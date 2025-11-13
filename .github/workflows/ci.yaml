@@ -48,6 +48,10 @@ jobs:
         run: |
           uv sync --extra dev
 
+      - name: Run pre-commit
+        run: |
+          uv run pre-commit run --hook-stage manual --all-files
+
       - name: Test with pytest
         run: |
           # stop pytest after 3 failures to save CI time
