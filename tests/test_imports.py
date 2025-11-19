@@ -1,2 +1,2 @@
 def test_imports():
-    import auto_x  # noqa: F401, PLC0415
+    import auto_cast  # noqa: F401, PLC0415
