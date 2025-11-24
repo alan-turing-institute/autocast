@@ -1,6 +1,6 @@
 [project]
 name = "auto-cast"
-version = "0.1.0"
+version = "0.0.1"
 description = "Spatiotemporal forecasting"
 readme = "README.md"
 authors = [
