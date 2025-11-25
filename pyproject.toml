@@ -6,8 +6,10 @@ readme = "README.md"
 authors = [
     { name = "AI for Physical Systems Team at The Alan Turing Institute", email = "ai4physics@turing.ac.uk" },
 ]
-requires-python = ">=3.10,<3.13"
-dependencies = []
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "ice-station-zebra",
+]
 
 [project.optional-dependencies]
 dev = [
@@ -84,3 +86,6 @@ convention = "numpy"
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*.py" = ["D"]
+
+[tool.uv.sources]
+ice-station-zebra = { git = "https://github.com/alan-turing-institute/ice-station-zebra.git" }
