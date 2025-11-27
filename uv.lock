@@ -250,6 +250,8 @@ version = "0.0.1"
 source = { editable = "." }
 dependencies = [
     { name = "ice-station-zebra" },
+    { name = "lightning" },
+    { name = "torch" },
 ]
 
 [package.optional-dependencies]
@@ -266,11 +268,13 @@ dev = [
 requires-dist = [
     { name = "ice-station-zebra", git = "https://github.com/alan-turing-institute/ice-station-zebra.git" },
     { name = "ipykernel", marker = "extra == 'dev'", specifier = ">=7.1.0" },
+    { name = "lightning", specifier = ">=2.5.6" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.4.0" },
     { name = "pyright", marker = "extra == 'dev'", specifier = "==1.1.407" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.0.1" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=7.0.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = "==0.14.4" },
+    { name = "torch", specifier = ">=2.9.1" },
 ]
 provides-extras = ["dev"]
 
@@ -1451,7 +1455,7 @@ name = "importlib-metadata"
 version = "8.7.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "zipp" },
+    { name = "zipp", marker = "python_full_version < '3.12'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/76/66/650a33bd90f786193e4de4b3ad86ea60b53c89b669a5c7be931fac31cdb0/importlib_metadata-8.7.0.tar.gz", hash = "sha256:d13b81ad223b890aa16c5471f2ac3056cf76c5f10f82d6f9292f0b415f389000", size = 56641, upload-time = "2025-04-27T15:29:01.736Z" }
 wheels = [
