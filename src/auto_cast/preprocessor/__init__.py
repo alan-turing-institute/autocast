@@ -1,3 +1,4 @@
 from .base import Preprocessor
+from .fno import FNOInputPreprocessor
 
-__all__ = ["Preprocessor"]
+__all__ = ["FNOInputPreprocessor", "Preprocessor"]
