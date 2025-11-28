@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader
 from auto_cast.data.dataset import SpatioTemporalDataset
 
 
-class AutoEmulateDataModule(WellDataModule):
+class SpatioTemporalDataModule(WellDataModule):
     """A class for spatio-temporal data modules."""
 
     def __init__(
