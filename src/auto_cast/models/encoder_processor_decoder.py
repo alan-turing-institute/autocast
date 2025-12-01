@@ -20,9 +20,21 @@ class EncoderProcessorDecoder(L.LightningModule):
     max_rollout_steps: int
     loss_func: nn.Module
 
-    def __init__(self, learning_rate: float = 1e-3, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        learning_rate: float = 1e-3,
+        stride: int = 1,
+        teacher_forcing_ratio: float = 0.5,
+        max_rollout_steps: int = 10,
+        loss_func: nn.Module | None = None,
+        **kwargs: Any,
+    ) -> None:
         super().__init__()
         self.learning_rate = learning_rate
+        self.stride = stride
+        self.teacher_forcing_ratio = teacher_forcing_ratio
+        self.max_rollout_steps = max_rollout_steps
+        self.loss_func = loss_func or nn.MSELoss()
         for key, value in kwargs.items():
             setattr(self, key, value)
 
@@ -36,6 +48,8 @@ class EncoderProcessorDecoder(L.LightningModule):
         instance = cls(**kwargs)
         instance.encoder_decoder = encoder_decoder
         instance.processor = processor
+        for key, value in kwargs.items():
+            setattr(instance, key, value)
         return instance
 
     def forward(self, *args: Any, **kwargs: Any) -> Any:
@@ -62,6 +76,13 @@ class EncoderProcessorDecoder(L.LightningModule):
         y_true = batch.output_fields
         loss = self.loss_func(y_pred, y_true)
         self.log("val_loss", loss, prog_bar=True)
+        return loss
+
+    def test_step(self, batch: Batch, batch_idx: int) -> Tensor:  # noqa: ARG002
+        y_pred = self(batch)
+        y_true = batch.output_fields
+        loss = self.loss_func(y_pred, y_true)
+        self.log("test_loss", loss, prog_bar=True)
         return loss
 
     def configure_optimizers(self):
