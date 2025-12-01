@@ -13,15 +13,15 @@ RolloutOutput = tuple[Tensor, None] | tuple[Tensor, Tensor]
 
 # TODO: Could be a dataclass if we want more structure
 @dataclass
-class Batch:
-    input_fields: Tensor
-    output_fields: Tensor
-    constant_scalars: Tensor
-    constant_fields: Tensor
+class Batch:  # noqa: D101
+    input_fields: Tensor  # (B, T, W, H, C)
+    output_fields: Tensor  # (B, T, W, H, C)
+    constant_scalars: Tensor  # (B, C)
+    constant_fields: Tensor  # (B, W, H, C)
 
 
 @dataclass
-class EncodedBatch:
+class EncodedBatch:  # noqa: D101
     encoded_inputs: Tensor
     encoded_output_fields: Tensor
     encoded_info: dict[str, Tensor]
