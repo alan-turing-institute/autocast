@@ -6,6 +6,7 @@ from the_well.data.normalization import ZScoreNormalization
 from torch.utils.data import DataLoader
 
 from auto_cast.data.dataset import SpatioTemporalDataset
+from auto_cast.types import collate_batches
 
 
 class SpatioTemporalDataModule(WellDataModule):
@@ -126,13 +127,21 @@ class SpatioTemporalDataModule(WellDataModule):
     def train_dataloader(self) -> DataLoader:
         """DataLoader for training."""
         return DataLoader(
-            self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=1
+            self.train_dataset,
+            batch_size=self.batch_size,
+            shuffle=True,
+            num_workers=1,
+            collate_fn=collate_batches,
         )
 
     def val_dataloader(self) -> DataLoader:
         """DataLoader for standard validation (not full trajectory rollouts)."""
         return DataLoader(
-            self.val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=1
+            self.val_dataset,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=1,
+            collate_fn=collate_batches,
         )
 
     def rollout_val_dataloader(self) -> DataLoader:
@@ -142,12 +151,17 @@ class SpatioTemporalDataModule(WellDataModule):
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=1,
+            collate_fn=collate_batches,
         )
 
     def test_dataloader(self) -> DataLoader:
         """DataLoader for testing."""
         return DataLoader(
-            self.test_dataset, batch_size=self.batch_size, shuffle=False, num_workers=1
+            self.test_dataset,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=1,
+            collate_fn=collate_batches,
         )
 
     def rollout_test_dataloader(self) -> DataLoader:
@@ -157,4 +171,5 @@ class SpatioTemporalDataModule(WellDataModule):
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=1,
+            collate_fn=collate_batches,
         )
