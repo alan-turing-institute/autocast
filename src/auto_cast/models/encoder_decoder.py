@@ -17,10 +17,10 @@ class EncoderDecoder(L.LightningModule):
     def __init__(
         self, encoder: Encoder, decoder: Decoder, loss_func: nn.Module | None = None
     ) -> None:
+        super().__init__()
         self.encoder = encoder
         self.decoder = decoder
         self.loss_func = loss_func
-        super().__init__()
 
     def forward(self, batch: Batch) -> Tensor:
         return self.decoder(self.encoder(batch))
