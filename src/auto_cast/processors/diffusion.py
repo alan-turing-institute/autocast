@@ -56,6 +56,24 @@ class DiffusionProcessor(Processor):
     def forward(self, x: Tensor) -> Tensor:
         return self.map(x)
 
+    def q_sample(self, x_0: Tensor, t:Tensor) -> Tensor:
+        """Forward diffusion q(x_t | x_0).
 
+        Sample from q(x_t|x_0) = N(alpha_t * x_0, Sigma_t^2*I)
+        where alpha_t and sigma_t are obtained from the noise schedule.
+        
+        Args:
+        x_0: clean data (B, C, H, W)
+        t: time (B,)
 
-
+        Returns
+        -------
+        x_t: noised data at t (B, C, H, W)
+        """
+        alpha_t, sigma_t = self.schedule(t)
+        # Reshape (B,) to (B, 1, 1, 1) for broadcasting with (B, C, H, W)
+        alpha_t = alpha_t.view(-1, 1, 1, 1)
+        sigma_t = sigma_t.view(-1, 1, 1, 1)
+        noise = torch.randn_like(x_0)
+        x_t = alpha_t * x_0 + sigma_t * noise
+        return x_t
