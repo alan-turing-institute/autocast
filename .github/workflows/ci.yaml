@@ -22,8 +22,8 @@ jobs:
       fail-fast: true
       matrix:
         os: ["ubuntu-latest", "macos-latest", "windows-latest"]
-        # only run for MSV Python 3.10 on PRs, but all versions on pushes to main
-        python-version: ${{ github.event_name == 'push' && fromJSON('["3.10", "3.11", "3.12"]') || fromJSON('["3.10"]') }}
+        # only run for MSV Python 3.11 on PRs, but all versions on pushes to main
+        python-version: ${{ github.event_name == 'push' && fromJSON('["3.11", "3.12"]') || fromJSON('["3.11"]') }}
     env:
       TURN_OFF_MPS_IF_RUNNING_CI: 1
       MPLBACKEND: Agg

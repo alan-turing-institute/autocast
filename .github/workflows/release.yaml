@@ -15,12 +15,12 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.11'
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
         with:
-          python-version: '3.10'
+          python-version: '3.11'
           enable-cache: true
           cache-suffix: release
           activate-environment: true
