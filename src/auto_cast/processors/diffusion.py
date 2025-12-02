@@ -77,3 +77,18 @@ class DiffusionProcessor(Processor):
         noise = torch.randn_like(x_0)
         x_t = alpha_t * x_0 + sigma_t * noise
         return x_t
+    
+    def training_step(self, batch:EncodedBatch, batch_idx:int) -> Tensor:
+        """Training step with diffusion loss.
+
+        Sample random time steps and compute loss between denoised output and clean data.
+        """
+        x_0 = batch.encoded_output_fields  # Clean data : (B, C, H, W)
+        B = x_0.size(0)
+
+        # Sample random times in [0, 1] uniformly
+        t = torch.rand(B, device=x_0.device)  # (B,)
+        x_t = self.q_sample(x_0, t)  # (B, C, H, W)
+        x_denoised = self.map(x_t)  # Denoised output : (B, C, H, W)
+        loss = self.loss_func(x_denoised, x_0)  # loss comparing clean and denoised data
+        return loss
