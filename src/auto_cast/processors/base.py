@@ -15,6 +15,7 @@ class Processor(ABC, L.LightningModule):
     stride: int
     max_rollout_steps: int
     loss_func: nn.Module
+    learning_rate: float
 
     def forward(self, *args, **kwargs: Any) -> Any:
         """Forward pass through the Processor."""
@@ -24,13 +25,30 @@ class Processor(ABC, L.LightningModule):
     def training_step(self, batch: EncodedBatch, batch_idx: int) -> Tensor:  # noqa: ARG002
         output = self.map(batch.encoded_inputs)
         loss = self.loss_func(output, batch.encoded_output_fields)
-        return loss  # noqa: RET504
+        self.log(
+            "train_loss", loss, prog_bar=True, batch_size=batch.encoded_inputs.shape[0]
+        )
+        return loss
 
     @abstractmethod
     def map(self, x: Tensor) -> Tensor:
         """Map input window of states/times to output window."""
 
-    def configure_optimizers(self): ...
+    def validation_step(self, batch: EncodedBatch, batch_idx: int) -> Tensor:  # noqa: ARG002
+        output = self.map(batch.encoded_inputs)
+        loss = self.loss_func(output, batch.encoded_output_fields)
+        self.log(
+            "val_loss", loss, prog_bar=True, batch_size=batch.encoded_inputs.shape[0]
+        )
+        return loss
+
+    def configure_optimizers(self):
+        """Configure optimizers for training.
+
+        Returns Adam optimizer with learning_rate. Subclasses can override
+        to use different optimizers or learning rate schedules.
+        """
+        return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
 
     def rollout(self, batch: EncodedBatch) -> RolloutOutput:
         """Rollout over multiple time steps."""

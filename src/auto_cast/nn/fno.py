@@ -1,5 +1,6 @@
 from typing import Any
 
+import torch
 from neuralop.models import FNO
 from torch import nn
 
@@ -50,6 +51,7 @@ class FNOProcessor(Processor):
         hidden_channels: int = 64,
         n_layers: int = 4,
         loss_func: nn.Module | None = None,
+        learning_rate: float = 1e-3,
         **fno_kwargs: Any,
     ):
         super().__init__()
@@ -63,9 +65,13 @@ class FNOProcessor(Processor):
             **fno_kwargs,
         )
         self.loss_func = loss_func or nn.MSELoss()
+        self.learning_rate = learning_rate
 
     def forward(self, x: Tensor) -> Tensor:
         return self.model(x)
 
     def map(self, x: Tensor) -> Tensor:
         return self(x)
+
+    def configure_optimizers(self):
+        return torch.optim.Adam(self.parameters(), lr=self.learning_rate)

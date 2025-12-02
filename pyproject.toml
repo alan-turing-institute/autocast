@@ -96,3 +96,11 @@ convention = "numpy"
 
 [tool.uv.sources]
 autoemulate = { git = "https://github.com/alan-turing-institute/autoemulate.git" }
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    # Ignore Lightning warnings that are expected/benign in test environment
+    "ignore:You are trying to `self.log\\(\\)` but the `self.trainer` reference is not registered:UserWarning",
+    "ignore:GPU available but not used:UserWarning",
+    "ignore:The '.*_dataloader' does not have many workers:UserWarning",
+]

@@ -67,21 +67,27 @@ class EncoderProcessorDecoder(L.LightningModule):
         y_pred = self(batch)
         y_true = batch.output_fields
         loss = self.loss_func(y_pred, y_true)
-        self.log("train_loss", loss, prog_bar=True)
+        self.log(
+            "train_loss", loss, prog_bar=True, batch_size=batch.input_fields.shape[0]
+        )
         return loss
 
     def validation_step(self, batch: Batch, batch_idx: int) -> Tensor:  # noqa: ARG002
         y_pred = self(batch)
         y_true = batch.output_fields
         loss = self.loss_func(y_pred, y_true)
-        self.log("val_loss", loss, prog_bar=True)
+        self.log(
+            "val_loss", loss, prog_bar=True, batch_size=batch.input_fields.shape[0]
+        )
         return loss
 
     def test_step(self, batch: Batch, batch_idx: int) -> Tensor:  # noqa: ARG002
         y_pred = self(batch)
         y_true = batch.output_fields
         loss = self.loss_func(y_pred, y_true)
-        self.log("test_loss", loss, prog_bar=True)
+        self.log(
+            "test_loss", loss, prog_bar=True, batch_size=batch.input_fields.shape[0]
+        )
         return loss
 
     def configure_optimizers(self):
