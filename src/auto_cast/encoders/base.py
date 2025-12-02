@@ -3,24 +3,26 @@ from typing import Any
 
 from torch import nn
 
-from auto_cast.types import Tensor
+from auto_cast.types import Batch, Tensor
 
 
 class Encoder(nn.Module, ABC):
     """Base encoder."""
+
+    encoder_model: nn.Module
 
     def __init__(self, latent_dim: int, input_channels: int) -> None:
         super().__init__()
         self.latent_dim = latent_dim
         self.input_channels = input_channels
 
-    def encode(self, x: Tensor) -> Tensor:
+    def encode(self, batch: Batch) -> Tensor:
         """Encode the input tensor into the latent space.
 
         Parameters
         ----------
-        x: Tensor
-            Input tensor to be encoded.
+        x: Batch
+            Input batch to be encoded.
 
         Returns
         -------
@@ -31,3 +33,6 @@ class Encoder(nn.Module, ABC):
         raise NotImplementedError(msg)
 
     def forward(self, *args: Any, **kwargs: Any) -> Any: ...
+
+    def __call__(self, batch: Batch) -> Any:
+        return self.encode(batch)

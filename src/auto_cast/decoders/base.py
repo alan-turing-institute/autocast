@@ -9,6 +9,8 @@ from auto_cast.types import Tensor
 class Decoder(nn.Module, ABC):
     """Base Decoder."""
 
+    decoder_model: nn.Module
+
     def __init__(self, latent_dim: int, output_channels: int) -> None:
         super().__init__()
         self.latent_dim = latent_dim
@@ -30,3 +32,6 @@ class Decoder(nn.Module, ABC):
         raise NotImplementedError(msg)
 
     def forward(self, *args: Any, **kwargs: Any) -> Any: ...
+
+    def __call__(self, z: Tensor) -> Tensor:
+        return self.decode(z)
