@@ -81,3 +81,26 @@ def test_encoder_processor_decoder_training_step_runs():
         max_epochs=1, logger=False, enable_checkpointing=False, limit_train_batches=1
     )
     trainer.fit(model, train_dataloaders=dummy_loader, val_dataloaders=dummy_loader)
+
+
+def test_encoder_processor_decoder_rollout_is_mixin_backed():
+    encoder = PermuteConcat(with_constants=False)
+    decoder = ChannelsLast()
+    loss = nn.MSELoss()
+    encoder_decoder = EncoderDecoder(encoder=encoder, decoder=decoder, loss_func=loss)
+    processor = TinyProcessor()
+    model = EncoderProcessorDecoder.from_encoder_processor_decoder(
+        encoder_decoder=encoder_decoder,
+        processor=processor,
+        loss_func=loss,
+        stride=1,
+        max_rollout_steps=2,
+        teacher_forcing_ratio=0.0,
+    )
+
+    batch = _toy_batch(t_in=2, t_out=2)
+    preds, gts = model.rollout(batch)
+
+    assert preds.shape[0] == 2
+    assert gts is not None
+    assert gts.shape[0] == 2
