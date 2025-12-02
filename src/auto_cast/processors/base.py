@@ -5,7 +5,7 @@ import lightning as L
 import torch
 from torch import nn
 
-from auto_cast.types import Batch, EncodedBatch, RolloutOutput, Tensor
+from auto_cast.types import EncodedBatch, RolloutOutput, Tensor
 
 
 class Processor(L.LightningModule):
