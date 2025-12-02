@@ -1,5 +1,8 @@
-from torch import nn
 from abc import ABC
+from typing import Any
+
+from torch import nn
+
 from auto_cast.types import Tensor
 
 
@@ -14,15 +17,17 @@ class Encoder(nn.Module, ABC):
     def encode(self, x: Tensor) -> Tensor:
         """Encode the input tensor into the latent space.
 
-        Args:
-            x (Tensor): Input tensor to be encoded.
+        Parameters
+        ----------
+        x: Tensor
+            Input tensor to be encoded.
 
         Returns
         -------
-            Tensor: Encoded tensor in the latent space.
+        Tensor
+            Encoded tensor in the latent space.
         """
-        raise NotImplementedError("The encode method must be implemented by subclasses.")  # noqa: E501, EM101
-    
-    def forward(self, x: Tensor) -> Tensor:
-        """Forward Pass through the Encoder."""
-        return self.encode(x)
+        msg = "The encode method must be implemented by subclasses."
+        raise NotImplementedError(msg)
+
+    def forward(self, *args: Any, **kwargs: Any) -> Any: ...

@@ -91,6 +91,3 @@ convention = "numpy"
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*.py" = ["D"]
-
-[tool.uv.sources]
-ice-station-zebra = { git = "https://github.com/alan-turing-institute/ice-station-zebra.git" }
