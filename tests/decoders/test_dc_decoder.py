@@ -20,7 +20,7 @@ def test_dcdecoder_basic_2d():
     )
 
     z = rand(2, 16, 16, 16)
-    x = decoder.decode(z)
+    x = decoder.forward(z)
     assert_output_valid(x, (2, 64, 64, 3))
 
 
@@ -36,7 +36,7 @@ def test_dcdecoder_3d():
     )
 
     z = rand(2, 8, 16, 16, 16)
-    x = decoder.decode(z)
+    x = decoder.forward(z)
     assert_output_valid(x, (2, 32, 32, 32, 4))
 
 
@@ -53,7 +53,7 @@ def test_dcdecoder_pixel_shuffle():
 
     # Test forward pass
     z = rand(2, 16, 16, 16)
-    x = decoder.decode(z)
+    x = decoder.forward(z)
 
     assert x.shape == (2, 32, 32, 3), f"Expected (2, 32, 32, 3), got {x.shape}"
     assert not x.isnan().any(), "Output contains NaN values"
@@ -72,7 +72,7 @@ def test_dcdecoder_with_attention():
     )
 
     z = rand(2, 16, 16, 16)
-    x = decoder.decode(z)
+    x = decoder.forward(z)
     assert_output_valid(x, (2, 32, 32, 3))
 
 
@@ -88,7 +88,7 @@ def test_dcdecoder_single_depth():
     )
 
     z = rand(2, 16, 16, 16)
-    x = decoder.decode(z)
+    x = decoder.forward(z)
     assert_output_valid(x, (2, 16, 16, 3))
 
 

@@ -1,5 +1,6 @@
 import torch
 from azula.nn.layers import ConvNd
+from einops import rearrange
 from torch import nn
 
 from auto_cast.decoders import Decoder
@@ -107,9 +108,8 @@ class VAE(EncoderDecoder):
 
     def forward_with_latent(self, batch: Batch) -> tuple[Tensor, Tensor]:
         encoded = self.encode(batch)
-        # Split along channel dim (1) for spatial, feature dim (-1) for flat
-        split_dim = 1 if self.spatial is not None else -1
-        mean, log_var = encoded.chunk(2, dim=split_dim)
+        # Split along channel dim (last dim)
+        mean, log_var = encoded.chunk(2, dim=-1)
         z = self.reparametrize(mean, log_var)
         decoded = self.decode(z)
         return decoded, encoded
@@ -129,10 +129,39 @@ class VAE(EncoderDecoder):
         return mean + eps * std
 
     def encode(self, batch: Batch) -> Tensor:
-        h = self.encoder.encode(batch)  # not super().encode
-        mean = self.fc_mean(h)
-        log_var = self.fc_log_var(h)
-        concat_dim = 1 if self.spatial is not None else -1
+        h = self.encoder.encode(
+            batch
+        )  # Shape: (B, T, spatial..., C) or (B, T, C) for flat
+
+        # Check if latent is spatial (has spatial dims) or flat
+        is_spatial = self.spatial is not None and h.dim() > 3
+
+        # Process each timestep separately through fc layers
+        outputs_mean = []
+        outputs_logvar = []
+        for idx in range(h.shape[1]):  # Loop over time dimension
+            h_t = h[:, idx, ...]  # (B, spatial..., C) or (B, C) for flat
+
+            if is_spatial:
+                # Rearrange to (B, C, spatial...) for conv layers
+                h_t = rearrange(h_t, "B ... C -> B C ...")
+
+            mean_t = self.fc_mean(h_t)
+            logvar_t = self.fc_log_var(h_t)
+
+            if is_spatial:
+                # Rearrange back to (B, spatial..., C)
+                mean_t = rearrange(mean_t, "B C ... -> B ... C")
+                logvar_t = rearrange(logvar_t, "B C ... -> B ... C")
+
+            outputs_mean.append(mean_t)
+            outputs_logvar.append(logvar_t)
+
+        # Stack back into (B, T, spatial..., C) or (B, T, C)
+        mean = torch.stack(outputs_mean, dim=1)
+        log_var = torch.stack(outputs_logvar, dim=1)
+
+        concat_dim = -1  # Always concatenate along channel dimension (last dim)
         return torch.cat([mean, log_var], dim=concat_dim)
 
     def training_step(self, batch: Batch, batch_idx: int) -> Tensor:  # noqa: ARG002

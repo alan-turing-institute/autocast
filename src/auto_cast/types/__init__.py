@@ -5,6 +5,7 @@ import torch
 from torch.utils.data import DataLoader
 
 Tensor = torch.Tensor
+
 Input = Tensor | DataLoader
 RolloutOutput = tuple[Tensor, None] | tuple[Tensor, Tensor]
 

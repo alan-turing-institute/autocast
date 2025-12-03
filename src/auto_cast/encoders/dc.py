@@ -2,6 +2,7 @@ import math
 from collections.abc import Sequence
 from typing import cast
 
+import torch
 from azula.nn.layers import ConvNd, Patchify
 from einops import rearrange
 from torch import Tensor, nn
@@ -171,18 +172,8 @@ class DCEncoder(Encoder):
 
     def preprocess(self, batch: Batch) -> Batch:
         x = batch.input_fields
-        # Already channels-first
-        if x.dim() >= 2 and x.shape[1] == self.input_channels:
-            return batch
-
-        if x.shape[-1] != self.input_channels:
-            msg = (
-                "Cannot infer channel dimension for DCEncoder; expected"
-                f" {self.input_channels} but got shape {tuple(x.shape)}"
-            )
-            raise ValueError(msg)
-
-        x = rearrange(x, "B ... C -> B C ...")
+        # Rearrange from (B, T, spatial..., C) to (B, C, T, spatial...)
+        x = rearrange(x, "B T ... C -> B C T ...")
         return Batch(
             input_fields=x,
             output_fields=batch.output_fields,
@@ -196,23 +187,27 @@ class DCEncoder(Encoder):
         Parameters
         ----------
         batch: Batch
-            Input batch containing input_fields.
+            Input batch containing input_fields with shape (B, T, spatial..., C_i).
 
         Returns
         -------
         Tensor
-            Encoded latent tensor with shape (B, C_o, L_1 / 2^D, ..., L_N / 2^D).
+            Encoded latent tensor with shape (B, T, spatial_reduced..., C_o).
 
         """
         batch = self.preprocess(batch)
-        x = batch.input_fields
-        x = self.patch(x)
-
-        for blocks in self.descent:
-            for block in cast(nn.ModuleList, blocks):  # ModuleList in construction
-                x = block(x)
-
-        return x
+        outputs = []
+        for idx in range(batch.input_fields.shape[2]):  # loop over time dimension
+            x = batch.input_fields[:, :, idx, ...]
+            x = self.patch(x)
+            for blocks in self.descent:
+                for block in cast(nn.ModuleList, blocks):  # ModuleList in construction
+                    x = block(x)
+            outputs.append(x)
+        # Stack outputs: (B, C, spatial...) -> (B, T, C, spatial...)
+        # Then rearrange to (B, T, spatial..., C)
+        stacked = torch.stack(outputs, dim=1)  # (B, T, C, spatial...)
+        return rearrange(stacked, "B T C ... -> B T ... C")
 
     def forward(self, x: Tensor) -> Tensor:
         """Forward pass through encoder (for direct tensor input).

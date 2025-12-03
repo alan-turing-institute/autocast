@@ -220,14 +220,11 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
     def __len__(self):  # noqa: D105
         return len(self.all_input_fields)
 
-    def __getitem__(self, idx):  # noqa: D105
-        input_fields = (
-            self.all_input_fields[idx]
-            if not self.autoencoder_mode
-            else self.all_input_fields[idx][0]  # first time step only
-        )
+    def __getitem__(self, idx):
+        """Get item at index."""
+        input_fields = self.all_input_fields[idx]
         output_fields = (
-            input_fields if self.autoencoder_mode else self.all_output_fields[idx][0]
+            input_fields if self.autoencoder_mode else self.all_output_fields[idx]
         )
 
         item = {
@@ -396,6 +393,6 @@ class TheWell(SpatioTemporalDataset):
         data = self.well_dataset.__getitem__(index)
         if self.autoencoder_mode:
             # Replace output_fields with input_fields for autoencoder training
-            data["input_fields"] = data["input_fields"][0, ...]  # first time step only
-            data["output_fields"] = data["input_fields"][0, ...]  # first time step only
+            data["input_fields"] = data["input_fields"]
+            data["output_fields"] = data["input_fields"]
         return self.to_batch(data)

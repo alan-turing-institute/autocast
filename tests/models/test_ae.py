@@ -8,7 +8,19 @@ from auto_cast.types import Batch
 
 
 def _make_batch(shape: tuple[int, ...], *, requires_grad: bool = False) -> Batch:
-    x = rand(*shape, requires_grad=requires_grad)
+    """Create a batch with time dimension.
+
+    Args:
+        shape: Shape without time dimension (B, spatial..., C)
+
+    Returns:
+        Batch with shape (B, T, spatial..., C) where T=2
+    """
+    # Add time dimension: (B, spatial..., C) -> (B, T, spatial..., C)
+    b, *spatial_and_c = shape
+    t = 2  # Default time steps
+    new_shape = (b, t, *spatial_and_c)
+    x = rand(*new_shape, requires_grad=requires_grad)
     return Batch(
         input_fields=x,
         output_fields=x.clone(),
@@ -41,10 +53,10 @@ def test_ae_full_dcae_2d():
     batch = _make_batch((2, 64, 64, 3))
     x = batch.input_fields
     z = encoder.encode(batch)
-    x_recon = decoder.forward(z)
+    x_recon = decoder.decode(z)
 
     assert x_recon.shape == x.shape, f"Expected {x.shape}, got {x_recon.shape}"
-    assert z.shape == (2, 16, 16, 16), f"Expected (2, 16, 16, 16), got {z.shape}"
+    assert z.shape == (2, 2, 16, 16, 16), f"Expected (2, 2, 16, 16, 16), got {z.shape}"
     assert not x_recon.isnan().any(), "Reconstruction contains NaN values"
     assert not z.isnan().any(), "Latent contains NaN values"
 
@@ -73,10 +85,10 @@ def test_ae_full_dcae_3d():
     batch = _make_batch((2, 32, 32, 32, 4))
     x = batch.input_fields
     z = encoder.encode(batch)
-    x_recon = decoder.forward(z)
+    x_recon = decoder.decode(z)
 
     assert x_recon.shape == x.shape, f"Expected {x.shape}, got {x_recon.shape}"
-    expected_latent_shape = (2, 8, 16, 16, 16)
+    expected_latent_shape = (2, 2, 16, 16, 16, 8)  # (B, T, spatial..., C)
     assert z.shape == expected_latent_shape, (
         f"Expected {expected_latent_shape}, got {z.shape}"
     )
@@ -134,7 +146,7 @@ def test_ae_pixel_shuffle():
     batch = _make_batch((2, 64, 64, 3))
     x = batch.input_fields
     z = encoder.encode(batch)
-    x_recon = decoder.forward(z)
+    x_recon = decoder.decode(z)
 
     assert x_recon.shape == x.shape, f"Expected {x.shape}, got {x_recon.shape}"
     assert not x_recon.isnan().any(), "Reconstruction contains NaN values"
@@ -166,7 +178,7 @@ def test_ae_with_attention():
     batch = _make_batch((2, 64, 64, 3))
     x = batch.input_fields
     z = encoder.encode(batch)
-    x_recon = decoder.forward(z)
+    x_recon = decoder.decode(z)
 
     assert x_recon.shape == x.shape, f"Expected {x.shape}, got {x_recon.shape}"
     assert not x_recon.isnan().any(), "Reconstruction contains NaN values"
@@ -196,7 +208,7 @@ def test_ae_reconstruction_loss():
     batch = _make_batch((2, 64, 64, 3))
     x = batch.input_fields
     z = encoder.encode(batch)
-    x_recon = decoder.forward(z)
+    x_recon = decoder.decode(z)
 
     # Compute MSE loss
     loss = nn.functional.mse_loss(x_recon, x)
@@ -229,7 +241,7 @@ def test_ae_gradient_flow():
     batch = _make_batch((2, 64, 64, 3), requires_grad=True)
     x = batch.input_fields
     z = encoder.encode(batch)
-    x_recon = decoder.forward(z)
+    x_recon = decoder.decode(z)
     loss = nn.functional.mse_loss(x_recon, x)
     loss.backward()
 
@@ -314,7 +326,8 @@ def test_ae_wrapper_forward_with_batch():
     decoded, encoded = model.forward_with_latent(batch)
     assert torch.allclose(output, decoded)
     assert encoded.shape[0] == batch.input_fields.shape[0]
-    assert encoded.shape[1] == encoder.latent_dim
+    assert encoded.shape[1] == batch.input_fields.shape[1]  # Time dimension
+    assert encoded.shape[-1] == encoder.latent_dim  # Channel dimension
 
 
 def test_ae_wrapper_loss_and_backward():

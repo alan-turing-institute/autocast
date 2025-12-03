@@ -2,6 +2,7 @@ import math
 from collections.abc import Sequence
 from typing import cast
 
+import torch
 from azula.nn.layers import ConvNd, Unpatchify
 from einops import rearrange
 from torch import Tensor, nn
@@ -170,8 +171,8 @@ class DCDecoder(Decoder):
     def postprocess(self, decoded: Tensor) -> Tensor:
         return rearrange(decoded, "B C ... -> B ... C")
 
-    def decode(self, z: Tensor) -> Tensor:
-        """Decode latent tensor back to original space.
+    def forward(self, z: Tensor) -> Tensor:
+        """Forward pass through decoder (for direct tensor input).
 
         Parameters
         ----------
@@ -181,19 +182,38 @@ class DCDecoder(Decoder):
         Returns
         -------
         Tensor
-            Decoded tensor with shape (B, C_o, L_1 x 2^D, ..., L_N x 2^D).
+            Decoded tensor with shape (B, L_1 x 2^D, ..., L_N x 2^D, C_o).
 
         """
         x = z
         for blocks in self.ascent:
-            for block in cast(nn.ModuleList, blocks):  # ModuleList in construction
+            for block in cast(nn.ModuleList, blocks):
                 x = block(x)
+        x = self.unpatch(x)
+        return self.postprocess(x)
 
-        return self.postprocess(self.unpatch(x))
+    def decode(self, z: Tensor) -> Tensor:
+        """Decode latent tensor with time dimension back to original space.
 
-    def forward(self, z: Tensor) -> Tensor:
-        """Forward pass through decoder."""
-        return self.decode(z)
+        Parameters
+        ----------
+        z: Tensor
+            Latent tensor with shape (B, T, spatial..., C_i) where C_i is last dim.
+
+        Returns
+        -------
+        Tensor
+            Decoded tensor with shape (B, T, spatial_expanded..., C_o).
+
+        """
+        outputs = []
+        for idx in range(z.shape[1]):
+            x = z[:, idx, ...]
+            # Rearrange from (B, spatial..., C) to (B, C, spatial...)
+            x = rearrange(x, "B ... C -> B C ...")
+            x = self.forward(x)
+            outputs.append(x)
+        return torch.stack(outputs, dim=1)
 
     def __call__(self, z: Tensor) -> Tensor:
         return self.decode(z)

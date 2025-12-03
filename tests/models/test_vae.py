@@ -12,7 +12,19 @@ from auto_cast.types import Batch, Tensor
 
 
 def _make_batch(shape: tuple[int, ...], *, requires_grad: bool = False) -> Batch:
-    x = torch.rand(*shape, requires_grad=requires_grad)
+    """Create a batch with time dimension.
+
+    Args:
+        shape: Shape without time dimension (B, spatial..., C)
+
+    Returns:
+        Batch with shape (B, T, spatial..., C) where T=2
+    """
+    # Add time dimension: (B, spatial..., C) -> (B, T, spatial..., C)
+    b, *spatial_and_c = shape
+    t = 2  # Default time steps
+    new_shape = (b, t, *spatial_and_c)
+    x = torch.rand(*new_shape, requires_grad=requires_grad)
     return Batch(
         input_fields=x,
         output_fields=x.clone(),
@@ -34,8 +46,13 @@ class _FlatEncoder(Encoder):
         )
 
     def encode(self, batch: Batch) -> Tensor:
-        x = batch.input_fields
-        return self.net(x)
+        x = batch.input_fields  # (B, T, ..., C)
+        # Process each time step
+        outputs = []
+        for idx in range(x.shape[1]):
+            x_t = x[:, idx, ...]  # (B, ..., C) or (B, C) for flat
+            outputs.append(self.net(x_t))
+        return torch.stack(outputs, dim=1)  # (B, T, C)
 
     def forward(self, batch: Batch) -> Tensor:  # pragma: no cover
         return self.encode(batch)
@@ -53,7 +70,12 @@ class _FlatDecoder(Decoder):
         )
 
     def decode(self, z: Tensor) -> Tensor:
-        return self.net(z)
+        # z is (B, T, C)
+        outputs = []
+        for idx in range(z.shape[1]):
+            z_t = z[:, idx, ...]  # (B, C)
+            outputs.append(self.net(z_t))
+        return torch.stack(outputs, dim=1)  # (B, T, C)
 
 
 class _FlatteningEncoder(Encoder):
@@ -71,7 +93,12 @@ class _FlatteningEncoder(Encoder):
         )
 
     def encode(self, batch: Batch) -> Tensor:
-        return self.net(batch.input_fields)
+        x = batch.input_fields  # (B, T, spatial..., C)
+        outputs = []
+        for idx in range(x.shape[1]):
+            x_t = x[:, idx, ...]  # (B, spatial..., C)
+            outputs.append(self.net(x_t))
+        return torch.stack(outputs, dim=1)  # (B, T, latent_dim)
 
 
 class _FlatteningDecoder(Decoder):
@@ -88,8 +115,13 @@ class _FlatteningDecoder(Decoder):
         )
 
     def decode(self, z: Tensor) -> Tensor:
-        x = self.net(z)
-        return x.view(z.shape[0], *self.output_shape)
+        # z is (B, T, latent_dim)
+        outputs = []
+        for idx in range(z.shape[1]):
+            z_t = z[:, idx, ...]  # (B, latent_dim)
+            x_t = self.net(z_t)
+            outputs.append(x_t.view(-1, *self.output_shape))
+        return torch.stack(outputs, dim=1)  # (B, T, C, H, W)
 
 
 def test_vae_spatial_latents_2d():
@@ -128,12 +160,13 @@ def test_vae_spatial_latents_2d():
     decoded, encoded = vae.forward_with_latent(batch)
     assert decoded.shape == x.shape, f"Expected {x.shape}, got {decoded.shape}"
 
-    # Encoded should be [B, 2*C, H, W] where C=16
+    # Encoded should be [B, T, H, W, D, 2*C] where C=8
     assert encoded.shape[0] == 2, "Batch size should be 2"
-    assert encoded.shape[1] == 32, (
-        f"Expected 32 channels (2*16), got {encoded.shape[1]}"
+    assert encoded.shape[1] == 2, "Time dimension should be 2"
+    assert encoded.shape[-1] == 32, (
+        f"Expected 32 channels (2*16), got {encoded.shape[-1]}"
     )
-    assert encoded.dim() == 4, "Encoded should be 4D (B, 2*C, H, W)"
+    assert encoded.dim() == 5, "Encoded should be 5D (B, T, H, W, 2*C)"
     assert not encoded.isnan().any(), "Encoded contains NaN values"
 
     # Test loss computation
@@ -178,10 +211,13 @@ def test_vae_spatial_latents_3d():
     decoded, encoded = vae.forward_with_latent(batch)
     assert decoded.shape == x.shape, f"Expected {x.shape}, got {decoded.shape}"
 
-    # Encoded should be [B, 2*C, D, H, W] where C=8
+    # Encoded should be [B, T, D, H, W, 2*C] where C=8
     assert encoded.shape[0] == 2, "Batch size should be 2"
-    assert encoded.shape[1] == 16, f"Expected 16 channels (2*8), got {encoded.shape[1]}"
-    assert encoded.dim() == 5, "Encoded should be 5D (B, D, H, W, 2*C)"
+    assert encoded.shape[1] == 2, "Time dimension should be 2"
+    assert encoded.shape[-1] == 16, (
+        f"Expected 16 channels (2*8), got {encoded.shape[-1]}"
+    )
+    assert encoded.dim() == 6, "Encoded should be 6D (B, T, D, H, W, 2*C)"
     assert not encoded.isnan().any(), "Encoded contains NaN values"
 
 
@@ -236,7 +272,7 @@ def test_vae_flat_latents():
     decoder = _FlatDecoder(latent_dim=latent_dim, output_dim=input_dim)
     vae = VAE(encoder=encoder, decoder=decoder, spatial=None)
 
-    x = torch.rand(5, input_dim)
+    x = torch.rand(5, 2, input_dim)  # Add time dimension (B, T, C)
     batch = Batch(
         input_fields=x,
         output_fields=x,
@@ -249,7 +285,7 @@ def test_vae_flat_latents():
     assert output.shape == x.shape
     decoded, encoded = vae.forward_with_latent(batch)
     assert decoded.shape == x.shape
-    assert encoded.shape == (x.shape[0], 2 * latent_dim)
+    assert encoded.shape == (x.shape[0], x.shape[1], 2 * latent_dim)  # (B, T, 2*C)
 
     # Stochastic sampling only during training for flat latents
     vae.train()
@@ -272,7 +308,7 @@ def test_vae_spatial_input_flat_latent():
     decoder = _FlatteningDecoder(latent_dim=latent_dim, output_shape=input_shape)
     vae = VAE(encoder=encoder, decoder=decoder, spatial=None)
 
-    x = torch.rand(4, *input_shape)
+    x = torch.rand(4, 2, *input_shape)  # Add time dimension (B, T, C, H, W)
     batch = Batch(
         input_fields=x,
         output_fields=x,
@@ -282,7 +318,7 @@ def test_vae_spatial_input_flat_latent():
 
     decoded, encoded = vae.forward_with_latent(batch)
     assert decoded.shape == x.shape
-    assert encoded.shape == (x.shape[0], 2 * latent_dim)
+    assert encoded.shape == (x.shape[0], x.shape[1], 2 * latent_dim)  # (B, T, 2*C)
 
     vae.train()
     train_out1 = vae(batch)
