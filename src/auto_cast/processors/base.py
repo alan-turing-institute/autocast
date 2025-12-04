@@ -15,6 +15,7 @@ class Processor(L.LightningModule):
     stride: int
     max_rollout_steps: int
     loss_func: nn.Module
+    learning_rate: float
 
     def forward(self, *args, **kwargs: Any) -> Any:
         """Forward pass through the Processor."""
@@ -30,7 +31,9 @@ class Processor(L.LightningModule):
     def map(self, x: Tensor) -> Tensor:
         """Map input window of states/times to output window."""
 
-    def configure_optimizers(self): ...
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
+        return optimizer
 
     def rollout(self, batch: EncodedBatch) -> RolloutOutput:
         """Rollout over multiple time steps."""
