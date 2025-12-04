@@ -9,11 +9,6 @@ from auto_cast.types import Tensor
 class Encoder(nn.Module, ABC):
     """Base encoder."""
 
-    def __init__(self, latent_dim: int, input_channels: int) -> None:
-        super().__init__()
-        self.latent_dim = latent_dim
-        self.input_channels = input_channels
-
     def encode(self, x: Tensor) -> Tensor:
         """Encode the input tensor into the latent space.
 

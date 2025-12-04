@@ -1,5 +1,3 @@
-from typing import Any
-
 import lightning as L
 import torch
 from torch import nn
@@ -14,16 +12,25 @@ class EncoderDecoder(L.LightningModule):
 
     encoder: Encoder
     decoder: Decoder
-    loss_func: nn.Module
+    loss_func: nn.Module | None
 
-    def __init__(self):
-        pass
+    def __init__(
+        self, encoder: Encoder, decoder: Decoder, loss_func: nn.Module | None = None
+    ) -> None:
+        super().__init__()
+        self.encoder = encoder
+        self.decoder = decoder
+        self.loss_func = loss_func
 
-    def forward(self, *args: Any, **kwargs: Any) -> Any:
-        return self.decoder(self.encoder(*args, **kwargs))
+    def forward(self, batch: Batch) -> Tensor:
+        return self.decoder(self.encoder(batch))
 
     def training_step(self, batch: Batch, batch_idx: int) -> Tensor:  # noqa: ARG002
-        output = self.encode(batch)
+        if self.loss_func is None:
+            msg = "Loss function not defined for EncoderDecoder model."
+            raise ValueError(msg)
+        x = self.encode(batch)
+        output = self.decoder(x)
         loss = self.loss_func(output, batch.output_fields)
         return loss  # noqa: RET504
 
@@ -43,8 +50,8 @@ class EncoderDecoder(L.LightningModule):
 class VAE(EncoderDecoder):
     """Variational Autoencoder Model."""
 
-    def forward(self, x: Tensor) -> Tensor:
-        mu, log_var = self.encoder(x)
+    def forward(self, batch: Batch) -> Tensor:
+        mu, log_var = self.encoder(batch)
         z = self.reparametrize(mu, log_var)
         x = self.decoder(z)
         return x  # noqa: RET504
