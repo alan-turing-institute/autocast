@@ -5,11 +5,12 @@ from typing import cast
 import torch
 from azula.nn.layers import ConvNd, Unpatchify
 from einops import rearrange
-from torch import Tensor, nn
+from torch import nn
 
 from auto_cast.decoders.base import Decoder
 from auto_cast.nn import ResBlock
 from auto_cast.nn.dc_utils import build_sample_block
+from auto_cast.types import TensorBCTS, TensorBTSC
 
 
 class DCDecoder(Decoder):
@@ -168,20 +169,20 @@ class DCDecoder(Decoder):
 
         self.decoder_model = self.ascent
 
-    def postprocess(self, decoded: Tensor) -> Tensor:
+    def postprocess(self, decoded: TensorBTSC) -> TensorBTSC:
         return rearrange(decoded, "B C ... -> B ... C")
 
-    def forward(self, z: Tensor) -> Tensor:
+    def forward(self, z: TensorBCTS) -> TensorBTSC:
         """Forward pass through decoder (for direct tensor input).
 
         Parameters
         ----------
-        z: Tensor
+        z: TensorBCTS
             Latent tensor with shape (B, C_i, L_1, ..., L_N).
 
         Returns
         -------
-        Tensor
+        TensorBTSC
             Decoded tensor with shape (B, L_1 x 2^D, ..., L_N x 2^D, C_o).
 
         """
@@ -192,7 +193,7 @@ class DCDecoder(Decoder):
         x = self.unpatch(x)
         return self.postprocess(x)
 
-    def decode(self, z: Tensor) -> Tensor:
+    def decode(self, z: TensorBTSC) -> TensorBTSC:
         """Decode latent tensor with time dimension back to original space.
 
         Parameters
@@ -215,5 +216,5 @@ class DCDecoder(Decoder):
             outputs.append(x)
         return torch.stack(outputs, dim=1)
 
-    def __call__(self, z: Tensor) -> Tensor:
+    def __call__(self, z: TensorBTSC) -> TensorBTSC:
         return self.decode(z)

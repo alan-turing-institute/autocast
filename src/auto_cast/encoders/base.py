@@ -38,5 +38,5 @@ class Encoder(nn.Module, ABC):
 
     def forward(self, *args: Any, **kwargs: Any) -> Any: ...
 
-    def __call__(self, batch: Batch) -> Any:
+    def __call__(self, batch: Batch) -> Tensor:
         return self.encode(batch)

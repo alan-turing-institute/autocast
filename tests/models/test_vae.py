@@ -8,7 +8,14 @@ from auto_cast.decoders.dc import DCDecoder
 from auto_cast.encoders.base import Encoder
 from auto_cast.encoders.dc import DCEncoder
 from auto_cast.models.vae import VAE, VAELoss
-from auto_cast.types import Batch, Tensor
+from auto_cast.types import (
+    Batch,
+    TensorBC,
+    TensorBSC,
+    TensorBTC,
+    TensorBTCHW,
+    TensorBTSC,
+)
 
 
 def _make_batch(shape: tuple[int, ...], *, requires_grad: bool = False) -> Batch:
@@ -45,16 +52,16 @@ class _FlatEncoder(Encoder):
             nn.Linear(2 * input_dim, latent_dim),
         )
 
-    def encode(self, batch: Batch) -> Tensor:
+    def encode(self, batch: Batch) -> TensorBTC:
         x = batch.input_fields  # (B, T, ..., C)
         # Process each time step
         outputs = []
         for idx in range(x.shape[1]):
             x_t = x[:, idx, ...]  # (B, ..., C) or (B, C) for flat
             outputs.append(self.net(x_t))
-        return torch.stack(outputs, dim=1)  # (B, T, C)
+        return torch.stack(outputs, dim=1)
 
-    def forward(self, batch: Batch) -> Tensor:  # pragma: no cover
+    def forward(self, batch: Batch) -> TensorBTC:
         return self.encode(batch)
 
 
@@ -69,11 +76,10 @@ class _FlatDecoder(Decoder):
             nn.Linear(2 * latent_dim, output_dim),
         )
 
-    def decode(self, z: Tensor) -> Tensor:
-        # z is (B, T, C)
+    def decode(self, z: TensorBTC) -> TensorBTC:
         outputs = []
         for idx in range(z.shape[1]):
-            z_t = z[:, idx, ...]  # (B, C)
+            z_t: TensorBC = z[:, idx, ...]  # (B, C)
             outputs.append(self.net(z_t))
         return torch.stack(outputs, dim=1)  # (B, T, C)
 
@@ -92,11 +98,11 @@ class _FlatteningEncoder(Encoder):
             nn.Linear(2 * in_features, latent_dim),
         )
 
-    def encode(self, batch: Batch) -> Tensor:
-        x = batch.input_fields  # (B, T, spatial..., C)
+    def encode(self, batch: Batch) -> TensorBTC:
+        x: TensorBTSC = batch.input_fields  # (B, T, spatial..., C)
         outputs = []
         for idx in range(x.shape[1]):
-            x_t = x[:, idx, ...]  # (B, spatial..., C)
+            x_t: TensorBSC = x[:, idx, ...]  # (B, spatial..., C)
             outputs.append(self.net(x_t))
         return torch.stack(outputs, dim=1)  # (B, T, latent_dim)
 
@@ -114,11 +120,10 @@ class _FlatteningDecoder(Decoder):
             nn.Linear(2 * latent_dim, out_features),
         )
 
-    def decode(self, z: Tensor) -> Tensor:
-        # z is (B, T, latent_dim)
+    def decode(self, z: TensorBTC) -> TensorBTCHW:
         outputs = []
         for idx in range(z.shape[1]):
-            z_t = z[:, idx, ...]  # (B, latent_dim)
+            z_t: TensorBC = z[:, idx, ...]  # (B, latent_dim)
             x_t = self.net(z_t)
             outputs.append(x_t.view(-1, *self.output_shape))
         return torch.stack(outputs, dim=1)  # (B, T, C, H, W)

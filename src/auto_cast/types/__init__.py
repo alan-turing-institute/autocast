@@ -18,6 +18,8 @@ TensorBCTS = Float[Tensor, "batch channel time *spatial"]
 TensorBWHC = Float[Tensor, "batch width height channel"]
 TensorBWHLC = Float[Tensor, "batch width height length channel"]
 TensorBSC = Float[Tensor, "batch *spatial channel"]
+TensorBTCHW = Float[Tensor, "batch time channel height width"]
+TensorBTC = Float[Tensor, "batch time channel"]
 
 Input = Tensor | DataLoader
 RolloutOutput = tuple[Tensor, None] | tuple[Tensor, Tensor]
