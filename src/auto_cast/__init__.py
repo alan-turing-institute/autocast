@@ -1,2 +1,3 @@
-def main() -> None:  # noqa: D103
-    print("Hello from auto-cast!")
+from beartype.claw import beartype_this_package
+
+beartype_this_package()
