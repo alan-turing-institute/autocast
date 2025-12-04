@@ -1,3 +1,5 @@
+from collections.abc import Sequence
+
 from torch import nn
 
 from auto_cast.decoders import Decoder
@@ -9,14 +11,21 @@ from auto_cast.types import Batch, Tensor, TensorBMStarL, TensorBTSPlusC
 class AELoss(nn.Module):
     """Autoencoder Loss Function."""
 
+    @staticmethod
+    def get_loss(loss: str) -> nn.Module:
+        if loss.lower() == "mse":
+            return nn.MSELoss()
+        raise ValueError(f"{loss} not currently supported.")
+
     def __init__(
-        self, losses: list[nn.Module] | None = None, weights: list[float] | None = None
+        self,
+        losses: Sequence[nn.Module] | None = None,
+        weights: Sequence[float] | None = None,
     ):
         super().__init__()
         losses = losses or [nn.MSELoss()]
-        weights = weights or [1.0] * len(losses)
         self.losses = losses
-        self.weights = weights
+        self.weights = weights or [1.0] * len(self.losses)
 
     def forward(self, model: EncoderDecoder, batch: Batch) -> Tensor:
         decoded, _ = model.forward_with_latent(batch)

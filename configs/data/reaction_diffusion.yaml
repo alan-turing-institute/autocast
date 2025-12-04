@@ -1,0 +1,22 @@
+data_path: null
+use_simulator: true
+split:
+  n_train: 4
+  n_valid: 2
+  n_test: 2
+simulator:
+  _target_: autoemulate.simulations.reaction_diffusion.ReactionDiffusion
+  return_timeseries: true
+  log_level: error
+datamodule:
+  batch_size: 16
+  n_steps_input: 1
+  n_steps_output: 0
+  stride: 1
+  input_channel_idxs: null
+  output_channel_idxs: null
+  autoencoder_mode: true
+  dtype: float32
+  ftype: torch
+  verbose: false
+  use_normalization: false

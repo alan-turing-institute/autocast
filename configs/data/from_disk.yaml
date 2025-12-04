@@ -1,0 +1,19 @@
+data_path: ${oc.env:DATA_PATH,null}
+use_simulator: false
+split:
+  n_train: 0
+  n_valid: 0
+  n_test: 0
+simulator: null
+datamodule:
+  batch_size: 16
+  n_steps_input: 1
+  n_steps_output: 1
+  stride: 1
+  input_channel_idxs: null
+  output_channel_idxs: null
+  autoencoder_mode: false
+  dtype: float32
+  ftype: torch
+  verbose: false
+  use_normalization: false
