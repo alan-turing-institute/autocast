@@ -35,7 +35,9 @@ def test_encoder_processor_decoder_training_step_runs(make_toy_batch, dummy_load
     encoder = PermuteConcat(with_constants=False)
     decoder = ChannelsLast(output_channels=output_channels, time_steps=time_steps)
     loss = nn.MSELoss()
-    encoder_decoder = EncoderDecoder(encoder=encoder, decoder=decoder, loss_func=loss)
+    encoder_decoder = EncoderDecoder.from_encoder_decoder(
+        encoder=encoder, decoder=decoder, loss_func=loss
+    )
 
     processor = TinyProcessor(in_channels=merged_channels)
     model = EncoderProcessorDecoder.from_encoder_processor_decoder(
@@ -67,7 +69,9 @@ def test_encoder_processor_decoder_rollout_is_mixin_backed(make_toy_batch):
     encoder = PermuteConcat(with_constants=False)
     decoder = ChannelsLast(output_channels=output_channels, time_steps=time_steps)
     loss = nn.MSELoss()
-    encoder_decoder = EncoderDecoder(encoder=encoder, decoder=decoder, loss_func=loss)
+    encoder_decoder = EncoderDecoder.from_encoder_decoder(
+        encoder=encoder, decoder=decoder, loss_func=loss
+    )
     processor = TinyProcessor(in_channels=merged_channels)
     model = EncoderProcessorDecoder.from_encoder_processor_decoder(
         encoder_decoder=encoder_decoder,

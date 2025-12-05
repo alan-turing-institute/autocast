@@ -1,28 +1,38 @@
-from abc import ABC
-from typing import Any
+from abc import ABC, abstractmethod
 
 from torch import nn
 
-from auto_cast.types import Tensor
+from auto_cast.types import Batch, TensorBMStarL
 
 
 class Encoder(nn.Module, ABC):
     """Base encoder."""
 
-    def encode(self, x: Tensor) -> Tensor:
+    encoder_model: nn.Module
+    latent_dim: int
+
+    def preprocess(self, batch: Batch) -> Batch:
+        """Optionally transform a batch before encoding.
+
+        Subclasses can override to implement pre-encoding steps that still
+        return a fully-populated `Batch` instance. Default is identity.
+        """
+        return batch
+
+    @abstractmethod
+    def encode(self, batch: Batch) -> TensorBMStarL:
         """Encode the input tensor into the latent space.
 
         Parameters
         ----------
-        x: Tensor
-            Input tensor to be encoded.
+        x: Batch
+            Input batch to be encoded.
 
         Returns
         -------
-        Tensor
-            Encoded tensor in the latent space.
+        TensorBMStarL
+            Encoded tensor in the latent space with shape (B, *, C_latent).
         """
-        msg = "The encode method must be implemented by subclasses."
-        raise NotImplementedError(msg)
 
-    def forward(self, *args: Any, **kwargs: Any) -> Any: ...
+    def __call__(self, batch: Batch) -> TensorBMStarL:
+        return self.encode(batch)

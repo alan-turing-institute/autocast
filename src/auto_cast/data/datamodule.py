@@ -27,11 +27,12 @@ class SpatioTemporalDataModule(WellDataModule):
         dtype: torch.dtype = torch.float32,
         ftype: str = "torch",
         verbose: bool = False,
+        autoencoder_mode: bool = False,
         use_normalization: bool = False,
     ):
         self.verbose = verbose
         self.use_normalization = use_normalization
-
+        self.autoencoder_mode = autoencoder_mode
         base_path = Path(data_path) if data_path is not None else None
         suffix = ".pt" if ftype == "torch" else ".h5"
         fname = f"data{suffix}"
@@ -52,6 +53,7 @@ class SpatioTemporalDataModule(WellDataModule):
             verbose=self.verbose,
             use_normalization=False,  # Temporarily disable to compute stats
             norm=None,
+            autoencoder_mode=self.autoencoder_mode,
         )
 
         # Compute normalization from training data if requested
@@ -80,6 +82,7 @@ class SpatioTemporalDataModule(WellDataModule):
             verbose=self.verbose,
             use_normalization=self.use_normalization,
             norm=norm,
+            autoencoder_mode=self.autoencoder_mode,
         )
         self.test_dataset = dataset_cls(
             data_path=str(test_path) if test_path is not None else None,
@@ -93,36 +96,40 @@ class SpatioTemporalDataModule(WellDataModule):
             verbose=self.verbose,
             use_normalization=self.use_normalization,
             norm=norm,
+            autoencoder_mode=self.autoencoder_mode,
         )
-        self.rollout_val_dataset = dataset_cls(
-            data_path=str(train_path) if train_path is not None else None,
-            data=data["train"] if data is not None else None,
-            n_steps_input=n_steps_input,
-            n_steps_output=n_steps_output,
-            stride=stride,
-            input_channel_idxs=input_channel_idxs,
-            output_channel_idxs=output_channel_idxs,
-            full_trajectory_mode=True,
-            dtype=dtype,
-            verbose=self.verbose,
-            use_normalization=self.use_normalization,
-            norm=norm,
-        )
-        self.rollout_test_dataset = dataset_cls(
-            data_path=str(test_path) if test_path is not None else None,
-            data=data["test"] if data is not None else None,
-            n_steps_input=n_steps_input,
-            n_steps_output=n_steps_output,
-            stride=stride,
-            input_channel_idxs=input_channel_idxs,
-            output_channel_idxs=output_channel_idxs,
-            full_trajectory_mode=True,
-            dtype=dtype,
-            verbose=self.verbose,
-            use_normalization=self.use_normalization,
-            norm=norm,
-        )
+
         self.batch_size = batch_size
+
+        if not self.autoencoder_mode:
+            self.rollout_val_dataset = dataset_cls(
+                data_path=str(train_path) if train_path is not None else None,
+                data=data["train"] if data is not None else None,
+                n_steps_input=n_steps_input,
+                n_steps_output=n_steps_output,
+                stride=stride,
+                input_channel_idxs=input_channel_idxs,
+                output_channel_idxs=output_channel_idxs,
+                full_trajectory_mode=True,
+                dtype=dtype,
+                verbose=self.verbose,
+                use_normalization=self.use_normalization,
+                norm=norm,
+            )
+            self.rollout_test_dataset = dataset_cls(
+                data_path=str(test_path) if test_path is not None else None,
+                data=data["test"] if data is not None else None,
+                n_steps_input=n_steps_input,
+                n_steps_output=n_steps_output,
+                stride=stride,
+                input_channel_idxs=input_channel_idxs,
+                output_channel_idxs=output_channel_idxs,
+                full_trajectory_mode=True,
+                dtype=dtype,
+                verbose=self.verbose,
+                use_normalization=self.use_normalization,
+                norm=norm,
+            )
 
     def train_dataloader(self) -> DataLoader:
         """DataLoader for training."""
@@ -146,6 +153,12 @@ class SpatioTemporalDataModule(WellDataModule):
 
     def rollout_val_dataloader(self) -> DataLoader:
         """DataLoader for full trajectory rollouts on validation data."""
+        if self.autoencoder_mode:
+            msg = (
+                "Rollout dataloaders not available when autoencoder_mode="
+                f"{self.autoencoder_mode}"
+            )
+            raise RuntimeError(msg)
         return DataLoader(
             self.rollout_val_dataset,
             batch_size=self.batch_size,
@@ -166,6 +179,12 @@ class SpatioTemporalDataModule(WellDataModule):
 
     def rollout_test_dataloader(self) -> DataLoader:
         """DataLoader for full trajectory rollouts on test data."""
+        if self.autoencoder_mode:
+            msg = (
+                "Rollout dataloaders not available when autoencoder_mode="
+                f"{self.autoencoder_mode}"
+            )
+            raise RuntimeError(msg)
         return DataLoader(
             self.rollout_test_dataset,
             batch_size=self.batch_size,

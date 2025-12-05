@@ -2,7 +2,7 @@ import torch
 from einops import rearrange
 
 from auto_cast.encoders.base import Encoder
-from auto_cast.types import Batch, Tensor
+from auto_cast.types import Batch, Tensor, TensorBCWH
 
 
 class PermuteConcat(Encoder):
@@ -27,3 +27,6 @@ class PermuteConcat(Encoder):
             scalars = scalars.expand(b, -1, t, w, h)
             x = torch.cat([x, scalars], dim=1)
         return rearrange(x, "b c t w h -> b (c t) w h")
+
+    def encode(self, batch: Batch) -> TensorBCWH:
+        return self.forward(batch)

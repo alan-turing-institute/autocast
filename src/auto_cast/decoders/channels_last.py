@@ -1,11 +1,16 @@
 from einops import rearrange
 
 from auto_cast.decoders.base import Decoder
-from auto_cast.types import Tensor
+from auto_cast.types import Tensor, TensorBCTSPlus, TensorBTSPlusC
 
 
 class ChannelsLast(Decoder):
-    """Decoder that splits merged (channel*time) back to (time, channel) and reorders to channels-last format."""  # noqa: E501
+    """Decoder that splits channels and time and reorders to channels-last format.
+
+    The decoder splits (channel*time) back to (time, channel) and moves the channels
+    to the last dimension assuming one or more spatial dimensions that are the last
+    dimensions of the ecoded tensor.
+    """
 
     def __init__(self, output_channels: int, time_steps: int = 1) -> None:
         """Initialize the ChannelsLast decoder.
@@ -24,12 +29,12 @@ class ChannelsLast(Decoder):
     def forward(self, x: Tensor) -> Tensor:
         """Forward pass through the ChannelsLast decoder.
 
-        Expects input shape (B, C*T, W, H) and outputs (B, T, W, H, C).
+        Expects input shape (B, C*T, spatial...) and outputs (B, T, spatial..., C).
         """
-        # Split merged (C*T) dimension back into separate C and T
-        # x: (B, C*T, W, H) -> (B, C, T, W, H)
         x = rearrange(
-            x, "b (c t) w h -> b c t w h", c=self.output_channels, t=self.time_steps
+            x, "b (c t) ... -> b c t ...", c=self.output_channels, t=self.time_steps
         )
-        # Rearrange to channels-last: (B, C, T, W, H) -> (B, T, W, H, C)
-        return rearrange(x, "b c t w h -> b t w h c")
+        return rearrange(x, "b c t ... -> b t ... c")
+
+    def decode(self, z: TensorBCTSPlus) -> TensorBTSPlusC:
+        return self.forward(z)

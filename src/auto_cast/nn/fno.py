@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 import torch
 from neuralop.models import FNO
@@ -6,6 +6,12 @@ from torch import nn
 
 from auto_cast.processors.base import Processor
 from auto_cast.types import Tensor
+
+
+@runtime_checkable
+class _HasGridCache(Protocol):
+    _grid: Any | None
+    _res: Any | None
 
 
 class FNOProcessor(Processor):
@@ -66,9 +72,22 @@ class FNOProcessor(Processor):
         )
         self.loss_func = loss_func or nn.MSELoss()
         self.learning_rate = learning_rate
+        self._reset_positional_embedding_cache()
 
     def forward(self, x: Tensor) -> Tensor:
         return self.model(x)
+
+    def _reset_positional_embedding_cache(self) -> None:
+        embedding = getattr(self.model, "positional_embedding", None)
+        if isinstance(embedding, _HasGridCache):
+            embedding._grid = None
+            embedding._res = None
+
+    def _apply(self, fn, recurse: bool = True):
+        super()._apply(fn, recurse=recurse)
+        # Invalidate cached grids so they'll be regenerated on the new device/dtype.
+        self._reset_positional_embedding_cache()
+        return self
 
     def map(self, x: Tensor) -> Tensor:
         return self(x)

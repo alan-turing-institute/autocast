@@ -7,7 +7,7 @@ from torch import nn
 from auto_cast.models.encoder_decoder import EncoderDecoder
 from auto_cast.processors.base import Processor
 from auto_cast.processors.rollout import RolloutMixin
-from auto_cast.types import Batch, EncodedBatch, Tensor
+from auto_cast.types import Batch, EncodedBatch, Tensor, TensorBMStarL, TensorBTSPlusC
 
 
 class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule):
@@ -40,10 +40,7 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule):
 
     @classmethod
     def from_encoder_processor_decoder(
-        cls,
-        encoder_decoder: EncoderDecoder,
-        processor: Processor,
-        **kwargs: Any,
+        cls, encoder_decoder: EncoderDecoder, processor: Processor, **kwargs: Any
     ) -> Self:
         instance = cls(**kwargs)
         instance.encoder_decoder = encoder_decoder
@@ -52,17 +49,20 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule):
             setattr(instance, key, value)
         return instance
 
-    def __call__(self, batch: Batch) -> Tensor:
+    def __call__(self, batch: Batch) -> TensorBTSPlusC:
         return self.decode(self.processor(self.encode(batch)))
 
-    def encode(self, x: Batch) -> Tensor:
+    def encode(self, x: Batch) -> TensorBMStarL:
         return self.encoder_decoder.encoder(x)
 
-    def decode(self, x: Tensor) -> Tensor:
-        return self.encoder_decoder.decoder(x)
+    def decode(self, z: TensorBMStarL) -> TensorBTSPlusC:
+        return self.encoder_decoder.decoder(z)
 
-    def map(self, x: EncodedBatch) -> Tensor:
+    def map(self, x: EncodedBatch) -> TensorBMStarL:
         return self.processor.map(x.encoded_inputs)
+
+    def forward(self, batch: Batch) -> TensorBTSPlusC:
+        return self.decode(self.processor(self.encode(batch)))
 
     def training_step(self, batch: Batch, batch_idx: int) -> Tensor:  # noqa: ARG002
         y_pred = self(batch)
