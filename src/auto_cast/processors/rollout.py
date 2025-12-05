@@ -17,10 +17,15 @@ class RolloutMixin(ABC, Generic[BatchT]):
     max_rollout_steps: int
     teacher_forcing_ratio: float
 
-    def rollout(self, batch: BatchT) -> RolloutOutput:
+    def rollout(self, batch: BatchT, free_running_only: bool = False) -> RolloutOutput:
         pred_outs: list[Tensor] = []
         true_outs: list[Tensor] = []
         current_batch = self._clone_batch(batch)
+
+        # If free running only, override teacher_forcing_ratio=0.0
+        teacher_forcing_ratio = (
+            self.teacher_forcing_ratio if not free_running_only else 0.0
+        )
 
         for _ in range(0, self.max_rollout_steps, self.stride):
             output = self._predict(current_batch)
@@ -31,9 +36,7 @@ class RolloutMixin(ABC, Generic[BatchT]):
                 true_outs.append(true_slice)
 
             rand_val = torch.rand(1, device=output.device).item()
-            teacher_force = (
-                true_slice.numel() > 0 and rand_val < self.teacher_forcing_ratio
-            )
+            teacher_force = true_slice.numel() > 0 and rand_val < teacher_forcing_ratio
             next_inputs = true_slice if teacher_force else output.detach()
 
             if next_inputs.shape[1] < self.stride:
