@@ -13,7 +13,7 @@ import lightning as L
 import torch
 from hydra import compose, initialize_config_dir
 from hydra.utils import instantiate
-from omegaconf import DictConfig, OmegaConf, open_dict
+from omegaconf import DictConfig, ListConfig, OmegaConf, open_dict
 from torch import nn
 
 from auto_cast.models.ae import AE, AELoss
@@ -190,6 +190,19 @@ def _configure_module_dimensions(
     _maybe_set(cfg.processor, "out_channels", channel_count * n_steps_output)
 
 
+def _normalize_processor_cfg(cfg: DictConfig) -> None:
+    """Force config values into the shapes expected by processor classes."""
+    processor_cfg = cfg.get("processor")
+    if processor_cfg is None:
+        return
+    tuple_fields = ("n_modes",)
+    for field in tuple_fields:
+        value = processor_cfg.get(field)
+        if isinstance(value, ListConfig):
+            with open_dict(processor_cfg):
+                processor_cfg[field] = tuple(value)
+
+
 def resolve_training_params(
     cfg: DictConfig, args: argparse.Namespace
 ) -> TrainingParams:
@@ -319,6 +332,7 @@ def main() -> None:
         n_steps_input=inferred_n_steps_input,
         n_steps_output=inferred_n_steps_output,
     )
+    _normalize_processor_cfg(cfg)
 
     encoder, decoder = build_autoencoder_modules(
         cfg.encoder,
