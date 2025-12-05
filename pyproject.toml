@@ -33,6 +33,8 @@ dev = [
 
 [project.scripts]
 auto-cast = "auto_cast:main"
+train_processor = "auto_cast.train.processor:main"
+train_autoencoder = "auto_cast.train.autoencoder:main"
 
 [build-system]
 requires = ["uv_build>=0.8.15,<0.9.0"]
