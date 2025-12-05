@@ -59,7 +59,7 @@ class Processor(RolloutMixin[EncodedBatch], ABC, L.LightningModule):
         """Map input window of states/times to output window."""
 
     def validation_step(self, batch: Batch, batch_idx: int) -> Tensor:
-        encoded_batch = self._encode_batch(batch) 
+        encoded_batch = self._encode_batch(batch)
         
         output = self.map(encoded_batch.encoded_inputs)
         loss = self.loss_func(output, encoded_batch.encoded_output_fields)
