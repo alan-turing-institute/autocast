@@ -6,7 +6,7 @@ import torch
 from torch import nn
 
 from auto_cast.processors.rollout import RolloutMixin
-from auto_cast.types import EncodedBatch, RolloutOutput, Tensor
+from auto_cast.types import EncodedBatch, Tensor
 
 
 class Processor(RolloutMixin[EncodedBatch], ABC, L.LightningModule):
@@ -104,21 +104,6 @@ class Processor(RolloutMixin[EncodedBatch], ABC, L.LightningModule):
 class DiscreteProcessor(Processor, ABC):
     """DiscreteProcessor."""
 
-    @abstractmethod
-    def map(self, x: Tensor) -> Tensor:
-        ...
-        # Map input window of states/times to output window
-
-    def rollout(self, batch: EncodedBatch) -> RolloutOutput:
-        ...
-
-        # Use self.map to generate trajectory
-
 
 class FlowBasedGenerativeProcessor(DiscreteProcessor):
     """Flow-based generative processor."""
-
-    def map(self, x: Tensor) -> Tensor:
-        ...
-        # Sample generative model    def loss(self, ...):...
-        # Flow matc
