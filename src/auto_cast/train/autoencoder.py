@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import argparse
 import logging
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
 import lightning as L
 import torch
-from hydra import main
+from hydra import compose, initialize_config_dir
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 from omegaconf.base import SCMode
@@ -16,6 +18,48 @@ from auto_cast.data.dataset import SpatioTemporalDataset
 from auto_cast.models.ae import AE
 
 log = logging.getLogger(__name__)
+
+
+def parse_args() -> argparse.Namespace:
+    """Parse CLI arguments for the autoencoder training utility."""
+    parser = argparse.ArgumentParser(
+        description=(
+            "Train the autoencoder stack defined by the Hydra config under configs/."
+        )
+    )
+    repo_root = Path(__file__).resolve().parents[3]
+    parser.add_argument(
+        "--config-dir",
+        "--config-path",
+        dest="config_dir",
+        type=Path,
+        default=repo_root / "configs",
+        help=(
+            "Path to the Hydra config directory (accepts --config-path as an "
+            "alias; defaults to <repo>/configs)."
+        ),
+    )
+    parser.add_argument(
+        "--config-name",
+        default="config",
+        help="Hydra config name to compose (defaults to 'config').",
+    )
+    parser.add_argument(
+        "--override",
+        dest="overrides",
+        action="append",
+        default=[],
+        help="Optional Hydra override, e.g. --override trainer.max_epochs=5",
+    )
+    return parser.parse_args()
+
+
+def compose_training_config(args: argparse.Namespace) -> DictConfig:
+    """Compose Hydra config using the provided CLI arguments."""
+    config_dir = args.config_dir.resolve()
+    overrides: Sequence[str] = args.overrides or []
+    with initialize_config_dir(version_base=None, config_dir=str(config_dir)):
+        return compose(config_name=args.config_name, overrides=list(overrides))
 
 
 def _as_dtype(name: str | None) -> torch.dtype:
@@ -120,7 +164,13 @@ def train_autoencoder(cfg: DictConfig) -> Path:
     return checkpoint_path
 
 
-@main(version_base=None, config_path="../../../configs", config_name="config")
-def hydra_entrypoint(cfg: DictConfig) -> None:
-    """Hydra entrypoint for CLI usage."""
+def main() -> None:
+    """CLI entrypoint for autoencoder training."""
+    args = parse_args()
+    logging.basicConfig(level=logging.INFO)
+    cfg = compose_training_config(args)
     train_autoencoder(cfg)
+
+
+if __name__ == "__main__":
+    main()

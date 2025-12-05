@@ -45,9 +45,14 @@ def parse_args() -> argparse.Namespace:
     repo_root = Path(__file__).resolve().parents[3]
     parser.add_argument(
         "--config-dir",
+        "--config-path",
+        dest="config_dir",
         type=Path,
         default=repo_root / "configs",
-        help="Path to the Hydra config directory (defaults to <repo>/configs).",
+        help=(
+            "Path to the Hydra config directory (accepts --config-path as an "
+            "alias; defaults to <repo>/configs)."
+        ),
     )
     parser.add_argument(
         "--config-name",
