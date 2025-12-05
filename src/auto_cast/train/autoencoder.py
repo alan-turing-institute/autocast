@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import logging
 from collections.abc import Sequence
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -10,7 +11,7 @@ import lightning as L
 import torch
 from hydra import compose, initialize_config_dir
 from hydra.utils import instantiate
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig, OmegaConf, open_dict
 from omegaconf.base import SCMode
 
 from auto_cast.data.datamodule import SpatioTemporalDataModule
@@ -51,6 +52,15 @@ def parse_args() -> argparse.Namespace:
         default=[],
         help="Optional Hydra override, e.g. --override trainer.max_epochs=5",
     )
+    parser.add_argument(
+        "--work-dir",
+        type=Path,
+        default=None,
+        help=(
+            "Directory Lightning should use as default_root_dir and where artifacts "
+            "are written (defaults to outputs/<experiment>/<timestamp>)."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -60,6 +70,22 @@ def compose_training_config(args: argparse.Namespace) -> DictConfig:
     overrides: Sequence[str] = args.overrides or []
     with initialize_config_dir(version_base=None, config_dir=str(config_dir)):
         return compose(config_name=args.config_name, overrides=list(overrides))
+
+
+def _resolve_work_dir(args: argparse.Namespace, cfg: DictConfig) -> Path:
+    if args.work_dir is not None:
+        return args.work_dir.expanduser().resolve()
+    experiment = cfg.get("experiment_name", "autoencoder")
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    return (Path.cwd() / "outputs" / str(experiment) / timestamp).resolve()
+
+
+def _configure_trainer_root(cfg: DictConfig, work_dir: Path) -> None:
+    trainer_cfg = cfg.get("trainer")
+    if trainer_cfg is None:
+        return
+    with open_dict(trainer_cfg):
+        trainer_cfg["default_root_dir"] = str(work_dir)
 
 
 def _as_dtype(name: str | None) -> torch.dtype:
@@ -143,7 +169,7 @@ def build_model(cfg: DictConfig) -> AE:
     return model
 
 
-def train_autoencoder(cfg: DictConfig) -> Path:
+def train_autoencoder(cfg: DictConfig, work_dir: Path) -> Path:
     """Train the autoencoder defined in `cfg` and return the checkpoint path."""
     log.info("Starting autoencoder experiment: %s", cfg.experiment_name)
     L.seed_everything(cfg.seed, workers=True)
@@ -153,13 +179,19 @@ def train_autoencoder(cfg: DictConfig) -> Path:
     trainer.fit(model=model, datamodule=datamodule)
 
     checkpoint_name = cfg.output.get("checkpoint_name", "autoencoder.ckpt")
-    checkpoint_path = Path(checkpoint_name)
+    checkpoint_target = Path(checkpoint_name)
+    checkpoint_path = (
+        checkpoint_target
+        if checkpoint_target.is_absolute()
+        else (work_dir / checkpoint_target)
+    )
     trainer.save_checkpoint(checkpoint_path)
     log.info("Saved checkpoint to %s", checkpoint_path.resolve())
 
     if cfg.output.get("save_config", False):
-        OmegaConf.save(cfg, Path("resolved_config.yaml"))
-        log.info("Wrote resolved config to %s", Path("resolved_config.yaml").resolve())
+        resolved_cfg_path = work_dir / "resolved_autoencoder_config.yaml"
+        OmegaConf.save(cfg, resolved_cfg_path)
+        log.info("Wrote resolved config to %s", resolved_cfg_path.resolve())
 
     return checkpoint_path
 
@@ -169,7 +201,11 @@ def main() -> None:
     args = parse_args()
     logging.basicConfig(level=logging.INFO)
     cfg = compose_training_config(args)
-    train_autoencoder(cfg)
+    work_dir = _resolve_work_dir(args, cfg)
+    work_dir.mkdir(parents=True, exist_ok=True)
+    _configure_trainer_root(cfg, work_dir)
+    log.info("Using work directory %s", work_dir)
+    train_autoencoder(cfg, work_dir)
 
 
 if __name__ == "__main__":

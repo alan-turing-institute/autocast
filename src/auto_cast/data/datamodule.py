@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import torch
-from the_well.data.datamodule import WellDataModule
+from lightning.pytorch import LightningDataModule
 from the_well.data.normalization import ZScoreNormalization
 from torch.utils.data import DataLoader
 
@@ -9,7 +9,7 @@ from auto_cast.data.dataset import SpatioTemporalDataset
 from auto_cast.types import collate_batches
 
 
-class SpatioTemporalDataModule(WellDataModule):
+class SpatioTemporalDataModule(LightningDataModule):
     """A class for spatio-temporal data modules."""
 
     def __init__(
@@ -30,6 +30,7 @@ class SpatioTemporalDataModule(WellDataModule):
         autoencoder_mode: bool = False,
         use_normalization: bool = False,
     ):
+        super().__init__()
         self.verbose = verbose
         self.use_normalization = use_normalization
         self.autoencoder_mode = autoencoder_mode
