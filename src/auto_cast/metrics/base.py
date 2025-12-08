@@ -37,8 +37,9 @@ class Metric(nn.Module):
         assert (
             y_true.ndim >= n_spatial_dims + 1
         ), "y_true must have at least n_spatial_dims + 1 dimensions"
-        return self.eval(y_pred, y_true, n_spatial_dims, **kwargs)
+        return self.score(y_pred, y_true, n_spatial_dims, **kwargs)
 
     @staticmethod
-    def eval(self, y_pred, y_true, **kwargs):
+    def score(y_pred, y_true, n_spatial_dims, **kwargs):
         raise NotImplementedError
+    

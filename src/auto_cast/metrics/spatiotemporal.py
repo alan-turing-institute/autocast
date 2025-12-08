@@ -6,7 +6,7 @@ from auto_cast.types import TensorBTSPlusC, TensorBTC
 
 class MSE(Metric):
     @staticmethod
-    def eval(
+    def score(
         y_pred: TensorBTSPlusC,
         y_true: TensorBTSPlusC,
         n_spatial_dims: int,
@@ -29,7 +29,7 @@ class MSE(Metric):
     
 class MAE(Metric):
     @staticmethod
-    def eval(
+    def score(
         y_pred: TensorBTSPlusC,
         y_true: TensorBTSPlusC,
         n_spatial_dims: int,
@@ -53,7 +53,7 @@ class MAE(Metric):
 
 class NMAE(Metric):
     @staticmethod
-    def eval(
+    def score(
         y_pred: TensorBTSPlusC,
         y_true: TensorBTSPlusC,
         n_spatial_dims: int,
@@ -77,13 +77,13 @@ class NMAE(Metric):
     
 class NMSE(Metric):
     @staticmethod
-    def eval(
+    def score(
         y_pred: TensorBTSPlusC,
         y_true: TensorBTSPlusC,
         n_spatial_dims: int,
         eps: float = 1e-7,
         norm_mode: str = "norm",
-    ) -> torch.Tensor:
+    ) -> TensorBTC:
         """
         Normalized Mean Squared Error
 
@@ -106,16 +106,16 @@ class NMSE(Metric):
             norm = torch.std(y_true, dim=spatial_dims) ** 2
         else:
             raise ValueError(f"Invalid norm_mode: {norm_mode}")
-        return MSE.eval(y_pred, y_true, n_spatial_dims) / (norm + eps)
+        return MSE.score(y_pred, y_true, n_spatial_dims) / (norm + eps)
     
 class RMSE(Metric):
     @staticmethod
-    def eval(
+    def score(
         y_pred: TensorBTSPlusC,
         y_true: TensorBTSPlusC,
         n_spatial_dims: int,
         eps: float = 1e-7,
-    ) -> torch.Tensor:
+    ) -> TensorBTC:
         """
         Root Mean Squared Error
 
@@ -128,17 +128,17 @@ class RMSE(Metric):
         Returns:
             Root mean squared error between y_pred and y_true.
         """
-        return torch.sqrt(MSE.eval(y_pred, y_true, n_spatial_dims))
+        return torch.sqrt(MSE.score(y_pred, y_true, n_spatial_dims))
     
 class NRMSE(Metric):
     @staticmethod
-    def eval(
+    def score(
         y_pred: TensorBTSPlusC,
         y_true: TensorBTSPlusC,
         n_spatial_dims: int,
         eps: float = 1e-7,
         norm_mode: str = "norm",
-    ) -> torch.Tensor:
+    ) -> TensorBTC:
         """
         Normalized Root Mean Squared Error
 
@@ -154,17 +154,17 @@ class NRMSE(Metric):
             Normalized root mean squared error between y_pred and y_true.
 
         """
-        return torch.sqrt(NMSE.eval(y_pred, y_true, n_spatial_dims, eps=eps, norm_mode=norm_mode))
+        return torch.sqrt(NMSE.score(y_pred, y_true, n_spatial_dims, eps=eps, norm_mode=norm_mode))
 
 
 class VMSE(Metric):
     @staticmethod
-    def eval(
+    def score(
         y_pred: TensorBTSPlusC,
         y_true: TensorBTSPlusC,
         n_spatial_dims: int,
         eps: float = 1e-7,
-    ) -> torch.Tensor:
+    ) -> TensorBTC:
         """
         Variance Scaled Mean Squared Error
 
@@ -177,17 +177,17 @@ class VMSE(Metric):
         Returns:
             Variance mean squared error between y_pred and y_true.
         """
-        return NMSE.eval(y_pred, y_true, n_spatial_dims, norm_mode="std")
+        return NMSE.score(y_pred, y_true, n_spatial_dims, norm_mode="std")
 
 
 class VRMSE(Metric):
     @staticmethod
-    def eval(
+    def score(
         y_pred: TensorBTSPlusC,
         y_true: TensorBTSPlusC,
         n_spatial_dims: int,
         eps: float = 1e-7,
-    ) -> torch.Tensor:
+    ) -> TensorBTC:
         """
         Root Variance Scaled Mean Squared Error
 
@@ -200,17 +200,17 @@ class VRMSE(Metric):
         Returns:
             Root variance mean squared error between y_pred and y_true.
         """
-        return NRMSE.eval(y_pred, y_true, n_spatial_dims, norm_mode="std")
+        return NRMSE.score(y_pred, y_true, n_spatial_dims, norm_mode="std")
 
 
 class LInfinity(Metric):
     @staticmethod
-    def eval(
+    def score(
         y_pred: TensorBTSPlusC,
         y_true: TensorBTSPlusC,
         n_spatial_dims: int,
         eps: float = 1e-7,
-    ) -> torch.Tensor:
+    ) -> TensorBTC:
         """
         L-Infinity Norm
 
