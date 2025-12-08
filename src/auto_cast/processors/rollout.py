@@ -18,7 +18,42 @@ class RolloutMixin(ABC, Generic[BatchT]):
     max_rollout_steps: int
     teacher_forcing_ratio: float
 
-    def rollout(self, batch: BatchT, free_running_only: bool = False) -> RolloutOutput:
+    def rollout(
+        self, batch: BatchT, free_running_only: bool = False, return_windows=False
+    ) -> RolloutOutput:
+        """Perform rollout over multiple time steps.
+
+        Parameters
+        ----------
+        batch: BatchT
+            Input batch containing initial data for rollout.
+        free_running_only: bool, optional
+            If True, disables teacher forcing during rollout. By default False.
+        return_windows: bool, optional
+            If True, returns the true outputs in windows matching the model's output
+            shape. By default False.
+
+
+        Notes
+        -----
+        The outputs stack along a new axis after batch representing number of rollout
+        windows R. Each window R contains n_steps_output time steps T.
+        For example with:
+        - batch size B=16
+        - rollout windows R=10
+        - n_steps_output T=2 per window,
+        - spatial dimensions W=16, H=8
+        - channels C=2
+
+        The shapes will be:
+          (B, R, T, W, H, C) = (16, 10, 2, 16, 8, 2)
+
+        If we do not return windows, we then rearrange to concatenate the windows
+        along time:
+          (B, T*T, W, H, C) = (16, 20, 16, 8, 2)
+
+        requiring that the stride equals n_steps_output.
+        """
         pred_outs: list[Tensor] = []
         true_outs: list[Tensor] = []
         current_batch = self._clone_batch(batch)
@@ -29,7 +64,7 @@ class RolloutMixin(ABC, Generic[BatchT]):
         )
 
         n_steps_output = self._predict(current_batch).shape[1]
-        if n_steps_output != self.stride:
+        if n_steps_output != self.stride and not return_windows:
             msg = (
                 f"Rollout stride ({self.stride}) must equal "
                 f"n_steps_output ({n_steps_output}) for correct concatenation."
@@ -53,30 +88,17 @@ class RolloutMixin(ABC, Generic[BatchT]):
 
             current_batch = self._advance_batch(current_batch, next_inputs, self.stride)
 
-        # Stack along a new axis after batch representing number of rollout windows R
-        # Each window R contains n_steps_output time steps T.
-        # For example with:
-        # - batch size B=16
-        # - rollout windows R=10
-        # - n_steps_output T=2 per window,
-        # - spatial dimensions W=16, H=8
-        # - channels C=2
-        # The shapes will be:
-        # (B, R, T, W, H, C) = (16, 10, 2, 16, 8, 2)
-        #
-        # We then rearrange to concatenate the windows along time:
-        # (B, T*T, W, H, C) = (16, 20, 16, 8, 2)
-        #
-        # assuming that the stride equals n_steps_output.
-
+        # Construct rollout outputs
         preds = torch.stack(pred_outs, dim=1)  # (B, R, T, spatial, C)
-        preds = rearrange(preds, "b r t ... -> b (r t) ...")  # (B, T*R, spatial, C)
-        if true_outs is None:
+        if not return_windows:
+            # Concatenate rollout windows along time axis if not returning windows
+            preds = rearrange(preds, "b r t ... -> b (r t) ...")  # (B, T*R, spatial, C)
+        if true_outs:
             return preds, None
 
-        # If true_outs is not None
         trues = torch.stack(true_outs, dim=1)  # (B, R, T, spatial, C)
-        trues = rearrange(trues, "b r t ... -> b (r t) ...")  # (B, T*R, spatial, C)
+        if not return_windows:
+            trues = rearrange(trues, "b r t ... -> b (r t) ...")  # (B, T*R, spatial, C)
         return preds, trues
 
     @abstractmethod
