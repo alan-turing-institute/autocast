@@ -109,7 +109,7 @@ class DiffusionProcessor(Processor):
         # w_t = (alpha_t / sigma_t) ** 2 + 1
         # w_t = torch.clip(w_t, max=1e4)
         
-        loss = (w_t * (x_denoised - x_0).square()).mean()
+        # loss = (w_t * (x_denoised - x_0).square()).mean()
         self.log(
             "train_loss",
             loss,
