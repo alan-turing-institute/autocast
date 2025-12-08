@@ -37,6 +37,7 @@ class DiffusionProcessor(Processor):
         max_rollout_steps: int = 10,
         learning_rate: float = 1e-4,
         n_steps_output: int = 4,
+        n_channels_out: int = 1,
     ):
 
         super().__init__()
@@ -45,6 +46,8 @@ class DiffusionProcessor(Processor):
         self.max_rollout_steps = max_rollout_steps
         self.learning_rate = learning_rate
         self.n_steps_output = n_steps_output
+        self.n_channels_out = n_channels_out
+
         # Create Azula denoiser with chosen preconditioning
         if denoiser_type == 'simple':
             self.denoiser = SimpleDenoiser(backbone=backbone, schedule=schedule)
@@ -64,8 +67,8 @@ class DiffusionProcessor(Processor):
         # the model is asked to denoise using t=0, which is a point it has never been trained on.
         self.inference_t = 1e-5
         t = torch.full((x.size(0),), self.inference_t, device=x.device)
-        B, _, H, W, C = x.shape
-        x_t = torch.randn(B, self.n_steps_output, H, W, C, device=x.device)
+        B, _, H, W, _ = x.shape
+        x_t = torch.randn(B, self.n_steps_output, H, W, self.n_channels_out, device=x.device)
         return self._denoise(x_t, t, cond=x)
     
     def forward(self, x: Tensor) -> Tensor:
