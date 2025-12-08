@@ -5,3 +5,4 @@ dist/
 .venv/
 *.egg-info/
 exploratory/data
+.DS_Store
