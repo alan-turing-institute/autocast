@@ -6,3 +6,4 @@ dist/
 *.egg-info/
 exploratory/data
 .DS_Store
+outputs/
