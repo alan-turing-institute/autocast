@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-from auto_cast.processors.base import FlowMatchingProcessor, Processor
+from auto_cast.processors.base import Processor
 from auto_cast.types import EncodedBatch, Tensor
 
 
@@ -45,30 +45,3 @@ def test_processor_rollout_handles_encoded_batches():
     assert preds.shape[0] == 2
     assert gts is not None
     assert gts.shape[0] == 2
-
-
-class _DummyFlowMatchingModel(nn.Module):
-    def forward(self, z: Tensor, t: Tensor, context: Tensor) -> Tensor:
-        return context - z
-
-
-def test_flow_matching_processor_samples_and_combines_losses():
-    batch = _toy_encoded_batch()
-    flow_model = _DummyFlowMatchingModel()
-
-    processor = FlowMatchingProcessor(
-        flow_matching_model=flow_model,
-        output_shape=batch.encoded_output_fields.shape,
-        learning_rate=1e-3,
-        flow_ode_steps=1,
-    )
-
-    preds = processor.map(batch.encoded_inputs)
-    assert preds.shape == batch.encoded_output_fields.shape
-    assert torch.allclose(preds, batch.encoded_inputs)
-
-    loss = processor.training_step(batch, 0)
-    loss.backward()
-
-    assert loss.shape == ()
-    assert loss.requires_grad

@@ -7,7 +7,7 @@ from torch import nn
 
 # Assuming these are the correct imports for your types:
 from auto_cast.processors.rollout import RolloutMixin
-from auto_cast.types import EncodedBatch, Tensor, TensorBMStarL, Batch # <-- Added Batch import
+from auto_cast.types import EncodedBatch, Tensor
 
 
 class Processor(RolloutMixin[EncodedBatch], ABC, L.LightningModule):
@@ -38,8 +38,8 @@ class Processor(RolloutMixin[EncodedBatch], ABC, L.LightningModule):
         raise NotImplementedError(msg)
         
 
-    def training_step(self, batch: EncodedBatch, batch_idx: int) -> Tensor: # <-- Changed type hint from EncodedBatch to Batch
-        # Convert raw Batch to EncodedBatch before processing        
+    def training_step(self, batch: EncodedBatch, batch_idx: int) -> Tensor:
+        # Convert raw Batch to EncodedBatch before processing
         output = self.map(batch.encoded_inputs)
         loss = self.loss_func(output, batch.encoded_output_fields)
         self.log(
@@ -58,9 +58,8 @@ class Processor(RolloutMixin[EncodedBatch], ABC, L.LightningModule):
             y (Tensor): Output tensor of shape (B, T_out, ...)
         '''
 
-    def validation_step(self, batch: EncodedBatch, batch_idx: int) -> Tensor: # <-- Changed type hint from EncodedBatch to Batch
+    def validation_step(self, batch: EncodedBatch, batch_idx: int) -> Tensor:
         # Convert raw Batch to EncodedBatch before processing
-        
         output = self.map(batch.encoded_inputs)
         loss = self.loss_func(output, batch.encoded_output_fields)
         self.log(
@@ -111,133 +110,3 @@ class Processor(RolloutMixin[EncodedBatch], ABC, L.LightningModule):
             encoded_output_fields=next_outputs,
             encoded_info=batch.encoded_info,
         )
-
-
-class FlowMatchingProcessor(Processor):
-    """Processor that wraps a flow-matching generative model."""
-
-    def __init__(
-        self,
-        flow_matching_model: nn.Module,
-        *,
-        stride: int = 1,
-        teacher_forcing_ratio: float = 0.0,
-        max_rollout_steps: int = 1,
-        loss_func: nn.Module | None = None,
-        learning_rate: float = 1e-3,
-        flow_ode_steps: int = 1,
-        output_shape: tuple[int, ...],
-        **kwargs: Any,
-    ) -> None:
-        super().__init__(
-            stride=stride,
-            teacher_forcing_ratio=teacher_forcing_ratio,
-            max_rollout_steps=max_rollout_steps,
-            loss_func=loss_func or nn.MSELoss(),
-            **kwargs,
-        )
-        '''
-        Args:
-            flow_matching_model (nn.Module): The flow-matching vector field.
-            learning_rate (float): Learning rate for the optimizer.
-            flow_ode_steps (int): Number of steps to use in the flow ODE integration.
-            output_shape (tuple[int, ...]): Shape of the output states (B, T_out, *S, C).
-        '''
-        self.flow_matching_model = flow_matching_model
-        self.learning_rate = learning_rate
-        self.flow_ode_steps = flow_ode_steps
-        self.output_shape = output_shape
-
-    def forward(self, z: Tensor, t: Tensor, x: Tensor) -> Tensor:
-        '''
-        The vector field over the tangent space of output states (z)
-        conditioned on input states (x) at time (t).
-
-        Args:
-            z (Tensor): Current output states of shape (B, T_out, *S, C)
-            t (Tensor): Time tensor of shape (B,)
-            x (Tensor): Input states of shape (B, T_in, *S, C)
-        Returns:
-            dz (Tensor): Time derivative of output states of shape (B, T_out, *S, C)
-        '''
-        return self.flow_matching_model(z, t, x)
-
-    def map(self, x: TensorBMStarL) -> TensorBMStarL:
-        '''
-        Maps inputs states (x) to output states (z) by integrating the flow ODE.
-
-        Args:
-            x (Tensor): Input states of shape (B, T_in, *S, C)
-        Returns:
-            z (Tensor): Output states of shape (B, T_out, *S, C)
-        '''
-
-        # Random noisy output states and interpolant time
-        z = torch.randn(self.output_shape, device=x.device, dtype=x.dtype)
-        t = torch.tensor(0.0, device=x.device, dtype=x.dtype)
-
-        # Integrate flow ODE from t=0 to t=1
-        dt = torch.tensor(1.0 / max(self.flow_ode_steps, 1), device=x.device, dtype=x.dtype)
-        for _ in range(self.flow_ode_steps):
-            z = z + dt * self.forward(z, t, x)
-            t = t + dt
-        return z
-
-    def training_step(self, batch: EncodedBatch, batch_idx: int) -> Tensor:  # noqa: ARG002
-        '''
-        Performs a single training step.
-
-        Args:
-            batch (EncodedBatch): Batch of encoded input and output states
-                intput_fields: (B, T_in, *S, C)
-                output_fields: (B, T_out, *S, C)
-            batch_idx (int): Index of the batch
-        Returns:
-            loss (Tensor): Computed training loss ()
-        '''
-
-        # Shapes 
-        input_states = batch.encoded_inputs
-        target_states = batch.encoded_output_fields
-
-        # Random noisy initial states and interpolant time
-        z0 = torch.randn_like(target_states)
-        expand_shape = (target_states.shape[0],) + (1,) * (target_states.ndim - 1)
-        t = torch.rand(expand_shape, device=target_states.device, dtype=target_states.dtype)
-        zt = (1 - t) * z0 + t * target_states
-
-        # Target velocity, predicted velocity, and loss
-        target_velocity = target_states - z0
-        v_pred = self.forward(zt, t, input_states)
-        flow_loss = torch.mean((v_pred - target_velocity) ** 2)
-
-        # Log and return loss
-        batch_size = batch.encoded_inputs.shape[0]
-        self.log("train_loss", flow_loss, prog_bar=True, batch_size=batch_size)
-        self.log(
-            "train_flow_matching_loss",
-            flow_loss,
-            prog_bar=False,
-            batch_size=batch_size,
-        )
-        return flow_loss
-
-    def validation_step(self, batch: EncodedBatch, batch_idx: int) -> Tensor:
-        '''
-        Computes the test/validation metrics on the rollout of the processor.
-
-        Args:
-            batch (EncodedBatch): Batch of encoded input and output states
-                intput_fields: (B, T_in, *S, C)
-                output_fields: (B, T_out, *S, C)
-            batch_idx (int): Index of the batch
-        '''
-
-        # Roll out predictions and compare against available ground-truth rollout slices.
-        preds, gts = self.rollout(batch)
-        loss = self.loss_func(preds, gts) if gts is not None else torch.tensor(0.0, device=preds.device)
-
-        batch_size = batch.encoded_inputs.shape[0]
-        self.log("val_loss", loss, prog_bar=True, batch_size=batch_size)
-        self.log("val_rollout_loss", loss, prog_bar=False, batch_size=batch_size)
-        return loss
