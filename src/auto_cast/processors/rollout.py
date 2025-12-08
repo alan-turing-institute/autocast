@@ -71,7 +71,7 @@ class RolloutMixin(ABC, Generic[BatchT]):
             )
             raise ValueError(msg)
 
-        for _ in range(0, self.max_rollout_steps, self.stride):
+        for _ in range(self.max_rollout_steps):
             output = self._predict(current_batch)
             pred_outs.append(output)
 
@@ -93,7 +93,7 @@ class RolloutMixin(ABC, Generic[BatchT]):
         if not return_windows:
             # Concatenate rollout windows along time axis if not returning windows
             preds = rearrange(preds, "b r t ... -> b (r t) ...")  # (B, T*R, spatial, C)
-        if true_outs:
+        if len(true_outs) == 0:
             return preds, None
 
         trues = torch.stack(true_outs, dim=1)  # (B, R, T, spatial, C)
