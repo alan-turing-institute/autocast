@@ -1,5 +1,6 @@
 import math
 
+import azula
 import torch
 import torch.nn as nn
 
@@ -55,6 +56,7 @@ class DiffusionProcessor(Processor):
         # Store schedule for direct access
         self.schedule = schedule
 
+
     def map(self, x: Tensor) -> Tensor:
         """Map input window of states/times to output window using denoiser."""
 
@@ -73,6 +75,9 @@ class DiffusionProcessor(Processor):
         posterior = self.denoiser(x, t, cond=cond)
         return posterior.mean
     
+    # def __call__(self, *args, **kwds):
+    #     return self.
+    
     def training_step(self, batch: EncodedBatch, batch_idx: int) -> Tensor:
         """Training step with diffusion loss.
 
@@ -85,7 +90,7 @@ class DiffusionProcessor(Processor):
         t = torch.rand(x_0.size(0), device=x_0.device)  # (B,)
 
         # OPTION A: Use Azula's built-in weighted loss
-        # loss = self.denoiser.loss(x_0, t)
+        # loss = self.denoiser.loss(x_0, t=t, cond=x_cond)
         
         # OPTION B: Manual loss computation : currently the loss implemented here is the same as azula 
 
@@ -110,8 +115,7 @@ class DiffusionProcessor(Processor):
         )
         return loss
     
-    def sample(
-        self,
+    def _get_sampler(self,
         x_t: Tensor,
         cond: Tensor,
         num_steps: int = 100,
@@ -120,28 +124,7 @@ class DiffusionProcessor(Processor):
         return_trajectory: bool = False,
         silent: bool = True,
         **sampler_kwargs
-    ) -> Tensor:
-        """
-        Generate samples via reverse diffusion using Azula's samplers.
-        
-        Args:
-            x_t: Starting noise (B, T, C, H, W)
-            cond: Conditioning input (B, T_cond, C_cond, H, W)
-            num_steps: Number of denoising steps
-            sampler: Type of sampler to use:
-                - 'euler': Euler ODE solver (fast, deterministic)
-                - 'heun': Heun's method (more accurate, deterministic)
-                - 'ddim': DDIM sampler (eta controls stochasticity)
-                - 'ddpm': DDPM sampler (stochastic)
-            eta: Stochasticity parameter for DDIM (0=deterministic, 1=stochastic)
-            return_trajectory: If True, return all intermediate steps
-            silent: If True, hide progress bar
-            **sampler_kwargs: Additional kwargs passed to sampler
-            
-        Returns:
-            Generated samples (B, T, C, H, W)
-            Or if return_trajectory=True: List of tensors
-        """
+    ):
         # Create appropriate Azula sampler
         if sampler == 'euler':
             azula_sampler = EulerSampler(
@@ -182,6 +165,49 @@ class DiffusionProcessor(Processor):
             )
         else:
             raise ValueError(f"Unknown sampler: {sampler}. Choose from: 'euler', 'heun', 'ddim', 'ddpm'")
+
+    def sample(
+        self,
+        x_t: Tensor,
+        cond: Tensor,
+        num_steps: int = 100,
+        sampler: str = 'euler',
+        eta: float = 0.0,
+        return_trajectory: bool = False,
+        silent: bool = True,
+        **sampler_kwargs
+    ) -> Tensor:
+        """
+        Generate samples via reverse diffusion using Azula's samplers.
+        
+        Args:
+            x_t: Starting noise (B, T, C, H, W)
+            cond: Conditioning input (B, T_cond, C_cond, H, W)
+            num_steps: Number of denoising steps
+            sampler: Type of sampler to use:
+                - 'euler': Euler ODE solver (fast, deterministic)
+                - 'heun': Heun's method (more accurate, deterministic)
+                - 'ddim': DDIM sampler (eta controls stochasticity)
+                - 'ddpm': DDPM sampler (stochastic)
+            eta: Stochasticity parameter for DDIM (0=deterministic, 1=stochastic)
+            return_trajectory: If True, return all intermediate steps
+            silent: If True, hide progress bar
+            **sampler_kwargs: Additional kwargs passed to sampler
+            
+        Returns:
+            Generated samples (B, T, C, H, W)
+            Or if return_trajectory=True: List of tensors
+        """
+        azula_sampler = self._get_sampler(
+            x_t,
+            cond,
+            num_steps=num_steps,
+            sampler=sampler,
+            eta=eta,
+            return_trajectory=return_trajectory,
+            silent=silent,
+            **sampler_kwargs
+        )
         
         # Sample using Azula's sampler
         if return_trajectory:
