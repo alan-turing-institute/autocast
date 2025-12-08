@@ -10,6 +10,8 @@ import torch.nn as nn
 from azula.nn.unet import UNet
 from azula.nn.embedding import SineEncoding
 
+from auto_cast.types import Tensor, TensorBTSPlusC
+
 class TemporalUNetBackbone(nn.Module):
     """Azula UNet with proper time embedding."""
     
@@ -35,9 +37,9 @@ class TemporalUNetBackbone(nn.Module):
         )
         
         self.unet = UNet(
-            in_channels=in_channels + cond_channels,
+            in_channels=in_channels,
             out_channels=out_channels,
-            cond_channels=0,
+            cond_channels=cond_channels,
             mod_features=mod_features,
             hid_channels=hid_channels,
             hid_blocks=hid_blocks,
@@ -47,40 +49,50 @@ class TemporalUNetBackbone(nn.Module):
             periodic=periodic,
         )
 
-    def forward(self, x_out: torch.Tensor, t: torch.Tensor, cond: torch.Tensor) -> torch.Tensor:
+    def forward(self, x_t: TensorBTSPlusC, t: Tensor, cond: TensorBTSPlusC) -> TensorBTSPlusC:
         """
         Args:
             x_out: Noisy data (B, T, C, H, W) - channels first from Azula
-            t: Time steps (B,)
+            t: Time steps (B,) # TODO: define a type for this
             cond: Conditioning input (B, T_cond, C, H, W) - channels first
         Returns:
             Denoised output (B, T, C, H, W)
         """
-        B, T, W, H, C = x_out.shape
-        _, T_cond, W_cond, H_cond , C_cond = cond.shape
-        assert W == W_cond and H == H_cond
-        print("x_out.shape", x_out.shape)
-        print("cond.shape", cond.shape)
-        # Embed time (once per batch)
-        t_emb = self.time_embedding(t)  # (B, mod_features)
-        mod_for_unet = t_emb
-        print(t_emb.shape)
-        t_emb = rearrange(t_emb, "b m -> b  1 1 1 m")
-        t_emb = t_emb.expand(B, T_cond, W, H, -1)  # (B, mod_features, H, W)
+        # B, T, W, H, C = x_out.shape
+        # _, T_cond, W_cond, H_cond , C_cond = cond.shape
+        # assert W == W_cond and H == H_cond
+        # print("x_out.shape", x_out.shape)
+        # print("cond.shape", cond.shape)
+        # # Embed time (once per batch)
+        # t_emb = self.time_embedding(t)  # (B, mod_features)
+        # mod_for_unet = t_emb
+        # print(t_emb.shape)
+        # t_emb = rearrange(t_emb, "b m -> b  1 1 1 m")
+        # t_emb = t_emb.expand(B, T_cond, W, H, -1)  # (B, mod_features, H, W)
 
-        print("t_emb.shape", t_emb.shape)
-        # Concatenate along channel dimension
-        x_cond = torch.cat([cond, t_emb], dim=-1)  # (B, T, C+C_cond, H, W)
-        print("x_cond.shape", x_cond.shape)
+        # print("t_emb.shape", t_emb.shape)
+        # # Concatenate along channel dimension
+        # x_cond = torch.cat([cond, t_emb], dim=-1)  # (B, T, C+C_cond, H, W)
+        # print("x_cond.shape", x_cond.shape)
         
-        x_cond = rearrange(x_cond, "b t w h c -> b (t c) w h")
-        print("x_cond reshaped", x_cond.shape)
-        # Process through UNet
-        out_flat = self.unet(x_cond, mod=mod_for_unet)
-        print("out",out_flat.shape)
-        # Reshape back to (B, T, C, H, W)
-        return out_flat.reshape(B, T, W, H, C)
+        # x_cond = rearrange(x_cond, "b t w h c -> b (t c) w h")
+        # print("x_cond reshaped", x_cond.shape)
+        # # Process through UNet
+        # out_flat = self.unet(x_cond, mod=mod_for_unet)
+        # print("out",out_flat.shape)
+        # # Reshape back to (B, T, C, H, W)
+        # return out_flat.reshape(B, T, W, H, C)
+        
+        B, T_out, W, H, C = x_t.shape
+        _, T_cond, W_cond, H_cond, C_cond = cond.shape
+        t_emb = self.time_embedding(t)
+        x_t_cf = rearrange(x_t, "b t w h c -> b (t c) w h")
+        x_cond_cf = rearrange(cond, "b t w h c -> b (t c) w h")
+        
+        # unet.forward(TensorBCLPlus, TensorBD, TensorBCLPlus) -> TensorBCLPlus
+        output = self.unet(x = x_t_cf, mod=t_emb, cond=x_cond_cf)
 
+        return rearrange(output, "b (t c) w h -> b t w h c", t=T_out, c=C)
 
 
 class SimpleUNet(nn.Module):
