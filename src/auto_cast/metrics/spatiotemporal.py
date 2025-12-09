@@ -1,19 +1,18 @@
-import numpy as np
 import torch
 
 from auto_cast.metrics.base import Metric
-from auto_cast.types import TensorBTC, TensorBTSPlusC
+from auto_cast.types import TensorBCTSPlus, TensorBTC
 
 
 class MSE(Metric):
+    """Mean Squared Error."""
+
     @staticmethod
     def score(
-        y_pred: TensorBTSPlusC,
-        y_true: TensorBTSPlusC,
-        n_spatial_dims: int,
+        y_pred: TensorBCTSPlus, y_true: TensorBCTSPlus, n_spatial_dims: int, **kwargs
     ) -> TensorBTC:
         """
-        Mean Squared Error
+        Compute Mean Squared Error.
 
         Args:
             y_pred: Predicted values tensor.
@@ -30,14 +29,14 @@ class MSE(Metric):
 
 
 class MAE(Metric):
+    """Mean Absolute Error."""
+
     @staticmethod
     def score(
-        y_pred: TensorBTSPlusC,
-        y_true: TensorBTSPlusC,
-        n_spatial_dims: int,
+        y_pred: TensorBCTSPlus, y_true: TensorBCTSPlus, n_spatial_dims: int, **kwargs
     ) -> TensorBTC:
         """
-        Mean Absolute Error
+        Compute Mean Absolute Error.
 
         Args:
             y_pred: Predicted values tensor.
@@ -54,15 +53,18 @@ class MAE(Metric):
 
 
 class NMAE(Metric):
+    """Normalized Mean Absolute Error."""
+
     @staticmethod
     def score(
-        y_pred: TensorBTSPlusC,
-        y_true: TensorBTSPlusC,
+        y_pred: TensorBCTSPlus,
+        y_true: TensorBCTSPlus,
         n_spatial_dims: int,
         eps: float = 1e-7,
+        **kwargs,
     ) -> TensorBTC:
         """
-        Normalized Mean Absolute Error
+        Compute Normalized Mean Absolute Error.
 
         Args:
             y_pred: Predicted values tensor.
@@ -80,16 +82,19 @@ class NMAE(Metric):
 
 
 class NMSE(Metric):
+    """Normalized Mean Squared Error."""
+
     @staticmethod
     def score(
-        y_pred: TensorBTSPlusC,
-        y_true: TensorBTSPlusC,
+        y_pred: TensorBCTSPlus,
+        y_true: TensorBCTSPlus,
         n_spatial_dims: int,
         eps: float = 1e-7,
         norm_mode: str = "norm",
+        **kwargs,
     ) -> TensorBTC:
         """
-        Normalized Mean Squared Error
+        Compute Normalized Mean Squared Error.
 
         Args:
             y_pred: Predicted values tensor.
@@ -98,7 +103,8 @@ class NMSE(Metric):
                 Number of spatial dimensions.
             eps: Small value to avoid division by zero. Default is 1e-7.
             norm_mode:
-                Mode for computing the normalization factor. Can be 'norm' or 'std'. Default is 'norm'.
+                Mode for computing the normalization factor. Can be 'norm' or 'std'.
+                Default is 'norm'.
 
         Returns
         -------
@@ -115,14 +121,14 @@ class NMSE(Metric):
 
 
 class RMSE(Metric):
+    """Root Mean Squared Error."""
+
     @staticmethod
     def score(
-        y_pred: TensorBTSPlusC,
-        y_true: TensorBTSPlusC,
-        n_spatial_dims: int,
+        y_pred: TensorBCTSPlus, y_true: TensorBCTSPlus, n_spatial_dims: int, **kwargs
     ) -> TensorBTC:
         """
-        Root Mean Squared Error
+        Compute Root Mean Squared Error.
 
         Args:
             y_pred: Predicted values tensor.
@@ -138,16 +144,19 @@ class RMSE(Metric):
 
 
 class NRMSE(Metric):
+    """Normalized Root Mean Squared Error."""
+
     @staticmethod
     def score(
-        y_pred: TensorBTSPlusC,
-        y_true: TensorBTSPlusC,
+        y_pred: TensorBCTSPlus,
+        y_true: TensorBCTSPlus,
         n_spatial_dims: int,
         eps: float = 1e-7,
         norm_mode: str = "norm",
+        **kwargs,
     ) -> TensorBTC:
         """
-        Normalized Root Mean Squared Error
+        Compute Normalized Root Mean Squared Error.
 
         Args:
             y_pred: Predicted values tensor.
@@ -155,7 +164,8 @@ class NRMSE(Metric):
             n_spatial_dims: int
                 Number of spatial dimensions.
             eps: Small value to avoid division by zero. Default is 1e-7.
-            norm_mode : Mode for computing the normalization factor. Can be 'norm' or 'std'. Default is 'norm'.
+            norm_mode : Mode for computing the normalization factor.
+                Can be 'norm' or 'std'. Default is 'norm'.
 
         Returns
         -------
@@ -168,14 +178,14 @@ class NRMSE(Metric):
 
 
 class VMSE(Metric):
+    """Variance Scaled Mean Squared Error."""
+
     @staticmethod
     def score(
-        y_pred: TensorBTSPlusC,
-        y_true: TensorBTSPlusC,
-        n_spatial_dims: int,
+        y_pred: TensorBCTSPlus, y_true: TensorBCTSPlus, n_spatial_dims: int, **kwargs
     ) -> TensorBTC:
         """
-        Variance Scaled Mean Squared Error
+        Compute Variance Scaled Mean Squared Error.
 
         Args:
             y_pred: Predicted values tensor.
@@ -191,14 +201,14 @@ class VMSE(Metric):
 
 
 class VRMSE(Metric):
+    """Variance Scaled Root Mean Squared Error."""
+
     @staticmethod
     def score(
-        y_pred: TensorBTSPlusC,
-        y_true: TensorBTSPlusC,
-        n_spatial_dims: int,
+        y_pred: TensorBCTSPlus, y_true: TensorBCTSPlus, n_spatial_dims: int, **kwargs
     ) -> TensorBTC:
         """
-        Root Variance Scaled Mean Squared Error
+        Compute Root Variance Scaled Mean Squared Error.
 
         Args:
             y_pred: Predicted values tensor.
@@ -214,14 +224,14 @@ class VRMSE(Metric):
 
 
 class LInfinity(Metric):
+    """L-Infinity Norm."""
+
     @staticmethod
     def score(
-        y_pred: TensorBTSPlusC,
-        y_true: TensorBTSPlusC,
-        n_spatial_dims: int,
+        y_pred: TensorBCTSPlus, y_true: TensorBCTSPlus, n_spatial_dims: int, **kwargs
     ) -> TensorBTC:
         """
-        L-Infinity Norm
+        Compute L-Infinity Norm.
 
         Args:
             x: Input tensor.

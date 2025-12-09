@@ -2,10 +2,15 @@ import numpy as np
 import torch
 from torch import nn
 
+from auto_cast.types import TensorBCTSPlus
+
 
 class Metric(nn.Module):
     """
-    Decorator for metrics that standardizes the input arguments and checks the dimensions of the input tensors.
+    Base class for metrics.
+
+    This class standardizes the input arguments and
+    checks the dimensions of the input tensors.
 
     Args:
         f: function
@@ -46,5 +51,7 @@ class Metric(nn.Module):
         return self.score(y_pred, y_true, n_spatial_dims, **kwargs)
 
     @staticmethod
-    def score(y_pred, y_true, n_spatial_dims, **kwargs):
+    def score(
+        y_pred: TensorBCTSPlus, y_true: TensorBCTSPlus, n_spatial_dims: int, **kwargs
+    ):
         raise NotImplementedError
