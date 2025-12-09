@@ -45,16 +45,14 @@ class ProcessorModel(RolloutMixin[EncodedBatch], ABC, L.LightningModule):
         return self.processor.map(x)
 
     def training_step(self, batch: EncodedBatch, batch_idx: int) -> Tensor:  # noqa: ARG002
-        output = self.processor.map(batch.encoded_inputs)
-        loss = self.processor.loss(output, batch.encoded_output_fields)
+        loss = self.processor.loss(batch)
         self.log(
             "train_loss", loss, prog_bar=True, batch_size=batch.encoded_inputs.shape[0]
         )
         return loss
 
     def validation_step(self, batch: EncodedBatch, batch_idx: int) -> Tensor:  # noqa: ARG002
-        output = self.processor.map(batch.encoded_inputs)
-        loss = self.processor.loss(output, batch.encoded_output_fields)
+        loss = self.processor.loss(batch)
         self.log(
             "val_loss", loss, prog_bar=True, batch_size=batch.encoded_inputs.shape[0]
         )

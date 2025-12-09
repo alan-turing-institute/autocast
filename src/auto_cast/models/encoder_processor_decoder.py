@@ -165,8 +165,7 @@ class EPDTrainProcessor(EncoderProcessorDecoder):
 
     def training_step(self, batch: Batch, batch_idx: int) -> Tensor:  # noqa: ARG002
         encoded_batch = self.encoder_decoder.encoder.encode_batch(batch)
-        output = self.processor.map(encoded_batch.encoded_inputs)
-        loss = self.processor.loss(output, encoded_batch.encoded_output_fields)
+        loss = self.processor.loss(encoded_batch)
         self.log(
             "train_loss", loss, prog_bar=True, batch_size=batch.input_fields.shape[0]
         )

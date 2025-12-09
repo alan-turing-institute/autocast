@@ -1,5 +1,6 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import TypeVar
 
 import torch
 from jaxtyping import Float
@@ -55,6 +56,9 @@ Input = Tensor | DataLoader
 
 # Rollout output type
 RolloutOutput = tuple[Tensor, None] | tuple[Tensor, Tensor]
+
+# Generic batch type variable
+BatchT = TypeVar("BatchT")
 
 
 @dataclass

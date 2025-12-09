@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Generic, TypeVar
+from typing import Generic
 
 import torch
 
-from auto_cast.types import RolloutOutput, Tensor
-
-BatchT = TypeVar("BatchT")
+from auto_cast.types import BatchT, RolloutOutput, Tensor
 
 
 class RolloutMixin(ABC, Generic[BatchT]):

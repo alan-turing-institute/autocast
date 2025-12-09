@@ -24,7 +24,7 @@ def _toy_encoded_batch(
     )
 
 
-class _IdentityProcessor(Processor):
+class _IdentityProcessor(Processor[EncodedBatch]):
     def __init__(self) -> None:
         super().__init__(
             loss_func=nn.MSELoss(),
@@ -33,8 +33,8 @@ class _IdentityProcessor(Processor):
     def map(self, x: Tensor) -> Tensor:
         return x
 
-    def loss(self, output: Tensor, target: Tensor) -> Tensor:
-        return self.loss_func(output, target)
+    def loss(self, batch: EncodedBatch) -> Tensor:
+        return self.loss_func(batch.encoded_inputs, batch.encoded_output_fields)
 
 
 def test_processor_rollout_handles_encoded_batches():

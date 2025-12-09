@@ -6,10 +6,10 @@ from auto_cast.encoders.permute_concat import PermuteConcat
 from auto_cast.models.encoder_decoder import EncoderDecoder
 from auto_cast.models.encoder_processor_decoder import EncoderProcessorDecoder
 from auto_cast.processors.base import Processor
-from auto_cast.types import Tensor
+from auto_cast.types import EncodedBatch, Tensor
 
 
-class TinyProcessor(Processor):
+class TinyProcessor(Processor[EncodedBatch]):
     def __init__(self, in_channels: int = 1) -> None:
         super().__init__()
         self.conv = nn.Conv2d(
@@ -25,8 +25,9 @@ class TinyProcessor(Processor):
     def map(self, x: Tensor) -> Tensor:
         return self(x)
 
-    def loss(self, output: Tensor, target: Tensor) -> Tensor:
-        return self.loss_func(output, target)
+    def loss(self, batch: EncodedBatch) -> Tensor:
+        outputs = self(batch.encoded_inputs)
+        return self.loss_func(outputs, batch.encoded_output_fields)
 
 
 def test_encoder_processor_decoder_training_step_runs(make_toy_batch, dummy_loader):

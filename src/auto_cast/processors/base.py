@@ -1,12 +1,12 @@
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Generic
 
 from torch import nn
 
-from auto_cast.types import Tensor
+from auto_cast.types import BatchT, Tensor
 
 
-class Processor(ABC, nn.Module):
+class Processor(ABC, nn.Module, Generic[BatchT]):
     """Processor Base Class."""
 
     def __init__(
@@ -27,7 +27,7 @@ class Processor(ABC, nn.Module):
             setattr(self, key, value)
 
     @abstractmethod
-    def loss(self, output: Tensor, target: Tensor) -> Tensor:
+    def loss(self, batch: BatchT) -> Tensor:
         """Compute loss between output and target."""
 
     @abstractmethod

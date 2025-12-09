@@ -4,7 +4,7 @@ from neuralop.models import FNO
 from torch import nn
 
 from auto_cast.processors.base import Processor
-from auto_cast.types import Tensor
+from auto_cast.types import EncodedBatch, Tensor
 
 
 @runtime_checkable
@@ -13,7 +13,7 @@ class _HasGridCache(Protocol):
     _res: Any | None
 
 
-class FNOProcessor(Processor):
+class FNOProcessor(Processor[EncodedBatch]):
     """Fourier Neural Operator Module.
 
     A discrete processor that uses a Fourier Neural Operator (FNO) to learn
@@ -91,5 +91,6 @@ class FNOProcessor(Processor):
     def map(self, x: Tensor) -> Tensor:
         return self(x)
 
-    def loss(self, output: Tensor, target: Tensor) -> Tensor:
-        return self.loss_func(output, target)
+    def loss(self, batch: EncodedBatch) -> Tensor:
+        output = self.map(batch.encoded_inputs)
+        return self.loss_func(output, batch.encoded_output_fields)
