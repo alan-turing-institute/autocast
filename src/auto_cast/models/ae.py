@@ -36,10 +36,9 @@ class AE(EncoderDecoder):
     def __init__(
         self, encoder: Encoder, decoder: Decoder, loss_func: AELoss | None = None
     ):
-        super().__init__()
-        self.encoder = encoder
-        self.decoder = decoder
-        self.loss_func = loss_func or AELoss()
+        super().__init__(
+            encoder=encoder, decoder=decoder, loss_func=loss_func or AELoss()
+        )
 
     def forward(self, batch: Batch) -> TensorBNC:
         return self.forward_with_latent(batch)[0]

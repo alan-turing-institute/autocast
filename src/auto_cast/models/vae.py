@@ -75,9 +75,7 @@ class VAE(EncoderDecoder):
             Number of spatial dimensions in latent space (e.g., 2 for images).
             If None, assumes flat 1D latent representation.
         """
-        super().__init__()
-        self.encoder = encoder
-        self.decoder = decoder
+        super().__init__(encoder=encoder, decoder=decoder)
         self.spatial = spatial
         latent_dim = encoder.latent_dim
         if encoder.latent_dim != decoder.latent_dim:

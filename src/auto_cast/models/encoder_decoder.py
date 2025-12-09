@@ -1,4 +1,4 @@
-from typing import Any, Self
+from typing import Any
 
 import lightning as L
 import torch
@@ -17,22 +17,17 @@ class EncoderDecoder(L.LightningModule):
     loss_func: nn.Module | None
     learning_rate: float = 1e-3
 
-    def __init__(self):
-        super().__init__()
-
-    @classmethod
-    def from_encoder_decoder(
-        cls,
+    def __init__(
+        self,
         encoder: Encoder,
         decoder: Decoder,
         loss_func: nn.Module | None = None,
         **kwargs: Any,
-    ) -> Self:
-        instance = cls(**kwargs)
-        instance.encoder = encoder
-        instance.decoder = decoder
-        instance.loss_func = loss_func
-        return instance
+    ):
+        super().__init__()
+        self.encoder = encoder
+        self.decoder = decoder
+        self.loss_func = loss_func
 
     def forward(self, batch: Batch) -> TensorBTSC:
         return self.decoder(self.encoder(batch))

@@ -1,15 +1,19 @@
 import lightning as L
 
-from auto_cast.nn.fno import FNOProcessor
+from auto_cast.models.processor import ProcessorModel
+from auto_cast.processors.fno import FNOProcessor
 
 
 def test_fno_processor(encoded_batch, encoded_dummy_loader):
     input_channels = encoded_batch.encoded_inputs.shape[1]
     output_channels = encoded_batch.encoded_output_fields.shape[1]
-    model = FNOProcessor(
+    processor = FNOProcessor(
         in_channels=input_channels,
         out_channels=output_channels,
         n_modes=(4, 4),
+    )
+    model = ProcessorModel(
+        processor=processor,
     )
 
     output = model.map(encoded_batch.encoded_inputs)

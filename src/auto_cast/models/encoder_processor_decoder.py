@@ -1,4 +1,4 @@
-from typing import Any, Self
+from typing import Any
 
 import lightning as L
 import torch
@@ -22,6 +22,8 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule):
 
     def __init__(
         self,
+        encoder_decoder: EncoderDecoder,
+        processor: Processor,
         learning_rate: float = 1e-3,
         stride: int = 1,
         teacher_forcing_ratio: float = 0.5,
@@ -30,6 +32,8 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule):
         **kwargs: Any,
     ) -> None:
         super().__init__()
+        self.encoder_decoder = encoder_decoder
+        self.processor = processor
         self.learning_rate = learning_rate
         self.stride = stride
         self.teacher_forcing_ratio = teacher_forcing_ratio
@@ -37,17 +41,6 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule):
         self.loss_func = loss_func or nn.MSELoss()
         for key, value in kwargs.items():
             setattr(self, key, value)
-
-    @classmethod
-    def from_encoder_processor_decoder(
-        cls, encoder_decoder: EncoderDecoder, processor: Processor, **kwargs: Any
-    ) -> Self:
-        instance = cls(**kwargs)
-        instance.encoder_decoder = encoder_decoder
-        instance.processor = processor
-        for key, value in kwargs.items():
-            setattr(instance, key, value)
-        return instance
 
     def __call__(self, batch: Batch) -> TensorBTSC:
         return self.decode(self.processor(self.encode(batch)))
@@ -141,3 +134,39 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule):
             constant_scalars=batch.constant_scalars,
             constant_fields=batch.constant_fields,
         )
+
+
+class EPDTrainProcessor(EncoderProcessorDecoder):
+    """Encoder-Processor-Decoder Model training on processor."""
+
+    train_processor: Processor
+
+    def __init__(
+        self,
+        encoder_decoder: EncoderDecoder,
+        processor: Processor,
+        learning_rate: float = 1e-3,
+        stride: int = 1,
+        teacher_forcing_ratio: float = 0.5,
+        max_rollout_steps: int = 10,
+        loss_func: nn.Module | None = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(
+            encoder_decoder=encoder_decoder,
+            processor=processor,
+            learning_rate=learning_rate,
+            stride=stride,
+            teacher_forcing_ratio=teacher_forcing_ratio,
+            max_rollout_steps=max_rollout_steps,
+            loss_func=loss_func,
+            **kwargs,
+        )
+
+    def training_step(self, batch: Batch, batch_idx: int) -> Tensor:  # noqa: ARG002
+        encoded_batch = self.encoder_decoder.encoder.encode_batch(batch)
+        loss = self.processor.loss(encoded_batch)
+        self.log(
+            "train_loss", loss, prog_bar=True, batch_size=batch.input_fields.shape[0]
+        )
+        return loss

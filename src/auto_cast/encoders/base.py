@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 
 from torch import nn
 
-from auto_cast.types import Batch, TensorBNC
+from auto_cast.types import Batch, EncodedBatch, TensorBNC
 
 
 class Encoder(nn.Module, ABC):
@@ -33,6 +33,39 @@ class Encoder(nn.Module, ABC):
         TensorBNC
             Encoded tensor in the latent space with shape (B, *, C_latent).
         """
+
+    def encode_batch(
+        self,
+        batch: Batch,
+        encoded_info: dict | None = None,
+    ) -> EncodedBatch:
+        """Encode a full Batch into an EncodedBatch.
+
+        By default, encodes both input_fields and output_fields identically.
+        Subclasses can override to implement different encoding strategies.
+
+        Parameters
+        ----------
+        batch: Batch
+            Input batch to be encoded.
+
+        Returns
+        -------
+        EncodedBatch
+            Encoded batch containing encoded inputs and original output fields.
+        """
+        encoded_inputs = self.encode(self.preprocess(batch))
+
+        # Assign output fields to inputs to be encoded identically in this default impl
+        batch.input_fields = batch.output_fields
+        encoded_outputs = self.encode(self.preprocess(batch))
+
+        # Return encoded batch
+        return EncodedBatch(
+            encoded_inputs=encoded_inputs,
+            encoded_output_fields=encoded_outputs,
+            encoded_info=encoded_info or {},
+        )
 
     def __call__(self, batch: Batch) -> TensorBNC:
         return self.encode(batch)
