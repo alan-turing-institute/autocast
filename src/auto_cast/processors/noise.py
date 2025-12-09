@@ -5,27 +5,27 @@
 import math
 
 import torch
-import torch.nn as nn
+from torch import nn
 
 from auto_cast.types import Tensor
 
 
 class NoiseSchedule(nn.Module):
     """Noise Schedule Module.
-    
-    if Azula became useful for other things we can use their base class 
-    instead of this base 
+
+    if Azula became useful for other things we can use their base class
+    instead of this base
     """
 
     def forward(self, t: Tensor) -> tuple[Tensor, Tensor]:
         """Get alpha and sigma for given time steps t."""
         msg = "Subclasses should implement this method."
         raise NotImplementedError(msg)
-    
+
 
 class LogLinearSchedule(NoiseSchedule):
     """Log-Linear Noise Schedule.
-    
+
     Implements a log-linear schedule for alpha and sigma.
     """
 

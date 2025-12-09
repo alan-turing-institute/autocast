@@ -2,13 +2,13 @@ from abc import ABC, abstractmethod
 
 from torch import nn
 
-from auto_cast.types import Tensor, TensorBMStarL, TensorBTSPlusC
+from auto_cast.types import Tensor, TensorBNC, TensorBTSC
 
 
 class Decoder(nn.Module, ABC):
     """Base Decoder."""
 
-    def postprocess(self, decoded: Tensor) -> TensorBTSPlusC:
+    def postprocess(self, decoded: Tensor) -> TensorBTSC:
         """Optionally transform the decoded tensor before returning.
 
         Subclasses can override to implement post-decoding steps. Default is
@@ -17,12 +17,12 @@ class Decoder(nn.Module, ABC):
         return decoded
 
     @abstractmethod
-    def decode(self, z: TensorBMStarL) -> TensorBTSPlusC:
+    def decode(self, z: TensorBNC) -> TensorBTSC:
         """Decode the latent tensor back to the original space.
 
         Parameters
         ----------
-        z: TensorBMStarL
+        z: TensorBNC
             Latent tensor to be decoded.
 
         Returns
@@ -30,5 +30,5 @@ class Decoder(nn.Module, ABC):
             Tensor: Decoded tensor in the original space.
         """
 
-    def __call__(self, z: TensorBMStarL) -> TensorBTSPlusC:
+    def __call__(self, z: TensorBNC) -> TensorBTSC:
         return self.decode(z)

@@ -10,7 +10,7 @@ from torch import nn
 from auto_cast.encoders.base import Encoder
 from auto_cast.nn import ResBlock
 from auto_cast.nn.dc_utils import build_sample_block
-from auto_cast.types import Batch, TensorBTSPlusC
+from auto_cast.types import Batch, TensorBTSC
 
 
 class DCEncoder(Encoder):
@@ -180,7 +180,7 @@ class DCEncoder(Encoder):
             constant_fields=batch.constant_fields,
         )
 
-    def encode(self, batch: Batch) -> TensorBTSPlusC:
+    def encode(self, batch: Batch) -> TensorBTSC:
         """Encode input batch to latent representation.
 
         Parameters
@@ -208,17 +208,17 @@ class DCEncoder(Encoder):
         stacked = torch.stack(outputs, dim=1)  # (B, T, C, spatial...)
         return rearrange(stacked, "B T C ... -> B T ... C")
 
-    def forward(self, x: TensorBTSPlusC) -> TensorBTSPlusC:
+    def forward(self, x: TensorBTSC) -> TensorBTSC:
         """Forward pass through encoder (for direct tensor input).
 
         Parameters
         ----------
-        x: TensorBTSPlusC
+        x: TensorBTSC
             Input tensor with shape (B, T, spatial..., C_i).
 
         Returns
         -------
-        TensorBTSPlusC
+        TensorBTSC
             Encoded latent tensor.
 
         """
@@ -229,5 +229,5 @@ class DCEncoder(Encoder):
                 x = block(x)
         return x
 
-    def __call__(self, batch: Batch) -> TensorBTSPlusC:
+    def __call__(self, batch: Batch) -> TensorBTSC:
         return self.encode(batch)

@@ -1,4 +1,4 @@
-from typing import Any, Self
+from typing import Any
 
 import lightning as L
 import torch
@@ -6,7 +6,7 @@ from torch import nn
 
 from auto_cast.decoders import Decoder
 from auto_cast.encoders import Encoder
-from auto_cast.types import Batch, Tensor, TensorBMStarL, TensorBTSPlusC
+from auto_cast.types import Batch, Tensor, TensorBNC, TensorBTSC
 
 
 class EncoderDecoder(L.LightningModule):
@@ -17,27 +17,22 @@ class EncoderDecoder(L.LightningModule):
     loss_func: nn.Module | None
     learning_rate: float = 1e-3
 
-    def __init__(self):
-        super().__init__()
-
-    @classmethod
-    def from_encoder_decoder(
-        cls,
+    def __init__(
+        self,
         encoder: Encoder,
         decoder: Decoder,
         loss_func: nn.Module | None = None,
         **kwargs: Any,
-    ) -> Self:
-        instance = cls(**kwargs)
-        instance.encoder = encoder
-        instance.decoder = decoder
-        instance.loss_func = loss_func
-        return instance
+    ):
+        super().__init__()
+        self.encoder = encoder
+        self.decoder = decoder
+        self.loss_func = loss_func
 
-    def forward(self, batch: Batch) -> TensorBTSPlusC:
+    def forward(self, batch: Batch) -> TensorBTSC:
         return self.decoder(self.encoder(batch))
 
-    def forward_with_latent(self, batch: Batch) -> tuple[TensorBTSPlusC, TensorBMStarL]:
+    def forward_with_latent(self, batch: Batch) -> tuple[TensorBTSC, TensorBNC]:
         encoded = self.encode(batch)
         decoded = self.decode(encoded)
         return decoded, encoded
@@ -65,13 +60,13 @@ class EncoderDecoder(L.LightningModule):
         )
         return loss
 
-    def predict_step(self, batch: Batch, batch_idx: int) -> TensorBTSPlusC:  # noqa: ARG002
+    def predict_step(self, batch: Batch, batch_idx: int) -> TensorBTSC:  # noqa: ARG002
         return self(batch)
 
-    def encode(self, batch: Batch) -> TensorBMStarL:
+    def encode(self, batch: Batch) -> TensorBNC:
         return self.encoder.encode(batch)
 
-    def decode(self, z: TensorBMStarL) -> TensorBTSPlusC:
+    def decode(self, z: TensorBNC) -> TensorBTSC:
         return self.decoder.decode(z)
 
     def configure_optimizers(self):

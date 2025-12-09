@@ -1,13 +1,12 @@
-
 import itertools
 
 import lightning as L
 import pytest
 import torch
+from azula.noise import VPSchedule
 from torch.utils.data import DataLoader, Dataset
 
-from azula.noise import VPSchedule
-
+from auto_cast.models.processor import ProcessorModel
 from auto_cast.nn.unet import TemporalUNetBackbone
 from auto_cast.processors.diffusion import DiffusionProcessor
 from auto_cast.types import EncodedBatch
@@ -88,15 +87,27 @@ params = list(
         [1, 4],  # n_steps_input
         [1, 2],  # n_channels_in
         [1, 4],  # n_channels_out
+        ["cpu", "mps"] if torch.backends.mps.is_available() else ["cpu"],  # accelerator
     )
 )
 
+
 @pytest.mark.parametrize(
-    ("n_steps_output", "n_steps_input", "n_channels_in", "n_channels_out"),
+    (
+        "n_steps_output",
+        "n_steps_input",
+        "n_channels_in",
+        "n_channels_out",
+        "accelerator",
+    ),
     params,
 )
 def test_diffusion_processor(
-    n_steps_output: int, n_steps_input: int, n_channels_in: int, n_channels_out: int
+    n_steps_output: int,
+    n_steps_input: int,
+    n_channels_in: int,
+    n_channels_out: int,
+    accelerator: str,
 ):
     encoded_loader = _build_encoded_loader(
         n_steps_input=n_steps_input,
@@ -106,7 +117,7 @@ def test_diffusion_processor(
     )
     encoded_batch = next(iter(encoded_loader))
 
-    model = DiffusionProcessor(
+    processor = DiffusionProcessor(
         backbone=TemporalUNetBackbone(
             in_channels=n_channels_out * n_steps_output,
             out_channels=n_channels_out * n_steps_output,
@@ -121,7 +132,7 @@ def test_diffusion_processor(
         n_steps_output=n_steps_output,
         n_channels_out=n_channels_out,
     )
-
+    model = ProcessorModel(processor=processor, sampler_steps=5)
     output = model.map(encoded_batch.encoded_inputs)
     assert output.shape == encoded_batch.encoded_output_fields.shape
 
@@ -135,9 +146,15 @@ def test_diffusion_processor(
         enable_checkpointing=False,
         limit_train_batches=1,
         enable_model_summary=False,
-        accelerator="cpu",
+        accelerator=accelerator,
     ).fit(
         model,
         train_dataloaders=encoded_loader,
         val_dataloaders=encoded_loader,
     )
+
+    # Testing map
+    with torch.no_grad():
+        model.eval()
+        output = model.map(encoded_batch.encoded_inputs)
+        assert output.shape == encoded_batch.encoded_output_fields.shape
