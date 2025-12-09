@@ -7,7 +7,7 @@ from torch import nn
 
 from auto_cast.processors.base import Processor
 from auto_cast.processors.rollout import RolloutMixin
-from auto_cast.types import EncodedBatch, Tensor, TensorBMStarL
+from auto_cast.types import EncodedBatch, Tensor, TensorBNC
 
 
 class ProcessorModel(RolloutMixin[EncodedBatch], ABC, L.LightningModule):
@@ -41,7 +41,7 @@ class ProcessorModel(RolloutMixin[EncodedBatch], ABC, L.LightningModule):
         for key, value in kwargs.items():
             setattr(self, key, value)
 
-    def forward(self, x: TensorBMStarL) -> TensorBMStarL:
+    def forward(self, x: TensorBNC) -> TensorBNC:
         return self.processor.map(x)
 
     def training_step(self, batch: EncodedBatch, batch_idx: int) -> Tensor:  # noqa: ARG002

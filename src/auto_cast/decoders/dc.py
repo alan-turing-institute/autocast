@@ -10,7 +10,7 @@ from torch import nn
 from auto_cast.decoders.base import Decoder
 from auto_cast.nn import ResBlock
 from auto_cast.nn.dc_utils import build_sample_block
-from auto_cast.types import TensorBCTS, TensorBTSC
+from auto_cast.types import TensorBNC, TensorBTSC
 
 
 class DCDecoder(Decoder):
@@ -173,17 +173,17 @@ class DCDecoder(Decoder):
     def postprocess(self, decoded: TensorBTSC) -> TensorBTSC:
         return rearrange(decoded, "B C ... -> B ... C")
 
-    def forward(self, z: TensorBCTS) -> TensorBTSC:
+    def forward(self, z: TensorBNC) -> TensorBTSC:
         """Forward pass through decoder (for direct tensor input).
 
         Parameters
         ----------
-        z: TensorBCTSPlus
+        z: TensorBNC
             Latent tensor with shape (B, C_i, L_1, ..., L_N).
 
         Returns
         -------
-        TensorBTSPlusC
+        TensorBTSC
             Decoded tensor with shape (B, L_1 x 2^D, ..., L_N x 2^D, C_o).
 
         """

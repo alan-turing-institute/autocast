@@ -1,7 +1,7 @@
 import torch
 
 from auto_cast.metrics.base import Metric
-from auto_cast.types import TensorBCTSPlus, TensorBTC
+from auto_cast.types import TensorBCTS, TensorBTC
 
 
 class MSE(Metric):
@@ -9,7 +9,7 @@ class MSE(Metric):
 
     @staticmethod
     def score(
-        y_pred: TensorBCTSPlus, y_true: TensorBCTSPlus, n_spatial_dims: int, **kwargs
+        y_pred: TensorBCTS, y_true: TensorBCTS, n_spatial_dims: int, **kwargs
     ) -> TensorBTC:
         """
         Compute Mean Squared Error.
@@ -33,7 +33,7 @@ class MAE(Metric):
 
     @staticmethod
     def score(
-        y_pred: TensorBCTSPlus, y_true: TensorBCTSPlus, n_spatial_dims: int, **kwargs
+        y_pred: TensorBCTS, y_true: TensorBCTS, n_spatial_dims: int, **kwargs
     ) -> TensorBTC:
         """
         Compute Mean Absolute Error.
@@ -57,8 +57,8 @@ class NMAE(Metric):
 
     @staticmethod
     def score(
-        y_pred: TensorBCTSPlus,
-        y_true: TensorBCTSPlus,
+        y_pred: TensorBCTS,
+        y_true: TensorBCTS,
         n_spatial_dims: int,
         eps: float = 1e-7,
         **kwargs,
@@ -86,8 +86,8 @@ class NMSE(Metric):
 
     @staticmethod
     def score(
-        y_pred: TensorBCTSPlus,
-        y_true: TensorBCTSPlus,
+        y_pred: TensorBCTS,
+        y_true: TensorBCTS,
         n_spatial_dims: int,
         eps: float = 1e-7,
         norm_mode: str = "norm",
@@ -125,7 +125,7 @@ class RMSE(Metric):
 
     @staticmethod
     def score(
-        y_pred: TensorBCTSPlus, y_true: TensorBCTSPlus, n_spatial_dims: int, **kwargs
+        y_pred: TensorBCTS, y_true: TensorBCTS, n_spatial_dims: int, **kwargs
     ) -> TensorBTC:
         """
         Compute Root Mean Squared Error.
@@ -148,8 +148,8 @@ class NRMSE(Metric):
 
     @staticmethod
     def score(
-        y_pred: TensorBCTSPlus,
-        y_true: TensorBCTSPlus,
+        y_pred: TensorBCTS,
+        y_true: TensorBCTS,
         n_spatial_dims: int,
         eps: float = 1e-7,
         norm_mode: str = "norm",
@@ -182,7 +182,7 @@ class VMSE(Metric):
 
     @staticmethod
     def score(
-        y_pred: TensorBCTSPlus, y_true: TensorBCTSPlus, n_spatial_dims: int, **kwargs
+        y_pred: TensorBCTS, y_true: TensorBCTS, n_spatial_dims: int, **kwargs
     ) -> TensorBTC:
         """
         Compute Variance Scaled Mean Squared Error.
@@ -205,7 +205,7 @@ class VRMSE(Metric):
 
     @staticmethod
     def score(
-        y_pred: TensorBCTSPlus, y_true: TensorBCTSPlus, n_spatial_dims: int, **kwargs
+        y_pred: TensorBCTS, y_true: TensorBCTS, n_spatial_dims: int, **kwargs
     ) -> TensorBTC:
         """
         Compute Root Variance Scaled Mean Squared Error.
@@ -228,7 +228,7 @@ class LInfinity(Metric):
 
     @staticmethod
     def score(
-        y_pred: TensorBCTSPlus, y_true: TensorBCTSPlus, n_spatial_dims: int, **kwargs
+        y_pred: TensorBCTS, y_true: TensorBCTS, n_spatial_dims: int, **kwargs
     ) -> TensorBTC:
         """
         Compute L-Infinity Norm.

@@ -2,7 +2,7 @@ import numpy as np
 import torch
 from torch import nn
 
-from auto_cast.types import TensorBCTSPlus
+from auto_cast.types import TensorBCTS
 
 
 class Metric(nn.Module):
@@ -51,7 +51,5 @@ class Metric(nn.Module):
         return self.score(y_pred, y_true, n_spatial_dims, **kwargs)
 
     @staticmethod
-    def score(
-        y_pred: TensorBCTSPlus, y_true: TensorBCTSPlus, n_spatial_dims: int, **kwargs
-    ):
+    def score(y_pred: TensorBCTS, y_true: TensorBCTS, n_spatial_dims: int, **kwargs):
         raise NotImplementedError

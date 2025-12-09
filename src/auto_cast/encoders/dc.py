@@ -213,12 +213,12 @@ class DCEncoder(Encoder):
 
         Parameters
         ----------
-        x: TensorBTSPlusC
+        x: TensorBTSC
             Input tensor with shape (B, T, spatial..., C_i).
 
         Returns
         -------
-        TensorBTSPlusC
+        TensorBTSC
             Encoded latent tensor.
 
         """
