@@ -129,13 +129,10 @@ def test_diffusion_processor(
             periodic=False,
         ),
         schedule=VPSchedule(),
-    )
-    model = ProcessorModel(
-        processor=processor,
         n_steps_output=n_steps_output,
         n_channels_out=n_channels_out,
-        sampler_steps=5,
     )
+    model = ProcessorModel(processor=processor, sampler_steps=5)
     output = model.map(encoded_batch.encoded_inputs)
     assert output.shape == encoded_batch.encoded_output_fields.shape
 

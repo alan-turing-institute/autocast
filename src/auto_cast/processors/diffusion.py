@@ -57,12 +57,6 @@ class DiffusionProcessor(Processor):
         # if we start from zero at every autoregressive step, the model is asked to
         # denoise using t=0, which is a point it has never been trained on.
         # self.inference_t = 1e-5
-        if self.train:
-            msg = (
-                "Direct map not implemented during training. Use training_step instead."
-            )
-            raise NotImplementedError(msg)
-
         sampler = self._get_sampler(self.sampler_steps, dtype=x.dtype, device=x.device)
         B, _, W, H, _ = x.shape
         x_1 = sampler.init(
@@ -71,21 +65,21 @@ class DiffusionProcessor(Processor):
         return sampler(x_1, cond=x)
 
     def forward(self, x: Tensor) -> Tensor:
-        # Training mode: sample random time and denoise
-        if self.train:
-            B, _, W, H, _ = x.shape
+        # # Training mode: sample random time and denoise
+        # if self.train:
+        #     B, _, W, H, _ = x.shape
 
-            # Sample a random time
-            t = torch.rand(B, device=x.device) * 0.999 + 0.001  # Avoid t=0 or t=1
+        #     # Sample a random time
+        #     t = torch.rand(B, device=x.device) * 0.999 + 0.001  # Avoid t=0 or t=1
 
-            # Create noisy input
-            x_noisy = torch.randn(
-                B, self.n_steps_output, W, H, self.n_channels_out, device=x.device
-            )
+        #     # Create noisy input
+        #     x_noisy = torch.randn(
+        #         B, self.n_steps_output, W, H, self.n_channels_out, device=x.device
+        #     )
 
-            # Denoise (this preserves gradients)
-            posterior = self.denoiser(x_noisy, t, cond=x)
-            return posterior.mean
+        #     # Denoise (this preserves gradients)
+        #     posterior = self.denoiser(x_noisy, t, cond=x)
+        #     return posterior.mean
 
         # Evaluation mode: use the map function
         return self.map(x)
@@ -107,19 +101,19 @@ class DiffusionProcessor(Processor):
         t = torch.rand(x_0.size(0), device=x_0.device)  # (B,)
 
         # Cannot use Azula's built-in weighted loss since ligntning calls forward
-        # loss = self.denoiser.loss(x_0, t=t, cond=x_cond)
+        loss = self.denoiser.loss(x_0, t=t, cond=x_cond)
 
-        # Compute weighted loss
-        alpha_t, sigma_t = self.schedule(t)
-        alpha_t = alpha_t.view(-1, 1, 1, 1, 1)  # (B, 1, 1, 1, 1)
-        sigma_t = sigma_t.view(-1, 1, 1, 1, 1)  # (B, 1, 1, 1, 1)
+        # # Compute weighted loss
+        # alpha_t, sigma_t = self.schedule(t)
+        # alpha_t = alpha_t.view(-1, 1, 1, 1, 1)  # (B, 1, 1, 1, 1)
+        # sigma_t = sigma_t.view(-1, 1, 1, 1, 1)  # (B, 1, 1, 1, 1)
 
-        # Call forward in train mode to ensure gradients are tracked
-        x_denoised = self.forward(x_cond)
+        # # Call forward in train mode to ensure gradients are tracked
+        # x_denoised = self.forward(x_cond)
 
-        w_t = (alpha_t / sigma_t) ** 2 + 1
-        w_t = torch.clip(w_t, max=1e4)
-        loss = (w_t * (x_denoised - x_0).square()).mean()
+        # w_t = (alpha_t / sigma_t) ** 2 + 1
+        # w_t = torch.clip(w_t, max=1e4)
+        # loss = (w_t * (x_denoised - x_0).square()).mean()
 
         return loss  # noqa: RET504
 
