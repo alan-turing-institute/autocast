@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 
+from auto_cast.models.processor import ProcessorModel
 from auto_cast.processors.base import Processor
 from auto_cast.types import EncodedBatch, Tensor
 
@@ -24,20 +25,24 @@ def _toy_encoded_batch(
 
 
 class _IdentityProcessor(Processor):
-    def __init__(self, *, stride: int, max_rollout_steps: int) -> None:
+    def __init__(self) -> None:
         super().__init__(
-            stride=stride,
-            max_rollout_steps=max_rollout_steps,
-            teacher_forcing_ratio=0.0,
             loss_func=nn.MSELoss(),
         )
 
     def map(self, x: Tensor) -> Tensor:
         return x
 
+    def loss(self, output: Tensor, target: Tensor) -> Tensor:
+        return self.loss_func(output, target)
+
 
 def test_processor_rollout_handles_encoded_batches():
-    processor = _IdentityProcessor(stride=1, max_rollout_steps=2)
+    processor = ProcessorModel(
+        processor=_IdentityProcessor(),
+        stride=1,
+        max_rollout_steps=2,
+    )
     encoded_batch = _toy_encoded_batch(t_in=2, t_out=2)
 
     preds, gts = processor.rollout(encoded_batch)

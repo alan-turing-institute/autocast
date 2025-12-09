@@ -1,4 +1,4 @@
-from typing import Any, Self
+from typing import Any
 
 import lightning as L
 import torch
@@ -22,6 +22,8 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule):
 
     def __init__(
         self,
+        encoder_decoder: EncoderDecoder,
+        processor: Processor,
         learning_rate: float = 1e-3,
         stride: int = 1,
         teacher_forcing_ratio: float = 0.5,
@@ -30,6 +32,8 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule):
         **kwargs: Any,
     ) -> None:
         super().__init__()
+        self.encoder_decoder = encoder_decoder
+        self.processor = processor
         self.learning_rate = learning_rate
         self.stride = stride
         self.teacher_forcing_ratio = teacher_forcing_ratio
@@ -37,17 +41,6 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule):
         self.loss_func = loss_func or nn.MSELoss()
         for key, value in kwargs.items():
             setattr(self, key, value)
-
-    @classmethod
-    def from_encoder_processor_decoder(
-        cls, encoder_decoder: EncoderDecoder, processor: Processor, **kwargs: Any
-    ) -> Self:
-        instance = cls(**kwargs)
-        instance.encoder_decoder = encoder_decoder
-        instance.processor = processor
-        for key, value in kwargs.items():
-            setattr(instance, key, value)
-        return instance
 
     def __call__(self, batch: Batch) -> TensorBTSPlusC:
         return self.decode(self.processor(self.encode(batch)))

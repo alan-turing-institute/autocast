@@ -1,6 +1,5 @@
 from typing import Any, Protocol, runtime_checkable
 
-import torch
 from neuralop.models import FNO
 from torch import nn
 
@@ -92,5 +91,5 @@ class FNOProcessor(Processor):
     def map(self, x: Tensor) -> Tensor:
         return self(x)
 
-    def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
+    def loss(self, output: Tensor, target: Tensor) -> Tensor:
+        return self.loss_func(output, target)

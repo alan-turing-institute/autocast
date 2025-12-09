@@ -17,12 +17,16 @@ class TinyProcessor(Processor):
             out_channels=in_channels,
             kernel_size=1,
         )
+        self.loss_func = nn.MSELoss()
 
     def forward(self, x: Tensor) -> Tensor:
         return self.conv(x)
 
     def map(self, x: Tensor) -> Tensor:
         return self(x)
+
+    def loss(self, output: Tensor, target: Tensor) -> Tensor:
+        return self.loss_func(output, target)
 
 
 def test_encoder_processor_decoder_training_step_runs(make_toy_batch, dummy_loader):
@@ -40,7 +44,7 @@ def test_encoder_processor_decoder_training_step_runs(make_toy_batch, dummy_load
     )
 
     processor = TinyProcessor(in_channels=merged_channels)
-    model = EncoderProcessorDecoder.from_encoder_processor_decoder(
+    model = EncoderProcessorDecoder(
         encoder_decoder=encoder_decoder,
         processor=processor,
         loss_func=loss,
@@ -73,7 +77,7 @@ def test_encoder_processor_decoder_rollout_is_mixin_backed(make_toy_batch):
         encoder=encoder, decoder=decoder, loss_func=loss
     )
     processor = TinyProcessor(in_channels=merged_channels)
-    model = EncoderProcessorDecoder.from_encoder_processor_decoder(
+    model = EncoderProcessorDecoder(
         encoder_decoder=encoder_decoder,
         processor=processor,
         loss_func=loss,
