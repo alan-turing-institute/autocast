@@ -117,10 +117,20 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule):
 
     def _advance_batch(self, batch: Batch, next_inputs: Tensor, stride: int) -> Batch:
         """Shift the input/output windows forward by `stride` using `next_inputs`."""
-        next_inputs = torch.cat(
-            [batch.input_fields[:, stride:, ...], next_inputs[:, :stride, ...]],
-            dim=1,
-        )
+        # Get the original number of input time steps to maintain consistency
+        n_steps_input = batch.input_fields.shape[1]
+
+        # Concatenate remaining inputs with new predictions
+        remaining_inputs = batch.input_fields[:, stride:, ...]
+        new_predictions = next_inputs[:, :stride, ...]
+
+        if remaining_inputs.shape[1] == 0:
+            # No remaining inputs, use most recent n_steps_input from predictions
+            combined = new_predictions[:, -n_steps_input:, ...]
+        else:
+            combined = torch.cat([remaining_inputs, new_predictions], dim=1)
+            # Keep only the most recent n_steps_input time steps
+            combined = combined[:, -n_steps_input:, ...]
 
         next_outputs = (
             batch.output_fields[:, stride:, ...]
@@ -129,7 +139,7 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule):
         )
 
         return Batch(
-            input_fields=next_inputs,
+            input_fields=combined,
             output_fields=next_outputs,
             constant_scalars=batch.constant_scalars,
             constant_fields=batch.constant_fields,
@@ -165,8 +175,17 @@ class EPDTrainProcessor(EncoderProcessorDecoder):
 
     def training_step(self, batch: Batch, batch_idx: int) -> Tensor:  # noqa: ARG002
         encoded_batch = self.encoder_decoder.encoder.encode_batch(batch)
+        # TODO: ensure no grads propagate through encoder_decoder
         loss = self.processor.loss(encoded_batch)
         self.log(
             "train_loss", loss, prog_bar=True, batch_size=batch.input_fields.shape[0]
+        )
+        return loss
+
+    def validation_step(self, batch, batch_idx: int):  # noqa: ARG002
+        encoded_batch = self.encoder_decoder.encoder.encode_batch(batch)
+        loss = self.processor.loss(encoded_batch)
+        self.log(
+            "valid_loss", loss, prog_bar=True, batch_size=batch.input_fields.shape[0]
         )
         return loss

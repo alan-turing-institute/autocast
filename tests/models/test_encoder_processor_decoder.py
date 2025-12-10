@@ -68,6 +68,7 @@ def test_encoder_processor_decoder_training_step_runs(make_toy_batch, dummy_load
 @pytest.mark.parametrize(
     ("n_steps_input", "n_steps_output", "stride"),
     [
+        (1, 4, 4),  # More output than input (n_steps_output >= n_steps_input)
         (2, 2, 2),  # Equal input/output, stride matches
         (4, 4, 4),  # Larger equal input/output
         (3, 3, 3),  # Odd number of steps

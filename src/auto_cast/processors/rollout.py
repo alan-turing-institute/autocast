@@ -6,7 +6,8 @@ from typing import Generic
 import torch
 from einops import rearrange
 
-from auto_cast.types import BatchT, RolloutOutput, Tensor
+from auto_cast.types import RolloutOutput, Tensor
+from auto_cast.types.batch import BatchT
 
 
 class RolloutMixin(ABC, Generic[BatchT]):
