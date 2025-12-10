@@ -57,10 +57,14 @@ class DiffusionProcessor(Processor):
         # if we start from zero at every autoregressive step, the model is asked to
         # denoise using t=0, which is a point it has never been trained on.
         # self.inference_t = 1e-5
-        sampler = self._get_sampler(self.sampler_steps, dtype=x.dtype, device=x.device)
+        dtype = x.dtype
+        device = x.device
+        sampler = self._get_sampler(self.sampler_steps, dtype=dtype, device=device)
         B, _, W, H, _ = x.shape
         x_1 = sampler.init(
-            (B, self.n_steps_output, W, H, self.n_channels_out)
+            (B, self.n_steps_output, W, H, self.n_channels_out),
+            dtype=dtype,
+            device=device,
         )  # Fully noised
         return sampler(x_1, cond=x)
 
