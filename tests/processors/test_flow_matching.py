@@ -5,10 +5,10 @@ import pytest
 import torch
 from torch.utils.data import DataLoader, Dataset
 
-from auto_cast.models.processor import ProcessorModel
-from auto_cast.nn.unet import TemporalUNetBackbone
-from auto_cast.processors.flow_matching import FlowMatchingProcessor
-from auto_cast.types import EncodedBatch
+from autocast.models.processor import ProcessorModel
+from autocast.nn.unet import TemporalUNetBackbone
+from autocast.processors.flow_matching import FlowMatchingProcessor
+from autocast.types import EncodedBatch
 
 
 def _single_item_collate(items):

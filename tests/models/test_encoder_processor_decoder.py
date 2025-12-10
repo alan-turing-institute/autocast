@@ -2,12 +2,12 @@ import lightning as L
 import pytest
 from torch import nn
 
-from auto_cast.decoders.channels_last import ChannelsLast
-from auto_cast.encoders.permute_concat import PermuteConcat
-from auto_cast.models.encoder_decoder import EncoderDecoder
-from auto_cast.models.encoder_processor_decoder import EncoderProcessorDecoder
-from auto_cast.processors.base import Processor
-from auto_cast.types import EncodedBatch, Tensor
+from autocast.decoders.channels_last import ChannelsLast
+from autocast.encoders.permute_concat import PermuteConcat
+from autocast.models.encoder_decoder import EncoderDecoder
+from autocast.models.encoder_processor_decoder import EncoderProcessorDecoder
+from autocast.processors.base import Processor
+from autocast.types import EncodedBatch, Tensor
 
 
 class TinyProcessor(Processor[EncodedBatch]):

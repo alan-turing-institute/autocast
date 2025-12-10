@@ -1,7 +1,7 @@
 import torch
 from einops import rearrange
 
-from auto_cast.decoders.channels_last import ChannelsLast
+from autocast.decoders.channels_last import ChannelsLast
 
 
 def test_channels_last_reorders_dimensions():

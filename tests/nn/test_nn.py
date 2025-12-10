@@ -3,7 +3,7 @@ import itertools
 import pytest
 import torch
 
-from auto_cast.nn.unet import TemporalUNetBackbone
+from autocast.nn.unet import TemporalUNetBackbone
 
 params = list(
     itertools.product(

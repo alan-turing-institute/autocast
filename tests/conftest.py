@@ -6,7 +6,7 @@ from einops import rearrange
 from torch import Tensor, nn
 from torch.utils.data import DataLoader, Dataset
 
-from auto_cast.types import Batch, EncodedBatch
+from autocast.types import Batch, EncodedBatch
 
 
 def _make_batch(

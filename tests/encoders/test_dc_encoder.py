@@ -5,7 +5,7 @@ from conftest import (
 )
 from torch import rand
 
-from auto_cast.encoders.dc import DCEncoder
+from autocast.encoders.dc import DCEncoder
 
 
 def test_dcencoder_basic_2d():

@@ -1,4 +1,4 @@
-_target_: auto_cast.processors.fno.FNOProcessor
+_target_: autocast.processors.fno.FNOProcessor
 in_channels: null
 out_channels: null
 n_modes: [16, 16]

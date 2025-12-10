@@ -6,10 +6,10 @@ import torch
 from azula.noise import VPSchedule
 from torch.utils.data import DataLoader, Dataset
 
-from auto_cast.models.processor import ProcessorModel
-from auto_cast.nn.unet import TemporalUNetBackbone
-from auto_cast.processors.diffusion import DiffusionProcessor
-from auto_cast.types import EncodedBatch
+from autocast.models.processor import ProcessorModel
+from autocast.nn.unet import TemporalUNetBackbone
+from autocast.processors.diffusion import DiffusionProcessor
+from autocast.types import EncodedBatch
 
 
 def _single_item_collate(items):
