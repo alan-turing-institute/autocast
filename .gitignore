@@ -4,5 +4,8 @@ __pycache__/
 dist/
 .venv/
 *.egg-info/
+exploratory/data
+.DS_Store
 outputs/
+lightning_logs/
 datasets/

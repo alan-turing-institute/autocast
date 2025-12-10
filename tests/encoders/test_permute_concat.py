@@ -1,30 +1,8 @@
 import torch
+from conftest import _make_batch
 from einops import rearrange
 
 from auto_cast.encoders.permute_concat import PermuteConcat
-from auto_cast.types import Batch
-
-
-def _make_batch(
-    batch_size: int = 1,
-    t: int = 1,
-    w: int = 2,
-    h: int = 3,
-    c: int = 2,
-    const_c: int = 1,
-    scalar_c: int = 1,
-) -> Batch:
-    input_fields = torch.arange(batch_size * t * w * h * c, dtype=torch.float32)
-    input_fields = input_fields.view(batch_size, t, w, h, c)
-    output_fields = torch.zeros(batch_size, t, w, h, c)
-    constant_fields = torch.ones(batch_size, w, h, const_c)
-    constant_scalars = torch.full((batch_size, scalar_c), 5.0)
-    return Batch(
-        input_fields=input_fields,
-        output_fields=output_fields,
-        constant_scalars=constant_scalars,
-        constant_fields=constant_fields,
-    )
 
 
 def test_permute_concat_with_constants():

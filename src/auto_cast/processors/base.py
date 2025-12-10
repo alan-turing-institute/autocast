@@ -34,12 +34,13 @@ class Processor(ABC, nn.Module, Generic[BatchT]):
 
     @abstractmethod
     def map(self, x: Tensor) -> Tensor:
-        """Map input window of states/times to output window."""
+        """
+        Map input states to output states.
 
+        Args:
+            x (Tensor): Input tensor of shape (B, T_in, ...)
 
-class DiscreteProcessor(Processor, ABC):
-    """DiscreteProcessor."""
-
-
-class FlowBasedGenerativeProcessor(DiscreteProcessor):
-    """Flow-based generative processor."""
+        Returns
+        -------
+            y (Tensor): Output tensor of shape (B, T_out, ...)
+        """
