@@ -1,10 +1,10 @@
 import torch
 from torch import nn, rand
 
-from auto_cast.decoders.dc import DCDecoder
-from auto_cast.encoders.dc import DCEncoder
-from auto_cast.models.ae import AE, AELoss
-from auto_cast.types import Batch
+from autocast.decoders.dc import DCDecoder
+from autocast.encoders.dc import DCEncoder
+from autocast.models.ae import AE, AELoss
+from autocast.types import Batch
 
 
 def _make_batch(shape: tuple[int, ...], *, requires_grad: bool = False) -> Batch:

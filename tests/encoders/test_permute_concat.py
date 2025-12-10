@@ -2,7 +2,7 @@ import torch
 from conftest import _make_batch
 from einops import rearrange
 
-from auto_cast.encoders.permute_concat import PermuteConcat
+from autocast.encoders.permute_concat import PermuteConcat
 
 
 def test_permute_concat_with_constants():

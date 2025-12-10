@@ -3,12 +3,12 @@ import math
 import torch
 from torch import nn
 
-from auto_cast.decoders.base import Decoder
-from auto_cast.decoders.dc import DCDecoder
-from auto_cast.encoders.base import Encoder
-from auto_cast.encoders.dc import DCEncoder
-from auto_cast.models.vae import VAE, VAELoss
-from auto_cast.types import (
+from autocast.decoders.base import Decoder
+from autocast.decoders.dc import DCDecoder
+from autocast.encoders.base import Encoder
+from autocast.encoders.dc import DCEncoder
+from autocast.models.vae import VAE, VAELoss
+from autocast.types import (
     Batch,
     TensorBNC,
     TensorBSC,

@@ -1,5 +1,5 @@
 [project]
-name = "auto-cast"
+name = "autocast"
 version = "0.0.1"
 description = "Spatiotemporal forecasting"
 readme = "README.md"
@@ -32,10 +32,10 @@ dev = [
 ]
 
 [project.scripts]
-auto-cast = "auto_cast:main"
-train_processor = "auto_cast.train.processor:main"
-train_autoencoder = "auto_cast.train.autoencoder:main"
-evaluate_processor = "auto_cast.eval.processor:main"
+autocast = "autocast:main"
+train_processor = "autocast.train.processor:main"
+train_autoencoder = "autocast.train.autoencoder:main"
+evaluate_processor = "autocast.eval.processor:main"
 
 [build-system]
 requires = ["uv_build>=0.8.15,<0.9.0"]

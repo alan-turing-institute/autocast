@@ -1,8 +1,8 @@
 import pytest
 import torch
 
-from auto_cast.metrics import ALL_METRICS
-from auto_cast.types import TensorBTSC
+from autocast.metrics import ALL_METRICS
+from autocast.types import TensorBTSC
 
 
 @pytest.mark.parametrize("MetricCls", ALL_METRICS)

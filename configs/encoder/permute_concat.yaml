@@ -1,2 +1,2 @@
-_target_: auto_cast.encoders.permute_concat.PermuteConcat
+_target_: autocast.encoders.permute_concat.PermuteConcat
 with_constants: false

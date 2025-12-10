@@ -1,6 +1,6 @@
 learning_rate: 0.001
 encoder:
-  _target_: auto_cast.encoders.dc.DCEncoder
+  _target_: autocast.encoders.dc.DCEncoder
   in_channels: 2
   out_channels: 16
   hid_channels: [32, 64]
@@ -12,7 +12,7 @@ encoder:
   periodic: false
   dropout: null
 decoder:
-  _target_: auto_cast.decoders.dc.DCDecoder
+  _target_: autocast.decoders.dc.DCDecoder
   in_channels: 16
   out_channels: 2
   hid_channels: [64, 32]
@@ -24,7 +24,7 @@ decoder:
   periodic: false
   dropout: null
 loss:
-  _target_: auto_cast.models.ae.AELoss
+  _target_: autocast.models.ae.AELoss
   losses:
     - _target_: torch.nn.MSELoss
   weights: [1.0]

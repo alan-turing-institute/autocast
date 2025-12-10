@@ -1,3 +1,3 @@
-_target_: auto_cast.decoders.channels_last.ChannelsLast
+_target_: autocast.decoders.channels_last.ChannelsLast
 output_channels: null
 time_steps: null

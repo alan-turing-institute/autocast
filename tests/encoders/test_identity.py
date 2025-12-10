@@ -1,7 +1,7 @@
 import torch
 from conftest import _make_batch
 
-from auto_cast.encoders.identity import IdentityEncoder
+from autocast.encoders.identity import IdentityEncoder
 
 
 def test_identity():

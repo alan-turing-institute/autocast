@@ -1,9 +1,9 @@
 import torch
 from torch import nn
 
-from auto_cast.models.processor import ProcessorModel
-from auto_cast.processors.base import Processor
-from auto_cast.types import EncodedBatch, Tensor
+from autocast.models.processor import ProcessorModel
+from autocast.processors.base import Processor
+from autocast.types import EncodedBatch, Tensor
 
 
 def _toy_encoded_batch(
