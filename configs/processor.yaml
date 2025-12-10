@@ -13,7 +13,7 @@ output:
   save_config: true
 
 training:
-  n_steps_input: 1
+  n_steps_input: 4
   n_steps_output: 4
   stride: 4
   autoencoder_checkpoint: null
