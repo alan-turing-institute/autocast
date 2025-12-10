@@ -2,7 +2,7 @@ import numpy as np
 import torch
 from torchmetrics import Metric
 
-from auto_cast.types import TensorBTC, TensorBTSPlusC
+from auto_cast.types import TensorBTC, TensorBTSC
 
 
 class BaseMetric(Metric):
@@ -39,7 +39,7 @@ class BaseMetric(Metric):
         self,
         y_pred: torch.Tensor | np.ndarray,
         y_true: torch.Tensor | np.ndarray,
-    ) -> tuple[TensorBTSPlusC, TensorBTSPlusC]:
+    ) -> tuple[TensorBTSC, TensorBTSC]:
         """
         Check types and shapes and converts inputs to torch.Tensor.
 
@@ -82,8 +82,8 @@ class BaseMetric(Metric):
 
     def score(
         self,
-        y_pred: TensorBTSPlusC,
-        y_true: TensorBTSPlusC,
+        y_pred: TensorBTSC,
+        y_true: TensorBTSC,
     ) -> TensorBTC:
         """
         Compute metric reduced over spatial dims only.
@@ -97,8 +97,8 @@ class BaseMetric(Metric):
 
     def forward(
         self,
-        y_pred: TensorBTSPlusC | np.ndarray,
-        y_true: TensorBTSPlusC | np.ndarray,
+        y_pred: TensorBTSC | np.ndarray,
+        y_true: TensorBTSC | np.ndarray,
     ) -> TensorBTC:
         """
         Functional metric call.
@@ -111,8 +111,8 @@ class BaseMetric(Metric):
 
     def update(
         self,
-        y_pred: TensorBTSPlusC | np.ndarray,
-        y_true: TensorBTSPlusC | np.ndarray,
+        y_pred: TensorBTSC | np.ndarray,
+        y_true: TensorBTSC | np.ndarray,
     ) -> None:
         """
         Update metric state with a batch of predictions and targets.
@@ -170,8 +170,8 @@ class MSE(BaseMetric):
 
     def score(
         self,
-        y_pred: TensorBTSPlusC,
-        y_true: TensorBTSPlusC,
+        y_pred: TensorBTSC,
+        y_true: TensorBTSC,
     ) -> TensorBTC:
         spatial_dims = tuple(range(-self.n_spatial_dims - 1, -1))
         return torch.mean((y_pred - y_true) ** 2, dim=spatial_dims)
@@ -182,8 +182,8 @@ class MAE(BaseMetric):
 
     def score(
         self,
-        y_pred: TensorBTSPlusC,
-        y_true: TensorBTSPlusC,
+        y_pred: TensorBTSC,
+        y_true: TensorBTSC,
     ) -> TensorBTC:
         spatial_dims = tuple(range(-self.n_spatial_dims - 1, -1))
         return torch.mean((y_pred - y_true).abs(), dim=spatial_dims)
@@ -208,8 +208,8 @@ class NMAE(BaseMetric):
 
     def score(
         self,
-        y_pred: TensorBTSPlusC,
-        y_true: TensorBTSPlusC,
+        y_pred: TensorBTSC,
+        y_true: TensorBTSC,
     ) -> TensorBTC:
         spatial_dims = tuple(range(-self.n_spatial_dims - 1, -1))
         norm = torch.mean(torch.abs(y_true), dim=spatial_dims)
@@ -235,8 +235,8 @@ class NMSE(BaseMetric):
 
     def score(
         self,
-        y_pred: TensorBTSPlusC,
-        y_true: TensorBTSPlusC,
+        y_pred: TensorBTSC,
+        y_true: TensorBTSC,
     ) -> TensorBTC:
         spatial_dims = tuple(range(-self.n_spatial_dims - 1, -1))
         norm = torch.mean(y_true**2, dim=spatial_dims)
@@ -248,8 +248,8 @@ class RMSE(BaseMetric):
 
     def score(
         self,
-        y_pred: TensorBTSPlusC,
-        y_true: TensorBTSPlusC,
+        y_pred: TensorBTSC,
+        y_true: TensorBTSC,
     ) -> TensorBTC:
         spatial_dims = tuple(range(-self.n_spatial_dims - 1, -1))
         return torch.sqrt(torch.mean((y_pred - y_true) ** 2, dim=spatial_dims))
@@ -274,8 +274,8 @@ class NRMSE(BaseMetric):
 
     def score(
         self,
-        y_pred: TensorBTSPlusC,
-        y_true: TensorBTSPlusC,
+        y_pred: TensorBTSC,
+        y_true: TensorBTSC,
     ) -> TensorBTC:
         spatial_dims = tuple(range(-self.n_spatial_dims - 1, -1))
         norm = torch.mean(y_true**2, dim=spatial_dims)
@@ -303,8 +303,8 @@ class VMSE(BaseMetric):
 
     def score(
         self,
-        y_pred: TensorBTSPlusC,
-        y_true: TensorBTSPlusC,
+        y_pred: TensorBTSC,
+        y_true: TensorBTSC,
     ) -> TensorBTC:
         spatial_dims = tuple(range(-self.n_spatial_dims - 1, -1))
         norm_var = torch.std(y_true, dim=spatial_dims) ** 2
@@ -335,8 +335,8 @@ class VRMSE(BaseMetric):
 
     def score(
         self,
-        y_pred: TensorBTSPlusC,
-        y_true: TensorBTSPlusC,
+        y_pred: TensorBTSC,
+        y_true: TensorBTSC,
     ) -> TensorBTC:
         spatial_dims = tuple(range(-self.n_spatial_dims - 1, -1))
 
@@ -352,8 +352,8 @@ class LInfinity(BaseMetric):
 
     def score(
         self,
-        y_pred: TensorBTSPlusC,
-        y_true: TensorBTSPlusC,
+        y_pred: TensorBTSC,
+        y_true: TensorBTSC,
     ) -> TensorBTC:
         spatial_dims = tuple(range(-self.n_spatial_dims - 1, -1))
         return torch.max(

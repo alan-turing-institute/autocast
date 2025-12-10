@@ -7,7 +7,7 @@ from torch import nn
 
 from auto_cast.processors.base import Processor
 from auto_cast.processors.rollout import RolloutMixin
-from auto_cast.types import EncodedBatch, Tensor, TensorBMStarL
+from auto_cast.types import EncodedBatch, Tensor, TensorBNC
 
 
 class ProcessorModel(RolloutMixin[EncodedBatch], ABC, L.LightningModule):
@@ -41,7 +41,7 @@ class ProcessorModel(RolloutMixin[EncodedBatch], ABC, L.LightningModule):
         for key, value in kwargs.items():
             setattr(self, key, value)
 
-    def forward(self, x: TensorBMStarL) -> TensorBMStarL:
+    def forward(self, x: TensorBNC) -> TensorBNC:
         return self.processor.map(x)
 
     def training_step(self, batch: EncodedBatch, batch_idx: int) -> Tensor:  # noqa: ARG002
@@ -91,17 +91,28 @@ class ProcessorModel(RolloutMixin[EncodedBatch], ABC, L.LightningModule):
     def _advance_batch(
         self, batch: EncodedBatch, next_inputs: Tensor, stride: int
     ) -> EncodedBatch:
-        next_inputs = torch.cat(
-            [batch.encoded_inputs[:, stride:, ...], next_inputs[:, :stride, ...]],
-            dim=1,
-        )
+        # Get the original number of input time steps to maintain consistency
+        n_steps_input = batch.encoded_inputs.shape[1]
+
+        # Concatenate remaining inputs with new predictions
+        remaining_inputs = batch.encoded_inputs[:, stride:, ...]
+        new_predictions = next_inputs[:, :stride, ...]
+
+        if remaining_inputs.shape[1] == 0:
+            # No remaining inputs, use most recent n_steps_input from predictions
+            combined = new_predictions[:, -n_steps_input:, ...]
+        else:
+            combined = torch.cat([remaining_inputs, new_predictions], dim=1)
+            # Keep only the most recent n_steps_input time steps
+            combined = combined[:, -n_steps_input:, ...]
+
         next_outputs = (
             batch.encoded_output_fields[:, stride:, ...]
             if batch.encoded_output_fields.shape[1] > stride
             else batch.encoded_output_fields[:, 0:0, ...]
         )
         return EncodedBatch(
-            encoded_inputs=next_inputs,
+            encoded_inputs=combined,
             encoded_output_fields=next_outputs,
             encoded_info=batch.encoded_info,
         )

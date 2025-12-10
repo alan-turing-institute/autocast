@@ -1,8 +1,9 @@
 from abc import ABC, abstractmethod
+from dataclasses import replace
 
 from torch import nn
 
-from auto_cast.types import Batch, EncodedBatch, TensorBMStarL
+from auto_cast.types import Batch, EncodedBatch, TensorBNC
 
 
 class Encoder(nn.Module, ABC):
@@ -20,7 +21,7 @@ class Encoder(nn.Module, ABC):
         return batch
 
     @abstractmethod
-    def encode(self, batch: Batch) -> TensorBMStarL:
+    def encode(self, batch: Batch) -> TensorBNC:
         """Encode the input tensor into the latent space.
 
         Parameters
@@ -30,7 +31,7 @@ class Encoder(nn.Module, ABC):
 
         Returns
         -------
-        TensorBMStarL
+        TensorBNC
             Encoded tensor in the latent space with shape (B, *, C_latent).
         """
 
@@ -54,11 +55,13 @@ class Encoder(nn.Module, ABC):
         EncodedBatch
             Encoded batch containing encoded inputs and original output fields.
         """
-        encoded_inputs = self.encode(self.preprocess(batch))
+        encoded_inputs = self.encode(batch)
 
         # Assign output fields to inputs to be encoded identically in this default impl
-        batch.input_fields = batch.output_fields
-        encoded_outputs = self.encode(self.preprocess(batch))
+        # Create a new batch with output fields as input fields to prevent mutation
+        output_batch = replace(batch, input_fields=batch.output_fields)
+
+        encoded_outputs = self.encode(output_batch)
 
         # Return encoded batch
         return EncodedBatch(
@@ -67,5 +70,5 @@ class Encoder(nn.Module, ABC):
             encoded_info=encoded_info or {},
         )
 
-    def __call__(self, batch: Batch) -> TensorBMStarL:
+    def __call__(self, batch: Batch) -> TensorBNC:
         return self.encode(batch)
