@@ -339,10 +339,7 @@ def main() -> None:
         cfg.decoder,
         training_params.autoencoder_checkpoint,
     )
-    encoder_decoder = EncoderDecoder.from_encoder_decoder(
-        encoder=encoder,
-        decoder=decoder,
-    )
+    encoder_decoder = EncoderDecoder(encoder=encoder, decoder=decoder)
 
     if training_params.freeze_autoencoder and training_params.autoencoder_checkpoint:
         log.info("Freezing encoder and decoder parameters.")
@@ -356,7 +353,7 @@ def main() -> None:
     loss_cfg = epd_cfg.get("loss_func") if epd_cfg is not None else None
     loss_func = instantiate(loss_cfg) if loss_cfg is not None else nn.MSELoss()
 
-    model = EncoderProcessorDecoder.from_encoder_processor_decoder(
+    model = EncoderProcessorDecoder(
         encoder_decoder=encoder_decoder,
         processor=processor,
         learning_rate=learning_rate,
