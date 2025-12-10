@@ -8,6 +8,7 @@ class IdentityEncoder(Encoder):
 
     def __init__(self) -> None:
         super().__init__()
+
     def forward(self, batch: Batch) -> Tensor:
         return batch.input_fields
 

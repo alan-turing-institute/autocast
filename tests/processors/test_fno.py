@@ -1,7 +1,7 @@
 import lightning as L
-from auto_cast.processors.fno import FNOProcessor
 
 from auto_cast.models.processor import ProcessorModel
+from auto_cast.processors.fno import FNOProcessor
 
 
 def test_fno_processor(encoded_batch, encoded_dummy_loader):
