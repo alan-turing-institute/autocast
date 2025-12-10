@@ -31,6 +31,7 @@ class DiffusionProcessor(Processor):
         n_steps_output: int = 4,
         n_channels_out: int = 1,
         sampler_steps: int = 50,
+        sampler: str = "euler",
     ):
         super().__init__()
         self.teacher_forcing_ratio = teacher_forcing_ratio
@@ -40,6 +41,7 @@ class DiffusionProcessor(Processor):
         self.n_steps_output = n_steps_output
         self.n_channels_out = n_channels_out
         self.sampler_steps = sampler_steps
+        self.sampler = sampler
 
         # Create Azula denoiser with chosen preconditioning
         if denoiser_type == "simple":
@@ -54,13 +56,15 @@ class DiffusionProcessor(Processor):
 
     def map(self, x: Tensor) -> Tensor:
         """Map input window of states/times to output window using denoiser."""
-        # if we start from zero at every autoregressive step, the model is asked to
-        # denoise using t=0, which is a point it has never been trained on.
-        # self.inference_t = 1e-5
         dtype = x.dtype
         device = x.device
         sampler = self._get_sampler(self.sampler_steps, dtype=dtype, device=device)
         B, _, W, H, _ = x.shape
+
+        # if we start from zero at every autoregressive step, the model is asked to
+        # denoise using t=0, which is a point it has never been trained on.
+        # self.inference_t = 1e-5
+        # using azula sampler init to create noise at t=1
         x_1 = sampler.init(
             (B, self.n_steps_output, W, H, self.n_channels_out),
             dtype=dtype,
@@ -69,23 +73,6 @@ class DiffusionProcessor(Processor):
         return sampler(x_1, cond=x)
 
     def forward(self, x: Tensor) -> Tensor:
-        # # Training mode: sample random time and denoise
-        # if self.train:
-        #     B, _, W, H, _ = x.shape
-
-        #     # Sample a random time
-        #     t = torch.rand(B, device=x.device) * 0.999 + 0.001  # Avoid t=0 or t=1
-
-        #     # Create noisy input
-        #     x_noisy = torch.randn(
-        #         B, self.n_steps_output, W, H, self.n_channels_out, device=x.device
-        #     )
-
-        #     # Denoise (this preserves gradients)
-        #     posterior = self.denoiser(x_noisy, t, cond=x)
-        #     return posterior.mean
-
-        # Evaluation mode: use the map function
         return self.map(x)
 
     def _denoise(self, x: Tensor, t: Tensor, cond: Tensor) -> Tensor:
@@ -107,6 +94,7 @@ class DiffusionProcessor(Processor):
         # Cannot use Azula's built-in weighted loss since ligntning calls forward
         loss = self.denoiser.loss(x_0, t=t, cond=x_cond)
 
+        # TODO: consider an API for looking at alternative losses
         # # Compute weighted loss
         # alpha_t, sigma_t = self.schedule(t)
         # alpha_t = alpha_t.view(-1, 1, 1, 1, 1)  # (B, 1, 1, 1, 1)
@@ -124,11 +112,11 @@ class DiffusionProcessor(Processor):
     def _get_sampler(
         self,
         num_steps: int = 100,
-        sampler: str = "euler",
         eta: float = 0.0,
         silent: bool = True,
         **sampler_kwargs,
     ) -> Sampler:
+        sampler = self.sampler
         # Create appropriate Azula sampler
         if sampler == "euler":
             azula_sampler = EulerSampler(
