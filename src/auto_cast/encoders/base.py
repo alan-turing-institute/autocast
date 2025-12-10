@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from dataclasses import replace
 
 from torch import nn
 
@@ -54,11 +55,13 @@ class Encoder(nn.Module, ABC):
         EncodedBatch
             Encoded batch containing encoded inputs and original output fields.
         """
-        encoded_inputs = self.encode(self.preprocess(batch))
+        encoded_inputs = self.encode(batch)
 
         # Assign output fields to inputs to be encoded identically in this default impl
-        batch.input_fields = batch.output_fields
-        encoded_outputs = self.encode(self.preprocess(batch))
+        # Create a new batch with output fields as input fields to prevent mutation
+        output_batch = replace(batch, input_fields=batch.output_fields)
+
+        encoded_outputs = self.encode(output_batch)
 
         # Return encoded batch
         return EncodedBatch(
