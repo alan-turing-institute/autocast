@@ -434,6 +434,7 @@ def _render_rollouts(
                 batch_idx=sample_index,
                 fps=fps,
                 save_path=str(filename),
+                colorbar_mode="column",
             )
             saved_paths.append(filename)
             rendered_batches.add(batch_idx)
