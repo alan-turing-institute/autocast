@@ -10,10 +10,9 @@ def test_spatiotemporal_metrics(MetricCls):
     # shape. (B, T, S1, S2, C) with n_spatial_dims = 2
     y_pred: TensorBTSC = torch.ones((2, 3, 4, 4, 5))
     y_true: TensorBTSC = torch.ones((2, 3, 4, 4, 5))
-    n_spatial_dims = 2
 
     # instantiate the metric with n_spatial_dims
-    metric = MetricCls(n_spatial_dims=n_spatial_dims)
+    metric = MetricCls()
 
     # score computes the metric over the spatial dims, returning (B, T, C)
     error = metric.score(y_pred, y_true)
@@ -27,7 +26,7 @@ def test_spatiotemporal_metrics_stateful(MetricCls):
     y_pred = torch.ones((2, 3, 4, 4, 5))
     y_true = torch.ones((2, 3, 4, 4, 5))
 
-    metric = MetricCls(n_spatial_dims=2)
+    metric = MetricCls()
     metric.update(y_pred, y_true)
     value = metric.compute()
 

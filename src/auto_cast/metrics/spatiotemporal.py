@@ -12,20 +12,17 @@ class BaseMetric(Metric):
     Checks input types and shapes and converts to torch.Tensor.
 
     Args:
-        n_spatial_dims: Number of spatial dimensions
         reduce_all: If True, return scalar by averaging over all non-batch dims
         dist_sync_on_step: Synchronize metric state across processes at each forward()
     """
 
     def __init__(
         self,
-        n_spatial_dims: int = 2,
         reduce_all: bool = True,
         dist_sync_on_step: bool = False,
     ):
         super().__init__(dist_sync_on_step=dist_sync_on_step)
 
-        self.n_spatial_dims = n_spatial_dims
         self.reduce_all = reduce_all
 
         # States shared by all derived metrics
@@ -63,19 +60,14 @@ class BaseMetric(Metric):
             f"y_true must be a torch.Tensor or np.ndarray, got {type(y_true)}"
         )
 
-        min_dims = self.n_spatial_dims + 3  # B, T, *S, C
-        assert y_pred.ndim >= min_dims, (
-            f"y_pred must have at least {min_dims} dimensions "
-            f"(B, T, {self.n_spatial_dims} spatial dims, C), got {y_pred.ndim}"
-        )
-        assert y_true.ndim >= min_dims, (
-            f"y_true must have at least {min_dims} dimensions "
-            f"(B, T, {self.n_spatial_dims} spatial dims, C), got {y_true.ndim}"
-        )
-
         assert y_pred.shape == y_true.shape, (
             f"y_pred and y_true must have the same shape, "
             f"got {y_pred.shape} and {y_true.shape}"
+        )
+
+        assert y_pred.ndim >= 4, (
+            f"y_pred has {y_pred.ndim} dimensions, should be at least 4, "
+            f"following the pattern(B, T, *S, C)"
         )
 
         return y_pred, y_true
@@ -155,6 +147,10 @@ class BaseMetric(Metric):
         super().reset()
         self._initialized = False
 
+    def _infer_n_spatial_dims(self, tensor: TensorBTSC) -> int:
+        """Infer number of spatial dimensions from tensor shape."""
+        return tensor.ndim - 3  # Subtract B, T, C
+
 
 class MSE(BaseMetric):
     """Mean Squared Error over spatial dims."""
@@ -164,6 +160,7 @@ class MSE(BaseMetric):
         y_pred: TensorBTSC,
         y_true: TensorBTSC,
     ) -> TensorBTC:
+        self.n_spatial_dims = self._infer_n_spatial_dims(y_pred)
         spatial_dims = tuple(range(-self.n_spatial_dims - 1, -1))
         return torch.mean((y_pred - y_true) ** 2, dim=spatial_dims)
 
@@ -176,6 +173,7 @@ class MAE(BaseMetric):
         y_pred: TensorBTSC,
         y_true: TensorBTSC,
     ) -> TensorBTC:
+        self.n_spatial_dims = self._infer_n_spatial_dims(y_pred)
         spatial_dims = tuple(range(-self.n_spatial_dims - 1, -1))
         return torch.mean((y_pred - y_true).abs(), dim=spatial_dims)
 
@@ -185,13 +183,11 @@ class NMAE(BaseMetric):
 
     def __init__(
         self,
-        n_spatial_dims: int = 2,
         reduce_all: bool = True,
         dist_sync_on_step: bool = False,
         eps: float = 1e-7,
     ):
         super().__init__(
-            n_spatial_dims=n_spatial_dims,
             reduce_all=reduce_all,
             dist_sync_on_step=dist_sync_on_step,
         )
@@ -202,6 +198,7 @@ class NMAE(BaseMetric):
         y_pred: TensorBTSC,
         y_true: TensorBTSC,
     ) -> TensorBTC:
+        self.n_spatial_dims = self._infer_n_spatial_dims(y_pred)
         spatial_dims = tuple(range(-self.n_spatial_dims - 1, -1))
         norm = torch.mean(torch.abs(y_true), dim=spatial_dims)
         return torch.mean((y_pred - y_true).abs(), dim=spatial_dims) / (norm + self.eps)
@@ -212,13 +209,11 @@ class NMSE(BaseMetric):
 
     def __init__(
         self,
-        n_spatial_dims: int = 2,
         reduce_all: bool = True,
         dist_sync_on_step: bool = False,
         eps: float = 1e-7,
     ):
         super().__init__(
-            n_spatial_dims=n_spatial_dims,
             reduce_all=reduce_all,
             dist_sync_on_step=dist_sync_on_step,
         )
@@ -229,6 +224,7 @@ class NMSE(BaseMetric):
         y_pred: TensorBTSC,
         y_true: TensorBTSC,
     ) -> TensorBTC:
+        self.n_spatial_dims = self._infer_n_spatial_dims(y_pred)
         spatial_dims = tuple(range(-self.n_spatial_dims - 1, -1))
         norm = torch.mean(y_true**2, dim=spatial_dims)
         return torch.mean((y_pred - y_true) ** 2, dim=spatial_dims) / (norm + self.eps)
@@ -242,6 +238,7 @@ class RMSE(BaseMetric):
         y_pred: TensorBTSC,
         y_true: TensorBTSC,
     ) -> TensorBTC:
+        self.n_spatial_dims = self._infer_n_spatial_dims(y_pred)
         spatial_dims = tuple(range(-self.n_spatial_dims - 1, -1))
         return torch.sqrt(torch.mean((y_pred - y_true) ** 2, dim=spatial_dims))
 
@@ -251,13 +248,11 @@ class NRMSE(BaseMetric):
 
     def __init__(
         self,
-        n_spatial_dims: int = 2,
         eps: float = 1e-7,
         reduce_all: bool = True,
         dist_sync_on_step: bool = False,
     ):
         super().__init__(
-            n_spatial_dims=n_spatial_dims,
             reduce_all=reduce_all,
             dist_sync_on_step=dist_sync_on_step,
         )
@@ -268,6 +263,7 @@ class NRMSE(BaseMetric):
         y_pred: TensorBTSC,
         y_true: TensorBTSC,
     ) -> TensorBTC:
+        self.n_spatial_dims = self._infer_n_spatial_dims(y_pred)
         spatial_dims = tuple(range(-self.n_spatial_dims - 1, -1))
         norm = torch.mean(y_true**2, dim=spatial_dims)
         return torch.sqrt(
@@ -280,13 +276,11 @@ class VMSE(BaseMetric):
 
     def __init__(
         self,
-        n_spatial_dims: int = 2,
         eps: float = 1e-7,
         reduce_all: bool = True,
         dist_sync_on_step: bool = False,
     ):
         super().__init__(
-            n_spatial_dims=n_spatial_dims,
             reduce_all=reduce_all,
             dist_sync_on_step=dist_sync_on_step,
         )
@@ -297,6 +291,7 @@ class VMSE(BaseMetric):
         y_pred: TensorBTSC,
         y_true: TensorBTSC,
     ) -> TensorBTC:
+        self.n_spatial_dims = self._infer_n_spatial_dims(y_pred)
         spatial_dims = tuple(range(-self.n_spatial_dims - 1, -1))
         norm_var = torch.std(y_true, dim=spatial_dims) ** 2
         return torch.mean((y_pred - y_true) ** 2, dim=spatial_dims) / (
@@ -312,13 +307,11 @@ class VRMSE(BaseMetric):
 
     def __init__(
         self,
-        n_spatial_dims: int = 2,
         reduce_all: bool = True,
         dist_sync_on_step: bool = False,
         eps: float = 1e-7,
     ):
         super().__init__(
-            n_spatial_dims=n_spatial_dims,
             reduce_all=reduce_all,
             dist_sync_on_step=dist_sync_on_step,
         )
@@ -329,6 +322,7 @@ class VRMSE(BaseMetric):
         y_pred: TensorBTSC,
         y_true: TensorBTSC,
     ) -> TensorBTC:
+        self.n_spatial_dims = self._infer_n_spatial_dims(y_pred)
         spatial_dims = tuple(range(-self.n_spatial_dims - 1, -1))
 
         norm_std = torch.std(y_true, dim=spatial_dims)
@@ -346,6 +340,7 @@ class LInfinity(BaseMetric):
         y_pred: TensorBTSC,
         y_true: TensorBTSC,
     ) -> TensorBTC:
+        self.n_spatial_dims = self._infer_n_spatial_dims(y_pred)
         spatial_dims = tuple(range(-self.n_spatial_dims - 1, -1))
         return torch.max(
             torch.abs(y_pred - y_true).flatten(start_dim=spatial_dims[0], end_dim=-2),

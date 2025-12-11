@@ -2,10 +2,10 @@ from typing import Any
 
 import lightning as L
 import torch
-import torchmetrics
 from torch import nn
+from torchmetrics import Metric, MetricCollection
 
-from auto_cast.metrics import MAE, MSE, NMAE, NMSE, NRMSE, RMSE, VMSE, VRMSE, LInfinity
+from auto_cast.metrics import ALL_METRICS, MSE
 from auto_cast.models.encoder_decoder import EncoderDecoder
 from auto_cast.processors.base import Processor
 from auto_cast.processors.rollout import RolloutMixin
@@ -21,7 +21,8 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule):
     stride: int
     max_rollout_steps: int
     loss_func: nn.Module
-    n_spatial_dims: int
+    val_metrics: MetricCollection | None
+    test_metrics: MetricCollection | None
 
     def __init__(
         self,
@@ -32,7 +33,8 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule):
         teacher_forcing_ratio: float = 0.5,
         max_rollout_steps: int = 10,
         loss_func: nn.Module | None = None,
-        n_spatial_dims: int = 2,
+        val_metrics: list[Metric] | None = None,
+        test_metrics: list[Metric] | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__()
@@ -43,21 +45,10 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule):
         self.teacher_forcing_ratio = teacher_forcing_ratio
         self.max_rollout_steps = max_rollout_steps
         self.loss_func = loss_func or nn.MSELoss()
-        self.n_spatial_dims = n_spatial_dims
-        self.val_metrics = torchmetrics.MetricCollection(
-            {
-                "mse": MSE(n_spatial_dims=self.n_spatial_dims),
-                "mae": MAE(n_spatial_dims=self.n_spatial_dims),
-                "nmae": NMAE(n_spatial_dims=self.n_spatial_dims),
-                "nmse": NMSE(n_spatial_dims=self.n_spatial_dims),
-                "nrmse": NRMSE(n_spatial_dims=self.n_spatial_dims),
-                "rmse": RMSE(n_spatial_dims=self.n_spatial_dims),
-                "vmse": VMSE(n_spatial_dims=self.n_spatial_dims),
-                "vrmse": VRMSE(n_spatial_dims=self.n_spatial_dims),
-                "linf": LInfinity(n_spatial_dims=self.n_spatial_dims),
-            }
-        ).clone(prefix="val_")
-        self.test_metrics = self.val_metrics.clone(prefix="test_")
+
+        self.val_metrics = self._build_metrics(val_metrics, "val_")
+        self.test_metrics = self._build_metrics(test_metrics, "test_")
+
         for key, value in kwargs.items():
             setattr(self, key, value)
 
@@ -92,14 +83,15 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule):
         self.log(
             "val_loss", loss, prog_bar=True, batch_size=batch.input_fields.shape[0]
         )
-        self.val_metrics.update(y_pred, y_true)
-        self.log_dict(
-            self.val_metrics,
-            prog_bar=False,
-            on_step=False,
-            on_epoch=True,
-            batch_size=batch.input_fields.shape[0],
-        )
+        if self.val_metrics is not None:
+            self.val_metrics.update(y_pred, y_true)
+            self.log_dict(
+                self.val_metrics,
+                prog_bar=False,
+                on_step=False,
+                on_epoch=True,
+                batch_size=batch.input_fields.shape[0],
+            )
         return loss
 
     def test_step(self, batch: Batch, batch_idx: int) -> Tensor:  # noqa: ARG002
@@ -109,14 +101,15 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule):
         self.log(
             "test_loss", loss, prog_bar=True, batch_size=batch.input_fields.shape[0]
         )
-        self.test_metrics.update(y_pred, y_true)
-        self.log_dict(
-            self.test_metrics,
-            prog_bar=False,
-            on_step=False,
-            on_epoch=True,
-            batch_size=batch.input_fields.shape[0],
-        )
+        if self.test_metrics is not None:
+            self.test_metrics.update(y_pred, y_true)
+            self.log_dict(
+                self.test_metrics,
+                prog_bar=False,
+                on_step=False,
+                on_epoch=True,
+                batch_size=batch.input_fields.shape[0],
+            )
         return loss
 
     def configure_optimizers(self):
@@ -179,6 +172,38 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule):
             constant_scalars=batch.constant_scalars,
             constant_fields=batch.constant_fields,
         )
+
+    @staticmethod
+    def _build_metrics(
+        metrics: list[Metric] | None,
+        prefix: str,
+    ) -> MetricCollection | None:
+        # If no metrics provided, default to a single MSE
+        metrics_list = [MSE()] if metrics is None else metrics
+
+        metric_dict: dict[str, Metric | MetricCollection] = {}
+
+        for metric in metrics_list:
+            if not isinstance(metric, ALL_METRICS):
+                allowed = ", ".join(cls.__name__ for cls in ALL_METRICS)
+                raise ValueError(
+                    f"Invalid metric '{metric}'. Allowed metrics: {allowed}"
+                )
+
+            # Determine metric name
+            name = getattr(metric, "name", None)
+            if not isinstance(name, str):
+                name = metric.__class__.__name__.lower()
+
+            if name in metric_dict:
+                raise ValueError(f"Duplicate metric name '{name}'")
+
+            metric_dict[name] = metric
+
+        if not metric_dict:
+            return None
+
+        return MetricCollection(metric_dict).clone(prefix=prefix)
 
 
 class EPDTrainProcessor(EncoderProcessorDecoder):
