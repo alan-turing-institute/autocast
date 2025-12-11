@@ -1,8 +1,10 @@
 from collections.abc import Callable
+from itertools import chain
 from typing import Any, Literal
 
 import h5py
 import torch
+import yaml
 from the_well.data import Augmentation, WellDataset
 from the_well.data.normalization import ZScoreNormalization
 from torch.utils.data import Dataset
@@ -43,7 +45,8 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         dtype: torch.dtype = torch.float32,
         verbose: bool = False,
         use_normalization: bool = False,
-        norm: type[ZScoreNormalization] | None = None,
+        normalization_type: type[ZScoreNormalization] | None = None,
+        normalization_path: str | None = None,
     ):
         """
         Initialize the dataset.
@@ -75,14 +78,18 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             If True, print dataset information.
         use_normalization: bool
             Whether to apply Z-score normalization. Defaults to False.
-        norm: type[Standardizer] | None
+        normalization_type: type[Standardizer] | None
             Normalization object (computed from training data). Defaults to None.
+        normalization_path: str | None
+            Path to normalization statistics file (yaml). Defaults to None.
         """
         self.dtype = dtype
         self.verbose = verbose
         self.use_normalization = use_normalization
-        self.norm = norm
+        self.normalization_type = normalization_type
+        self.normalization_path = normalization_path
         self.autoencoder_mode = autoencoder_mode
+        self.metadata: Metadata | None = None
 
         if data_path is not None:
             self.read_data(data_path)
@@ -130,8 +137,9 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         for traj_idx in range(self.n_trajectories):
             # Create subtrajectories for this trajectory
             fields = (
-                self.data[traj_idx]
-                .unfold(0, self.n_steps_input + self.n_steps_output, self.stride)
+                self.data[traj_idx].unfold(
+                    0, self.n_steps_input + self.n_steps_output, self.stride
+                )
                 # [num_subtrajectories, T_in + T_out, W, H, C]
                 .permute(0, -1, 1, 2, 3)
             )
@@ -239,6 +247,32 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
 
         return self.to_sample(item)
 
+    def set_up_normalization(self):
+        """Set up normalizer. Call after metadata has been created."""
+        # Initialize normalization classes if True
+        assert self.metadata is not None, "Metadata must be set before normalization."
+        # TODO: add handling for when these args are inconsistent with each other
+        if (
+            self.use_normalization
+            and self.normalization_path
+            and self.normalization_type
+        ):
+            with open(self.normalization_path, mode="r") as f:
+                stats = yaml.safe_load(f)
+            # TODO: in The Well they separately track:
+            #   - `core_field_names` and
+            #   - `core_constant_field_names`
+            # e.g., core is [`velocity`] instead of [`velocity_x`, `velocity_y`]
+            # Here we just flatten the field names because that works for our current
+            # examples but might to handle that here too for more complex datasets
+            self.norm = self.normalization_type(
+                stats,
+                list(chain.from_iterable(self.metadata.field_names.values())),
+                list(chain.from_iterable(self.metadata.constant_field_names.values())),
+            )
+        else:
+            self.norm = None
+
 
 class ReactionDiffusionDataset(SpatioTemporalDataset):
     """Reaction-Diffusion dataset."""
@@ -263,6 +297,7 @@ class ReactionDiffusionDataset(SpatioTemporalDataset):
             n_steps_per_trajectory=[self.data.shape[1]] * self.data.shape[0],
             grid_type="cartesian",
         )
+        self.set_up_normalization()
 
 
 class AdvectionDiffusionDataset(SpatioTemporalDataset):
@@ -288,6 +323,7 @@ class AdvectionDiffusionDataset(SpatioTemporalDataset):
             n_steps_per_trajectory=[self.data.shape[1]] * self.data.shape[0],
             grid_type="cartesian",
         )
+        self.set_up_normalization()
 
 
 class BOUTDataset(SpatioTemporalDataset):
@@ -316,6 +352,7 @@ class BOUTDataset(SpatioTemporalDataset):
             n_steps_per_trajectory=[self.data.shape[1]] * self.data.shape[0],
             grid_type="cartesian",
         )
+        self.set_up_normalization()
 
 
 class TheWell(SpatioTemporalDataset):
