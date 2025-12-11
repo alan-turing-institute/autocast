@@ -5,8 +5,136 @@ from lightning.pytorch import LightningDataModule
 from the_well.data.normalization import ZScoreNormalization
 from torch.utils.data import DataLoader
 
-from autocast.data.dataset import SpatioTemporalDataset
+from autocast.data.dataset import SpatioTemporalDataset, TheWell
 from autocast.types import collate_batches
+
+
+class TheWellDataModule(LightningDataModule):
+    """DataModule for TheWell datasets."""
+
+    def __init__(
+        self,
+        well_dataset_name: str,
+        n_steps_input: int = 1,
+        n_steps_output: int = 1,
+        batch_size: int = 4,
+        use_normalization: bool = False,
+        autoencoder_mode: bool = False,
+        **well_kwargs,
+    ):
+        super().__init__()
+        self.batch_size = batch_size
+        self.autoencoder_mode = autoencoder_mode
+
+        self.train_dataset = TheWell(
+            well_dataset_name=well_dataset_name,
+            well_split_name="train",
+            n_steps_input=n_steps_input,
+            n_steps_output=n_steps_output,
+            use_normalization=use_normalization,
+            autoencoder_mode=autoencoder_mode,
+            **well_kwargs,
+        )
+        self.val_dataset = TheWell(
+            well_dataset_name=well_dataset_name,
+            well_split_name="valid",
+            n_steps_input=n_steps_input,
+            n_steps_output=n_steps_output,
+            use_normalization=use_normalization,
+            autoencoder_mode=autoencoder_mode,
+            **well_kwargs,
+        )
+        self.test_dataset = TheWell(
+            well_dataset_name=well_dataset_name,
+            well_split_name="test",
+            n_steps_input=n_steps_input,
+            n_steps_output=n_steps_output,
+            use_normalization=use_normalization,
+            autoencoder_mode=autoencoder_mode,
+            **well_kwargs,
+        )
+
+        if not autoencoder_mode:
+            self.rollout_val_dataset = TheWell(
+                well_dataset_name=well_dataset_name,
+                well_split_name="train",
+                n_steps_input=n_steps_input,
+                n_steps_output=n_steps_output,
+                use_normalization=use_normalization,
+                full_trajectory_mode=True,
+                **well_kwargs,
+            )
+            self.rollout_test_dataset = TheWell(
+                well_dataset_name=well_dataset_name,
+                well_split_name="test",
+                n_steps_input=n_steps_input,
+                n_steps_output=n_steps_output,
+                use_normalization=use_normalization,
+                full_trajectory_mode=True,
+                **well_kwargs,
+            )
+
+    def train_dataloader(self) -> DataLoader:
+        """DataLoader for training."""
+        return DataLoader(
+            self.train_dataset,
+            batch_size=self.batch_size,
+            shuffle=True,
+            num_workers=0,  # TheWell uses h5py which can't be pickled
+            collate_fn=collate_batches,
+        )
+
+    def val_dataloader(self) -> DataLoader:
+        """DataLoader for validation."""
+        return DataLoader(
+            self.val_dataset,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=0,  # TheWell uses h5py which can't be pickled
+            collate_fn=collate_batches,
+        )
+
+    def test_dataloader(self) -> DataLoader:
+        """DataLoader for testing."""
+        return DataLoader(
+            self.test_dataset,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=0,  # TheWell uses h5py which can't be pickled
+            collate_fn=collate_batches,
+        )
+
+    def rollout_val_dataloader(self) -> DataLoader:
+        """DataLoader for full trajectory rollouts on validation data."""
+        if self.autoencoder_mode:
+            msg = (
+                "Rollout dataloaders not available when autoencoder_mode="
+                f"{self.autoencoder_mode}"
+            )
+            raise RuntimeError(msg)
+        return DataLoader(
+            self.rollout_val_dataset,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=0,  # TheWell uses h5py which can't be pickled
+            collate_fn=collate_batches,
+        )
+
+    def rollout_test_dataloader(self) -> DataLoader:
+        """DataLoader for full trajectory rollouts on test data."""
+        if self.autoencoder_mode:
+            msg = (
+                "Rollout dataloaders not available when autoencoder_mode="
+                f"{self.autoencoder_mode}"
+            )
+            raise RuntimeError(msg)
+        return DataLoader(
+            self.rollout_test_dataset,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=0,  # TheWell uses h5py which can't be pickled
+            collate_fn=collate_batches,
+        )
 
 
 class SpatioTemporalDataModule(LightningDataModule):
@@ -37,9 +165,9 @@ class SpatioTemporalDataModule(LightningDataModule):
         base_path = Path(data_path) if data_path is not None else None
         suffix = ".pt" if ftype == "torch" else ".h5"
         fname = f"data{suffix}"
-        train_path = base_path / "train" / fname if base_path is not None else None
-        valid_path = base_path / "valid" / fname if base_path is not None else None
-        test_path = base_path / "test" / fname if base_path is not None else None
+        train_path = base_path / "train" / fname if base_path else None
+        valid_path = base_path / "valid" / fname if base_path else None
+        test_path = base_path / "test" / fname if base_path else None
 
         # Create training dataset first (without normalization)
         self.train_dataset = dataset_cls(
