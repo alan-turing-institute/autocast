@@ -7,10 +7,10 @@ from auto_cast.types import TensorBTSC
 
 @pytest.mark.parametrize("MetricCls", ALL_METRICS)
 def test_spatiotemporal_metrics(MetricCls):
-    # shape. (B, T, S, C) with n_spatial_dims = 1
-    y_pred: TensorBTSC = torch.ones((2, 3, 4, 5))
-    y_true: TensorBTSC = torch.ones((2, 3, 4, 5))
-    n_spatial_dims = 1
+    # shape. (B, T, S1, S2, C) with n_spatial_dims = 2
+    y_pred: TensorBTSC = torch.ones((2, 3, 4, 4, 5))
+    y_true: TensorBTSC = torch.ones((2, 3, 4, 4, 5))
+    n_spatial_dims = 2
 
     # instantiate the metric with n_spatial_dims
     metric = MetricCls(n_spatial_dims=n_spatial_dims)
@@ -24,10 +24,10 @@ def test_spatiotemporal_metrics(MetricCls):
 
 @pytest.mark.parametrize("MetricCls", ALL_METRICS)
 def test_spatiotemporal_metrics_stateful(MetricCls):
-    y_pred = torch.ones((2, 3, 4, 5))
-    y_true = torch.ones((2, 3, 4, 5))
+    y_pred = torch.ones((2, 3, 4, 4, 5))
+    y_true = torch.ones((2, 3, 4, 4, 5))
 
-    metric = MetricCls(n_spatial_dims=1, reduce_all=True)
+    metric = MetricCls(n_spatial_dims=2)
     metric.update(y_pred, y_true)
     value = metric.compute()
 

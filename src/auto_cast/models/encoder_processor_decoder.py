@@ -2,8 +2,10 @@ from typing import Any
 
 import lightning as L
 import torch
+import torchmetrics
 from torch import nn
 
+from auto_cast.metrics import MAE, MSE, NMAE, NMSE, NRMSE, RMSE, VMSE, VRMSE, LInfinity
 from auto_cast.models.encoder_decoder import EncoderDecoder
 from auto_cast.processors.base import Processor
 from auto_cast.processors.rollout import RolloutMixin
@@ -19,6 +21,7 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule):
     stride: int
     max_rollout_steps: int
     loss_func: nn.Module
+    n_spatial_dims: int
 
     def __init__(
         self,
@@ -29,6 +32,7 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule):
         teacher_forcing_ratio: float = 0.5,
         max_rollout_steps: int = 10,
         loss_func: nn.Module | None = None,
+        n_spatial_dims: int = 2,
         **kwargs: Any,
     ) -> None:
         super().__init__()
@@ -39,6 +43,21 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule):
         self.teacher_forcing_ratio = teacher_forcing_ratio
         self.max_rollout_steps = max_rollout_steps
         self.loss_func = loss_func or nn.MSELoss()
+        self.n_spatial_dims = n_spatial_dims
+        self.val_metrics = torchmetrics.MetricCollection(
+            {
+                "mse": MSE(n_spatial_dims=self.n_spatial_dims),
+                "mae": MAE(n_spatial_dims=self.n_spatial_dims),
+                "nmae": NMAE(n_spatial_dims=self.n_spatial_dims),
+                "nmse": NMSE(n_spatial_dims=self.n_spatial_dims),
+                "nrmse": NRMSE(n_spatial_dims=self.n_spatial_dims),
+                "rmse": RMSE(n_spatial_dims=self.n_spatial_dims),
+                "vmse": VMSE(n_spatial_dims=self.n_spatial_dims),
+                "vrmse": VRMSE(n_spatial_dims=self.n_spatial_dims),
+                "linf": LInfinity(n_spatial_dims=self.n_spatial_dims),
+            }
+        ).clone(prefix="val_")
+        self.test_metrics = self.val_metrics.clone(prefix="test_")
         for key, value in kwargs.items():
             setattr(self, key, value)
 
@@ -73,6 +92,14 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule):
         self.log(
             "val_loss", loss, prog_bar=True, batch_size=batch.input_fields.shape[0]
         )
+        self.val_metrics.update(y_pred, y_true)
+        self.log_dict(
+            self.val_metrics,
+            prog_bar=False,
+            on_step=False,
+            on_epoch=True,
+            batch_size=batch.input_fields.shape[0],
+        )
         return loss
 
     def test_step(self, batch: Batch, batch_idx: int) -> Tensor:  # noqa: ARG002
@@ -81,6 +108,14 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule):
         loss = self.loss_func(y_pred, y_true)
         self.log(
             "test_loss", loss, prog_bar=True, batch_size=batch.input_fields.shape[0]
+        )
+        self.test_metrics.update(y_pred, y_true)
+        self.log_dict(
+            self.test_metrics,
+            prog_bar=False,
+            on_step=False,
+            on_epoch=True,
+            batch_size=batch.input_fields.shape[0],
         )
         return loss
 
