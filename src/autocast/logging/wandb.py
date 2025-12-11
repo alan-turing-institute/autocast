@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -25,31 +24,31 @@ def _to_container(value: Any) -> Any:
 
 
 def _extract_wandb_cfg(
-    logging_cfg: Mapping[str, Any] | DictConfig | None,
+    logging_cfg: dict[str, Any] | DictConfig | None,
 ) -> dict[str, Any] | None:
     if logging_cfg is None:
         return None
     candidate = None
-    if isinstance(logging_cfg, (Mapping, DictConfig)):
+    if isinstance(logging_cfg, (dict, DictConfig)):
         candidate = logging_cfg.get("wandb") if "wandb" in logging_cfg else logging_cfg
     if candidate is None:
         return None
     candidate = _to_container(candidate)
     if candidate is None:
         return None
-    if not isinstance(candidate, Mapping):
+    if not isinstance(candidate, dict):
         return None
     return dict(candidate)
 
 
 def _build_logger_kwargs(
-    wandb_cfg: Mapping[str, Any],
+    wandb_cfg: dict[str, Any],
     *,
     experiment_name: str,
     run_name: str | None,
     job_type: str | None,
     work_dir: Path | None,
-    base_config: Mapping[str, Any] | None,
+    base_config: dict[str, Any] | None,
 ) -> tuple[dict[str, Any], _WatchConfig]:
     tags_raw = wandb_cfg.get("tags") or []
     tags = list(tags_raw) if isinstance(tags_raw, (list, tuple)) else [tags_raw]
@@ -99,13 +98,13 @@ def _build_logger_kwargs(
 
 
 def create_wandb_logger(
-    logging_cfg: Mapping[str, Any] | DictConfig | None,
+    logging_cfg: dict[str, Any] | DictConfig | None,
     *,
     experiment_name: str,
     run_name: str | None = None,
     job_type: str | None = None,
     work_dir: Path | None = None,
-    config: Mapping[str, Any] | DictConfig | None = None,
+    config: dict[str, Any] | DictConfig | None = None,
 ) -> tuple[WandbLogger | None, _WatchConfig | None]:
     """Instantiate a WandbLogger when enabled via the Hydra logging config."""
     wandb_cfg = _extract_wandb_cfg(logging_cfg)
@@ -140,7 +139,7 @@ def maybe_watch_model(
 
 def log_metrics(
     logger: WandbLogger | None,
-    metrics: Mapping[str, float],
+    metrics: dict[str, float],
     step: int | None = None,
 ) -> None:
     """Log scalar metrics when a trainer is not driving WandbLogger."""
