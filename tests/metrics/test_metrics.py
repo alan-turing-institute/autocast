@@ -13,10 +13,10 @@ def test_spatiotemporal_metrics(MetricCls):
     n_spatial_dims = 1
 
     # instantiate the metric with n_spatial_dims
-    metric = MetricCls(n_spatial_dims=n_spatial_dims, reduce_all=False)
+    metric = MetricCls(n_spatial_dims=n_spatial_dims)
 
-    # functional call goes through BaseMetric.forward -> .score
-    error = metric(y_pred, y_true)  # (B, T, C)
+    # score computes the metric over the spatial dims, returning (B, T, C)
+    error = metric.score(y_pred, y_true)
 
     # for identical tensors, all errors must be zero
     assert torch.allclose(error.nansum(), torch.tensor(0.0))

@@ -95,20 +95,6 @@ class BaseMetric(Metric):
         """
         raise NotImplementedError
 
-    def forward(
-        self,
-        y_pred: TensorBTSC | np.ndarray,
-        y_true: TensorBTSC | np.ndarray,
-    ) -> TensorBTC:
-        """
-        Functional metric call.
-
-        Does not update internal state.
-        Equivalent to score(y_pred, y_true) with input checks.
-        """
-        y_pred, y_true = self._check_input(y_pred, y_true)
-        return self.score(y_pred, y_true)
-
     def update(
         self,
         y_pred: TensorBTSC | np.ndarray,
@@ -163,6 +149,11 @@ class BaseMetric(Metric):
             return score.mean()
 
         return score
+
+    def reset(self) -> None:
+        """Reset metric state and initialization flag."""
+        super().reset()
+        self._initialized = False
 
 
 class MSE(BaseMetric):
