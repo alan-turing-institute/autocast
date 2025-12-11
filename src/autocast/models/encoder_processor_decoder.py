@@ -39,6 +39,8 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule):
         self.teacher_forcing_ratio = teacher_forcing_ratio
         self.max_rollout_steps = max_rollout_steps
         self.train_processor_only = train_processor_only
+        if self.train_processor_only:
+            self.encoder_decoder.freeze()
         self.loss_func = loss_func
         for key, value in kwargs.items():
             setattr(self, key, value)
