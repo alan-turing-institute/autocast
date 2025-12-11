@@ -270,7 +270,7 @@ def _evaluate_metrics(
                 "num_samples": batch_size,
             }
             for name, metric in metrics.items():
-                value = metric(preds, trues, n_spatial_dims)
+                value = metric(preds, trues)
                 scalar = float(value.mean().item())
                 row[name] = scalar
                 totals[name] += scalar * batch_size

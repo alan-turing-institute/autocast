@@ -6,3 +6,5 @@ log_every_n_steps: 10
 enable_checkpointing: true
 detect_anomaly: false
 default_root_dir: ${hydra:run.dir}
+#default_root_dir: null
+
