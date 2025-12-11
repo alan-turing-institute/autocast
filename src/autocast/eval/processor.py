@@ -386,29 +386,6 @@ def _load_model(
     return model
 
 
-def _ensure_rollout_stride(batch: Batch, stride: int) -> Batch:
-    current_steps = batch.input_fields.shape[1]
-    if current_steps >= stride:
-        return batch
-    deficit = stride - current_steps
-    if batch.output_fields.shape[1] < deficit:
-        msg = (
-            "Rollout requested stride longer than available ground-truth window: "
-            f"needed {stride}, have {current_steps} inputs and "
-            f"{batch.output_fields.shape[1]} outputs."
-        )
-        raise ValueError(msg)
-    padding = batch.output_fields[:, :deficit, ...]
-    new_inputs = torch.cat([batch.input_fields, padding], dim=1)
-    new_outputs = batch.output_fields[:, deficit:, ...]
-    return Batch(
-        input_fields=new_inputs,
-        output_fields=new_outputs,
-        constant_scalars=batch.constant_scalars,
-        constant_fields=batch.constant_fields,
-    )
-
-
 def _render_rollouts(
     model: EncoderProcessorDecoder,
     dataloader,
@@ -431,12 +408,7 @@ def _render_rollouts(
         for batch_idx, batch in enumerate(dataloader):
             if batch_idx not in targets:
                 continue
-            try:
-                stride_ready_batch = _ensure_rollout_stride(batch, model.stride)
-            except ValueError as exc:
-                log.warning("Skipping batch %s: %s", batch_idx, exc)
-                continue
-            batch_on_device = _batch_to_device(stride_ready_batch, device)
+            batch_on_device = _batch_to_device(batch, device)
             preds, trues = model.rollout(
                 batch_on_device,
                 free_running_only=free_running_only,
