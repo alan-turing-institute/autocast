@@ -18,7 +18,11 @@ class RolloutMixin(ABC, Generic[BatchT]):
     teacher_forcing_ratio: float
 
     def rollout(
-        self, batch: BatchT, free_running_only: bool = False, return_windows=False
+        self,
+        batch: BatchT,
+        stride: int,
+        free_running_only: bool = False,
+        return_windows=False,
     ) -> RolloutOutput:
         """Perform rollout over multiple time steps.
 
@@ -63,9 +67,9 @@ class RolloutMixin(ABC, Generic[BatchT]):
         )
 
         n_steps_output = self._predict(current_batch).shape[1]
-        if n_steps_output != self.stride and not return_windows:
+        if n_steps_output != stride and not return_windows:
             msg = (
-                f"Rollout stride ({self.stride}) must equal "
+                f"Rollout stride ({stride}) must equal "
                 f"n_steps_output ({n_steps_output}) for correct concatenation."
             )
             raise ValueError(msg)
@@ -74,7 +78,7 @@ class RolloutMixin(ABC, Generic[BatchT]):
             output = self._predict(current_batch)
             pred_outs.append(output)
 
-            true_slice, should_record = self._true_slice(current_batch, self.stride)
+            true_slice, should_record = self._true_slice(current_batch, stride)
             if should_record:
                 true_outs.append(true_slice)
 
@@ -82,10 +86,10 @@ class RolloutMixin(ABC, Generic[BatchT]):
             teacher_force = true_slice.numel() > 0 and rand_val < teacher_forcing_ratio
             next_inputs = true_slice if teacher_force else output.detach()
 
-            if next_inputs.shape[1] < self.stride:
+            if next_inputs.shape[1] < stride:
                 break
 
-            current_batch = self._advance_batch(current_batch, next_inputs, self.stride)
+            current_batch = self._advance_batch(current_batch, next_inputs, stride)
 
         # Construct rollout outputs
         preds = torch.stack(pred_outs, dim=1)  # (B, R, T, spatial, C)

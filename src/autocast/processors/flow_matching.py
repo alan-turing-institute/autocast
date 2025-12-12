@@ -18,7 +18,6 @@ class FlowMatchingProcessor(Processor):
         backbone: nn.Module,
         schedule: Any | None = None,
         denoiser_type: str | None = None,
-        stride: int = 1,
         teacher_forcing_ratio: float = 0.0,
         max_rollout_steps: int = 10,
         loss_func: nn.Module | None = None,
@@ -30,7 +29,6 @@ class FlowMatchingProcessor(Processor):
     ) -> None:
         # Store core hyperparameters and optional prebuilt backbone.
         super().__init__(
-            stride=stride,
             teacher_forcing_ratio=teacher_forcing_ratio,
             max_rollout_steps=max_rollout_steps,
             loss_func=loss_func or nn.MSELoss(),

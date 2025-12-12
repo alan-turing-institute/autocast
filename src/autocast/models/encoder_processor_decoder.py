@@ -18,7 +18,7 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule):
     encoder_decoder: EncoderDecoder
     processor: Processor
     teacher_forcing_ratio: float
-    stride: int
+    # stride: int
     max_rollout_steps: int
     val_metrics: MetricCollection | None
     test_metrics: MetricCollection | None
@@ -29,6 +29,7 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule):
         processor: Processor,
         learning_rate: float = 1e-3,
         stride: int = 1,
+        eval_stride: int | None = None,
         teacher_forcing_ratio: float = 0.5,
         max_rollout_steps: int = 10,
         train_processor_only: bool = False,
@@ -42,6 +43,7 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule):
         self.processor = processor
         self.learning_rate = learning_rate
         self.stride = stride
+        self.eval_stride = eval_stride if eval_stride is not None else stride
         self.teacher_forcing_ratio = teacher_forcing_ratio
         self.max_rollout_steps = max_rollout_steps
         self.train_processor_only = train_processor_only
@@ -132,36 +134,44 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule):
         return loss
 
     def test_step(self, batch: Batch, batch_idx: int) -> Tensor:  # noqa: ARG002
-        y_pred = self(batch)
-        y_true = batch.output_fields
-        if self.train_processor_only:
-            with torch.no_grad():
-                encoded_batch = self.encoder_decoder.encoder.encode_batch(batch)
-            loss = self.processor.loss(encoded_batch)
+        # Temporarily set processor stride to eval_stride for testing
+        original_stride = self.processor.stride
+        self.processor.stride = self.eval_stride
+
+        try:
+            y_pred = self(batch)
+            y_true = batch.output_fields
+            if self.train_processor_only:
+                with torch.no_grad():
+                    encoded_batch = self.encoder_decoder.encoder.encode_batch(batch)
+                loss = self.processor.loss(encoded_batch)
+                self.log(
+                    "test_loss",
+                    loss,
+                    prog_bar=True,
+                    batch_size=batch.input_fields.shape[0],
+                )
+                return loss
+            if self.loss_func is None:
+                msg = "loss_func must be provided testing full EPD model."
+                raise ValueError(msg)
+            loss = self.loss_func(y_pred, y_true)
             self.log(
-                "test_loss",
-                loss,
-                prog_bar=True,
-                batch_size=batch.input_fields.shape[0],
+                "test_loss", loss, prog_bar=True, batch_size=batch.input_fields.shape[0]
             )
+            if self.test_metrics is not None:
+                self.test_metrics.update(y_pred, y_true)
+                self.log_dict(
+                    self.test_metrics,
+                    prog_bar=False,
+                    on_step=False,
+                    on_epoch=True,
+                    batch_size=batch.input_fields.shape[0],
+                )
             return loss
-        if self.loss_func is None:
-            msg = "loss_func must be provided testing full EPD model."
-            raise ValueError(msg)
-        loss = self.loss_func(y_pred, y_true)
-        self.log(
-            "test_loss", loss, prog_bar=True, batch_size=batch.input_fields.shape[0]
-        )
-        if self.test_metrics is not None:
-            self.test_metrics.update(y_pred, y_true)
-            self.log_dict(
-                self.test_metrics,
-                prog_bar=False,
-                on_step=False,
-                on_epoch=True,
-                batch_size=batch.input_fields.shape[0],
-            )
-        return loss
+        finally:
+            # Restore original stride
+            self.processor.stride = original_stride
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
@@ -195,7 +205,11 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule):
         return batch.output_fields, False
 
     def _advance_batch(self, batch: Batch, next_inputs: Tensor, stride: int) -> Batch:
-        """Shift the input/output windows forward by `stride` using `next_inputs`."""
+        """Shift the input/output windows forward by `stride` using `next_inputs`.
+
+        Note: stride parameter overrides self.stride to allow different strides
+        for training vs evaluation.
+        """
         # Get the original number of input time steps to maintain consistency
         n_steps_input = batch.input_fields.shape[1]
 

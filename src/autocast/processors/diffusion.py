@@ -25,7 +25,6 @@ class DiffusionProcessor(Processor):
         schedule: Schedule,
         denoiser_type: str = "karras",
         teacher_forcing_ratio: float = 0.0,
-        stride: int = 1,
         max_rollout_steps: int = 10,
         learning_rate: float = 1e-4,
         n_steps_output: int = 4,
@@ -35,7 +34,7 @@ class DiffusionProcessor(Processor):
     ):
         super().__init__()
         self.teacher_forcing_ratio = teacher_forcing_ratio
-        self.stride = stride
+        # self.stride = stride
         self.max_rollout_steps = max_rollout_steps
         self.learning_rate = learning_rate
         self.n_steps_output = n_steps_output
