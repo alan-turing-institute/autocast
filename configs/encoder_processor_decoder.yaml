@@ -6,7 +6,7 @@ defaults:
   - _self_
 
 seed: 42
-experiment_name: processor
+experiment_name: encoder_processor_decoder
 output:
   checkpoint_name: encoder_processor_decoder.ckpt
   save_config: true
@@ -14,7 +14,7 @@ output:
 training:
   n_steps_input: 1
   n_steps_output: 4
-  stride: null
+  stride: 4
   autoencoder_checkpoint: null
   freeze_autoencoder: false
 

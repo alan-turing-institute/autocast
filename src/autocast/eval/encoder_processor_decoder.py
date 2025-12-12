@@ -72,8 +72,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--config-name",
-        default="processor",
-        help="Hydra config name to compose (defaults to 'processor').",
+        default="encoder_processor_decoder",
+        help="Hydra config name to compose (defaults to 'encoder_processor_decoder').",
     )
     parser.add_argument(
         "overrides",
@@ -455,8 +455,8 @@ def main() -> None:
     resolved_cfg = OmegaConf.to_container(cfg, resolve=True)
     wandb_logger, _ = create_wandb_logger(
         cfg.get("logging"),
-        experiment_name=cfg.get("experiment_name", "processor"),
-        job_type="evaluate-processor",
+        experiment_name=cfg.get("experiment_name", "encoder_processor_decoder"),
+        job_type="evaluate-encoder-processor-decoder",
         work_dir=work_dir,
         config={
             "hydra": resolved_cfg,
