@@ -6,7 +6,7 @@ from torch import nn
 
 from autocast.decoders import Decoder
 from autocast.encoders import Encoder
-from autocast
+from autocast.models.denorm_mixin import DenormMixin
 from autocast.types import Batch, Tensor, TensorBNC, TensorBTSC
 
 
