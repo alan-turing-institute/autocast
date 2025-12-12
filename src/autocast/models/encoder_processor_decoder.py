@@ -17,9 +17,6 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule):
 
     encoder_decoder: EncoderDecoder
     processor: Processor
-    teacher_forcing_ratio: float
-    # stride: int
-    max_rollout_steps: int
     val_metrics: MetricCollection | None
     test_metrics: MetricCollection | None
 

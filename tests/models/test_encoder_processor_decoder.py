@@ -108,16 +108,22 @@ def test_encoder_processor_decoder_rollout_handles_batches(
         loss_func=loss,
         stride=stride,
         max_rollout_steps=max_rollout_steps,
-        teacher_forcing_ratio=0.0,
     )
 
-    preds, gts = model.rollout(batch, return_windows=True)
+    preds, gts = model.rollout(
+        batch, stride=stride, max_rollout_steps=max_rollout_steps, return_windows=True
+    )
 
     assert preds.shape == (batch_size, max_rollout_steps, n_steps_output, 4, 4, 1)
     assert gts is not None
     assert gts.shape == preds.shape
 
-    preds, gts = model.rollout(batch, return_windows=False)
+    preds, gts = model.rollout(
+        batch,
+        stride=n_steps_output,
+        max_rollout_steps=max_rollout_steps,
+        return_windows=False,
+    )
 
     assert preds.shape == (batch_size, max_rollout_steps * n_steps_output, 4, 4, 1)
     assert gts is not None
@@ -174,7 +180,7 @@ def test_encoder_processor_decoder_rollout_handles_short_trajectory(
         teacher_forcing_ratio=0.0,
     )
 
-    preds, gts = model.rollout(batch, return_windows=True)
+    preds, gts = model.rollout(batch, stride=stride, return_windows=True)
 
     # In free-running mode, predictions continue for all max_rollout_steps
     assert preds.shape == (batch_size, max_rollout_steps, n_steps_output, 4, 4, 1)
@@ -183,7 +189,7 @@ def test_encoder_processor_decoder_rollout_handles_short_trajectory(
     assert gts is not None
     assert gts.shape == (batch_size, expected_gt_windows, n_steps_output, 4, 4, 1)
 
-    preds, gts = model.rollout(batch, return_windows=False)
+    preds, gts = model.rollout(batch, stride=n_steps_output, return_windows=False)
 
     # Predictions for all rollout windows concatenated
     assert preds.shape == (batch_size, max_rollout_steps * n_steps_output, 4, 4, 1)

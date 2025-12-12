@@ -13,14 +13,12 @@ from autocast.types.batch import BatchT
 class RolloutMixin(ABC, Generic[BatchT]):
     """Rollout logic for generic batches."""
 
-    stride: int
-    max_rollout_steps: int
-    teacher_forcing_ratio: float
-
     def rollout(
         self,
         batch: BatchT,
         stride: int,
+        max_rollout_steps: int = 10,
+        teacher_forcing_ratio: float = 0.0,
         free_running_only: bool = False,
         return_windows=False,
     ) -> RolloutOutput:
@@ -62,9 +60,7 @@ class RolloutMixin(ABC, Generic[BatchT]):
         current_batch = self._clone_batch(batch)
 
         # If free running only, override teacher_forcing_ratio=0.0
-        teacher_forcing_ratio = (
-            self.teacher_forcing_ratio if not free_running_only else 0.0
-        )
+        teacher_forcing_ratio = teacher_forcing_ratio if not free_running_only else 0.0
 
         n_steps_output = self._predict(current_batch).shape[1]
         if n_steps_output != stride and not return_windows:
@@ -74,7 +70,7 @@ class RolloutMixin(ABC, Generic[BatchT]):
             )
             raise ValueError(msg)
 
-        for _ in range(self.max_rollout_steps):
+        for _ in range(max_rollout_steps):
             output = self._predict(current_batch)
             pred_outs.append(output)
 
