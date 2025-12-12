@@ -1,21 +1,55 @@
+import lightning as L
 from the_well.data.normalization import ZScoreNormalization
 
 from autocast.types.batch import Batch
 from autocast.types.types import Tensor
 
 
-class DenormMixin:
+class DenormMixin(L.LightningModule):
     """
     Mixin class to provide denormalization functionality for models.
 
-    Taken from The Well Trainer.denormalize(), see:
+    Based on The Well Trainer.denormalize(), see:
     https://github.com/PolymathicAI/the_well/blob/6cd3c44ef832855a5abae87d555bf0f0f52b1fa7/the_well/benchmark/trainer/training.py#L190
     """
+
+    norm: ZScoreNormalization | None = None
+    denormalize_predictions: bool = True
+
+    def on_fit_start(self):
+        """Automatically connect to datamodule's normalizer at training start."""
+        self._connect_normalizer()
+        # Call parent hook if it exists (for multiple inheritance)
+        if hasattr(super(), "on_fit_start"):
+            super().on_fit_start()
+
+    def on_predict_start(self):
+        """Automatically connect to datamodule's normalizer at prediction start."""
+        self._connect_normalizer()
+        # Call parent hook if it exists (for multiple inheritance)
+        if hasattr(super(), "on_predict_start"):
+            super().on_predict_start()
+
+    def _connect_normalizer(self):
+        """
+        Helper to connect to datamodule's normalizer.
+
+        Looks for the normalizer in trainer.datamodule.train_dataset.norm
+        and sets self.normalizer if found.
+        """
+        if not hasattr(self, "trainer"):
+            return
+
+        if hasattr(self.trainer, "datamodule"):
+            datamodule = self.trainer.datamodule
+            if hasattr(datamodule, "train_dataset") and hasattr(
+                datamodule.train_dataset, "norm"
+            ):
+                self.normalizer = datamodule.train_dataset.norm
 
     def denormalize_batch(
         self,
         batch: Batch,
-        norm: ZScoreNormalization,
     ) -> Batch:
         """
         Denormalize the input batch.
@@ -24,20 +58,23 @@ class DenormMixin:
         ----------
         batch : Batch
             The input batch containing normalized data.
-        norm : type[ZScoreNormalization]
-            The normalization class used for denormalization.
 
         Returns
         -------
         Batch
             The denormalized batch.
         """
+        if self.norm is None:
+            return batch
+
         return Batch(
-            input_fields=norm.denormalize_flattened(batch.input_fields, "variable"),
+            input_fields=self.norm.denormalize_flattened(
+                batch.input_fields, "variable"
+            ),
             output_fields=batch.output_fields,
             constant_scalars=batch.constant_scalars,
             constant_fields=(
-                norm.denormalize_flattened(batch.constant_fields, "constant")
+                self.norm.denormalize_flattened(batch.constant_fields, "constant")
                 if batch.constant_fields
                 else None
             ),
@@ -46,7 +83,6 @@ class DenormMixin:
     def denormalize_tensor(
         self,
         tensor: Tensor,
-        norm: ZScoreNormalization,
         delta=False,
     ) -> Tensor:
         """
@@ -56,8 +92,6 @@ class DenormMixin:
         ----------
         tensor : Tensor
             The normalized tensor to be denormalized.
-        norm : type[ZScoreNormalization]
-            The normalization class used for denormalization.
         delta : bool, optional
             Whether to apply delta denormalization. Default is False.
 
@@ -66,9 +100,12 @@ class DenormMixin:
         Tensor
             The denormalized tensor.
         """
+        if self.norm is None:
+            return tensor
+
         if delta:
-            denorm_tensor = norm.delta_denormalize_flattened(tensor, "variable")
+            denorm_tensor = self.norm.delta_denormalize_flattened(tensor, "variable")
         else:
-            denorm_tensor = norm.denormalize_flattened(tensor, "variable")
+            denorm_tensor = self.norm.denormalize_flattened(tensor, "variable")
 
         return denorm_tensor
