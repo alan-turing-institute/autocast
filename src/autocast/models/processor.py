@@ -20,8 +20,6 @@ class ProcessorModel(RolloutMixin[EncodedBatch], ABC, L.LightningModule):
         self,
         processor: Processor,
         stride: int = 1,
-        teacher_forcing_ratio: float = 0.0,
-        max_rollout_steps: int = 1,
         loss_func: nn.Module | None = None,
         learning_rate: float | None = None,
         **kwargs: Any,
@@ -29,8 +27,6 @@ class ProcessorModel(RolloutMixin[EncodedBatch], ABC, L.LightningModule):
         super().__init__()
         self.processor = processor  # Register nn.Module parameters
         self.stride = stride
-        self.teacher_forcing_ratio = teacher_forcing_ratio
-        self.max_rollout_steps = max_rollout_steps
         self.loss_func = loss_func or nn.MSELoss()
         # Use processor's learning_rate if not explicitly provided
         self.learning_rate = (

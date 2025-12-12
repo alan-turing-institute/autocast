@@ -17,9 +17,6 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule):
 
     encoder_decoder: EncoderDecoder
     processor: Processor
-    teacher_forcing_ratio: float
-    stride: int
-    max_rollout_steps: int
     val_metrics: MetricCollection | None
     test_metrics: MetricCollection | None
 
@@ -29,6 +26,7 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule):
         processor: Processor,
         learning_rate: float = 1e-3,
         stride: int = 1,
+        rollout_stride: int | None = None,
         teacher_forcing_ratio: float = 0.5,
         max_rollout_steps: int = 10,
         train_processor_only: bool = False,
@@ -42,6 +40,7 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule):
         self.processor = processor
         self.learning_rate = learning_rate
         self.stride = stride
+        self.rollout_stride = rollout_stride if rollout_stride is not None else stride
         self.teacher_forcing_ratio = teacher_forcing_ratio
         self.max_rollout_steps = max_rollout_steps
         self.train_processor_only = train_processor_only
@@ -195,7 +194,11 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule):
         return batch.output_fields, False
 
     def _advance_batch(self, batch: Batch, next_inputs: Tensor, stride: int) -> Batch:
-        """Shift the input/output windows forward by `stride` using `next_inputs`."""
+        """Shift the input/output windows forward by `stride` using `next_inputs`.
+
+        Note: stride parameter overrides self.stride to allow different strides
+        for training vs evaluation.
+        """
         # Get the original number of input time steps to maintain consistency
         n_steps_input = batch.input_fields.shape[1]
 

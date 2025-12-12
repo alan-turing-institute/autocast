@@ -6,6 +6,8 @@ defaults:
 
 learning_rate: 0.0001
 train_processor_only: true
+stride: ${training.stride}
+rollout_stride: ${training.rollout_stride}
 teacher_forcing_ratio: 0.5
 max_rollout_steps: 10
 loss_func:
