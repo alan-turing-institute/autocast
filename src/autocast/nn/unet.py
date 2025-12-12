@@ -1,3 +1,5 @@
+from collections.abc import Sequence
+
 from azula.nn.embedding import SineEncoding
 from azula.nn.unet import UNet
 from einops import rearrange
@@ -15,8 +17,8 @@ class TemporalUNetBackbone(nn.Module):
         out_channels: int = 1,
         cond_channels: int = 1,
         mod_features: int = 256,
-        hid_channels: tuple = (32, 64, 128),
-        hid_blocks: tuple = (2, 2, 2),
+        hid_channels: Sequence[int] = (32, 64, 128),
+        hid_blocks: Sequence[int] = (2, 2, 2),
         spatial: int = 2,
         periodic: bool = False,
     ):

@@ -12,13 +12,7 @@ backbone:
   out_channels: null
   cond_channels: null
   mod_features: 256
-  hid_channels:
-    _target_: builtins.tuple
-    _args_:
-      - [32, 64, 128]
-  hid_blocks:
-    _target_: builtins.tuple
-    _args_:
-      - [2, 2, 2]
+  hid_channels: [32, 64, 128]
+  hid_blocks: [2, 2, 2]
   spatial: 2
   periodic: false
