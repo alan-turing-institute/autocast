@@ -24,9 +24,6 @@ class DiffusionProcessor(Processor):
         backbone: nn.Module,
         schedule: Schedule,
         denoiser_type: str = "karras",
-        teacher_forcing_ratio: float = 0.0,
-        stride: int = 1,
-        max_rollout_steps: int = 10,
         learning_rate: float = 1e-4,
         n_steps_output: int = 4,
         n_channels_out: int = 1,
@@ -34,9 +31,6 @@ class DiffusionProcessor(Processor):
         sampler: str = "euler",
     ):
         super().__init__()
-        self.teacher_forcing_ratio = teacher_forcing_ratio
-        self.stride = stride
-        self.max_rollout_steps = max_rollout_steps
         self.learning_rate = learning_rate
         self.n_steps_output = n_steps_output
         self.n_channels_out = n_channels_out

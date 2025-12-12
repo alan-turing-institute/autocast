@@ -14,7 +14,8 @@ output:
 training:
   n_steps_input: 1
   n_steps_output: 4
-  stride: 4
+  stride: 1
+  rollout_stride: 4
   autoencoder_checkpoint: null
   freeze_autoencoder: false
 

@@ -392,6 +392,7 @@ def _render_rollouts(
     fmt: str,
     fps: int,
     device: torch.device,
+    stride: int,
     free_running_only: bool,
 ) -> list[Path]:
     if not batch_indices:
@@ -408,6 +409,7 @@ def _render_rollouts(
             batch_on_device = _batch_to_device(batch, device)
             preds, trues = model.rollout(
                 batch_on_device,
+                stride=stride,
                 free_running_only=free_running_only,
             )
             if trues is None:
@@ -522,7 +524,8 @@ def main() -> None:
             args.video_format,
             args.fps,
             device,
-            args.free_running_only,
+            stride=inferred_n_steps_output,
+            free_running_only=args.free_running_only,
         )
 
 

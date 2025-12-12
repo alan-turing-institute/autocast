@@ -1,5 +1,8 @@
-data_path: ${oc.env:AUTOCAST_DATASETS,./datasets}/reaction_diffusion
-use_simulator: false
+# Note that if data_path is not null, the simulator settings will be ignored.
+# The use_simulator flag is not required if data_path is provided. 
+# Issue explaining this at https://github.com/alan-turing-institute/autocast/issues/108
+data_path: null
+use_simulator: true
 split:
   n_train: 4
   n_valid: 2
