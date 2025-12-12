@@ -170,20 +170,20 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
 
     _attach_colorbars()
 
-    fig.suptitle(f"{title} - Batch {batch_idx}", fontsize=14, fontweight="bold")
-
-    time_text = fig.text(0.5, 0.95, "", ha="center", fontsize=12)
+    suptitle_text = fig.suptitle("", fontsize=14, fontweight="bold")
 
     def update(frame):
         for ch in range(C):
             images[0][ch].set_array(true_batch[frame, :, :, ch])
             images[1][ch].set_array(pred_batch[frame, :, :, ch])
             images[2][ch].set_array(diff_batch[frame, :, :, ch])
-        time_text.set_text(f"Time Step: {frame}/{T - 1}")
-        return [img for row in images for img in row] + [time_text]
+        suptitle_text.set_text(
+            f"{title} - Batch {batch_idx} - Time Step: {frame}/{T - 1}"
+        )
+        return [img for row in images for img in row] + [suptitle_text]
 
     anim = animation.FuncAnimation(
-        fig, update, frames=T, interval=1000 / fps, blit=True, repeat=True
+        fig, update, frames=T, interval=1000 / fps, blit=False, repeat=True
     )
 
     if save_path:
