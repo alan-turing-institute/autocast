@@ -55,11 +55,12 @@ def parse_args() -> argparse.Namespace:
         help="Hydra config name to compose (defaults to 'processor').",
     )
     parser.add_argument(
-        "--override",
-        dest="overrides",
-        action="append",
-        default=[],
-        help="Optional Hydra override, e.g. --override trainer.max_epochs=5",
+        "overrides",
+        nargs="*",
+        help=(
+            "Hydra config overrides (e.g. trainer.max_epochs=5 "
+            "logging.wandb.enabled=true)"
+        ),
     )
     parser.add_argument(
         "--autoencoder-checkpoint",

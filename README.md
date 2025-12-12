@@ -40,15 +40,14 @@ stores rollout animations for the specified test batches.
 AutoCast now ships with an optional [Weights & Biases](https://wandb.ai/) integration that is
 fully driven by the Hydra config under `configs/logging/wandb.yaml`.
 
-- Enable logging for CLI workflows by overriding `logging.wandb.enabled=true` and
-	optionally providing `project`, `name`, or `tags` overrides:
+- Enable logging for CLI workflows by passing Hydra config overrides as positional arguments:
 
 	```bash
 	uv run train_processor \
 		--config-path=configs \
-		--override logging.wandb.enabled=true \
-		--override logging.wandb.project=autocast-experiments \
-		--override logging.wandb.name=processor-baseline
+		logging.wandb.enabled=true \
+		logging.wandb.project=autocast-experiments \
+		logging.wandb.name=processor-baseline
 	```
 
 - The autoencoder/processor training CLIs pass the configured `WandbLogger` directly into Lightning so that metrics, checkpoints, and artifacts are synchronized automatically.
