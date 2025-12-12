@@ -34,9 +34,9 @@ dev = [
 
 [project.scripts]
 autocast = "autocast:main"
-train_processor = "autocast.train.processor:main"
+train_encoder_processor_decoder = "autocast.train.encoder_processor_decoder:main"
 train_autoencoder = "autocast.train.autoencoder:main"
-evaluate_processor = "autocast.eval.processor:main"
+evaluate_encoder_processor_decoder = "autocast.eval.encoder_processor_decoder:main"
 
 [build-system]
 requires = ["uv_build>=0.8.15,<0.9.0"]
