@@ -6,13 +6,14 @@ from torch import nn
 from torchmetrics import Metric, MetricCollection
 
 from autocast.metrics import ALL_METRICS
+from autocast.models.denorm_mixin import DenormMixin
 from autocast.models.encoder_decoder import EncoderDecoder
 from autocast.processors.base import Processor
 from autocast.processors.rollout import RolloutMixin
 from autocast.types import Batch, EncodedBatch, Tensor, TensorBNC, TensorBTSC
 
 
-class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule):
+class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule, DenormMixin):
     """Encoder-Processor-Decoder Model."""
 
     encoder_decoder: EncoderDecoder

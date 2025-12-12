@@ -5,12 +5,13 @@ import lightning as L
 import torch
 from torch import nn
 
+from autocast.models.denorm_mixin import DenormMixin
 from autocast.processors.base import Processor
 from autocast.processors.rollout import RolloutMixin
 from autocast.types import EncodedBatch, Tensor, TensorBNC
 
 
-class ProcessorModel(RolloutMixin[EncodedBatch], ABC, L.LightningModule):
+class ProcessorModel(RolloutMixin[EncodedBatch], ABC, L.LightningModule, DenormMixin):
     """Processor Base Class."""
 
     processor: Processor
@@ -44,14 +45,18 @@ class ProcessorModel(RolloutMixin[EncodedBatch], ABC, L.LightningModule):
     def forward(self, x: TensorBNC) -> TensorBNC:
         return self.processor.map(x)
 
-    def training_step(self, batch: EncodedBatch, batch_idx: int) -> Tensor:  # noqa: ARG002
+    def training_step(
+        self, batch: EncodedBatch, batch_idx: int
+    ) -> Tensor:  # noqa: ARG002
         loss = self.processor.loss(batch)
         self.log(
             "train_loss", loss, prog_bar=True, batch_size=batch.encoded_inputs.shape[0]
         )
         return loss
 
-    def validation_step(self, batch: EncodedBatch, batch_idx: int) -> Tensor:  # noqa: ARG002
+    def validation_step(
+        self, batch: EncodedBatch, batch_idx: int
+    ) -> Tensor:  # noqa: ARG002
         loss = self.processor.loss(batch)
         self.log(
             "val_loss", loss, prog_bar=True, batch_size=batch.encoded_inputs.shape[0]

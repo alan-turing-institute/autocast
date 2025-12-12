@@ -6,10 +6,11 @@ from torch import nn
 
 from autocast.decoders import Decoder
 from autocast.encoders import Encoder
+from autocast
 from autocast.types import Batch, Tensor, TensorBNC, TensorBTSC
 
 
-class EncoderDecoder(L.LightningModule):
+class EncoderDecoder(L.LightningModule, DenormMixin):
     """Encoder-Decoder Model."""
 
     encoder: Encoder

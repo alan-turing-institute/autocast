@@ -4,6 +4,7 @@ from torch import nn
 
 from autocast.decoders import Decoder
 from autocast.encoders import Encoder
+from autocast.models.denorm_mixin import DenormMixin
 from autocast.models.encoder_decoder import EncoderDecoder
 from autocast.types import Batch, Tensor, TensorBNC, TensorBTSC
 
@@ -36,7 +37,7 @@ class AELoss(nn.Module):
         return total_loss
 
 
-class AE(EncoderDecoder):
+class AE(EncoderDecoder, DenormMixin):
     """Autoencoder Model."""
 
     encoder: Encoder
