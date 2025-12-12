@@ -42,6 +42,9 @@ def test_train_autoencoder(
     mock_wandb_logger = MagicMock()
     mock_watch_cfg = MagicMock()
 
+    # change epocchs to one
+    cfg.trainer.max_epochs = 1
+
     with (
         patch(
             "autocast.train.autoencoder.create_wandb_logger",
