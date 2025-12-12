@@ -1,5 +1,5 @@
-data_path: null
-use_simulator: true
+data_path: ./datasets/reaction_diffusion/
+use_simulator: false
 split:
   n_train: 4
   n_valid: 2
