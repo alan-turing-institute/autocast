@@ -455,8 +455,8 @@ def main() -> None:
     resolved_cfg = OmegaConf.to_container(cfg, resolve=True)
     wandb_logger, _ = create_wandb_logger(
         cfg.get("logging"),
-        experiment_name=cfg.get("experiment_name", "processor"),
-        job_type="evaluate-processor",
+        experiment_name=cfg.get("experiment_name", "encoder_processor_decoder"),
+        job_type="evaluate-encoder-processor-decoder",
         work_dir=work_dir,
         config={
             "hydra": resolved_cfg,
