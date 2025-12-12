@@ -1,3 +1,5 @@
+from typing import Literal
+
 import matplotlib.pyplot as plt
 import numpy as np
 from einops import rearrange
@@ -16,7 +18,7 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     cmap="viridis",
     save_path=None,
     title="Ground Truth vs Prediction",
-    colorbar_mode="none",
+    colorbar_mode: Literal["none", "row", "column", "all"] = "none",
     channel_names=None,
 ):
     """Create a video comparing ground truth and predicted spatiotemporal time series.
@@ -56,9 +58,9 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     animation.FuncAnimation
         Animation object that can be displayed in notebooks.
     """
-    colorbar_mode = colorbar_mode.lower()
+    colorbar_mode_str = colorbar_mode.lower()
     valid_modes = {"none", "row", "column", "all"}
-    if colorbar_mode not in valid_modes:
+    if colorbar_mode_str not in valid_modes:
         raise ValueError(
             "Invalid colorbar_mode "
             f"'{colorbar_mode}'. Expected one of {sorted(valid_modes)}."
@@ -85,20 +87,20 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
 
     norms = [[None] * C for _ in range(n_primary_rows)]
 
-    if colorbar_mode == "column":
+    if colorbar_mode_str == "column":
         for ch in range(C):
             channel_arrays = [row[:, :, :, ch] for row in primary_rows]
             min_val, max_val = _range_from_arrays(channel_arrays)
             norm = Normalize(vmin=min_val, vmax=max_val)
             for row_idx in range(n_primary_rows):
                 norms[row_idx][ch] = norm
-    elif colorbar_mode == "row":
+    elif colorbar_mode_str == "row":
         for row_idx, row in enumerate(primary_rows):
             min_val, max_val = _range_from_arrays([row])
             norm = Normalize(vmin=min_val, vmax=max_val)
             for ch in range(C):
                 norms[row_idx][ch] = norm
-    elif colorbar_mode == "all":
+    elif colorbar_mode_str == "all":
         min_val, max_val = _range_from_arrays(primary_rows)
         norm = Normalize(vmin=min_val, vmax=max_val)
         for row_idx in range(n_primary_rows):

@@ -188,6 +188,8 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         self.constant_scalars = (
             torch.Tensor(f["constant_scalars"][:]).to(self.dtype)  # type: ignore  # noqa: PGH003
             if "constant_scalars" in f
+            and f["constant_scalars"] is not None
+            and f["constant_scalars"] != {}
             else None
         )  # [N, C]
 
@@ -196,7 +198,9 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             torch.Tensor(f["constant_fields"][:]).to(  # type: ignore # noqa: PGH003
                 self.dtype
             )  # [N, W, H, C]
-            if "constant_fields" in f and f["constant_fields"] != {}
+            if "constant_fields" in f
+            and f["constant_fields"] is not None
+            and f["constant_fields"] != {}
             else None
         )
 

@@ -106,7 +106,7 @@ def test_flow_matching_processor(
     encoded_batch = next(iter(encoded_loader))
 
     processor = FlowMatchingProcessor(
-        flow_matching_model=TemporalUNetBackbone(
+        backbone=TemporalUNetBackbone(
             in_channels=n_steps_output * n_channels_out,
             out_channels=n_steps_output * n_channels_out,
             cond_channels=n_steps_input * n_channels_in,

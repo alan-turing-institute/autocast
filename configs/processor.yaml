@@ -1,8 +1,6 @@
 defaults:
   - data: reaction_diffusion
-  - encoder: permute_concat
-  - decoder: channels_last
-  - processor: fno
+  - model: encoder_processor_decoder
   - trainer: default
   - logging: wandb
   - _self_
@@ -14,17 +12,11 @@ output:
   save_config: true
 
 training:
-  n_steps_input: 4
+  n_steps_input: 1
   n_steps_output: 4
-  stride: 4
+  stride: null
   autoencoder_checkpoint: null
   freeze_autoencoder: false
-
-encoder_processor_decoder:
-  learning_rate: 0.001
-  train_processor_only: false
-  loss_func:
-    _target_: torch.nn.MSELoss
 
 hydra:
   run:

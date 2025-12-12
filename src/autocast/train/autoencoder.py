@@ -123,6 +123,11 @@ def _generate_split(simulator: Any, split_cfg: DictConfig) -> dict[str, Any]:
 
 def build_datamodule(cfg: DictConfig) -> SpatioTemporalDataModule:
     """Instantiate the `SpatioTemporalDataModule` described by `cfg`."""
+    # If the config explicitly names a datamodule class via Hydra `_target_`,
+    # instantiate and return directly
+    if cfg.get("_target_") is not None:
+        log.info("Instantiating datamodule from target: %s", cfg.get("_target_"))
+        return instantiate(cfg)
     data_path = cfg.get("data_path")
     data = None
     if cfg.get("use_simulator"):

@@ -1,0 +1,18 @@
+_target_: autocast.processors.flow_matching.FlowMatchingProcessor
+stride: ${training.stride}
+teacher_forcing_ratio: 0.0
+max_rollout_steps: ${training.n_steps_output}
+learning_rate: 0.0001
+flow_ode_steps: 4
+n_steps_output: null
+n_channels_out: null
+backbone:
+  _target_: autocast.nn.unet.TemporalUNetBackbone
+  in_channels: null
+  out_channels: null
+  cond_channels: null
+  mod_features: 256
+  hid_channels: [32, 64, 128]
+  hid_blocks: [2, 2, 2]
+  spatial: 2
+  periodic: false

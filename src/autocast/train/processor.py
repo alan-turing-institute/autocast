@@ -86,6 +86,12 @@ def parse_args() -> argparse.Namespace:
         help="Override training.n_steps_output (number of target time steps).",
     )
     parser.add_argument(
+        "--stride",
+        type=int,
+        default=None,
+        help="Override training stride (rollout interval between predictions).",
+    )
+    parser.add_argument(
         "--work-dir",
         type=Path,
         default=Path.cwd(),
@@ -165,7 +171,7 @@ def instantiate_trainer(
     )
 
 
-def main() -> None:
+def main() -> None:  # noqa: PLR0915
     """CLI entrypoint for training the processor."""
     args = parse_args()
     logging.basicConfig(level=logging.INFO)
@@ -175,6 +181,7 @@ def main() -> None:
 
     cfg = compose_training_config(args)
     resolved_cfg = OmegaConf.to_container(cfg, resolve=True)
+    model_cfg = cfg.get("model") or cfg
     wandb_logger, watch_cfg = create_wandb_logger(
         cfg.get("logging"),
         experiment_name=cfg.get("experiment_name", "processor"),
@@ -225,8 +232,8 @@ def main() -> None:
     normalize_processor_cfg(cfg)
 
     encoder, decoder = build_autoencoder_modules(
-        cfg.encoder,
-        cfg.decoder,
+        model_cfg.encoder,
+        model_cfg.decoder,
         training_params.autoencoder_checkpoint,
     )
     encoder_decoder = EncoderDecoder(encoder=encoder, decoder=decoder)
@@ -236,17 +243,25 @@ def main() -> None:
         _freeze_module(encoder_decoder.encoder)
         _freeze_module(encoder_decoder.decoder)
 
-    processor = instantiate(cfg.processor)
+    processor = instantiate(model_cfg.processor)
 
-    epd_cfg = cfg.get("encoder_processor_decoder")
-    learning_rate = epd_cfg.get("learning_rate", 1e-3) if epd_cfg is not None else 1e-3
-    loss_cfg = epd_cfg.get("loss_func") if epd_cfg is not None else None
+    epd_cfg = model_cfg
+    learning_rate = epd_cfg.get("learning_rate", 1e-3)
+    train_processor_only = epd_cfg.get("train_processor_only", False)
+    teacher_forcing_ratio = epd_cfg.get("teacher_forcing_ratio", 0.5)
+    max_rollout_steps = epd_cfg.get("max_rollout_steps", 10)
+    loss_cfg = epd_cfg.get("loss_func")
     loss_func = instantiate(loss_cfg) if loss_cfg is not None else nn.MSELoss()
+    stride = training_params.stride
 
     model = EncoderProcessorDecoder(
         encoder_decoder=encoder_decoder,
         processor=processor,
         learning_rate=learning_rate,
+        train_processor_only=train_processor_only,
+        stride=stride,
+        teacher_forcing_ratio=teacher_forcing_ratio,
+        max_rollout_steps=max_rollout_steps,
         loss_func=loss_func,
     )
 

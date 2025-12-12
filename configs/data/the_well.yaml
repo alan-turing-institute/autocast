@@ -1,0 +1,36 @@
+# TheWell dataset configuration
+# Configure TheWellDataModule for loading datasets from The Well benchmark
+_target_: autocast.data.datamodule.TheWellDataModule
+
+# Dataset name from The Well.
+# Set to `null` here so it must be provided or overridden from the CLI:
+# Example override: `python script.py data=the_well data.well_dataset_name=turbulent_radiative_layer_2D`
+well_dataset_name: turbulent_radiative_layer_2D
+
+# Path to The Well datasets. Read from `AUTOCAST_DATASETS` environment variable
+# Example: export AUTOCAST_DATASETS=/path/to/autocast/datasets
+well_base_path: ${oc.env:AUTOCAST_DATASETS,./datasets}
+
+# Temporal configuration
+n_steps_input: 1
+n_steps_output: 4
+min_dt_stride: 1
+max_dt_stride: 1
+
+# DataLoader configuration
+batch_size: 16
+
+# Normalization
+use_normalization: true
+normalization_path: ../stats.yaml  # defaults to ../stats.yaml relative to dataset
+
+# Mode configuration - can be overridden in autoencoder.yaml
+autoencoder_mode: false
+
+# Additional TheWell parameters
+max_rollout_steps: 100
+flatten_tensors: true
+cache_small: true
+max_cache_size: 1.0e9
+return_grid: true
+boundary_return_type: padding

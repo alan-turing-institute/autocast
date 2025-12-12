@@ -107,6 +107,12 @@ def parse_args() -> argparse.Namespace:
         help="Override training.n_steps_output (number of target time steps).",
     )
     parser.add_argument(
+        "--stride",
+        type=int,
+        default=None,
+        help="Override training stride used for rollouts (defaults to n_steps_output).",
+    )
+    parser.add_argument(
         "--checkpoint",
         type=Path,
         required=True,
@@ -330,17 +336,19 @@ def _load_state_dict(checkpoint_path: Path) -> OrderedDict[str, torch.Tensor]:
     return state_dict
 
 
-def _load_model(cfg: DictConfig, checkpoint_path: Path) -> EncoderProcessorDecoder:
-    encoder = instantiate(cfg.encoder)
-    decoder = instantiate(cfg.decoder)
+def _load_model(
+    cfg: DictConfig,
+    checkpoint_path: Path,
+) -> EncoderProcessorDecoder:
+    model_cfg = cfg.get("model") or cfg
+    encoder = instantiate(model_cfg.encoder)
+    decoder = instantiate(model_cfg.decoder)
     encoder_decoder = EncoderDecoder(encoder=encoder, decoder=decoder)
-    processor = instantiate(cfg.processor)
-    epd_cfg = cfg.get("encoder_processor_decoder") or {}
+    processor = instantiate(model_cfg.processor)
+    epd_cfg = model_cfg
     learning_rate = epd_cfg.get("learning_rate", 1e-3)
-    training_cfg = cfg.get("training")
-    stride = 1
-    if isinstance(training_cfg, DictConfig):
-        stride = training_cfg.get("stride", 1)
+    training_cfg = cfg.get("training") or {}
+    stride = training_cfg.get("stride", 1)
     teacher_forcing_ratio = epd_cfg.get("teacher_forcing_ratio", 0.5)
     max_rollout_steps = epd_cfg.get("max_rollout_steps", 10)
     loss_cfg = epd_cfg.get("loss_func")
@@ -374,29 +382,6 @@ def _load_model(cfg: DictConfig, checkpoint_path: Path) -> EncoderProcessorDecod
     return model
 
 
-def _ensure_rollout_stride(batch: Batch, stride: int) -> Batch:
-    current_steps = batch.input_fields.shape[1]
-    if current_steps >= stride:
-        return batch
-    deficit = stride - current_steps
-    if batch.output_fields.shape[1] < deficit:
-        msg = (
-            "Rollout requested stride longer than available ground-truth window: "
-            f"needed {stride}, have {current_steps} inputs and "
-            f"{batch.output_fields.shape[1]} outputs."
-        )
-        raise ValueError(msg)
-    padding = batch.output_fields[:, :deficit, ...]
-    new_inputs = torch.cat([batch.input_fields, padding], dim=1)
-    new_outputs = batch.output_fields[:, deficit:, ...]
-    return Batch(
-        input_fields=new_inputs,
-        output_fields=new_outputs,
-        constant_scalars=batch.constant_scalars,
-        constant_fields=batch.constant_fields,
-    )
-
-
 def _render_rollouts(
     model: EncoderProcessorDecoder,
     dataloader,
@@ -419,12 +404,7 @@ def _render_rollouts(
         for batch_idx, batch in enumerate(dataloader):
             if batch_idx not in targets:
                 continue
-            try:
-                stride_ready_batch = _ensure_rollout_stride(batch, model.stride)
-            except ValueError as exc:
-                log.warning("Skipping batch %s: %s", batch_idx, exc)
-                continue
-            batch_on_device = _batch_to_device(stride_ready_batch, device)
+            batch_on_device = _batch_to_device(batch, device)
             preds, trues = model.rollout(
                 batch_on_device,
                 free_running_only=free_running_only,
@@ -450,6 +430,7 @@ def _render_rollouts(
                 batch_idx=sample_index,
                 fps=fps,
                 save_path=str(filename),
+                colorbar_mode="column",
             )
             saved_paths.append(filename)
             rendered_batches.add(batch_idx)
@@ -509,7 +490,10 @@ def main() -> None:
 
     metrics = _build_metrics(args.metrics or ("mse", "rmse"))
 
-    model = _load_model(cfg, args.checkpoint)
+    model = _load_model(
+        cfg,
+        args.checkpoint,
+    )
     device = _resolve_device(args.device)
     model.to(device)
 

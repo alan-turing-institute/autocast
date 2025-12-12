@@ -1,0 +1,12 @@
+defaults:
+  - /encoder: identity
+  - /decoder: identity
+  - /processor: flow_matching
+  - _self_
+
+learning_rate: 0.001
+train_processor_only: false
+teacher_forcing_ratio: 0.5
+max_rollout_steps: 10
+loss_func:
+  _target_: torch.nn.MSELoss
