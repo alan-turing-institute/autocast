@@ -20,15 +20,17 @@ Train an encoder-processor-decoder stack and evaluate the resulting checkpoint:
 
 ```bash
 # Train
-uv run train_processor --config-path=configs/ --work-dir=outputs/processor_run
-
+uv run train_encoder_processor_decoder \
+    --config-path=configs/ \
+	--work-dir=outputs/encoder_processor_decoder_run
+	
 # Evaluate
-uv run evaluate_processor \
+uv run evaluate_encoder_processor_decoder \
 	--config-path=configs/ \
 	--work-dir=outputs/processor_eval \
-	--checkpoint=outputs/processor_run/encoder_processor_decoder.ckpt \
+	--checkpoint=outputs/encoder_processor_decoder_run/encoder_processor_decoder.ckpt \
 	--batch-index=0 --batch-index=3 \
-	--video-dir=outputs/processor_eval/videos
+	--video-dir=outputs/encoder_processor_decoder_run/videos
 ```
 
 Evaluation writes a CSV of aggregate metrics to `--csv-path` (defaults to
@@ -43,7 +45,7 @@ fully driven by the Hydra config under `configs/logging/wandb.yaml`.
 - Enable logging for CLI workflows by passing Hydra config overrides as positional arguments:
 
 	```bash
-	uv run train_processor \
+	uv run train_encoder_processor_decoder \
 		--config-path=configs \
 		logging.wandb.enabled=true \
 		logging.wandb.project=autocast-experiments \
