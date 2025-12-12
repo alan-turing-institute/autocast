@@ -14,7 +14,6 @@ class DenormMixin(L.LightningModule):
     """
 
     norm: ZScoreNormalization | None = None
-    denormalize_predictions: bool = True
 
     def on_fit_start(self):
         """Automatically connect to datamodule's normalizer at training start."""
@@ -109,3 +108,30 @@ class DenormMixin(L.LightningModule):
             denorm_tensor = self.norm.denormalize_flattened(tensor, "variable")
 
         return denorm_tensor
+
+    def predict_step(
+        self,
+        batch: Batch,
+        batch_idx: int,
+    ) -> Tensor:
+        """
+        Override predict_step to include denormalization.
+
+        Parameters
+        ----------
+        batch : Batch
+            The input batch.
+        batch_idx : int
+            The index of the batch.
+
+        Returns
+        -------
+        Tensor
+            The (optionally denormalized) predictions.
+        """
+        predictions = self(batch)
+
+        if self.norm is None:
+            return predictions
+
+        return self.denormalize_tensor(predictions)

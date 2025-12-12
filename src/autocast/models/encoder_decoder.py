@@ -61,9 +61,6 @@ class EncoderDecoder(DenormMixin):
         )
         return loss
 
-    def predict_step(self, batch: Batch, batch_idx: int) -> TensorBTSC:  # noqa: ARG002
-        return self(batch)
-
     def encode(self, batch: Batch) -> TensorBNC:
         return self.encoder.encode(batch)
 
