@@ -54,6 +54,8 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         ----------
         data_path: str
             Path to the HDF5 file containing the dataset.
+        data: dict | None
+            Preloaded data. Defaults to None.
         n_steps_input: int
             Number of input time steps.
         n_steps_output: int
@@ -88,6 +90,8 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         self.normalization_type = normalization_type
         self.normalization_path = normalization_path
         self.autoencoder_mode = autoencoder_mode
+        # NOTE: currently this only gets populated in subclasses
+        # normalization implementation relies on metadata
         self.metadata: Metadata | None = None
         # this is the same attribute name that The WellDataset uses
         self.norm: ZScoreNormalization | None = None
