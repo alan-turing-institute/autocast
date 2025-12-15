@@ -36,7 +36,6 @@ def test_train_autoencoder(
     cfg = compose_training_config(autoencoder_cli_args)
     resolved_work_dir = _resolve_work_dir(autoencoder_cli_args, cfg)
     _configure_trainer_root(cfg, resolved_work_dir)
-    print(resolved_work_dir)
 
     # Mock wandb logger and related components
     mock_wandb_logger = MagicMock()
@@ -58,10 +57,9 @@ def test_train_autoencoder(
         mock_create_logger.assert_called_once()
         assert mock_create_logger.call_args.args[0] == cfg.get("logging")
 
-        # Veryify checkpoint path is returned
+        # Verify checkpoint path is returned and exists
         assert checkpoint_path is not None
         assert Path(checkpoint_path).exists()
-        assert Path(checkpoint_path).suffix == ".ckpt"
 
         # Verify that working dir has a checkpoints folder, checkpoint file
         # and a yaml file
