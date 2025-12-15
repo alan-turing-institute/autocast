@@ -45,7 +45,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--config-name",
-        default="config",
+        default="autoencoder",
         help="Hydra config name to compose (defaults to 'config').",
     )
     parser.add_argument(
