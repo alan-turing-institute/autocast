@@ -2,9 +2,11 @@
 #SBATCH --account=vjgo8416-ai-phy-sys
 #SBATCH --qos turing
 #SBATCH --time 3:00:00
-#SBATCH --nodes 1
-#SBATCH --gpus 1
-#SBATCH --tasks-per-node 36
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --gpus=1
+#SBATCH --mem=32G
 #SBATCH --job-name train_and_eval_autoencoder
 
 set -e
@@ -15,13 +17,13 @@ module load bask-apps/live
 module load Python/3.11.3-GCCcore-12.3.0
 module load FFmpeg/6.0-GCCcore-12.3.0
 
-# Activate virtual environment - This assumes you have already created a virtual environment in the project directory
-# If you haven't, replace with `uv venv`
-source .venv/bin/activate
 
 # Pip install to get current version of code    
 uv sync --extra dev
 
+# Activate virtual environment - This assumes you have already created a virtual environment in the project directory
+# If you haven't, replace with `uv venv`
+source .venv/bin/activate
 # First define a timestamp
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
