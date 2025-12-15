@@ -165,6 +165,7 @@ class SpatioTemporalDataModule(LightningDataModule):
         use_normalization: bool = False,
         normalization_type: type[ZScoreNormalization] | None = None,
         normalization_path: None | str = None,
+        normalization_stats: dict | None = None,
     ):
         super().__init__()
         self.verbose = verbose
@@ -222,6 +223,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             use_normalization=use_normalization,
             normalization_type=normalization_type,
             normalization_path=normalization_path,
+            normalization_stats=normalization_stats,
         )
         self.test_dataset = dataset_cls(
             data_path=str(test_path) if test_path is not None else None,
@@ -237,6 +239,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             use_normalization=use_normalization,
             normalization_type=normalization_type,
             normalization_path=normalization_path,
+            normalization_stats=normalization_stats,
         )
 
         self.batch_size = batch_size
@@ -256,6 +259,7 @@ class SpatioTemporalDataModule(LightningDataModule):
                 use_normalization=use_normalization,
                 normalization_type=normalization_type,
                 normalization_path=normalization_path,
+                normalization_stats=normalization_stats,
             )
             self.rollout_test_dataset = dataset_cls(
                 data_path=str(test_path) if test_path is not None else None,
@@ -271,6 +275,7 @@ class SpatioTemporalDataModule(LightningDataModule):
                 use_normalization=use_normalization,
                 normalization_type=normalization_type,
                 normalization_path=normalization_path,
+                normalization_stats=normalization_stats,
             )
 
     def train_dataloader(self) -> DataLoader:

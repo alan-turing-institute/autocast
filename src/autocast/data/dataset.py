@@ -46,6 +46,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         use_normalization: bool = False,
         normalization_type: type[ZScoreNormalization] | None = None,
         normalization_path: str | None = None,
+        normalization_stats: dict | None = None,
     ):
         """
         Initialize the dataset.
@@ -83,16 +84,16 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             Normalization object (computed from training data). Defaults to None.
         normalization_path: str | None
             Path to normalization statistics file (yaml). Defaults to None.
+        normalization_stats: dict | None
+            Preloaded normalization statistics. Defaults to None.
         """
         self.dtype = dtype
         self.verbose = verbose
         self.use_normalization = use_normalization
         self.normalization_type = normalization_type
         self.normalization_path = normalization_path
+        self.normalization_stats = normalization_stats
         self.autoencoder_mode = autoencoder_mode
-        # NOTE: currently this only gets populated in subclasses
-        # normalization implementation relies on metadata
-        self.metadata: Metadata | None = None
         # this is the same attribute name that The WellDataset uses
         self.norm: ZScoreNormalization | None = None
 
@@ -275,35 +276,22 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             )
             raise ValueError(msg)
         if self.use_normalization and self.normalization_type:
-            # TODO: once we implement other ways of passing normalization data,
-            #  we can remove the dependency on normalization_path here
-            if self.normalization_path is None:
-                msg = (
-                    "Normalization path must be provided when "
-                    "`use_normalization` is True."
-                )
-                raise ValueError(msg)
-            if self.metadata is None:
-                msg = "Metadata must be set before normalization."
-                raise ValueError(msg)
-            with open(self.normalization_path, mode="r") as f:
-                stats = yaml.safe_load(f)
-            if len(self.metadata.field_names.keys()) > 1:
-                # TODO: in The Well they separately track:
-                #   - `core_field_names` (vs field_names) and
-                #   - `core_constant_field_names` (vs constant_field_names)
-                # e.g., core is [`velocity`] instead of [`velocity_x`, `velocity_y`]
-                # we need a way to do this (once we have datasets that require it)
-                msg = (
-                    "Staggered grid normalization not implemented. Found "
-                    f"field_names indices {list(self.metadata.field_names.keys())}, but "
-                    "only index 0 is currently supported."
-                )
-                raise NotImplementedError(msg)
+            if self.normalization_stats is None:
+                if self.normalization_path is None:
+                    msg = (
+                        "Normalization data path must be provided when "
+                        "`use_normalization` is True and `normalization_stats` "
+                        "are not provided."
+                    )
+                    raise ValueError(msg)
+
+                with open(self.normalization_path, mode="r") as f:
+                    self.normalization_stats = yaml.safe_load(f)
+
             self.norm = self.normalization_type(
-                stats,
-                self.metadata.field_names[0],
-                [],
+                self.normalization_stats.get("stats", {}),
+                self.normalization_stats.get("core_field_names", []),
+                self.normalization_stats.get("constant_field_names", []),
             )
         else:
             self.norm = None
@@ -357,7 +345,6 @@ class AdvectionDiffusionDataset(SpatioTemporalDataset):
             n_steps_per_trajectory=[self.data.shape[1]] * self.data.shape[0],
             grid_type="cartesian",
         )
-        self.set_up_normalization()
 
 
 class BOUTDataset(SpatioTemporalDataset):
@@ -386,7 +373,6 @@ class BOUTDataset(SpatioTemporalDataset):
             n_steps_per_trajectory=[self.data.shape[1]] * self.data.shape[0],
             grid_type="cartesian",
         )
-        self.set_up_normalization()
 
 
 class TheWell(SpatioTemporalDataset):
