@@ -1,5 +1,3 @@
-"""Tests for normalization statistics loading in SpatioTemporalDataset and DataModule."""
-
 from pathlib import Path
 
 import pytest
