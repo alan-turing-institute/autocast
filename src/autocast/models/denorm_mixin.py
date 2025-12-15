@@ -45,6 +45,7 @@ class DenormMixin(L.LightningModule):
                 datamodule.train_dataset, "norm"
             ):
                 log.info("Getting normalizer from the train dataset.")
+                # SpatioTemporalDataset and WellDataset both have norm attribute
                 self.norm = datamodule.train_dataset.norm
 
     def denormalize_batch(

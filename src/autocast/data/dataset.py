@@ -1,5 +1,4 @@
 from collections.abc import Callable
-from itertools import chain
 from typing import Any, Literal
 
 import h5py
@@ -90,6 +89,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         self.normalization_path = normalization_path
         self.autoencoder_mode = autoencoder_mode
         self.metadata: Metadata | None = None
+        # this is the same attribute name that The WellDataset uses
         self.norm: ZScoreNormalization | None = None
 
         if data_path is not None:
@@ -273,16 +273,22 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
                 raise ValueError(msg)
             with open(self.normalization_path, mode="r") as f:
                 stats = yaml.safe_load(f)
-            # TODO: in The Well they separately track:
-            #   - `core_field_names` and
-            #   - `core_constant_field_names`
-            # e.g., core is [`velocity`] instead of [`velocity_x`, `velocity_y`]
-            # Here we just flatten the field names because that works for our current
-            # examples but might have to handle that here too for more complex datasets
+            if len(self.metadata.field_names.keys()) > 1:
+                # TODO: in The Well they separately track:
+                #   - `core_field_names` (vs field_names) and
+                #   - `core_constant_field_names` (vs constant_field_names)
+                # e.g., core is [`velocity`] instead of [`velocity_x`, `velocity_y`]
+                # we need a way to do this (once we have datasets that require it)
+                msg = (
+                    "Staggered grid normalization not implemented. Found "
+                    f"field_names indices {list(self.metadata.field_names.keys())}, but "
+                    "only index 0 is currently supported."
+                )
+                raise NotImplementedError(msg)
             self.norm = self.normalization_type(
                 stats,
-                list(chain.from_iterable(self.metadata.field_names.values())),
-                list(chain.from_iterable(self.metadata.constant_field_names.values())),
+                self.metadata.field_names[0],
+                [],
             )
         else:
             self.norm = None
