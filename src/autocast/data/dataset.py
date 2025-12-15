@@ -267,6 +267,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         - Sets `self.norm` to `None` if `self.use_normalization = False`.
         """
 
+        # TODO: The well uses both attributes but cant we just use normalization_type ?
         if (self.use_normalization and self.normalization_type is None) or (
             not self.use_normalization and self.normalization_type is not None
         ):  # noqa: PGH003
@@ -276,6 +277,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             )
             raise ValueError(msg)
         if self.use_normalization and self.normalization_type:
+            # TODO: consider checking if only stats dict or path is provided
             if self.normalization_stats is None:
                 if self.normalization_path is None:
                     msg = (
