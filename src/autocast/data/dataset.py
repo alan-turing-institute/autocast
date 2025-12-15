@@ -143,9 +143,8 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         for traj_idx in range(self.n_trajectories):
             # Create subtrajectories for this trajectory
             fields = (
-                self.data[traj_idx].unfold(
-                    0, self.n_steps_input + self.n_steps_output, self.stride
-                )
+                self.data[traj_idx]
+                .unfold(0, self.n_steps_input + self.n_steps_output, self.stride)
                 # [num_subtrajectories, T_in + T_out, W, H, C]
                 .permute(0, -1, 1, 2, 3)
             )
@@ -295,11 +294,10 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         - Call method after metadata has been created.
         - Sets `self.norm` to `None` if `self.use_normalization = False`.
         """
-
         # TODO: The well uses both attributes but cant we just use normalization_type ?
         if (self.use_normalization and self.normalization_type is None) or (
             not self.use_normalization and self.normalization_type is not None
-        ):  # noqa: PGH003
+        ):
             msg = (
                 "Both `use_normalization` and `normalization_type` must be set "
                 "consistently."
@@ -316,7 +314,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
                     )
                     raise ValueError(msg)
 
-                with open(self.normalization_path, mode="r") as f:
+                with open(self.normalization_path) as f:
                     self.normalization_stats = yaml.safe_load(f)
 
             self.norm = self.normalization_type(
