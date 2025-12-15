@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from torchmetrics import Metric, MetricCollection
 
 from autocast.metrics import ALL_METRICS, MSE
+from autocast.types import Tensor
 
 
 class MetricsMixin:

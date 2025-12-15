@@ -5,7 +5,6 @@ import torch
 from torch import nn
 from torchmetrics import Metric, MetricCollection
 
-from autocast.metrics import ALL_METRICS, MSE
 from autocast.metrics.utils import MetricsMixin
 from autocast.models.encoder_decoder import EncoderDecoder
 from autocast.processors.base import Processor
