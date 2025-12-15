@@ -245,6 +245,35 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         output_fields = (
             input_fields if self.autoencoder_mode else self.all_output_fields[idx]
         )
+        if self.use_normalization and self.norm is not None:
+            field_names = (
+                self.norm.core_field_names + self.norm.core_constant_field_names
+            )
+
+            # Normalize each channel separately
+            input_fields_list = []
+            output_fields_list = []
+
+            # TODO: assumes that channels are in same order as field names
+            for i, field_name in enumerate(field_names):
+                input_channel = input_fields[..., i]
+                output_channel = output_fields[..., i]
+
+                # Normalize and add channel dim back
+                input_normalized = self.norm.normalize(
+                    input_channel, field_name
+                ).unsqueeze(-1)
+                output_normalized = self.norm.normalize(
+                    output_channel, field_name
+                ).unsqueeze(-1)
+
+                input_fields_list.append(input_normalized)
+                output_fields_list.append(output_normalized)
+
+            # Concatenate back along channel dimension
+            if input_fields_list:
+                input_fields = torch.cat(input_fields_list, dim=-1)
+                output_fields = torch.cat(output_fields_list, dim=-1)
 
         item = {
             "input_fields": input_fields,
