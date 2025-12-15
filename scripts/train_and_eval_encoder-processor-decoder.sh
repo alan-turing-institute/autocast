@@ -8,6 +8,8 @@
 #SBATCH --gpus=1
 #SBATCH --mem=32G
 #SBATCH --job-name train_and_eval_encoder-processor-decoder
+#SBATCH --output=logs/train_and_eval_encoder-processor-decoder_%j.out
+#SBATCH --error=logs/train_and_eval_encoder-processor-decoder_%j.err
 
 set -e
 
