@@ -47,8 +47,10 @@ class ProcessorModel(RolloutMixin[EncodedBatch], ABC, L.LightningModule, Metrics
         return self.processor.map(x)
 
     def training_step(
-        self, batch: EncodedBatch, batch_idx: int
-    ) -> Tensor:  # noqa: ARG002
+        self,
+        batch: EncodedBatch,
+        batch_idx: int,  # noqa: ARG002
+    ) -> Tensor:
         loss = self.processor.loss(batch)
         self.log(
             "train_loss", loss, prog_bar=True, batch_size=batch.encoded_inputs.shape[0]
@@ -56,8 +58,10 @@ class ProcessorModel(RolloutMixin[EncodedBatch], ABC, L.LightningModule, Metrics
         return loss
 
     def validation_step(
-        self, batch: EncodedBatch, batch_idx: int
-    ) -> Tensor:  # noqa: ARG002
+        self,
+        batch: EncodedBatch,
+        batch_idx: int,  # noqa: ARG002
+    ) -> Tensor:
         loss = self.processor.loss(batch)
         self.log(
             "val_loss", loss, prog_bar=True, batch_size=batch.encoded_inputs.shape[0]
