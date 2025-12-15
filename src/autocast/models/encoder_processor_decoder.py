@@ -74,8 +74,7 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule):
 
     def training_step(self, batch: Batch, batch_idx: int) -> Tensor:  # noqa: ARG002
         if self.train_processor_only:
-            with torch.no_grad():
-                encoded_batch = self.encoder_decoder.encoder.encode_batch(batch)
+            encoded_batch = self.encoder_decoder.encoder.encode_batch(batch)
             loss = self.processor.loss(encoded_batch)
             self.log(
                 "train_loss",
@@ -99,8 +98,7 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule):
 
     def validation_step(self, batch: Batch, batch_idx: int) -> Tensor:  # noqa: ARG002
         if self.train_processor_only:
-            with torch.no_grad():
-                encoded_batch = self.encoder_decoder.encoder.encode_batch(batch)
+            encoded_batch = self.encoder_decoder.encoder.encode_batch(batch)
             loss = self.processor.loss(encoded_batch)
             self.log(
                 "val_loss",
@@ -108,6 +106,14 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule):
                 prog_bar=True,
                 batch_size=batch.input_fields.shape[0],
             )
+            if self.val_metrics is not None:
+                preds = self.processor.map(encoded_batch.encoded_inputs)
+                self._log_metric_collection(
+                    self.val_metrics,
+                    preds,
+                    encoded_batch.encoded_output_fields,
+                    batch.input_fields.shape[0],
+                )
             return loss
 
         if self.loss_func is None:
@@ -120,22 +126,14 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule):
             "val_loss", loss, prog_bar=True, batch_size=batch.input_fields.shape[0]
         )
         if self.val_metrics is not None:
-            self.val_metrics.update(y_pred, y_true)
-            self.log_dict(
-                self.val_metrics,
-                prog_bar=False,
-                on_step=False,
-                on_epoch=True,
-                batch_size=batch.input_fields.shape[0],
+            self._log_metric_collection(
+                self.val_metrics, y_pred, y_true, batch.input_fields.shape[0]
             )
         return loss
 
     def test_step(self, batch: Batch, batch_idx: int) -> Tensor:  # noqa: ARG002
-        y_pred = self(batch)
-        y_true = batch.output_fields
         if self.train_processor_only:
-            with torch.no_grad():
-                encoded_batch = self.encoder_decoder.encoder.encode_batch(batch)
+            encoded_batch = self.encoder_decoder.encoder.encode_batch(batch)
             loss = self.processor.loss(encoded_batch)
             self.log(
                 "test_loss",
@@ -143,22 +141,27 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule):
                 prog_bar=True,
                 batch_size=batch.input_fields.shape[0],
             )
+            if self.test_metrics is not None:
+                preds = self.processor.map(encoded_batch.encoded_inputs)
+                self._log_metric_collection(
+                    self.test_metrics,
+                    preds,
+                    encoded_batch.encoded_output_fields,
+                    batch.input_fields.shape[0],
+                )
             return loss
         if self.loss_func is None:
             msg = "loss_func must be provided testing full EPD model."
             raise ValueError(msg)
+        y_pred = self(batch)
+        y_true = batch.output_fields
         loss = self.loss_func(y_pred, y_true)
         self.log(
             "test_loss", loss, prog_bar=True, batch_size=batch.input_fields.shape[0]
         )
         if self.test_metrics is not None:
-            self.test_metrics.update(y_pred, y_true)
-            self.log_dict(
-                self.test_metrics,
-                prog_bar=False,
-                on_step=False,
-                on_epoch=True,
-                batch_size=batch.input_fields.shape[0],
+            self._log_metric_collection(
+                self.test_metrics, y_pred, y_true, batch.input_fields.shape[0]
             )
         return loss
 
@@ -227,6 +230,24 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule):
             constant_fields=batch.constant_fields,
         )
 
+    def _log_metric_collection(
+        self,
+        collection: MetricCollection | None,
+        preds: TensorBTSC,
+        targets: TensorBTSC,
+        batch_size: int,
+    ) -> None:
+        if collection is None:
+            return
+        collection.update(preds, targets)
+        self.log_dict(
+            collection,
+            prog_bar=False,
+            on_step=False,
+            on_epoch=True,
+            batch_size=batch_size,
+        )
+
     @staticmethod
     def _build_metrics(
         metrics: list[Metric] | None,
@@ -289,7 +310,6 @@ class EPDTrainProcessor(EncoderProcessorDecoder):
 
     def training_step(self, batch: Batch, batch_idx: int) -> Tensor:  # noqa: ARG002
         encoded_batch = self.encoder_decoder.encoder.encode_batch(batch)
-        # TODO: ensure no grads propagate through encoder_decoder
         loss = self.processor.loss(encoded_batch)
         self.log(
             "train_loss", loss, prog_bar=True, batch_size=batch.input_fields.shape[0]
