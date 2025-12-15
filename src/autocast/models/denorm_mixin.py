@@ -1,8 +1,12 @@
+import logging
+
 import lightning as L
 from the_well.data.normalization import ZScoreNormalization
 
 from autocast.types.batch import Batch
 from autocast.types.types import Tensor
+
+log = logging.getLogger(__name__)
 
 
 class DenormMixin(L.LightningModule):
@@ -40,6 +44,7 @@ class DenormMixin(L.LightningModule):
             if hasattr(datamodule, "train_dataset") and hasattr(
                 datamodule.train_dataset, "norm"
             ):
+                log.info("Getting normalizer from the train dataset.")
                 self.norm = datamodule.train_dataset.norm
 
     def denormalize_batch(
@@ -130,4 +135,5 @@ class DenormMixin(L.LightningModule):
         if self.norm is None:
             return predictions
 
+        log.info("Denormalizing predictions.")
         return self.denormalize_tensor(predictions)
