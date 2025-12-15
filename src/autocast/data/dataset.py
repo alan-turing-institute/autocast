@@ -259,18 +259,30 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
     def set_up_normalization(self):
         """
         Set up normalizer.
+
         Notes
         -----
         - Call method after metadata has been created.
         - Sets `self.norm` to `None` if `self.use_normalization = False`.
         """
 
-        # TODO: add handling for when these args are inconsistent with each other
-        if (
-            self.use_normalization
-            and self.normalization_path
-            and self.normalization_type
-        ):
+        if (self.use_normalization and self.normalization_type is None) or (
+            not self.use_normalization and self.normalization_type is not None
+        ):  # noqa: PGH003
+            msg = (
+                "Both `use_normalization` and `normalization_type` must be set "
+                "consistently."
+            )
+            raise ValueError(msg)
+        if self.use_normalization and self.normalization_type:
+            # TODO: once we implement other ways of passing normalization data,
+            #  we can remove the dependency on normalization_path here
+            if self.normalization_path is None:
+                msg = (
+                    "Normalization path must be provided when "
+                    "`use_normalization` is True."
+                )
+                raise ValueError(msg)
             if self.metadata is None:
                 msg = "Metadata must be set before normalization."
                 raise ValueError(msg)
