@@ -193,6 +193,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             use_normalization=use_normalization,
             normalization_type=normalization_type,
             normalization_path=normalization_path,
+            normalization_stats=normalization_stats,
         )
 
         # # Compute normalization from training data if requested
