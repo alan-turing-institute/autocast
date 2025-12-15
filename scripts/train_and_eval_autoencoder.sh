@@ -6,8 +6,8 @@
 #SBATCH --gpus 1
 #SBATCH --tasks-per-node 36
 #SBATCH --job-name train_and_eval_autoencoder
-#SBATCH --output=logs/%x_%j.out
-#SBATCH --error=logs/%x_%j.err
+#SBATCH --output=outputs/slurm/%x_%j.out
+#SBATCH --error=outputs/slurm/%x_%j.err
 
 set -e
 
@@ -31,9 +31,16 @@ TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 # Change this as needed
 JOB_NAME="autoencoder_run"
 
-# Finally, this builds the working directory path. 
+# This builds the working directory path. 
 # It follows the structure outputs/JOB_NAME/TIMESTAMP
 WORKING_DIR="outputs/${JOB_NAME}/${TIMESTAMP}"
+
+
+# Write the slurm output and error files to the working directory
+mkdir -p "${WORKING_DIR}"
+
+exec > "${WORKING_DIR}/slurm_${SLURM_JOB_NAME}_${SLURM_JOB_ID}.out" \
+     2> "${WORKING_DIR}/slurm_${SLURM_JOB_NAME}_${SLURM_JOB_ID}.err"
 
 # ---------------- Code to train and evaluate the model ----------------
 
