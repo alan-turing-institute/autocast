@@ -46,7 +46,7 @@ the `AUTOCAST_DATASETS` environment variable.
 ```bash
 uv run python -m autocast.train.autoencoder \
 	--config-path=configs \
-	--work-dir=outputs/rd/epd_00 \
+	--work-dir=outputs/rd/epd_01 \
 	data.data_path=$AUTOCAST_DATASETS/reaction_diffusion \
 	data.use_simulator=false \
 	model.learning_rate=0.00005 \
@@ -77,7 +77,7 @@ uv run evaluate_encoder_processor_decoder \
 	--batch-index=0 --batch-index=1 \
 	--video-dir=outputs/rd/epd_00/eval/videos \
 	data.data_path=$AUTOCAST_DATASETS/reaction_diffusion \
-	data.use_simulator=false \
+	data.use_simulator=false
 ```
 
 ## Experiment Tracking with Weights & Biases
