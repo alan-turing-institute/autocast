@@ -6,8 +6,6 @@
 #SBATCH --gpus 1
 #SBATCH --tasks-per-node 36
 #SBATCH --job-name train_and_eval_autoencoder
-#SBATCH --output=outputs/slurm/%x_%j.out
-#SBATCH --error=outputs/slurm/%x_%j.err
 
 set -e
 
