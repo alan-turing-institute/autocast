@@ -69,7 +69,7 @@ class MetricsMixin:
         """
         if metrics is not None:
             metrics.update(y_pred, y_true)
-            model.log_dict(  # type: ignore[attr-defined]
+            model.log_dict(
                 metrics,
                 prog_bar=False,
                 on_step=False,
