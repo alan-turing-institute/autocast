@@ -1,5 +1,5 @@
 _target_: autocast.encoders.dc.DCEncoder
-in_channels: 2
+in_channels: null
 out_channels: 2
 hid_channels: [32, 64, 128]
 hid_blocks: [2, 2, 2]

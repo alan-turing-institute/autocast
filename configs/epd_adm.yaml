@@ -1,0 +1,26 @@
+defaults:
+  - data: advection_diffusion_multichannel
+  - model: epd_adm
+  - trainer: default
+  - logging: wandb
+  - _self_
+
+seed: 42
+experiment_name: epd_adm
+output:
+  checkpoint_name: encoder_processor_decoder.ckpt
+  save_config: true
+
+training:
+  n_steps_input: 1
+  n_steps_output: 4
+  stride: 1
+  rollout_stride: 4
+  autoencoder_checkpoint: null
+  freeze_autoencoder: false
+
+hydra:
+  run:
+    dir: outputs/${experiment_name}/${now:%Y-%m-%d_%H-%M-%S}
+  job:
+    chdir: true

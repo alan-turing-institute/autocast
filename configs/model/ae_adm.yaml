@@ -1,0 +1,13 @@
+defaults:
+  # Updated parameters for increased compression for AE for reaction diffusion data
+  - /encoder: dc_deep
+  - /decoder: dc_deep
+  - _self_
+
+learning_rate: 0.0005
+
+loss:
+  _target_: autocast.models.ae.AELoss
+  losses:
+    - _target_: torch.nn.MSELoss
+  weights: [1.0]

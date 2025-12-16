@@ -1,0 +1,25 @@
+# Note that if data_path is not null, the simulator settings will be ignored.
+# The use_simulator flag is not required if data_path is provided. 
+# Issue explaining this at https://github.com/alan-turing-institute/autocast/issues/108
+data_path: ${oc.env:AUTOCAST_DATASETS,./datasets}/advection_diffusion_multichannel
+use_simulator: false
+split:
+  n_train: 4
+  n_valid: 2
+  n_test: 2
+simulator:
+  _target_: autoemulate.simulations.advection_diffusion.AdvectionDiffusionMultichannel
+  return_timeseries: true
+  log_level: error
+datamodule:
+  batch_size: 16
+  n_steps_input: 1
+  n_steps_output: 0
+  stride: 1
+  input_channel_idxs: null
+  output_channel_idxs: null
+  autoencoder_mode: true
+  dtype: float32
+  ftype: torch
+  verbose: false
+  use_normalization: false

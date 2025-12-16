@@ -1,0 +1,22 @@
+defaults:
+  - data: advection_diffusion_singlechannel
+  # Or set to TheWell dataset:
+  # - data: the_well
+  - model: ae_ad
+  - trainer: default
+  - logging: wandb
+  - _self_
+
+seed: 42
+experiment_name: ae_ad
+data:
+  autoencoder_mode: true
+output:
+  checkpoint_name: autoencoder.ckpt
+  save_config: true
+
+hydra:
+  run:
+    dir: outputs/${experiment_name}/${now:%Y-%m-%d_%H-%M-%S}
+  job:
+    chdir: true
