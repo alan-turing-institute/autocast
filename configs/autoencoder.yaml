@@ -2,7 +2,7 @@ defaults:
   - data: reaction_diffusion
   # Or set to TheWell dataset:
   # - data: the_well
-  - model: ae
+  - model: autoencoder
   - trainer: default
   - logging: wandb
   - _self_
