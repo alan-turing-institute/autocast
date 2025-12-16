@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Sequence
+
 import lightning as L
 from torchmetrics import Metric, MetricCollection
 
@@ -14,7 +16,7 @@ class MetricsMixin:
 
     @staticmethod
     def _build_metrics(
-        metrics: list[Metric] | None,
+        metrics: Sequence[Metric] | None,
         prefix: str,
     ) -> MetricCollection | None:
         # If no metrics provided, default to a single MSE

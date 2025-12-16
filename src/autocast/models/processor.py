@@ -1,5 +1,5 @@
 from abc import ABC
-from typing import Any
+from typing import Any, Sequence
 
 import lightning as L
 import torch
@@ -24,9 +24,9 @@ class ProcessorModel(RolloutMixin[EncodedBatch], ABC, L.LightningModule, Metrics
         stride: int = 1,
         loss_func: nn.Module | None = None,
         learning_rate: float | None = None,
-        train_metrics: list[Metric] | None = None,
-        val_metrics: list[Metric] | None = None,
-        test_metrics: list[Metric] | None = None,
+        train_metrics: Sequence[Metric] | None = [],
+        val_metrics: Sequence[Metric] | None = None,
+        test_metrics: Sequence[Metric] | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__()

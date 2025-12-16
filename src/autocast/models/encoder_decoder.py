@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Sequence
 
 import lightning as L
 import torch
@@ -24,9 +24,9 @@ class EncoderDecoder(L.LightningModule, MetricsMixin):
         encoder: Encoder,
         decoder: Decoder,
         loss_func: nn.Module | None = None,
-        train_metrics: list[Metric] | None = None,
-        val_metrics: list[Metric] | None = None,
-        test_metrics: list[Metric] | None = None,
+        train_metrics: Sequence[Metric] | None = [],
+        val_metrics: Sequence[Metric] | None = None,
+        test_metrics: Sequence[Metric] | None = None,
         **kwargs: Any,
     ):
         super().__init__()

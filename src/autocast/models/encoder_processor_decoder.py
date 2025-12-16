@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Sequence
 
 import lightning as L
 import torch
@@ -17,6 +17,7 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule, MetricsMix
 
     encoder_decoder: EncoderDecoder
     processor: Processor
+    train_metrics: MetricCollection | None
     val_metrics: MetricCollection | None
     test_metrics: MetricCollection | None
 
@@ -31,9 +32,9 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule, MetricsMix
         max_rollout_steps: int = 10,
         train_processor_only: bool = False,
         loss_func: nn.Module | None = None,
-        train_metrics: list[Metric] | None = None,
-        val_metrics: list[Metric] | None = None,
-        test_metrics: list[Metric] | None = None,
+        train_metrics: Sequence[Metric] | None = [],
+        val_metrics: Sequence[Metric] | None = None,
+        test_metrics: Sequence[Metric] | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__()
@@ -74,11 +75,12 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule, MetricsMix
         decoded = self.encoder_decoder.decoder.decode(mapped)
         return decoded  # noqa: RET504
 
-    def loss(self, batch: Batch) -> Tensor:
+    def loss(self, batch: Batch) -> tuple[Tensor, Tensor | None]:
         if self.train_processor_only:
             with torch.no_grad():
                 encoded_batch = self.encoder_decoder.encoder.encode_batch(batch)
             loss = self.processor.loss(encoded_batch)
+            y_pred = None
         else:
             if self.loss_func is None:
                 msg = "loss_func must be provided when training full EPD model."
@@ -87,42 +89,45 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule, MetricsMix
             y_pred = self(batch)
             y_true = batch.output_fields
             loss = self.loss_func(y_pred, y_true)
-        return loss
+        return loss, y_pred
 
     def training_step(self, batch: Batch, batch_idx: int) -> Tensor:  # noqa: ARG002
-        loss = self.loss(batch)
+        loss, y_pred = self.loss(batch)
         self.log(
             "train_loss", loss, prog_bar=True, batch_size=batch.input_fields.shape[0]
         )
-        y_pred = self(batch)
-        y_true = batch.output_fields
-        self._update_and_log_metrics(
-            self, self.train_metrics, y_pred, y_true, batch.input_fields.shape[0]
-        )
+        if y_pred is None and self.train_metrics is not None:
+            y_pred = self(batch)
+            y_true = batch.output_fields
+            self._update_and_log_metrics(
+                self, self.train_metrics, y_pred, y_true, batch.input_fields.shape[0]
+            )
         return loss
 
     def validation_step(self, batch: Batch, batch_idx: int) -> Tensor:  # noqa: ARG002
-        loss = self.loss(batch)
+        loss, y_pred = self.loss(batch)
         self.log(
             "val_loss", loss, prog_bar=True, batch_size=batch.input_fields.shape[0]
         )
-        y_pred = self(batch)
-        y_true = batch.output_fields
-        self._update_and_log_metrics(
-            self, self.val_metrics, y_pred, y_true, batch.input_fields.shape[0]
-        )
+        if y_pred is None and self.val_metrics is not None:
+            y_pred = self(batch)
+            y_true = batch.output_fields
+            self._update_and_log_metrics(
+                self, self.val_metrics, y_pred, y_true, batch.input_fields.shape[0]
+            )
         return loss
 
     def test_step(self, batch: Batch, batch_idx: int) -> Tensor:  # noqa: ARG002
-        loss = self.loss(batch)
+        loss, y_pred = self.loss(batch)
         self.log(
             "test_loss", loss, prog_bar=True, batch_size=batch.input_fields.shape[0]
         )
-        y_pred = self(batch)
-        y_true = batch.output_fields
-        self._update_and_log_metrics(
-            self, self.test_metrics, y_pred, y_true, batch.input_fields.shape[0]
-        )
+        if y_pred is None and self.test_metrics is not None:
+            y_pred = self(batch)
+            y_true = batch.output_fields
+            self._update_and_log_metrics(
+                self, self.test_metrics, y_pred, y_true, batch.input_fields.shape[0]
+            )
         return loss
 
     def configure_optimizers(self):
