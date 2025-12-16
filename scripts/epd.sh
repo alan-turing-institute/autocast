@@ -1,6 +1,5 @@
 #!/bin/bash
 
-
 set -e
 
 export LABEL=$1
@@ -9,7 +8,7 @@ export DATAPATH=$3
 
 uv run python -m autocast.train.encoder_processor_decoder \
 	--config-path=configs \
-    --config-name=epd_${LABEL} \
+	--config-name=epd_${LABEL} \
 	--work-dir=outputs/${LABEL}/${OUTPATH} \
 	data.data_path=$AUTOCAST_DATASETS/${DATAPATH} \
 	data.use_simulator=false \

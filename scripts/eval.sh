@@ -1,6 +1,5 @@
 #!/bin/bash
 
-
 set -e
 
 export LABEL=$1
