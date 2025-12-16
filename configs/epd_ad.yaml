@@ -19,6 +19,9 @@ training:
   autoencoder_checkpoint: null
   freeze_autoencoder: false
 
+eval:
+  max_rollout_steps: 20
+
 hydra:
   run:
     dir: outputs/${experiment_name}/${now:%Y-%m-%d_%H-%M-%S}
