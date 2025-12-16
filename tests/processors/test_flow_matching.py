@@ -107,9 +107,12 @@ def test_flow_matching_processor(
 
     processor = FlowMatchingProcessor(
         backbone=TemporalUNetBackbone(
-            in_channels=n_steps_output * n_channels_out,
-            out_channels=n_steps_output * n_channels_out,
-            cond_channels=n_steps_input * n_channels_in,
+            in_channels=n_channels_out,
+            out_channels=n_channels_out,
+            cond_channels=n_channels_in,
+            n_steps_output=n_steps_output,
+            n_steps_input=n_steps_input,
+            temporal_method="attention",
             mod_features=256,
             hid_channels=(32, 64, 128),
             hid_blocks=(2, 2, 2),
