@@ -56,3 +56,24 @@ class AE(EncoderDecoder):
         encoded = self.encode(batch)
         decoded = self.decode(encoded)
         return decoded, encoded
+
+    def _compute_loss(self, batch: Batch) -> Tensor:
+        assert self.loss_func is not None
+        return self.loss_func(self, batch)
+
+    def training_step(self, batch: Batch, batch_idx: int) -> Tensor:  # noqa: ARG002
+        loss = self._compute_loss(batch)
+        self.log(
+            "train_loss", loss, prog_bar=True, batch_size=batch.input_fields.shape[0]
+        )
+        return loss
+
+    def validation_step(self, batch: Batch, batch_idx: int) -> Tensor:  # noqa: ARG002
+        loss = self._compute_loss(batch)
+        self.log(
+            "val_loss", loss, prog_bar=True, batch_size=batch.input_fields.shape[0]
+        )
+        return loss
+
+    def test_step(self, batch: Batch, batch_idx: int) -> Tensor:  # noqa: ARG002
+        return self._compute_loss(batch)
