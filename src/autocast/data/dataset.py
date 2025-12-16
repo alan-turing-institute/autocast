@@ -80,7 +80,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             If True, print dataset information.
         use_normalization: bool
             Whether to apply Z-score normalization. Defaults to False.
-        normalization_type: type[Standardizer] | None
+        normalization_type: type[ZScoreNormalization] | None
             Normalization object (computed from training data). Defaults to None.
         normalization_path: str | None
             Path to normalization statistics file (yaml). Defaults to None.
