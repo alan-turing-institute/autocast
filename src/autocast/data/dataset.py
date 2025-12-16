@@ -3,6 +3,7 @@ from typing import Any, Literal
 
 import h5py
 import torch
+import yaml
 from the_well.data import Augmentation, WellDataset
 from the_well.data.normalization import ZScoreNormalization
 from torch.utils.data import Dataset
@@ -43,7 +44,9 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         dtype: torch.dtype = torch.float32,
         verbose: bool = False,
         use_normalization: bool = False,
-        norm: type[ZScoreNormalization] | None = None,
+        normalization_type: type[ZScoreNormalization] | None = None,
+        normalization_path: str | None = None,
+        normalization_stats: dict | None = None,
     ):
         """
         Initialize the dataset.
@@ -52,6 +55,8 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         ----------
         data_path: str
             Path to the HDF5 file containing the dataset.
+        data: dict | None
+            Preloaded data. Defaults to None.
         n_steps_input: int
             Number of input time steps.
         n_steps_output: int
@@ -75,13 +80,19 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             If True, print dataset information.
         use_normalization: bool
             Whether to apply Z-score normalization. Defaults to False.
-        norm: type[Standardizer] | None
+        normalization_type: type[ZScoreNormalization] | None
             Normalization object (computed from training data). Defaults to None.
+        normalization_path: str | None
+            Path to normalization statistics file (yaml). Defaults to None.
+        normalization_stats: dict | None
+            Preloaded normalization statistics. Defaults to None.
         """
         self.dtype = dtype
         self.verbose = verbose
         self.use_normalization = use_normalization
-        self.norm = norm
+        self.normalization_type = normalization_type
+        self.normalization_path = normalization_path
+        self.normalization_stats = normalization_stats
         self.autoencoder_mode = autoencoder_mode
 
         if data_path is not None:
@@ -89,6 +100,8 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         # TODO: consider ensuring only one passed and not overridden
         if data is not None:
             self.parse_data(data)
+
+        self.set_up_normalization()
 
         if autoencoder_mode and full_trajectory_mode:
             msg = "autoencoder_mode and full_trajectory_mode cannot both be True."
@@ -231,6 +244,35 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         output_fields = (
             input_fields if self.autoencoder_mode else self.all_output_fields[idx]
         )
+        if self.use_normalization and self.norm is not None:
+            field_names = (
+                self.norm.core_field_names + self.norm.core_constant_field_names
+            )
+
+            # Normalize each channel separately
+            input_fields_list = []
+            output_fields_list = []
+
+            # TODO: assumes that channels are in same order as field names
+            for i, field_name in enumerate(field_names):
+                input_channel = input_fields[..., i]
+                output_channel = output_fields[..., i]
+
+                # Normalize and add channel dim back
+                input_normalized = self.norm.normalize(
+                    input_channel, field_name
+                ).unsqueeze(-1)
+                output_normalized = self.norm.normalize(
+                    output_channel, field_name
+                ).unsqueeze(-1)
+
+                input_fields_list.append(input_normalized)
+                output_fields_list.append(output_normalized)
+
+            # Concatenate back along channel dimension
+            if input_fields_list:
+                input_fields = torch.cat(input_fields_list, dim=-1)
+                output_fields = torch.cat(output_fields_list, dim=-1)
 
         item = {
             "input_fields": input_fields,
@@ -242,6 +284,46 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             item["constant_fields"] = self.all_constant_fields[idx]
 
         return self.to_sample(item)
+
+    def set_up_normalization(self):
+        """
+        Set up normalizer.
+
+        Notes
+        -----
+        - Call method after metadata has been created.
+        - Sets `self.norm` to `None` if `self.use_normalization = False`.
+        """
+        # TODO: The well uses both attributes but cant we just use normalization_type ?
+        if (self.use_normalization and self.normalization_type is None) or (
+            not self.use_normalization and self.normalization_type is not None
+        ):
+            msg = (
+                "Both `use_normalization` and `normalization_type` must be set "
+                "consistently."
+            )
+            raise ValueError(msg)
+        if self.use_normalization and self.normalization_type:
+            # TODO: consider checking if only stats dict or path is provided
+            if self.normalization_stats is None:
+                if self.normalization_path is None:
+                    msg = (
+                        "Normalization data path must be provided when "
+                        "`use_normalization` is True and `normalization_stats` "
+                        "are not provided."
+                    )
+                    raise ValueError(msg)
+
+                with open(self.normalization_path) as f:
+                    self.normalization_stats = yaml.safe_load(f)
+
+            self.norm = self.normalization_type(
+                self.normalization_stats.get("stats", {}),
+                self.normalization_stats.get("core_field_names", []),
+                self.normalization_stats.get("constant_field_names", []),
+            )
+        else:
+            self.norm = None
 
 
 class ReactionDiffusionDataset(SpatioTemporalDataset):

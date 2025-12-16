@@ -1,16 +1,19 @@
 from abc import ABC
+from collections.abc import Sequence
 from typing import Any
 
 import lightning as L
 import torch
 from torch import nn
+from torchmetrics import Metric
 
+from autocast.metrics.utils import MetricsMixin
 from autocast.processors.base import Processor
 from autocast.processors.rollout import RolloutMixin
 from autocast.types import EncodedBatch, Tensor, TensorBNC
 
 
-class ProcessorModel(RolloutMixin[EncodedBatch], ABC, L.LightningModule):
+class ProcessorModel(RolloutMixin[EncodedBatch], ABC, L.LightningModule, MetricsMixin):
     """Processor Base Class."""
 
     processor: Processor
@@ -22,6 +25,9 @@ class ProcessorModel(RolloutMixin[EncodedBatch], ABC, L.LightningModule):
         stride: int = 1,
         loss_func: nn.Module | None = None,
         learning_rate: float | None = None,
+        train_metrics: Sequence[Metric] | None = [],
+        val_metrics: Sequence[Metric] | None = None,
+        test_metrics: Sequence[Metric] | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__()
@@ -34,24 +40,60 @@ class ProcessorModel(RolloutMixin[EncodedBatch], ABC, L.LightningModule):
             if learning_rate is not None
             else getattr(processor, "learning_rate", 1e-3)
         )
+        self.train_metrics = self._build_metrics(train_metrics, "train_")
+        self.val_metrics = self._build_metrics(val_metrics, "val_")
+        self.test_metrics = self._build_metrics(test_metrics, "test_")
         for key, value in kwargs.items():
             setattr(self, key, value)
 
     def forward(self, x: TensorBNC) -> TensorBNC:
         return self.processor.map(x)
 
-    def training_step(self, batch: EncodedBatch, batch_idx: int) -> Tensor:  # noqa: ARG002
+    def training_step(
+        self,
+        batch: EncodedBatch,
+        batch_idx: int,  # noqa: ARG002
+    ) -> Tensor:
         loss = self.processor.loss(batch)
         self.log(
             "train_loss", loss, prog_bar=True, batch_size=batch.encoded_inputs.shape[0]
         )
+        if self.train_metrics is not None:
+            y_pred = self._predict(batch)
+            y_true = batch.encoded_output_fields
+            self._update_and_log_metrics(
+                self, self.train_metrics, y_pred, y_true, batch.encoded_inputs.shape[0]
+            )
         return loss
 
-    def validation_step(self, batch: EncodedBatch, batch_idx: int) -> Tensor:  # noqa: ARG002
+    def validation_step(
+        self,
+        batch: EncodedBatch,
+        batch_idx: int,  # noqa: ARG002
+    ) -> Tensor:
         loss = self.processor.loss(batch)
         self.log(
             "val_loss", loss, prog_bar=True, batch_size=batch.encoded_inputs.shape[0]
         )
+        if self.val_metrics is not None:
+            y_pred = self._predict(batch)
+            y_true = batch.encoded_output_fields
+            self._update_and_log_metrics(
+                self, self.val_metrics, y_pred, y_true, batch.encoded_inputs.shape[0]
+            )
+        return loss
+
+    def test_step(self, batch: EncodedBatch, batch_idx: int) -> Tensor:  # noqa: ARG002
+        loss = self.processor.loss(batch)
+        self.log(
+            "test_loss", loss, prog_bar=True, batch_size=batch.encoded_inputs.shape[0]
+        )
+        if self.test_metrics is not None:
+            y_pred = self._predict(batch)
+            y_true = batch.encoded_output_fields
+            self._update_and_log_metrics(
+                self, self.test_metrics, y_pred, y_true, batch.encoded_inputs.shape[0]
+            )
         return loss
 
     def configure_optimizers(self):

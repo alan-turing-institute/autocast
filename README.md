@@ -7,6 +7,12 @@ For development, install with [`uv`](https://github.com/astral-sh/uv):
 uv sync --extra dev
 ```
 
+If contributing to the codebase, you can run 
+```bash 
+ pre-commit install 
+ ```
+This will setup the pre-commit checks so any pushed commits will pass the CI. 
+
 ## Quickstart
 
 Train an encoder-decoder stack and evaluate the resulting checkpoint:
@@ -101,3 +107,16 @@ fully driven by the Hydra config under `configs/logging/wandb.yaml`.
 
 When `enabled` remains `false` (the default), the logger is skipped entirely, so the stack can
 be used without a W&B account.
+
+## Running on HPC 
+
+In the [Scripts](/scripts/) folders, slurm scripts can be found for running training and evaluation on the baskerville HPC. 
+
+To run, simply navigate to the top level of this repository, and run: 
+
+`sbatch scripts/train_and_eval_encoder-processor-decoder.sh` or 
+`sbatch scripts/train_and_eval_autoencoder.sh` depending on which model you would like to run.
+
+This will train and evaluate the model using the settings in the corresponding config (found in the configs folder). Outputs from both train and eval will be written out to an outputs folder with the following naming convention: 
+
+`outputs/{job_name}/{$date +%Y%m%d_%H%M%S}`. 

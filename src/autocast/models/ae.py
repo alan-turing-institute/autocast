@@ -1,6 +1,7 @@
 from collections.abc import Sequence
 
 from torch import nn
+from torchmetrics import Metric
 
 from autocast.decoders import Decoder
 from autocast.encoders import Encoder
@@ -48,12 +49,18 @@ class AE(EncoderDecoder):
         decoder: Decoder,
         loss_func: AELoss | None = None,
         learning_rate: float = 1e-3,
+        train_metrics: Sequence[Metric] | None = [],
+        val_metrics: Sequence[Metric] | None = None,
+        test_metrics: Sequence[Metric] | None = None,
     ):
         super().__init__(
             encoder=encoder,
             decoder=decoder,
             loss_func=loss_func or AELoss(),
             learning_rate=learning_rate,
+            train_metrics=train_metrics,
+            val_metrics=val_metrics,
+            test_metrics=test_metrics,
         )
 
     def forward(self, batch: Batch) -> TensorBNC:
@@ -73,6 +80,12 @@ class AE(EncoderDecoder):
         self.log(
             "train_loss", loss, prog_bar=True, batch_size=batch.input_fields.shape[0]
         )
+        if self.train_metrics is not None:
+            y_pred = self(batch)
+            y_true = batch.output_fields
+            self._update_and_log_metrics(
+                self, self.train_metrics, y_pred, y_true, batch.input_fields.shape[0]
+            )
         return loss
 
     def validation_step(self, batch: Batch, batch_idx: int) -> Tensor:  # noqa: ARG002
@@ -80,7 +93,23 @@ class AE(EncoderDecoder):
         self.log(
             "val_loss", loss, prog_bar=True, batch_size=batch.input_fields.shape[0]
         )
+        if self.val_metrics is not None:
+            y_pred = self(batch)
+            y_true = batch.output_fields
+            self._update_and_log_metrics(
+                self, self.val_metrics, y_pred, y_true, batch.input_fields.shape[0]
+            )
         return loss
 
     def test_step(self, batch: Batch, batch_idx: int) -> Tensor:  # noqa: ARG002
-        return self._compute_loss(batch)
+        loss = self._compute_loss(batch)
+        self.log(
+            "test_loss", loss, prog_bar=True, batch_size=batch.input_fields.shape[0]
+        )
+        if self.test_metrics is not None:
+            y_pred = self(batch)
+            y_true = batch.output_fields
+            self._update_and_log_metrics(
+                self, self.test_metrics, y_pred, y_true, batch.input_fields.shape[0]
+            )
+        return loss
