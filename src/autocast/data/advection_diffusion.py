@@ -55,7 +55,7 @@ class AdvectionDiffusion(Simulator):
         output_names: list[str] | None = None,
         return_timeseries: bool = False,
         log_level: str = "progress_bar",
-        n: int = 50,
+        n: int = 32,
         L: float = 10.0,
         T: float = 80.0,
         dt: float = 0.25,
