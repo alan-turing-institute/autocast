@@ -35,7 +35,8 @@ uv run evaluate_encoder_processor_decoder \
 	--config-path=configs/ \
 	--work-dir=outputs/processor_eval \
 	--checkpoint=outputs/encoder_processor_decoder_run/encoder_processor_decoder.ckpt \
-	--batch-index=0 --batch-index=3 \
+	--batch-index=0 \
+	--batch-index=1 \
 	--video-dir=outputs/encoder_processor_decoder_run/videos
 ```
 
@@ -52,7 +53,7 @@ the `AUTOCAST_DATASETS` environment variable.
 ```bash
 uv run python -m autocast.train.autoencoder \
 	--config-path=configs \
-	--work-dir=outputs/rd/epd_01 \
+	--work-dir=outputs/rd/00 \
 	data.data_path=$AUTOCAST_DATASETS/reaction_diffusion \
 	data.use_simulator=false \
 	model.learning_rate=0.00005 \
@@ -60,30 +61,48 @@ uv run python -m autocast.train.autoencoder \
 	logging.wandb.enabled=true
 ```
 
+Or alternatively with the included bash script:
+```bash
+./scripts/ae.sh rd 00 reaction_diffusion
+```
+
 ### Train processor
 
 ```bash
 uv run python -m autocast.train.encoder_processor_decoder \
 	--config-path=configs \
-	--work-dir=outputs/rd/epd_00 \
+	--work-dir=outputs/rd/00 \
 	data.data_path=$AUTOCAST_DATASETS/reaction_diffusion \
 	data.use_simulator=false \
 	model.learning_rate=0.0001 \
 	trainer.max_epochs=10 \
 	logging.wandb.enabled=true \
-	training.autoencoder_checkpoint=outputs/rd/epd_00/autoencoder.ckpt
+	training.autoencoder_checkpoint=outputs/rd/00/autoencoder.ckpt
+```
+
+Or alternatively with the included bash script:
+```bash
+./scripts/epd.sh rd 00 reaction_diffusion
 ```
 
 ### Evaluation
 ```bash
 uv run evaluate_encoder_processor_decoder \
 	--config-path=configs/ \
-	--work-dir=outputs/rd/epd_00/eval \
+	--work-dir=outputs/rd/00/eval \
 	--checkpoint=outputs/rd/epd_00/encoder_processor_decoder.ckpt \
-	--batch-index=0 --batch-index=1 \
-	--video-dir=outputs/rd/epd_00/eval/videos \
+	--batch-index=0 \
+	--batch-index=1 \
+	--batch-index=2 \
+	--batch-index=3 \
+	--video-dir=outputs/rd/00/eval/videos \
 	data.data_path=$AUTOCAST_DATASETS/reaction_diffusion \
 	data.use_simulator=false
+```
+
+Or alternatively with the included bash script:
+```bash
+./scripts/eval.sh rd 00 reaction_diffusion
 ```
 
 ## Experiment Tracking with Weights & Biases
