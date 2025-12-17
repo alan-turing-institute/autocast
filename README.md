@@ -41,8 +41,7 @@ uv run evaluate_encoder_processor_decoder \
 	--config-path=configs/ \
 	--work-dir=outputs/processor_eval \
 	--checkpoint=outputs/encoder_processor_decoder_run/encoder_processor_decoder.ckpt \
-	--batch-index=0 \
-	--batch-index=1 \
+	--batch-index=0 --batch-index=1 \  # Optional batch indices, remove to skip videos
 	--video-dir=outputs/encoder_processor_decoder_run/videos
 ```
 
