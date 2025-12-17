@@ -1,5 +1,5 @@
+import os  # noqa: EXE002
 from pathlib import Path
-import os
 
 import torch
 from lightning.pytorch import LightningDataModule
@@ -22,13 +22,16 @@ class TheWellDataModule(LightningDataModule):
         use_normalization: bool = False,
         normalization_type: type[ZScoreNormalization] | None = None,
         autoencoder_mode: bool = False,
-        num_workers: int = 0,  # Default 0 for h5py compatibility
+        num_workers: int | None = None,  # Auto-detect if None
         **well_kwargs,
     ):
         super().__init__()
         self.batch_size = batch_size
         self.autoencoder_mode = autoencoder_mode
-        self.num_workers = num_workers
+        # Auto-detect num_workers based on available CPUs, capped at 8
+        self.num_workers = (
+            num_workers if num_workers is not None else min(os.cpu_count() or 1, 8)
+        )
 
         self.train_dataset = TheWell(
             well_dataset_name=well_dataset_name,
@@ -175,8 +178,10 @@ class SpatioTemporalDataModule(LightningDataModule):
         self.verbose = verbose
         self.use_normalization = use_normalization
         self.autoencoder_mode = autoencoder_mode
-        # Auto-detect num_workers based on available CPUs, capped at 4
-        self.num_workers = num_workers if num_workers is not None else min(os.cpu_count() or 1, 4)
+        # Auto-detect num_workers based on available CPUs, capped at 8
+        self.num_workers = (
+            num_workers if num_workers is not None else min(os.cpu_count() or 1, 8)
+        )
         base_path = Path(data_path) if data_path is not None else None
         suffix = ".pt" if ftype == "torch" else ".h5"
         fname = f"data{suffix}"
