@@ -55,12 +55,12 @@ class BaseMetric(Metric):
         if isinstance(y_true, np.ndarray):
             y_true = torch.from_numpy(y_true)
 
-        assert isinstance(
-            y_pred, torch.Tensor
-        ), f"y_pred must be a torch.Tensor or np.ndarray, got {type(y_pred)}"
-        assert isinstance(
-            y_true, torch.Tensor
-        ), f"y_true must be a torch.Tensor or np.ndarray, got {type(y_true)}"
+        assert isinstance(y_pred, torch.Tensor), (
+            f"y_pred must be a torch.Tensor or np.ndarray, got {type(y_pred)}"
+        )
+        assert isinstance(y_true, torch.Tensor), (
+            f"y_true must be a torch.Tensor or np.ndarray, got {type(y_true)}"
+        )
 
         assert y_pred.shape == y_true.shape, (
             f"y_pred and y_true must have the same shape, "
