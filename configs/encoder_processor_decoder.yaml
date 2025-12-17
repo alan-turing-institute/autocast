@@ -1,5 +1,6 @@
 defaults:
   - data: reaction_diffusion
+  - optional optimizer: null
   - model: encoder_processor_decoder
   - trainer: default
   - logging: wandb
