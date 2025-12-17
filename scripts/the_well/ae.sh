@@ -62,7 +62,7 @@ uv run train_autoencoder \
     trainer.max_epochs=100 \
     trainer.gradient_clip_val=1.0 \
     data=the_well \
-    data.well_dataset_name=turbulent_radiative_layer_2D \
-    data.batch_size=16 \
+    data.well_dataset_name=rayleigh_benard \
+    data.batch_size=8 \
     optimizer=adamw
     
