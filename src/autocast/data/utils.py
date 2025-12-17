@@ -15,6 +15,11 @@ def get_datamodule(
     n_steps_output: int,
     stride: int,
     autoencoder_mode: bool = False,
+    n_train: int = 20,
+    n_valid: int = 4,
+    n_test: int = 4,
+    simulation_datasets_path: str = "../datasets/tmp",
+    the_well_dataset_path: str = "../datasets/",
 ):
     """Get the configured datamodule.
 
@@ -34,7 +39,25 @@ def get_datamodule(
         Stride between time steps.
     autoencoder_mode: bool
         Whether to use autoencoder mode.
+    n_train: int
+        Number of training samples to generate (if not using The Well).
+    n_valid: int
+        Number of validation samples to generate (if not using The Well).
+    n_test: int
+        Number of test samples to generate (if not using The Well).
+    simulation_datasets_path: str
+        Base path to store and load temporary datasets from running simulations.
+    the_well_dataset_path: str
+        Base path to The Well datasets.
     """
+
+    def generate_split(simulator):
+        """Generate training, validation, and test splits from the simulator."""
+        train = simulator.forward_samples_spatiotemporal(n_train)
+        valid = simulator.forward_samples_spatiotemporal(n_valid)
+        test = simulator.forward_samples_spatiotemporal(n_test)
+        return {"train": train, "valid": valid, "test": test}
+
     if not the_well:
         if simulation_name.startswith("advection_diffusion"):
             Sim = AdvectionDiffusion
@@ -43,19 +66,11 @@ def get_datamodule(
         else:
             raise ValueError(f"Unknown simulation name: {simulation_name}")
 
+        # Initialize simulator
         sim = Sim(return_timeseries=True, log_level="error")
 
-        def generate_split(
-            simulator, n_train: int = 20, n_valid: int = 4, n_test: int = 4
-        ):
-            """Generate training, validation, and test splits from the simulator."""
-            train = simulator.forward_samples_spatiotemporal(n_train)
-            valid = simulator.forward_samples_spatiotemporal(n_valid)
-            test = simulator.forward_samples_spatiotemporal(n_test)
-            return {"train": train, "valid": valid, "test": test}
-
         # Cache file path
-        cache_path = Path(f"../datasets/tmp/{simulation_name}")
+        cache_path = Path(f"{simulation_datasets_path}/{simulation_name}")
 
         # Load from cache if it exists, otherwise generate and save
         if cache_path.exists():
@@ -86,7 +101,7 @@ def get_datamodule(
 
     # If the well dataset
     return TheWellDataModule(
-        well_base_path="../datasets/",
+        well_base_path=the_well_dataset_path,
         well_dataset_name=simulation_name,
         n_steps_input=n_steps_input,
         n_steps_output=n_steps_output,
