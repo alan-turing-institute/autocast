@@ -7,6 +7,7 @@ flow_ode_steps: 10
 n_steps_output: null
 n_channels_out: null
 backbone:
+  # See: https://github.com/PolymathicAI/lola/blob/bd4bdf2a9fc024e6b2aa95eb4e24a800fec98dae/experiments/configs/denoiser/unet_deep.yaml
   _target_: autocast.nn.unet.TemporalUNetBackbone
   in_channels: null
   out_channels: null
@@ -14,7 +15,7 @@ backbone:
   mod_features: 256
   hid_channels: [64, 128, 256, 512, 768, 1024]
   hid_blocks: [3, 3, 3, 3, 3, 3]
-  stride: [1, 2, 2]
+  stride: 2 # TODO: stride as non-integer raises exception
   spatial: 2
   periodic: true
   dropout: 0.05
