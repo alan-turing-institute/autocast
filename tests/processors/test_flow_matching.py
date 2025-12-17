@@ -89,6 +89,7 @@ params = list(
     )
 )
 
+
 @pytest.mark.parametrize(
     "temporal_method",
     ["none", "attention", "tcn"],
@@ -98,7 +99,11 @@ params = list(
     params,
 )
 def test_flow_matching_processor(
-    n_steps_output: int, n_steps_input: int, n_channels_in: int, n_channels_out: int, temporal_method: str
+    n_steps_output: int,
+    n_steps_input: int,
+    n_channels_in: int,
+    n_channels_out: int,
+    temporal_method: str,
 ):
     encoded_loader = _build_encoded_loader(
         n_steps_input=n_steps_input,

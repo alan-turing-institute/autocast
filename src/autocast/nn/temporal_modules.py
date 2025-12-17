@@ -2,7 +2,7 @@
 
 This module provides temporal processing methods that can be used
 in temporal backbone architectures (UNet, ViT, etc.) for handling sequences
-in the format (B, T, H, W, C).
+in the format (B, T, W, H, C).
 """
 
 from einops import rearrange
@@ -59,30 +59,30 @@ class TemporalAttention(nn.Module):
         """Apply temporal self-attention.
 
         Args:
-            x: (B, T, H, W, C)
+            x: (B, T, W, H, C)
 
         Returns
         -------
-            (B, T, H, W, C) with temporal attention applied
+            (B, T, W, H, C) with temporal attention applied
         """
-        B, _, H, W, _ = x.shape
+        B, _, W, H, _ = x.shape
 
-        # Project to hidden dimension: (B, T, H, W, C) -> (B, T, H, W, hidden_dim)
+        # Project to hidden dimension: (B, T, W, H, C) -> (B, T, W, H, hidden_dim)
         x_proj = self.proj_in(x)
 
         # Normalize spatially
-        x_norm = rearrange(x_proj, "b t h w c -> b c t h w")
+        x_norm = rearrange(x_proj, "b t w h c -> b c t w h")
         x_norm = self.norm(x_norm)
-        x_norm = rearrange(x_norm, "b c t h w -> b t h w c")
+        x_norm = rearrange(x_norm, "b c t w h -> b t w h c")
 
-        # Reshape to (B*H*W, T, hidden_dim) for temporal attention
-        x_flat = rearrange(x_norm, "b t h w c -> (b h w) t c")
+        # Reshape to (B*W*H, T, hidden_dim) for temporal attention
+        x_flat = rearrange(x_norm, "b t w h c -> (b w h) t c")
 
         # Apply temporal self-attention
         attn_out, _ = self.attn(x_flat, x_flat, x_flat)
 
         # Reshape back
-        attn_out = rearrange(attn_out, "(b h w) t c -> b t h w c", b=B, h=H, w=W)
+        attn_out = rearrange(attn_out, "(b w h) t c -> b t w h c", b=B, w=W, h=H)
 
         # Project back to original dimension
         attn_out = self.proj_out(attn_out)
@@ -151,16 +151,16 @@ class TemporalConvNet(nn.Module):
         """Apply temporal convolutions.
 
         Args:
-            x: (B, T, H, W, C)
+            x: (B, T, W, H, C)
 
         Returns
         -------
-            (B, T, H, W, C) with temporal convolutions applied
+            (B, T, W, H, C) with temporal convolutions applied
         """
-        B, T, H, W, _ = x.shape
+        B, T, W, H, _ = x.shape
 
-        # Reshape to (B*H*W, C, T) for 1D conv
-        x_flat = rearrange(x, "b t h w c -> (b h w) c t")
+        # Reshape to (B*W*H, C, T) for 1D conv
+        x_flat = rearrange(x, "b t w h c -> (b w h) c t")
 
         # Apply TCN layers
         for layer in self.layers:
@@ -176,4 +176,5 @@ class TemporalConvNet(nn.Module):
         x_flat = self.proj_out(x_flat)
 
         # Reshape back
-        return rearrange(x_flat, "(b h w) c t -> b t h w c", b=B, h=H, w=W)
+        return rearrange(x_flat, "(b w h) c t -> b t w h c", b=B, w=W, h=H)
+

@@ -7,7 +7,7 @@ from autocast.types import TensorBCS
 class SpatialAttentionWrapper(nn.Module):
     """Wrapper to handle spatial dimensions for MultiheadSelfAttention.
 
-    Converts (B, C, H, W, ...) -> (B, H*W*..., C) -> attention -> (B, C, H, W, ...).
+    Converts (B, C, W, H, ...) -> (B, W*H*..., C) -> attention -> (B, C, W, H, ...).
     """
 
     def __init__(self, attention_module: nn.Module, spatial: int) -> None:
@@ -48,7 +48,7 @@ class SpatialAttentionWrapper(nn.Module):
         # Apply attention
         y = self.attention(x_flat)
 
-        # Transpose back and reshape: (B, H*W*..., C) -> (B, C, H, W, ...)
+        # Transpose back and reshape: (B, W*H*..., C) -> (B, C, W, H, ...)
         return rearrange(y, "b ... c -> b c ...").reshape(
             batch_size, channels, *spatial_shape
         )

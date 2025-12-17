@@ -11,7 +11,7 @@ from autocast.nn.base import TemporalBackboneBase
 class TemporalUNetBackbone(TemporalBackboneBase):
     """Azula UNet with flexible temporal encoding options.
 
-    Wraps the Azula UNet to handle temporal sequences in the format (B, T, H, W, C)
+    Wraps the Azula UNet to handle temporal sequences in the format (B, T, W, H, C)
     for diffusion models or temporal forecasting. Supports multiple temporal
     processing methods that can be selected via the `temporal_method` parameter.
     """

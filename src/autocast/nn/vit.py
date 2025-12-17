@@ -10,7 +10,7 @@ class TemporalViTBackbone(TemporalBackboneBase):
     """Azula ViT with flexible temporal encoding options.
 
     Wraps the Azula Vision Transformer to handle temporal sequences in the
-    format (B, T, H, W, C) for diffusion models or temporal forecasting.
+    format (B, T, W, H, C) for diffusion models or temporal forecasting.
     Supports multiple temporal processing methods that can be selected via
     the `temporal_method` parameter.
     """

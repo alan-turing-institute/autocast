@@ -108,7 +108,6 @@ params = list(
     ),
     params,
 )
-
 @pytest.mark.parametrize(
     "temporal_method",
     ["none", "attention", "tcn"],

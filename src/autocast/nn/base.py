@@ -141,8 +141,8 @@ class TemporalBackboneBase(nn.Module, ABC):
         """Apply temporal processing to input and conditioning.
 
         Args:
-            x_t: Input tensor (B, T, H, W, C)
-            cond: Conditioning tensor (B, T_cond, H, W, C)
+            x_t: Input tensor (B, T, W, H, C)
+            cond: Conditioning tensor (B, T_cond, W, H, C)
 
         Returns
         -------
@@ -177,13 +177,13 @@ class TemporalBackboneBase(nn.Module, ABC):
         """Forward pass of the temporal backbone.
 
         Args:
-            x_t: Noisy data (B, T, H, W, C) - spatial dims before channels
+            x_t: Noisy data (B, T, W, H, C) - spatial dims before channels
             t: Diffusion time steps (B,)
-            cond: Conditioning input (B, T_cond, H, W, C)
+            cond: Conditioning input (B, T_cond, W, H, C)
 
         Returns
         -------
-            Denoised output (B, T, H, W, C)
+            Denoised output (B, T, W, H, C)
         """
         _, T_out, _, _, C = x_t.shape
 
@@ -193,12 +193,12 @@ class TemporalBackboneBase(nn.Module, ABC):
         # Apply temporal processing
         x_t_temporal, cond_temporal = self.apply_temporal_processing(x_t, cond)
 
-        # Convert to channels-first format: (B, T, H, W, C) -> (B, T*C, H, W)
-        x_t_cf = rearrange(x_t_temporal, "b t h w c -> b (t c) h w")
-        x_cond_cf = rearrange(cond_temporal, "b t h w c -> b (t c) h w")
+        # Convert to channels-first format: (B, T, W, H, C) -> (B, T*C, W, H)
+        x_t_cf = rearrange(x_t_temporal, "b t w h c -> b (t c) w h")
+        x_cond_cf = rearrange(cond_temporal, "b t w h c -> b (t c) w h")
 
-        # Backbone forward: (B, T*C, H, W) -> (B, T*out_channels, H, W)
+        # Backbone forward: (B, T*C, W, H) -> (B, T*out_channels, W, H)
         output = self.backbone(x=x_t_cf, mod=t_emb, cond=x_cond_cf)
 
-        # Convert back to channels-last format: (B, T*C, H, W) -> (B, T, H, W, C)
-        return rearrange(output, "b (t c) h w -> b t h w c", t=T_out, c=C)
+        # Convert back to channels-last format: (B, T*C, W, H) -> (B, T, W, H, C)
+        return rearrange(output, "b (t c) w h -> b t w h c", t=T_out, c=C)
