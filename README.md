@@ -2,6 +2,12 @@
 
 ## Installation
 
+### Prereqiuisites
+
+- [uv](https://github.com/astral-sh/uv): running scripts; managing virtual environments
+- [ffmpeg](https://ffmpeg.org/): optional video generation during evaluation
+
+### Development
 For development, install with [`uv`](https://github.com/astral-sh/uv):
 ```bash
 uv sync --extra dev
