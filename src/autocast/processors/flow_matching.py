@@ -29,6 +29,7 @@ class FlowMatchingProcessor(Processor):
         n_steps_output: int = 4,
         n_channels_out: int = 1,
         backbone_kwargs: dict[str, Any] | None = None,
+        residual: bool = False,
         **kwargs: Any,
     ) -> None:
         # Store core hyperparameters and optional prebuilt backbone.
@@ -37,6 +38,7 @@ class FlowMatchingProcessor(Processor):
             teacher_forcing_ratio=teacher_forcing_ratio,
             max_rollout_steps=max_rollout_steps,
             loss_func=loss_func or nn.MSELoss(),
+            residual=residual,
             **kwargs,
         )
         self.flow_matching_model = flow_matching_model or backbone
@@ -113,8 +115,23 @@ class FlowMatchingProcessor(Processor):
         # Simple fixed-step Euler integration over the flow field.
         dt = torch.tensor(1.0 / self.flow_ode_steps, device=device, dtype=dtype)
         for _ in range(self.flow_ode_steps):
-            z = z + dt * self.flow_field(z, t, x)
+            z_abs = z
+            if self.residual:
+                base = x[:, -1:, ...]
+                if base.shape[1] != z.shape[1]:
+                    base = base.expand(
+                        batch_size, z.shape[1], *spatial_shape, self.n_channels_out
+                    )
+                z_abs = z + base
+            z = z + dt * self.flow_field(z_abs, t, x)
             t = t + dt
+        if self.residual:
+            base = x[:, -1:, ...]
+            if base.shape[1] != z.shape[1]:
+                base = base.expand(
+                    batch_size, z.shape[1], *spatial_shape, self.n_channels_out
+                )
+            return base + z
         return z
 
     def loss(self, batch: EncodedBatch) -> Tensor:
@@ -137,6 +154,11 @@ class FlowMatchingProcessor(Processor):
 
         batch_size = target_states.shape[0]
 
+        if self.residual:
+            base = input_states[:, -1:, ...]
+            if base.shape[1] != target_states.shape[1]:
+                base = base.expand(batch_size, target_states.shape[1], *base.shape[2:])
+            target_states = target_states - base
         z0 = torch.randn_like(target_states, requires_grad=True)
         t = torch.rand(
             batch_size, device=target_states.device, dtype=target_states.dtype
@@ -145,5 +167,12 @@ class FlowMatchingProcessor(Processor):
         zt = (1 - t_broadcast) * z0 + t_broadcast * target_states
 
         target_velocity = target_states - z0
-        v_pred = self.flow_field(zt, t, input_states)
+        if self.residual:
+            base = input_states[:, -1:, ...]
+            if base.shape[1] != zt.shape[1]:
+                base = base.expand(batch_size, zt.shape[1], *base.shape[2:])
+            z_abs = zt + base
+        else:
+            z_abs = zt
+        v_pred = self.flow_field(z_abs, t, input_states)
         return torch.mean((v_pred - target_velocity) ** 2)

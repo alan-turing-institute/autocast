@@ -32,8 +32,9 @@ class DiffusionProcessor(Processor):
         n_channels_out: int = 1,
         sampler_steps: int = 50,
         sampler: str = "euler",
+        residual: bool = False,
     ):
-        super().__init__()
+        super().__init__(residual=residual)
         self.teacher_forcing_ratio = teacher_forcing_ratio
         self.stride = stride
         self.max_rollout_steps = max_rollout_steps
@@ -70,7 +71,14 @@ class DiffusionProcessor(Processor):
             dtype=dtype,
             device=device,
         )  # Fully noised
-        return sampler(x_1, cond=x)
+        output = sampler(x_1, cond=x)
+        if not self.residual:
+            return output
+
+        base = x[:, -1:, ...]
+        if base.shape[1] != output.shape[1]:
+            base = base.expand(B, output.shape[1], *output.shape[2:])
+        return base + output
 
     def forward(self, x: Tensor) -> Tensor:
         return self.map(x)
@@ -87,6 +95,8 @@ class DiffusionProcessor(Processor):
         """
         x_cond = batch.encoded_inputs
         x_0 = batch.encoded_output_fields  # Clean data : (B, T,C, H, W)
+        if self.residual:
+            x_0 = self._residualize_target(x_cond, x_0)
 
         # Sample random times in [0, 1] uniformly
         t = torch.rand(x_0.size(0), device=x_0.device)  # (B,)

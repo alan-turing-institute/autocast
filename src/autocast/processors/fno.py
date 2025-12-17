@@ -60,9 +60,10 @@ class FNOProcessor(Processor[EncodedBatch]):
         learning_rate: float = 1e-3,
         stride: int = 1,
         max_rollout_steps: int = 10,
+        residual: bool = False,
         **fno_kwargs: Any,
     ):
-        super().__init__()
+        super().__init__(residual=residual)
 
         n_modes_tuple = tuple(n_modes)
 
@@ -96,8 +97,18 @@ class FNOProcessor(Processor[EncodedBatch]):
         return self
 
     def map(self, x: Tensor) -> Tensor:
-        return self(x)
+        output = self(x)
+        if not self.residual:
+            return output
+        base = x[:, -1:, ...]
+        if base.shape[1] != output.shape[1]:
+            base = base.expand(output.shape[0], output.shape[1], *base.shape[2:])
+        return base + output
 
     def loss(self, batch: EncodedBatch) -> Tensor:
         output = self.map(batch.encoded_inputs)
-        return self.loss_func(output, batch.encoded_output_fields)
+        target = self._residualize_target(
+            batch.encoded_inputs, batch.encoded_output_fields
+        )
+        output_res = self._residualize_target(batch.encoded_inputs, output)
+        return self.loss_func(output_res, target)
