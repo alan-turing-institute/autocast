@@ -1,0 +1,16 @@
+_target_: autocast.encoders.dc.DCEncoder
+# in_channels: ${oc.select:data.n_channels, null}
+in_channels: 4
+out_channels: 64
+# name: "dcae_f32c64_small"
+# arch: "dcae"
+# saturation: "softclip2"
+hid_channels: [32, 64, 128, 256, 384, 512]
+hid_blocks: [3, 3, 3, 3, 3, 3]
+pixel_shuffle: true
+norm: "layer"
+# attention_heads: null
+ffn_factor: 1
+dropout: 0.05
+checkpointing: false
+identity_init: true
