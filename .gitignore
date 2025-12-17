@@ -8,4 +8,4 @@ exploratory/data
 .DS_Store
 outputs/
 lightning_logs/
-datasets/
+datasets
