@@ -5,7 +5,7 @@ import torch
 import torch.nn.functional as F
 from einops import rearrange
 from the_well.benchmark.models.common import BaseModel
-from timm.layers import DropPath
+from timm.layers.drop import DropPath
 from torch import nn
 
 from autocast.processors.base import Processor
@@ -20,7 +20,7 @@ def _largest_divisor_leq(n: int, max_divisor: int) -> int:
 
 
 class hMLP_stem(nn.Module):
-    """Image to Patch Embedding"""
+    """Image to Patch Embedding."""
 
     def __init__(
         self,
@@ -61,7 +61,7 @@ class hMLP_stem(nn.Module):
 
 
 class hMLP_output(nn.Module):
-    """Patch to Image De-bedding"""
+    """Patch to Image De-bedding."""
 
     def __init__(
         self,
@@ -98,6 +98,12 @@ class hMLP_output(nn.Module):
 
 
 class AxialAttentionBlock(nn.Module):
+    """Axial attention block for multi-dimensional feature processing.
+
+    This module performs scaled dot-product attention over spatial axes,
+    enabling efficient attention computation for multi-dimensional inputs.
+    """
+
     def __init__(
         self,
         hidden_dim: int = 768,
@@ -109,7 +115,8 @@ class AxialAttentionBlock(nn.Module):
         super().__init__()
         if hidden_dim % num_heads != 0:
             raise ValueError(
-                f"hidden_dim ({hidden_dim}) must be divisible by num_heads ({num_heads})"
+                f"hidden_dim ({hidden_dim}) must be divisible by "
+                f"num_heads ({num_heads})"
             )
 
         self.num_heads = num_heads
@@ -168,15 +175,13 @@ class AxialAttentionBlock(nn.Module):
         q, k, v, ff = self.fused_projection(x).split(self.fused_heads, dim=-1)
 
         # base layout
-        q, k, v = map(
-            lambda t: rearrange(t, self.head_split, he=self.num_heads), (q, k, v)
-        )
+        q, k, v = (rearrange(t, self.head_split, he=self.num_heads) for t in (q, k, v))
         q, k = self.qnorm(q), self.knorm(k)
 
         out = torch.zeros_like(x)
 
         for in_perm, out_perm in self.spatial_permutations:
-            q1, k1, v1 = map(lambda t: rearrange(t, in_perm).contiguous(), (q, k, v))
+            q1, k1, v1 = (rearrange(t, in_perm).contiguous() for t in (q, k, v))
             ax_out = F.scaled_dot_product_attention(q1, k1, v1)
             ax_out = rearrange(ax_out, out_perm).contiguous()
             out = out + ax_out
@@ -190,8 +195,8 @@ class AxialAttentionBlock(nn.Module):
 
 
 class AViT(BaseModel):
-    """
-    Uses axial attention to predict forward dynamics.
+    """Uses axial attention to predict forward dynamics.
+
     This simplified version just stacks time in channels.
     """
 
@@ -216,10 +221,12 @@ class AViT(BaseModel):
         for k in self.spatial_resolution:
             if k % self.patch_size != 0:
                 raise ValueError(
-                    f"spatial_resolution {self.spatial_resolution} must be divisible by {self.patch_size}"
+                    f"spatial_resolution {self.spatial_resolution} must be "
+                    f"divisible by {self.patch_size}"
                 )
 
-        pe_size = tuple(int(k / self.patch_size) for k in self.spatial_resolution) + (
+        pe_size = (
+            *tuple(int(k / self.patch_size) for k in self.spatial_resolution),
             hidden_dim,
         )
         self.absolute_pe = nn.Parameter(0.02 * torch.randn(*pe_size))
@@ -268,14 +275,11 @@ class AViT(BaseModel):
 
         x = rearrange(x, self.embed_reshapes[0])
         x = self.debed(x)
-        x = rearrange(x, self.embed_reshapes[1])
-        return x
+        return rearrange(x, self.embed_reshapes[1])
 
 
 class AViTProcessor(Processor[EncodedBatch]):
-    """
-    Vision Transformer Module.
-    """
+    """Vision Transformer Module."""
 
     def __init__(
         self,
