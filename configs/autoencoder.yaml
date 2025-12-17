@@ -1,5 +1,6 @@
 defaults:
   - data: reaction_diffusion
+  - optional optimizer: null
   # Or set to TheWell dataset:
   # - data: the_well
   - model: autoencoder

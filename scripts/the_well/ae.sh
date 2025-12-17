@@ -45,6 +45,11 @@ uv sync --extra dev
 # If you haven't, replace with `uv venv`
 source .venv/bin/activate
 
+# Mitigate CUDA fragmentation when memory is tight
+export PYTORCH_ALLOC_CONF=expandable_segments:True
+# Backwards compatibility for older PyTorch builds
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+
 # ---------------- Code to train and evaluate the model ----------------
 
 # Train
@@ -52,13 +57,12 @@ uv run train_autoencoder \
     --config-path=configs/ \
     --config-name=autoencoder \
 	--work-dir=${WORKING_DIR} \
-    encoder=dc_f32c64_small \
-    decoder=dc_f32c64_small \
+    model=autoencoder_dc_f32c64_small \
     logging.wandb.enabled=true \
     trainer.max_epochs=100 \
     trainer.gradient_clip_val=1.0 \
     data=the_well \
-    data.well_dataset_name=rayleigh_benard \
-    data.the_well.batch_size=64 \
+    data.well_dataset_name=turbulent_radiative_layer_2D \
+    data.batch_size=16 \
     optimizer=adamw
     
