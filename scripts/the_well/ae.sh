@@ -52,16 +52,13 @@ uv run train_autoencoder \
     --config-path=configs/ \
     --config-name=autoencoder \
 	--work-dir=${WORKING_DIR} \
-    model.autoencoder.encoder=dc_f32c64_small \
-    model.autoencoder.decoder=dc_f32c64_small \
+    encoder=dc_f32c64_small \
+    decoder=dc_f32c64_small \
     logging.wandb.enabled=true \
-    training.default.max_epochs=100 \
+    trainer.max_epochs=100 \
+    trainer.gradient_clip_val=1.0 \
     data=the_well \
     data.well_dataset_name=rayleigh_benard \
-    data.the_well.batch_size=64
+    data.the_well.batch_size=64 \
+    optimizer=adamw
     
-
-
-
-	
-

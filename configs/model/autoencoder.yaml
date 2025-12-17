@@ -2,9 +2,11 @@ defaults:
   # Updated parameters for increased compression for AE for reaction diffusion data
   - /encoder: dc_deep
   - /decoder: dc_deep
+  - optional /optimizer: null  
   - _self_
 
 learning_rate: 0.0005
+optimizer_config: ${optimizer}  # Pass optimizer config to model, null if not specified
 
 loss:
   _target_: autocast.models.ae.AELoss
