@@ -3,7 +3,7 @@ from pathlib import Path
 
 import h5py
 import torch
-from einops import repeat
+from einops import rearrange, repeat
 from lightning.pytorch import LightningDataModule
 from torch.utils.data import ConcatDataset, DataLoader, Dataset
 
@@ -120,19 +120,21 @@ class MiniWellInputOutput(EncodedDataset, EncodedBatchMixin):
         if self.concat_inputs_and_label:
             # Broadcast label across spatial dims to match input_fields shape
             # input_fields: (T, C, *spatial), label: (*) -> (1, numel, *spatial)
+            t = input_fields.shape[0]
             spatial_dims = input_fields.shape[2:]  # (H, W, ...)
             label_flat = label.flatten()  # Flatten any shape to 1D
             label_expanded = repeat(
                 label_flat,
-                "c -> 1 c " + " ".join(f"d{i}" for i in range(len(spatial_dims))),
+                "c -> t c " + " ".join(f"d{i}" for i in range(len(spatial_dims))),
+                t=t,
                 **{f"d{i}": s for i, s in enumerate(spatial_dims)},
             )
-            input_fields = torch.cat([input_fields, label_expanded], dim=0)
+            input_fields = torch.cat([input_fields, label_expanded], dim=1)
 
         return self.to_sample(
             {
-                "input_fields": input_fields,
-                "output_fields": output_fields,
+                "input_fields": rearrange(input_fields, "t c ... -> t ... c"),
+                "output_fields": rearrange(output_fields, "t c ... -> t ... c"),
                 "label": label,
                 "encoded_info": data.get("encoded_info", {}),
             }
@@ -268,18 +270,16 @@ class EncodedDataModule(LightningDataModule):
 
 
 class MiniWellDataModule(LightningDataModule):
-    """DataModule for MiniWell datasets that accepts file lists.
+    """DataModule for MiniWell datasets.
 
     This datamodule wraps MiniWellInputOutput datasets and provides
     train/val/test dataloaders that collate samples into EncodedBatch objects.
-    Accepts either individual files or lists of files for each split.
+    Accepts a data_path with train/valid/test subdirectories containing data.h5.
     """
 
     def __init__(
         self,
-        train_files: str | list[str] | None = None,
-        valid_files: str | list[str] | None = None,
-        test_files: str | list[str] | None = None,
+        data_path: str | None = None,
         n_steps_input: int = 1,
         n_steps_output: int = 1,
         stride: int = 1,
@@ -290,12 +290,8 @@ class MiniWellDataModule(LightningDataModule):
         """Initialize the MiniWellDataModule.
 
         Args:
-            train_files: Path(s) to training h5 file(s). Can be a single path
-                string or a list of paths.
-            valid_files: Path(s) to validation h5 file(s). Can be a single path
-                string or a list of paths.
-            test_files: Path(s) to test h5 file(s). Can be a single path
-                string or a list of paths.
+            data_path: Base path to the dataset files. Should contain
+                train/, valid/, test/ subdirectories with data.h5 files.
             n_steps_input: Number of input time steps.
             n_steps_output: Number of output time steps to predict.
             stride: Stride for stepping through trajectories.
@@ -305,9 +301,7 @@ class MiniWellDataModule(LightningDataModule):
             concat_inputs_and_label: Whether to concatenate labels with inputs.
         """
         super().__init__()
-        self.train_files = self._normalize_files(train_files)
-        self.valid_files = self._normalize_files(valid_files)
-        self.test_files = self._normalize_files(test_files)
+        self.data_path = Path(data_path) if data_path is not None else None
         self.n_steps_input = n_steps_input
         self.n_steps_output = n_steps_output
         self.stride = stride
@@ -319,17 +313,13 @@ class MiniWellDataModule(LightningDataModule):
         self.val_dataset: Dataset | None = None
         self.test_dataset: Dataset | None = None
 
-    @staticmethod
-    def _normalize_files(files: str | list[str] | None) -> list[str]:
-        """Convert file input to a list of file paths."""
-        if files is None:
-            return []
-        if isinstance(files, str):
-            return [files]
-        return list(files)
+    def _create_dataset(self, dir_path: Path) -> Dataset | None:
+        """Create a dataset from all h5 files in a directory."""
+        if not dir_path.exists():
+            return None
 
-    def _create_dataset(self, files: list[str]) -> Dataset | None:
-        """Create a dataset from a list of files."""
+        # Find all h5 files in the directory
+        files = sorted(dir_path.glob("*.h5")) + sorted(dir_path.glob("*.hdf5"))
         if not files:
             return None
 
@@ -345,22 +335,31 @@ class MiniWellDataModule(LightningDataModule):
         }
 
         if len(files) == 1:
-            return MiniWellInputOutput(file_name=files[0], **common_kwargs)
+            return MiniWellInputOutput(file_name=str(files[0]), **common_kwargs)
 
         # Multiple files - create ConcatDataset
-        datasets = [MiniWellInputOutput(file_name=f, **common_kwargs) for f in files]
+        datasets = [
+            MiniWellInputOutput(file_name=str(f), **common_kwargs) for f in files
+        ]
         return ConcatDataset(datasets)
 
     def setup(self, stage: str | None = None) -> None:
         """Set up datasets for the given stage."""
+        if self.data_path is None:
+            msg = "data_path must be provided"
+            raise ValueError(msg)
+
         if stage == "fit" or stage is None:
             if self.train_dataset is None:
-                self.train_dataset = self._create_dataset(self.train_files)
+                train_dir = self.data_path / "train"
+                self.train_dataset = self._create_dataset(train_dir)
             if self.val_dataset is None:
-                self.val_dataset = self._create_dataset(self.valid_files)
+                valid_dir = self.data_path / "valid"
+                self.val_dataset = self._create_dataset(valid_dir)
 
         if (stage == "test" or stage is None) and self.test_dataset is None:
-            self.test_dataset = self._create_dataset(self.test_files)
+            test_dir = self.data_path / "test"
+            self.test_dataset = self._create_dataset(test_dir)
 
     def train_dataloader(self) -> DataLoader:
         """Return training dataloader."""

@@ -34,8 +34,8 @@ class Sample:
 class EncodedSample:
     """A batch after being processed by an Encoder."""
 
-    encoded_inputs: TensorBTSC
-    encoded_output_fields: TensorBTSC
+    encoded_inputs: TensorBNC
+    encoded_output_fields: TensorBNC
     label: TensorNC | None
     encoded_info: dict[str, Tensor]
 
