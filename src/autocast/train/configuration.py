@@ -162,20 +162,32 @@ def align_processor_channels_with_encoder(
             _override_dimension(
                 backbone_cfg,
                 "in_channels",
-                latent_out,
-                (raw_out,),
+                latent_channels,
+                (channel_count,),
             )
             _override_dimension(
                 backbone_cfg,
                 "out_channels",
-                latent_out,
-                (raw_out,),
+                latent_channels,
+                (channel_count,),
             )
             _override_dimension(
                 backbone_cfg,
                 "cond_channels",
-                latent_in,
-                (raw_in,),
+                latent_channels,
+                (channel_count,),
+            )
+            _override_dimension(
+                backbone_cfg,
+                "n_steps_input",
+                n_steps_input,
+                (),
+            )
+            _override_dimension(
+                backbone_cfg,
+                "n_steps_output",
+                n_steps_output,
+                (),
             )
 
     return latent_channels
