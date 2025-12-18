@@ -67,6 +67,7 @@ class Encoder(nn.Module, ABC):
         return EncodedBatch(
             encoded_inputs=encoded_inputs,
             encoded_output_fields=encoded_outputs,
+            label=None,  # TODO: revisit handling of labels if part of API
             encoded_info=encoded_info or {},
         )
 

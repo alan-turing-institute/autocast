@@ -7,9 +7,11 @@ import torch
 from autocast.types.types import (
     Tensor,
     TensorBC,
+    TensorBNC,
     TensorBSC,
     TensorBTSC,
     TensorC,
+    TensorNC,
     TensorSC,
     TensorTSC,
 )
@@ -29,6 +31,16 @@ class Sample:
 
 
 @dataclass
+class EncodedSample:
+    """A batch after being processed by an Encoder."""
+
+    encoded_inputs: TensorBTSC
+    encoded_output_fields: TensorBTSC
+    label: TensorNC | None
+    encoded_info: dict[str, Tensor]
+
+
+@dataclass
 class Batch:
     """A batch in input data space."""
 
@@ -44,6 +56,7 @@ class EncodedBatch:
 
     encoded_inputs: TensorBTSC
     encoded_output_fields: TensorBTSC
+    label: TensorBNC | None
     encoded_info: dict[str, Tensor]
 
 

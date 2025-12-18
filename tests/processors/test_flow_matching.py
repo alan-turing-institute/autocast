@@ -55,6 +55,7 @@ class _FlowMatchingEncodedDataset(Dataset):
         return EncodedBatch(
             encoded_inputs=encoded_inputs,
             encoded_output_fields=encoded_outputs,
+            label=None,
             encoded_info={},
         )
 
