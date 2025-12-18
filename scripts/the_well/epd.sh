@@ -66,7 +66,10 @@ uv run train_encoder_processor_decoder \
     trainer.gradient_clip_val=1.0 \
     data=the_well \
     data.well_dataset_name=rayleigh_benard \
+    data.num_workers=4 \
     data.batch_size=8 \
+    data.cache_small=false \
+    data.max_cache_size=0 \
     optimizer=adamw \
     trainer.callbacks.0.every_n_train_steps=5000 \
     "training.autoencoder_checkpoint='outputs/autoencoder_run/20251217_121300/autocast/0nttzj9a/checkpoints/step-step=7900.ckpt'"
