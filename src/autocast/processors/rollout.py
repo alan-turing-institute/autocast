@@ -5,6 +5,7 @@ from typing import Generic
 
 import torch
 from einops import rearrange
+from tqdm import tqdm
 
 from autocast.types import RolloutOutput, Tensor
 from autocast.types.batch import BatchT
@@ -70,7 +71,7 @@ class RolloutMixin(ABC, Generic[BatchT]):
             )
             raise ValueError(msg)
 
-        for _ in range(max_rollout_steps):
+        for _ in tqdm(range(max_rollout_steps), desc="Rollout"):
             output = self._predict(current_batch)
             pred_outs.append(output)
 

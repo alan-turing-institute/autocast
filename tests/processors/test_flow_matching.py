@@ -91,11 +91,19 @@ params = list(
 
 
 @pytest.mark.parametrize(
+    "temporal_method",
+    ["none", "attention", "tcn"],
+)
+@pytest.mark.parametrize(
     ("n_steps_output", "n_steps_input", "n_channels_in", "n_channels_out"),
     params,
 )
 def test_flow_matching_processor(
-    n_steps_output: int, n_steps_input: int, n_channels_in: int, n_channels_out: int
+    n_steps_output: int,
+    n_steps_input: int,
+    n_channels_in: int,
+    n_channels_out: int,
+    temporal_method: str,
 ):
     encoded_loader = _build_encoded_loader(
         n_steps_input=n_steps_input,
@@ -107,9 +115,12 @@ def test_flow_matching_processor(
 
     processor = FlowMatchingProcessor(
         backbone=TemporalUNetBackbone(
-            in_channels=n_steps_output * n_channels_out,
-            out_channels=n_steps_output * n_channels_out,
-            cond_channels=n_steps_input * n_channels_in,
+            in_channels=n_channels_out,
+            out_channels=n_channels_out,
+            cond_channels=n_channels_in,
+            n_steps_output=n_steps_output,
+            n_steps_input=n_steps_input,
+            temporal_method=temporal_method,
             mod_features=256,
             hid_channels=(32, 64, 128),
             hid_blocks=(2, 2, 2),
