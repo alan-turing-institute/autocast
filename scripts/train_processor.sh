@@ -7,9 +7,9 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --gpus=1
 #SBATCH --mem=32G
-#SBATCH --job-name train_and_eval_autoencoder
-#SBATCH --output=logs/train_and_eval_autoencoder_%j.out
-#SBATCH --error=logs/train_and_eval_autoencoder_%j.err
+#SBATCH --job-name processor
+#SBATCH --output=logs/processor_%j.out
+#SBATCH --error=logs/processor_%j.err
 
 set -e
 
@@ -31,7 +31,7 @@ TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
 # Now define a job name. This will be used to create a unique working directory for outputs.
 # Change this as needed
-JOB_NAME="autoencoder_run"
+JOB_NAME="processor"
 
 # This builds the working directory path. 
 # It follows the structure outputs/JOB_NAME/TIMESTAMP
