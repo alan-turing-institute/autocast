@@ -18,9 +18,9 @@ class PermuteConcat(Encoder):
         x = batch.input_fields
         x = rearrange(x, "b t w h c -> b c t w h")
         if self.with_constants and batch.constant_fields is not None:
-            constants = batch.constant_fields
-            constants = rearrange(constants, "b w h c -> b c 1 w h")
-            x = torch.cat([x, constants], dim=1)
+            constants_fields = batch.constant_fields
+            constants_fields = rearrange(constants_fields, "b w h c -> b c t w h", t = t)
+            x = torch.cat([x, constants_fields], dim=1)
         if self.with_constants and batch.constant_scalars is not None:
             scalars = batch.constant_scalars
             scalars = rearrange(scalars, "b c -> b c 1 1 1")
