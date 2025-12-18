@@ -28,12 +28,13 @@ class TemporalUNetBackbone(TemporalBackboneBase):
         hid_blocks: Sequence[int] = (2, 2, 2),
         spatial: int = 2,
         periodic: bool = False,
-        temporal_method: str = "attention",
+        temporal_method: str = "none",
         num_attention_heads: int = 8,
         attention_hidden_dim: int = 64,
         # TCN parameters
         tcn_kernel_size: int = 3,
         tcn_num_layers: int = 2,
+        **kwargs,
     ):
         """Initialize Temporal UNet Backbone.
 
@@ -70,6 +71,7 @@ class TemporalUNetBackbone(TemporalBackboneBase):
             attention_hidden_dim=attention_hidden_dim,
             tcn_kernel_size=tcn_kernel_size,
             tcn_num_layers=tcn_num_layers,
+            **kwargs,
         )
 
         # Build UNet backbone
@@ -78,6 +80,7 @@ class TemporalUNetBackbone(TemporalBackboneBase):
             hid_blocks=hid_blocks,
             spatial=spatial,
             periodic=periodic,
+            **kwargs,
         )
 
     @property
@@ -110,4 +113,5 @@ class TemporalUNetBackbone(TemporalBackboneBase):
             stride=2,
             spatial=kwargs["spatial"],
             periodic=kwargs["periodic"],
+            **kwargs,
         )
