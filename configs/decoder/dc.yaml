@@ -1,0 +1,11 @@
+_target_: autocast.decoders.dc.DCDecoder
+in_channels: 2
+out_channels: ${oc.select:data.n_channels, null}
+hid_channels: [64, 32]
+hid_blocks: [2, 2]
+kernel_size: 3
+stride: 2
+spatial: 2
+pixel_shuffle: false
+periodic: false
+dropout: null

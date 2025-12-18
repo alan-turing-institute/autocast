@@ -31,6 +31,7 @@ from autocast.metrics.spatiotemporal import (
 from autocast.models.encoder_decoder import EncoderDecoder
 from autocast.models.encoder_processor_decoder import EncoderProcessorDecoder
 from autocast.train.configuration import (
+    align_processor_channels_with_encoder,
     compose_training_config,
     configure_module_dimensions,
     normalize_processor_cfg,
@@ -348,10 +349,6 @@ def _load_model(
     processor = instantiate(model_cfg.processor)
     epd_cfg = model_cfg
     learning_rate = epd_cfg.get("learning_rate", 1e-3)
-    training_cfg = cfg.get("training") or {}
-    stride = training_cfg.get("stride", 1)
-    teacher_forcing_ratio = epd_cfg.get("teacher_forcing_ratio", 0.5)
-    max_rollout_steps = epd_cfg.get("max_rollout_steps", 10)
     loss_cfg = epd_cfg.get("loss_func")
     loss_func = instantiate(loss_cfg) if loss_cfg is not None else nn.MSELoss()
 
@@ -367,9 +364,6 @@ def _load_model(
         encoder_decoder=encoder_decoder,
         processor=processor,
         learning_rate=learning_rate,
-        stride=stride,
-        teacher_forcing_ratio=teacher_forcing_ratio,
-        max_rollout_steps=max_rollout_steps,
         loss_func=loss_func,
     )
     load_result = model.load_state_dict(state_dict, strict=True)
@@ -393,6 +387,7 @@ def _render_rollouts(
     fps: int,
     device: torch.device,
     stride: int,
+    max_rollout_steps: int,
     free_running_only: bool,
 ) -> list[Path]:
     if not batch_indices:
@@ -410,6 +405,7 @@ def _render_rollouts(
             preds, trues = model.rollout(
                 batch_on_device,
                 stride=stride,
+                max_rollout_steps=max_rollout_steps,
                 free_running_only=free_running_only,
             )
             if trues is None:
@@ -481,6 +477,7 @@ def main() -> None:
         inferred_n_steps_output,
         _,
         _,
+        example_batch,
     ) = prepare_datamodule(cfg)
 
     configure_module_dimensions(
@@ -490,6 +487,16 @@ def main() -> None:
         n_steps_output=inferred_n_steps_output,
     )
     normalize_processor_cfg(cfg)
+    model_cfg = cfg.get("model") or cfg
+    encoder_probe = instantiate(model_cfg.encoder)
+    align_processor_channels_with_encoder(
+        cfg,
+        encoder=encoder_probe,
+        channel_count=channel_count,
+        n_steps_input=inferred_n_steps_input,
+        n_steps_output=inferred_n_steps_output,
+        example_batch=example_batch,
+    )
 
     metrics = _build_metrics(args.metrics or ("mse", "rmse"))
 
@@ -514,7 +521,14 @@ def main() -> None:
         log_metrics(wandb_logger, payload)
 
     if args.batch_indices:
-        rollout_loader = datamodule.rollout_test_dataloader()
+        # Set batch size to 1 for rendering individual trajectories
+        rollout_loader = datamodule.rollout_test_dataloader(batch_size=1)
+        # Determine rollout parameters (allow CLI override for stride)
+        eval_cfg = cfg.get("eval") or {}
+        max_rollout_steps = eval_cfg.get("max_rollout_steps", 10)
+        rollout_stride = (
+            args.stride if args.stride is not None else inferred_n_steps_output
+        )
         _render_rollouts(
             model,
             rollout_loader,
@@ -524,7 +538,8 @@ def main() -> None:
             args.video_format,
             args.fps,
             device,
-            stride=inferred_n_steps_output,
+            stride=rollout_stride,
+            max_rollout_steps=max_rollout_steps,
             free_running_only=args.free_running_only,
         )
 

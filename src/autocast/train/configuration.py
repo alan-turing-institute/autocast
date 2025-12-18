@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+import torch
 from hydra import compose, initialize_config_dir
 from omegaconf import DictConfig, ListConfig, open_dict
 
 from autocast.train.autoencoder import build_datamodule
+from autocast.types import Batch
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -46,6 +51,14 @@ def prepare_datamodule(cfg: DictConfig):
     channel_count = train_inputs.shape[-1]
     inferred_n_steps_input = train_inputs.shape[1]
     inferred_n_steps_output = train_outputs.shape[1]
+    constant_scalars = getattr(batch, "constant_scalars", None)
+    constant_fields = getattr(batch, "constant_fields", None)
+    sample_batch = Batch(
+        input_fields=train_inputs,
+        output_fields=train_outputs,
+        constant_scalars=constant_scalars,
+        constant_fields=constant_fields,
+    )
     return (
         datamodule,
         channel_count,
@@ -53,7 +66,119 @@ def prepare_datamodule(cfg: DictConfig):
         inferred_n_steps_output,
         train_inputs.shape,
         train_outputs.shape,
+        sample_batch,
     )
+
+
+def _infer_encoder_latent_channels(
+    encoder, fallback_channels: int, example_batch: Batch | None = None
+) -> int:
+    latent_dim = getattr(encoder, "latent_dim", None)
+    if isinstance(latent_dim, int) and latent_dim > 0:
+        return latent_dim
+    if example_batch is None or not hasattr(encoder, "encode"):
+        return fallback_channels
+
+    prev_training = getattr(encoder, "training", None)
+    if prev_training is not None:
+        encoder.eval()
+    try:
+        with torch.no_grad():
+            encoded = encoder.encode(example_batch)  # type: ignore[attr-defined]
+        inferred = int(encoded.shape[-1])
+        log.debug("Inferred latent channel count=%s from sample batch", inferred)
+        return inferred
+    except Exception as exc:  # pragma: no cover - defensive
+        log.debug("Failed to infer latent channels via encode(): %s", exc)
+        return fallback_channels
+    finally:
+        if prev_training is not None:
+            encoder.train(prev_training)
+
+
+def _override_dimension(
+    cfg_node: DictConfig | None,
+    key: str,
+    value: int,
+    fallback_values: tuple[int | None | str, ...] = (),
+) -> None:
+    if cfg_node is None or key not in cfg_node:
+        return
+    current = cfg_node.get(key)
+    allowed = set(fallback_values)
+    allowed.update({None, "auto"})
+    if current in allowed:
+        cfg_node[key] = value
+
+
+def align_processor_channels_with_encoder(
+    cfg: DictConfig,
+    *,
+    encoder,
+    channel_count: int,
+    n_steps_input: int,
+    n_steps_output: int,
+    example_batch: Batch | None = None,
+) -> int:
+    """Align processor/backbone channels with the encoder latent dimensionality."""
+    latent_channels = _infer_encoder_latent_channels(
+        encoder,
+        fallback_channels=channel_count,
+        example_batch=example_batch,
+    )
+
+    processor_cfg = _model_cfg(cfg).get("processor")
+    if processor_cfg is None:
+        return latent_channels
+
+    raw_in = channel_count * n_steps_input
+    raw_out = channel_count * n_steps_output
+    latent_in = latent_channels * n_steps_input
+    latent_out = latent_channels * n_steps_output
+
+    with open_dict(processor_cfg):
+        _override_dimension(
+            processor_cfg,
+            "n_channels_out",
+            latent_channels,
+            (channel_count,),
+        )
+        _override_dimension(
+            processor_cfg,
+            "out_channels",
+            latent_out,
+            (raw_out,),
+        )
+        _override_dimension(
+            processor_cfg,
+            "in_channels",
+            latent_in,
+            (raw_in,),
+        )
+
+    backbone_cfg = processor_cfg.get("backbone")
+    if backbone_cfg is not None:
+        with open_dict(backbone_cfg):
+            _override_dimension(
+                backbone_cfg,
+                "in_channels",
+                latent_out,
+                (raw_out,),
+            )
+            _override_dimension(
+                backbone_cfg,
+                "out_channels",
+                latent_out,
+                (raw_out,),
+            )
+            _override_dimension(
+                backbone_cfg,
+                "cond_channels",
+                latent_in,
+                (raw_in,),
+            )
+
+    return latent_channels
 
 
 def _maybe_set(cfg_node: DictConfig | None, key: str, value: int) -> None:
@@ -176,6 +301,7 @@ def resolve_training_params(cfg: DictConfig, args) -> TrainingParams:
 
 __all__ = [
     "TrainingParams",
+    "align_processor_channels_with_encoder",
     "compose_training_config",
     "configure_module_dimensions",
     "normalize_processor_cfg",

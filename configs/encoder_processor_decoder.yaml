@@ -6,7 +6,7 @@ defaults:
   - _self_
 
 seed: 42
-experiment_name: encoder_processor_decoder
+experiment_name: epd
 output:
   checkpoint_name: encoder_processor_decoder.ckpt
   save_config: true

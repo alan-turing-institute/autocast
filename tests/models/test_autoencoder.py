@@ -3,7 +3,7 @@ from torch import nn, rand
 
 from autocast.decoders.dc import DCDecoder
 from autocast.encoders.dc import DCEncoder
-from autocast.models.ae import AE, AELoss
+from autocast.models.autoencoder import AE, AELoss
 from autocast.types import Batch
 
 

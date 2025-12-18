@@ -7,7 +7,7 @@ from autocast.decoders.base import Decoder
 from autocast.decoders.dc import DCDecoder
 from autocast.encoders.base import Encoder
 from autocast.encoders.dc import DCEncoder
-from autocast.models.vae import VAE, VAELoss
+from autocast.models.variational_autoencoder import VAE, VAELoss
 from autocast.types import (
     Batch,
     TensorBNC,

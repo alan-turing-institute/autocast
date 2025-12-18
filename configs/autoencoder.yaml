@@ -2,13 +2,13 @@ defaults:
   - data: reaction_diffusion
   # Or set to TheWell dataset:
   # - data: the_well
-  - model: ae
+  - model: autoencoder
   - trainer: default
   - logging: wandb
   - _self_
 
 seed: 42
-experiment_name: autoencoder
+experiment_name: ae
 data:
   autoencoder_mode: true
 output:

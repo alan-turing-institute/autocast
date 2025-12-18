@@ -2,10 +2,22 @@
 
 ## Installation
 
+### Prereqiuisites
+
+- [uv](https://github.com/astral-sh/uv): running scripts; managing virtual environments
+- [ffmpeg](https://ffmpeg.org/): optional video generation during evaluation
+
+### Development
 For development, install with [`uv`](https://github.com/astral-sh/uv):
 ```bash
 uv sync --extra dev
 ```
+
+If contributing to the codebase, you can run 
+```bash 
+ pre-commit install 
+ ```
+This will setup the pre-commit checks so any pushed commits will pass the CI. 
 
 ## Quickstart
 
@@ -29,13 +41,74 @@ uv run evaluate_encoder_processor_decoder \
 	--config-path=configs/ \
 	--work-dir=outputs/processor_eval \
 	--checkpoint=outputs/encoder_processor_decoder_run/encoder_processor_decoder.ckpt \
-	--batch-index=0 --batch-index=3 \
+	--batch-index=0 --batch-index=1 \  # Optional batch indices, remove to skip videos
 	--video-dir=outputs/encoder_processor_decoder_run/videos
 ```
 
 Evaluation writes a CSV of aggregate metrics to `--csv-path` (defaults to
 `<work-dir>/evaluation_metrics.csv`) and, when `--batch-index` is provided,
 stores rollout animations for the specified test batches.
+
+## Example pipeline
+
+This assumes you have the `reaction_diffusion` dataset stored at the path specified by
+the `AUTOCAST_DATASETS` environment variable.
+
+### Train autoencoder
+```bash
+uv run python -m autocast.train.autoencoder \
+	--config-path=configs \
+	--work-dir=outputs/rd/00 \
+	data.data_path=$AUTOCAST_DATASETS/reaction_diffusion \
+	data.use_simulator=false \
+	model.learning_rate=0.00005 \
+	trainer.max_epochs=10 \
+	logging.wandb.enabled=true
+```
+
+Or alternatively with the included bash script:
+```bash
+./scripts/ae.sh rd 00 reaction_diffusion
+```
+
+### Train processor
+
+```bash
+uv run python -m autocast.train.encoder_processor_decoder \
+	--config-path=configs \
+	--work-dir=outputs/rd/00 \
+	data.data_path=$AUTOCAST_DATASETS/reaction_diffusion \
+	data.use_simulator=false \
+	model.learning_rate=0.0001 \
+	trainer.max_epochs=10 \
+	logging.wandb.enabled=true \
+	training.autoencoder_checkpoint=outputs/rd/00/autoencoder.ckpt
+```
+
+Or alternatively with the included bash script:
+```bash
+./scripts/epd.sh rd 00 reaction_diffusion
+```
+
+### Evaluation
+```bash
+uv run evaluate_encoder_processor_decoder \
+	--config-path=configs/ \
+	--work-dir=outputs/rd/00/eval \
+	--checkpoint=outputs/rd/00/encoder_processor_decoder.ckpt \
+	--batch-index=0 \
+	--batch-index=1 \
+	--batch-index=2 \
+	--batch-index=3 \
+	--video-dir=outputs/rd/00/eval/videos \
+	data.data_path=$AUTOCAST_DATASETS/reaction_diffusion \
+	data.use_simulator=false
+```
+
+Or alternatively with the included bash script:
+```bash
+./scripts/eval.sh rd 00 reaction_diffusion
+```
 
 ## Experiment Tracking with Weights & Biases
 

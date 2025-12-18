@@ -197,7 +197,7 @@ class DCEncoder(Encoder):
         batch = self.preprocess(batch)
         outputs = []
         for idx in range(batch.input_fields.shape[2]):  # loop over time dimension
-            x = batch.input_fields[:, :, idx, ...]
+            x = batch.input_fields[:, :, idx, ...].contiguous()
             x = self.patch(x)
             for blocks in self.descent:
                 for block in cast(nn.ModuleList, blocks):  # ModuleList in construction

@@ -16,6 +16,8 @@ class BaseMetric(Metric):
         dist_sync_on_step: Synchronize metric state across processes at each forward()
     """
 
+    name: str = "base_metric"
+
     def __init__(
         self,
         reduce_all: bool = True,
@@ -155,6 +157,8 @@ class BaseMetric(Metric):
 class MSE(BaseMetric):
     """Mean Squared Error over spatial dims."""
 
+    name: str = "mse"
+
     def score(
         self,
         y_pred: TensorBTSC,
@@ -168,6 +172,8 @@ class MSE(BaseMetric):
 class MAE(BaseMetric):
     """Mean Absolute Error over spatial dims."""
 
+    name: str = "mae"
+
     def score(
         self,
         y_pred: TensorBTSC,
@@ -180,6 +186,8 @@ class MAE(BaseMetric):
 
 class NMAE(BaseMetric):
     """Normalized Mean Absolute Error over spatial dims."""
+
+    name: str = "nmae"
 
     def __init__(
         self,
@@ -207,6 +215,8 @@ class NMAE(BaseMetric):
 class NMSE(BaseMetric):
     """Normalized Mean Squared Error over spatial dims."""
 
+    name: str = "nmse"
+
     def __init__(
         self,
         reduce_all: bool = True,
@@ -233,6 +243,8 @@ class NMSE(BaseMetric):
 class RMSE(BaseMetric):
     """Root Mean Squared Error over spatial dims."""
 
+    name: str = "rmse"
+
     def score(
         self,
         y_pred: TensorBTSC,
@@ -245,6 +257,8 @@ class RMSE(BaseMetric):
 
 class NRMSE(BaseMetric):
     """Normalized Root Mean Squared Error over spatial dims."""
+
+    name: str = "nrmse"
 
     def __init__(
         self,
@@ -273,6 +287,8 @@ class NRMSE(BaseMetric):
 
 class VMSE(BaseMetric):
     """Variance Scaled Mean Squared Error over spatial dims."""
+
+    name: str = "vmse"
 
     def __init__(
         self,
@@ -305,6 +321,8 @@ class VRMSE(BaseMetric):
     Computes VRMSE = RMSE / std(y_true), where std is computed over spatial dims.
     """
 
+    name: str = "vrmse"
+
     def __init__(
         self,
         reduce_all: bool = True,
@@ -334,6 +352,8 @@ class VRMSE(BaseMetric):
 
 class LInfinity(BaseMetric):
     """L-Infinity Norm over spatial dims."""
+
+    name: str = "l_infinity"
 
     def score(
         self,

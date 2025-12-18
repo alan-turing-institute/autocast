@@ -14,10 +14,11 @@ from omegaconf import DictConfig, OmegaConf
 from torch import nn
 
 from autocast.logging import create_wandb_logger, maybe_watch_model
-from autocast.models.ae import AE, AELoss
+from autocast.models.autoencoder import AE, AELoss
 from autocast.models.encoder_decoder import EncoderDecoder
 from autocast.models.encoder_processor_decoder import EncoderProcessorDecoder
 from autocast.train.configuration import (
+    align_processor_channels_with_encoder,
     compose_training_config,
     configure_module_dimensions,
     normalize_processor_cfg,
@@ -206,6 +207,7 @@ def main() -> None:  # noqa: PLR0915
         inferred_n_steps_output,
         input_shape,
         output_shape,
+        example_batch,
     ) = prepare_datamodule(cfg)
 
     log.info("Detected input shape %s and output shape %s", input_shape, output_shape)
@@ -238,6 +240,14 @@ def main() -> None:  # noqa: PLR0915
         training_params.autoencoder_checkpoint,
     )
     encoder_decoder = EncoderDecoder(encoder=encoder, decoder=decoder)
+    align_processor_channels_with_encoder(
+        cfg,
+        encoder=encoder,
+        channel_count=channel_count,
+        n_steps_input=inferred_n_steps_input,
+        n_steps_output=inferred_n_steps_output,
+        example_batch=example_batch,
+    )
 
     if training_params.freeze_autoencoder and training_params.autoencoder_checkpoint:
         log.info("Freezing encoder and decoder parameters.")

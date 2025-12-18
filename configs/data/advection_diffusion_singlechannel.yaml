@@ -2,8 +2,8 @@
 # The use_simulator flag is not required if data_path is provided. 
 # Issue explaining this at https://github.com/alan-turing-institute/autocast/issues/108
 data_path: null
-n_channels: 2
 use_simulator: true
+n_channels: 1
 split:
   n_train: 4
   n_valid: 2

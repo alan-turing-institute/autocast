@@ -187,7 +187,7 @@ class DCDecoder(Decoder):
             Decoded tensor with shape (B, L_1 x 2^D, ..., L_N x 2^D, C_o).
 
         """
-        x = z
+        x = z.contiguous()
         for blocks in self.ascent:
             for block in cast(nn.ModuleList, blocks):
                 x = block(x)

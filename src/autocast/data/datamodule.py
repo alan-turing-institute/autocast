@@ -19,6 +19,7 @@ class TheWellDataModule(LightningDataModule):
         n_steps_output: int = 1,
         batch_size: int = 4,
         use_normalization: bool = False,
+        normalization_type: type[ZScoreNormalization] | None = None,
         autoencoder_mode: bool = False,
         **well_kwargs,
     ):
@@ -32,6 +33,7 @@ class TheWellDataModule(LightningDataModule):
             n_steps_input=n_steps_input,
             n_steps_output=n_steps_output,
             use_normalization=use_normalization,
+            normalization_type=normalization_type,
             autoencoder_mode=autoencoder_mode,
             **well_kwargs,
         )
@@ -41,6 +43,7 @@ class TheWellDataModule(LightningDataModule):
             n_steps_input=n_steps_input,
             n_steps_output=n_steps_output,
             use_normalization=use_normalization,
+            normalization_type=normalization_type,
             autoencoder_mode=autoencoder_mode,
             **well_kwargs,
         )
@@ -50,6 +53,7 @@ class TheWellDataModule(LightningDataModule):
             n_steps_input=n_steps_input,
             n_steps_output=n_steps_output,
             use_normalization=use_normalization,
+            normalization_type=normalization_type,
             autoencoder_mode=autoencoder_mode,
             **well_kwargs,
         )
@@ -61,6 +65,7 @@ class TheWellDataModule(LightningDataModule):
                 n_steps_input=n_steps_input,
                 n_steps_output=n_steps_output,
                 use_normalization=use_normalization,
+                normalization_type=normalization_type,
                 full_trajectory_mode=True,
                 **well_kwargs,
             )
@@ -70,6 +75,7 @@ class TheWellDataModule(LightningDataModule):
                 n_steps_input=n_steps_input,
                 n_steps_output=n_steps_output,
                 use_normalization=use_normalization,
+                normalization_type=normalization_type,
                 full_trajectory_mode=True,
                 **well_kwargs,
             )
@@ -104,7 +110,7 @@ class TheWellDataModule(LightningDataModule):
             collate_fn=collate_batches,
         )
 
-    def rollout_val_dataloader(self) -> DataLoader:
+    def rollout_val_dataloader(self, batch_size: int | None = None) -> DataLoader:
         """DataLoader for full trajectory rollouts on validation data."""
         if self.autoencoder_mode:
             msg = (
@@ -114,13 +120,13 @@ class TheWellDataModule(LightningDataModule):
             raise RuntimeError(msg)
         return DataLoader(
             self.rollout_val_dataset,
-            batch_size=self.batch_size,
+            batch_size=batch_size or self.batch_size,
             shuffle=False,
             num_workers=0,  # TheWell uses h5py which can't be pickled
             collate_fn=collate_batches,
         )
 
-    def rollout_test_dataloader(self) -> DataLoader:
+    def rollout_test_dataloader(self, batch_size: int | None = None) -> DataLoader:
         """DataLoader for full trajectory rollouts on test data."""
         if self.autoencoder_mode:
             msg = (
@@ -130,7 +136,7 @@ class TheWellDataModule(LightningDataModule):
             raise RuntimeError(msg)
         return DataLoader(
             self.rollout_test_dataset,
-            batch_size=self.batch_size,
+            batch_size=batch_size or self.batch_size,
             shuffle=False,
             num_workers=0,  # TheWell uses h5py which can't be pickled
             collate_fn=collate_batches,
@@ -157,6 +163,9 @@ class SpatioTemporalDataModule(LightningDataModule):
         verbose: bool = False,
         autoencoder_mode: bool = False,
         use_normalization: bool = False,
+        normalization_type: type[ZScoreNormalization] | None = None,
+        normalization_path: None | str = None,
+        normalization_stats: dict | None = None,
     ):
         super().__init__()
         self.verbose = verbose
@@ -178,26 +187,28 @@ class SpatioTemporalDataModule(LightningDataModule):
             stride=stride,
             input_channel_idxs=input_channel_idxs,
             output_channel_idxs=output_channel_idxs,
+            autoencoder_mode=self.autoencoder_mode,
             dtype=dtype,
             verbose=self.verbose,
-            use_normalization=False,  # Temporarily disable to compute stats
-            norm=None,
-            autoencoder_mode=self.autoencoder_mode,
+            use_normalization=use_normalization,
+            normalization_type=normalization_type,
+            normalization_path=normalization_path,
+            normalization_stats=normalization_stats,
         )
 
-        # Compute normalization from training data if requested
-        norm = None
-        if self.use_normalization:
-            if self.verbose:
-                print("Computing normalization statistics from training data...")
-            norm = ZScoreNormalization
-            # if self.verbose:
-            #     print(f"  Mean (per channel): {norm.mean}")
-            #     print(f"  Std (per channel): {norm.std}")
+        # # Compute normalization from training data if requested
+        # norm = None
+        # if self.use_normalization:
+        #     if self.verbose:
+        #         print("Computing normalization statistics from training data...")
+        #     norm = ZScoreNormalization
+        #     # if self.verbose:
+        #     #     print(f"  Mean (per channel): {norm.mean}")
+        #     #     print(f"  Std (per channel): {norm.std}")
 
-            # Now enable normalization for training dataset
-            self.train_dataset.use_normalization = True
-            self.train_dataset.norm = norm
+        #     # Now enable normalization for training dataset
+        #     self.train_dataset.use_normalization = True
+        #     self.train_dataset.norm = norm
 
         self.val_dataset = dataset_cls(
             data_path=str(valid_path) if valid_path is not None else None,
@@ -207,11 +218,13 @@ class SpatioTemporalDataModule(LightningDataModule):
             stride=stride,
             input_channel_idxs=input_channel_idxs,
             output_channel_idxs=output_channel_idxs,
+            autoencoder_mode=self.autoencoder_mode,
             dtype=dtype,
             verbose=self.verbose,
-            use_normalization=self.use_normalization,
-            norm=norm,
-            autoencoder_mode=self.autoencoder_mode,
+            use_normalization=use_normalization,
+            normalization_type=normalization_type,
+            normalization_path=normalization_path,
+            normalization_stats=normalization_stats,
         )
         self.test_dataset = dataset_cls(
             data_path=str(test_path) if test_path is not None else None,
@@ -221,11 +234,13 @@ class SpatioTemporalDataModule(LightningDataModule):
             stride=stride,
             input_channel_idxs=input_channel_idxs,
             output_channel_idxs=output_channel_idxs,
+            autoencoder_mode=self.autoencoder_mode,
             dtype=dtype,
             verbose=self.verbose,
-            use_normalization=self.use_normalization,
-            norm=norm,
-            autoencoder_mode=self.autoencoder_mode,
+            use_normalization=use_normalization,
+            normalization_type=normalization_type,
+            normalization_path=normalization_path,
+            normalization_stats=normalization_stats,
         )
 
         self.batch_size = batch_size
@@ -242,8 +257,10 @@ class SpatioTemporalDataModule(LightningDataModule):
                 full_trajectory_mode=True,
                 dtype=dtype,
                 verbose=self.verbose,
-                use_normalization=self.use_normalization,
-                norm=norm,
+                use_normalization=use_normalization,
+                normalization_type=normalization_type,
+                normalization_path=normalization_path,
+                normalization_stats=normalization_stats,
             )
             self.rollout_test_dataset = dataset_cls(
                 data_path=str(test_path) if test_path is not None else None,
@@ -256,8 +273,10 @@ class SpatioTemporalDataModule(LightningDataModule):
                 full_trajectory_mode=True,
                 dtype=dtype,
                 verbose=self.verbose,
-                use_normalization=self.use_normalization,
-                norm=norm,
+                use_normalization=use_normalization,
+                normalization_type=normalization_type,
+                normalization_path=normalization_path,
+                normalization_stats=normalization_stats,
             )
 
     def train_dataloader(self) -> DataLoader:
@@ -280,7 +299,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             collate_fn=collate_batches,
         )
 
-    def rollout_val_dataloader(self) -> DataLoader:
+    def rollout_val_dataloader(self, batch_size: int | None = None) -> DataLoader:
         """DataLoader for full trajectory rollouts on validation data."""
         if self.autoencoder_mode:
             msg = (
@@ -290,7 +309,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             raise RuntimeError(msg)
         return DataLoader(
             self.rollout_val_dataset,
-            batch_size=self.batch_size,
+            batch_size=batch_size or self.batch_size,
             shuffle=False,
             num_workers=1,
             collate_fn=collate_batches,
@@ -306,7 +325,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             collate_fn=collate_batches,
         )
 
-    def rollout_test_dataloader(self) -> DataLoader:
+    def rollout_test_dataloader(self, batch_size: int | None = None) -> DataLoader:
         """DataLoader for full trajectory rollouts on test data."""
         if self.autoencoder_mode:
             msg = (
@@ -316,7 +335,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             raise RuntimeError(msg)
         return DataLoader(
             self.rollout_test_dataset,
-            batch_size=self.batch_size,
+            batch_size=batch_size or self.batch_size,
             shuffle=False,
             num_workers=1,
             collate_fn=collate_batches,
