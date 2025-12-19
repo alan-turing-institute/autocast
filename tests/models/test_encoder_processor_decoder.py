@@ -114,7 +114,7 @@ def test_encoder_processor_decoder_rollout_handles_batches(
         batch, stride=stride, max_rollout_steps=max_rollout_steps, return_windows=True
     )
 
-    assert preds.shape == (batch_size, max_rollout_steps, n_steps_output, 4, 4, 1)
+    assert preds.shape == (batch_size, max_rollout_steps, n_steps_output, 16, 16, 1)
     assert gts is not None
     assert gts.shape == preds.shape
 
@@ -125,7 +125,7 @@ def test_encoder_processor_decoder_rollout_handles_batches(
         return_windows=False,
     )
 
-    assert preds.shape == (batch_size, max_rollout_steps * n_steps_output, 4, 4, 1)
+    assert preds.shape == (batch_size, max_rollout_steps * n_steps_output, 16, 16, 1)
     assert gts is not None
     assert gts.shape == preds.shape
 
@@ -183,16 +183,16 @@ def test_encoder_processor_decoder_rollout_handles_short_trajectory(
     preds, gts = model.rollout(batch, stride=stride, return_windows=True)
 
     # In free-running mode, predictions continue for all max_rollout_steps
-    assert preds.shape == (batch_size, max_rollout_steps, n_steps_output, 4, 4, 1)
+    assert preds.shape == (batch_size, max_rollout_steps, n_steps_output, 16, 16, 1)
 
     # Ground truth only available for windows where data exists
     assert gts is not None
-    assert gts.shape == (batch_size, expected_gt_windows, n_steps_output, 4, 4, 1)
+    assert gts.shape == (batch_size, expected_gt_windows, n_steps_output, 16, 16, 1)
 
     preds, gts = model.rollout(batch, stride=n_steps_output, return_windows=False)
 
     # Predictions for all rollout windows concatenated
-    assert preds.shape == (batch_size, max_rollout_steps * n_steps_output, 4, 4, 1)
+    assert preds.shape == (batch_size, max_rollout_steps * n_steps_output, 16, 16, 1)
     # Ground truth only for windows where data was available
     assert gts is not None
-    assert gts.shape == (batch_size, expected_gt_windows * n_steps_output, 4, 4, 1)
+    assert gts.shape == (batch_size, expected_gt_windows * n_steps_output, 16, 16, 1)

@@ -258,7 +258,7 @@ def main() -> None:  # noqa: PLR0915
 
     epd_cfg = model_cfg
     learning_rate = epd_cfg.get("learning_rate", 1e-3)
-    train_processor_only = epd_cfg.get("train_processor_only", False)
+    train_in_latent_space = epd_cfg.get("train_in_latent_space", False)
     teacher_forcing_ratio = epd_cfg.get("teacher_forcing_ratio", 0.5)
     max_rollout_steps = epd_cfg.get("max_rollout_steps", 10)
     loss_cfg = epd_cfg.get("loss_func")
@@ -269,7 +269,7 @@ def main() -> None:  # noqa: PLR0915
         encoder_decoder=encoder_decoder,
         processor=processor,
         learning_rate=learning_rate,
-        train_processor_only=train_processor_only,
+        train_in_latent_space=train_in_latent_space,
         stride=stride,
         teacher_forcing_ratio=teacher_forcing_ratio,
         max_rollout_steps=max_rollout_steps,

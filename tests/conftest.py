@@ -89,8 +89,8 @@ def make_toy_batch() -> Callable[..., Batch]:
         batch_size: int = 2,
         t_in: int = 2,
         t_out: int | None = None,
-        w: int = 4,
-        h: int = 4,
+        w: int = 16,
+        h: int = 16,
         c: int = 1,
     ) -> Batch:
         t_out = t_out or t_in
