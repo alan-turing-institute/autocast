@@ -1,3 +1,5 @@
+exclude: ^src/autocast/external/.*$
+
 repos:
 - repo: https://github.com/astral-sh/ruff-pre-commit
   # Ruff version.

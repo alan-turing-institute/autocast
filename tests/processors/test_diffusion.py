@@ -146,6 +146,7 @@ def test_diffusion_processor(
         schedule=VPSchedule(),
         n_steps_output=n_steps_output,
         n_channels_out=n_channels_out,
+        sampler_steps=5,
     )
     model = ProcessorModel(processor=processor, sampler_steps=5, stride=n_steps_output)
     output = model.map(encoded_batch.encoded_inputs)
