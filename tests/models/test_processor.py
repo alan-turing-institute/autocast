@@ -357,7 +357,7 @@ def test_varying_temporal_steps(n_steps_input: int, n_steps_output: int):
     )
 
 
-@pytest.mark.parametrize("n_channels_in,n_channels_out", [(4, 4), (8, 8), (4, 8)])
+@pytest.mark.parametrize(("n_channels_in", "n_channels_out"), [(4, 4), (8, 8), (4, 8)])
 def test_varying_channels(n_channels_in: int, n_channels_out: int):
     """Test ProcessorModel with different channel configurations."""
     processor = _build_diffusion_processor(
