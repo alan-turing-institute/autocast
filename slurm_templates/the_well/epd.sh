@@ -60,7 +60,7 @@ uv run train_encoder_processor_decoder \
     model=encoder_processor_decoder \
     encoder@model.encoder=dc_f32c64_small \
     decoder@model.decoder=dc_f32c64_small \
-    processor@model.processor=flow_matching_rb \
+    processor@model.processor=flow_matching_large \
     logging.wandb.enabled=true \
     trainer.max_epochs=5 \
     trainer.gradient_clip_val=1.0 \
