@@ -224,8 +224,12 @@ def configure_module_dimensions(
     dimension rather than raw channel counts.
     """
     model_cfg = _model_cfg(cfg)
+    encoder_cfg = model_cfg.get("encoder")
+    _maybe_set(encoder_cfg, "in_channels", channel_count)
+    _maybe_set(encoder_cfg, "time_steps", n_steps_input)
     decoder_cfg = model_cfg.get("decoder")
-    _maybe_set(decoder_cfg, "output_channels", channel_count)
+    _maybe_set(decoder_cfg, "out_channels", channel_count)
+    _maybe_set(decoder_cfg, "output_channels", channel_count)  # alias
     _maybe_set(decoder_cfg, "time_steps", n_steps_output)
     processor_cfg = model_cfg.get("processor")
     _maybe_set(processor_cfg, "in_channels", channel_count * n_steps_input)
@@ -250,10 +254,17 @@ def normalize_processor_cfg(cfg: DictConfig) -> None:
 def update_data_cfg(cfg: DictConfig, n_steps_input: int, n_steps_output: int) -> None:
     """Update datamodule configuration to match resolved training step counts."""
     data_cfg = cfg.data
-    with open_dict(data_cfg.datamodule):
-        data_cfg.datamodule.n_steps_input = n_steps_input
-        data_cfg.datamodule.n_steps_output = n_steps_output
-        data_cfg.datamodule.autoencoder_mode = False
+    # Handle both nested datamodule structure and flat structure (e.g., the_well.yaml)
+    if "datamodule" in data_cfg:
+        with open_dict(data_cfg.datamodule):
+            data_cfg.datamodule.n_steps_input = n_steps_input
+            data_cfg.datamodule.n_steps_output = n_steps_output
+            data_cfg.datamodule.autoencoder_mode = False
+    else:
+        with open_dict(data_cfg):
+            data_cfg.n_steps_input = n_steps_input
+            data_cfg.n_steps_output = n_steps_output
+            data_cfg.autoencoder_mode = False
 
 
 def resolve_training_params(cfg: DictConfig, args) -> TrainingParams:

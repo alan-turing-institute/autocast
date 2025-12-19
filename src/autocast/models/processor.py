@@ -8,16 +8,20 @@ from torch import nn
 from torchmetrics import Metric
 
 from autocast.metrics.utils import MetricsMixin
+from autocast.models.optimizer_mixin import OptimizerMixin
 from autocast.processors.base import Processor
 from autocast.processors.rollout import RolloutMixin
 from autocast.types import EncodedBatch, Tensor, TensorBNC
 
 
-class ProcessorModel(RolloutMixin[EncodedBatch], ABC, L.LightningModule, MetricsMixin):
+class ProcessorModel(
+    OptimizerMixin, RolloutMixin[EncodedBatch], ABC, L.LightningModule, MetricsMixin
+):
     """Processor Base Class."""
 
     processor: Processor
     learning_rate: float
+    optimizer_config: dict[str, Any] | None
 
     def __init__(
         self,
@@ -25,6 +29,7 @@ class ProcessorModel(RolloutMixin[EncodedBatch], ABC, L.LightningModule, Metrics
         stride: int = 1,
         loss_func: nn.Module | None = None,
         learning_rate: float | None = None,
+        optimizer_config: dict[str, Any] | None = None,
         train_metrics: Sequence[Metric] | None = [],
         val_metrics: Sequence[Metric] | None = None,
         test_metrics: Sequence[Metric] | None = None,
@@ -40,6 +45,7 @@ class ProcessorModel(RolloutMixin[EncodedBatch], ABC, L.LightningModule, Metrics
             if learning_rate is not None
             else getattr(processor, "learning_rate", 1e-3)
         )
+        self.optimizer_config = optimizer_config
         self.train_metrics = self._build_metrics(train_metrics, "train_")
         self.val_metrics = self._build_metrics(val_metrics, "val_")
         self.test_metrics = self._build_metrics(test_metrics, "test_")
@@ -95,14 +101,6 @@ class ProcessorModel(RolloutMixin[EncodedBatch], ABC, L.LightningModule, Metrics
                 self, self.test_metrics, y_pred, y_true, batch.encoded_inputs.shape[0]
             )
         return loss
-
-    def configure_optimizers(self):
-        """Configure optimizers for training.
-
-        Returns Adam optimizer with learning_rate. Subclasses can override
-        to use different optimizers or learning rate schedules.
-        """
-        return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
 
     def _clone_batch(self, batch: EncodedBatch) -> EncodedBatch:
         return EncodedBatch(

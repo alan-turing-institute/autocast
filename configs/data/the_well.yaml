@@ -19,6 +19,7 @@ max_dt_stride: 1
 
 # DataLoader configuration
 batch_size: 16
+num_workers: 0
 
 # Normalization
 use_normalization: true

@@ -9,10 +9,11 @@ from torchmetrics import Metric
 from autocast.decoders import Decoder
 from autocast.encoders import Encoder
 from autocast.metrics.utils import MetricsMixin
+from autocast.models.optimizer_mixin import OptimizerMixin
 from autocast.types import Batch, Tensor, TensorBNC, TensorBTSC
 
 
-class EncoderDecoder(L.LightningModule, MetricsMixin):
+class EncoderDecoder(OptimizerMixin, L.LightningModule, MetricsMixin):
     """Encoder-Decoder Model."""
 
     encoder: Encoder
@@ -25,6 +26,8 @@ class EncoderDecoder(L.LightningModule, MetricsMixin):
         encoder: Encoder,
         decoder: Decoder,
         loss_func: nn.Module | None = None,
+        learning_rate: float = 1e-3,
+        optimizer_config: dict[str, Any] | None = None,
         train_metrics: Sequence[Metric] | None = [],
         val_metrics: Sequence[Metric] | None = None,
         test_metrics: Sequence[Metric] | None = None,
@@ -34,6 +37,8 @@ class EncoderDecoder(L.LightningModule, MetricsMixin):
         self.encoder = encoder
         self.decoder = decoder
         self.loss_func = loss_func
+        self.learning_rate = learning_rate
+        self.optimizer_config = optimizer_config
         self.train_metrics = self._build_metrics(train_metrics, "train_")
         self.val_metrics = self._build_metrics(val_metrics, "val_")
         self.test_metrics = self._build_metrics(test_metrics, "test_")
@@ -100,10 +105,6 @@ class EncoderDecoder(L.LightningModule, MetricsMixin):
 
     def decode(self, z: TensorBNC) -> TensorBTSC:
         return self.decoder.decode(z)
-
-    def configure_optimizers(self):
-        """Configure optimizers for training."""
-        return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
 
 
 class VAE(EncoderDecoder):

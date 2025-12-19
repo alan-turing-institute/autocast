@@ -3,6 +3,7 @@ defaults:
   - _self_
 
 learning_rate: 0.0001
+optimizer_config: ${oc.select:optimizer, null}  # Pass optimizer config to model, null if not specified
 stride: ${training.stride}
 rollout_stride: ${training.rollout_stride}
 loss_func:

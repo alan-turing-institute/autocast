@@ -16,6 +16,12 @@ backbone:
   mod_features: 256
   hid_channels: [64, 128, 256, 512]
   hid_blocks: [3, 3, 3, 3]
+  temporal_method: "none"
+  stride: 2 # TODO: stride as non-integer raises exception
   spatial: 2
   periodic: true
-  temporal_method: "none"
+  dropout: 0.05
+  ffn_factor: 1
+  checkpointing: true
+  identity_init: true
+  attention_heads: {5: 8}

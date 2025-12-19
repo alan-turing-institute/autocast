@@ -6,4 +6,14 @@ log_every_n_steps: 10
 enable_checkpointing: true
 detect_anomaly: false
 default_root_dir: null
+gradient_clip_val: null
+
+# Save checkpoints mid-epoch (step-based), not only at epoch end.
+# Override at runtime, e.g.: trainer.callbacks.0.every_n_train_steps=500
+callbacks:
+  - _target_: lightning.pytorch.callbacks.ModelCheckpoint
+    save_top_k: -1
+    every_n_train_steps: 1000
+    save_on_train_epoch_end: false
+    filename: "step-{step}"
 

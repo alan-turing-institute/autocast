@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import torch
@@ -21,11 +22,16 @@ class TheWellDataModule(LightningDataModule):
         use_normalization: bool = False,
         normalization_type: type[ZScoreNormalization] | None = None,
         autoencoder_mode: bool = False,
+        num_workers: int | None = None,  # Auto-detect if None
         **well_kwargs,
     ):
         super().__init__()
         self.batch_size = batch_size
         self.autoencoder_mode = autoencoder_mode
+        # Auto-detect num_workers based on available CPUs, capped at 8
+        self.num_workers = (
+            num_workers if num_workers is not None else min(os.cpu_count() or 1, 8)
+        )
 
         self.train_dataset = TheWell(
             well_dataset_name=well_dataset_name,
@@ -86,7 +92,7 @@ class TheWellDataModule(LightningDataModule):
             self.train_dataset,
             batch_size=self.batch_size,
             shuffle=True,
-            num_workers=0,  # TheWell uses h5py which can't be pickled
+            num_workers=self.num_workers,
             collate_fn=collate_batches,
         )
 
@@ -96,7 +102,7 @@ class TheWellDataModule(LightningDataModule):
             self.val_dataset,
             batch_size=self.batch_size,
             shuffle=False,
-            num_workers=0,  # TheWell uses h5py which can't be pickled
+            num_workers=self.num_workers,
             collate_fn=collate_batches,
         )
 
@@ -106,7 +112,7 @@ class TheWellDataModule(LightningDataModule):
             self.test_dataset,
             batch_size=self.batch_size,
             shuffle=False,
-            num_workers=0,  # TheWell uses h5py which can't be pickled
+            num_workers=self.num_workers,
             collate_fn=collate_batches,
         )
 
@@ -122,7 +128,7 @@ class TheWellDataModule(LightningDataModule):
             self.rollout_val_dataset,
             batch_size=batch_size or self.batch_size,
             shuffle=False,
-            num_workers=0,  # TheWell uses h5py which can't be pickled
+            num_workers=self.num_workers,
             collate_fn=collate_batches,
         )
 
@@ -138,7 +144,7 @@ class TheWellDataModule(LightningDataModule):
             self.rollout_test_dataset,
             batch_size=batch_size or self.batch_size,
             shuffle=False,
-            num_workers=0,  # TheWell uses h5py which can't be pickled
+            num_workers=self.num_workers,
             collate_fn=collate_batches,
         )
 
@@ -166,11 +172,16 @@ class SpatioTemporalDataModule(LightningDataModule):
         normalization_type: type[ZScoreNormalization] | None = None,
         normalization_path: None | str = None,
         normalization_stats: dict | None = None,
+        num_workers: int | None = None,
     ):
         super().__init__()
         self.verbose = verbose
         self.use_normalization = use_normalization
         self.autoencoder_mode = autoencoder_mode
+        # Auto-detect num_workers based on available CPUs, capped at 8
+        self.num_workers = (
+            num_workers if num_workers is not None else min(os.cpu_count() or 1, 8)
+        )
         base_path = Path(data_path) if data_path is not None else None
         suffix = ".pt" if ftype == "torch" else ".h5"
         fname = f"data{suffix}"
@@ -285,7 +296,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             self.train_dataset,
             batch_size=self.batch_size,
             shuffle=True,
-            num_workers=1,
+            num_workers=self.num_workers,
             collate_fn=collate_batches,
         )
 
@@ -295,7 +306,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             self.val_dataset,
             batch_size=self.batch_size,
             shuffle=False,
-            num_workers=1,
+            num_workers=self.num_workers,
             collate_fn=collate_batches,
         )
 
@@ -311,7 +322,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             self.rollout_val_dataset,
             batch_size=batch_size or self.batch_size,
             shuffle=False,
-            num_workers=1,
+            num_workers=self.num_workers,
             collate_fn=collate_batches,
         )
 
@@ -321,7 +332,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             self.test_dataset,
             batch_size=self.batch_size,
             shuffle=False,
-            num_workers=1,
+            num_workers=self.num_workers,
             collate_fn=collate_batches,
         )
 
@@ -337,6 +348,6 @@ class SpatioTemporalDataModule(LightningDataModule):
             self.rollout_test_dataset,
             batch_size=batch_size or self.batch_size,
             shuffle=False,
-            num_workers=1,
+            num_workers=self.num_workers,
             collate_fn=collate_batches,
         )

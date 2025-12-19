@@ -1,6 +1,6 @@
 """Temporal UNet backbone with flexible temporal processing methods."""
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from azula.nn.unet import UNet
 from torch import nn
@@ -27,6 +27,7 @@ class TemporalUNetBackbone(TemporalBackboneBase):
         hid_channels: Sequence[int] = (32, 64, 128),
         hid_blocks: Sequence[int] = (2, 2, 2),
         spatial: int = 2,
+        kernel_size: int = 3,
         periodic: bool = False,
         temporal_method: str = "none",
         num_attention_heads: int = 8,
@@ -34,6 +35,13 @@ class TemporalUNetBackbone(TemporalBackboneBase):
         # TCN parameters
         tcn_kernel_size: int = 3,
         tcn_num_layers: int = 2,
+        # UNet parameters
+        stride: int | Sequence[int] = 2,
+        dropout: float = 0.0,
+        ffn_factor: int = 1,
+        identity_init: bool = False,
+        attention_heads: Mapping[int, int] | None = None,
+        checkpointing: bool = False,
     ):
         """Initialize Temporal UNet Backbone.
 
@@ -47,6 +55,7 @@ class TemporalUNetBackbone(TemporalBackboneBase):
             hid_channels: Tuple of hidden channels for UNet levels
             hid_blocks: Tuple of number of blocks per UNet level
             spatial: Spatial dimensionality (2 for 2D)
+            kernel_size: Kernel size for UNet convolutions
             periodic: Whether to use periodic boundary conditions
             temporal_method: Method for temporal processing. Options:
                 - "attention": Multi-head self-attention over time
@@ -56,6 +65,12 @@ class TemporalUNetBackbone(TemporalBackboneBase):
             attention_hidden_dim: Hidden dimension for attention methods
             tcn_kernel_size: Kernel size for TCN
             tcn_num_layers: Number of TCN layers
+            stride: Stride for UNet downsampling/upsampling
+            dropout: Dropout rate in UNet blocks
+            ffn_factor: Feedforward network expansion factor in UNet blocks
+            identity_init: Whether to use identity initialization in UNet blocks
+            attention_heads: Mapping of UNet levels to number of attention heads
+            checkpointing: Whether to use gradient checkpointing in UNet
         """
         # Initialize base class with common parameters
         super().__init__(
@@ -76,8 +91,15 @@ class TemporalUNetBackbone(TemporalBackboneBase):
         self.unet = self._build_backbone(
             hid_channels=hid_channels,
             hid_blocks=hid_blocks,
+            kernel_size=kernel_size,
+            stride=stride,
             spatial=spatial,
             periodic=periodic,
+            dropout=dropout,
+            ffn_factor=ffn_factor,
+            identity_init=identity_init,
+            attention_heads=attention_heads or {},
+            checkpointing=checkpointing,
         )
 
     @property
@@ -99,15 +121,32 @@ class TemporalUNetBackbone(TemporalBackboneBase):
         -------
             UNet module
         """
+        hid_channels = kwargs.pop("hid_channels")
+        hid_blocks = kwargs.pop("hid_blocks")
+        spatial = kwargs.pop("spatial")
+        periodic = kwargs.pop("periodic")
+        kernel_size = kwargs.pop("kernel_size", 3)
+        stride = kwargs.pop("stride", 2)
+        dropout = kwargs.pop("dropout", 0.0)
+        ffn_factor = kwargs.pop("ffn_factor", 4)
+        identity_init = kwargs.pop("identity_init", False)
+        attention_heads = kwargs.pop("attention_heads", {})
+        checkpointing = kwargs.pop("checkpointing", False)
+
         return UNet(
             in_channels=self.in_channels * self.n_steps_output,
             out_channels=self.out_channels * self.n_steps_output,
             cond_channels=self.cond_channels * self.n_steps_input,
             mod_features=self.mod_features,
-            hid_channels=kwargs["hid_channels"],
-            hid_blocks=kwargs["hid_blocks"],
-            kernel_size=3,
-            stride=2,
-            spatial=kwargs["spatial"],
-            periodic=kwargs["periodic"],
+            hid_channels=hid_channels,
+            hid_blocks=hid_blocks,
+            kernel_size=kernel_size,
+            stride=stride,
+            spatial=spatial,
+            periodic=periodic,
+            dropout=dropout,
+            ffn_factor=ffn_factor,
+            identity_init=identity_init,
+            attention_heads=attention_heads,
+            checkpointing=checkpointing,
         )

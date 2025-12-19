@@ -8,13 +8,16 @@ from torchmetrics import Metric, MetricCollection
 
 from autocast.metrics.utils import MetricsMixin
 from autocast.models.encoder_decoder import EncoderDecoder
+from autocast.models.optimizer_mixin import OptimizerMixin
 from autocast.processors.base import Processor
 from autocast.processors.rollout import RolloutMixin
 from autocast.types import Batch, EncodedBatch, Tensor, TensorBNC, TensorBTSC
 
 
-class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule, MetricsMixin):
-    """Encoder-Processor-Decoder Model."""
+class EncoderProcessorDecoder(
+    OptimizerMixin, RolloutMixin[Batch], L.LightningModule, MetricsMixin
+):
+    """Encoder-Processor-Decoder Model.""" ""
 
     encoder_decoder: EncoderDecoder
     processor: Processor
@@ -27,6 +30,7 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule, MetricsMix
         encoder_decoder: EncoderDecoder,
         processor: Processor,
         learning_rate: float = 1e-3,
+        optimizer_config: dict[str, Any] | None = None,
         stride: int = 1,
         rollout_stride: int | None = None,
         teacher_forcing_ratio: float = 0.5,
@@ -42,6 +46,7 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule, MetricsMix
         self.encoder_decoder = encoder_decoder
         self.processor = processor
         self.learning_rate = learning_rate
+        self.optimizer_config = optimizer_config
         self.stride = stride
         self.rollout_stride = rollout_stride if rollout_stride is not None else stride
         self.teacher_forcing_ratio = teacher_forcing_ratio
@@ -132,9 +137,6 @@ class EncoderProcessorDecoder(RolloutMixin[Batch], L.LightningModule, MetricsMix
                 self, self.test_metrics, y_pred, y_true, batch.input_fields.shape[0]
             )
         return loss
-
-    def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
 
     def _clone_batch(self, batch: Batch) -> Batch:
         return Batch(
