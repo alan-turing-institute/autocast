@@ -1,7 +1,7 @@
 _target_: autocast.decoders.wrapped_decoder.WrappedDecoder
 defaults:
   # / to indicate root config directory
-  - /dcae_f32c64_large
+  - /external/lola/ae/dcae_f32c64_large
   - _self_
 
 

@@ -1,7 +1,7 @@
 _target_: autocast.encoders.wrapped_encoder.WrappedEncoder
 # defaults section is required in Hydra for importing other config files
 defaults:
-  - /dcae_f32c64_large
+  - /external/lola/ae/dcae_f32c64_large
   # self here is equivalent to "encoder/wrapped_encoder"
   - _self_
 
