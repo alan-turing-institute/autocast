@@ -18,17 +18,17 @@ class TemporalUNetBackbone(TemporalBackboneBase):
 
     def __init__(
         self,
-        in_channels: int = 1,
-        out_channels: int = 1,
-        cond_channels: int = 1,
-        n_steps_output: int = 4,
-        n_steps_input: int = 1,
+        in_channels: int,
+        out_channels: int,
+        cond_channels: int,
+        n_steps_output: int,
+        n_steps_input: int,
         mod_features: int = 256,
         hid_channels: Sequence[int] = (32, 64, 128),
         hid_blocks: Sequence[int] = (2, 2, 2),
         spatial: int = 2,
         periodic: bool = False,
-        temporal_method: str = "attention",
+        temporal_method: str = "none",
         num_attention_heads: int = 8,
         attention_hidden_dim: int = 64,
         # TCN parameters
