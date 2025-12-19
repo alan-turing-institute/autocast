@@ -20,6 +20,7 @@ def _toy_encoded_batch(
     return EncodedBatch(
         encoded_inputs=encoded_inputs,
         encoded_output_fields=encoded_outputs,
+        label=None,
         encoded_info={},
     )
 

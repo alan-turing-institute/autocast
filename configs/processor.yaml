@@ -1,0 +1,24 @@
+defaults:
+  - data: miniwell
+  - model: processor
+  - trainer: default
+  - logging: wandb
+  - _self_
+
+seed: 42
+experiment_name: processor
+output:
+  checkpoint_name: processor.ckpt
+  save_config: true
+
+training:
+  n_steps_input: 1
+  n_steps_output: 4
+  stride: 1
+  rollout_stride: 4
+
+hydra:
+  run:
+    dir: outputs/${experiment_name}/${now:%Y-%m-%d_%H-%M-%S}
+  job:
+    chdir: true

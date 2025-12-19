@@ -1,4 +1,12 @@
-from .batch import Batch, BatchT, EncodedBatch, Sample, collate_batches
+from .batch import (
+    Batch,
+    BatchT,
+    EncodedBatch,
+    EncodedSample,
+    Sample,
+    collate_batches,
+    collate_encoded_samples,
+)
 from .types import (
     Input,
     RolloutOutput,
@@ -19,6 +27,7 @@ __all__ = [
     "Batch",
     "BatchT",
     "EncodedBatch",
+    "EncodedSample",
     "Input",
     "RolloutOutput",
     "Sample",
@@ -34,4 +43,5 @@ __all__ = [
     "TensorSC",
     "TensorTSC",
     "collate_batches",
+    "collate_encoded_samples",
 ]

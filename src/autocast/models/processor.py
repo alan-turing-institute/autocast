@@ -108,6 +108,7 @@ class ProcessorModel(RolloutMixin[EncodedBatch], ABC, L.LightningModule, Metrics
         return EncodedBatch(
             encoded_inputs=batch.encoded_inputs.clone(),
             encoded_output_fields=batch.encoded_output_fields.clone(),
+            label=None,
             encoded_info={
                 key: value.clone() if hasattr(value, "clone") else value
                 for key, value in batch.encoded_info.items()
@@ -152,6 +153,7 @@ class ProcessorModel(RolloutMixin[EncodedBatch], ABC, L.LightningModule, Metrics
         return EncodedBatch(
             encoded_inputs=combined,
             encoded_output_fields=next_outputs,
+            label=batch.label,
             encoded_info=batch.encoded_info,
         )
 

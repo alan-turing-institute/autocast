@@ -1,0 +1,18 @@
+# MiniWell dataset configuration
+# Configure MiniWellDataModule for loading MiniWell h5 datasets
+_target_: autocast.data.encoded_dataset.MiniWellDataModule
+
+# Base path containing train/, valid/, test/ subdirectories with *.h5 files
+data_path: null
+
+# Temporal configuration
+n_steps_input: 1
+n_steps_output: 4
+stride: 1
+
+# DataLoader configuration
+batch_size: 16
+num_workers: 0  # Use 0 for h5py compatibility
+
+# Dataset configuration
+concat_inputs_and_label: true
