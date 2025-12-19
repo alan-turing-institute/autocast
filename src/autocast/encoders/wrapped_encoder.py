@@ -43,6 +43,7 @@ class WrappedEncoder(ChannelsFirstEncoder):
     wrapped_encode_func: Callable
 
     def __init__(self, **kwargs):
+        super().__init__()
         self.wrapped_autoencoder = get_autoencoder(**kwargs)
         runpath = kwargs.get("runpath")
         if runpath is not None:
