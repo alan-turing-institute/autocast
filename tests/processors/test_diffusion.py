@@ -108,12 +108,17 @@ params = list(
     ),
     params,
 )
+@pytest.mark.parametrize(
+    "temporal_method",
+    ["none", "attention", "tcn"],
+)
 def test_diffusion_processor(
     n_steps_output: int,
     n_steps_input: int,
     n_channels_in: int,
     n_channels_out: int,
     accelerator: str,
+    temporal_method: str,
 ):
     encoded_loader = _build_encoded_loader(
         n_steps_input=n_steps_input,
@@ -125,9 +130,12 @@ def test_diffusion_processor(
 
     processor = DiffusionProcessor(
         backbone=TemporalUNetBackbone(
-            in_channels=n_channels_out * n_steps_output,
-            out_channels=n_channels_out * n_steps_output,
-            cond_channels=n_channels_in * n_steps_input,
+            in_channels=n_channels_out,
+            out_channels=n_channels_out,
+            cond_channels=n_channels_in,
+            n_steps_output=n_steps_output,
+            n_steps_input=n_steps_input,
+            temporal_method=temporal_method,
             mod_features=256,
             hid_channels=(32, 64, 128),
             hid_blocks=(2, 2, 2),
@@ -137,6 +145,7 @@ def test_diffusion_processor(
         schedule=VPSchedule(),
         n_steps_output=n_steps_output,
         n_channels_out=n_channels_out,
+        sampler_steps=5,
     )
     model = ProcessorModel(processor=processor, sampler_steps=5, stride=n_steps_output)
     output = model.map(encoded_batch.encoded_inputs)

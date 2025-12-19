@@ -162,20 +162,32 @@ def align_processor_channels_with_encoder(
             _override_dimension(
                 backbone_cfg,
                 "in_channels",
-                latent_out,
-                (raw_out,),
+                latent_channels,
+                (channel_count,),
             )
             _override_dimension(
                 backbone_cfg,
                 "out_channels",
-                latent_out,
-                (raw_out,),
+                latent_channels,
+                (channel_count,),
             )
             _override_dimension(
                 backbone_cfg,
                 "cond_channels",
-                latent_in,
-                (raw_in,),
+                latent_channels,
+                (channel_count,),
+            )
+            _override_dimension(
+                backbone_cfg,
+                "n_steps_input",
+                n_steps_input,
+                (),
+            )
+            _override_dimension(
+                backbone_cfg,
+                "n_steps_output",
+                n_steps_output,
+                (),
             )
 
     return latent_channels
@@ -205,7 +217,12 @@ def configure_module_dimensions(
     n_steps_input: int,
     n_steps_output: int,
 ) -> None:
-    """Populate missing dimension hints for encoder/decoder/processor modules."""
+    """Populate missing dimension hints for encoder/decoder/processor modules.
+
+    Note: Backbone channel dimensions are handled separately by
+    align_processor_channels_with_encoder, which uses the encoder's latent
+    dimension rather than raw channel counts.
+    """
     model_cfg = _model_cfg(cfg)
     decoder_cfg = model_cfg.get("decoder")
     _maybe_set(decoder_cfg, "output_channels", channel_count)
@@ -215,11 +232,6 @@ def configure_module_dimensions(
     _maybe_set(processor_cfg, "out_channels", channel_count * n_steps_output)
     _maybe_set(processor_cfg, "n_steps_output", n_steps_output)
     _maybe_set(processor_cfg, "n_channels_out", channel_count)
-
-    backbone_cfg = processor_cfg.get("backbone") if processor_cfg else None
-    _maybe_set(backbone_cfg, "in_channels", channel_count * n_steps_output)
-    _maybe_set(backbone_cfg, "out_channels", channel_count * n_steps_output)
-    _maybe_set(backbone_cfg, "cond_channels", channel_count * n_steps_input)
 
 
 def normalize_processor_cfg(cfg: DictConfig) -> None:

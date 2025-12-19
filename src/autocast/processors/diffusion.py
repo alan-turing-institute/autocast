@@ -80,7 +80,7 @@ class DiffusionProcessor(Processor):
         clean data.
         """
         x_cond = batch.encoded_inputs
-        x_0 = batch.encoded_output_fields  # Clean data : (B, T,C, H, W)
+        x_0 = batch.encoded_output_fields  # Clean data : (B, T,C, W, H)
 
         # Sample random times in [0, 1] uniformly
         t = torch.rand(x_0.size(0), device=x_0.device)  # (B,)
@@ -171,8 +171,8 @@ class DiffusionProcessor(Processor):
         Generate samples via reverse diffusion using Azula's samplers.
 
         Args:
-            x_t: Starting noise (B, T, C, H, W)
-            cond: Conditioning input (B, T_cond, C_cond, H, W)
+            x_t: Starting noise (B, T, C, W, H)
+            cond: Conditioning input (B, T_cond, C_cond, W, H)
             num_steps: Number of denoising steps
             sampler: Type of sampler to use:
                 - 'euler': Euler ODE solver (fast, deterministic)
@@ -186,7 +186,7 @@ class DiffusionProcessor(Processor):
 
         Returns
         -------
-            Generated samples (B, T, C, H, W)
+            Generated samples (B, T, C, W, H)
             Or if return_trajectory=True: List of tensors
         """
         azula_sampler = self._get_sampler(
@@ -210,5 +210,5 @@ class DiffusionProcessor(Processor):
                 trajectory.append(x)
 
             # Stack, this is just for debugging and visualisation purposes
-            return torch.stack(trajectory, dim=0)  # (num_steps+1, B, T, C, H, W)
-        return azula_sampler(x_t, cond=cond)  # (B, T, C, H, W)
+            return torch.stack(trajectory, dim=0)  # (num_steps+1, B, T, C, W, H)
+        return azula_sampler(x_t, cond=cond)  # (B, T, C, W, H)
