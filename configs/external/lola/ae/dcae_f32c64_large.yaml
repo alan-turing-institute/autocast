@@ -1,0 +1,14 @@
+name: "dcae_f32c${.lat_channels}_large"
+arch: "dcae"
+saturation: "softclip2"
+latent_noise: 0.0
+lat_channels: 64
+hid_channels: [64, 128, 256, 512, 768, 1024]
+hid_blocks: [3, 3, 3, 3, 3, 3]
+pixel_shuffle: true
+norm: "layer"
+attention_heads: {}
+ffn_factor: 1
+dropout: 0.05
+checkpointing: false
+identity_init: true
