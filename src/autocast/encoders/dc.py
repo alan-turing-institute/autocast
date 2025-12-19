@@ -84,8 +84,14 @@ class DCEncoder(Encoder):
         dropout: float | None = None,
         checkpointing: bool = False,
         identity_init: bool = True,
+        with_constant_fields: bool = False,
+        with_constant_scalars: bool = False,
     ) -> None:
         super().__init__()
+
+        # Set constants concatenation options
+        self.with_constant_fields = with_constant_fields
+        self.with_constant_scalars = with_constant_scalars
 
         attention_heads = attention_heads or {}
         assert len(hid_blocks) == len(hid_channels)

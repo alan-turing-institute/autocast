@@ -1,1 +1,3 @@
 _target_: autocast.encoders.identity.IdentityEncoder
+with_constant_fields: false
+with_constant_scalars: false

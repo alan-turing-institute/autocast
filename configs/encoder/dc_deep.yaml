@@ -9,3 +9,5 @@ spatial: 2
 pixel_shuffle: false
 periodic: false
 dropout: null
+with_constant_fields: false
+with_constant_scalars: false
