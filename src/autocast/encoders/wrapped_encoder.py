@@ -1,14 +1,11 @@
 from collections.abc import Callable
-from typing import Any
 
 import torch
 from einops import rearrange
 
 from autocast.encoders.base import Encoder
-from autocast.types import TensorBNC
+from autocast.nn.lola_autoencoder import get_autoencoder
 from autocast.types.batch import Batch
-
-from .lola_autoencoder import get_autoencoder
 
 
 class ChannelsFirstEncoder(Encoder):

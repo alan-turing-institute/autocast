@@ -11,21 +11,21 @@ __all__ = [
 ]
 
 import math
-import torch.nn as nn
-
-from torch import Tensor
-from torch.utils.checkpoint import checkpoint
 from typing import Dict, Optional, Sequence, Union
 
+import torch.nn as nn
+from torch import Tensor
+from torch.utils.checkpoint import checkpoint
+
+from autocast.nn.dc_utils import (
+    ConvNd,
+)
 from autocast.nn.lola_layers import (
     ConvNd,
     LayerNorm,
     Patchify,
     SelfAttentionNd,
     Unpatchify,
-)
-from autocast.nn.dc_utils import (
-    ConvNd,
 )
 
 
