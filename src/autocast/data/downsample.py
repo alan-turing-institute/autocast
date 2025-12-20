@@ -116,7 +116,7 @@ def process_dataset_item(
     spatial_downsample_factor: int,
     temporal_downsample_factor: int,
     time_fraction: float,
-    trajectories_to_process: int | None,
+    trajectories_to_process: int | np.integer | None,
 ) -> None:
     """Process a single HDF5 dataset (array) and write to destination.
 
@@ -145,9 +145,15 @@ def process_dataset_item(
         )
 
         # Handle different dataset types
-        if re.match(r"t[012]_fields.*", full_name) or full_name == "additional_information/g_contravariant":
+        if (
+            re.match(r"t[012]_fields.*", full_name)
+            or full_name == "additional_information/g_contravariant"
+        ):
             # Field data - apply full downsampling
-            if attrs.get("sample_varying", False) and trajectories_to_process is not None:
+            if (
+                attrs.get("sample_varying", False)
+                and trajectories_to_process is not None
+            ):
                 data = data[:trajectories_to_process, ...]
 
             if full_name.startswith("t0_fields"):
@@ -181,7 +187,10 @@ def process_dataset_item(
                 **downsample_kws,
             )
 
-        elif re.match(r"dimensions/([xyz]|phi|theta|log_r|r)", full_name) and len(data.shape) == 1:
+        elif (
+            re.match(r"dimensions/([xyz]|phi|theta|log_r|r)", full_name)
+            and len(data.shape) == 1
+        ):
             # Spatial dimension arrays - only spatial downsampling
             data = downsample_field(
                 data,
@@ -194,7 +203,10 @@ def process_dataset_item(
 
         elif re.match(r"scalars/.*", full_name):
             # Scalar data - trajectory limiting and time downsampling only
-            if attrs.get("sample_varying", False) and trajectories_to_process is not None:
+            if (
+                attrs.get("sample_varying", False)
+                and trajectories_to_process is not None
+            ):
                 data = data[:trajectories_to_process, ...]
             if attrs.get("time_varying", False):
                 new_time_length = int(data.shape[-1] * time_fraction)
@@ -210,8 +222,7 @@ def process_dataset_item(
                 num_elements = data.shape[0] // spatial_downsample_factor
                 # Preserve first and last elements for boundary info
                 data = np.array(
-                    [data[0]] + [False] * (num_elements - 2) + [data[-1]],
-                    dtype=bool
+                    [data[0]] + [False] * (num_elements - 2) + [data[-1]], dtype=bool
                 )
             elif len(data.shape) == 2:
                 data = downsample_field(
@@ -245,7 +256,7 @@ def process_group(
     spatial_downsample_factor: int,
     temporal_downsample_factor: int,
     time_fraction: float,
-    trajectories_to_process: int | None,
+    trajectories_to_process: int | np.integer | None,
     full_name: str,
 ) -> None:
     """Recursively process an HDF5 group.
@@ -294,7 +305,7 @@ def process_file(
     spatial_downsample_factor: int,
     temporal_downsample_factor: int,
     time_fraction: float,
-    trajectories_to_process: int | None,
+    trajectories_to_process: int | np.integer | None,
 ) -> None:
     """Process a single HDF5 file.
 
@@ -389,8 +400,7 @@ def update_metadata_file(
     # Update spatial resolution
     if "spatial_resolution" in metadata:
         metadata["spatial_resolution"] = [
-            dim // spatial_downsample_factor
-            for dim in metadata["spatial_resolution"]
+            dim // spatial_downsample_factor for dim in metadata["spatial_resolution"]
         ]
 
     # Update n_steps_per_simulation
