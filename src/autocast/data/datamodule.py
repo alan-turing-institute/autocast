@@ -16,7 +16,8 @@ class TheWellDataModule(LightningDataModule):
 
     def __init__(
         self,
-        well_dataset_name: str,
+        well_dataset_name: str | None = None,
+        path: str | None = None,
         n_steps_input: int = 1,
         n_steps_output: int = 1,
         batch_size: int = 4,
@@ -36,8 +37,22 @@ class TheWellDataModule(LightningDataModule):
             num_workers if num_workers is not None else min(os.cpu_count() or 1, 8)
         )
 
+        # Build common kwargs - use path directly if provided, otherwise use dataset name
+        common_kwargs = {
+            "n_steps_input": n_steps_input,
+            "n_steps_output": n_steps_output,
+            "use_normalization": use_normalization,
+            "normalization_type": normalization_type,
+            "autoencoder_mode": autoencoder_mode,
+            **well_kwargs,
+        }
+        if path is not None:
+            # Use path directly for custom datasets (e.g., downsampled)
+            common_kwargs["path"] = path
+        else:
+            common_kwargs["well_dataset_name"] = well_dataset_name
+
         self.train_dataset = TheWell(
-            well_dataset_name=well_dataset_name,
             well_split_name="train",
             n_steps_input=n_steps_input,
             n_steps_output=n_steps_output,
@@ -48,7 +63,6 @@ class TheWellDataModule(LightningDataModule):
             **well_kwargs,
         )
         self.val_dataset = TheWell(
-            well_dataset_name=well_dataset_name,
             well_split_name="valid",
             n_steps_input=n_steps_input,
             n_steps_output=n_steps_output,
@@ -59,7 +73,6 @@ class TheWellDataModule(LightningDataModule):
             **well_kwargs,
         )
         self.test_dataset = TheWell(
-            well_dataset_name=well_dataset_name,
             well_split_name="test",
             n_steps_input=n_steps_input,
             n_steps_output=n_steps_output,
@@ -71,8 +84,11 @@ class TheWellDataModule(LightningDataModule):
         )
 
         if not autoencoder_mode:
+            # Remove autoencoder_mode for rollout datasets
+            rollout_kwargs = {
+                k: v for k, v in common_kwargs.items() if k != "autoencoder_mode"
+            }
             self.rollout_val_dataset = TheWell(
-                well_dataset_name=well_dataset_name,
                 well_split_name="train",
                 n_steps_input=n_steps_input,
                 n_steps_output=n_steps_output,
@@ -80,10 +96,9 @@ class TheWellDataModule(LightningDataModule):
                 normalization_type=normalization_type,
                 normalization_path=normalization_path,
                 full_trajectory_mode=True,
-                **well_kwargs,
+                **rollout_kwargs,
             )
             self.rollout_test_dataset = TheWell(
-                well_dataset_name=well_dataset_name,
                 well_split_name="test",
                 n_steps_input=n_steps_input,
                 n_steps_output=n_steps_output,
@@ -91,7 +106,7 @@ class TheWellDataModule(LightningDataModule):
                 normalization_type=normalization_type,
                 normalization_path=normalization_path,
                 full_trajectory_mode=True,
-                **well_kwargs,
+                **rollout_kwargs,
             )
 
     def train_dataloader(self) -> DataLoader:

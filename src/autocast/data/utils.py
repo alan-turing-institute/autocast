@@ -27,6 +27,7 @@ def get_datamodule(
     use_normalization: bool = True,
     normalization_path: str = "../stats.yaml",  # TODO: choose better default
     normalization_stats: dict[str, Any] | None = None,
+    use_path_directly: bool = False,
 ):
     """Get the configured datamodule.
 
@@ -70,6 +71,9 @@ def get_datamodule(
         Preloaded normalization statistics (e.g. from Hydra config). Only
         supported for non-The Well datasets; when provided, used instead of
         normalization_path.
+    use_path_directly: bool
+        If True, use the path directly instead of looking up by dataset name.
+        This is useful for custom/downsampled datasets not in the standard Well list.
     """
     if the_well and normalization_stats is not None:
         msg = (
@@ -138,6 +142,21 @@ def get_datamodule(
         )
 
     # If the well dataset
+    # For custom datasets (e.g., downsampled), use path directly to avoid name check
+    if use_path_directly:
+        dataset_path = str(Path(the_well_dataset_path) / simulation_name)
+        return TheWellDataModule(
+            path=dataset_path,
+            n_steps_input=n_steps_input,
+            n_steps_output=n_steps_output,
+            min_dt_stride=stride,
+            max_dt_stride=stride,
+            use_normalization=True,
+            autoencoder_mode=autoencoder_mode,
+            num_workers=0,  # HDF5 files don't work well with multiprocessing
+            batch_size=batch_size,
+        )
+
     return TheWellDataModule(
         well_base_path=the_well_dataset_path,
         well_dataset_name=simulation_name,
