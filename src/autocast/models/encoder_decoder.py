@@ -114,7 +114,7 @@ class VAE(EncoderDecoder):
         mu, log_var = self.encoder(batch)
         z = self.reparametrize(mu, log_var)
         x = self.decoder(z)
-        return x  # noqa: RET504
+        return x
 
     def reparametrize(self, mu: Tensor, log_var: Tensor) -> Tensor:
         std = torch.exp(0.5 * log_var)

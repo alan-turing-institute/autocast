@@ -174,7 +174,7 @@ def _spectral_poisson_solver(w2d: np.ndarray, K3: np.ndarray) -> np.ndarray:
     """
     psi_hat = np.fft.fft2(w2d) * K3
     psi = np.real(np.fft.ifft2(psi_hat))
-    return psi  # noqa: RET504
+    return psi
 
 
 def _laplacian_periodic(w2d: np.ndarray, dx: float) -> np.ndarray:

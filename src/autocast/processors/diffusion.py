@@ -101,7 +101,7 @@ class DiffusionProcessor(Processor):
         # w_t = torch.clip(w_t, max=1e4)
         # loss = (w_t * (x_denoised - x_0).square()).mean()
 
-        return loss  # noqa: RET504
+        return loss
 
     def _get_sampler(
         self,
