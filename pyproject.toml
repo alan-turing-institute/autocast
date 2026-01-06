@@ -89,6 +89,7 @@ ignore = [
     "D102",    # Missing docstring in public class, TODO: remove in future
     "D104",    # Missing docstring in public package
     "PLR0913", # too many arguments
+    "RET504",  # Allow assignment to variable before return
 ]
 
 unfixable = [

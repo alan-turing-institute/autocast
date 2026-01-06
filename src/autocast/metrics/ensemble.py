@@ -206,4 +206,4 @@ class CRPS(EnsembleBaseMetric):
         n_spatial_dims = self._infer_n_spatial_dims(crps)
         crps_reduced = crps.mean(dim=tuple(range(2, 2 + n_spatial_dims)))
 
-        return crps_reduced  # noqa: RET504
+        return crps_reduced
