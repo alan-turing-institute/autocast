@@ -79,7 +79,7 @@ class EncoderProcessorDecoder(
         encoded = self.encoder_decoder.encoder.encode(batch)
         mapped = self.processor.map(encoded)
         decoded = self.encoder_decoder.decoder.decode(mapped)
-        return decoded  # noqa: RET504
+        return decoded
 
     def loss(self, batch: Batch) -> tuple[Tensor, Tensor | None]:
         if self.train_in_latent_space:
