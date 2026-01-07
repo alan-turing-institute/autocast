@@ -39,17 +39,20 @@ class BTSCMMetric(BaseMetric[TensorBTSCM, TensorBTSC]):
         if isinstance(y_true, np.ndarray):
             y_true = torch.from_numpy(y_true)
 
-        assert isinstance(y_pred, torch.Tensor), (
-            f"y_pred must be a torch.Tensor or np.ndarray, got {type(y_pred)}"
-        )
-        assert isinstance(y_true, torch.Tensor), (
-            f"y_true must be a torch.Tensor or np.ndarray, got {type(y_true)}"
-        )
+        if not isinstance(y_pred, torch.Tensor):
+            raise TypeError(
+                f"y_pred must be a torch.Tensor or np.ndarray, got {type(y_pred)}"
+            )
+        if not isinstance(y_true, torch.Tensor):
+            raise TypeError(
+                f"y_true must be a torch.Tensor or np.ndarray, got {type(y_true)}"
+            )
 
-        assert y_pred.ndim >= 4, (
-            f"y_pred has {y_pred.ndim} dimensions, should be at least 4, "
-            f"following the pattern(B, T, S, C)"
-        )
+        if y_pred.ndim < 5:
+            raise ValueError(
+                f"y_pred has {y_pred.ndim} dimensions, should be at least 5, "
+                f"following the pattern (B, T, S, C, M)"
+            )
 
         if y_pred.shape[:-1] != y_true.shape:
             raise ValueError(
