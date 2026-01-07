@@ -8,6 +8,7 @@ from .batch import (
     collate_encoded_samples,
 )
 from .types import (
+    ArrayLike,
     Input,
     RolloutOutput,
     Tensor,
@@ -18,12 +19,14 @@ from .types import (
     TensorBSC,
     TensorBTC,
     TensorBTSC,
+    TensorBTSCM,
     TensorC,
     TensorSC,
     TensorTSC,
 )
 
 __all__ = [
+    "ArrayLike",
     "Batch",
     "BatchT",
     "EncodedBatch",
@@ -39,6 +42,7 @@ __all__ = [
     "TensorBSC",
     "TensorBTC",
     "TensorBTSC",
+    "TensorBTSCM",
     "TensorC",
     "TensorSC",
     "TensorTSC",

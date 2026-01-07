@@ -65,7 +65,7 @@ class BaseMetric(Metric, Generic[TPred, TTrue], ABC):
         self.sum_score += score_summed
         self.total_samples += batch_size
 
-    def compute(self) -> torch.Tensor:
+    def compute(self) -> Tensor:
         """Compute final metric value."""
         if self.total_samples == 0:
             msg = "No samples were provided to the metric"
@@ -84,6 +84,6 @@ class BaseMetric(Metric, Generic[TPred, TTrue], ABC):
         super().reset()
         self._initialized = False
 
-    def _infer_n_spatial_dims(self, tensor: torch.Tensor) -> int:
+    def _infer_n_spatial_dims(self, tensor: Tensor) -> int:
         """Infer number of spatial dimensions from tensor shape."""
         return tensor.ndim - 3  # Subtract B, T, C

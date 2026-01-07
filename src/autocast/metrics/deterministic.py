@@ -2,7 +2,7 @@ import numpy as np
 import torch
 
 from autocast.metrics.base import BaseMetric
-from autocast.types import TensorBTC, TensorBTSC
+from autocast.types import Tensor, TensorBTC, TensorBTSC
 from autocast.types.types import ArrayLike
 
 
@@ -10,7 +10,7 @@ class BTSCMetric(BaseMetric[TensorBTSC, TensorBTSC]):
     """
     Base class for metrics that operate on spatial tensors.
 
-    Checks input types and shapes and converts to torch.Tensor.
+    Checks input types and shapes and converts to Tensor.
 
     Args:
         reduce_all: If True, return scalar by averaging over all non-batch dims
@@ -23,7 +23,7 @@ class BTSCMetric(BaseMetric[TensorBTSC, TensorBTSC]):
         self, y_pred: ArrayLike, y_true: ArrayLike
     ) -> tuple[TensorBTSC, TensorBTSC]:
         """
-        Check types and shapes and converts inputs to torch.Tensor.
+        Check types and shapes and converts inputs to Tensor.
 
         Args:
             y_pred: Predictions of shape (B, T, *S, C)
@@ -31,20 +31,20 @@ class BTSCMetric(BaseMetric[TensorBTSC, TensorBTSC]):
 
         Returns
         -------
-            Tuple of (y_pred, y_true) as torch.Tensors
+            Tuple of (y_pred, y_true) as Tensors
         """
         if isinstance(y_pred, np.ndarray):
             y_pred = torch.from_numpy(y_pred)
         if isinstance(y_true, np.ndarray):
             y_true = torch.from_numpy(y_true)
 
-        if not isinstance(y_pred, torch.Tensor):
+        if not isinstance(y_pred, Tensor):
             raise TypeError(
-                f"y_pred must be a torch.Tensor or np.ndarray, got {type(y_pred)}"
+                f"y_pred must be a Tensor or np.ndarray, got {type(y_pred)}"
             )
-        if not isinstance(y_true, torch.Tensor):
+        if not isinstance(y_true, Tensor):
             raise TypeError(
-                f"y_true must be a torch.Tensor or np.ndarray, got {type(y_true)}"
+                f"y_true must be a Tensor or np.ndarray, got {type(y_true)}"
             )
 
         if y_pred.shape != y_true.shape:
