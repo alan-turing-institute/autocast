@@ -7,7 +7,7 @@ from collections.abc import Sequence
 import lightning as L
 from torchmetrics import Metric, MetricCollection
 
-from autocast.metrics import ALL_METRICS, VRMSE
+from autocast.metrics import ALL_DETERMINISTIC_METRICS, VRMSE
 from autocast.types import Tensor
 
 
@@ -25,8 +25,8 @@ class MetricsMixin:
         metric_dict: dict[str, Metric | MetricCollection] = {}
 
         for metric in metrics_list:
-            if not isinstance(metric, ALL_METRICS):
-                allowed = ", ".join(cls.__name__ for cls in ALL_METRICS)
+            if not isinstance(metric, ALL_DETERMINISTIC_METRICS):
+                allowed = ", ".join(cls.__name__ for cls in ALL_DETERMINISTIC_METRICS)
                 raise ValueError(
                     f"Invalid metric '{metric}'. Allowed metrics: {allowed}"
                 )
