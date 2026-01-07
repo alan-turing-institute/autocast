@@ -26,8 +26,8 @@ class BTSCMetric(BaseMetric[TensorBTSC, TensorBTSC]):
         Check types and shapes and converts inputs to Tensor.
 
         Args:
-            y_pred: Predictions of shape (B, T, *S, C)
-            y_true: Ground truth of shape (B, T, *S, C)
+            y_pred: Predictions of shape (B, T, S, C)
+            y_true: Ground truth of shape (B, T, S, C)
 
         Returns
         -------
@@ -56,7 +56,7 @@ class BTSCMetric(BaseMetric[TensorBTSC, TensorBTSC]):
         if y_pred.ndim < 4:
             raise ValueError(
                 f"y_pred has {y_pred.ndim} dimensions, should be at least 4, "
-                f"following the pattern(B, T, *S, C)"
+                f"following the pattern(B, T, S, C)"
             )
 
         return y_pred, y_true
@@ -65,7 +65,7 @@ class BTSCMetric(BaseMetric[TensorBTSC, TensorBTSC]):
         """
         Compute metric reduced over spatial dims only.
 
-        Expected input shape: (B, T, *S, C)
+        Expected input shape: (B, T, S, C)
         Expected output shape: (B, T, C)
 
         Must be implemented by subclasses.

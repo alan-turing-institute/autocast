@@ -45,7 +45,7 @@ class BaseMetric(Metric, Generic[TPred, TTrue], ABC):
 
     def update(self, y_pred: ArrayLike, y_true: ArrayLike) -> None:
         """Update metric state with a batch of predictions and targets."""
-        score_spatial = self.score(y_pred, y_true)  # (B, T, *S, C) -> (B, T, C)
+        score_spatial = self.score(y_pred, y_true)  # (B, T, S, C) -> (B, T, C)
 
         if score_spatial.ndim != 3:
             raise ValueError(
