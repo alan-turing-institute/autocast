@@ -63,9 +63,6 @@ class EncoderProcessorDecoder(
         for key, value in kwargs.items():
             setattr(self, key, value)
 
-    def __call__(self, batch: Batch) -> TensorBTSC:
-        return self.decode(self.processor(self.encode(batch)))
-
     def encode(self, x: Batch) -> TensorBNC:
         return self.encoder_decoder.encoder(x)
 
