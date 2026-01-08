@@ -47,7 +47,7 @@ exec > "${WORKING_DIR}/slurm_${SLURM_JOB_NAME}_${SLURM_JOB_ID}.out" \
 # ---------------- Code to train and evaluate the model ----------------
 
 # Train
-uv run train_autoencoder \
+srun uv run train_autoencoder \
     --config-path=configs/ \
 	--work-dir=${WORKING_DIR}
 	

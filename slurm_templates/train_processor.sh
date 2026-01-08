@@ -47,7 +47,7 @@ exec > "${WORKING_DIR}/slurm_${SLURM_JOB_NAME}_${SLURM_JOB_ID}.out" \
 # ---------------- Code to train and evaluate the model ----------------
 
 # Train
-uv run python -m autocast.train.processor \
+srun uv run python -m autocast.train.processor \
     --config-path=configs/ \
     --work-dir="${WORKING_DIR}" \
     data.data_path=datasets/rayleigh_benard/1e3z5x2c_rayleigh_benard_dcae_f32c64_large/cache/rayleigh_benard \

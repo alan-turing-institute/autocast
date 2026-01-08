@@ -84,7 +84,7 @@ echo "${SLURM_ARRAY_TASK_ID},${MAX_EPOCH},${BATCH_SIZE}" >> "${LOOKUP_FILE}"
 
 # ---------------- Train and Evaluate Model ----------------
 # Train
-uv run python -m autocast.train.encoder_processor_decoder \
+srun uv run python -m autocast.train.encoder_processor_decoder \
     --config-path=configs/ \
 	--work-dir=${WORKING_DIR} \
 	trainer.max_epochs=${MAX_EPOCH} \
@@ -92,7 +92,7 @@ uv run python -m autocast.train.encoder_processor_decoder \
 
 	
 # Evaluate
-uv run evaluate_encoder_processor_decoder \
+srun uv run evaluate_encoder_processor_decoder \
 	--config-path=configs/ \
 	--work-dir=${WORKING_DIR} \
 	--checkpoint=${WORKING_DIR}/encoder_processor_decoder.ckpt \

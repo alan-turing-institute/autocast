@@ -46,12 +46,12 @@ exec > "${WORKING_DIR}/slurm_${SLURM_JOB_NAME}_${SLURM_JOB_ID}.out" \
 # ---------------- Code to train and evaluate the model ----------------
 
 # Train
-uv run train_encoder_processor_decoder \
+srun uv run train_encoder_processor_decoder \
     --config-path=configs/ \
 	--work-dir=${WORKING_DIR}
 	
 # Evaluate
-uv run evaluate_encoder_processor_decoder \
+srun uv run evaluate_encoder_processor_decoder \
 	--config-path=configs/ \
 	--work-dir=${WORKING_DIR} \
 	--checkpoint=${WORKING_DIR}/encoder_processor_decoder.ckpt \
