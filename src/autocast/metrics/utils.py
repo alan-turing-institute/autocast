@@ -25,7 +25,7 @@ class MetricsMixin:
         metric_dict: dict[str, Metric | MetricCollection] = {}
 
         for metric in metrics_list:
-            if not isinstance(metric, ALL_METRICS):
+            if metric not in ALL_METRICS:
                 allowed = ", ".join(cls.__name__ for cls in ALL_METRICS)
                 raise ValueError(
                     f"Invalid metric '{metric}'. Allowed metrics: {allowed}"

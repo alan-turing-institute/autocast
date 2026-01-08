@@ -34,6 +34,10 @@ class TemporalViTBackbone(TemporalBackboneBase):
         # TCN parameters
         tcn_kernel_size: int = 3,
         tcn_num_layers: int = 2,
+        # ViT parameters
+        dropout: float = 0.0,
+        ffn_factor: int = 4,
+        checkpointing: bool = False,
     ):
         """Initialize Temporal ViT Backbone.
 
@@ -57,6 +61,9 @@ class TemporalViTBackbone(TemporalBackboneBase):
             attention_hidden_dim: Hidden dimension for attention methods
             tcn_kernel_size: Kernel size for TCN
             tcn_num_layers: Number of TCN layers
+            dropout: Dropout rate in ViT blocks
+            ffn_factor: Feedforward network expansion factor in ViT blocks
+            checkpointing: Whether to use gradient checkpointing in ViT
         """
         # Initialize base class with common parameters
         super().__init__(
@@ -82,6 +89,9 @@ class TemporalViTBackbone(TemporalBackboneBase):
             attention_heads=attention_heads,
             patch_size=patch_size,
             spatial=spatial,
+            ffn_factor=ffn_factor,
+            dropout=dropout,
+            checkpointing=checkpointing,
         )
 
     @property
@@ -99,6 +109,9 @@ class TemporalViTBackbone(TemporalBackboneBase):
                 - attention_heads: Number of attention heads in ViT
                 - patch_size: Size of patches for ViT
                 - spatial: Spatial dimensionality (2 for 2D)
+                - ffn_factor: The channel factor in the FFN.
+                - dropout: The dropout rate in :math:`[0, 1]`.
+                - checkpointing: Whether to use gradient checkpointing or not.
 
         Returns
         -------
@@ -114,4 +127,7 @@ class TemporalViTBackbone(TemporalBackboneBase):
             attention_heads=kwargs["attention_heads"],
             patch_size=kwargs["patch_size"],
             spatial=kwargs["spatial"],
+            ffn_factor=kwargs.get("ffn_factor", 4),
+            dropout=kwargs.get("dropout", 0.0),
+            checkpointing=kwargs.get("checkpointing", False),
         )

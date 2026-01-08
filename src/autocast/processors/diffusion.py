@@ -9,6 +9,7 @@ from azula.sample import (
     EulerSampler,
     HeunSampler,
     Sampler,
+    zABSampler,
 )
 from torch import nn
 
@@ -28,7 +29,10 @@ class DiffusionProcessor(Processor):
         n_steps_output: int = 4,
         n_channels_out: int = 1,
         sampler_steps: int = 50,
-        sampler: str = "euler",
+        sampler: str = "zab",
+        sampler_start: float = 0.999,
+        sampler_stop: float = 0.0,
+        use_direct_prediction: bool = False,
     ):
         super().__init__()
         self.learning_rate = learning_rate
@@ -36,6 +40,8 @@ class DiffusionProcessor(Processor):
         self.n_channels_out = n_channels_out
         self.sampler_steps = sampler_steps
         self.sampler = sampler
+        self.sampler_start = sampler_start
+        self.sampler_stop = sampler_stop
 
         # Create Azula denoiser with chosen preconditioning
         if denoiser_type == "simple":
@@ -47,24 +53,43 @@ class DiffusionProcessor(Processor):
 
         # Store schedule for direct access
         self.schedule = schedule
+        # Debug/diagnostic mode: bypass iterative sampler and return a single-step
+        # posterior mean prediction. This can be useful for isolating whether the
+        # denoiser is learning, but it is not equivalent to full reverse sampling.
+        self.use_direct_prediction = use_direct_prediction
 
     def map(self, x: Tensor) -> Tensor:
-        """Map input window of states/times to output window using denoiser."""
+        """Map input window of states/times to output window using denoiser.
+
+        By default, runs iterative reverse-time sampling.
+
+        If use_direct_prediction=True, returns a single-step posterior mean prediction
+        at t=1 (diagnostic only; not equivalent to full reverse sampling).
+        """
         dtype = x.dtype
         device = x.device
-        sampler = self._get_sampler(self.sampler_steps, dtype=dtype, device=device)
         B, _, W, H, _ = x.shape
 
-        # if we start from zero at every autoregressive step, the model is asked to
-        # denoise using t=0, which is a point it has never been trained on.
-        # self.inference_t = 1e-5
-        # using azula sampler init to create noise at t=1
+        # Iterative sampling (default)
+        sampler = self._get_sampler(
+            self.sampler_steps,
+            dtype=dtype,
+            device=device,
+        )
         x_1 = sampler.init(
             (B, self.n_steps_output, W, H, self.n_channels_out),
             dtype=dtype,
             device=device,
         )  # Fully noised
-        return sampler(x_1, cond=x)
+        x_0 = sampler(x_1, cond=x)
+
+        if not self.use_direct_prediction:
+            return x_0
+
+        # Diagnostic: compare to a single-step posterior mean prediction at t=1.
+        t = torch.ones(B, device=device)
+        posterior = self.denoiser(x_1, t, cond=x)
+        return posterior.mean
 
     def forward(self, x: Tensor) -> Tensor:
         return self.map(x)
@@ -108,51 +133,65 @@ class DiffusionProcessor(Processor):
         num_steps: int = 100,
         eta: float = 0.0,
         silent: bool = True,
+        sampler: str | None = None,
         **sampler_kwargs,
     ) -> Sampler:
-        sampler = self.sampler
+        sampler_name = sampler or self.sampler
         # Create appropriate Azula sampler
-        if sampler == "euler":
+        if sampler_name == "euler":
             azula_sampler = EulerSampler(
                 denoiser=self.denoiser,
-                start=1.0,
-                stop=0.0,
+                start=self.sampler_start,
+                stop=self.sampler_stop,
                 steps=num_steps,
                 silent=silent,
                 **sampler_kwargs,
             )
-        elif sampler == "heun":
+        elif sampler_name == "heun":
             azula_sampler = HeunSampler(
                 denoiser=self.denoiser,
-                start=1.0,
-                stop=0.0,
+                start=self.sampler_start,
+                stop=self.sampler_stop,
                 steps=num_steps,
                 silent=silent,
                 **sampler_kwargs,
             )
-        elif sampler == "ddim":
+        elif sampler_name == "ddim":
             azula_sampler = DDIMSampler(
                 denoiser=self.denoiser,
                 eta=eta,
-                start=1.0,
-                stop=0.0,
+                start=self.sampler_start,
+                stop=self.sampler_stop,
                 steps=num_steps,
                 silent=silent,
                 **sampler_kwargs,
             )
-        elif sampler == "ddpm":
+        elif sampler_name == "ddpm":
             azula_sampler = DDPMSampler(
                 denoiser=self.denoiser,
-                start=1.0,
-                stop=0.0,
+                start=self.sampler_start,
+                stop=self.sampler_stop,
+                steps=num_steps,
+                silent=silent,
+                **sampler_kwargs,
+            )
+        elif sampler_name == "zab":
+            # zABSampler integrates in u = sigma/alpha space and is often more
+            # numerically stable than Euler/Heun on VP schedules when sigma/alpha
+            # becomes very large.
+            azula_sampler = zABSampler(
+                denoiser=self.denoiser,
+                order=2,
+                start=self.sampler_start,
+                stop=self.sampler_stop,
                 steps=num_steps,
                 silent=silent,
                 **sampler_kwargs,
             )
         else:
             raise ValueError(
-                f"Unknown sampler: {sampler}. Choose from: 'euler', 'heun', 'ddim',"
-                "'ddpm'"
+                f"Unknown sampler: {sampler_name}. Choose from: 'euler', 'heun', "
+                "'ddim', 'ddpm', 'zab'"
             )
         return azula_sampler
 
@@ -191,10 +230,9 @@ class DiffusionProcessor(Processor):
         """
         azula_sampler = self._get_sampler(
             num_steps=num_steps,
-            sampler=sampler,
             eta=eta,
-            return_trajectory=return_trajectory,
             silent=silent,
+            sampler=sampler,
             **sampler_kwargs,
         )
 

@@ -83,31 +83,46 @@ class MiniWellDataset(Dataset):
 class MiniWellInputOutput(EncodedDataset, EncodedBatchMixin):
     """A wrapper around The Well's MiniwellDataset to provide Batch objects."""
 
-    miniwell_dataset: MiniWellDataset
+    miniwell_dataset: MiniWellDataset | Dataset
 
     def __init__(
         self,
-        file_name: str,
+        filepath: list[str] | str,
         n_steps_input: int,
         n_steps_output: int,
-        steps: int = 1,
         stride: int = 1,
         concat_inputs_and_label: bool = True,
     ):
         Dataset.__init__(self)
         self.n_steps_input = n_steps_input
         self.n_steps_output = n_steps_output
+        self.steps = n_steps_input + n_steps_output
+        self.stride = stride
         self.concat_inputs_and_label = concat_inputs_and_label
-        self.miniwell_dataset = MiniWellDataset(
-            file=file_name, steps=steps, stride=stride
-        )
+        if isinstance(filepath, list):
+            self.miniwell_dataset = MiniWellDataset.from_files(
+                files=filepath, steps=self.steps, stride=self.stride
+            )
+        else:
+            self.miniwell_dataset = MiniWellDataset(
+                file=filepath, steps=self.steps, stride=self.stride
+            )
 
-    @staticmethod
-    def from_files(files: Iterable[str], **kwargs) -> Dataset:
-        return ConcatDataset([MiniWellDataset(file, **kwargs) for file in files])
+    # @staticmethod
+    # def from_files(
+    #     files: Iterable[str],
+    #     n_steps_input: int,
+    #     n_steps_output: int,
+    #     stride: int,
+    #     concat_inputs_and_label: bool = True,
+    # ) -> Dataset:
+    #     # return ConcatDataset([MiniWellDataset(file, **kwargs) for file in files])
+    #     return MiniWellDataset.from_files(
+    #         files, steps=n_steps_input + n_steps_output, stride=stride
+    #     )
 
     def __len__(self) -> int:  # noqa: D105
-        return len(self.miniwell_dataset)
+        return len(self.miniwell_dataset)  # type: ignore  # noqa: PGH003
 
     def __getitem__(self, index) -> EncodedSample:  # noqa: D105
         data = self.miniwell_dataset.__getitem__(index)
@@ -131,10 +146,12 @@ class MiniWellInputOutput(EncodedDataset, EncodedBatchMixin):
             )
             input_fields = torch.cat([input_fields, label_expanded], dim=1)
 
+        # Model expects (T, W, H, C) but HDF5 has (T, C, H, W)
+        # Use "t c h w -> t w h c" to match model's expected spatial layout
         return self.to_sample(
             {
-                "input_fields": rearrange(input_fields, "t c ... -> t ... c"),
-                "output_fields": rearrange(output_fields, "t c ... -> t ... c"),
+                "input_fields": rearrange(input_fields, "t c h w -> t w h c"),
+                "output_fields": rearrange(output_fields, "t c h w -> t w h c"),
                 "label": label,
                 "encoded_info": data.get("encoded_info", {}),
             }
@@ -323,25 +340,18 @@ class MiniWellDataModule(LightningDataModule):
         if not files:
             return None
 
-        # Compute total steps needed for the MiniWell dataset
-        total_steps = self.n_steps_input + self.n_steps_output
-
         common_kwargs = {
             "n_steps_input": self.n_steps_input,
             "n_steps_output": self.n_steps_output,
-            "steps": total_steps,
+            # "steps": total_steps,
             "stride": self.stride,
             "concat_inputs_and_label": self.concat_inputs_and_label,
         }
 
         if len(files) == 1:
-            return MiniWellInputOutput(file_name=str(files[0]), **common_kwargs)
+            return MiniWellInputOutput(filepath=str(files[0]), **common_kwargs)
 
-        # Multiple files - create ConcatDataset
-        datasets = [
-            MiniWellInputOutput(file_name=str(f), **common_kwargs) for f in files
-        ]
-        return ConcatDataset(datasets)
+        return MiniWellInputOutput(filepath=[str(f) for f in files], **common_kwargs)
 
     def setup(self, stage: str | None = None) -> None:
         """Set up datasets for the given stage."""
