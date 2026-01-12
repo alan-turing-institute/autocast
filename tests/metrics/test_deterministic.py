@@ -1,11 +1,11 @@
 import pytest
 import torch
 
-from autocast.metrics import ALL_METRICS
+from autocast.metrics import ALL_DETERMINISTIC_METRICS
 from autocast.types import TensorBTSC
 
 
-@pytest.mark.parametrize("MetricCls", ALL_METRICS)
+@pytest.mark.parametrize("MetricCls", ALL_DETERMINISTIC_METRICS)
 def test_spatiotemporal_metrics(MetricCls):
     # shape. (B, T, S1, S2, C) with n_spatial_dims = 2
     y_pred: TensorBTSC = torch.ones((2, 3, 4, 4, 5))
@@ -21,7 +21,7 @@ def test_spatiotemporal_metrics(MetricCls):
     assert torch.allclose(error.nansum(), torch.tensor(0.0))
 
 
-@pytest.mark.parametrize("MetricCls", ALL_METRICS)
+@pytest.mark.parametrize("MetricCls", ALL_DETERMINISTIC_METRICS)
 def test_spatiotemporal_metrics_stateful(MetricCls):
     y_pred = torch.ones((2, 3, 4, 4, 5))
     y_true = torch.ones((2, 3, 4, 4, 5))

@@ -17,7 +17,7 @@ from omegaconf import DictConfig, OmegaConf
 from torch import nn
 
 from autocast.logging import create_wandb_logger, log_metrics
-from autocast.metrics.spatiotemporal import (
+from autocast.metrics import (
     MAE,
     MSE,
     NMAE,

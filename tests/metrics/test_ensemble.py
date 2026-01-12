@@ -31,8 +31,7 @@ def test_ensemble_metrics_wrong_shape(MetricCls):
     # instantiate the metric with n_spatial_dims
     metric = MetricCls()
 
-    # TODO (#147): update exception raised here
-    with pytest.raises(RuntimeError):
+    with pytest.raises(ValueError):  # noqa: PT011
         # score computes the metric over the spatial dims, returning (B, T, C)
         metric.score(y_pred, y_true)
 

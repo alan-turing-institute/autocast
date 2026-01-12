@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 from jaxtyping import Float
 from torch.utils.data import DataLoader
@@ -39,6 +40,9 @@ TensorBCWH = Float[Tensor, "batch channel width height"]  # Specific spatial dim
 TensorBTCHW = Float[Tensor, "batch time channel height width"]  # Specific spatial dims
 
 TensorBTC = Float[Tensor, "batch time channel"]
+
+ArrayLike = Tensor | np.ndarray
+
 
 # # Currently not used, but kept for reference
 # TensorBTWHC = Float[Tensor, "batch time width height channel"]
