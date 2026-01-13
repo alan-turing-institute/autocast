@@ -1,23 +1,11 @@
+defaults:
+  - /backbone@backbone: unet
+  - _self_
+
 _target_: autocast.processors.diffusion.DiffusionProcessor
-backbone:
-  _target_: autocast.nn.unet.TemporalUNetBackbone
-  in_channels: null
-  out_channels: null
-  cond_channels: null
-  n_steps_output: null
-  n_steps_input: null
-  mod_features: 256
-  hid_channels: [32, 64, 128]
-  hid_blocks: [2, 2, 2]
-  spatial: 2
-  periodic: false
 schedule:
   _target_: azula.noise.VPSchedule
 denoiser_type: karras
-teacher_forcing_ratio: 0.0
-stride: ${training.stride}
-max_rollout_steps: ${training.n_steps_output}
-learning_rate: 0.0001
 n_steps_output: null
 n_channels_out: null
 sampler_steps: 50

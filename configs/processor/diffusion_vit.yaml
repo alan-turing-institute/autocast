@@ -1,32 +1,11 @@
+defaults:
+  - /backbone@backbone: vit
+  - _self_
+
 _target_: autocast.processors.diffusion.DiffusionProcessor
-backbone:
-  _target_: autocast.nn.vit.TemporalViTBackbone
-  in_channels: null
-  out_channels: null
-  cond_channels: null
-  n_steps_output: null
-  n_steps_input: null
-  mod_features: 256
-  global_cond_channels: null
-  hid_channels: 768
-  # hid_channels: 512
-  hid_blocks: 12
-  # hid_blocks: 8
-  temporal_method: "none"
-  # temporal_method: "attention"
-  attention_heads: 12
-  # attention_heads: 8
-  spatial: 2
-  patch_size: 1
-  dropout: 0.05
-  ffn_factor: 4
 schedule:
   _target_: azula.noise.VPSchedule
 denoiser_type: karras
-teacher_forcing_ratio: 0.0
-stride: ${training.stride}
-max_rollout_steps: ${training.n_steps_output}
-learning_rate: 0.0001
 n_steps_output: null
 n_channels_out: null
 sampler_steps: 50

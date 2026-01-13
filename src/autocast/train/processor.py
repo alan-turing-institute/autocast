@@ -176,7 +176,7 @@ def prepare_encoded_datamodule(cfg: DictConfig):
     # For encoded datasets, use encoded_inputs and encoded_output_fields
     train_inputs = _get_field(batch, "encoded_inputs", "input_fields")
     train_outputs = _get_field(batch, "encoded_output_fields", "output_fields")
-    global_cond = _get_field(batch, "encoded_inputs", "global_cond")
+    global_cond = getattr(batch, "global_cond", None)
 
     # Shape is (B, T, *spatial, C) for channels-last encoded data
     in_channel_count = train_inputs.shape[-1]

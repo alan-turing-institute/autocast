@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
-
 import torch
 from torch import nn
 
@@ -19,10 +17,9 @@ class FlowMatchingProcessor(Processor):
         flow_ode_steps: int = 1,
         n_steps_output: int = 4,
         n_channels_out: int = 1,
-        **kwargs: Any,
     ) -> None:
         # Store core hyperparameters and optional prebuilt backbone.
-        super().__init__(**kwargs)
+        super().__init__()
         self.flow_matching_model = backbone
         self.flow_ode_steps = max(flow_ode_steps, 1)
         self.n_steps_output = n_steps_output

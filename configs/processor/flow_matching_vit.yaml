@@ -1,9 +1,8 @@
 defaults:
-  - /backbone@backbone: unet_large
+  - /backbone@backbone: vit
   - _self_
+
 _target_: autocast.processors.flow_matching.FlowMatchingProcessor
-stride: ${training.stride}
-max_rollout_steps: ${training.n_steps_output}
 learning_rate: 0.0001
 flow_ode_steps: 4
 n_steps_output: null
