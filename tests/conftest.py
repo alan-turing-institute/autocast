@@ -54,17 +54,17 @@ def assert_module_initialized(module: nn.Module, module_name: str):
         assert not param.isnan().any(), "Parameters contain NaN values"
 
 
-def assert_gradients_flow(module: nn.Module, input_tensor: Tensor, module_name: str):
+def assert_gradients_flow(
+    module: nn.Module, module_method: Callable, input: Tensor, module_name: str
+):
     """Assert gradients flow through module to input and all parameters."""
-    output = module.forward(input_tensor)
+    output = module_method(input)
     loss = output.sum()
     loss.backward()
 
     # Check input gradients
-    assert input_tensor.grad is not None, f"{module_name}: No gradients on input"
-    assert not input_tensor.grad.isnan().any(), (
-        f"{module_name}: Input gradients contain NaN"
-    )
+    assert input.grad is not None, f"{module_name}: No gradients on input"
+    assert not input.grad.isnan().any(), f"{module_name}: Input gradients contain NaN"
 
     # Check parameter gradients
     for name, param in module.named_parameters():

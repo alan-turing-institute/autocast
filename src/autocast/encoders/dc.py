@@ -170,16 +170,6 @@ class DCEncoder(Encoder):
 
         self.encoder_model = self.descent
 
-    def preprocess(self, batch: Batch) -> Batch:
-        x = batch.input_fields
-        x = rearrange(x, "B T ... C -> B C T ...")
-        return Batch(
-            input_fields=x,
-            output_fields=batch.output_fields,
-            constant_scalars=batch.constant_scalars,
-            constant_fields=batch.constant_fields,
-        )
-
     def encode(self, batch: Batch) -> TensorBTSC:
         """Encode input batch to latent representation.
 
@@ -194,21 +184,9 @@ class DCEncoder(Encoder):
             Encoded latent tensor with shape (B, T, spatial_reduced..., C_o).
 
         """
-        batch = self.preprocess(batch)
-        outputs = []
-        for idx in range(batch.input_fields.shape[2]):  # loop over time dimension
-            x = batch.input_fields[:, :, idx, ...].contiguous()
-            x = self.patch(x)
-            for blocks in self.descent:
-                for block in cast(nn.ModuleList, blocks):  # ModuleList in construction
-                    x = block(x)
-            outputs.append(x)
+        return self.encode_tensor(batch.input_fields)
 
-        # Stack outputs along time dimension
-        stacked = torch.stack(outputs, dim=1)  # (B, T, C, spatial...)
-        return rearrange(stacked, "B T C ... -> B T ... C")
-
-    def forward(self, x: TensorBTSC) -> TensorBTSC:
+    def encode_tensor(self, x: TensorBTSC) -> TensorBTSC:
         """Forward pass through encoder (for direct tensor input).
 
         Parameters
@@ -222,12 +200,16 @@ class DCEncoder(Encoder):
             Encoded latent tensor.
 
         """
-        x = self.patch(x)
+        x = rearrange(x, "B T ... C -> B C T ...")
+        outputs = []
+        for idx in range(x.shape[2]):  # loop over time dimension
+            x_t = x[:, :, idx, ...].contiguous()
+            x_t = self.patch(x_t)
+            for blocks in self.descent:
+                for block in cast(nn.ModuleList, blocks):  # ModuleList in construction
+                    x_t = block(x_t)
+            outputs.append(x_t)
 
-        for blocks in self.descent:
-            for block in cast(nn.ModuleList, blocks):
-                x = block(x)
-        return x
-
-    def __call__(self, batch: Batch) -> TensorBTSC:
-        return self.encode(batch)
+        # Stack outputs along time dimension
+        stacked = torch.stack(outputs, dim=1)  # (B, T, C, spatial...)
+        return rearrange(stacked, "B T C ... -> B T ... C")

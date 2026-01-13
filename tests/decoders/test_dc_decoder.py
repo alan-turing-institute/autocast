@@ -118,4 +118,4 @@ def test_dcdecoder_gradient_flow():
     )
 
     z = rand(2, 16, 16, 16, requires_grad=True)
-    assert_gradients_flow(decoder, z, "Decoder")
+    assert_gradients_flow(decoder, decoder.forward, z, "Decoder")

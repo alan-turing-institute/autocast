@@ -19,9 +19,9 @@ def test_dcencoder_basic_2d():
         pixel_shuffle=False,
     )
 
-    x = rand(2, 3, 64, 64)
-    z = encoder.forward(x)
-    assert_output_valid(z, (2, 16, 16, 16))
+    x = rand(2, 1, 64, 64, 3)
+    z = encoder.encode_tensor(x)
+    assert_output_valid(z, (2, 1, 16, 16, 16))
 
 
 def test_dcencoder_3d():
@@ -35,9 +35,9 @@ def test_dcencoder_3d():
         pixel_shuffle=False,
     )
 
-    x = rand(2, 4, 32, 32, 32)
-    z = encoder.forward(x)
-    assert_output_valid(z, (2, 8, 16, 16, 16))
+    x = rand(2, 1, 32, 32, 32, 4)
+    z = encoder.encode_tensor(x)
+    assert_output_valid(z, (2, 1, 16, 16, 16, 8))
 
 
 def test_dcencoder_pixel_shuffle():
@@ -51,9 +51,9 @@ def test_dcencoder_pixel_shuffle():
         pixel_shuffle=True,
     )
 
-    x = rand(2, 3, 64, 64)
-    z = encoder.forward(x)
-    assert_output_valid(z, (2, 16, 32, 32))
+    x = rand(2, 1, 64, 64, 3)
+    z = encoder.encode_tensor(x)
+    assert_output_valid(z, (2, 1, 32, 32, 16))
 
 
 def test_dcencoder_with_attention():
@@ -68,9 +68,9 @@ def test_dcencoder_with_attention():
         pixel_shuffle=False,
     )
 
-    x = rand(2, 3, 64, 64)
-    z = encoder.forward(x)
-    assert_output_valid(z, (2, 16, 32, 32))
+    x = rand(2, 1, 64, 64, 3)
+    z = encoder.encode_tensor(x)
+    assert_output_valid(z, (2, 1, 32, 32, 16))
 
 
 def test_dcencoder_single_depth():
@@ -84,9 +84,9 @@ def test_dcencoder_single_depth():
         pixel_shuffle=False,
     )
 
-    x = rand(2, 3, 32, 32)
-    z = encoder.forward(x)
-    assert_output_valid(z, (2, 16, 32, 32))
+    x = rand(2, 1, 32, 32, 3)
+    z = encoder.encode_tensor(x)
+    assert_output_valid(z, (2, 1, 32, 32, 16))
 
 
 def test_dcencoder_initialization():
@@ -114,5 +114,5 @@ def test_dcencoder_gradient_flow():
         pixel_shuffle=False,
     )
 
-    x = rand(2, 3, 64, 64, requires_grad=True)
-    assert_gradients_flow(encoder, x, "Encoder")
+    x = rand(2, 1, 64, 64, 3, requires_grad=True)
+    assert_gradients_flow(encoder, encoder.encode_tensor, x, "Encoder")
