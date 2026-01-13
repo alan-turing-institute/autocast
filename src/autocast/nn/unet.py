@@ -31,8 +31,8 @@ class TemporalUNetBackbone(TemporalBackboneBase):
         kernel_size: int = 3,
         periodic: bool = False,
         temporal_method: str = "none",
-        num_attention_heads: int = 8,
-        attention_hidden_dim: int = 64,
+        temporal_attention_heads: int = 8,
+        temporal_attention_hidden_dim: int = 64,
         # TCN parameters
         tcn_kernel_size: int = 3,
         tcn_num_layers: int = 2,
@@ -63,8 +63,8 @@ class TemporalUNetBackbone(TemporalBackboneBase):
                 - "attention": Multi-head self-attention over time
                 - "tcn": Temporal convolutional network
                 - "none": No temporal processing (identity)
-            num_attention_heads: Number of heads for attention methods
-            attention_hidden_dim: Hidden dimension for attention methods
+            temporal_attention_heads: Number of heads for attention methods
+            temporal_attention_hidden_dim: Hidden dimension for attention methods
             tcn_kernel_size: Kernel size for TCN
             tcn_num_layers: Number of TCN layers
             stride: Stride for UNet downsampling/upsampling
@@ -84,8 +84,8 @@ class TemporalUNetBackbone(TemporalBackboneBase):
             mod_features=mod_features,
             global_cond_features=global_cond_features,
             temporal_method=temporal_method,
-            num_attention_heads=num_attention_heads,
-            attention_hidden_dim=attention_hidden_dim,
+            temporal_attention_heads=temporal_attention_heads,
+            temporal_attention_hidden_dim=temporal_attention_hidden_dim,
             tcn_kernel_size=tcn_kernel_size,
             tcn_num_layers=tcn_num_layers,
         )

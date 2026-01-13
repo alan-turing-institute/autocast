@@ -32,8 +32,8 @@ class TemporalBackboneBase(nn.Module, ABC):
         mod_features: int = 256,
         global_cond_features: int | None = None,
         temporal_method: str = "none",
-        num_attention_heads: int = 8,
-        attention_hidden_dim: int = 64,
+        temporal_attention_heads: int = 8,
+        temporal_attention_hidden_dim: int = 64,
         # TCN parameters
         tcn_kernel_size: int = 3,
         tcn_num_layers: int = 2,
@@ -52,8 +52,8 @@ class TemporalBackboneBase(nn.Module, ABC):
                 - "attention": Multi-head self-attention over time
                 - "tcn": Temporal convolutional network
                 - "none": No temporal processing (identity)
-            num_attention_heads: Number of heads for attention methods
-            attention_hidden_dim: Hidden dimension for attention methods
+            temporal_attention_heads: Number of heads for attention methods
+            temporal_attention_hidden_dim: Hidden dimension for attention methods
             tcn_kernel_size: Kernel size for TCN
             tcn_num_layers: Number of TCN layers
         """
@@ -90,8 +90,8 @@ class TemporalBackboneBase(nn.Module, ABC):
         self.temporal_proc_input = self._create_temporal_module(
             channels=in_channels,
             temporal_method=temporal_method,
-            num_attention_heads=num_attention_heads,
-            attention_hidden_dim=attention_hidden_dim,
+            temporal_attention_heads=temporal_attention_heads,
+            temporal_attention_hidden_dim=temporal_attention_hidden_dim,
             tcn_kernel_size=tcn_kernel_size,
             tcn_num_layers=tcn_num_layers,
         )
@@ -99,8 +99,8 @@ class TemporalBackboneBase(nn.Module, ABC):
         self.temporal_proc_cond = self._create_temporal_module(
             channels=cond_channels,
             temporal_method=temporal_method,
-            num_attention_heads=num_attention_heads,
-            attention_hidden_dim=attention_hidden_dim,
+            temporal_attention_heads=temporal_attention_heads,
+            temporal_attention_hidden_dim=temporal_attention_hidden_dim,
             tcn_kernel_size=tcn_kernel_size,
             tcn_num_layers=tcn_num_layers,
         )
@@ -109,8 +109,8 @@ class TemporalBackboneBase(nn.Module, ABC):
         self,
         channels: int,
         temporal_method: str,
-        num_attention_heads: int,
-        attention_hidden_dim: int,
+        temporal_attention_heads: int,
+        temporal_attention_hidden_dim: int,
         tcn_kernel_size: int,
         tcn_num_layers: int,
     ) -> nn.Module:
@@ -119,8 +119,8 @@ class TemporalBackboneBase(nn.Module, ABC):
         Args:
             channels: Number of channels for this module
             temporal_method: Method name
-            num_attention_heads: Number of heads for attention
-            attention_hidden_dim: Hidden dimension for attention
+            temporal_attention_heads: Number of heads for attention
+            temporal_attention_hidden_dim: Hidden dimension for attention
             tcn_kernel_size: Kernel size for TCN
             tcn_num_layers: Number of TCN layers
 
@@ -131,8 +131,8 @@ class TemporalBackboneBase(nn.Module, ABC):
         if temporal_method == "attention":
             return TemporalAttention(
                 channels=channels,
-                attention_heads=num_attention_heads,
-                hidden_dim=attention_hidden_dim,
+                attention_heads=temporal_attention_heads,
+                hidden_dim=temporal_attention_hidden_dim,
             )
         if temporal_method == "tcn":
             return TemporalConvNet(

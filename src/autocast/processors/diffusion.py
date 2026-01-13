@@ -1,15 +1,7 @@
 import torch
 from azula.denoise import KarrasDenoiser, SimpleDenoiser
 from azula.noise import Schedule
-
-# Import Azula's samplers
-from azula.sample import (
-    DDIMSampler,
-    DDPMSampler,
-    EulerSampler,
-    HeunSampler,
-    Sampler,
-)
+from azula.sample import DDIMSampler, DDPMSampler, EulerSampler, HeunSampler, Sampler
 from torch import nn
 
 from autocast.processors.base import Processor
