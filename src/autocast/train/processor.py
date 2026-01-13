@@ -176,17 +176,19 @@ def prepare_encoded_datamodule(cfg: DictConfig):
     # For encoded datasets, use encoded_inputs and encoded_output_fields
     train_inputs = _get_field(batch, "encoded_inputs", "input_fields")
     train_outputs = _get_field(batch, "encoded_output_fields", "output_fields")
+    global_cond = _get_field(batch, "encoded_inputs", "global_cond")
 
     # Shape is (B, T, *spatial, C) for channels-last encoded data
     in_channel_count = train_inputs.shape[-1]
     out_channel_count = train_outputs.shape[-1]
     inferred_n_steps_input = train_inputs.shape[1]
     inferred_n_steps_output = train_outputs.shape[1]
-
+    global_cond_channels = global_cond.shape[-1] if global_cond is not None else None
     return (
         datamodule,
         in_channel_count,
         out_channel_count,
+        global_cond_channels,
         inferred_n_steps_input,
         inferred_n_steps_output,
         train_inputs.shape,
@@ -230,6 +232,7 @@ def configure_processor_dimensions(
     cfg: DictConfig,
     in_channel_count: int,
     out_channel_count: int,
+    global_cond_channels: int | None,
     n_steps_input: int,
     n_steps_output: int,
 ) -> None:
@@ -249,6 +252,9 @@ def configure_processor_dimensions(
     _maybe_set(backbone_cfg, "cond_channels", in_channel_count)
     _maybe_set(backbone_cfg, "n_steps_input", n_steps_input)
     _maybe_set(backbone_cfg, "n_steps_output", n_steps_output)
+    _maybe_set(
+        backbone_cfg, "global_cond_channels", global_cond_channels
+    ) if global_cond_channels is not None else None
 
 
 def _ensure_output_path(path: Path, work_dir: Path) -> Path:
@@ -304,6 +310,7 @@ def main() -> None:
         datamodule,
         in_channel_count,
         out_channel_count,
+        global_cond_channels,
         inferred_n_steps_input,
         inferred_n_steps_output,
         input_shape,
@@ -331,6 +338,7 @@ def main() -> None:
         cfg,
         in_channel_count=in_channel_count,
         out_channel_count=out_channel_count,
+        global_cond_channels=global_cond_channels,
         n_steps_input=inferred_n_steps_input,
         n_steps_output=inferred_n_steps_output,
     )
