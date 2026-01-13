@@ -16,21 +16,14 @@ class FlowMatchingProcessor(Processor):
         self,
         *,
         backbone: nn.Module,
-        schedule: Any | None = None,
-        denoiser_type: str | None = None,
-        loss_func: nn.Module | None = None,
-        learning_rate: float = 1e-4,
         flow_ode_steps: int = 1,
         n_steps_output: int = 4,
         n_channels_out: int = 1,
         **kwargs: Any,
     ) -> None:
         # Store core hyperparameters and optional prebuilt backbone.
-        super().__init__(loss_func=loss_func or nn.MSELoss(), **kwargs)
+        super().__init__(**kwargs)
         self.flow_matching_model = backbone
-        self.schedule = schedule  # accepted for API compatibility
-        self.denoiser_type = denoiser_type
-        self.learning_rate = learning_rate
         self.flow_ode_steps = max(flow_ode_steps, 1)
         self.n_steps_output = n_steps_output
         self.n_channels_out = n_channels_out
@@ -53,7 +46,7 @@ class FlowMatchingProcessor(Processor):
         -------
             Time derivative of output states with the same shape as `z`.
         """
-        return self.flow_matching_model(z, t, x, global_cond)
+        return self.flow_matching_model(z, t=t, cond=x, global_cond=global_cond)
 
     def forward(self, x: Tensor, global_cond: Tensor | None) -> Tensor:
         """Alias to map for Lightning/PyTorch compatibility."""
