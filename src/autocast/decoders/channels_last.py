@@ -1,7 +1,7 @@
 from einops import rearrange
 
 from autocast.decoders.base import Decoder
-from autocast.types import Tensor, TensorBCTS, TensorBTSC
+from autocast.types import TensorBCTS, TensorBTSC
 
 
 class ChannelsLast(Decoder):
@@ -26,15 +26,12 @@ class ChannelsLast(Decoder):
         self.output_channels = output_channels
         self.time_steps = time_steps
 
-    def forward(self, x: Tensor) -> Tensor:
-        """Forward pass through the ChannelsLast decoder.
+    def decode(self, z: TensorBCTS) -> TensorBTSC:
+        """Decode the latent tensor by rearranging channels and time.
 
         Expects input shape (B, C*T, spatial...) and outputs (B, T, spatial..., C).
         """
-        x = rearrange(
-            x, "b (c t) ... -> b c t ...", c=self.output_channels, t=self.time_steps
-        )
-        return rearrange(x, "b c t ... -> b t ... c")
-
-    def decode(self, z: TensorBCTS) -> TensorBTSC:
-        return self.forward(z)
+        c = self.output_channels
+        t = self.time_steps
+        z = rearrange(z, "b (c t) ... -> b c t ...", c=c, t=t)
+        return rearrange(z, "b c t ... -> b t ... c")

@@ -110,13 +110,13 @@ def test_ae_hybrid_unet_dc():
     )
 
     # Test forward pass with different latent sizes
-    z1 = rand(2, 16, 8, 8)
+    z1 = rand(2, 1, 8, 8, 16)
     x1 = decoder.forward(z1)
-    assert x1.shape == (2, 32, 32, 3), f"Expected (2, 32, 32, 3), got {x1.shape}"
+    assert x1.shape == (2, 1, 32, 32, 3), f"Expected (2, 1, 32, 32, 3), got {x1.shape}"
 
-    z2 = rand(2, 16, 16, 16)
+    z2 = rand(2, 1, 16, 16, 16)
     x2 = decoder.forward(z2)
-    assert x2.shape == (2, 64, 64, 3), f"Expected (2, 64, 64, 3), got {x2.shape}"
+    assert x2.shape == (2, 1, 64, 64, 3), f"Expected (2, 1, 64, 64, 3), got {x2.shape}"
 
     assert not x1.isnan().any(), "Output contains NaN values"
     assert not x2.isnan().any(), "Output contains NaN values"

@@ -8,8 +8,5 @@ class IdentityDecoder(Decoder):
     def __init__(self) -> None:
         super().__init__()
 
-    def forward(self, x: TensorBNC) -> TensorBTSC:
-        return x
-
     def decode(self, z: TensorBNC) -> TensorBTSC:
-        return self.forward(z)
+        return z

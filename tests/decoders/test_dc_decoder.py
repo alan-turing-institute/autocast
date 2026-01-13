@@ -19,9 +19,9 @@ def test_dcdecoder_basic_2d():
         pixel_shuffle=False,
     )
 
-    z = rand(2, 16, 16, 16)
+    z = rand(2, 1, 16, 16, 16)
     x = decoder.forward(z)
-    assert_output_valid(x, (2, 64, 64, 3))
+    assert_output_valid(x, (2, 1, 64, 64, 3))
 
 
 def test_dcdecoder_3d():
@@ -35,9 +35,9 @@ def test_dcdecoder_3d():
         pixel_shuffle=False,
     )
 
-    z = rand(2, 8, 16, 16, 16)
+    z = rand(2, 6, 16, 16, 16, 8)
     x = decoder.forward(z)
-    assert_output_valid(x, (2, 32, 32, 32, 4))
+    assert_output_valid(x, (2, 6, 32, 32, 32, 4))
 
 
 def test_dcdecoder_pixel_shuffle():
@@ -52,10 +52,10 @@ def test_dcdecoder_pixel_shuffle():
     )
 
     # Test forward pass
-    z = rand(2, 16, 16, 16)
+    z = rand(2, 1, 16, 16, 16)
     x = decoder.forward(z)
 
-    assert x.shape == (2, 32, 32, 3), f"Expected (2, 32, 32, 3), got {x.shape}"
+    assert x.shape == (2, 1, 32, 32, 3), f"Expected (2, 1, 32, 32, 3), got {x.shape}"
     assert not x.isnan().any(), "Output contains NaN values"
 
 
@@ -71,9 +71,9 @@ def test_dcdecoder_with_attention():
         pixel_shuffle=False,
     )
 
-    z = rand(2, 16, 16, 16)
+    z = rand(2, 1, 16, 16, 16)
     x = decoder.forward(z)
-    assert_output_valid(x, (2, 32, 32, 3))
+    assert_output_valid(x, (2, 1, 32, 32, 3))
 
 
 def test_dcdecoder_single_depth():
@@ -87,9 +87,9 @@ def test_dcdecoder_single_depth():
         pixel_shuffle=False,
     )
 
-    z = rand(2, 16, 16, 16)
+    z = rand(2, 1, 16, 16, 16)
     x = decoder.forward(z)
-    assert_output_valid(x, (2, 16, 16, 3))
+    assert_output_valid(x, (2, 1, 16, 16, 3))
 
 
 def test_dcdecoder_initialization():
@@ -117,5 +117,5 @@ def test_dcdecoder_gradient_flow():
         pixel_shuffle=False,
     )
 
-    z = rand(2, 16, 16, 16, requires_grad=True)
+    z = rand(2, 1, 16, 16, 16, requires_grad=True)
     assert_gradients_flow(decoder, decoder.forward, z, "Decoder")

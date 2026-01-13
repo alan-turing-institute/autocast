@@ -30,5 +30,5 @@ class Decoder(nn.Module, ABC):
             Tensor: Decoded tensor in the original space.
         """
 
-    def __call__(self, z: TensorBNC) -> TensorBTSC:
+    def forward(self, z: TensorBNC) -> TensorBTSC:
         return self.decode(z)
