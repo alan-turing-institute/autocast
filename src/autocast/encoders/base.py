@@ -35,7 +35,8 @@ class GenericEncoder(nn.Module, ABC, Generic[BatchT, BatchTEncoded]):
         Returns
         -------
         TensorBNC | tuple[TensorBNC, Tensor | None]
-            Encoded tensor in the latent space with shape (B, *, C_latent).
+            Encoded tensor in the latent space with shape (B, *, C_latent) or a tuple of
+            (encoded tensor, optional conditioning tensor of shape (B, D)).
         """
 
     @abstractmethod
