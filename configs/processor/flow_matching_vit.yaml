@@ -4,6 +4,6 @@ defaults:
 
 _target_: autocast.processors.flow_matching.FlowMatchingProcessor
 learning_rate: 0.0001
-flow_ode_steps: 4
+flow_ode_steps: 10
 n_steps_output: null
 n_channels_out: null

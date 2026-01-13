@@ -6,14 +6,13 @@ n_steps_output: null
 n_steps_input: null
 mod_features: 256
 global_cond_channels: null
-hid_channels: 768
+hid_channels: 1024
 # hid_channels: 512
-hid_blocks: 12
+hid_blocks: 16
 # hid_blocks: 8
 temporal_method: "none"
 # temporal_method: "attention"
-attention_heads: 12
-# attention_heads: 8
+attention_heads: 8
 spatial: 2
 patch_size: 1
 dropout: 0.05
