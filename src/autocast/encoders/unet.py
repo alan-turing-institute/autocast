@@ -52,9 +52,3 @@ class UNetEncoder(Encoder):
         # TODO: implement more sophisticated encoding combining fields if needed
         x = batch.input_fields
         return self.encoder_model(x)
-
-    def forward(self, x: Tensor) -> Tensor:
-        return self.encoder_model(x)
-
-    def __call__(self, batch: Batch) -> Tensor:
-        return self.encode(batch)
