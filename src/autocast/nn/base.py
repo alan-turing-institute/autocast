@@ -199,7 +199,7 @@ class TemporalBackboneBase(nn.Module, ABC):
             x_t: Noisy data (B, T, W, H, C) - spatial dims before channels
             t: Diffusion time steps (B,)
             cond: Conditioning input (B, T_cond, W, H, C)
-            global_cond: Optional global conditioning/modulation vector (B, C_label)
+            global_cond: Optional global conditioning/modulation vector (B, D)
 
         Returns
         -------
