@@ -52,11 +52,11 @@ uv run python -m autocast.train.processor \
     --work-dir="${WORKING_DIR}" \
     data.data_path=datasets/rayleigh_benard/1e3z5x2c_rayleigh_benard_dcae_f32c64_large/cache/rayleigh_benard \
     data.batch_size=64 \
-	training.n_steps_input=1 \
+    training.n_steps_input=1 \
     training.n_steps_output=4 \
     processor@model.processor=diffusion_vit \
     training.stride=1 \
     trainer.max_epochs=20 \
-	logging.wandb.enabled=true
+    logging.wandb.enabled=true
 	
 
