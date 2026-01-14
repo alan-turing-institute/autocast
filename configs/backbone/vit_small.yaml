@@ -1,0 +1,16 @@
+_target_: autocast.nn.vit.TemporalViTBackbone
+in_channels: null
+out_channels: null
+cond_channels: null
+n_steps_output: null
+n_steps_input: null
+mod_features: 256
+global_cond_channels: null
+hid_channels: 512
+hid_blocks: 16
+temporal_method: "none"
+attention_heads: 4
+spatial: 2
+patch_size: 1
+dropout: 0.05
+ffn_factor: 4
