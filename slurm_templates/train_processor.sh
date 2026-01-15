@@ -1,12 +1,12 @@
 #!/bin/bash
 #SBATCH --account=vjgo8416-ai-phy-sys
 #SBATCH --qos turing
-#SBATCH --time 12:00:00
+#SBATCH --time 3:00:00
 #SBATCH --nodes=1
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=36
-#SBATCH --gpus=1
-#SBATCH --mem=0
+#SBATCH --gpus-per-node 1
+#SBATCH --ntasks-per-node 1
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=256G
 #SBATCH --job-name processor
 #SBATCH --output=logs/processor_%j.out
 #SBATCH --error=logs/processor_%j.err
@@ -47,7 +47,7 @@ exec > "${WORKING_DIR}/slurm_${SLURM_JOB_NAME}_${SLURM_JOB_ID}.out" \
 # ---------------- Code to train and evaluate the model ----------------
 
 # Train
-uv run python -m autocast.train.processor \
+srun uv run python -m autocast.train.processor \
     --config-path=configs/ \
     --work-dir="${WORKING_DIR}" \
     data.data_path=datasets/rayleigh_benard/1e3z5x2c_rayleigh_benard_dcae_f32c64_large/cache/rayleigh_benard \

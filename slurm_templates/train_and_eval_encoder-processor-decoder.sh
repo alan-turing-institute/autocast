@@ -3,10 +3,10 @@
 #SBATCH --qos turing
 #SBATCH --time 3:00:00
 #SBATCH --nodes=1
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
-#SBATCH --gpus=1
-#SBATCH --mem=32G
+#SBATCH --gpus-per-node 1
+#SBATCH --ntasks-per-node 1
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=256G
 #SBATCH --job-name train_and_eval_encoder-processor-decoder
 #SBATCH --output=logs/train_and_eval_encoder-processor-decoder_%j.out
 #SBATCH --error=logs/train_and_eval_encoder-processor-decoder_%j.err
@@ -46,12 +46,12 @@ exec > "${WORKING_DIR}/slurm_${SLURM_JOB_NAME}_${SLURM_JOB_ID}.out" \
 # ---------------- Code to train and evaluate the model ----------------
 
 # Train
-uv run train_encoder_processor_decoder \
+srun uv run train_encoder_processor_decoder \
     --config-path=configs/ \
 	--work-dir=${WORKING_DIR}
 	
 # Evaluate
-uv run evaluate_encoder_processor_decoder \
+srun uv run evaluate_encoder_processor_decoder \
 	--config-path=configs/ \
 	--work-dir=${WORKING_DIR} \
 	--checkpoint=${WORKING_DIR}/encoder_processor_decoder.ckpt \
