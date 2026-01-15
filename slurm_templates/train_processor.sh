@@ -1,12 +1,12 @@
 #!/bin/bash
 #SBATCH --account=vjgo8416-ai-phy-sys
 #SBATCH --qos turing
-#SBATCH --time 12:00:00
+#SBATCH --time 3:00:00
 #SBATCH --nodes=1
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=36
-#SBATCH --gpus=1
-#SBATCH --mem=0
+#SBATCH --gpus-per-node 1
+#SBATCH --ntasks-per-node 1
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=256G
 #SBATCH --job-name processor
 #SBATCH --output=logs/processor_%j.out
 #SBATCH --error=logs/processor_%j.err

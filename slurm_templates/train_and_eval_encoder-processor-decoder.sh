@@ -3,10 +3,10 @@
 #SBATCH --qos turing
 #SBATCH --time 3:00:00
 #SBATCH --nodes=1
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
-#SBATCH --gpus=1
-#SBATCH --mem=32G
+#SBATCH --gpus-per-node 1
+#SBATCH --ntasks-per-node 1
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=256G
 #SBATCH --job-name train_and_eval_encoder-processor-decoder
 #SBATCH --output=logs/train_and_eval_encoder-processor-decoder_%j.out
 #SBATCH --error=logs/train_and_eval_encoder-processor-decoder_%j.err
