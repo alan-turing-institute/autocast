@@ -61,15 +61,13 @@ class WrappedDecoder(Decoder):
         self.wrapped_decode_func = self.wrapped_autoencoder.decode
 
     def decode(self, z: torch.Tensor) -> torch.Tensor:
-        b, t, *spatial, c = z.shape
+        b, t, *_ = z.shape
         z = rearrange(z, "B T ... C -> (B T) C ...")
-        decoded = torch.empty((0, c, *spatial), device=z.device, dtype=z.dtype)
+        outputs = []
         for i in trange(0, z.shape[0], self.batch_size):
             z_batch = z[i : i + self.batch_size]
             decoded_batch = self.wrapped_decode_func(z_batch)
-            if i == 0:
-                decoded = decoded_batch
-            else:
-                decoded = torch.cat((decoded, decoded_batch), dim=0)
+            outputs.append(decoded_batch)
+        decoded = torch.cat(outputs, dim=0)
         stacked = rearrange(decoded, "(B T) C ... -> B T ... C", B=b, T=t)
         return stacked
