@@ -50,7 +50,15 @@ class Batch:
     constant_fields: TensorBSC | None
 
     def repeat(self, m: int) -> "Batch":
-        """Repeat batch members."""
+        """Repeat batch members.
+
+        This interleaves the batch dimension by repeating each sample m times.
+
+        For example, for m=3, a batch with samples
+        0, 1, 2, ...
+        becomes
+        0, 0, 0, 1, 1, 1, 2, 2, 2, ...
+        """
         return Batch(
             input_fields=self.input_fields.repeat_interleave(m, dim=0),
             output_fields=self.output_fields.repeat_interleave(m, dim=0),
@@ -77,7 +85,16 @@ class EncodedBatch:
     encoded_info: dict[str, Tensor]
 
     def repeat(self, m: int) -> "EncodedBatch":
-        """Repeat batch members."""
+        """Repeat batch members.
+
+        This interleaves the batch dimension by repeating each sample m times.
+
+        For example, for m=3, a batch with samples
+        0, 1, 2, ...
+        becomes
+        0, 0, 0, 1, 1, 1, 2, 2, 2, ...
+
+        """
         return EncodedBatch(
             encoded_inputs=self.encoded_inputs.repeat_interleave(m, dim=0),
             encoded_output_fields=self.encoded_output_fields.repeat_interleave(
