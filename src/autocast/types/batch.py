@@ -49,6 +49,23 @@ class Batch:
     constant_scalars: TensorBC | None
     constant_fields: TensorBSC | None
 
+    def repeat(self, m: int) -> "Batch":
+        """Repeat batch members."""
+        return Batch(
+            input_fields=self.input_fields.repeat_interleave(m, dim=0),
+            output_fields=self.output_fields.repeat_interleave(m, dim=0),
+            constant_scalars=(
+                self.constant_scalars.repeat_interleave(m, dim=0)
+                if self.constant_scalars is not None
+                else None
+            ),
+            constant_fields=(
+                self.constant_fields.repeat_interleave(m, dim=0)
+                if self.constant_fields is not None
+                else None
+            ),
+        )
+
 
 @dataclass
 class EncodedBatch:
@@ -58,6 +75,23 @@ class EncodedBatch:
     encoded_output_fields: TensorBNC
     global_cond: TensorBNC | None
     encoded_info: dict[str, Tensor]
+
+    def repeat(self, m: int) -> "EncodedBatch":
+        """Repeat batch members."""
+        return EncodedBatch(
+            encoded_inputs=self.encoded_inputs.repeat_interleave(m, dim=0),
+            encoded_output_fields=self.encoded_output_fields.repeat_interleave(
+                m, dim=0
+            ),
+            global_cond=(
+                self.global_cond.repeat_interleave(m, dim=0)
+                if self.global_cond is not None
+                else None
+            ),
+            encoded_info={
+                k: v.repeat_interleave(m, dim=0) for k, v in self.encoded_info.items()
+            },
+        )
 
 
 def collate_batches(samples: Sequence[Sample]) -> Batch:
