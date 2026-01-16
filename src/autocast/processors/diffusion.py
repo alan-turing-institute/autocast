@@ -58,7 +58,7 @@ class DiffusionProcessor(Processor):
         )  # Fully noised
         return sampler(x_1, cond=x, global_cond=global_cond)
 
-    def forward(self, x: Tensor, global_cond: Tensor | None) -> Tensor:
+    def forward(self, x: Tensor, global_cond: Tensor | None = None) -> Tensor:
         return self.map(x, global_cond)
 
     # def _denoise(self, x: Tensor, t: Tensor, cond: Tensor) -> Tensor:

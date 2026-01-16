@@ -8,10 +8,12 @@ from torchmetrics import Metric, MetricCollection
 
 from autocast.metrics.utils import MetricsMixin
 from autocast.models.encoder_decoder import EncoderDecoder
+from autocast.models.noise_injector import NoiseInjector
 from autocast.models.optimizer_mixin import OptimizerMixin
 from autocast.processors.base import Processor
 from autocast.processors.rollout import RolloutMixin
-from autocast.types import Batch, EncodedBatch, Tensor, TensorBNC, TensorBTSC
+from autocast.types import Batch, Tensor, TensorBTSC
+from autocast.types.types import TensorBTSCM
 
 
 class EncoderProcessorDecoder(
@@ -40,6 +42,7 @@ class EncoderProcessorDecoder(
         train_metrics: Sequence[Metric] | None = [],
         val_metrics: Sequence[Metric] | None = None,
         test_metrics: Sequence[Metric] | None = None,
+        input_noise_injector: NoiseInjector | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__()
@@ -52,6 +55,8 @@ class EncoderProcessorDecoder(
         self.teacher_forcing_ratio = teacher_forcing_ratio
         self.max_rollout_steps = max_rollout_steps
         self.train_in_latent_space = train_in_latent_space
+        self.input_noise_injector = input_noise_injector
+
         if self.train_in_latent_space:
             self.encoder_decoder.freeze()
         self.loss_func = loss_func
@@ -63,19 +68,20 @@ class EncoderProcessorDecoder(
         for key, value in kwargs.items():
             setattr(self, key, value)
 
-    def __call__(self, batch: Batch) -> TensorBTSC:
-        return self.decode(self.processor(self.encode(batch)))
+    def _apply_input_noise(self, batch: Batch) -> Batch:
+        """Apply input noise if self.input_noise_injector is set."""
+        if self.input_noise_injector is not None:
+            noisy_input = self.input_noise_injector(batch.input_fields)
+            batch = Batch(
+                input_fields=noisy_input,
+                output_fields=batch.output_fields,
+                constant_scalars=batch.constant_scalars,
+                constant_fields=batch.constant_fields,
+            )
+        return batch
 
-    def encode(self, x: Batch) -> TensorBNC:
-        return self.encoder_decoder.encoder(x)
-
-    def decode(self, z: TensorBNC) -> TensorBTSC:
-        return self.encoder_decoder.decoder(z)
-
-    def map(self, x: EncodedBatch) -> TensorBNC:
-        return self.processor.map(x.encoded_inputs)
-
-    def forward(self, batch: Batch) -> TensorBTSC:
+    def forward(self, batch: Batch) -> TensorBTSC | TensorBTSCM:
+        batch = self._apply_input_noise(batch)
         encoded = self.encoder_decoder.encoder.encode(batch)
         mapped = self.processor.map(encoded)
         decoded = self.encoder_decoder.decoder.decode(mapped)
@@ -83,6 +89,7 @@ class EncoderProcessorDecoder(
 
     def loss(self, batch: Batch) -> tuple[Tensor, Tensor | None]:
         if self.train_in_latent_space:
+            batch = self._apply_input_noise(batch)
             encoded_batch = self.encoder_decoder.encoder.encode_batch(batch)
             loss = self.processor.loss(encoded_batch)
             y_pred = None
@@ -199,47 +206,3 @@ class EncoderProcessorDecoder(
             constant_scalars=batch.constant_scalars,
             constant_fields=batch.constant_fields,
         )
-
-
-class EPDTrainProcessor(EncoderProcessorDecoder):
-    """Encoder-Processor-Decoder Model training on processor."""
-
-    train_processor: Processor
-
-    def __init__(
-        self,
-        encoder_decoder: EncoderDecoder,
-        processor: Processor,
-        learning_rate: float = 1e-3,
-        stride: int = 1,
-        teacher_forcing_ratio: float = 0.5,
-        max_rollout_steps: int = 10,
-        loss_func: nn.Module | None = None,
-        **kwargs: Any,
-    ) -> None:
-        super().__init__(
-            encoder_decoder=encoder_decoder,
-            processor=processor,
-            learning_rate=learning_rate,
-            stride=stride,
-            teacher_forcing_ratio=teacher_forcing_ratio,
-            max_rollout_steps=max_rollout_steps,
-            loss_func=loss_func,
-            **kwargs,
-        )
-
-    def training_step(self, batch: Batch, batch_idx: int) -> Tensor:  # noqa: ARG002
-        encoded_batch = self.encoder_decoder.encoder.encode_batch(batch)
-        loss = self.processor.loss(encoded_batch)
-        self.log(
-            "train_loss", loss, prog_bar=True, batch_size=batch.input_fields.shape[0]
-        )
-        return loss
-
-    def validation_step(self, batch, batch_idx: int):  # noqa: ARG002
-        encoded_batch = self.encoder_decoder.encoder.encode_batch(batch)
-        loss = self.processor.loss(encoded_batch)
-        self.log(
-            "valid_loss", loss, prog_bar=True, batch_size=batch.input_fields.shape[0]
-        )
-        return loss

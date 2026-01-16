@@ -45,7 +45,7 @@ class FlowMatchingProcessor(Processor):
         """
         return self.flow_matching_model(z, t=t, cond=x, global_cond=global_cond)
 
-    def forward(self, x: Tensor, global_cond: Tensor | None) -> Tensor:
+    def forward(self, x: Tensor, global_cond: Tensor | None = None) -> Tensor:
         """Alias to map for Lightning/PyTorch compatibility."""
         return self.map(x, global_cond)
 
