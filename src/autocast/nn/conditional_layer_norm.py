@@ -36,14 +36,14 @@ class ConditionalLayerNorm(nn.Module):
             self.gamma = nn.Linear(
                 self.n_noise_channels,
                 n_channels,
-                bias=bias,
+                bias=True,  # Include bias to allow scaling around non-zero constant
                 device=device,
                 dtype=dtype,
             )
             self.beta = nn.Linear(
                 self.n_noise_channels,
                 n_channels,
-                bias=bias,
+                bias=False,  # Since this is additive bias already
                 device=device,
                 dtype=dtype,
             )
@@ -114,4 +114,6 @@ class ConditionalLayerNorm(nn.Module):
             )  # (B, 1, ..., 1, C_channels)
             beta = rearrange(beta, f"b c -> {shape_str}")  # (B, 1, ..., 1, C_channels)
 
+        # gamma * x_norm + beta = x_norm
+        # return x_norm
         return gamma * x_norm + beta
