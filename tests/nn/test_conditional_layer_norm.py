@@ -17,7 +17,6 @@ def test_conditional_layer_norm():
 
     x_noise2 = torch.randn(2, 1, 64, 64, 1)
     output3 = norm_layer.forward(sample_batch, x_noise2)
-    print(sample_batch)
     # Different conditioning should give different output
     assert not torch.allclose(output1, output3)
 
