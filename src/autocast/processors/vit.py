@@ -111,7 +111,6 @@ class AxialAttentionBlock(nn.Module):
         drop_path: float = 0.0,
         layer_scale_init_value: float = 1e-6,
         n_noise_channels: int | None = None,
-        elementwise_affine: bool = False,
     ):
         super().__init__()
         if hidden_dim % num_heads != 0:
@@ -134,7 +133,7 @@ class AxialAttentionBlock(nn.Module):
         self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
 
         self.norm = ConditionalLayerNorm(
-            hidden_dim, n_noise_channels, elementwise_affine=elementwise_affine
+            hidden_dim, n_noise_channels, elementwise_affine=False
         )
 
         self.fused_heads = [hidden_dim, hidden_dim, hidden_dim, 4 * hidden_dim]
@@ -142,10 +141,10 @@ class AxialAttentionBlock(nn.Module):
 
         head_dim = hidden_dim // num_heads
         self.qnorm = ConditionalLayerNorm(
-            head_dim, n_noise_channels, elementwise_affine=elementwise_affine
+            head_dim, n_noise_channels, elementwise_affine=False
         )
         self.knorm = ConditionalLayerNorm(
-            head_dim, n_noise_channels, elementwise_affine=elementwise_affine
+            head_dim, n_noise_channels, elementwise_affine=False
         )
 
         self.output_head = nn.Linear(hidden_dim, hidden_dim)
@@ -221,7 +220,6 @@ class AViT(BaseModel):
         drop_path: float = 0.0,
         groups: int = 12,
         n_noise_channels: int | None = None,
-        elementwise_affine: bool = False,
     ):
         super().__init__(n_spatial_dims, spatial_resolution)
 
@@ -257,7 +255,6 @@ class AViT(BaseModel):
                     n_spatial_dims=self.n_spatial_dims,
                     drop_path=float(self.dp[i]),
                     n_noise_channels=n_noise_channels,
-                    elementwise_affine=elementwise_affine,
                 )
                 for i in range(processor_blocks)
             ]
@@ -306,7 +303,6 @@ class AViTProcessor(Processor[EncodedBatch]):
         groups: int = 8,
         loss_func: nn.Module | None = None,
         n_noise_channels: int | None = None,
-        elementwise_affine: bool = False,
         # learning_rate: float = 1e-3,
         # **avit_kwargs: Any,
     ):
@@ -324,7 +320,6 @@ class AViTProcessor(Processor[EncodedBatch]):
             drop_path=drop_path,
             groups=groups,
             n_noise_channels=n_noise_channels,
-            elementwise_affine=elementwise_affine,
         )
 
         self.loss_func = loss_func or nn.MSELoss()
