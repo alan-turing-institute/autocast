@@ -20,6 +20,7 @@ def get_datamodule(
     simulation_datasets_path: str = "../datasets/tmp",
     the_well_dataset_path: str = "../datasets/",
     overwrite_tmp: bool = False,
+    num_workers: int = 8,
 ):
     """Get the configured datamodule.
 
@@ -99,6 +100,7 @@ def get_datamodule(
             stride=n_steps_output,
             autoencoder_mode=autoencoder_mode,
             batch_size=16,
+            num_workers=num_workers,
         )
 
     # If the well dataset
@@ -111,4 +113,5 @@ def get_datamodule(
         max_dt_stride=stride,
         use_normalization=True,
         autoencoder_mode=autoencoder_mode,
+        num_workers=num_workers,
     )
