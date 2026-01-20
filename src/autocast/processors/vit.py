@@ -303,8 +303,6 @@ class AViTProcessor(Processor[EncodedBatch]):
         groups: int = 8,
         loss_func: nn.Module | None = None,
         n_noise_channels: int | None = None,
-        # learning_rate: float = 1e-3,
-        # **avit_kwargs: Any,
     ):
         super().__init__()
         self.n_spatial_dims = len(spatial_resolution)
