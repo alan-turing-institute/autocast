@@ -1,40 +1,13 @@
 from collections.abc import Callable
+from pathlib import Path
 
 import torch
 from einops import rearrange
 
 from autocast.decoders.base import Decoder
-from autocast.encoders.base import Encoder
 from autocast.external.lola.lola_autoencoder import get_autoencoder
+from autocast.types import TensorBTSC
 from autocast.types.batch import Batch
-
-
-class ChannelsFirstEncoder(Encoder):
-    """Channels-First Encoder Wrapper for Lola AutoEncoder."""
-
-    wrapped_encode_func: Callable
-
-    def preprocess(self, batch: Batch) -> Batch:
-        x = batch.input_fields
-        x = rearrange(x, "B T ... C -> B C T ...")
-        return Batch(
-            input_fields=x,
-            output_fields=batch.output_fields,
-            constant_scalars=batch.constant_scalars,
-            constant_fields=batch.constant_fields,
-        )
-
-    def encode(self, batch: Batch) -> torch.Tensor:
-        batch = self.preprocess(batch)
-        outputs = []
-        for idx in range(batch.input_fields.shape[2]):  # loop over time dimension
-            x = batch.input_fields[:, :, idx, ...].contiguous()
-            x = self.wrapped_encode_func(x)
-            outputs.append(x)
-
-        # Stack outputs along time dimension
-        stacked = torch.stack(outputs, dim=1)  # (B, T, C, spatial...)
-        return rearrange(stacked, "B T C ... -> B T ... C")
 
 
 class WrappedDecoder(Decoder):
@@ -43,15 +16,32 @@ class WrappedDecoder(Decoder):
     wrapped_autoencoder: torch.nn.Module
     wrapped_decode_func: Callable
 
-    def __init__(self, **kwargs):
+    def __init__(self, device: str = "cpu", **kwargs):
         super().__init__()
+        self.batch_size = kwargs.pop("batch_size", 16)
+        self.mean = kwargs.pop("mean")
+        self.std = kwargs.pop("std")
+        runpath = kwargs.pop("runpath", None)
         self.wrapped_autoencoder = get_autoencoder(**kwargs)
-        runpath = kwargs.get("runpath")
         if runpath is not None:
+            runpath = Path(runpath)
             state = torch.load(
-                runpath / "state.pth",
+                Path(runpath) / "state.pth",
                 weights_only=True,
-                map_location=kwargs.get("device"),
+                map_location=device,
             )
             self.wrapped_autoencoder.load_state_dict(state)
+            print(f"Loaded autoencoder weights from {runpath / 'state.pth'}")
         self.wrapped_decode_func = self.wrapped_autoencoder.decode
+
+    def decode(self, z: torch.Tensor) -> torch.Tensor:
+        b, t, *_ = z.shape
+        z = rearrange(z, "B T ... C -> (B T) C ...")
+        decoded = self.wrapped_decode_func(z)
+        stacked = rearrange(decoded, "(B T) C ... -> B T ... C", B=b, T=t)
+        stacked = self.postprocess(stacked)
+        return stacked
+
+    def postprocess(self, decoded: torch.Tensor) -> torch.Tensor:
+        output = super().postprocess(decoded)
+        return output * self.std + self.mean

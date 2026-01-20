@@ -20,6 +20,7 @@ class TheWellDataModule(LightningDataModule):
         n_steps_output: int = 1,
         batch_size: int = 4,
         use_normalization: bool = False,
+        # TODO: consider how to pass normalization stats/path
         normalization_type: type[ZScoreNormalization] | None = None,
         autoencoder_mode: bool = False,
         num_workers: int | None = None,  # Auto-detect if None
