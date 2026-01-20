@@ -3,10 +3,10 @@ import torch
 
 from autocast.metrics.base import BaseMetric
 from autocast.types import Tensor, TensorBTC, TensorBTSC
-from autocast.types.types import ArrayLike
+from autocast.types.types import ArrayLike, TensorBTSCM
 
 
-class BTSCMetric(BaseMetric[TensorBTSC, TensorBTSC]):
+class BTSCMetric(BaseMetric[TensorBTSC | TensorBTSCM, TensorBTSC]):
     """
     Base class for metrics that operate on spatial tensors.
 
@@ -45,10 +45,16 @@ class BTSCMetric(BaseMetric[TensorBTSC, TensorBTSC]):
                 f"y_true must be a Tensor or np.ndarray, got {type(y_true)}"
             )
 
-        if y_pred.shape != y_true.shape:
+        if y_pred.ndim == y_true.ndim and y_pred.shape != y_true.shape:
             raise ValueError(
                 f"y_pred and y_true must have the same shape, "
                 f"got {y_pred.shape} and {y_true.shape}"
+            )
+
+        if y_pred.ndim == y_true.ndim + 1 and y_pred.shape[:-1] != y_true.shape:
+            raise ValueError(
+                f"y_pred (ensemble) and y_true must have the same shape along "
+                f"non-ensemble dims, got {y_pred.shape} and {y_true.shape}"
             )
 
         if y_pred.ndim < 4:
@@ -57,9 +63,29 @@ class BTSCMetric(BaseMetric[TensorBTSC, TensorBTSC]):
                 f"following the pattern(B, T, S, C)"
             )
 
+        # Handle ensemble dimension if present
+        if y_pred.ndim == y_true.ndim + 1:
+            y_pred = self._ensemble_aggregation(y_pred)
+
         return y_pred, y_true
 
-    def _score(self, y_pred: TensorBTSC, y_true: TensorBTSC) -> TensorBTC:
+    def _ensemble_aggregation(self, y_pred: TensorBTSCM) -> TensorBTSC:
+        """Aggregate ensemble dimension.
+
+        Parameters
+        ----------
+        y_pred
+            Predictions with ensemble dim, shape (B, T, C, M)
+
+        Returns
+        -------
+            Aggregated predictions, shape (B, T, S, C)
+        """
+        return y_pred.mean(dim=-1)
+
+    def _score(
+        self, y_pred: TensorBTSC | TensorBTSCM, y_true: TensorBTSC | TensorBTSCM
+    ) -> TensorBTC:
         """
         Compute metric reduced over spatial dims only.
 

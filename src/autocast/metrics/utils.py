@@ -7,8 +7,8 @@ from collections.abc import Sequence
 import lightning as L
 from torchmetrics import Metric, MetricCollection
 
-from autocast.metrics import ALL_DETERMINISTIC_METRICS, VRMSE
-from autocast.types import Tensor
+from autocast.metrics import ALL_DETERMINISTIC_METRICS, ALL_ENSEMBLE_METRICS, VRMSE
+from autocast.types.types import TensorBTSC, TensorBTSCM
 
 
 class MetricsMixin:
@@ -25,8 +25,11 @@ class MetricsMixin:
         metric_dict: dict[str, Metric | MetricCollection] = {}
 
         for metric in metrics_list:
-            if not isinstance(metric, ALL_DETERMINISTIC_METRICS):
-                allowed = ", ".join(cls.__name__ for cls in ALL_DETERMINISTIC_METRICS)
+            if not isinstance(metric, ALL_DETERMINISTIC_METRICS + ALL_ENSEMBLE_METRICS):
+                allowed = ", ".join(
+                    cls.__name__
+                    for cls in ALL_DETERMINISTIC_METRICS + ALL_ENSEMBLE_METRICS
+                )
                 raise ValueError(
                     f"Invalid metric '{metric}'. Allowed metrics: {allowed}"
                 )
@@ -50,8 +53,8 @@ class MetricsMixin:
     def _update_and_log_metrics(
         model: L.LightningModule,
         metrics: MetricCollection | None,
-        y_pred: Tensor,
-        y_true: Tensor,
+        y_pred: TensorBTSC | TensorBTSCM,
+        y_true: TensorBTSC,
         batch_size: int,
     ) -> None:
         """Update metrics and log them.
@@ -62,7 +65,7 @@ class MetricsMixin:
             The Lightning module to log metrics to.
         metric_collection : MetricCollection | None
             The metric collection to update and log. If None, this method does nothing.
-        y_pred : Tensor
+        y_pred : TensorBTSC | TensorBTSCM
             Model predictions.
         y_true : Tensor
             Ground truth targets.
