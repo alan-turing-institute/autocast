@@ -7,13 +7,13 @@ from azula.nn.layers import ConvNd, Patchify
 from einops import rearrange
 from torch import nn
 
-from autocast.encoders.base import Encoder
+from autocast.encoders.base import EncoderWithCond
 from autocast.nn import ResBlock
 from autocast.nn.dc_utils import build_sample_block
 from autocast.types import Batch, TensorBTSC
 
 
-class DCEncoder(Encoder):
+class DCEncoder(EncoderWithCond):
     """Deep Compressed (DC) encoder module.
 
     Progressively downsamples input to latent representation using residual blocks
