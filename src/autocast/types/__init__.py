@@ -21,6 +21,7 @@ from .types import (
     TensorBTSC,
     TensorBTSCM,
     TensorC,
+    TensorS,
     TensorSC,
     TensorTSC,
 )
@@ -44,6 +45,7 @@ __all__ = [
     "TensorBTSC",
     "TensorBTSCM",
     "TensorC",
+    "TensorS",
     "TensorSC",
     "TensorTSC",
     "collate_batches",

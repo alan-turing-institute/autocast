@@ -35,6 +35,7 @@ TensorBSSC = Float[Tensor, "batch spatial *spatial channel"]  # No time dimensio
 TensorTSC = Float[Tensor, "time spatial *spatial channel"]  # No batch dimension
 TensorNC = Float[Tensor, "*optional_dims channel"]  # No batch dimension
 TensorSC = Float[Tensor, "spatial *spatial channel"]  # No batch dimension
+TensorS = Float[Tensor, "spatial *spatial"]  # No batch or channel dimension
 
 TensorBCWH = Float[Tensor, "batch channel width height"]  # Specific spatial dims
 TensorBTCHW = Float[Tensor, "batch time channel height width"]  # Specific spatial dims

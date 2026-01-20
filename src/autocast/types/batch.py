@@ -12,6 +12,7 @@ from autocast.types.types import (
     TensorBTSC,
     TensorC,
     TensorNC,
+    TensorS,
     TensorSC,
     TensorTSC,
 )
@@ -28,6 +29,7 @@ class Sample:
     output_fields: TensorTSC
     constant_scalars: TensorC | None
     constant_fields: TensorSC | None
+    boundary_conditions: TensorS | None
 
 
 @dataclass
@@ -48,6 +50,7 @@ class Batch:
     output_fields: TensorBTSC
     constant_scalars: TensorBC | None
     constant_fields: TensorBSC | None
+    boundary_conditions: TensorS | None = None
 
     def repeat(self, m: int) -> "Batch":
         """Repeat batch members.
@@ -70,6 +73,11 @@ class Batch:
             constant_fields=(
                 self.constant_fields.repeat_interleave(m, dim=0)
                 if self.constant_fields is not None
+                else None
+            ),
+            boundary_conditions=(
+                self.boundary_conditions.repeat_interleave(m, dim=0)
+                if self.boundary_conditions is not None
                 else None
             ),
         )
@@ -130,12 +138,14 @@ def collate_batches(samples: Sequence[Sample]) -> Batch:
     output_fields = torch.stack([sample.output_fields for sample in samples], dim=0)
     constant_scalars = _stack_optional("constant_scalars")
     constant_fields = _stack_optional("constant_fields")
+    boundary_conditions = _stack_optional("boundary_conditions")
 
     return Batch(
         input_fields=input_fields,
         output_fields=output_fields,
         constant_scalars=constant_scalars,
         constant_fields=constant_fields,
+        boundary_conditions=boundary_conditions,
     )
 
 

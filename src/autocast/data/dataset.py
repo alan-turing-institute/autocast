@@ -23,6 +23,7 @@ class BatchMixin:
             output_fields=data["output_fields"],
             constant_scalars=data.get("constant_scalars"),
             constant_fields=data.get("constant_fields"),
+            boundary_conditions=data.get("boundary_conditions"),
         )
 
 
