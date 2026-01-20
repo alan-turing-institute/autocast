@@ -21,6 +21,7 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     cmap: str = "viridis",
     save_path: str | None = None,
     title: str = "Ground Truth vs Prediction",
+    pred_uq_label: str = "Prediction UQ",
     colorbar_mode: Literal["none", "row", "column", "all"] = "none",
     channel_names: list[str] | None = None,
 ):
@@ -128,7 +129,7 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
         (diff_batch, "Difference (True - Pred)", "RdBu"),
     ]
     if pred_uq is not None:
-        rows_to_plot.append((pred_uq_batch, "Prediction UQ", cmap))
+        rows_to_plot.append((pred_uq_batch, pred_uq_label, "inferno"))
     total_rows = len(rows_to_plot)
 
     fig = plt.figure(figsize=(C * 4, total_rows * 4))
@@ -149,12 +150,16 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
                 raise ValueError(msg)
             frame0 = rearrange(data[0, :, :, ch], "w h -> h w")
 
-            im = ax.imshow(
-                frame0,
-                cmap=row_cmap,
-                aspect="auto",
-                norm=norms[row_idx][ch] if row_idx < n_primary_rows else diff_norm,
-            )
+            if row_idx < n_primary_rows:
+                norm = norms[row_idx][ch]
+            elif row_idx == len(rows_to_plot) - 1 and pred_uq_batch is not None:
+                uq_min = float(pred_uq_batch[..., ch].min())
+                uq_max = float(pred_uq_batch[..., ch].max())
+                uq_norm = Normalize(vmin=uq_min, vmax=uq_max)
+                norm = uq_norm
+            else:
+                norm = diff_norm
+            im = ax.imshow(frame0, cmap=row_cmap, aspect="auto", norm=norm)
 
             if row_idx == 0:
                 ax.set_title(
