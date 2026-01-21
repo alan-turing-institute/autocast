@@ -199,11 +199,11 @@ class DCEncoder(EncoderWithCond):
             Encoded latent tensor.
 
         """
-        b, t, *_, c = x.shape
+        b, t, *_, _ = x.shape
         # Concatenate batch and time for processing
         x = rearrange(x, "B T ... C -> (B T) C ...")
         x = self.patch(x)
         for blocks in self.descent:
             for block in cast(nn.ModuleList, blocks):  # ModuleList in construction
                 x = block(x)
-        return rearrange(x, "(B T) C ... -> B T ... C", B=b, T=t, C=c)
+        return rearrange(x, "(B T) C ... -> B T ... C", B=b, T=t, C=self.latent_dim)

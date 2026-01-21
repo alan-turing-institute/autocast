@@ -183,10 +183,11 @@ class DCDecoder(Decoder):
             Decoded tensor with shape (B, T, spatial_expanded..., C_o).
 
         """
-        b, t, *_, c = z.shape
+        b, t, *_ = z.shape
         z = rearrange(z, "B T ... C -> (B T) C ...")
         for blocks in self.ascent:
             for block in cast(nn.ModuleList, blocks):
                 z = block(z)
-            z = self.unpatch(z)
-        return rearrange(z, "(B T) C ... -> B T ... C", B=b, T=t, C=c)
+        z = self.unpatch(z)
+        z = rearrange(z, "(B T) C ... -> B T ... C", B=b, T=t, C=self.output_channels)
+        return z
