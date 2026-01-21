@@ -5,7 +5,7 @@ from torch import nn
 
 from autocast.decoders.base import Decoder
 from autocast.decoders.dc import DCDecoder
-from autocast.encoders.base import Encoder
+from autocast.encoders.base import EncoderWithCond
 from autocast.encoders.dc import DCEncoder
 from autocast.models.variational_autoencoder import VAE, VAELoss
 from autocast.types import (
@@ -38,7 +38,7 @@ def _make_batch(shape: tuple[int, ...], *, requires_grad: bool = False) -> Batch
     )
 
 
-class _FlatEncoder(Encoder):
+class _FlatEncoder(EncoderWithCond):
     """Minimal encoder that produces flat (non-spatial) latents for tests."""
 
     def __init__(self, input_dim: int, latent_dim: int) -> None:
@@ -84,7 +84,7 @@ class _FlatDecoder(Decoder):
         return torch.stack(outputs, dim=1)  # (B, T, C)
 
 
-class _FlatteningEncoder(Encoder):
+class _FlatteningEncoder(EncoderWithCond):
     """Encoder that ingests spatial tensors and outputs flat latents."""
 
     def __init__(self, input_shape: tuple[int, ...], latent_dim: int) -> None:

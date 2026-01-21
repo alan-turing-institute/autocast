@@ -4,7 +4,7 @@ from torch import nn
 from torchmetrics import Metric
 
 from autocast.decoders import Decoder
-from autocast.encoders import Encoder
+from autocast.encoders.base import EncoderWithCond
 from autocast.models.encoder_decoder import EncoderDecoder
 from autocast.types import Batch, Tensor, TensorBNC, TensorBTSC
 
@@ -40,12 +40,12 @@ class AELoss(nn.Module):
 class AE(EncoderDecoder):
     """Autoencoder Model."""
 
-    encoder: Encoder
+    encoder: EncoderWithCond
     decoder: Decoder
 
     def __init__(
         self,
-        encoder: Encoder,
+        encoder: EncoderWithCond,
         decoder: Decoder,
         loss_func: AELoss | None = None,
         learning_rate: float = 1e-3,

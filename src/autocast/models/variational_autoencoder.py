@@ -4,7 +4,7 @@ from einops import rearrange
 from torch import nn
 
 from autocast.decoders import Decoder
-from autocast.encoders import Encoder
+from autocast.encoders.base import EncoderWithCond
 from autocast.models.encoder_decoder import EncoderDecoder
 from autocast.types import Batch, Tensor, TensorBNC, TensorBTSC
 
@@ -57,12 +57,14 @@ class VAE(EncoderDecoder):
     latent representations.
     """
 
-    encoder: Encoder
+    encoder: EncoderWithCond
     decoder: Decoder
     fc_mean: nn.Module
     fc_log_var: nn.Module
 
-    def __init__(self, encoder: Encoder, decoder: Decoder, spatial: int | None = None):
+    def __init__(
+        self, encoder: EncoderWithCond, decoder: Decoder, spatial: int | None = None
+    ):
         """Initialize VAE.
 
         Parameters
