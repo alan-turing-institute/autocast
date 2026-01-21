@@ -1,5 +1,4 @@
 import torch
-from einops import rearrange
 from torch import Tensor, nn
 
 
@@ -102,17 +101,12 @@ class ConditionalLayerNorm(nn.Module):
                 f"does not match n_noise_channels {self.n_noise_channels}"
             )
             raise ValueError(msg)
+
         gamma = self.gamma(x_noise)  # (B, C_channels)
         beta = self.beta(x_noise)  # (B, C_channels)
 
-        # Insert 1s for all dimensions between B and C_channels
-        dims_to_add = x.ndim - gamma.ndim
-        shape_str = " ".join(["b"] + ["1"] * dims_to_add + ["c"])
-        if dims_to_add > 0:
-            gamma = rearrange(
-                gamma, f"b c -> {shape_str}"
-            )  # (B, 1, ..., 1, C_channels)
-            beta = rearrange(beta, f"b c -> {shape_str}")  # (B, 1, ..., 1, C_channels)
-
         # Apply conditional scale and shift to the normalized input
-        return gamma * x_norm + beta
+        ones = torch.ones_like(x_norm)
+        scaled = torch.einsum("b c, b ... c-> b ... c", gamma, x_norm)
+        shifted = torch.einsum("b c, b ... c-> b ... c", beta, ones)
+        return scaled + shifted
