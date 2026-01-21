@@ -171,3 +171,30 @@ class EncoderWithCond(Encoder):
             conditioning tensor of shape (B, D).
         """
         return (self.encode(batch), self.encode_cond(batch))
+
+    def encode_batch(
+        self, batch: Batch, encoded_info: dict | None = None
+    ) -> EncodedBatch:
+        """Encode a full Batch into an EncodedBatch with conditioning.
+
+        Overrides base implementation to ensure encode_with_cond is used to capture
+        any provided global conditioning variables.
+        """
+        encoded_inputs, global_cond = self.encode_with_cond(batch)
+
+        # Create a new batch with output fields as input fields to prevent mutation
+        output_batch = replace(batch, input_fields=batch.output_fields.clone())
+
+        encoded_outputs = self.encode(output_batch)
+        if isinstance(encoded_outputs, tuple):
+            encoded_outputs = encoded_outputs[0]
+
+        return EncodedBatch(
+            encoded_inputs=encoded_inputs,
+            encoded_output_fields=encoded_outputs,
+            global_cond=global_cond,
+            encoded_info=encoded_info or {},
+        )
+
+    def forward(self, batch: Batch) -> TensorBNC | tuple[TensorBNC, Tensor | None]:
+        return self.encode_with_cond(batch)
