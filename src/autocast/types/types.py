@@ -21,6 +21,7 @@ Tensor = torch.Tensor
 TensorC = Float[Tensor, "channel"]  # Vector of scalars
 TensorBC = Float[Tensor, "batch channel"]  # Only batch and channel
 TensorBNC = Float[Tensor, "batch *optional_dims channel"]
+TensorBNCM = Float[Tensor, "batch *optional_dims channel ensemble"]  # ensemble
 TensorBTNC = Float[Tensor, "batch time *optional_dims channel"]
 TensorBSC = Float[Tensor, "batch spatial *spatial channel"]
 TensorBLC = Float[Tensor, "batch latent *latent channel"]
