@@ -9,7 +9,7 @@ def test_permute_concat_with_constants():
     encoder = PermuteConcat(with_constants=True)
     batch = _make_batch()
 
-    encoded = encoder(batch)
+    encoded, _ = encoder(batch)
 
     # After encoder: (B, T, W, H, C) -> (B, C, T, W, H) -> (B, C*T, W, H)
     base_channels = batch.input_fields.shape[-1]
