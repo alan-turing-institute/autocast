@@ -97,23 +97,11 @@ class ProcessorModelEnsemble(ProcessorModel):
             return_windows=return_windows,
         )
 
-        # Rearrange concatenated batch dim to separate ensemble dim at end
-        def rearange_outputs(
-            preds: Tensor, trues: Tensor | None
-        ) -> tuple[Tensor, Tensor | None]:
-            preds = rearrange(
-                preds, "(b m) ... -> b ... m", b=b, m=n_members or self.n_members
-            )
-            if trues is not None:
-                trues = rearrange(
-                    trues, "(b m) ... -> b ... m", b=b, m=(n_members or self.n_members)
-                )
-                return preds, trues
-            return preds, trues
-
         # If n_members is specified, rearrange outputs accordingly
         if n_members is not None:
-            preds, trues = rearange_outputs(preds, trues)
+            preds = rearrange(preds, "(b m) ... -> b ... m", b=b, m=n_members)
+            if trues is not None:
+                trues = rearrange(trues, "(b m) ... -> b ... m", b=b, m=n_members)
 
         # Return outputs with trues if not None
         if trues is not None:
