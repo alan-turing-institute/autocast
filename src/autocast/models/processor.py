@@ -8,6 +8,7 @@ from torch import nn
 from torchmetrics import Metric
 
 from autocast.metrics.utils import MetricsMixin
+from autocast.models.noise_injector import NoiseInjector
 from autocast.models.optimizer_mixin import OptimizerMixin
 from autocast.processors.base import Processor
 from autocast.processors.rollout import RolloutMixin
@@ -33,6 +34,7 @@ class ProcessorModel(
         train_metrics: Sequence[Metric] | None = [],
         val_metrics: Sequence[Metric] | None = None,
         test_metrics: Sequence[Metric] | None = None,
+        noise_injector: NoiseInjector | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__()
@@ -49,18 +51,36 @@ class ProcessorModel(
         self.train_metrics = self._build_metrics(train_metrics, "train_")
         self.val_metrics = self._build_metrics(val_metrics, "val_")
         self.test_metrics = self._build_metrics(test_metrics, "test_")
+        self.noise_injector = noise_injector
         for key, value in kwargs.items():
             setattr(self, key, value)
 
-    def forward(self, x: TensorBNC, global_cond: Tensor | None = None) -> TensorBNC:
+    def _apply_input_noise(self, batch: EncodedBatch) -> EncodedBatch:
+        """Apply input noise if self.noise_injector is set."""
+        if self.noise_injector is not None:
+            noisy_input = self.noise_injector(batch.encoded_inputs)
+            batch = EncodedBatch(
+                encoded_inputs=noisy_input,
+                encoded_output_fields=batch.encoded_output_fields,
+                global_cond=batch.global_cond,
+                encoded_info=batch.encoded_info,
+            )
+        return batch
+
+    def forward(self, x: TensorBNC, global_cond: Tensor | None) -> TensorBNC:
         return self.processor.map(x, global_cond)
+
+    def loss(self, batch: EncodedBatch) -> Tensor:
+        batch = self._apply_input_noise(batch)
+        loss = self.processor.loss(batch)
+        return loss
 
     def training_step(
         self,
         batch: EncodedBatch,
         batch_idx: int,  # noqa: ARG002
     ) -> Tensor:
-        loss = self.processor.loss(batch)
+        loss = self.loss(batch)
         self.log(
             "train_loss", loss, prog_bar=True, batch_size=batch.encoded_inputs.shape[0]
         )
@@ -77,7 +97,7 @@ class ProcessorModel(
         batch: EncodedBatch,
         batch_idx: int,  # noqa: ARG002
     ) -> Tensor:
-        loss = self.processor.loss(batch)
+        loss = self.loss(batch)
         self.log(
             "val_loss", loss, prog_bar=True, batch_size=batch.encoded_inputs.shape[0]
         )
@@ -90,7 +110,7 @@ class ProcessorModel(
         return loss
 
     def test_step(self, batch: EncodedBatch, batch_idx: int) -> Tensor:  # noqa: ARG002
-        loss = self.processor.loss(batch)
+        loss = self.loss(batch)
         self.log(
             "test_loss", loss, prog_bar=True, batch_size=batch.encoded_inputs.shape[0]
         )
