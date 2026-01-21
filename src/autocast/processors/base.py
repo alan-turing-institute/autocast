@@ -33,7 +33,7 @@ class Processor(ABC, nn.Module, Generic[BatchT]):
         """Compute loss between output and target."""
 
     @abstractmethod
-    def map(self, x: Tensor, global_cond: Tensor | None = None) -> Tensor:
+    def map(self, x: Tensor, global_cond: Tensor | None) -> Tensor:
         """
         Map input states to output states.
 

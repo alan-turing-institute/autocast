@@ -40,7 +40,7 @@ class DiffusionProcessor(Processor):
         # Store schedule for direct access
         self.schedule = schedule
 
-    def map(self, x: Tensor, global_cond: Tensor | None = None) -> Tensor:
+    def map(self, x: Tensor, global_cond: Tensor | None) -> Tensor:
         """Map input window of states/times to output window using denoiser."""
         dtype = x.dtype
         device = x.device

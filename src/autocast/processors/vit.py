@@ -337,7 +337,8 @@ class AViTProcessor(Processor[EncodedBatch]):
 
         raise ValueError(f"Unsupported n_spatial_dims={self.n_spatial_dims}")
 
-    def map(self, x: Tensor, global_cond: Tensor | None = None) -> Tensor:  # noqa: ARG002 since noise generation is internal
+    def map(self, x: Tensor, global_cond: Tensor | None) -> Tensor:
+        _ = global_cond  # Unused global_cond within AViT currently
         # Generate noise if needed for generating conditional layer norm outputs
         if self.n_noise_channels is None:
             noise = None
@@ -348,5 +349,5 @@ class AViTProcessor(Processor[EncodedBatch]):
         return self(x, noise)
 
     def loss(self, batch: EncodedBatch) -> Tensor:
-        pred = self.map(batch.encoded_inputs)
+        pred = self.map(batch.encoded_inputs, batch.global_cond)
         return self.loss_func(pred, batch.encoded_output_fields)

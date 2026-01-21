@@ -45,11 +45,11 @@ class FlowMatchingProcessor(Processor):
         """
         return self.flow_matching_model(z, t=t, cond=x, global_cond=global_cond)
 
-    def forward(self, x: Tensor, global_cond: Tensor | None = None) -> Tensor:
+    def forward(self, x: Tensor, global_cond: Tensor | None) -> Tensor:
         """Alias to map for Lightning/PyTorch compatibility."""
         return self.map(x, global_cond)
 
-    def map(self, x: Tensor, global_cond: Tensor | None = None) -> Tensor:
+    def map(self, x: Tensor, global_cond: Tensor | None) -> Tensor:
         """Map inputs states (x) to output states (z) by integrating the flow ODE.
 
         Starting from noise, Euler-integrate the learned vector field until t=1.
