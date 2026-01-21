@@ -391,12 +391,15 @@ def test_encoded_batch_with_global_conds():
 
 
 def test_clone_batch_preserves_global_conds():
-    """Test that _clone_batch preserves global_cond=None correctly."""
+    """Test that _clone_batch preserves global_cond correctly."""
     processor = _build_diffusion_processor()
     model = ProcessorModel(processor=processor, learning_rate=1e-4)
 
     batch = _make_encoded_batch(global_cond=torch.randn(2, 1, 3))
     cloned = model._clone_batch(batch)
 
-    # Current implementation sets global_cond=None in clone
-    assert cloned.global_cond is None, "Clone sets global_cond to None"
+    assert cloned.global_cond is not None, "Clone should preserve global_cond"
+    assert torch.allclose(batch.global_cond, cloned.global_cond), (  # type: ignore  # noqa: PGH003
+        "Clone should have same values"
+    )
+    assert batch.global_cond is not cloned.global_cond, "Clone should be a new tensor"
