@@ -17,7 +17,7 @@ from autocast.logging import create_wandb_logger, maybe_watch_model
 from autocast.models.autoencoder import AE, AELoss
 from autocast.models.encoder_decoder import EncoderDecoder
 from autocast.models.encoder_processor_decoder import EncoderProcessorDecoder
-from autocast.train.configuration import (
+from autocast.scripts.train.configuration import (
     align_processor_channels_with_encoder,
     compose_training_config,
     configure_module_dimensions,
