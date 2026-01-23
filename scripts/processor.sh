@@ -5,7 +5,7 @@ set -e
 export LABEL=$1
 export OUTPATH=$2
 export DATAPATH=$3
-
+export ADDITIONAL_ARGS=$4
 uv run python -m autocast.train.processor \
 	--config-path=configs \
 	--config-name=processor \
@@ -19,5 +19,5 @@ uv run python -m autocast.train.processor \
 	logging.wandb.enabled=true \
 	+trainer.limit_train_batches=0.2 \
 	+trainer.limit_val_batches=0.1 \
-    +trainer.limit_test_batches=0.1
+    +trainer.limit_test_batches=0.1 $ADDITIONAL_ARGS
     
