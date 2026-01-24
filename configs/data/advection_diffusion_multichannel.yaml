@@ -13,10 +13,10 @@ simulator:
   return_timeseries: true
   log_level: error
 datamodule:
-  batch_size: 16
-  n_steps_input: 1
-  n_steps_output: 0
-  stride: 1
+  batch_size: auto
+  n_steps_input: auto
+  n_steps_output: auto
+  stride: auto
   input_channel_idxs: null
   output_channel_idxs: null
   autoencoder_mode: true

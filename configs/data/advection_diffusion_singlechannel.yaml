@@ -9,6 +9,7 @@ split:
   n_valid: 2
   n_test: 2
 simulator:
+  # TODO: fix the target simulator to be AdvectionDiffusion
   _target_: autoemulate.simulations.reaction_diffusion.ReactionDiffusion
   return_timeseries: true
   log_level: error

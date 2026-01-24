@@ -1,410 +1,193 @@
-"""Shared utilities for Hydra-based training/evaluation scripts."""
+"""Shared configuration utilities for Autocast training scripts.
 
-from __future__ import annotations
+This module handles:
+1. CLI Argument Parsing
+2. Hydra Config Loading & Conversion to Pydantic
+3. DataModule Instantiation
+4. Dynamic Parameter Resolution (handling 'auto' values)
+"""
 
+import argparse
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Any
 
 import torch
 from hydra import compose, initialize_config_dir
-from omegaconf import DictConfig, ListConfig, open_dict
+from hydra.utils import instantiate
+from omegaconf import OmegaConf
 
-from autocast.scripts.train.autoencoder import build_datamodule
-from autocast.types import Batch
+from autocast.config.base import Config
+from autocast.data.datamodule import SpatioTemporalDataModule
+from autocast.data.dataset import SpatioTemporalDataset
 
 log = logging.getLogger(__name__)
 
 
-@dataclass
-class TrainingParams:
-    """Resolved training knobs that may come from config or CLI overrides."""
+def parse_common_args(description: str, default_config_name: str) -> argparse.Namespace:
+    """Parse common CLI arguments for training scripts."""
+    parser = argparse.ArgumentParser(description=description)
+    repo_root = Path(__file__).resolve().parents[4]
 
-    n_steps_input: int
-    n_steps_output: int
-    stride: int
-    autoencoder_checkpoint: Path | None
-    freeze_autoencoder: bool
+    parser.add_argument(
+        "--config-dir",
+        "--config-path",
+        dest="config_dir",
+        type=Path,
+        default=repo_root / "configs",
+        help="Path to the Hydra config directory.",
+    )
+    parser.add_argument(
+        "--config-name",
+        default=default_config_name,
+        help=f"Hydra config name (default: '{default_config_name}').",
+    )
+    parser.add_argument(
+        "overrides",
+        nargs="*",
+        help="Hydra config overrides (e.g. trainer.max_epochs=5).",
+    )
+    parser.add_argument(
+        "--work-dir",
+        type=Path,
+        default=Path.cwd(),
+        help="Directory for artifacts and checkpoints (default: CWD).",
+    )
+    parser.add_argument(
+        "--output-checkpoint",
+        type=Path,
+        default=None,
+        help="Explicit checkpoint filename override.",
+    )
+    parser.add_argument(
+        "--skip-test",
+        action="store_true",
+        help="Skip running trainer.test() after training.",
+    )
+
+    return parser.parse_args()
 
 
-def compose_training_config(args) -> DictConfig:
-    """Compose the Hydra config prior to applying CLI-specific overrides."""
+def load_config(args: argparse.Namespace) -> Config:
+    """Load Hydra config, apply overrides, and convert to Pydantic Config."""
     config_dir = args.config_dir.resolve()
     overrides: Sequence[str] = args.overrides or []
+
     with initialize_config_dir(version_base=None, config_dir=str(config_dir)):
-        return compose(config_name=args.config_name, overrides=list(overrides))
+        hydra_cfg = compose(config_name=args.config_name, overrides=list(overrides))
+
+    # Resolve strings like ${oc.env:DATA_PATH}
+    resolved_container = OmegaConf.to_container(hydra_cfg, resolve=True)
+
+    # Validation occurs here
+    config = Config(**resolved_container)  # type: ignore TODO: confirm handling
+
+    # Apply CLI args that override config values
+    if hasattr(args, "n_steps_input") and args.n_steps_input is not None:
+        config.training.n_steps_input = args.n_steps_input
+    if hasattr(args, "n_steps_output") and args.n_steps_output is not None:
+        config.training.n_steps_output = args.n_steps_output
+    if hasattr(args, "stride") and args.stride is not None:
+        config.training.stride = args.stride
+    if (
+        hasattr(args, "autoencoder_checkpoint")
+        and args.autoencoder_checkpoint is not None
+    ):
+        config.training.autoencoder_checkpoint = str(args.autoencoder_checkpoint)
+
+    return config
 
 
-def _get_field(batch, primary: str, fallback: str):
-    return (
-        getattr(batch, primary) if hasattr(batch, primary) else getattr(batch, fallback)
+def _as_dtype(name: str | None) -> torch.dtype:
+    if name is None:
+        return torch.float32
+    # if isinstance(name, type) and hasattr(name, "dtype"):  # handle actual types
+    if isinstance(name, torch.dtype):
+        return name
+    if not isinstance(name, str):
+        return name
+
+    if not hasattr(torch, name):
+        raise ValueError(f"Unknown torch dtype '{name}'")
+    return getattr(torch, name)
+
+
+def _generate_split(simulator: Any, split_cfg: dict) -> dict[str, Any]:
+    n_train = split_cfg.get("n_train", 0)
+    n_valid = split_cfg.get("n_valid", 0)
+    n_test = split_cfg.get("n_test", 0)
+    log.info(
+        "Generating synthetic dataset (train=%s, valid=%s, test=%s)",
+        n_train,
+        n_valid,
+        n_test,
     )
+    return {
+        "train": simulator.forward_samples_spatiotemporal(n_train),
+        "valid": simulator.forward_samples_spatiotemporal(n_valid),
+        "test": simulator.forward_samples_spatiotemporal(n_test),
+    }
 
 
-def prepare_datamodule(cfg: DictConfig):
-    """Instantiate the datamodule and inspect the first batch for sizing."""
-    datamodule = build_datamodule(cfg.data)
-    batch = next(iter(datamodule.train_dataloader()))
-    train_inputs = _get_field(batch, "inputs", "input_fields")
-    train_outputs = _get_field(batch, "outputs", "output_fields")
-    channel_count = train_inputs.shape[-1]
-    inferred_n_steps_input = train_inputs.shape[1]
-    inferred_n_steps_output = train_outputs.shape[1]
-    constant_scalars = getattr(batch, "constant_scalars", None)
-    constant_fields = getattr(batch, "constant_fields", None)
-    sample_batch = Batch(
-        input_fields=train_inputs,
-        output_fields=train_outputs,
-        constant_scalars=constant_scalars,
-        constant_fields=constant_fields,
-    )
-    return (
-        datamodule,
-        channel_count,
-        inferred_n_steps_input,
-        inferred_n_steps_output,
-        train_inputs.shape,
-        train_outputs.shape,
-        sample_batch,
-    )
+def build_datamodule(data_config: dict[str, Any]) -> SpatioTemporalDataModule:
+    """Instantiate the DataModule from a config dictionary (from Pydantic)."""
+    # 1. Direct Instantiation (e.g. Encoded Datasets)
+    if data_config.get("_target_"):
+        log.info("Instantiating datamodule from target: %s", data_config["_target_"])
+        return instantiate(data_config)
 
+    # 2. Standard SpatioTemporalDataModule construction
+    dm_cfg = data_config.get("datamodule", {})
+    if dm_cfg is None:
+        dm_cfg = {}
 
-def _infer_encoder_latent_info(
-    encoder, fallback_channels: int, example_batch: Batch | None = None
-) -> tuple[int, bool]:
-    """Infer latent channel count and whether time is preserved as a dimension."""
-    if example_batch is None or not hasattr(encoder, "encode"):
-        return fallback_channels, False
+    # Extract params that go into constructor vs kwargs
+    data_path = data_config.get("data_path")
 
-    prev_training = getattr(encoder, "training", None)
-    if prev_training is not None:
-        encoder.eval()
-    try:
-        with torch.no_grad():
-            encoded = encoder.encode(example_batch)  # type: ignore[attr-defined]
+    data = None
+    if data_config.get("use_simulator"):
+        simulator = instantiate(data_config.get("simulator"))
+        data = _generate_split(simulator, data_config.get("split", {}))
 
-        channel_dim = getattr(encoder, "channel_dim", -1)
-        inferred = int(encoded.shape[channel_dim])
-
-        input_fields = getattr(example_batch, "input_fields", None)
-        time_preserved = bool(
-            input_fields is not None
-            and encoded.ndim == input_fields.ndim
-            and encoded.shape[1] == input_fields.shape[1]
-        )
-
-        log.debug(
-            "Inferred latent channels=%s (time_preserved=%s)",
-            inferred,
-            time_preserved,
-        )
-        return inferred, time_preserved
-    except Exception as exc:  # pragma: no cover - defensive
-        log.debug("Failed to infer latent channels via encode(): %s", exc)
-        return fallback_channels, False
-    finally:
-        if prev_training is not None:
-            encoder.train(prev_training)
-
-
-def _infer_encoder_global_cond_channels(
-    encoder, example_batch: Batch | None = None
-) -> int | None:
-    if example_batch is None or not hasattr(encoder, "encode_cond"):
-        return None
-
-    prev_training = getattr(encoder, "training", None)
-    if prev_training is not None:
-        encoder.eval()
-    try:
-        with torch.no_grad():
-            cond = encoder.encode_cond(example_batch)  # type: ignore[attr-defined]
-        if cond is not None:
-            inferred = int(cond.shape[-1])
-            log.debug("Inferred cond channel count=%s from sample batch", inferred)
-            return inferred
-        return 0
-    except Exception as exc:  # pragma: no cover - defensive
-        log.debug("Failed to infer cond channels via encode_cond(): %s", exc)
-        return None
-    finally:
-        if prev_training is not None:
-            encoder.train(prev_training)
-
-
-def _override_dimension(
-    cfg_node: DictConfig | None,
-    key: str,
-    value: int,
-    fallback_values: tuple[int | None | str, ...] = (),
-) -> None:
-    if cfg_node is None or key not in cfg_node:
-        return
-    current = cfg_node.get(key)
-    allowed = set(fallback_values)
-    allowed.update({None, "auto"})
-    if current in allowed:
-        cfg_node[key] = value
-
-
-def align_processor_channels_with_encoder(
-    cfg: DictConfig,
-    *,
-    encoder,
-    channel_count: int,
-    n_steps_input: int,
-    n_steps_output: int,
-    example_batch: Batch | None = None,
-    input_noise_injector=None,
-) -> int:
-    """Align processor/backbone channels with the encoder latent dimensionality."""
-    input_batch = example_batch
-    if example_batch is not None and input_noise_injector is not None:
-        input_batch = replace(
-            example_batch,
-            input_fields=input_noise_injector(example_batch.input_fields),
-        )
-    latent_channels_in, time_preserved_in = _infer_encoder_latent_info(
-        encoder,
-        fallback_channels=channel_count,
-        example_batch=input_batch,
-    )
-    output_batch = None
-    if example_batch is not None:
-        output_batch = replace(
-            example_batch,
-            input_fields=example_batch.output_fields.clone(),
-        )
-    latent_channels_out, time_preserved_out = _infer_encoder_latent_info(
-        encoder,
-        fallback_channels=channel_count,
-        example_batch=output_batch,
-    )
-    global_cond_channels = _infer_encoder_global_cond_channels(
-        encoder, example_batch=example_batch
-    )
-
-    processor_cfg = _model_cfg(cfg).get("processor")
-    if processor_cfg is None:
-        return latent_channels_out
-
-    raw_in = channel_count * n_steps_input
-    raw_out = channel_count * n_steps_output
-    latent_in = (
-        latent_channels_in * n_steps_input if time_preserved_in else latent_channels_in
-    )
-    latent_out = (
-        latent_channels_out * n_steps_output
-        if time_preserved_out
-        else latent_channels_out
-    )
-
-    with open_dict(processor_cfg):
-        _override_dimension(
-            processor_cfg,
-            "n_channels_out",
-            latent_channels_out,
-            (channel_count,),
-        )
-        _override_dimension(
-            processor_cfg,
-            "out_channels",
-            latent_out,
-            (raw_out,),
-        )
-        _override_dimension(
-            processor_cfg,
-            "in_channels",
-            latent_in,
-            (raw_in,),
-        )
-
-    backbone_cfg = processor_cfg.get("backbone")
-    if backbone_cfg is not None:
-        with open_dict(backbone_cfg):
-            _override_dimension(
-                backbone_cfg,
-                "in_channels",
-                latent_channels_in,
-                (channel_count,),
-            )
-            _override_dimension(
-                backbone_cfg,
-                "out_channels",
-                latent_channels_out,
-                (channel_count,),
-            )
-            _override_dimension(
-                backbone_cfg,
-                "cond_channels",
-                latent_channels_in,
-                (channel_count,),
-            )
-            if global_cond_channels is not None:
-                _override_dimension(
-                    backbone_cfg,
-                    "global_cond_channels",
-                    global_cond_channels,
-                    (channel_count, latent_channels_out),
-                )
-            _override_dimension(
-                backbone_cfg,
-                "n_steps_input",
-                n_steps_input,
-                (),
-            )
-            _override_dimension(
-                backbone_cfg,
-                "n_steps_output",
-                n_steps_output,
-                (),
-            )
-
-    return latent_channels_out
-
-
-def _maybe_set(cfg_node: DictConfig | None, key: str, value: int) -> None:
-    if cfg_node is None or key not in cfg_node:
-        return
-    current = cfg_node.get(key)
-    if current not in (None, "auto"):
-        return
-    with open_dict(cfg_node):
-        cfg_node[key] = value
-
-
-def _model_cfg(cfg: DictConfig) -> DictConfig:
-    """Return the nested model config when present, else the root config."""
-    model_cfg = cfg.get("model")
-    if isinstance(model_cfg, DictConfig):
-        return model_cfg
-    return cfg
-
-
-def configure_module_dimensions(
-    cfg: DictConfig,
-    channel_count: int,
-    n_steps_input: int,
-    n_steps_output: int,
-    *,
-    input_channel_count: int | None = None,
-    output_channel_count: int | None = None,
-) -> None:
-    """Populate missing dimension hints for encoder/decoder/processor modules.
-
-    Note: Backbone channel dimensions are handled separately by
-    align_processor_channels_with_encoder, which uses the encoder's latent
-    dimension rather than raw channel counts.
-    """
-    model_cfg = _model_cfg(cfg)
-    encoder_cfg = model_cfg.get("encoder")
-    in_channels = input_channel_count or channel_count
-    out_channels = output_channel_count or channel_count
-    _maybe_set(encoder_cfg, "in_channels", in_channels)
-    _maybe_set(encoder_cfg, "time_steps", n_steps_input)
-    decoder_cfg = model_cfg.get("decoder")
-    _maybe_set(decoder_cfg, "out_channels", out_channels)
-    _maybe_set(decoder_cfg, "output_channels", out_channels)  # alias
-    _maybe_set(decoder_cfg, "time_steps", n_steps_output)
-    processor_cfg = model_cfg.get("processor")
-    _maybe_set(processor_cfg, "in_channels", in_channels * n_steps_input)
-    _maybe_set(processor_cfg, "out_channels", out_channels * n_steps_output)
-    _maybe_set(processor_cfg, "n_steps_output", n_steps_output)
-    _maybe_set(processor_cfg, "n_channels_out", out_channels)
-
-
-def normalize_processor_cfg(cfg: DictConfig) -> None:
-    """Force config values into the shapes expected by processor classes."""
-    processor_cfg = _model_cfg(cfg).get("processor")
-    if processor_cfg is None:
-        return
-    tuple_fields = ("n_modes", "spatial_resolution")
-    for field in tuple_fields:
-        value = processor_cfg.get(field)
-        if isinstance(value, ListConfig):
-            with open_dict(processor_cfg):
-                processor_cfg[field] = tuple(value)
-
-
-def update_data_cfg(cfg: DictConfig, n_steps_input: int, n_steps_output: int) -> None:
-    """Update datamodule configuration to match resolved training step counts."""
-    data_cfg = cfg.data
-    # Handle both nested datamodule structure and flat structure (e.g., the_well.yaml)
-    if "datamodule" in data_cfg:
-        with open_dict(data_cfg.datamodule):
-            data_cfg.datamodule.n_steps_input = n_steps_input
-            data_cfg.datamodule.n_steps_output = n_steps_output
-            data_cfg.datamodule.autoencoder_mode = False
-    else:
-        with open_dict(data_cfg):
-            data_cfg.n_steps_input = n_steps_input
-            data_cfg.n_steps_output = n_steps_output
-            data_cfg.autoencoder_mode = False
-
-
-def resolve_training_params(cfg: DictConfig, args) -> TrainingParams:
-    """Resolve training hyperparameters using the config plus CLI overrides."""
-    training_cfg = cfg.get("training")
-    n_steps_input_cfg = (
-        training_cfg.get("n_steps_input", 1) if training_cfg is not None else 1
-    )
-    n_steps_output_cfg = (
-        training_cfg.get("n_steps_output", 1) if training_cfg is not None else 1
-    )
-    ckpt_cfg = (
-        training_cfg.get("autoencoder_checkpoint") if training_cfg is not None else None
-    )
-    freeze_cfg = (
-        training_cfg.get("freeze_autoencoder", False)
-        if training_cfg is not None
-        else False
-    )
-    stride_cfg = training_cfg.get("stride") if training_cfg is not None else None
-
-    n_steps_input = args.n_steps_input or n_steps_input_cfg
-    n_steps_output = args.n_steps_output or n_steps_output_cfg
-
-    checkpoint = args.autoencoder_checkpoint
-    if checkpoint is None and ckpt_cfg is not None:
-        checkpoint = Path(ckpt_cfg)
-
-    freeze_autoencoder = (
-        args.freeze_autoencoder if args.freeze_autoencoder is not None else freeze_cfg
-    )
-
-    if stride_cfg in (None, "auto"):
-        stride_cfg = n_steps_output
-    stride_override = getattr(args, "stride", None)
-    stride = stride_override or stride_cfg or n_steps_output
-    if stride < 1:
-        msg = "stride must be >= 1."
+    if data_path is None and data is None:
+        msg = "Either 'data_path' or 'use_simulator' must be provided."
         raise ValueError(msg)
 
-    if training_cfg is not None:
-        with open_dict(training_cfg):
-            training_cfg["stride"] = stride
+    # Process kwargs
+    batch_size = dm_cfg.pop("batch_size", 4)
+    dtype = _as_dtype(dm_cfg.pop("dtype", "float32"))
+    ftype = dm_cfg.pop("ftype", "torch")
+    dataset_cls = dm_cfg.pop("dataset_cls", SpatioTemporalDataset)
 
-    if n_steps_output < 1:
-        msg = "n_steps_output must be >= 1 for processor training."
-        raise ValueError(msg)
-
-    return TrainingParams(
-        n_steps_input=n_steps_input,
-        n_steps_output=n_steps_output,
-        stride=stride,
-        autoencoder_checkpoint=checkpoint,
-        freeze_autoencoder=freeze_autoencoder,
+    return SpatioTemporalDataModule(
+        data_path=data_path,
+        data=data,
+        dataset_cls=dataset_cls,
+        batch_size=batch_size,
+        dtype=dtype,
+        ftype=ftype,
+        **dm_cfg,
     )
 
 
-__all__ = [
-    "TrainingParams",
-    "align_processor_channels_with_encoder",
-    "compose_training_config",
-    "configure_module_dimensions",
-    "normalize_processor_cfg",
-    "prepare_datamodule",
-    "resolve_training_params",
-    "update_data_cfg",
-]
+def resolve_auto_params(
+    config: Config, input_shape: tuple, output_shape: tuple
+) -> Config:
+    """Resolve 'auto' values in the configuration using inferred data shapes."""
+    # Resolve Steps
+    if config.training.n_steps_input == "auto":
+        config.training.n_steps_input = input_shape[1]
+
+    if config.training.n_steps_output == "auto":
+        config.training.n_steps_output = output_shape[1]
+
+    # Resolve Stride
+    if config.training.stride == "auto":
+        config.training.stride = config.training.n_steps_output
+
+    # Resolve Rollout Stride
+    if config.training.rollout_stride == "auto":
+        config.training.rollout_stride = config.training.stride
+
+    return config

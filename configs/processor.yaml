@@ -12,10 +12,11 @@ output:
   save_config: true
 
 training:
-  n_steps_input: 1
-  n_steps_output: 4
-  stride: 1
-  rollout_stride: 4
+  n_steps_input: auto
+  n_steps_output: auto
+  stride: auto
+  rollout_stride: auto
+
 
 hydra:
   run:

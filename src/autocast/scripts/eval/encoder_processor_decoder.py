@@ -10,10 +10,7 @@ from collections import OrderedDict
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-import lightning as L
 import torch
-from hydra.utils import instantiate
-from omegaconf import DictConfig, OmegaConf
 from torch import nn
 
 from autocast.logging import create_wandb_logger, log_metrics
@@ -28,20 +25,9 @@ from autocast.metrics import (
     VRMSE,
     LInfinity,
 )
-from autocast.models.encoder_decoder import EncoderDecoder
 from autocast.models.encoder_processor_decoder import EncoderProcessorDecoder
-from autocast.models.encoder_processor_decoder_ensemble import (
-    EncoderProcessorDecoderEnsemble,
-)
-from autocast.scripts.train.configuration import (
-    align_processor_channels_with_encoder,
-    compose_training_config,
-    configure_module_dimensions,
-    normalize_processor_cfg,
-    prepare_datamodule,
-    resolve_training_params,
-    update_data_cfg,
-)
+from autocast.scripts.train.configuration import load_config
+from autocast.scripts.train.setup import setup_datamodule, setup_epd_model
 from autocast.types import Batch
 from autocast.utils import plot_spatiotemporal_video
 
@@ -87,36 +73,7 @@ def parse_args() -> argparse.Namespace:
             "logging.wandb.enabled=true)"
         ),
     )
-    parser.add_argument(
-        "--autoencoder-checkpoint",
-        type=Path,
-        default=None,
-        help="Retained for parity with training; ignored for evaluation.",
-    )
-    parser.add_argument(
-        "--freeze-autoencoder",
-        action=BooleanOptionalAction,
-        default=None,
-        help="Retained for parity with training; ignored for evaluation.",
-    )
-    parser.add_argument(
-        "--n-steps-input",
-        type=int,
-        default=None,
-        help="Override training.n_steps_input (number of input time steps).",
-    )
-    parser.add_argument(
-        "--n-steps-output",
-        type=int,
-        default=None,
-        help="Override training.n_steps_output (number of target time steps).",
-    )
-    parser.add_argument(
-        "--stride",
-        type=int,
-        default=None,
-        help="Override training stride used for rollouts (defaults to n_steps_output).",
-    )
+    # Required for evaluation
     parser.add_argument(
         "--checkpoint",
         type=Path,
@@ -126,9 +83,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--work-dir",
         type=Path,
-        default=Path.cwd(),
-        help="Directory where evaluation artifacts (csv/videos) are saved.",
+        default=None,
+        help="Directory where evaluation artifacts are saved. Defaults to CWD.",
     )
+
+    # Optional overrides typically handled by Hydra, but kept for convenience
+    parser.add_argument(
+        "--stride",
+        type=int,
+        default=None,
+        help="Override training stride used for rollouts.",
+    )
+
+    # Evaluation specific
     parser.add_argument(
         "--csv-path",
         type=Path,
@@ -142,12 +109,6 @@ def parse_args() -> argparse.Namespace:
         choices=sorted(AVAILABLE_METRICS.keys()),
         default=None,
         help="Metrics to compute (defaults to mse and rmse).",
-    )
-    parser.add_argument(
-        "--n-spatial-dims",
-        type=int,
-        default=None,
-        help="Override the number of spatial dims (inferred when omitted).",
     )
     parser.add_argument(
         "--batch-index",
@@ -196,16 +157,16 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _resolve_csv_path(args: argparse.Namespace) -> Path:
+def _resolve_csv_path(args: argparse.Namespace, work_dir: Path) -> Path:
     if args.csv_path is not None:
         return args.csv_path.expanduser().resolve()
-    return (args.work_dir / "evaluation_metrics.csv").resolve()
+    return (work_dir / "evaluation_metrics.csv").resolve()
 
 
-def _resolve_video_dir(args: argparse.Namespace) -> Path:
+def _resolve_video_dir(args: argparse.Namespace, work_dir: Path) -> Path:
     if args.video_dir is not None:
         return args.video_dir.expanduser().resolve()
-    return (args.work_dir / "videos").resolve()
+    return (work_dir / "videos").resolve()
 
 
 def _resolve_device(arg: str) -> torch.device:
@@ -243,16 +204,6 @@ def _build_metrics(metric_names: Sequence[str]):
         metric_cls = AVAILABLE_METRICS[name]
         metrics[name] = metric_cls()
     return metrics
-
-
-def _infer_spatial_dims(args: argparse.Namespace, output_shape: Sequence[int]) -> int:
-    if args.n_spatial_dims is not None:
-        return args.n_spatial_dims
-    spatial_dims = len(output_shape) - 3
-    if spatial_dims < 1:
-        msg = "Unable to infer spatial dimensions from output shape %s"
-        raise ValueError(msg % (output_shape,))
-    return spatial_dims
 
 
 def _evaluate_metrics(
@@ -298,95 +249,6 @@ def _evaluate_metrics(
         aggregate[name] = totals[name] / total_weight
     rows.append(aggregate)
     return rows
-
-
-def _write_csv(
-    rows: list[dict[str, object]],
-    csv_path: Path,
-    metric_names: Sequence[str],
-):
-    if not rows:
-        log.warning("No evaluation rows to write; skipping CSV generation.")
-        return
-    csv_path.parent.mkdir(parents=True, exist_ok=True)
-    base_fields = ["dataset_split", "batch_index", "num_samples"]
-    fieldnames = base_fields + list(metric_names)
-    with open(csv_path, "w", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow(row)
-    log.info("Wrote metrics CSV to %s", csv_path)
-
-
-def _load_state_dict(checkpoint_path: Path) -> OrderedDict[str, torch.Tensor]:
-    checkpoint_real = checkpoint_path.expanduser().resolve()
-    checkpoint = torch.load(
-        checkpoint_real,
-        map_location="cpu",
-        weights_only=False,
-    )
-    if isinstance(checkpoint, Mapping):
-        state_dict = checkpoint.get("state_dict", checkpoint)
-    else:  # pragma: no cover - defensive fallback for unexpected formats
-        state_dict = checkpoint
-    if not isinstance(state_dict, Mapping):
-        msg = f"Checkpoint {checkpoint_real} does not contain a valid state_dict."
-        raise TypeError(msg)
-    if isinstance(state_dict, OrderedDict):
-        state_dict = state_dict.copy()
-    else:
-        state_dict = OrderedDict(state_dict)
-    state_dict.pop("_metadata", None)
-    return state_dict
-
-
-def _load_model(
-    cfg: DictConfig,
-    checkpoint_path: Path,
-    *,
-    n_members: int = 1,
-) -> EncoderProcessorDecoder:
-    model_cfg = cfg.get("model") or cfg
-    encoder = instantiate(model_cfg.encoder)
-    decoder = instantiate(model_cfg.decoder)
-    encoder_decoder = EncoderDecoder(encoder=encoder, decoder=decoder)
-    processor = instantiate(model_cfg.processor)
-    epd_cfg = model_cfg
-    learning_rate = epd_cfg.get("learning_rate", 1e-3)
-    loss_cfg = epd_cfg.get("loss_func")
-    loss_func = instantiate(loss_cfg) if loss_cfg is not None else nn.MSELoss()
-
-    checkpoint_real = checkpoint_path.expanduser().resolve()
-    if not checkpoint_real.exists():
-        msg = f"Checkpoint not found: {checkpoint_real}"
-        raise FileNotFoundError(msg)
-    log.info("Loading checkpoint from %s", checkpoint_real)
-
-    state_dict = _load_state_dict(checkpoint_real)
-
-    model_class = (
-        EncoderProcessorDecoderEnsemble if n_members > 1 else EncoderProcessorDecoder
-    )
-    model_kwargs = {
-        "encoder_decoder": encoder_decoder,
-        "processor": processor,
-        "learning_rate": learning_rate,
-        "loss_func": loss_func,
-    }
-    if n_members > 1:
-        model_kwargs["n_members"] = n_members
-
-    model = model_class(**model_kwargs)
-    load_result = model.load_state_dict(state_dict, strict=True)
-    if load_result.missing_keys or load_result.unexpected_keys:
-        msg = (
-            "Checkpoint parameters do not match the instantiated model. "
-            f"Missing keys: {load_result.missing_keys}. "
-            f"Unexpected keys: {load_result.unexpected_keys}."
-        )
-        raise RuntimeError(msg)
-    return model
 
 
 def _render_rollouts(
@@ -469,20 +331,82 @@ def _render_rollouts(
     return saved_paths
 
 
+def _write_csv(
+    rows: list[dict[str, object]],
+    csv_path: Path,
+    metric_names: Sequence[str],
+):
+    if not rows:
+        log.warning("No evaluation rows to write; skipping CSV generation.")
+        return
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    base_fields = ["dataset_split", "batch_index", "num_samples"]
+    fieldnames = base_fields + list(metric_names)
+    with open(csv_path, "w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+    log.info("Wrote metrics CSV to %s", csv_path)
+
+
+def _load_state_dict(checkpoint_path: Path) -> OrderedDict[str, torch.Tensor]:
+    checkpoint_real = checkpoint_path.expanduser().resolve()
+    checkpoint = torch.load(
+        checkpoint_real,
+        map_location="cpu",
+        weights_only=False,
+    )
+    if isinstance(checkpoint, Mapping):
+        state_dict = checkpoint.get("state_dict", checkpoint)
+    else:
+        state_dict = checkpoint
+    if not isinstance(state_dict, Mapping):
+        msg = f"Checkpoint {checkpoint_real} does not contain a valid state_dict."
+        raise TypeError(msg)
+    if isinstance(state_dict, OrderedDict):
+        state_dict = state_dict.copy()
+    else:
+        state_dict = OrderedDict(state_dict)
+    state_dict.pop("_metadata", None)
+    return state_dict
+
+
 def main() -> None:
     """Entry point for CLI-based evaluation."""
     args = parse_args()
     logging.basicConfig(level=logging.INFO)
 
-    work_dir = args.work_dir.expanduser().resolve()
+    work_dir = (args.work_dir or Path.cwd()).expanduser().resolve()
     work_dir.mkdir(parents=True, exist_ok=True)
-    csv_path = _resolve_csv_path(args)
-    video_dir = _resolve_video_dir(args)
-    cfg = compose_training_config(args)
-    resolved_cfg = OmegaConf.to_container(cfg, resolve=True)
+    csv_path = _resolve_csv_path(args, work_dir)
+    video_dir = _resolve_video_dir(args, work_dir)
+
+    cfg = load_config(args)
+
+    # Setup datamodule and resolve config
+    datamodule, cfg, stats = setup_datamodule(cfg)
+
+    # Setup Model
+    model = setup_epd_model(cfg, stats)
+
+    # Load checkpoint
+    log.info("Loading checkpoint from %s", args.checkpoint)
+    state_dict = _load_state_dict(args.checkpoint)
+    load_result = model.load_state_dict(state_dict, strict=True)
+    if load_result.missing_keys or load_result.unexpected_keys:
+        msg = (
+            "Checkpoint parameters do not match the instantiated model. "
+            f"Missing keys: {load_result.missing_keys}. "
+            f"Unexpected keys: {load_result.unexpected_keys}."
+        )
+        raise RuntimeError(msg)
+
+    # Setup WandB (if enabled by config)
+    resolved_cfg = cfg.model_dump()
     wandb_logger, _ = create_wandb_logger(
-        cfg.get("logging"),
-        experiment_name=cfg.get("experiment_name", "encoder_processor_decoder"),
+        cfg.logging.model_dump(),
+        experiment_name=cfg.experiment_name,
         job_type="evaluate-encoder-processor-decoder",
         work_dir=work_dir,
         config={
@@ -494,65 +418,15 @@ def main() -> None:
             },
         },
     )
-    training_params = resolve_training_params(cfg, args)
-    update_data_cfg(cfg, training_params.n_steps_input, training_params.n_steps_output)
-
-    L.seed_everything(cfg.get("seed", 42), workers=True)
-
-    (
-        datamodule,
-        channel_count,
-        inferred_n_steps_input,
-        inferred_n_steps_output,
-        _,
-        _,
-        example_batch,
-    ) = prepare_datamodule(cfg)
-
-    model_cfg = cfg.get("model") or cfg
-    input_noise_cfg = (
-        model_cfg.get("input_noise_injector")
-        or cfg.get("input_noise_injector")
-        or cfg.get("nn", {}).get("noise", {}).get("input_noise_injector")
-    )
-    input_noise_injector = (
-        instantiate(input_noise_cfg) if input_noise_cfg is not None else None
-    )
-    input_channel_count = channel_count
-    if input_noise_injector is not None:
-        input_channel_count += input_noise_injector.get_additional_channels()
-
-    configure_module_dimensions(
-        cfg,
-        channel_count=channel_count,
-        n_steps_input=inferred_n_steps_input,
-        n_steps_output=inferred_n_steps_output,
-        input_channel_count=input_channel_count,
-        output_channel_count=channel_count,
-    )
-    normalize_processor_cfg(cfg)
-    encoder_probe = instantiate(model_cfg.encoder)
-    align_processor_channels_with_encoder(
-        cfg,
-        encoder=encoder_probe,
-        channel_count=channel_count,
-        n_steps_input=inferred_n_steps_input,
-        n_steps_output=inferred_n_steps_output,
-        example_batch=example_batch,
-        input_noise_injector=input_noise_injector,
-    )
 
     metrics = _build_metrics(args.metrics or ("mse", "rmse"))
 
-    n_members = int((cfg.get("model") or cfg).get("n_members", 1))
-    model = _load_model(
-        cfg,
-        args.checkpoint,
-        n_members=n_members,
-    )
+    n_members = getattr(cfg.model, "n_members", 1)
+
     device = _resolve_device(args.device)
     model.to(device)
 
+    # Evaluation
     test_loader = datamodule.test_dataloader()
     rows = _evaluate_metrics(model, test_loader, metrics, device)
     _write_csv(rows, csv_path, list(metrics.keys()))
@@ -566,15 +440,23 @@ def main() -> None:
         }
         log_metrics(wandb_logger, payload)
 
+    # Rollouts
     if args.batch_indices:
-        # Set batch size to 1 for rendering individual trajectories
         rollout_loader = datamodule.rollout_test_dataloader(batch_size=1)
-        # Determine rollout parameters (allow CLI override for stride)
-        eval_cfg = cfg.get("eval") or {}
-        max_rollout_steps = eval_cfg.get("max_rollout_steps", 10)
+        # Check explicit eval config or assume defaults
+        eval_cfg = getattr(cfg, "eval", {}) if hasattr(cfg, "eval") else {}
+        if isinstance(eval_cfg, dict):
+            max_rollout_steps = eval_cfg.get("max_rollout_steps", 10)
+        else:
+            max_rollout_steps = getattr(eval_cfg, "max_rollout_steps", 10)
+
+        # Use stride from args, or config, or fallback to n_steps_output (from stats)
         rollout_stride = (
-            args.stride if args.stride is not None else inferred_n_steps_output
+            args.stride
+            if args.stride is not None
+            else (cfg.training.stride or stats["n_steps_output"])
         )
+
         _render_rollouts(
             model,
             rollout_loader,
