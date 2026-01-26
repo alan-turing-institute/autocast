@@ -3,7 +3,7 @@ defaults:
   # - /decoder: identity
   - /encoder: dc_deep
   - /decoder: dc_deep
-  - /processor: flow_matching_vit_no_global_cond
+  - /processor: flow_matching_vit
   - _self_
 
 learning_rate: 0.0001
