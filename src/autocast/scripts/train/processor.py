@@ -15,6 +15,7 @@ from torch import nn
 
 from autocast.logging import create_wandb_logger, maybe_watch_model
 from autocast.models.processor import ProcessorModel
+from autocast.models.processor_ensemble import ProcessorModelEnsemble
 from autocast.types import EncodedBatch
 
 log = logging.getLogger(__name__)
@@ -277,7 +278,7 @@ def instantiate_trainer(
     )
 
 
-def main() -> None:
+def main() -> None:  # noqa: PLR0915
     """CLI entrypoint for training the processor."""
     args = parse_args()
     logging.basicConfig(level=logging.INFO)
@@ -353,13 +354,31 @@ def main() -> None:
     loss_func = instantiate(loss_cfg) if loss_cfg is not None else nn.MSELoss()
     stride = training_params.stride
 
-    # Create the ProcessorModel
-    model = ProcessorModel(
-        processor=processor,
-        stride=stride,
-        loss_func=loss_func,
-        learning_rate=learning_rate,
-    )
+    # Instantiate metrics if present
+    metrics_kwargs = {}
+    for stage in ["train", "val", "test"]:
+        metric_key = f"{stage}_metrics"
+        if metric_key in model_cfg:
+            metrics_kwargs[metric_key] = instantiate(model_cfg[metric_key])
+
+    # Check for ensemble configuration
+    n_members = model_cfg.get("n_members", 1)
+    is_ensemble = int(n_members) > 1
+
+    model_class = ProcessorModelEnsemble if is_ensemble else ProcessorModel
+
+    model_kwargs = {
+        "processor": processor,
+        "stride": stride,
+        "loss_func": loss_func,
+        "learning_rate": learning_rate,
+        **metrics_kwargs,
+    }
+
+    if is_ensemble:
+        model_kwargs["n_members"] = int(n_members)
+
+    model = model_class(**model_kwargs)
 
     maybe_watch_model(wandb_logger, model, watch_cfg)
     trainer = instantiate_trainer(cfg, work_dir, logger=wandb_logger)

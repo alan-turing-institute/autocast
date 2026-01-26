@@ -17,6 +17,9 @@ from autocast.logging import create_wandb_logger, maybe_watch_model
 from autocast.models.autoencoder import AE, AELoss
 from autocast.models.encoder_decoder import EncoderDecoder
 from autocast.models.encoder_processor_decoder import EncoderProcessorDecoder
+from autocast.models.encoder_processor_decoder_ensemble import (
+    EncoderProcessorDecoderEnsemble,
+)
 from autocast.scripts.train.configuration import (
     align_processor_channels_with_encoder,
     compose_training_config,
@@ -266,17 +269,40 @@ def main() -> None:  # noqa: PLR0915
     loss_func = instantiate(loss_cfg) if loss_cfg is not None else nn.MSELoss()
     stride = training_params.stride
 
-    model = EncoderProcessorDecoder(
-        encoder_decoder=encoder_decoder,
-        processor=processor,
-        learning_rate=learning_rate,
-        optimizer_config=optimizer_config,
-        train_in_latent_space=train_in_latent_space,
-        stride=stride,
-        teacher_forcing_ratio=teacher_forcing_ratio,
-        max_rollout_steps=max_rollout_steps,
-        loss_func=loss_func,
+    # Instantiate metrics if present in the config
+    metrics_kwargs = {}
+    for stage in ["train", "val", "test"]:
+        metric_key = f"{stage}_metrics"
+        if metric_key in epd_cfg:
+            # We assume the config is compatible with hydra.utils.instantiate
+            # (e.g. a list of metrics or a MetricCollection config)
+            metrics_kwargs[metric_key] = instantiate(epd_cfg[metric_key])
+
+    # Check for ensemble configuration
+    n_members = epd_cfg.get("n_members", 1)
+    is_ensemble = int(n_members) > 1
+
+    model_class = (
+        EncoderProcessorDecoderEnsemble if is_ensemble else EncoderProcessorDecoder
     )
+
+    model_kwargs = {
+        "encoder_decoder": encoder_decoder,
+        "processor": processor,
+        "learning_rate": learning_rate,
+        "optimizer_config": optimizer_config,
+        "train_in_latent_space": train_in_latent_space,
+        "stride": stride,
+        "teacher_forcing_ratio": teacher_forcing_ratio,
+        "max_rollout_steps": max_rollout_steps,
+        "loss_func": loss_func,
+        **metrics_kwargs,
+    }
+
+    if is_ensemble:
+        model_kwargs["n_members"] = int(n_members)
+
+    model = model_class(**model_kwargs)
 
     maybe_watch_model(wandb_logger, model, watch_cfg)
     trainer = instantiate_trainer(cfg, work_dir, logger=wandb_logger)
