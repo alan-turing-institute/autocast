@@ -121,6 +121,8 @@ def test_flow_matching_processor(
             cond_channels=n_channels_in,
             n_steps_output=n_steps_output,
             n_steps_input=n_steps_input,
+            include_global_cond=False,
+            global_cond_channels=None,
             temporal_method=temporal_method,
             mod_features=256,
             hid_channels=(32, 64, 128),

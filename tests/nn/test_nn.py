@@ -25,6 +25,8 @@ def test_unet(n_steps_output, n_steps_input, n_channels_in, n_channels_out):
         cond_channels=n_channels_in,
         n_steps_output=n_steps_output,
         n_steps_input=n_steps_input,
+        include_global_cond=False,
+        global_cond_channels=None,
         temporal_method="attention",
         mod_features=256,
         hid_channels=(32, 64, 128),
