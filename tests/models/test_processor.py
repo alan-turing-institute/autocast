@@ -100,6 +100,8 @@ def _build_diffusion_processor(
     n_steps_output: int = 4,
     n_channels_in: int = 8,
     n_channels_out: int = 8,
+    include_global_cond: bool = False,
+    global_cond_channels: int | None = None,
 ) -> DiffusionProcessor:
     """Build a DiffusionProcessor with a TemporalUNetBackbone."""
     backbone = TemporalUNetBackbone(
@@ -108,8 +110,8 @@ def _build_diffusion_processor(
         cond_channels=n_channels_in,
         n_steps_output=n_steps_output,
         n_steps_input=n_steps_input,
-        include_global_cond=False,
-        global_cond_channels=None,
+        include_global_cond=include_global_cond,
+        global_cond_channels=global_cond_channels,
         mod_features=64,
         hid_channels=(16, 32),
         hid_blocks=(1, 1),
@@ -381,7 +383,7 @@ def test_varying_channels(n_channels_in: int, n_channels_out: int):
     )
 
 
-# --- Tests with Labels ---
+# --- Tests with global_cond ---
 
 
 def test_encoded_batch_with_global_conds():
@@ -420,3 +422,27 @@ def test_clone_batch_preserves_global_conds():
         "Clone should have same values"
     )
     assert batch.global_cond is not cloned.global_cond, "Clone should be a new tensor"
+
+
+def test_processor_model_enforces_global_cond_usage():
+    """Test that backbone actually uses global_cond when configured to do so."""
+    # Configure processor to require global_cond
+    global_cond_dim = 5
+    processor = _build_diffusion_processor(
+        include_global_cond=True,
+        global_cond_channels=global_cond_dim,
+    )
+    model = ProcessorModel(processor=processor, learning_rate=1e-4)
+
+    # Test success with valid global_cond
+    batch_with_cond = _make_encoded_batch(global_cond=torch.randn(2, global_cond_dim))
+    loss = model.training_step(batch_with_cond, batch_idx=0)
+    assert not loss.isnan()
+
+    # Test failure when global_cond is missing (None)
+    batch_without_cond = _make_encoded_batch(global_cond=None)
+
+    # Expect ValueError from TemporalBackboneBase:
+    # "Model init with global_cond_channels but no global_cond provided"
+    with pytest.raises(ValueError, match="no global_cond provided"):
+        model.training_step(batch_without_cond, batch_idx=0)
