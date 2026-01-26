@@ -189,7 +189,7 @@ def test_processor_model_forward():
     model = ProcessorModel(processor=processor, learning_rate=1e-4)
 
     batch = _make_encoded_batch()
-    output = model(batch.encoded_inputs)
+    output = model(batch.encoded_inputs, batch.global_cond)
 
     assert output.shape == (2, 4, 8, 8, 8), f"Unexpected output shape: {output.shape}"
 
