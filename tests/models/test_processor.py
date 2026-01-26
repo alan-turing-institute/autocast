@@ -446,3 +446,33 @@ def test_processor_model_enforces_global_cond_usage():
     # "Model init with global_cond_channels but no global_cond provided"
     with pytest.raises(ValueError, match="no global_cond provided"):
         model.training_step(batch_without_cond, batch_idx=0)
+
+
+def test_processor_ignores_global_cond_when_disabled():
+    """Test that global_cond is ignored when include_global_cond is False."""
+    # Configure processor to not use global_cond even when present
+    processor = _build_diffusion_processor(
+        include_global_cond=False,
+        global_cond_channels=None,
+    )
+    model = ProcessorModel(processor=processor, learning_rate=1e-4)
+
+    # Create dummy input
+    batch_size = 2
+    # Use simple shapes matching default build params
+    x = torch.randn(batch_size, 1, 8, 8, 8)
+    global_cond = torch.randn(batch_size, 5)
+
+    # Run with global_cond = None
+    # Fix seed to ensure same noise generation in sampler
+    torch.manual_seed(42)
+    output_no_cond = model(x, global_cond=None)
+
+    # Run with global_cond provided (reset seed to get exactly same noise)
+    torch.manual_seed(42)
+    output_with_cond = model(x, global_cond=global_cond)
+
+    # Outputs should be identical since global_cond is meant to be ignored
+    assert torch.allclose(output_no_cond, output_with_cond), (
+        "Output changed despite global_cond being disabled"
+    )
