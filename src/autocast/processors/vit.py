@@ -1,8 +1,9 @@
+from collections.abc import Sequence
+
 import numpy as np
 import torch
 import torch.nn.functional as F
 from einops import rearrange
-from the_well.benchmark.models.common import BaseModel
 from timm.layers.drop import DropPath
 from torch import nn
 
@@ -202,7 +203,7 @@ class AxialAttentionBlock(nn.Module):
         return residual + self.drop_path(x)
 
 
-class AViT(BaseModel):
+class AViT(nn.Module):
     """Uses axial attention to predict forward dynamics.
 
     This simplified version just stacks time in channels.
@@ -213,7 +214,7 @@ class AViT(BaseModel):
         dim_in: int,
         dim_out: int,
         n_spatial_dims: int,
-        spatial_resolution: tuple[int, ...],
+        spatial_resolution: Sequence[int],
         hidden_dim: int = 768,
         num_heads: int = 12,
         processor_blocks: int = 8,
@@ -221,7 +222,9 @@ class AViT(BaseModel):
         groups: int = 12,
         n_noise_channels: int | None = None,
     ):
-        super().__init__(n_spatial_dims, spatial_resolution)
+        super().__init__()
+        self.n_spatial_dims = n_spatial_dims
+        self.spatial_resolution = spatial_resolution
 
         self.drop_path = drop_path
         self.dp = np.linspace(0, drop_path, processor_blocks)
@@ -295,7 +298,7 @@ class AViTProcessor(Processor[EncodedBatch]):
         self,
         in_channels: int,
         out_channels: int,
-        spatial_resolution: tuple[int, ...],
+        spatial_resolution: Sequence[int],
         hidden_dim: int = 64,
         num_heads: int = 4,
         n_layers: int = 4,

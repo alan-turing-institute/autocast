@@ -85,7 +85,8 @@ def _infer_encoder_latent_channels(
     try:
         with torch.no_grad():
             encoded = encoder.encode(example_batch)  # type: ignore[attr-defined]
-        inferred = int(encoded.shape[-1])
+
+        inferred = int(encoded.shape[encoder.channel_dim])
         log.debug("Inferred latent channel count=%s from sample batch", inferred)
         return inferred
     except Exception as exc:  # pragma: no cover - defensive
@@ -278,7 +279,7 @@ def normalize_processor_cfg(cfg: DictConfig) -> None:
     processor_cfg = _model_cfg(cfg).get("processor")
     if processor_cfg is None:
         return
-    tuple_fields = ("n_modes",)
+    tuple_fields = ("n_modes", "spatial_resolution")
     for field in tuple_fields:
         value = processor_cfg.get(field)
         if isinstance(value, ListConfig):

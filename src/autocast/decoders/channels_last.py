@@ -33,5 +33,4 @@ class ChannelsLast(Decoder):
         """
         c = self.output_channels
         t = self.time_steps
-        z = rearrange(z, "b (c t) ... -> b c t ...", c=c, t=t)
-        return rearrange(z, "b c t ... -> b t ... c")
+        return rearrange(z, "b (c t) ... -> b t ... c", c=c, t=t)

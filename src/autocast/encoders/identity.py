@@ -6,6 +6,8 @@ from autocast.types.types import TensorBNC
 class IdentityEncoder(Encoder):
     """Permute and concatenate Encoder."""
 
+    channel_dim: int = -1
+
     def __init__(self) -> None:
         super().__init__()
 

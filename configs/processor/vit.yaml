@@ -1,0 +1,8 @@
+_target_: autocast.processors.vit.AViTProcessor
+in_channels: auto 
+out_channels: auto
+spatial_resolution: [16, 16]
+hidden_dim: 128
+num_heads: 4
+n_layers: 4
+drop_path: 0.1

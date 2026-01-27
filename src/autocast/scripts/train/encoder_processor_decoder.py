@@ -276,7 +276,13 @@ def main() -> None:  # noqa: PLR0915
         if metric_key in epd_cfg:
             # We assume the config is compatible with hydra.utils.instantiate
             # (e.g. a list of metrics or a MetricCollection config)
-            metrics_kwargs[metric_key] = instantiate(epd_cfg[metric_key])
+            metrics_val = instantiate(epd_cfg[metric_key])
+            if isinstance(metrics_val, (DictConfig, dict)):
+                metrics_val = [
+                    instantiate(v) if isinstance(v, (DictConfig, dict)) else v
+                    for v in metrics_val.values()
+                ]
+            metrics_kwargs[metric_key] = metrics_val
 
     # Check for ensemble configuration
     n_members = epd_cfg.get("n_members", 1)

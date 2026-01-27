@@ -8,6 +8,8 @@ from autocast.types import Batch, TensorBNC
 class PermuteConcat(EncoderWithCond):
     """Permute and concatenate Encoder."""
 
+    channel_dim: int = 1
+
     def __init__(self, with_constants: bool = False) -> None:
         super().__init__()
         self.with_constants = with_constants
