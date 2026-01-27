@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import torch
@@ -70,14 +70,12 @@ def prepare_datamodule(cfg: DictConfig):
     )
 
 
-def _infer_encoder_latent_channels(
+def _infer_encoder_latent_info(
     encoder, fallback_channels: int, example_batch: Batch | None = None
-) -> int:
-    latent_dim = getattr(encoder, "latent_dim", None)
-    if isinstance(latent_dim, int) and latent_dim > 0:
-        return latent_dim
+) -> tuple[int, bool]:
+    """Infer latent channel count and whether time is preserved as a dimension."""
     if example_batch is None or not hasattr(encoder, "encode"):
-        return fallback_channels
+        return fallback_channels, False
 
     prev_training = getattr(encoder, "training", None)
     if prev_training is not None:
@@ -86,12 +84,25 @@ def _infer_encoder_latent_channels(
         with torch.no_grad():
             encoded = encoder.encode(example_batch)  # type: ignore[attr-defined]
 
-        inferred = int(encoded.shape[encoder.channel_dim])
-        log.debug("Inferred latent channel count=%s from sample batch", inferred)
-        return inferred
+        channel_dim = getattr(encoder, "channel_dim", -1)
+        inferred = int(encoded.shape[channel_dim])
+
+        input_fields = getattr(example_batch, "input_fields", None)
+        time_preserved = bool(
+            input_fields is not None
+            and encoded.ndim == input_fields.ndim
+            and encoded.shape[1] == input_fields.shape[1]
+        )
+
+        log.debug(
+            "Inferred latent channels=%s (time_preserved=%s)",
+            inferred,
+            time_preserved,
+        )
+        return inferred, time_preserved
     except Exception as exc:  # pragma: no cover - defensive
         log.debug("Failed to infer latent channels via encode(): %s", exc)
-        return fallback_channels
+        return fallback_channels, False
     finally:
         if prev_training is not None:
             encoder.train(prev_training)
@@ -145,12 +156,30 @@ def align_processor_channels_with_encoder(
     n_steps_input: int,
     n_steps_output: int,
     example_batch: Batch | None = None,
+    input_noise_injector=None,
 ) -> int:
     """Align processor/backbone channels with the encoder latent dimensionality."""
-    latent_channels = _infer_encoder_latent_channels(
+    input_batch = example_batch
+    if example_batch is not None and input_noise_injector is not None:
+        input_batch = replace(
+            example_batch,
+            input_fields=input_noise_injector(example_batch.input_fields),
+        )
+    latent_channels_in, time_preserved_in = _infer_encoder_latent_info(
         encoder,
         fallback_channels=channel_count,
-        example_batch=example_batch,
+        example_batch=input_batch,
+    )
+    output_batch = None
+    if example_batch is not None:
+        output_batch = replace(
+            example_batch,
+            input_fields=example_batch.output_fields.clone(),
+        )
+    latent_channels_out, time_preserved_out = _infer_encoder_latent_info(
+        encoder,
+        fallback_channels=channel_count,
+        example_batch=output_batch,
     )
     global_cond_channels = _infer_encoder_global_cond_channels(
         encoder, example_batch=example_batch
@@ -158,18 +187,24 @@ def align_processor_channels_with_encoder(
 
     processor_cfg = _model_cfg(cfg).get("processor")
     if processor_cfg is None:
-        return latent_channels
+        return latent_channels_out
 
     raw_in = channel_count * n_steps_input
     raw_out = channel_count * n_steps_output
-    latent_in = latent_channels * n_steps_input
-    latent_out = latent_channels * n_steps_output
+    latent_in = (
+        latent_channels_in * n_steps_input if time_preserved_in else latent_channels_in
+    )
+    latent_out = (
+        latent_channels_out * n_steps_output
+        if time_preserved_out
+        else latent_channels_out
+    )
 
     with open_dict(processor_cfg):
         _override_dimension(
             processor_cfg,
             "n_channels_out",
-            latent_channels,
+            latent_channels_out,
             (channel_count,),
         )
         _override_dimension(
@@ -191,19 +226,19 @@ def align_processor_channels_with_encoder(
             _override_dimension(
                 backbone_cfg,
                 "in_channels",
-                latent_channels,
+                latent_channels_in,
                 (channel_count,),
             )
             _override_dimension(
                 backbone_cfg,
                 "out_channels",
-                latent_channels,
+                latent_channels_out,
                 (channel_count,),
             )
             _override_dimension(
                 backbone_cfg,
                 "cond_channels",
-                latent_channels,
+                latent_channels_in,
                 (channel_count,),
             )
             if global_cond_channels is not None:
@@ -211,7 +246,7 @@ def align_processor_channels_with_encoder(
                     backbone_cfg,
                     "global_cond_channels",
                     global_cond_channels,
-                    (channel_count, latent_channels),
+                    (channel_count, latent_channels_out),
                 )
             _override_dimension(
                 backbone_cfg,
@@ -226,7 +261,7 @@ def align_processor_channels_with_encoder(
                 (),
             )
 
-    return latent_channels
+    return latent_channels_out
 
 
 def _maybe_set(cfg_node: DictConfig | None, key: str, value: int) -> None:
@@ -252,6 +287,9 @@ def configure_module_dimensions(
     channel_count: int,
     n_steps_input: int,
     n_steps_output: int,
+    *,
+    input_channel_count: int | None = None,
+    output_channel_count: int | None = None,
 ) -> None:
     """Populate missing dimension hints for encoder/decoder/processor modules.
 
@@ -261,17 +299,19 @@ def configure_module_dimensions(
     """
     model_cfg = _model_cfg(cfg)
     encoder_cfg = model_cfg.get("encoder")
-    _maybe_set(encoder_cfg, "in_channels", channel_count)
+    in_channels = input_channel_count or channel_count
+    out_channels = output_channel_count or channel_count
+    _maybe_set(encoder_cfg, "in_channels", in_channels)
     _maybe_set(encoder_cfg, "time_steps", n_steps_input)
     decoder_cfg = model_cfg.get("decoder")
-    _maybe_set(decoder_cfg, "out_channels", channel_count)
-    _maybe_set(decoder_cfg, "output_channels", channel_count)  # alias
+    _maybe_set(decoder_cfg, "out_channels", out_channels)
+    _maybe_set(decoder_cfg, "output_channels", out_channels)  # alias
     _maybe_set(decoder_cfg, "time_steps", n_steps_output)
     processor_cfg = model_cfg.get("processor")
-    _maybe_set(processor_cfg, "in_channels", channel_count * n_steps_input)
-    _maybe_set(processor_cfg, "out_channels", channel_count * n_steps_output)
+    _maybe_set(processor_cfg, "in_channels", in_channels * n_steps_input)
+    _maybe_set(processor_cfg, "out_channels", out_channels * n_steps_output)
     _maybe_set(processor_cfg, "n_steps_output", n_steps_output)
-    _maybe_set(processor_cfg, "n_channels_out", channel_count)
+    _maybe_set(processor_cfg, "n_channels_out", out_channels)
 
 
 def normalize_processor_cfg(cfg: DictConfig) -> None:

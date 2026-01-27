@@ -229,11 +229,30 @@ def main() -> None:  # noqa: PLR0915
             training_params.n_steps_output,
         )
 
+    epd_cfg = model_cfg
+    input_noise_cfg = (
+        epd_cfg.get("input_noise_injector")
+        or cfg.get("input_noise_injector")
+        or cfg.get("nn", {}).get("noise", {}).get("input_noise_injector")
+    )
+    input_noise_injector = (
+        instantiate(input_noise_cfg) if input_noise_cfg is not None else None
+    )
+    input_channel_count = channel_count
+    if input_noise_injector is not None:
+        log.info(
+            "Found input noise injector %s; adjusting input channel count.",
+            input_noise_injector.__class__.__name__,
+        )
+        input_channel_count += input_noise_injector.get_additional_channels()
+
     configure_module_dimensions(
         cfg,
         channel_count=channel_count,
         n_steps_input=inferred_n_steps_input,
         n_steps_output=inferred_n_steps_output,
+        input_channel_count=input_channel_count,
+        output_channel_count=channel_count,
     )
     normalize_processor_cfg(cfg)
 
@@ -250,6 +269,7 @@ def main() -> None:  # noqa: PLR0915
         n_steps_input=inferred_n_steps_input,
         n_steps_output=inferred_n_steps_output,
         example_batch=example_batch,
+        input_noise_injector=input_noise_injector,
     )
 
     if training_params.freeze_autoencoder and training_params.autoencoder_checkpoint:
@@ -268,14 +288,6 @@ def main() -> None:  # noqa: PLR0915
     loss_cfg = epd_cfg.get("loss_func")
     loss_func = instantiate(loss_cfg) if loss_cfg is not None else nn.MSELoss()
     stride = training_params.stride
-    input_noise_cfg = (
-        epd_cfg.get("input_noise_injector")
-        or cfg.get("input_noise_injector")
-        or cfg.get("nn", {}).get("noise", {}).get("input_noise_injector")
-    )
-    input_noise_injector = (
-        instantiate(input_noise_cfg) if input_noise_cfg is not None else None
-    )
 
     # Instantiate metrics if present in the config
     metrics_kwargs = {}

@@ -483,14 +483,28 @@ def main() -> None:
         example_batch,
     ) = prepare_datamodule(cfg)
 
+    model_cfg = cfg.get("model") or cfg
+    input_noise_cfg = (
+        model_cfg.get("input_noise_injector")
+        or cfg.get("input_noise_injector")
+        or cfg.get("nn", {}).get("noise", {}).get("input_noise_injector")
+    )
+    input_noise_injector = (
+        instantiate(input_noise_cfg) if input_noise_cfg is not None else None
+    )
+    input_channel_count = channel_count
+    if input_noise_injector is not None:
+        input_channel_count += input_noise_injector.get_additional_channels()
+
     configure_module_dimensions(
         cfg,
         channel_count=channel_count,
         n_steps_input=inferred_n_steps_input,
         n_steps_output=inferred_n_steps_output,
+        input_channel_count=input_channel_count,
+        output_channel_count=channel_count,
     )
     normalize_processor_cfg(cfg)
-    model_cfg = cfg.get("model") or cfg
     encoder_probe = instantiate(model_cfg.encoder)
     align_processor_channels_with_encoder(
         cfg,
@@ -499,6 +513,7 @@ def main() -> None:
         n_steps_input=inferred_n_steps_input,
         n_steps_output=inferred_n_steps_output,
         example_batch=example_batch,
+        input_noise_injector=input_noise_injector,
     )
 
     metrics = _build_metrics(args.metrics or ("mse", "rmse"))

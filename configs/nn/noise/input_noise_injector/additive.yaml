@@ -1,2 +1,2 @@
-_target_: autocast.models.noise_injector.AdditiveNoiseInjector
+_target_: autocast.nn.noise.noise_injector.AdditiveNoiseInjector
 std: 1.0
