@@ -30,4 +30,14 @@ fi
 uv run python -m autocast.scripts.train.encoder_processor_decoder "${OVERRIDES[@]}" "$@"
 
 # Example Usage for Ensemble via CLI Args:
-# ./scripts/epd.sh my_label my_run reaction_diffusion "+model.n_members=5 encoder@model.encoder=permute_concat decoder@model.decoder=channels_last processor@model.processor=vit model.loss_func._target_=autocast.losses.ensemble.CRPSLoss +model.train_metrics.crps._target_=autocast.metrics.ensemble.CRPS"
+# ./scripts/epd.sh my_label my_run reaction_diffusion \
+#     encoder@model.encoder=permute_concat \
+#     decoder@model.decoder=channels_last \
+#     processor@model.processor=vit \
+#     model.processor.n_noise_channels=1000 \
+#     +model.n_members=10 \
+#     model.loss_func._target_=autocast.losses.ensemble.CRPSLoss \
+#     +model.train_metrics.crps._target_=autocast.metrics.ensemble.CRPS \
+#     logging.wandb.enabled=true \
+#     model.learning_rate=0.0002 \
+#     trainer.max_epochs=5
