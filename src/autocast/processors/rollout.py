@@ -23,6 +23,7 @@ class RolloutMixin(ABC, Generic[BatchT]):
         free_running_only: bool = False,
         return_windows: bool = False,
         detach: bool = True,
+        n_members: int | None = None,  # noqa: ARG002 not used in default implementation but potentially in overrides
     ) -> RolloutOutput:
         """Perform rollout over multiple time steps.
 
@@ -38,6 +39,8 @@ class RolloutMixin(ABC, Generic[BatchT]):
         detach: bool, optional
             If True, detaches the output from the graph before feeding it back in
             as input. Set to False for autoregressive loss calculation. By default True.
+        n_members: int | None
+            Number of ensemble members for ensemble models. By default None.
 
 
         Notes

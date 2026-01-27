@@ -1,6 +1,6 @@
 import torch
 
-from autocast.nn.conditional_layer_norm import ConditionalLayerNorm
+from autocast.nn.noise.conditional_layer_norm import ConditionalLayerNorm
 
 
 def test_conditional_layer_norm():

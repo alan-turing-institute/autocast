@@ -8,8 +8,8 @@ from torch import nn
 from torchmetrics import Metric
 
 from autocast.metrics.utils import MetricsMixin
-from autocast.models.noise_injector import NoiseInjector
 from autocast.models.optimizer_mixin import OptimizerMixin
+from autocast.nn.noise.noise_injector import NoiseInjector
 from autocast.processors.base import Processor
 from autocast.processors.rollout import RolloutMixin
 from autocast.types import EncodedBatch, Tensor, TensorBNC

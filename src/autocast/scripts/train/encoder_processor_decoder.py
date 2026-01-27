@@ -17,6 +17,9 @@ from autocast.logging import create_wandb_logger, maybe_watch_model
 from autocast.models.autoencoder import AE, AELoss
 from autocast.models.encoder_decoder import EncoderDecoder
 from autocast.models.encoder_processor_decoder import EncoderProcessorDecoder
+from autocast.models.encoder_processor_decoder_ensemble import (
+    EncoderProcessorDecoderEnsemble,
+)
 from autocast.scripts.train.configuration import (
     align_processor_channels_with_encoder,
     compose_training_config,
@@ -226,11 +229,30 @@ def main() -> None:  # noqa: PLR0915
             training_params.n_steps_output,
         )
 
+    epd_cfg = model_cfg
+    input_noise_cfg = (
+        epd_cfg.get("input_noise_injector")
+        or cfg.get("input_noise_injector")
+        or cfg.get("nn", {}).get("noise", {}).get("input_noise_injector")
+    )
+    input_noise_injector = (
+        instantiate(input_noise_cfg) if input_noise_cfg is not None else None
+    )
+    input_channel_count = channel_count
+    if input_noise_injector is not None:
+        log.info(
+            "Found input noise injector %s; adjusting input channel count.",
+            input_noise_injector.__class__.__name__,
+        )
+        input_channel_count += input_noise_injector.get_additional_channels()
+
     configure_module_dimensions(
         cfg,
         channel_count=channel_count,
         n_steps_input=inferred_n_steps_input,
         n_steps_output=inferred_n_steps_output,
+        input_channel_count=input_channel_count,
+        output_channel_count=channel_count,
     )
     normalize_processor_cfg(cfg)
 
@@ -247,6 +269,7 @@ def main() -> None:  # noqa: PLR0915
         n_steps_input=inferred_n_steps_input,
         n_steps_output=inferred_n_steps_output,
         example_batch=example_batch,
+        input_noise_injector=input_noise_injector,
     )
 
     if training_params.freeze_autoencoder and training_params.autoencoder_checkpoint:
@@ -266,17 +289,47 @@ def main() -> None:  # noqa: PLR0915
     loss_func = instantiate(loss_cfg) if loss_cfg is not None else nn.MSELoss()
     stride = training_params.stride
 
-    model = EncoderProcessorDecoder(
-        encoder_decoder=encoder_decoder,
-        processor=processor,
-        learning_rate=learning_rate,
-        optimizer_config=optimizer_config,
-        train_in_latent_space=train_in_latent_space,
-        stride=stride,
-        teacher_forcing_ratio=teacher_forcing_ratio,
-        max_rollout_steps=max_rollout_steps,
-        loss_func=loss_func,
+    # Instantiate metrics if present in the config
+    metrics_kwargs = {}
+    for stage in ["train", "val", "test"]:
+        metric_key = f"{stage}_metrics"
+        if metric_key in epd_cfg:
+            # We assume the config is compatible with hydra.utils.instantiate
+            # (e.g. a list of metrics or a MetricCollection config)
+            metrics_val = instantiate(epd_cfg[metric_key])
+            if isinstance(metrics_val, (DictConfig, dict)):
+                metrics_val = [
+                    instantiate(v) if isinstance(v, (DictConfig, dict)) else v
+                    for v in metrics_val.values()
+                ]
+            metrics_kwargs[metric_key] = metrics_val
+
+    # Check for ensemble configuration
+    n_members = epd_cfg.get("n_members", 1)
+    is_ensemble = int(n_members) > 1
+
+    model_class = (
+        EncoderProcessorDecoderEnsemble if is_ensemble else EncoderProcessorDecoder
     )
+
+    model_kwargs = {
+        "encoder_decoder": encoder_decoder,
+        "processor": processor,
+        "learning_rate": learning_rate,
+        "optimizer_config": optimizer_config,
+        "train_in_latent_space": train_in_latent_space,
+        "stride": stride,
+        "teacher_forcing_ratio": teacher_forcing_ratio,
+        "max_rollout_steps": max_rollout_steps,
+        "loss_func": loss_func,
+        "input_noise_injector": input_noise_injector,
+        **metrics_kwargs,
+    }
+
+    if is_ensemble:
+        model_kwargs["n_members"] = int(n_members)
+
+    model = model_class(**model_kwargs)
 
     maybe_watch_model(wandb_logger, model, watch_cfg)
     trainer = instantiate_trainer(cfg, work_dir, logger=wandb_logger)

@@ -82,7 +82,8 @@ class EncoderProcessorDecoderEnsemble(EncoderProcessorDecoder):
             # If the loss_func can handle BTSCM and BTSC (like CRPS), it works here too
             # (though BTSC might be BNC in latent space, CRPS works on ndim >= 5)
             loss = self.loss_func(preds, targets)
-            return loss, preds
+            # Return None so metrics use decoded outputs via self(batch).
+            return loss, None
 
         # Fallback to standard processor loss (e.g. Diffusion loss) on flattened batch
         return super().loss(batch)

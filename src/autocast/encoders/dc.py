@@ -64,6 +64,7 @@ class DCEncoder(EncoderWithCond):
     """
 
     encoder_model: nn.Module
+    channel_dim: int = -1
 
     def __init__(
         self,

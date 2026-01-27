@@ -5,7 +5,7 @@ set -e
 export LABEL=$1
 export OUTPATH=$2
 export DATAPATH=$3
-export ADDITIONAL_ARGS=$4
+shift 3
 
 # Run script
 uv run evaluate_encoder_processor_decoder \
@@ -20,4 +20,5 @@ uv run evaluate_encoder_processor_decoder \
 	--video-dir=outputs/${LABEL}/${OUTPATH}/eval/videos \
 	data=$DATAPATH \
 	data.data_path=$AUTOCAST_DATASETS/${DATAPATH} \
-	data.use_simulator=false $ADDITIONAL_ARGS
+	data.use_simulator=false \
+	"$@"

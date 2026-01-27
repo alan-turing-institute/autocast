@@ -30,6 +30,9 @@ from autocast.metrics import (
 )
 from autocast.models.encoder_decoder import EncoderDecoder
 from autocast.models.encoder_processor_decoder import EncoderProcessorDecoder
+from autocast.models.encoder_processor_decoder_ensemble import (
+    EncoderProcessorDecoderEnsemble,
+)
 from autocast.scripts.train.configuration import (
     align_processor_channels_with_encoder,
     compose_training_config,
@@ -341,6 +344,8 @@ def _load_state_dict(checkpoint_path: Path) -> OrderedDict[str, torch.Tensor]:
 def _load_model(
     cfg: DictConfig,
     checkpoint_path: Path,
+    *,
+    n_members: int = 1,
 ) -> EncoderProcessorDecoder:
     model_cfg = cfg.get("model") or cfg
     encoder = instantiate(model_cfg.encoder)
@@ -360,12 +365,19 @@ def _load_model(
 
     state_dict = _load_state_dict(checkpoint_real)
 
-    model = EncoderProcessorDecoder(
-        encoder_decoder=encoder_decoder,
-        processor=processor,
-        learning_rate=learning_rate,
-        loss_func=loss_func,
+    model_class = (
+        EncoderProcessorDecoderEnsemble if n_members > 1 else EncoderProcessorDecoder
     )
+    model_kwargs = {
+        "encoder_decoder": encoder_decoder,
+        "processor": processor,
+        "learning_rate": learning_rate,
+        "loss_func": loss_func,
+    }
+    if n_members > 1:
+        model_kwargs["n_members"] = n_members
+
+    model = model_class(**model_kwargs)
     load_result = model.load_state_dict(state_dict, strict=True)
     if load_result.missing_keys or load_result.unexpected_keys:
         msg = (
@@ -389,6 +401,7 @@ def _render_rollouts(
     stride: int,
     max_rollout_steps: int,
     free_running_only: bool,
+    n_members: int | None = None,
 ) -> list[Path]:
     if not batch_indices:
         return []
@@ -407,6 +420,7 @@ def _render_rollouts(
                 stride=stride,
                 max_rollout_steps=max_rollout_steps,
                 free_running_only=free_running_only,
+                n_members=n_members if n_members and n_members > 1 else None,
             )
             if trues is None:
                 log.warning(
@@ -426,13 +440,25 @@ def _render_rollouts(
             # Limit the rollout to the available ground truth rollout length
             if trues.shape[1] < preds.shape[1]:
                 preds = preds[:, : trues.shape[1]]
+            # Reduce ensemble dimension for plotting if present.
+            # When n_members > 1, the rollout output has shape (B, T, ..., C, M).
+            if n_members is not None and n_members > 1:
+                preds_mean = preds.mean(dim=-1)
+                trues_mean = trues.mean(dim=-1)
+                preds_uq = preds.std(dim=-1)
+            else:
+                preds_mean = preds
+                trues_mean = trues
+                preds_uq = None
             plot_spatiotemporal_video(
-                true=trues.cpu(),
-                pred=preds.cpu(),
+                true=trues_mean.cpu(),
+                pred=preds_mean.cpu(),
+                pred_uq=preds_uq.cpu() if preds_uq is not None else None,
                 batch_idx=sample_index,
                 fps=fps,
                 save_path=str(filename),
                 colorbar_mode="column",
+                pred_uq_label="Ensemble Std Dev",
             )
             saved_paths.append(filename)
             rendered_batches.add(batch_idx)
@@ -483,14 +509,28 @@ def main() -> None:
         example_batch,
     ) = prepare_datamodule(cfg)
 
+    model_cfg = cfg.get("model") or cfg
+    input_noise_cfg = (
+        model_cfg.get("input_noise_injector")
+        or cfg.get("input_noise_injector")
+        or cfg.get("nn", {}).get("noise", {}).get("input_noise_injector")
+    )
+    input_noise_injector = (
+        instantiate(input_noise_cfg) if input_noise_cfg is not None else None
+    )
+    input_channel_count = channel_count
+    if input_noise_injector is not None:
+        input_channel_count += input_noise_injector.get_additional_channels()
+
     configure_module_dimensions(
         cfg,
         channel_count=channel_count,
         n_steps_input=inferred_n_steps_input,
         n_steps_output=inferred_n_steps_output,
+        input_channel_count=input_channel_count,
+        output_channel_count=channel_count,
     )
     normalize_processor_cfg(cfg)
-    model_cfg = cfg.get("model") or cfg
     encoder_probe = instantiate(model_cfg.encoder)
     align_processor_channels_with_encoder(
         cfg,
@@ -499,13 +539,16 @@ def main() -> None:
         n_steps_input=inferred_n_steps_input,
         n_steps_output=inferred_n_steps_output,
         example_batch=example_batch,
+        input_noise_injector=input_noise_injector,
     )
 
     metrics = _build_metrics(args.metrics or ("mse", "rmse"))
 
+    n_members = int((cfg.get("model") or cfg).get("n_members", 1))
     model = _load_model(
         cfg,
         args.checkpoint,
+        n_members=n_members,
     )
     device = _resolve_device(args.device)
     model.to(device)
@@ -544,6 +587,7 @@ def main() -> None:
             stride=rollout_stride,
             max_rollout_steps=max_rollout_steps,
             free_running_only=args.free_running_only,
+            n_members=n_members,
         )
 
 

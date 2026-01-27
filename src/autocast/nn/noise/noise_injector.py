@@ -13,6 +13,10 @@ class NoiseInjector(nn.Module, abc.ABC):
     def forward(self, x: Tensor) -> Tensor:
         """Apply noise to input tensor."""
 
+    def get_additional_channels(self) -> int:
+        """Return the number of additional channels this injector adds."""
+        return 0
+
     def _validate_std(self, std: float) -> float:
         if std <= 0.0:
             msg = "Standard deviation must be greater than 0.0 and non-negative."
@@ -41,6 +45,9 @@ class ConcatenatedNoiseInjector(NoiseInjector):
         super().__init__()
         self.n_channels = n_channels
         self.std = self._validate_std(std)
+
+    def get_additional_channels(self) -> int:
+        return self.n_channels
 
     def forward(self, x: Tensor) -> Tensor:
         if self.n_channels <= 0:
