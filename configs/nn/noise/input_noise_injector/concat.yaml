@@ -1,0 +1,3 @@
+_target_: autocast.models.noise_injector.ConcatenatedNoiseInjector
+n_channels: 1
+std: 1.0

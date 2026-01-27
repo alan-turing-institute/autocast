@@ -268,6 +268,14 @@ def main() -> None:  # noqa: PLR0915
     loss_cfg = epd_cfg.get("loss_func")
     loss_func = instantiate(loss_cfg) if loss_cfg is not None else nn.MSELoss()
     stride = training_params.stride
+    input_noise_cfg = (
+        epd_cfg.get("input_noise_injector")
+        or cfg.get("input_noise_injector")
+        or cfg.get("nn", {}).get("noise", {}).get("input_noise_injector")
+    )
+    input_noise_injector = (
+        instantiate(input_noise_cfg) if input_noise_cfg is not None else None
+    )
 
     # Instantiate metrics if present in the config
     metrics_kwargs = {}
@@ -302,6 +310,7 @@ def main() -> None:  # noqa: PLR0915
         "teacher_forcing_ratio": teacher_forcing_ratio,
         "max_rollout_steps": max_rollout_steps,
         "loss_func": loss_func,
+        "input_noise_injector": input_noise_injector,
         **metrics_kwargs,
     }
 

@@ -1,6 +1,7 @@
 defaults:
   - data: reaction_diffusion
   - optional optimizer: null
+  - optional nn/noise/input_noise_injector: null
   - model: encoder_processor_decoder
   - trainer: default
   - logging: wandb
