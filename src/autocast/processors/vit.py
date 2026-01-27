@@ -28,6 +28,7 @@ class PatchEmbedding(nn.Module):
         hidden_dim: int,
         groups: int = 12,
         n_spatial_dims: int = 2,
+        patch_size: int | None = None,
     ):
         super().__init__()
         if n_spatial_dims == 1:
@@ -40,6 +41,12 @@ class PatchEmbedding(nn.Module):
             raise ValueError(f"Unsupported n_spatial_dims={n_spatial_dims}")
 
         self.n_spatial_dims = n_spatial_dims
+
+        if patch_size is not None:
+            self.in_projs = conv(
+                dim_in, hidden_dim, kernel_size=patch_size, stride=patch_size, bias=True
+            )
+            return
 
         # Make GroupNorm robust for small hidden_dim
         g_quarter = _largest_divisor_leq(hidden_dim // 4, groups)
@@ -69,6 +76,7 @@ class PatchUnembedding(nn.Module):
         hidden_dim: int = 768,
         groups: int = 12,
         n_spatial_dims: int = 2,
+        patch_size: int | None = None,
     ):
         super().__init__()
         self.n_spatial_dims = n_spatial_dims
@@ -80,6 +88,16 @@ class PatchUnembedding(nn.Module):
             conv = nn.ConvTranspose3d
         else:
             raise ValueError(f"Unsupported n_spatial_dims={n_spatial_dims}")
+
+        if patch_size is not None:
+            self.out_proj = conv(
+                hidden_dim,
+                dim_out,
+                kernel_size=patch_size,
+                stride=patch_size,
+                bias=True,
+            )
+            return
 
         g_quarter = _largest_divisor_leq(hidden_dim // 4, groups)
 
@@ -221,6 +239,7 @@ class AViT(nn.Module):
         drop_path: float = 0.0,
         groups: int = 12,
         n_noise_channels: int | None = None,
+        patch_size: int | None = None,
     ):
         super().__init__()
         self.n_spatial_dims = n_spatial_dims
@@ -229,7 +248,7 @@ class AViT(nn.Module):
         self.drop_path = drop_path
         self.dp = np.linspace(0, drop_path, processor_blocks)
 
-        self.patch_size = 16
+        self.patch_size = 16 if patch_size is None else patch_size
         for k in self.spatial_resolution:
             if k % self.patch_size != 0:
                 raise ValueError(
@@ -248,6 +267,7 @@ class AViT(nn.Module):
             hidden_dim=hidden_dim,
             groups=groups,
             n_spatial_dims=self.n_spatial_dims,
+            patch_size=patch_size,
         )
 
         self.blocks = nn.ModuleList(
@@ -268,6 +288,7 @@ class AViT(nn.Module):
             dim_out=dim_out,
             groups=groups,
             n_spatial_dims=self.n_spatial_dims,
+            patch_size=patch_size,
         )
 
         if self.n_spatial_dims == 2:
@@ -306,6 +327,7 @@ class AViTProcessor(Processor[EncodedBatch]):
         groups: int = 8,
         loss_func: nn.Module | None = None,
         n_noise_channels: int | None = None,
+        patch_size: int | None = None,
     ):
         super().__init__()
         self.n_spatial_dims = len(spatial_resolution)
@@ -321,6 +343,7 @@ class AViTProcessor(Processor[EncodedBatch]):
             drop_path=drop_path,
             groups=groups,
             n_noise_channels=n_noise_channels,
+            patch_size=patch_size,
         )
 
         self.loss_func = loss_func or nn.MSELoss()
