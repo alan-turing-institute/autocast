@@ -122,8 +122,8 @@ def _generate_split(simulator: Any, split_cfg: DictConfig) -> dict[str, Any]:
     }
 
 
-def build_datamodule(cfg: DictConfig) -> SpatioTemporalDataModule:
-    """Instantiate the `SpatioTemporalDataModule` described by `cfg`."""
+def build_datamodule(cfg: DictConfig) -> L.LightningDataModule:
+    """Instantiate the datamodule (LightningDataModule) described by `cfg`."""
     # If the config explicitly names a datamodule class via Hydra `_target_`,
     # instantiate and return directly
     if cfg.get("_target_") is not None:
@@ -206,7 +206,7 @@ def _heatmap_slice(tensor: torch.Tensor) -> torch.Tensor:
 
 def _save_reconstructions(
     model: AE,
-    datamodule: SpatioTemporalDataModule,
+    datamodule: L.LightningDataModule,
     work_dir: Path,
     max_batches: int = 4,
     cmap: str = "viridis",

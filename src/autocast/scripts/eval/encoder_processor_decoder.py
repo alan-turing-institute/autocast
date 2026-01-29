@@ -402,6 +402,7 @@ def _render_rollouts(
     max_rollout_steps: int,
     free_running_only: bool,
     n_members: int | None = None,
+    metrics: dict[str, nn.Module] | None = None,
 ) -> list[Path]:
     if not batch_indices:
         return []
@@ -409,6 +410,9 @@ def _render_rollouts(
     saved_paths: list[Path] = []
     rendered_batches: set[int] = set()
     video_dir.mkdir(parents=True, exist_ok=True)
+
+    # Build empty val dict for results
+    metric_results = {name: [] for name in metrics} if metrics is not None else {}
 
     with torch.no_grad():
         for batch_idx, batch in enumerate(dataloader):
@@ -436,6 +440,23 @@ def _render_rollouts(
                     preds.shape[0],
                 )
                 continue
+
+            if metrics is not None:
+                for name, val_metric in metrics.items():
+                    # Mean metric for time steps 6:12
+                    mean_metric_6_12 = val_metric.score(
+                        preds[:, 6:12, ...], trues[:, 6:12, ...]
+                    ).mean()
+
+                    # Mean metric for time steps 13:30
+                    mean_metric_13_30 = val_metric.score(
+                        preds[:, 13:30, ...], trues[:, 13:30, ...]
+                    ).mean()
+
+                    metric_results[name + "_6:12"].append(mean_metric_6_12.item())
+                    metric_results[name + "_13:30"].append(mean_metric_13_30.item())
+
+            preds = preds[sample_index : sample_index + 1]
             filename = video_dir / f"batch_{batch_idx}_sample_{sample_index}.{fmt}"
             # Limit the rollout to the available ground truth rollout length
             if trues.shape[1] < preds.shape[1]:
@@ -464,9 +485,15 @@ def _render_rollouts(
             rendered_batches.add(batch_idx)
             log.info("Saved rollout visualization to %s", filename)
     missing = targets - rendered_batches
+
+    # Aggregate validation results
+    metrics_results = {
+        name: sum(values) / len(values) for name, values in metric_results.items()
+    }
+
     for batch_idx in sorted(missing):
         log.warning("Requested batch %s was not found in the dataloader.", batch_idx)
-    return saved_paths
+    return saved_paths, metrics_results
 
 
 def main() -> None:
@@ -575,7 +602,7 @@ def main() -> None:
         rollout_stride = (
             args.stride if args.stride is not None else inferred_n_steps_output
         )
-        _render_rollouts(
+        _, metrics_results = _render_rollouts(
             model,
             rollout_loader,
             args.batch_indices,
@@ -588,6 +615,12 @@ def main() -> None:
             max_rollout_steps=max_rollout_steps,
             free_running_only=args.free_running_only,
             n_members=n_members,
+            metrics=metrics,
+        )
+
+        log_metrics(
+            wandb_logger,
+            {f"rollout_metrics/{k}": v for k, v in metrics_results.items()},
         )
 
 
