@@ -8,7 +8,7 @@ export DATAPATH=$3
 shift 3
 
 # Run script
-uv run evaluate_encoder_processor_decoder \
+uv run python -m autocast.scripts.eval.encoder_processor_decoder \
 	--config-path=configs/ \
 	--config-name=encoder_processor_decoder \
 	--work-dir=outputs/${LABEL}/${OUTPATH}/eval \
@@ -18,7 +18,6 @@ uv run evaluate_encoder_processor_decoder \
 	--batch-index=2 \
 	--batch-index=3 \
 	--video-dir=outputs/${LABEL}/${OUTPATH}/eval/videos \
-	data=$DATAPATH \
-	data.data_path=$AUTOCAST_DATASETS/${DATAPATH} \
-	data.use_simulator=false \
+	datamodule=${DATAPATH} \
+	datamodule.data_path=$AUTOCAST_DATASETS/${DATAPATH} \
 	"$@"

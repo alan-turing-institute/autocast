@@ -8,13 +8,12 @@ export DATAPATH=$3
 export ADDITIONAL_ARGS=$4
 
 # Run script
-uv run python -m autocast.train.autoencoder \
+uv run python -m autocast.scripts.train.autoencoder \
 	--config-path=configs \
 	--config-name=autoencoder \
 	--work-dir=outputs/${LABEL}/${OUTPATH} \
-	data=$DATAPATH \
-	data.data_path=$AUTOCAST_DATASETS/${DATAPATH} \
-	data.use_simulator=false \
+	datamodule=${DATAPATH} \
+	datamodule.data_path=$AUTOCAST_DATASETS/${DATAPATH} \
 	model.learning_rate=0.00002 \
 	trainer.max_epochs=20 \
 	logging.wandb.enabled=true $ADDITIONAL_ARGS
