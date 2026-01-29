@@ -1,0 +1,27 @@
+{
+  "files": [
+    "README.md"
+  ],
+  "imageSize": 100,
+  "commit": false,
+  "commitType": "docs",
+  "commitConvention": "angular",
+  "contributors": [
+    {
+      "login": "jasonmcewen",
+      "name": "Jason McEwen ",
+      "avatar_url": "https://avatars.githubusercontent.com/u/3181701?v=4",
+      "profile": "http://www.jasonmcewen.org",
+      "contributions": [
+        "ideas",
+        "projectManagement"
+      ]
+    }
+  ],
+  "contributorsPerLine": 7,
+  "skipCi": true,
+  "repoType": "github",
+  "repoHost": "https://github.com",
+  "projectName": "autocast",
+  "projectOwner": "alan-turing-institute"
+}
