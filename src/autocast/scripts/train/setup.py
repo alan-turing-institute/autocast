@@ -133,12 +133,6 @@ def setup_autoencoder_components(
             and encoder_cfg.get("in_channels") in (None, "auto")
         ):
             encoder_cfg["in_channels"] = n_channels
-        if (
-            "time_steps" in encoder_cfg
-            and isinstance(n_steps_input, int)
-            and encoder_cfg.get("time_steps") in (None, "auto")
-        ):
-            encoder_cfg["time_steps"] = n_steps_input
 
     if isinstance(decoder_cfg, DictConfig):
         decoder_cfg = OmegaConf.to_container(decoder_cfg, resolve=True)
@@ -155,12 +149,6 @@ def setup_autoencoder_components(
             and decoder_cfg.get("output_channels") in (None, "auto")
         ):
             decoder_cfg["output_channels"] = n_channels
-        if (
-            "time_steps" in decoder_cfg
-            and isinstance(n_steps_output, int)
-            and decoder_cfg.get("time_steps") in (None, "auto")
-        ):
-            decoder_cfg["time_steps"] = n_steps_output
 
     encoder = instantiate(encoder_cfg)
     decoder = instantiate(decoder_cfg)
