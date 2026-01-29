@@ -50,6 +50,17 @@
         "code",
         "review"
       ]
+    },
+    {
+      "login": "cisprague",
+      "name": "Christopher Iliffe Sprague",
+      "avatar_url": "https://avatars.githubusercontent.com/u/17131395?v=4",
+      "profile": "https://cisprague.github.io/",
+      "contributions": [
+        "ideas",
+        "code",
+        "review"
+      ]
     }
   ],
   "contributorsPerLine": 7,
