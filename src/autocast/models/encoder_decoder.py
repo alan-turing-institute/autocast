@@ -9,11 +9,12 @@ from torchmetrics import Metric
 from autocast.decoders import Decoder
 from autocast.encoders.base import EncoderWithCond
 from autocast.metrics.utils import MetricsMixin
+from autocast.models.denorm_mixin import DenormMixin
 from autocast.models.optimizer_mixin import OptimizerMixin
 from autocast.types import Batch, Tensor, TensorBNC, TensorBTSC
 
 
-class EncoderDecoder(OptimizerMixin, L.LightningModule, MetricsMixin):
+class EncoderDecoder(DenormMixin, OptimizerMixin, L.LightningModule, MetricsMixin):
     """Encoder-Decoder Model."""
 
     encoder: EncoderWithCond
@@ -58,6 +59,8 @@ class EncoderDecoder(OptimizerMixin, L.LightningModule, MetricsMixin):
         x = self(batch)
         y_pred = self.decoder(x)
         y_true = batch.output_fields
+        # y_pred = self.denormalize_tensor(y_pred)
+        # y_true = self.denormalize_tensor(y_true)
         loss = self.loss_func(y_pred, y_true)
         self.log(
             "train_loss", loss, prog_bar=True, batch_size=batch.input_fields.shape[0]
@@ -77,8 +80,15 @@ class EncoderDecoder(OptimizerMixin, L.LightningModule, MetricsMixin):
         self.log(
             "val_loss", loss, prog_bar=True, batch_size=batch.input_fields.shape[0]
         )
+        # Denormalize for metrics computation
+        y_pred_denorm = self.denormalize_tensor(y_pred)
+        y_true_denorm = self.denormalize_tensor(y_true)
         self._update_and_log_metrics(
-            self, self.val_metrics, y_pred, y_true, batch.input_fields.shape[0]
+            self,
+            self.val_metrics,
+            y_pred_denorm,
+            y_true_denorm,
+            batch.input_fields.shape[0],
         )
         return loss
 
@@ -92,13 +102,17 @@ class EncoderDecoder(OptimizerMixin, L.LightningModule, MetricsMixin):
         self.log(
             "test_loss", loss, prog_bar=True, batch_size=batch.input_fields.shape[0]
         )
+        # Denormalize for metrics computation
+        y_pred_denorm = self.denormalize_tensor(y_pred)
+        y_true_denorm = self.denormalize_tensor(y_true)
         self._update_and_log_metrics(
-            self, self.test_metrics, y_pred, y_true, batch.input_fields.shape[0]
+            self,
+            self.test_metrics,
+            y_pred_denorm,
+            y_true_denorm,
+            batch.input_fields.shape[0],
         )
         return loss
-
-    def predict_step(self, batch: Batch, batch_idx: int) -> TensorBTSC:  # noqa: ARG002
-        return self(batch)
 
     def encode(self, batch: Batch) -> TensorBNC:
         return self.encoder.encode(batch)

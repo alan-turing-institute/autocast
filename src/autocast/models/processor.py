@@ -8,6 +8,7 @@ from torch import nn
 from torchmetrics import Metric
 
 from autocast.metrics.utils import MetricsMixin
+from autocast.models.denorm_mixin import DenormMixin
 from autocast.models.optimizer_mixin import OptimizerMixin
 from autocast.nn.noise.noise_injector import NoiseInjector
 from autocast.processors.base import Processor
@@ -16,7 +17,12 @@ from autocast.types import EncodedBatch, Tensor, TensorBNC
 
 
 class ProcessorModel(
-    OptimizerMixin, RolloutMixin[EncodedBatch], ABC, L.LightningModule, MetricsMixin
+    DenormMixin,
+    OptimizerMixin,
+    RolloutMixin[EncodedBatch],
+    ABC,
+    L.LightningModule,
+    MetricsMixin,
 ):
     """Processor Base Class."""
 
@@ -104,6 +110,8 @@ class ProcessorModel(
         if self.val_metrics is not None:
             y_pred = self._predict(batch)
             y_true = batch.encoded_output_fields
+            y_pred = self.denormalize_tensor(y_pred)
+            y_true = self.denormalize_tensor(y_true)
             self._update_and_log_metrics(
                 self, self.val_metrics, y_pred, y_true, batch.encoded_inputs.shape[0]
             )
@@ -117,6 +125,8 @@ class ProcessorModel(
         if self.test_metrics is not None:
             y_pred = self._predict(batch)
             y_true = batch.encoded_output_fields
+            y_pred = self.denormalize_tensor(y_pred)
+            y_true = self.denormalize_tensor(y_true)
             self._update_and_log_metrics(
                 self, self.test_metrics, y_pred, y_true, batch.encoded_inputs.shape[0]
             )

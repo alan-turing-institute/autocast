@@ -287,14 +287,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         return self.to_sample(item)
 
     def set_up_normalization(self):
-        """
-        Set up normalizer.
-
-        Notes
-        -----
-        - Call method after metadata has been created.
-        - Sets `self.norm` to `None` if `self.use_normalization = False`.
-        """
+        """Set up normalizer (`None` if `self.use_normalization = False`)."""
         # TODO: The well uses both attributes but cant we just use normalization_type ?
         if (self.use_normalization and self.normalization_type is None) or (
             not self.use_normalization and self.normalization_type is not None
