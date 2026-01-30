@@ -23,7 +23,7 @@ num_workers: 0
 
 # Normalization
 use_normalization: true
-normalization_path: ${oc.env:AUTOCAST_DATASETS,./datasets}/${well_dataset_name}/stats.yaml
+normalization_path: ${oc.env:AUTOCAST_DATASETS,./datasets}/${oc.select:.well_dataset_name}/stats.yaml
 
 # Mode configuration - can be overridden in autoencoder.yaml
 autoencoder_mode: false
