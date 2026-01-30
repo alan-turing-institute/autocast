@@ -44,7 +44,6 @@ def main():
 
     # Run Training
     run_training(
-        None,
         cfg,
         model,
         datamodule,

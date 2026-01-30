@@ -323,8 +323,7 @@ def setup_epd_model(config: DictConfig, stats: dict) -> EncoderProcessorDecoder:
 
 
 def run_training(
-    cfg: Any,  # Unused, compat  # noqa: ARG001
-    pydantic_config: DictConfig,
+    config: DictConfig,
     model: L.LightningModule,
     datamodule: L.LightningDataModule,
     work_dir: Path,
@@ -333,9 +332,11 @@ def run_training(
     job_type: str = "train",
 ):
     """Standardized training loop."""
+    # Ensure work_dir is a Path
     work_dir = Path(work_dir)
 
-    logging_cfg = pydantic_config.get("logging")
+    # Setup logger
+    logging_cfg = config.get("logging")
     logging_cfg = (
         OmegaConf.to_container(logging_cfg, resolve=True)
         if logging_cfg is not None
@@ -343,13 +344,14 @@ def run_training(
     )
     wandb_logger, _watch_cfg = create_wandb_logger(
         logging_cfg,  # type: ignore TODO: fix
-        experiment_name=pydantic_config.get("experiment_name"),
+        experiment_name=config.get("experiment_name"),
         job_type=job_type,
         work_dir=work_dir,
-        config={"hydra": OmegaConf.to_container(pydantic_config, resolve=True)},
+        config={"hydra": OmegaConf.to_container(config, resolve=True)},
     )
 
-    trainer_cfg = pydantic_config.get("trainer")
+    # Get trainer
+    trainer_cfg = config.get("trainer")
     trainer_cfg = OmegaConf.to_container(trainer_cfg, resolve=True)
     trainer = instantiate(
         trainer_cfg,
@@ -357,19 +359,22 @@ def run_training(
         logger=wandb_logger,
     )
 
+    # Get output config and save resolved config if requested
+    output_cfg = config.get("output", {})
+    if output_cfg.get("save_config"):
+        save_resolved_config(config, work_dir)
+
     log.info("Starting training...")
     trainer.fit(model=model, datamodule=datamodule)
 
+    # Run testing if not skipped
     if not skip_test:
         trainer.test(model=model, dataloaders=datamodule.test_dataloader())
 
-    output_cfg = pydantic_config.get("output", {})
+    # Save final checkpoint
     ckpt_name = output_checkpoint_path or output_cfg.get(
         "checkpoint_name", "model.ckpt"
     )
     ckpt_path = work_dir / ckpt_name
     trainer.save_checkpoint(ckpt_path)
     log.info("Saved checkpoint to %s", ckpt_path)
-
-    if output_cfg.get("save_config"):
-        save_resolved_config(pydantic_config, work_dir)
