@@ -36,50 +36,21 @@ class DenormMixin(L.LightningModule):
         Looks for the normalizer in trainer.datamodule.train_dataset.norm
         and sets self.normalizer if found.
         """
-        if not hasattr(self, "trainer"):
+        # Lightning raises RuntimeError when accessing trainer property if not attached
+        # Use try-except to handle this gracefully
+        try:
+            trainer = self.trainer
+        except RuntimeError:
             return
 
-        if hasattr(self.trainer, "datamodule"):
-            datamodule = self.trainer.datamodule
+        if hasattr(trainer, "datamodule"):
+            datamodule = trainer.datamodule
             if hasattr(datamodule, "train_dataset") and hasattr(
                 datamodule.train_dataset, "norm"
             ):
                 log.info("Getting normalizer from the train dataset.")
                 # SpatioTemporalDataset and WellDataset both have norm attribute
                 self.norm = datamodule.train_dataset.norm
-
-    def denormalize_batch(
-        self,
-        batch: Batch,
-    ) -> Batch:
-        """
-        Denormalize the input batch.
-
-        Parameters
-        ----------
-        batch : Batch
-            The input batch containing normalized data.
-
-        Returns
-        -------
-        Batch
-            The denormalized batch.
-        """
-        if self.norm is None:
-            return batch
-
-        return Batch(
-            input_fields=self.norm.denormalize_flattened(
-                batch.input_fields, "variable"
-            ),
-            output_fields=batch.output_fields,
-            constant_scalars=batch.constant_scalars,
-            constant_fields=(
-                self.norm.denormalize_flattened(batch.constant_fields, "constant")
-                if batch.constant_fields
-                else None
-            ),
-        )
 
     def denormalize_tensor(
         self,
