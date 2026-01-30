@@ -1,4 +1,4 @@
-"""Train an encoder-processor-decoder with optional autoencoder warm-start."""
+"""Train an encoder-processor-decoder with optional pretrained autoencoder."""
 
 import logging
 
@@ -13,7 +13,6 @@ log = logging.getLogger(__name__)
 
 def main():
     """CLI entrypoint for training the processor."""
-    # Parse args
     args = parse_common_args(
         description=(
             "Train an encoder-processor-decoder model with Hydra-configured "
@@ -21,8 +20,9 @@ def main():
         ),
         default_config_name="encoder_processor_decoder",
     )
-    logging.basicConfig(level=logging.INFO)
 
+    # Setup logging and working directory
+    logging.basicConfig(level=logging.INFO)
     work_dir = args.work_dir.resolve()
     work_dir.mkdir(parents=True, exist_ok=True)
 

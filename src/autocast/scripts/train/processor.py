@@ -17,7 +17,6 @@ log = logging.getLogger(__name__)
 
 def main():
     """CLI entrypoint for training the processor."""
-    # Parse args
     args = parse_common_args(
         description=(
             "Train a ProcessorModel directly on encoded datasets with "
@@ -25,8 +24,9 @@ def main():
         ),
         default_config_name="processor",
     )
-    logging.basicConfig(level=logging.INFO)
 
+    # Setup logging and working directory
+    logging.basicConfig(level=logging.INFO)
     work_dir = args.work_dir.resolve()
     work_dir.mkdir(parents=True, exist_ok=True)
 

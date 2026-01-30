@@ -1,4 +1,4 @@
-"""Shared configuration loading for AutoCast scripts."""
+"""Shared config serialization and deserialization for AutoCast scripts."""
 
 import argparse
 import logging

@@ -1,4 +1,4 @@
-"""Shared CLI argument parsing utilities for AutoCast scripts."""
+"""Shared CLI argument parsing for AutoCast scripts."""
 
 import argparse
 import logging
