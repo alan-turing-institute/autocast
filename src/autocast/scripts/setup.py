@@ -49,7 +49,7 @@ def _get_optimizer_config(config: DictConfig) -> dict[str, Any] | None:
     if optimizer_config is None:
         return None
     config_dict = OmegaConf.to_container(optimizer_config, resolve=True)
-    return config_dict if isinstance(config_dict, dict) else None  # type: ignore  # noqa: PGH003
+    return config_dict if isinstance(config_dict, dict) else None  # type: ignore since checked if dict
 
 
 def _get_data_config(config: DictConfig) -> dict[str, Any]:
@@ -57,7 +57,7 @@ def _get_data_config(config: DictConfig) -> dict[str, Any]:
     if data_config is None:
         return {}
     config_dict = OmegaConf.to_container(data_config, resolve=True)
-    return config_dict if isinstance(config_dict, dict) else {}  # type: ignore  # noqa: PGH003
+    return config_dict if isinstance(config_dict, dict) else {}  # type: ignore since checked if dict
 
 
 def _filter_kwargs_for_target(
