@@ -23,7 +23,9 @@ class RolloutMixin(ABC, Generic[BatchT]):
         free_running_only: bool = False,
         return_windows: bool = False,
         detach: bool = True,
-        n_members: (int | None) = None,
+        n_members: (
+            int | None
+        ) = None,  # noqa: ARG002 not used in default implementation but potentially in overrides
     ) -> RolloutOutput:
         """Perform rollout over multiple time steps.
 
