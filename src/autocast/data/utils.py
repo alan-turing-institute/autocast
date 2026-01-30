@@ -22,6 +22,8 @@ def get_datamodule(
     overwrite_tmp: bool = False,
     num_workers: int = 8,
     batch_size: int = 16,
+    use_normalization: bool = True,
+    normalization_path: str = "../stats.yaml",  # TODO: choose better default
 ):
     """Get the configured datamodule.
 
@@ -116,8 +118,9 @@ def get_datamodule(
         n_steps_output=n_steps_output,
         min_dt_stride=stride,
         max_dt_stride=stride,
-        use_normalization=True,
+        use_normalization=use_normalization,
         autoencoder_mode=autoencoder_mode,
         num_workers=num_workers,
         batch_size=batch_size,
+        normalization_path=normalization_path,
     )
