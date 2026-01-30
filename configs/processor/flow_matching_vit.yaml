@@ -4,5 +4,5 @@ defaults:
 
 _target_: autocast.processors.flow_matching.FlowMatchingProcessor
 flow_ode_steps: 20
-n_steps_output: null
-n_channels_out: null
+n_steps_output: auto
+n_channels_out: auto
