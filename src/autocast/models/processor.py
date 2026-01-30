@@ -8,6 +8,7 @@ from torch import nn
 from torchmetrics import Metric
 
 from autocast.metrics.utils import MetricsMixin
+from autocast.models.denorm_mixin import DenormMixin
 from autocast.models.optimizer_mixin import OptimizerMixin
 from autocast.nn.noise.noise_injector import NoiseInjector
 from autocast.processors.base import Processor
@@ -16,7 +17,12 @@ from autocast.types import EncodedBatch, Tensor, TensorBNC
 
 
 class ProcessorModel(
-    OptimizerMixin, RolloutMixin[EncodedBatch], ABC, L.LightningModule, MetricsMixin
+    DenormMixin,
+    OptimizerMixin,
+    RolloutMixin[EncodedBatch],
+    ABC,
+    L.LightningModule,
+    MetricsMixin,
 ):
     """Processor Base Class."""
 

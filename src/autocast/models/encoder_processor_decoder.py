@@ -7,6 +7,7 @@ from torch import nn
 from torchmetrics import Metric, MetricCollection
 
 from autocast.metrics.utils import MetricsMixin
+from autocast.models.denorm_mixin import DenormMixin
 from autocast.models.encoder_decoder import EncoderDecoder
 from autocast.models.optimizer_mixin import OptimizerMixin
 from autocast.nn.noise.noise_injector import NoiseInjector
@@ -17,7 +18,7 @@ from autocast.types.types import TensorBTSCM
 
 
 class EncoderProcessorDecoder(
-    OptimizerMixin, RolloutMixin[Batch], L.LightningModule, MetricsMixin
+    DenormMixin, OptimizerMixin, RolloutMixin[Batch], L.LightningModule, MetricsMixin
 ):
     """Encoder-Processor-Decoder Model.""" ""
 

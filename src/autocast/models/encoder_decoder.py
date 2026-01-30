@@ -9,11 +9,12 @@ from torchmetrics import Metric
 from autocast.decoders import Decoder
 from autocast.encoders.base import EncoderWithCond
 from autocast.metrics.utils import MetricsMixin
+from autocast.models.denorm_mixin import DenormMixin
 from autocast.models.optimizer_mixin import OptimizerMixin
 from autocast.types import Batch, Tensor, TensorBNC, TensorBTSC
 
 
-class EncoderDecoder(OptimizerMixin, L.LightningModule, MetricsMixin):
+class EncoderDecoder(DenormMixin, OptimizerMixin, L.LightningModule, MetricsMixin):
     """Encoder-Decoder Model."""
 
     encoder: EncoderWithCond
