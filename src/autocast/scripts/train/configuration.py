@@ -161,27 +161,3 @@ def _generate_split(simulator: Any, split_cfg: dict) -> dict[str, Any]:
         "valid": simulator.forward_samples_spatiotemporal(n_valid),
         "test": simulator.forward_samples_spatiotemporal(n_test),
     }
-
-
-def resolve_auto_params(
-    config: DictConfig, input_shape: tuple, output_shape: tuple
-) -> DictConfig:
-    """Resolve 'auto' values in the configuration using inferred data shapes."""
-    training_cfg = config.get("training")
-    if training_cfg is None:
-        training_cfg = config.get("datamodule")
-    if training_cfg is None:
-        return config
-
-    if training_cfg.get("n_steps_input") == "auto":
-        training_cfg["n_steps_input"] = input_shape[1]
-    if training_cfg.get("n_steps_output") == "auto":
-        training_cfg["n_steps_output"] = output_shape[1]
-
-    if training_cfg.get("stride") == "auto":
-        training_cfg["stride"] = training_cfg.get("n_steps_output", output_shape[1])
-
-    if training_cfg.get("rollout_stride") == "auto":
-        training_cfg["rollout_stride"] = training_cfg.get("stride")
-
-    return config

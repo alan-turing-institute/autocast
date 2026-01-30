@@ -23,13 +23,34 @@ from autocast.models.encoder_processor_decoder_ensemble import (
 )
 from autocast.models.processor import ProcessorModel
 from autocast.models.processor_ensemble import ProcessorModelEnsemble
-from autocast.scripts.train.configuration import (
-    build_datamodule,
-    resolve_auto_params,
-)
+from autocast.scripts.train.configuration import build_datamodule
 from autocast.types.batch import Batch, EncodedBatch
 
 log = logging.getLogger(__name__)
+
+
+def resolve_auto_params(
+    config: DictConfig, input_shape: tuple, output_shape: tuple
+) -> DictConfig:
+    """Resolve 'auto' values in the configuration using inferred data shapes."""
+    training_cfg = config.get("training")
+    if training_cfg is None:
+        training_cfg = config.get("datamodule")
+    if training_cfg is None:
+        return config
+
+    if training_cfg.get("n_steps_input") == "auto":
+        training_cfg["n_steps_input"] = input_shape[1]
+    if training_cfg.get("n_steps_output") == "auto":
+        training_cfg["n_steps_output"] = output_shape[1]
+
+    if training_cfg.get("stride") == "auto":
+        training_cfg["stride"] = training_cfg.get("n_steps_output", output_shape[1])
+
+    if training_cfg.get("rollout_stride") == "auto":
+        training_cfg["rollout_stride"] = training_cfg.get("stride")
+
+    return config
 
 
 def _get_optimizer_config(config: DictConfig) -> dict[str, Any] | None:
