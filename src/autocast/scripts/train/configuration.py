@@ -119,14 +119,33 @@ def _infer_encoder_global_cond_channels(
         encoder.eval()
     try:
         with torch.no_grad():
+            # DEBUG: Log what's in the example_batch
+            log.info(
+                "DEBUG: example_batch.constant_scalars shape: %s",
+                example_batch.constant_scalars.shape
+                if example_batch.constant_scalars is not None
+                else None,
+            )
+            log.info(
+                "DEBUG: example_batch.boundary_conditions: %s",
+                example_batch.boundary_conditions,
+            )
+
             cond = encoder.encode_cond(example_batch)  # type: ignore[attr-defined]
+
+            # DEBUG: Log the inferred cond
+            log.info(
+                "DEBUG: encoder.encode_cond returned shape: %s",
+                cond.shape if cond is not None else None,
+            )
+
         if cond is not None:
             inferred = int(cond.shape[-1])
-            log.debug("Inferred cond channel count=%s from sample batch", inferred)
+            log.info("Inferred global_cond_channels=%s from sample batch", inferred)
             return inferred
         return 0
     except Exception as exc:  # pragma: no cover - defensive
-        log.debug("Failed to infer cond channels via encode_cond(): %s", exc)
+        log.warning("Failed to infer cond channels via encode_cond(): %s", exc)
         return None
     finally:
         if prev_training is not None:
