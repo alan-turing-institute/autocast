@@ -30,23 +30,17 @@ def resolve_auto_params(
     config: DictConfig, input_shape: tuple, output_shape: tuple
 ) -> DictConfig:
     """Resolve 'auto' values in the configuration using inferred data shapes."""
-    training_cfg = config.get("training")
-    if training_cfg is None:
-        training_cfg = config.get("datamodule")
-    if training_cfg is None:
+    data_config = config.get("datamodule")
+    if data_config is None:
         return config
-
-    if training_cfg.get("n_steps_input") == "auto":
-        training_cfg["n_steps_input"] = input_shape[1]
-    if training_cfg.get("n_steps_output") == "auto":
-        training_cfg["n_steps_output"] = output_shape[1]
-
-    if training_cfg.get("stride") == "auto":
-        training_cfg["stride"] = training_cfg.get("n_steps_output", output_shape[1])
-
-    if training_cfg.get("rollout_stride") == "auto":
-        training_cfg["rollout_stride"] = training_cfg.get("stride")
-
+    if data_config.get("n_steps_input") == "auto":
+        data_config["n_steps_input"] = input_shape[1]
+    if data_config.get("n_steps_output") == "auto":
+        data_config["n_steps_output"] = output_shape[1]
+    if data_config.get("stride") == "auto":
+        data_config["stride"] = data_config.get("n_steps_output", output_shape[1])
+    if data_config.get("rollout_stride") == "auto":
+        data_config["rollout_stride"] = data_config.get("stride")
     return config
 
 
@@ -58,13 +52,11 @@ def _get_optimizer_config(config: DictConfig) -> dict[str, Any] | None:
     return cfg if isinstance(cfg, dict) else None  # type: ignore  # noqa: PGH003
 
 
-def _get_training_cfg(config: DictConfig) -> dict[str, Any]:
-    training_cfg = config.get("training")
-    if training_cfg is None:
-        training_cfg = config.get("datamodule")
-    if training_cfg is None:
+def _get_data_config(config: DictConfig) -> dict[str, Any]:
+    data_cfg = config.get("datamodule")
+    if data_cfg is None:
         return {}
-    cfg = OmegaConf.to_container(training_cfg, resolve=True)
+    cfg = OmegaConf.to_container(data_cfg, resolve=True)
     return cfg if isinstance(cfg, dict) else {}  # type: ignore  # noqa: PGH003
 
 
@@ -110,12 +102,11 @@ def setup_datamodule(config: DictConfig):
     output_shape = train_outputs.shape
 
     config = resolve_auto_params(config, input_shape, output_shape)
-    training_cfg = _get_training_cfg(config)
-
+    data_cfg = _get_data_config(config)
     logic_stats = {
         "channel_count": input_shape[-1],
-        "n_steps_input": training_cfg.get("n_steps_input", input_shape[1]),
-        "n_steps_output": training_cfg.get("n_steps_output", output_shape[1]),
+        "n_steps_input": data_cfg.get("n_steps_input", input_shape[1]),
+        "n_steps_output": data_cfg.get("n_steps_output", output_shape[1]),
         "input_shape": input_shape,
         "output_shape": output_shape,
         "example_batch": batch,
@@ -255,10 +246,10 @@ def setup_processor_model(config: DictConfig, stats: dict) -> ProcessorModel:
     is_ensemble = model_cfg.get("n_members", 1) > 1
     cls = ProcessorModelEnsemble if is_ensemble else ProcessorModel
 
-    training_cfg = _get_training_cfg(config)
+    data_config = _get_data_config(config)
     kwargs = {
         "processor": processor,
-        "stride": training_cfg.get("stride", stats["n_steps_output"]),
+        "stride": data_config.get("stride", stats["n_steps_output"]),
         "loss_func": loss_func,
         "learning_rate": model_cfg.get("learning_rate", 1e-3),
         "optimizer_config": _get_optimizer_config(config),
@@ -279,8 +270,8 @@ def setup_epd_model(config: DictConfig, stats: dict) -> EncoderProcessorDecoder:
         config, stats, extra_input_channels=extra_input_channels
     )
 
-    training_cfg = _get_training_cfg(config)
-    if training_cfg.get("freeze_autoencoder"):
+    data_config = _get_data_config(config)
+    if data_config.get("freeze_autoencoder"):
         for p in encoder.parameters():
             p.requires_grad = False
         for p in decoder.parameters():
@@ -322,7 +313,7 @@ def setup_epd_model(config: DictConfig, stats: dict) -> EncoderProcessorDecoder:
         "processor": processor,
         "learning_rate": model_cfg.get("learning_rate", 1e-3),
         "train_in_latent_space": model_cfg.get("train_in_latent_space", False),
-        "stride": training_cfg.get("stride", stats["n_steps_output"]),
+        "stride": data_config.get("stride", stats["n_steps_output"]),
         "optimizer_config": _get_optimizer_config(config),
         "loss_func": loss_func,
         "input_noise_injector": noise_injector,
