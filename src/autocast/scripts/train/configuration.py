@@ -46,6 +46,8 @@ def prepare_datamodule(cfg: DictConfig):
     """Instantiate the datamodule and inspect the first batch for sizing."""
     datamodule = build_datamodule(cfg.data)
     batch = next(iter(datamodule.train_dataloader()))
+    print("Mean: ", batch.input_fields.mean([0, 1, 2, 3]))
+    print("Std : ", batch.input_fields.std([0, 1, 2, 3]))
     train_inputs = _get_field(batch, "inputs", "input_fields")
     train_outputs = _get_field(batch, "outputs", "output_fields")
     channel_count = train_inputs.shape[-1]

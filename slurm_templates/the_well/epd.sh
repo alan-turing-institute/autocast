@@ -53,23 +53,22 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 # ---------------- Code to train and evaluate the model ----------------
 
 # Train
-uv run train_encoder_processor_decoder \
-	--config-path=configs/ \
-    --config-name=encoder_processor_decoder \
-	--work-dir=${WORKING_DIR} \
-    model=encoder_processor_decoder \
-    encoder@model.encoder=permute_concat \
-    decoder@model.decoder=channels_last \
-    processor@model.processor=fno \
-    logging.wandb.enabled=true \
-    trainer.max_epochs=2 \
-    data=the_well \
-    data.well_dataset_name=turbulent_radiative_layer_2D \
-    data.num_workers=4 \
-    data.batch_size=16 \
-    optimizer=adamw \
-    optimizer.learning_rate=0.01 \
-    optimizer.weight_decay=1e-4 \
+ uv run train_encoder_processor_decoder \
+      --config-path=configs/ \
+          --config-name=encoder_processor_decoder \
+          model=encoder_processor_decoder \
+          encoder@model.encoder=permute_concat \
+          decoder@model.decoder=channels_last \
+          processor@model.processor=fno \
+          logging.wandb.enabled=true \
+          trainer.max_epochs=5 \
+          data=the_well \
+          data.well_dataset_name=turbulent_radiative_layer_2D \
+          data.num_workers=0 \
+          data.batch_size=4 \
+          optimizer=adamw \
+          optimizer.learning_rate=0.0001 \
+          optimizer.weight_decay=1e-4
 
 uv run evaluate_encoder_processor_decoder \
 	--config-path=configs/ \
