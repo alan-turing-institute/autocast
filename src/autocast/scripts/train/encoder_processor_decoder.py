@@ -18,7 +18,7 @@ def main():
             "Train an encoder-processor-decoder model with Hydra-configured "
             "encoder, decoder, and processor components."
         ),
-        default_config_name="encoder_processor_decoder",
+        config_name="encoder_processor_decoder",
     )
 
     # Setup logging and working directory

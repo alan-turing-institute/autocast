@@ -22,7 +22,7 @@ def main():
             "Train a ProcessorModel directly on encoded datasets with "
             "Hydra-configured processor components."
         ),
-        default_config_name="processor",
+        config_name="processor",
     )
 
     # Setup logging and working directory

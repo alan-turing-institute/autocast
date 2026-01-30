@@ -13,7 +13,7 @@ def main() -> None:
     """CLI entrypoint for autoencoder training."""
     args = parse_common_args(
         description=("Train autoencoder defined by Hydra config under configs/."),
-        default_config_name="autoencoder",
+        config_name="autoencoder",
     )
     logging.basicConfig(level=logging.INFO)
     cfg = load_config(args)

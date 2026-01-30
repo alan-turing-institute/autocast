@@ -25,6 +25,7 @@ from autocast.metrics import (
     LInfinity,
 )
 from autocast.models.encoder_processor_decoder import EncoderProcessorDecoder
+from autocast.scripts.cli import add_common_config_args, add_work_dir_arg
 from autocast.scripts.config import load_config
 from autocast.scripts.setup import setup_datamodule, setup_epd_model
 from autocast.types import Batch
@@ -50,28 +51,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Evaluate a trained encoder-processor-decoder checkpoint."
     )
-    repo_root = Path(__file__).resolve().parents[3]
-    parser.add_argument(
-        "--config-dir",
-        "--config-path",
-        dest="config_dir",
-        type=Path,
-        default=repo_root / "configs",
-        help="Path to the Hydra config directory (defaults to <repo>/configs).",
-    )
-    parser.add_argument(
-        "--config-name",
-        default="encoder_processor_decoder",
-        help="Hydra config name to compose (defaults to 'encoder_processor_decoder').",
-    )
-    parser.add_argument(
-        "overrides",
-        nargs="*",
-        help=(
-            "Hydra config overrides (e.g. trainer.max_epochs=5"
-            "logging.wandb.enabled=true)"
-        ),
-    )
+    add_common_config_args(parser, "encoder_processor_decoder")
     # Required for evaluation
     parser.add_argument(
         "--checkpoint",
@@ -79,12 +59,7 @@ def parse_args() -> argparse.Namespace:
         required=True,
         help="Path to the encoder-processor-decoder checkpoint to evaluate.",
     )
-    parser.add_argument(
-        "--work-dir",
-        type=Path,
-        default=None,
-        help="Directory where evaluation artifacts are saved. Defaults to CWD.",
-    )
+    add_work_dir_arg(parser)
 
     # Optional overrides typically handled by Hydra, but kept for convenience
     parser.add_argument(
@@ -376,7 +351,7 @@ def main() -> None:
     args = parse_args()
     logging.basicConfig(level=logging.INFO)
 
-    work_dir = (args.work_dir or Path.cwd()).expanduser().resolve()
+    work_dir = args.work_dir.expanduser().resolve()
     work_dir.mkdir(parents=True, exist_ok=True)
     csv_path = _resolve_csv_path(args, work_dir)
     video_dir = _resolve_video_dir(args, work_dir)
