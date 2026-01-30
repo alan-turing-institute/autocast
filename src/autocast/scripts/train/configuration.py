@@ -77,23 +77,34 @@ def load_config(args: argparse.Namespace) -> DictConfig:
 
 def build_datamodule(config: DictConfig) -> SpatioTemporalDataModule:
     """Build the DataModule from the Hydra configuration."""
-    dm_cfg = config.get("datamodule", config)
+    # Configure datamodule
+    dm_cfg = config.get("datamodule")
+    if dm_cfg is None:
+        msg = "Config must contain 'datamodule' key."
+        raise ValueError(msg)
     dm_container = OmegaConf.to_container(dm_cfg, resolve=True)
     if not isinstance(dm_container, dict):
         msg = f"datamodule config must be a mapping, got {type(dm_container).__name__}"
         raise TypeError(msg)
 
-    data_path = dm_container.get("data_path")
-    target = dm_container.get("_target_")
-    allow_simulator = True
-    if target:
-        try:
-            allow_simulator = issubclass(get_class(target), SpatioTemporalDataModule)
-        except Exception:
-            allow_simulator = True
-
+    # Configure simulator if provided
     sim_cfg = config.get("simulator")
-    if allow_simulator and data_path is None and sim_cfg is not None:
+    if sim_cfg is not None:
+        target = dm_container.get("_target_")
+        allow_simulator = True
+        if target:
+            try:
+                allow_simulator = issubclass(
+                    get_class(target), SpatioTemporalDataModule
+                )
+            except Exception:
+                allow_simulator = True
+        if not allow_simulator:
+            msg = (
+                "Simulator config provided, but datamodule target is not a "
+                "SpatioTemporalDataModule."
+            )
+            raise ValueError(msg)
         sim_container = OmegaConf.to_container(sim_cfg, resolve=True)
         if not isinstance(sim_container, dict):
             msg = (
@@ -105,7 +116,14 @@ def build_datamodule(config: DictConfig) -> SpatioTemporalDataModule:
         if not isinstance(simulator_cfg, dict):
             msg = "simulator config missing 'simulator' mapping"
             raise ValueError(msg)
+        if dm_container.get("data_path") is not None:
+            log.warning(
+                "Simulator config provided; ignoring datamodule.data_path and "
+                "using generated data instead."
+            )
         simulator = instantiate(simulator_cfg)
+
+        # Generate data splits from simulator and assign to datamodule config
         dm_container["data"] = _generate_split(
             simulator, sim_container.get("split", {})
         )
