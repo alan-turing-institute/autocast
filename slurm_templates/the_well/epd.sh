@@ -58,24 +58,19 @@ uv run train_encoder_processor_decoder \
     --config-name=encoder_processor_decoder \
 	--work-dir=${WORKING_DIR} \
     model=encoder_processor_decoder \
-    encoder@model.encoder=dc_f32c64_small \
-    decoder@model.decoder=dc_f32c64_small \
-    processor@model.processor=flow_matching_large \
+    encoder@model.encoder=permute_concat \
+    decoder@model.decoder=channels_last \
+    processor@model.processor=fno \
     logging.wandb.enabled=true \
-    trainer.max_epochs=5 \
-    trainer.gradient_clip_val=1.0 \
+    trainer.max_epochs=2 \
     data=the_well \
-    data.well_dataset_name=rayleigh_benard \
-    data.num_workers=0 \
-    data.batch_size=8 \
-    data.cache_small=false \
-    data.max_cache_size=0.0 \
+    data.well_dataset_name=turbulent_radiative_layer_2D \
+    data.num_workers=4 \
+    data.batch_size=16 \
     optimizer=adamw \
-    trainer.callbacks.0.every_n_train_steps=5000 \
-    "training.autoencoder_checkpoint='outputs/autoencoder_run/20251217_121300/autocast/0nttzj9a/checkpoints/step-step=7900.ckpt'"
-	# trainer.enable_checkpointing=false \
-    
-# Evaluate
+    optimizer.learning_rate=0.01 \
+    optimizer.weight_decay=1e-4 \
+
 uv run evaluate_encoder_processor_decoder \
 	--config-path=configs/ \
 	--work-dir=${WORKING_DIR} \
