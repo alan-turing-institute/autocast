@@ -17,7 +17,7 @@ from autocast.logging import create_wandb_logger, maybe_watch_model
 from autocast.models.autoencoder import AE
 from autocast.scripts.cli import parse_common_args
 from autocast.scripts.config import load_config
-from autocast.scripts.data import build_datamodule
+from autocast.scripts.setup import setup_autoencoder_model, setup_datamodule
 from autocast.types import Batch
 
 log = logging.getLogger(__name__)
@@ -31,25 +31,6 @@ def parse_args():
         ),
         default_config_name="autoencoder",
     )
-
-
-def build_model(cfg: DictConfig) -> AE:
-    """Create an autoencoder model (encoder, decoder, loss) from config."""
-    model_cfg = cfg.get("model", {})
-    encoder_cfg = model_cfg.get("encoder")
-    decoder_cfg = model_cfg.get("decoder")
-    loss_cfg = model_cfg.get("loss")
-
-    encoder = instantiate(encoder_cfg)
-    decoder = instantiate(decoder_cfg)
-    loss = instantiate(loss_cfg) if loss_cfg is not None else None
-
-    model = AE(encoder=encoder, decoder=decoder, loss_func=loss)
-
-    lr = model_cfg.get("learning_rate")
-    if lr is not None:
-        model.learning_rate = lr
-    return model
 
 
 def _batch_to_device(batch: Batch, device: torch.device) -> Batch:
@@ -145,9 +126,9 @@ def train_autoencoder(config: DictConfig, work_dir: Path) -> Path:
         config={"hydra": resolved_cfg},
     )
 
-    datamodule = build_datamodule(config)
+    datamodule, config, stats = setup_datamodule(config)
 
-    model = build_model(config)
+    model = setup_autoencoder_model(config, stats)
     maybe_watch_model(wandb_logger, model, watch_cfg)
 
     trainer_cfg = config.get("trainer")

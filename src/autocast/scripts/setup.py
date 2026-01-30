@@ -191,6 +191,19 @@ def setup_autoencoder_components(
     return encoder, decoder
 
 
+def setup_autoencoder_model(config: DictConfig, stats: dict) -> AE:
+    """Build the full autoencoder model (encoder, decoder, loss)."""
+    encoder, decoder = setup_autoencoder_components(config, stats)
+    model_cfg = config.get("model", {})
+    loss_cfg = model_cfg.get("loss")
+    loss = instantiate(loss_cfg) if loss_cfg is not None else None
+    model = AE(encoder=encoder, decoder=decoder, loss_func=loss)
+    lr = model_cfg.get("learning_rate")
+    if lr is not None:
+        model.learning_rate = lr
+    return model
+
+
 def _infer_latent_channels(encoder: Encoder, batch: Any) -> int:
     """Run a forward pass to determine latent channel count."""
     prev_training = encoder.training
