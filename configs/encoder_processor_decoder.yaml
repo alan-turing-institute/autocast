@@ -1,7 +1,6 @@
 defaults:
-  - data: reaction_diffusion
-  - optional optimizer: null
-  - optional nn/noise/input_noise_injector: null
+  - datamodule: advection_diffusion_multichannel
+  - optional simulator: null
   - model: encoder_processor_decoder
   - trainer: default
   - logging: wandb
@@ -9,20 +8,13 @@ defaults:
 
 seed: 42
 experiment_name: epd
+
 output:
   checkpoint_name: encoder_processor_decoder.ckpt
   save_config: true
 
 eval:
   max_rollout_steps: 25
-
-training:
-  n_steps_input: 1
-  n_steps_output: 4
-  stride: 1
-  rollout_stride: 4
-  autoencoder_checkpoint: null
-  freeze_autoencoder: false
 
 hydra:
   run:

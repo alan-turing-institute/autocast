@@ -14,9 +14,8 @@ OVERRIDES=(
 	--config-path=configs
 	--config-name=encoder_processor_decoder
 	--work-dir=${WORKDIR}
-	"data=${DATAPATH}"
-	"data.data_path=${AUTOCAST_DATASETS}/${DATAPATH}"
-	"data.use_simulator=false"
+	"datamodule=${DATAPATH}"
+	"datamodule.data_path=${AUTOCAST_DATASETS}/${DATAPATH}"
 )
 
 CKPT="${WORKDIR}/autoencoder.ckpt"

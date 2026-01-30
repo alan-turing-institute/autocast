@@ -1,6 +1,6 @@
 _target_: autocast.decoders.dc.DCDecoder
 in_channels: 64
-out_channels: 4 # ${oc.select:data.n_channels, null}
+out_channels: 4 # ${oc.select:datamodule.n_channels, null}
 # name: "dcae_f32c64_small"
 # arch: "dcae"
 # saturation: "softclip2"

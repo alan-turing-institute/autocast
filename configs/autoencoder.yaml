@@ -1,8 +1,9 @@
 defaults:
-  - data: reaction_diffusion
+  - datamodule: reaction_diffusion
+  - optional simulator: null
   - optional optimizer: null
   # Or set to TheWell dataset:
-  # - data: the_well
+  # - datamodule: the_well
   - model: autoencoder
   - trainer: default
   - logging: wandb
@@ -10,8 +11,10 @@ defaults:
 
 seed: 42
 experiment_name: ae
-data:
+
+datamodule:
   autoencoder_mode: true
+
 output:
   checkpoint_name: autoencoder.ckpt
   save_config: true

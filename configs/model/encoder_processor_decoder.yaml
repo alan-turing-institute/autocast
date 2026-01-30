@@ -4,13 +4,10 @@ defaults:
   - /encoder: dc_deep
   - /decoder: dc_deep
   - /processor: flow_matching_vit
+  - /input_noise_injector: null
   - _self_
-
+ 
 learning_rate: 0.0001
 train_in_latent_space: true
-stride: ${training.stride}
-rollout_stride: ${training.rollout_stride}
-teacher_forcing_ratio: 0.5
-max_rollout_steps: 25
 loss_func:
   _target_: torch.nn.MSELoss

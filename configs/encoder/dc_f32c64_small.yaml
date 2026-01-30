@@ -1,5 +1,5 @@
 _target_: autocast.encoders.dc.DCEncoder
-# in_channels: ${oc.select:data.n_channels, null}
+# in_channels: ${oc.select:datamodule.n_channels, null}
 in_channels: 4
 out_channels: 64
 # name: "dcae_f32c64_small"

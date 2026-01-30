@@ -1,4 +1,6 @@
 # TheWell dataset configuration
+# TODO: consider refactor such that this is nested within datamodule too at
+# the top level
 # Configure TheWellDataModule for loading datasets from The Well benchmark
 _target_: autocast.data.datamodule.TheWellDataModule
 

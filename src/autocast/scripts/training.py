@@ -1,0 +1,186 @@
+"""Training functions and utils for AutoCast experiments."""
+
+import logging
+from pathlib import Path
+
+import lightning as L
+import torch
+from hydra.utils import instantiate
+from matplotlib import pyplot as plt
+from omegaconf import DictConfig, OmegaConf
+
+from autocast.data.datamodule import SpatioTemporalDataModule
+from autocast.logging import create_wandb_logger
+from autocast.logging.wandb import maybe_watch_model
+from autocast.models.autoencoder import AE
+from autocast.scripts.config import save_resolved_config
+from autocast.scripts.data import batch_to_device
+from autocast.scripts.setup import setup_autoencoder_model, setup_datamodule
+
+log = logging.getLogger(__name__)
+
+
+def run_training(
+    config: DictConfig,
+    model: L.LightningModule,
+    datamodule: L.LightningDataModule,
+    work_dir: Path,
+    skip_test: bool = False,
+    output_checkpoint_path: Path | None = None,
+    job_type: str = "train",
+):
+    """Standardized training loop."""
+    # Ensure work_dir is a Path
+    work_dir = Path(work_dir)
+
+    # Setup logger
+    logging_cfg = config.get("logging")
+    logging_cfg = (
+        OmegaConf.to_container(logging_cfg, resolve=True)
+        if logging_cfg is not None
+        else {}
+    )
+    wandb_logger, _watch_cfg = create_wandb_logger(
+        logging_cfg,  # type: ignore TODO: fix
+        experiment_name=config.get("experiment_name"),
+        job_type=job_type,
+        work_dir=work_dir,
+        config={"hydra": OmegaConf.to_container(config, resolve=True)},
+    )
+
+    # Get trainer
+    trainer_cfg = config.get("trainer")
+    trainer_cfg = OmegaConf.to_container(trainer_cfg, resolve=True)
+    trainer = instantiate(
+        trainer_cfg,
+        default_root_dir=str(work_dir),
+        logger=wandb_logger,
+    )
+
+    # Get output config and save resolved config if requested
+    output_cfg = config.get("output", {})
+    if output_cfg.get("save_config"):
+        save_resolved_config(config, work_dir)
+
+    log.info("Starting training...")
+    trainer.fit(model=model, datamodule=datamodule)
+
+    # Run testing if not skipped
+    if not skip_test:
+        trainer.test(model=model, dataloaders=datamodule.test_dataloader())
+
+    # Save final checkpoint
+    ckpt_name = output_checkpoint_path or output_cfg.get(
+        "checkpoint_name", "model.ckpt"
+    )
+    ckpt_path = work_dir / ckpt_name
+    trainer.save_checkpoint(ckpt_path)
+    log.info("Saved checkpoint to %s", ckpt_path)
+
+
+@torch.no_grad()
+def _save_reconstructions(
+    model: AE,
+    datamodule: SpatioTemporalDataModule,
+    work_dir: Path,
+    max_batches: int = 4,
+    cmap: str = "viridis",
+) -> None:
+    output_dir = work_dir / "reconstructions"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    device = next(model.parameters()).device
+    model.eval()
+    loader = datamodule.test_dataloader()
+
+    def _heatmap_slice(tensor: torch.Tensor) -> torch.Tensor:
+        data = tensor.detach().cpu()
+        while data.ndim > 2:
+            data = data[0]
+        if data.ndim == 1:
+            data = data.unsqueeze(0)
+        return data
+
+    for idx, batch in enumerate(loader):
+        batch_on_device = batch_to_device(batch, device)
+        outputs, latents = model.forward_with_latent(batch_on_device)
+        inputs = batch_on_device.input_fields  # B, T, W, H, C
+
+        x = inputs[0, 0, ..., 0].clone().cpu()
+        y = outputs[0, 0, ..., 0].clone().cpu()
+        z = latents[0, 0, ..., 0].clone().cpu()
+        fig, axs = plt.subplots(1, 4, figsize=(12, 4))
+        for ax in axs:
+            ax.axis("off")
+
+        axs[0].imshow(_heatmap_slice(x), cmap=cmap)
+        axs[0].set_title("Input")
+        axs[1].imshow(_heatmap_slice(y), cmap=cmap)
+        axs[1].set_title("Reconstruction")
+        difference = y - x
+        axs[2].imshow(_heatmap_slice(difference), cmap=cmap)
+        axs[2].set_title("Difference")
+        axs[3].imshow(_heatmap_slice(z), cmap=cmap)
+        axs[3].set_title("Latent")
+
+        fig_path = output_dir / f"batch_{idx:02d}.png"
+        fig.tight_layout()
+        fig.savefig(fig_path)
+        plt.close(fig)
+        log.info("Saved reconstruction preview to %s", fig_path)
+
+        if idx + 1 >= max_batches:
+            break
+
+
+def train_autoencoder(config: DictConfig, work_dir: Path) -> Path:
+    """Train the autoencoder defined in `cfg` and return the checkpoint path."""
+    log.info("Starting autoencoder experiment: %s", config.get("experiment_name"))
+    L.seed_everything(config.get("seed", 42), workers=True)
+
+    resolved_cfg = OmegaConf.to_container(config, resolve=True)
+
+    logging_cfg = config.get("logging")
+    logging_cfg = (
+        OmegaConf.to_container(logging_cfg, resolve=True)
+        if logging_cfg is not None
+        else {}
+    )
+    wandb_logger, watch_cfg = create_wandb_logger(
+        logging_cfg,  # type: ignore TODO: fix
+        experiment_name=config.get("experiment_name"),
+        job_type="train-autoencoder",
+        work_dir=work_dir,
+        config={"hydra": resolved_cfg},
+    )
+
+    datamodule, config, stats = setup_datamodule(config)
+
+    model = setup_autoencoder_model(config, stats)
+    maybe_watch_model(wandb_logger, model, watch_cfg)
+
+    trainer_cfg = config.get("trainer")
+    trainer_cfg = OmegaConf.to_container(trainer_cfg, resolve=True)
+    trainer = instantiate(
+        trainer_cfg, logger=wandb_logger, default_root_dir=str(work_dir)
+    )
+    trainer.fit(model=model, datamodule=datamodule)
+
+    output_cfg = config.get("output", {})
+    checkpoint_name = output_cfg.get("checkpoint_name", "autoencoder.ckpt")
+    checkpoint_target = Path(checkpoint_name)
+    checkpoint_path = (
+        checkpoint_target
+        if checkpoint_target.is_absolute()
+        else (work_dir / checkpoint_target)
+    )
+    trainer.save_checkpoint(checkpoint_path)
+    log.info("Saved checkpoint to %s", checkpoint_path.resolve())
+
+    _save_reconstructions(model, datamodule, work_dir)
+
+    if output_cfg.get("save_config", False):
+        save_resolved_config(
+            config, work_dir, filename="resolved_autoencoder_config.yaml"
+        )
+
+    return checkpoint_path

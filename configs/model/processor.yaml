@@ -1,5 +1,6 @@
 defaults:
   - /processor: flow_matching
+  - /input_noise_injector: null
   - _self_
 
 learning_rate: 0.0001

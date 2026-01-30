@@ -1,0 +1,8 @@
+split:
+  n_train: 4
+  n_valid: 2
+  n_test: 2
+simulator:
+  _target_: autocast.data.advection_diffusion.AdvectionDiffusionMultichannel
+  return_timeseries: true
+  log_level: error

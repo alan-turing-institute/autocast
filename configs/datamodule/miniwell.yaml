@@ -1,4 +1,5 @@
 # MiniWell dataset configuration
+# TODO: consider datamodule structure here too
 # Configure MiniWellDataModule for loading MiniWell h5 datasets
 _target_: autocast.data.encoded_dataset.MiniWellDataModule
 

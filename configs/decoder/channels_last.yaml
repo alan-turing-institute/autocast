@@ -1,3 +1,3 @@
 _target_: autocast.decoders.channels_last.ChannelsLast
-output_channels: null
-time_steps: null
+output_channels: ${oc.select:datamodule.n_channels, null}
+time_steps: ${oc.select:datamodule.n_steps_output, null}
