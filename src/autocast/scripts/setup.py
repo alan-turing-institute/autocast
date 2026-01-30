@@ -292,7 +292,8 @@ def setup_epd_model(config: DictConfig, stats: dict) -> EncoderProcessorDecoder:
         proc_cfg = OmegaConf.to_container(proc_cfg, resolve=True)
 
     proc_kwargs = {
-        "in_channels": latent_channels * stats["n_steps_input"],
+        "in_channels": (latent_channels + extra_input_channels)
+        * stats["n_steps_input"],
         "out_channels": latent_channels * stats["n_steps_output"],
         "n_channels_out": latent_channels,
         "n_steps_output": stats["n_steps_output"],
