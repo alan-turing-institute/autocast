@@ -8,7 +8,6 @@ from pathlib import Path
 import lightning as L
 import matplotlib.pyplot as plt
 import torch
-import yaml
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 
@@ -16,7 +15,7 @@ from autocast.data.datamodule import SpatioTemporalDataModule
 from autocast.logging import create_wandb_logger, maybe_watch_model
 from autocast.models.autoencoder import AE
 from autocast.scripts.cli import parse_common_args
-from autocast.scripts.config import load_config
+from autocast.scripts.config import load_config, save_resolved_config
 from autocast.scripts.setup import setup_autoencoder_model, setup_datamodule
 from autocast.types import Batch
 
@@ -152,10 +151,9 @@ def train_autoencoder(config: DictConfig, work_dir: Path) -> Path:
     _save_reconstructions(model, datamodule, work_dir)
 
     if output_cfg.get("save_config", False):
-        resolved_cfg_path = work_dir / "resolved_autoencoder_config.yaml"
-        with open(resolved_cfg_path, "w") as f:
-            yaml.dump(resolved_cfg, f)
-        log.info("Wrote resolved config to %s", resolved_cfg_path.resolve())
+        save_resolved_config(
+            config, work_dir, filename="resolved_autoencoder_config.yaml"
+        )
 
     return checkpoint_path
 

@@ -7,7 +7,6 @@ from typing import Any
 
 import lightning as L
 import torch
-import yaml
 from hydra.utils import get_class, instantiate
 from omegaconf import DictConfig, OmegaConf
 from torch import nn
@@ -23,6 +22,7 @@ from autocast.models.encoder_processor_decoder_ensemble import (
 )
 from autocast.models.processor import ProcessorModel
 from autocast.models.processor_ensemble import ProcessorModelEnsemble
+from autocast.scripts.config import save_resolved_config
 from autocast.scripts.data import build_datamodule
 from autocast.types.batch import Batch, EncodedBatch
 
@@ -372,5 +372,4 @@ def run_training(
     log.info("Saved checkpoint to %s", ckpt_path)
 
     if output_cfg.get("save_config"):
-        with open(work_dir / "resolved_config.yaml", "w") as f:
-            yaml.dump(OmegaConf.to_container(pydantic_config, resolve=True), f)
+        save_resolved_config(pydantic_config, work_dir)
