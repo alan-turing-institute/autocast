@@ -23,7 +23,9 @@ class RolloutMixin(ABC, Generic[BatchT]):
         free_running_only: bool = False,
         return_windows: bool = False,
         detach: bool = True,
-        n_members: int | None = None,  # noqa: ARG002 not used in default implementation but potentially in overrides
+        n_members: (
+            int | None
+        ) = None,  # noqa: ARG002 not used in default implementation but potentially in overrides
     ) -> RolloutOutput:
         """Perform rollout over multiple time steps.
 
@@ -80,11 +82,11 @@ class RolloutMixin(ABC, Generic[BatchT]):
 
         for _ in tqdm(range(max_rollout_steps), desc="Rollout"):
             output = self._predict(current_batch)
-            pred_outs.append(output)
+            pred_outs.append(self.denormalize_tensor(output))
 
             true_slice, should_record = self._true_slice(current_batch, stride)
             if should_record:
-                true_outs.append(true_slice)
+                true_outs.append(self.denormalize_tensor(true_slice))
 
             rand_val = torch.rand(1, device=output.device).item()
             teacher_force = true_slice.numel() > 0 and rand_val < teacher_forcing_ratio
@@ -125,3 +127,6 @@ class RolloutMixin(ABC, Generic[BatchT]):
     def _advance_batch(
         self, batch: BatchT, next_inputs: Tensor, stride: int
     ) -> BatchT: ...
+
+    @abstractmethod
+    def denormalize_tensor(self, tensor: Tensor, delta=False) -> Tensor
