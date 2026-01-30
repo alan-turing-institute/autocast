@@ -130,7 +130,7 @@ def setup_encoded_datamodule(config: DictConfig):
 
 
 def setup_autoencoder_components(
-    config: DictConfig, stats: dict
+    config: DictConfig, stats: dict, extra_input_channels: int = 0
 ) -> tuple[EncoderWithCond, Decoder]:
     """Build or load the autoencoder (Encoder and Decoder)."""
     model_cfg = config.get("model", {})
@@ -138,6 +138,8 @@ def setup_autoencoder_components(
     decoder_cfg = model_cfg.get("decoder")
 
     n_channels = stats.get("channel_count")
+    if isinstance(n_channels, int) and extra_input_channels:
+        n_channels = n_channels + extra_input_channels
 
     if isinstance(encoder_cfg, DictConfig):
         encoder_cfg = OmegaConf.to_container(encoder_cfg, resolve=True)
@@ -225,13 +227,15 @@ def _infer_latent_channels(encoder: Encoder, batch: Any) -> int:
 def setup_processor_model(config: DictConfig, stats: dict) -> ProcessorModel:
     """Set up just the processor model for training on latents."""
     model_cfg = config.get("model", {})
+    noise_injector, extra_input_channels = _resolve_input_noise_injector(model_cfg)
 
     proc_cfg = model_cfg.get("processor")
     if isinstance(proc_cfg, DictConfig):
         proc_cfg = OmegaConf.to_container(proc_cfg, resolve=True)
 
     proc_kwargs = {
-        "in_channels": stats["channel_count"] * stats["n_steps_input"],
+        "in_channels": (stats["channel_count"] + extra_input_channels)
+        * stats["n_steps_input"],
         "out_channels": stats["channel_count"] * stats["n_steps_output"],
         "n_steps_output": stats["n_steps_output"],
         "n_channels_out": stats["channel_count"],
@@ -255,6 +259,7 @@ def setup_processor_model(config: DictConfig, stats: dict) -> ProcessorModel:
         "loss_func": loss_func,
         "learning_rate": model_cfg.get("learning_rate", 1e-3),
         "optimizer_config": _get_optimizer_config(config),
+        "noise_injector": noise_injector,
     }
     if is_ensemble:
         kwargs["n_members"] = model_cfg.get("n_members")
@@ -264,7 +269,12 @@ def setup_processor_model(config: DictConfig, stats: dict) -> ProcessorModel:
 
 def setup_epd_model(config: DictConfig, stats: dict) -> EncoderProcessorDecoder:
     """Orchestrate the creation of the full Encoder-Processor-Decoder model."""
-    encoder, decoder = setup_autoencoder_components(config, stats)
+    model_cfg = config.get("model", {})
+    noise_injector, extra_input_channels = _resolve_input_noise_injector(model_cfg)
+
+    encoder, decoder = setup_autoencoder_components(
+        config, stats, extra_input_channels=extra_input_channels
+    )
 
     training_cfg = _get_training_cfg(config)
     if training_cfg.get("freeze_autoencoder"):
@@ -277,7 +287,6 @@ def setup_epd_model(config: DictConfig, stats: dict) -> EncoderProcessorDecoder:
     stats["latent_channels"] = latent_channels
     log.info("Inferred latent channel count: %s", latent_channels)
 
-    model_cfg = config.get("model", {})
     proc_cfg = model_cfg.get("processor")
     if isinstance(proc_cfg, DictConfig):
         proc_cfg = OmegaConf.to_container(proc_cfg, resolve=True)
@@ -312,8 +321,27 @@ def setup_epd_model(config: DictConfig, stats: dict) -> EncoderProcessorDecoder:
         "stride": training_cfg.get("stride", stats["n_steps_output"]),
         "optimizer_config": _get_optimizer_config(config),
         "loss_func": loss_func,
+        "input_noise_injector": noise_injector,
     }
     if is_ensemble:
         kwargs["n_members"] = model_cfg.get("n_members")
 
     return cls(**kwargs)
+
+
+def _resolve_input_noise_injector(
+    model_cfg: dict | DictConfig | None,
+) -> tuple[Any | None, int]:
+    noise_cfg = model_cfg.get("input_noise_injector") if model_cfg else None
+    if not noise_cfg or "_target_" not in noise_cfg:
+        return None, 0
+
+    extra_channels = 0
+    if "ConcatenatedNoiseInjector" in str(noise_cfg.get("_target_")):
+        n_channels = noise_cfg.get("n_channels")
+        if n_channels in (None, "auto"):
+            proc = model_cfg.get("processor") or {}  # type: ignore is not None
+            n_channels = proc.get("n_noise_channels")
+        extra_channels = int(n_channels) if n_channels else 0
+
+    return instantiate(noise_cfg), extra_channels

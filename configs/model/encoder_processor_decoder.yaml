@@ -4,7 +4,7 @@ defaults:
   - /encoder: dc_deep
   - /decoder: dc_deep
   - /processor: flow_matching_vit
-  - optional /nn/noise/input_noise_injector: null
+  - optional input_noise_injector: null
   - _self_
 
 learning_rate: 0.0001
