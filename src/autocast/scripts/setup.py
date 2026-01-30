@@ -90,6 +90,7 @@ def _apply_processor_channel_defaults(
     n_steps_input: int,
     n_steps_output: int,
     n_channels_out: int,
+    global_cond_channels: int | None = None,
 ) -> None:
     if not isinstance(processor_config, dict):
         return
@@ -108,7 +109,7 @@ def _apply_processor_channel_defaults(
     if not isinstance(backbone_config, dict):
         return
 
-    def _set_backbone_if_auto(key: str, value: int) -> None:
+    def _set_backbone_if_auto(key: str, value: int | None) -> None:
         if key in backbone_config and backbone_config.get(key) in (None, "auto"):
             backbone_config[key] = value
 
@@ -117,6 +118,8 @@ def _apply_processor_channel_defaults(
     _set_backbone_if_auto("cond_channels", in_channels)
     _set_backbone_if_auto("n_steps_input", n_steps_input)
     _set_backbone_if_auto("n_steps_output", n_steps_output)
+    if global_cond_channels is not None:
+        _set_backbone_if_auto("global_cond_channels", global_cond_channels)
 
 
 def setup_datamodule(config: DictConfig):
@@ -240,10 +243,12 @@ def _infer_latent_channels(encoder: Encoder, batch: Any) -> tuple[int, bool]:
     encoder.eval()
     try:
         with torch.no_grad():
-            encoded = encoder(batch.input_fields)
+            encoded = encoder(batch)
+            if isinstance(encoded, tuple):
+                encoded = encoded[0]
             channel_dim = getattr(encoder, "channel_dim", -1)
-            time_channel_concat = encoded.ndim < batch.input_fields.ndim
-            return encoded.shape[channel_dim], time_channel_concat
+            time_and_channels_concat = encoded.ndim < batch.input_fields.ndim
+            return encoded.shape[channel_dim], time_and_channels_concat
     except Exception as e:
         msg = f"Could not infer latent channels: {e}. Defaulting to input channels."
         log.warning(msg)
@@ -335,6 +340,12 @@ def setup_epd_model(config: DictConfig, stats: dict) -> EncoderProcessorDecoder:
     stats["latent_channels"] = latent_channels
     log.info("Inferred latent channel count: %s", latent_channels)
 
+    global_cond_channels = None
+    if hasattr(encoder, "encode_cond"):
+        cond = encoder.encode_cond(stats["example_batch"])  # type: ignore[arg-type]
+        if cond is not None:
+            global_cond_channels = cond.shape[-1]
+
     processor_config = _get_normalized_processor_config(model_config)
 
     steps_in = stats["n_steps_input"]
@@ -375,6 +386,7 @@ def setup_epd_model(config: DictConfig, stats: dict) -> EncoderProcessorDecoder:
         n_steps_input=proc_kwargs["n_steps_input"],
         n_steps_output=proc_kwargs["n_steps_output"],
         n_channels_out=proc_kwargs["n_channels_out"],
+        global_cond_channels=global_cond_channels,
     )
     target = (
         processor_config.get("_target_") if isinstance(processor_config, dict) else None
