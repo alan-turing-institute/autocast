@@ -127,6 +127,8 @@ class EncoderProcessorDecoder(
             if y_pred is None:
                 y_pred = self(batch)
             y_true = batch.output_fields
+            y_pred = self.denormalize_tensor(y_pred)
+            y_true = self.denormalize_tensor(y_true)
             self._update_and_log_metrics(
                 self, self.val_metrics, y_pred, y_true, batch.input_fields.shape[0]
             )
@@ -141,6 +143,8 @@ class EncoderProcessorDecoder(
             if y_pred is None:
                 y_pred = self(batch)
             y_true = batch.output_fields
+            y_pred = self.denormalize_tensor(y_pred)
+            y_true = self.denormalize_tensor(y_true)
             self._update_and_log_metrics(
                 self, self.test_metrics, y_pred, y_true, batch.input_fields.shape[0]
             )

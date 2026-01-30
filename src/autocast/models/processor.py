@@ -110,6 +110,8 @@ class ProcessorModel(
         if self.val_metrics is not None:
             y_pred = self._predict(batch)
             y_true = batch.encoded_output_fields
+            y_pred = self.denormalize_tensor(y_pred)
+            y_true = self.denormalize_tensor(y_true)
             self._update_and_log_metrics(
                 self, self.val_metrics, y_pred, y_true, batch.encoded_inputs.shape[0]
             )
@@ -123,6 +125,8 @@ class ProcessorModel(
         if self.test_metrics is not None:
             y_pred = self._predict(batch)
             y_true = batch.encoded_output_fields
+            y_pred = self.denormalize_tensor(y_pred)
+            y_true = self.denormalize_tensor(y_true)
             self._update_and_log_metrics(
                 self, self.test_metrics, y_pred, y_true, batch.encoded_inputs.shape[0]
             )
