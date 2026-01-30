@@ -1,4 +1,4 @@
-from autocast.scripts.train.configuration import load_config
+from autocast.scripts.configuration import load_config
 
 
 def test_config(): ...

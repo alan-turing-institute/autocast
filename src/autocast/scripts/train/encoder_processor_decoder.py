@@ -4,8 +4,8 @@ import logging
 
 import lightning as L
 
-from autocast.scripts.train.configuration import load_config, parse_common_args
-from autocast.scripts.train.setup import run_training, setup_datamodule, setup_epd_model
+from autocast.scripts.configuration import load_config, parse_common_args
+from autocast.scripts.setup import run_training, setup_datamodule, setup_epd_model
 
 log = logging.getLogger(__name__)
 

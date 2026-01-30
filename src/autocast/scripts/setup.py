@@ -23,7 +23,7 @@ from autocast.models.encoder_processor_decoder_ensemble import (
 )
 from autocast.models.processor import ProcessorModel
 from autocast.models.processor_ensemble import ProcessorModelEnsemble
-from autocast.scripts.train.configuration import build_datamodule
+from autocast.scripts.configuration import build_datamodule
 from autocast.types.batch import Batch, EncodedBatch
 
 log = logging.getLogger(__name__)
@@ -140,20 +140,16 @@ def setup_autoencoder_components(
     encoder_cfg = model_cfg.get("encoder")
     decoder_cfg = model_cfg.get("decoder")
 
-    training_cfg = _get_training_cfg(config)
     n_channels = stats.get("channel_count")
-    n_steps_input = training_cfg.get("n_steps_input")
-    n_steps_output = training_cfg.get("n_steps_output")
 
     if isinstance(encoder_cfg, DictConfig):
         encoder_cfg = OmegaConf.to_container(encoder_cfg, resolve=True)
-    if isinstance(encoder_cfg, dict):
-        if (
-            "in_channels" in encoder_cfg
-            and isinstance(n_channels, int)
-            and encoder_cfg.get("in_channels") in (None, "auto")
-        ):
-            encoder_cfg["in_channels"] = n_channels
+    if isinstance(encoder_cfg, dict) and (
+        "in_channels" in encoder_cfg
+        and isinstance(n_channels, int)
+        and encoder_cfg.get("in_channels") in (None, "auto")
+    ):
+        encoder_cfg["in_channels"] = n_channels
 
     if isinstance(decoder_cfg, DictConfig):
         decoder_cfg = OmegaConf.to_container(decoder_cfg, resolve=True)
@@ -333,7 +329,7 @@ def run_training(
         else {}
     )
     wandb_logger, _watch_cfg = create_wandb_logger(
-        logging_cfg,
+        logging_cfg,  # type: ignore TODO: fix
         experiment_name=pydantic_config.get("experiment_name"),
         job_type=job_type,
         work_dir=work_dir,

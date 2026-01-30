@@ -25,8 +25,8 @@ from autocast.metrics import (
     LInfinity,
 )
 from autocast.models.encoder_processor_decoder import EncoderProcessorDecoder
-from autocast.scripts.train.configuration import load_config
-from autocast.scripts.train.setup import setup_datamodule, setup_epd_model
+from autocast.scripts.configuration import load_config
+from autocast.scripts.setup import setup_datamodule, setup_epd_model
 from autocast.types import Batch
 from autocast.utils import plot_spatiotemporal_video
 
