@@ -82,6 +82,43 @@ def _filter_kwargs_for_target(
     return {k: v for k, v in kwargs.items() if k in allowed}
 
 
+def _apply_processor_channel_defaults(
+    processor_config: dict[str, Any] | None,
+    *,
+    in_channels: int,
+    out_channels: int,
+    n_steps_input: int,
+    n_steps_output: int,
+    n_channels_out: int,
+) -> None:
+    if not isinstance(processor_config, dict):
+        return
+
+    def _set_if_auto(key: str, value: int) -> None:
+        if key in processor_config and processor_config.get(key) in (None, "auto"):
+            processor_config[key] = value
+
+    _set_if_auto("in_channels", in_channels)
+    _set_if_auto("out_channels", out_channels)
+    _set_if_auto("n_steps_input", n_steps_input)
+    _set_if_auto("n_steps_output", n_steps_output)
+    _set_if_auto("n_channels_out", n_channels_out)
+
+    backbone_config = processor_config.get("backbone")
+    if not isinstance(backbone_config, dict):
+        return
+
+    def _set_backbone_if_auto(key: str, value: int) -> None:
+        if key in backbone_config and backbone_config.get(key) in (None, "auto"):
+            backbone_config[key] = value
+
+    _set_backbone_if_auto("in_channels", out_channels)
+    _set_backbone_if_auto("out_channels", out_channels)
+    _set_backbone_if_auto("cond_channels", in_channels)
+    _set_backbone_if_auto("n_steps_input", n_steps_input)
+    _set_backbone_if_auto("n_steps_output", n_steps_output)
+
+
 def setup_datamodule(config: DictConfig):
     """Create the datamodule and infer data shapes."""
     datamodule = build_datamodule(config)
@@ -197,25 +234,32 @@ def setup_autoencoder_model(config: DictConfig, stats: dict) -> AE:
     return model
 
 
-def _infer_latent_channels(encoder: Encoder, batch: Any) -> int:
-    """Run a forward pass to determine latent channel count."""
+def _infer_latent_channels(encoder: Encoder, batch: Any) -> tuple[int, bool]:
+    """Run a forward pass to determine latent channel count and time layout."""
     prev_training = encoder.training
     encoder.eval()
     try:
         with torch.no_grad():
-            if hasattr(encoder, "encode"):
-                encoded = encoder.encode(batch)
-            else:
-                encoded = encoder(batch.input_fields)
-
+            encoded = encoder(batch.input_fields)
             channel_dim = getattr(encoder, "channel_dim", -1)
-            return encoded.shape[channel_dim]
+            time_channel_concat = encoded.ndim < batch.input_fields.ndim
+            return encoded.shape[channel_dim], time_channel_concat
     except Exception as e:
         msg = f"Could not infer latent channels: {e}. Defaulting to input channels."
         log.warning(msg)
-        return batch.input_fields.shape[-1]
+        return batch.input_fields.shape[-1], False
     finally:
         encoder.train(prev_training)
+
+
+def _get_normalized_processor_config(model_config: DictConfig) -> dict | None:
+    """Ensure processor config is dict or None."""
+    processor_config = model_config.get("processor")
+    if isinstance(processor_config, DictConfig):
+        processor_config = OmegaConf.to_container(processor_config, resolve=True)
+    if not isinstance(processor_config, dict):
+        processor_config = None
+    return processor_config
 
 
 def setup_processor_model(config: DictConfig, stats: dict) -> ProcessorModel:
@@ -223,17 +267,23 @@ def setup_processor_model(config: DictConfig, stats: dict) -> ProcessorModel:
     model_config = config.get("model", {})
     noise_injector, extra_input_channels = _resolve_input_noise_injector(model_config)
 
-    processor_config = model_config.get("processor")
-    if isinstance(processor_config, DictConfig):
-        processor_config = OmegaConf.to_container(processor_config, resolve=True)
+    processor_config = _get_normalized_processor_config(model_config)
 
     proc_kwargs = {
-        "in_channels": (stats["channel_count"] + extra_input_channels)
-        * stats["n_steps_input"],
-        "out_channels": stats["channel_count"] * stats["n_steps_output"],
+        "in_channels": stats["channel_count"] + extra_input_channels,
+        "out_channels": stats["channel_count"],
+        "n_steps_input": stats["n_steps_input"],
         "n_steps_output": stats["n_steps_output"],
         "n_channels_out": stats["channel_count"],
     }
+    _apply_processor_channel_defaults(
+        processor_config,
+        in_channels=proc_kwargs["in_channels"],
+        out_channels=proc_kwargs["out_channels"],
+        n_steps_input=proc_kwargs["n_steps_input"],
+        n_steps_output=proc_kwargs["n_steps_output"],
+        n_channels_out=proc_kwargs["n_channels_out"],
+    )
     target = (
         processor_config.get("_target_") if isinstance(processor_config, dict) else None
     )
@@ -279,24 +329,58 @@ def setup_epd_model(config: DictConfig, stats: dict) -> EncoderProcessorDecoder:
         for p in decoder.parameters():
             p.requires_grad = False
 
-    latent_channels = _infer_latent_channels(encoder, stats["example_batch"])  # type: ignore TODO
+    latent_channels, time_channel_concat = _infer_latent_channels(
+        encoder, stats["example_batch"]
+    )
     stats["latent_channels"] = latent_channels
     log.info("Inferred latent channel count: %s", latent_channels)
 
-    proc_config = model_config.get("processor")
-    if isinstance(proc_config, DictConfig):
-        proc_config = OmegaConf.to_container(proc_config, resolve=True)
+    processor_config = _get_normalized_processor_config(model_config)
 
+    steps_in = stats["n_steps_input"]
+    steps_out = stats["n_steps_output"]
+    per_step_channels = (
+        latent_channels // steps_in
+        if time_channel_concat and steps_in and latent_channels % steps_in == 0
+        else None
+    )
+
+    input_depends_on_channels = not isinstance(
+        getattr(encoder, "latent_dim", None), int
+    )
+    input_noise_channels = (
+        (
+            extra_input_channels * steps_in
+            if time_channel_concat
+            else extra_input_channels
+        )
+        if extra_input_channels and input_depends_on_channels
+        else 0
+    )
+
+    n_channels_out = per_step_channels or latent_channels
     proc_kwargs = {
-        "in_channels": (latent_channels + extra_input_channels)
-        * stats["n_steps_input"],
-        "out_channels": latent_channels * stats["n_steps_output"],
-        "n_channels_out": latent_channels,
-        "n_steps_output": stats["n_steps_output"],
+        "in_channels": latent_channels + input_noise_channels,
+        "out_channels": n_channels_out * steps_out
+        if per_step_channels
+        else n_channels_out,
+        "n_channels_out": n_channels_out,
+        "n_steps_input": steps_in,
+        "n_steps_output": steps_out,
     }
-    target = proc_config.get("_target_") if isinstance(proc_config, dict) else None
+    _apply_processor_channel_defaults(
+        processor_config,
+        in_channels=proc_kwargs["in_channels"],
+        out_channels=proc_kwargs["out_channels"],
+        n_steps_input=proc_kwargs["n_steps_input"],
+        n_steps_output=proc_kwargs["n_steps_output"],
+        n_channels_out=proc_kwargs["n_channels_out"],
+    )
+    target = (
+        processor_config.get("_target_") if isinstance(processor_config, dict) else None
+    )
     proc_kwargs = _filter_kwargs_for_target(target, proc_kwargs)
-    processor = instantiate(proc_config, **proc_kwargs)
+    processor = instantiate(processor_config, **proc_kwargs)
 
     loss_func_config = model_config.get("loss_func")
     loss_func = (
