@@ -6,11 +6,8 @@ import lightning as L
 
 from autocast.scripts.cli import parse_common_args
 from autocast.scripts.config import load_config
-from autocast.scripts.setup import (
-    run_training,
-    setup_encoded_datamodule,
-    setup_processor_model,
-)
+from autocast.scripts.setup import setup_encoded_datamodule, setup_processor_model
+from autocast.scripts.training import run_training
 
 log = logging.getLogger(__name__)
 

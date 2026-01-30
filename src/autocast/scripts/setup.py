@@ -5,7 +5,6 @@ import logging
 from pathlib import Path
 from typing import Any
 
-import lightning as L
 import torch
 from hydra.utils import get_class, instantiate
 from omegaconf import DictConfig, OmegaConf
@@ -13,7 +12,6 @@ from torch import nn
 
 from autocast.decoders.base import Decoder
 from autocast.encoders.base import Encoder, EncoderWithCond
-from autocast.logging import create_wandb_logger
 from autocast.models.autoencoder import AE, AELoss
 from autocast.models.encoder_decoder import EncoderDecoder
 from autocast.models.encoder_processor_decoder import EncoderProcessorDecoder
@@ -22,7 +20,6 @@ from autocast.models.encoder_processor_decoder_ensemble import (
 )
 from autocast.models.processor import ProcessorModel
 from autocast.models.processor_ensemble import ProcessorModelEnsemble
-from autocast.scripts.config import save_resolved_config
 from autocast.scripts.data import build_datamodule
 from autocast.types.batch import Batch, EncodedBatch
 
@@ -320,61 +317,3 @@ def setup_epd_model(config: DictConfig, stats: dict) -> EncoderProcessorDecoder:
         kwargs["n_members"] = model_cfg.get("n_members")
 
     return cls(**kwargs)
-
-
-def run_training(
-    config: DictConfig,
-    model: L.LightningModule,
-    datamodule: L.LightningDataModule,
-    work_dir: Path,
-    skip_test: bool = False,
-    output_checkpoint_path: Path | None = None,
-    job_type: str = "train",
-):
-    """Standardized training loop."""
-    # Ensure work_dir is a Path
-    work_dir = Path(work_dir)
-
-    # Setup logger
-    logging_cfg = config.get("logging")
-    logging_cfg = (
-        OmegaConf.to_container(logging_cfg, resolve=True)
-        if logging_cfg is not None
-        else {}
-    )
-    wandb_logger, _watch_cfg = create_wandb_logger(
-        logging_cfg,  # type: ignore TODO: fix
-        experiment_name=config.get("experiment_name"),
-        job_type=job_type,
-        work_dir=work_dir,
-        config={"hydra": OmegaConf.to_container(config, resolve=True)},
-    )
-
-    # Get trainer
-    trainer_cfg = config.get("trainer")
-    trainer_cfg = OmegaConf.to_container(trainer_cfg, resolve=True)
-    trainer = instantiate(
-        trainer_cfg,
-        default_root_dir=str(work_dir),
-        logger=wandb_logger,
-    )
-
-    # Get output config and save resolved config if requested
-    output_cfg = config.get("output", {})
-    if output_cfg.get("save_config"):
-        save_resolved_config(config, work_dir)
-
-    log.info("Starting training...")
-    trainer.fit(model=model, datamodule=datamodule)
-
-    # Run testing if not skipped
-    if not skip_test:
-        trainer.test(model=model, dataloaders=datamodule.test_dataloader())
-
-    # Save final checkpoint
-    ckpt_name = output_checkpoint_path or output_cfg.get(
-        "checkpoint_name", "model.ckpt"
-    )
-    ckpt_path = work_dir / ckpt_name
-    trainer.save_checkpoint(ckpt_path)
-    log.info("Saved checkpoint to %s", ckpt_path)
