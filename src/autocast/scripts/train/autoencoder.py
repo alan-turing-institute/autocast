@@ -15,7 +15,7 @@ from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf, open_dict
 from omegaconf.base import SCMode
 
-from autocast.data.datamodule import SpatioTemporalDataModule
+from autocast.data.datamodule import SpatioTemporalDataModule, TheWellDataModule
 from autocast.data.dataset import SpatioTemporalDataset
 from autocast.logging import create_wandb_logger, maybe_watch_model
 from autocast.models.autoencoder import AE
@@ -122,7 +122,7 @@ def _generate_split(simulator: Any, split_cfg: DictConfig) -> dict[str, Any]:
     }
 
 
-def build_datamodule(cfg: DictConfig) -> SpatioTemporalDataModule:
+def build_datamodule(cfg: DictConfig) -> SpatioTemporalDataModule | TheWellDataModule:
     """Instantiate the `SpatioTemporalDataModule` described by `cfg`."""
     # If the config explicitly names a datamodule class via Hydra `_target_`,
     # instantiate and return directly
