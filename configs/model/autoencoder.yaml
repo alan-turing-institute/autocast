@@ -3,7 +3,7 @@ defaults:
   - /decoder: dc_deep
   - _self_
 
-learning_rate: 0.0005
+learning_rate: 0.00002
 optimizer_config: ${oc.select:optimizer, null}  # Pass optimizer config to model, null if not specified
 
 loss:
