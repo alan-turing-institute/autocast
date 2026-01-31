@@ -20,7 +20,7 @@ OVERRIDES=(
 
 CKPT="${WORKDIR}/autoencoder.ckpt"
 if [ -f "${CKPT}" ]; then
-	OVERRIDES+=( "training.autoencoder_checkpoint=${CKPT}" )
+	OVERRIDES+=( "+autoencoder_checkpoint=${CKPT}" )
 fi
 
 # Run script

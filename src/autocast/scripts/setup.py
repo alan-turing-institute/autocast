@@ -193,8 +193,7 @@ def setup_autoencoder_components(
 
     encoder = instantiate(encoder_config)
     decoder = instantiate(decoder_config)
-
-    checkpoint = config.get("training", {}).get("autoencoder_checkpoint")
+    checkpoint = config.get("autoencoder_checkpoint")
 
     if checkpoint is None:
         log.info("No autoencoder checkpoint supplied; training from scratch.")
