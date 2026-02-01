@@ -61,14 +61,6 @@ def parse_args() -> argparse.Namespace:
     )
     add_work_dir_arg(parser)
 
-    # Optional overrides typically handled by Hydra, but kept for convenience
-    parser.add_argument(
-        "--stride",
-        type=int,
-        default=None,
-        help="Override training stride used for rollouts.",
-    )
-
     # Evaluation specific
     parser.add_argument(
         "--csv-path",
