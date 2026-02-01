@@ -196,7 +196,7 @@ def setup_autoencoder_components(
     checkpoint = config.get("autoencoder_checkpoint")
 
     if checkpoint is None:
-        log.info("No autoencoder checkpoint supplied; training from scratch.")
+        log.info("No autoencoder checkpoint supplied.")
         return encoder, decoder
 
     checkpoint_path = Path(checkpoint).expanduser().resolve()
