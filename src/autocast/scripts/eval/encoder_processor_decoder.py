@@ -403,13 +403,9 @@ def main() -> None:
         eval_cfg = cfg.get("eval", {})
         max_rollout_steps = eval_cfg.get("max_rollout_steps", 10)
 
-        # Use stride from args, or config, or fallback to n_steps_output (from stats)
+        # Use rollout_stride config or fallback to n_steps_output (from stats)
         data_config = cfg.get("datamodule", {})
-        rollout_stride = (
-            args.stride
-            if args.stride is not None
-            else (data_config.get("stride") or stats["n_steps_output"])
-        )
+        rollout_stride = data_config.get("rollout_stride") or stats["n_steps_output"]
 
         _render_rollouts(
             model,
