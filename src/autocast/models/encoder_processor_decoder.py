@@ -130,10 +130,6 @@ class EncoderProcessorDecoder(
             )
         return loss
 
-    def on_validation_epoch_end(self) -> None:
-        """Propagate custom plots from metrics to logger."""
-        self.log_plots(self, self.val_metrics, prefix="val_")
-
     def test_step(self, batch: Batch, batch_idx: int) -> Tensor:  # noqa: ARG002
         loss, y_pred = self.loss(batch)
         self.log(
@@ -147,10 +143,6 @@ class EncoderProcessorDecoder(
                 self, self.test_metrics, y_pred, y_true, batch.input_fields.shape[0]
             )
         return loss
-
-    def on_test_epoch_end(self) -> None:
-        """Propagate custom plots from metrics to logger."""
-        self.log_plots(self, self.test_metrics, prefix="test_")
 
     def _clone_batch(self, batch: Batch) -> Batch:
         return Batch(
