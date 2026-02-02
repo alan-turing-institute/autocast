@@ -28,7 +28,7 @@ Train an encoder-decoder stack and evaluate the resulting checkpoint:
 
 ```bash
 # Train
-uv run python -m autocast.train.autoencoder --config-path=configs/
+uv run train_autoencoder
 ```
 
 Train an encoder-processor-decoder stack and evaluate the resulting checkpoint:
@@ -36,20 +36,18 @@ Train an encoder-processor-decoder stack and evaluate the resulting checkpoint:
 ```bash
 # Train
 uv run train_encoder_processor_decoder \
-    --config-path=configs/ \
-	--work-dir=outputs/encoder_processor_decoder_run
+	hydra.run.dir=outputs/encoder_processor_decoder_run
 	
 # Evaluate
 uv run evaluate_encoder_processor_decoder \
-	--config-path=configs/ \
-	--work-dir=outputs/processor_eval \
-	--checkpoint=outputs/encoder_processor_decoder_run/encoder_processor_decoder.ckpt \
-	--batch-index=0 --batch-index=1 \  # Optional batch indices, remove to skip videos
-	--video-dir=outputs/encoder_processor_decoder_run/videos
+	hydra.run.dir=outputs/processor_eval \
+	eval.checkpoint=outputs/encoder_processor_decoder_run/encoder_processor_decoder.ckpt \
+	eval.batch_indices=[0,1] \
+	eval.video_dir=outputs/encoder_processor_decoder_run/videos
 ```
 
-Evaluation writes a CSV of aggregate metrics to `--csv-path` (defaults to
-`<work-dir>/evaluation_metrics.csv`) and, when `--batch-index` is provided,
+Evaluation writes a CSV of aggregate metrics to `eval.csv_path` (defaults to
+`<work-dir>/evaluation_metrics.csv`) and, when `eval.batch_indices` is provided,
 stores rollout animations for the specified test batches.
 
 ## Example pipeline
@@ -59,12 +57,11 @@ the `AUTOCAST_DATASETS` environment variable.
 
 ### Train autoencoder
 ```bash
-uv run python -m autocast.train.autoencoder \
-	--config-path=configs \
-	--work-dir=outputs/rd/00 \
-	data.data_path=$AUTOCAST_DATASETS/reaction_diffusion \
-	data.use_simulator=false \
-	model.learning_rate=0.00005 \
+uv run train_autoencoder \
+	hydra.run.dir=outputs/rd/00 \
+	datamodule.data_path=$AUTOCAST_DATASETS/reaction_diffusion \
+	datamodule.use_simulator=false \
+	optimizer.learning_rate=0.00005 \
 	trainer.max_epochs=10 \
 	logging.wandb.enabled=true
 ```
@@ -77,15 +74,14 @@ Or alternatively with the included bash script:
 ### Train processor
 
 ```bash
-uv run python -m autocast.train.encoder_processor_decoder \
-	--config-path=configs \
-	--work-dir=outputs/rd/00 \
-	data.data_path=$AUTOCAST_DATASETS/reaction_diffusion \
-	data.use_simulator=false \
-	model.learning_rate=0.0001 \
+uv run train_encoder_processor_decoder \
+	hydra.run.dir=outputs/rd/00 \
+	datamodule.data_path=$AUTOCAST_DATASETS/reaction_diffusion \
+	datamodule.use_simulator=false \
+	optimizer.learning_rate=0.0001 \
 	trainer.max_epochs=10 \
 	logging.wandb.enabled=true \
-	training.autoencoder_checkpoint=outputs/rd/00/autoencoder.ckpt
+	'autoencoder_checkpoint=outputs/rd/00/autoencoder.ckpt'
 ```
 
 Or alternatively with the included bash script:
@@ -96,16 +92,12 @@ Or alternatively with the included bash script:
 ### Evaluation
 ```bash
 uv run evaluate_encoder_processor_decoder \
-	--config-path=configs/ \
-	--work-dir=outputs/rd/00/eval \
-	--checkpoint=outputs/rd/00/encoder_processor_decoder.ckpt \
-	--batch-index=0 \
-	--batch-index=1 \
-	--batch-index=2 \
-	--batch-index=3 \
-	--video-dir=outputs/rd/00/eval/videos \
-	data.data_path=$AUTOCAST_DATASETS/reaction_diffusion \
-	data.use_simulator=false
+	hydra.run.dir=outputs/rd/00/eval \
+	eval.checkpoint=outputs/rd/00/encoder_processor_decoder.ckpt \
+	eval.batch_indices=[0,1,2,3] \
+	eval.video_dir=outputs/rd/00/eval/videos \
+	datamodule.data_path=$AUTOCAST_DATASETS/reaction_diffusion \
+	datamodule.use_simulator=false
 ```
 
 Or alternatively with the included bash script:
@@ -122,7 +114,6 @@ fully driven by the Hydra config under `configs/logging/wandb.yaml`.
 
 	```bash
 	uv run train_encoder_processor_decoder \
-		--config-path=configs \
 		logging.wandb.enabled=true \
 		logging.wandb.project=autocast-experiments \
 		logging.wandb.name=processor-baseline
