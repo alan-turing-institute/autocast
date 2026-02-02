@@ -44,14 +44,14 @@ AVAILABLE_METRICS = {
 }
 
 
-def _resolve_csv_path(eval_cfg: dict, work_dir: Path) -> Path:
+def _resolve_csv_path(eval_cfg: DictConfig, work_dir: Path) -> Path:
     csv_path = eval_cfg.get("csv_path")
     if csv_path is not None:
         return Path(csv_path).expanduser().resolve()
     return (work_dir / "evaluation_metrics.csv").resolve()
 
 
-def _resolve_video_dir(eval_cfg: dict, work_dir: Path) -> Path:
+def _resolve_video_dir(eval_cfg: DictConfig, work_dir: Path) -> Path:
     video_dir = eval_cfg.get("video_dir")
     if video_dir is not None:
         return Path(video_dir).expanduser().resolve()
