@@ -2,12 +2,14 @@ from typing import Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
+import torch
 from einops import rearrange
 from matplotlib import animation
 from matplotlib.colors import Normalize, TwoSlopeNorm
 from matplotlib.gridspec import GridSpec
 
-from autocast.types.types import Tensor, TensorBTSC
+from autocast.metrics.coverage import MultiCoverage
+from autocast.types.types import Tensor, TensorBTSC, TensorBTSCM
 
 
 def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
@@ -225,3 +227,113 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
 
     plt.close()
     return anim
+
+
+def compute_coverage_scores_from_dataloader(
+    dataloader: torch.utils.data.DataLoader,
+    model: torch.nn.Module,
+    coverage_levels: list[float] | None = None,
+    windows: list[tuple[int, int] | None] | None = None,
+    return_tensors: bool = False,
+) -> tuple[MultiCoverage, tuple[TensorBTSCM, TensorBTSC] | None]:
+    """
+    Compute coverage scores from a dataloader by running model forward passes.
+
+    Parameters
+    ----------
+    dataloader: DataLoader
+        DataLoader that yields batches.
+    model: nn.Module
+        Model with forward(batch) that returns predictions with ensemble dimension.
+    coverage_levels: list[float], optional
+        Coverage levels to evaluate (default: 0.05 to 0.95).
+    windows: list[tuple[int, int] | None], optional
+        List of (t_start, t_end) windows to evaluate. None means use all timesteps.
+        If multiple windows provided, evaluates each independently.
+    return_tensors: bool
+        If True, also return concatenated (pred, true) tensors.
+
+    Returns
+    -------
+    tuple[MultiCoverage, tuple[TensorBTSCM, TensorBTSC] | None]
+        The populated MultiCoverage metric and optionally the tensors.
+    """
+    coverage_levels_ = (
+        coverage_levels or np.linspace(0.05, 0.95, 10, endpoint=True).tolist()
+    )
+    metric = MultiCoverage(coverage_levels=coverage_levels_)
+
+    all_preds = [] if return_tensors else None
+    all_trues = [] if return_tensors else None
+
+    model.eval()
+    with torch.no_grad():
+        for batch in dataloader:
+            # Forward pass (assumes model(batch) returns ensemble predictions)
+            preds = model(batch)  # Shape: (B, T, ..., M) or similar
+            trues = batch.output_fields  # Shape: (B, T, ...)
+
+            # Apply windows if specified
+            if windows is not None:
+                for window in windows:
+                    if window is None:
+                        p, t = preds, trues
+                    else:
+                        t_start, t_end = window
+                        # Assume time is dim=1 for batch tensors
+                        p = preds[:, t_start:t_end]
+                        t = trues[:, t_start:t_end]
+                    metric.update(p, t)
+                    if return_tensors:
+                        all_preds.append(p)  # type: ignore as all_preds is here
+                        all_trues.append(t)  # type: ignore as all_trues is here
+            else:
+                metric.update(preds, trues)
+                if return_tensors:
+                    all_preds.append(preds)  # type: ignore as all_preds is here
+                    all_trues.append(trues)  # type: ignore as all_trues is here
+
+    tensors = None
+    if return_tensors:
+        tensors = (torch.cat(all_preds, dim=0), torch.cat(all_trues, dim=0))
+
+    return metric, tensors
+
+
+def plot_coverage(
+    pred: TensorBTSCM,
+    true: TensorBTSC,
+    coverage_levels: list[float] | None = None,
+    save_path: str | None = None,
+    title: str = "Coverage plot",
+):
+    """
+    Plot reliability diagram showing expected vs observed coverage.
+
+    This is a convenience wrapper around MultiCoverage.plot().
+
+    Parameters
+    ----------
+    pred: TensorBTSCM
+        Ensemble predictions (last dimension is ensemble members).
+    true: TensorBTSC
+        Ground truth tensor.
+    coverage_levels: list[float], optional
+        Coverage levels to evaluate (default: 0.05 to 0.95).
+    save_path: str, optional
+        Path to save the plot.
+    title: str
+        Plot title.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+    """
+    coverage_levels_ = (
+        coverage_levels or np.linspace(0.05, 0.95, 10, endpoint=True).tolist()
+    )
+
+    # Create metric, update with data, and plot
+    metric = MultiCoverage(coverage_levels=coverage_levels_)
+    metric.update(pred, true)
+    return metric.plot(save_path=save_path, title=title)

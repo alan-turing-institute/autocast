@@ -1,4 +1,5 @@
 import torch
+from matplotlib import pyplot as plt
 from torch.nn import ModuleList
 from torchmetrics import Metric
 
@@ -110,59 +111,52 @@ class MultiCoverage(Metric):
             results[f"coverage_{cl}"] = metric.compute()
         return results
 
-    # TODO: consider re-adding plot method for directly logging to wandb later
-    # def plot(self) -> Any:
-    #     try:
-    #         import matplotlib.pyplot as plt
+    def plot(self, save_path: str | None = None, title: str = "Coverage Plot"):
+        """
+        Plot reliability diagram showing expected vs observed coverage.
 
-    #         import wandb
-    #     except ImportError:
-    #         print("MultiCoverage.plot: wandb or matplotlib import failed")
-    #         return None
+        Parameters
+        ----------
+        save_path: str, optional
+            Path to save the plot.
+        title: str
+            Plot title.
 
-    #     # Gather computed values from sub-metrics
-    #     results = []
-    #     for metric in self.metrics:
-    #         assert isinstance(metric, Coverage)
-    #         val = metric.compute()
-    #         if val.numel() == 1:
-    #             results.append(val.item())
-    #         else:
-    #             results.append(val.mean().item())
+        Returns
+        -------
+        matplotlib.figure.Figure
+        """
+        # Gather computed values from sub-metrics
+        detailed = self.compute_detailed()
+        observed = []
+        for level in self.coverage_levels:
+            key = f"coverage_{level}"
+            value = detailed[key]
+            observed.append(value.mean().item())
 
-    #     # Create matplotlib figure
-    #     step = wandb.run.step
-    #     fig, ax = plt.subplots(figsize=(8, 6))
+        # Create matplotlib figure
+        fig, ax = plt.subplots(figsize=(6, 6))
 
-    #     # Plot observed coverage
-    #     ax.plot(
-    #         self.coverage_levels, results, marker="o", label="Observed", linewidth=2
-    #     )
+        # Ideal line (y=x)
+        ax.plot([0, 1], [0, 1], "k--", label="Ideal")
 
-    #     # Plot ideal coverage (y=x line)
-    #     ax.plot(
-    #         self.coverage_levels,
-    #         self.coverage_levels,
-    #         linestyle="--",
-    #         label="Ideal",
-    #         linewidth=2,
-    #     )
+        # Observed coverage
+        ax.plot(self.coverage_levels, observed, "bo-", label="Observed")
 
-    #     ax.set_xlabel("Expected Coverage")
-    #     ax.set_ylabel("Observed Coverage")
-    #     ax.set_title(f"Coverage (step={step})")
-    #     ax.legend()
-    #     ax.grid(True, alpha=0.3)
-    #     ax.set_xlim(0, 1)
-    #     ax.set_ylim(0, 1)
+        ax.set_xlabel("Expected Coverage")
+        ax.set_ylabel("Observed Coverage")
+        ax.set_title(title)
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.grid(True, linestyle=":", alpha=0.6)
+        ax.legend()
 
-    #     print(f"MultiCoverage.plot: Created plot with step={step}")
+        if save_path:
+            plt.savefig(save_path, bbox_inches="tight")
+            print(f"Plot saved to {save_path}")
 
-    #     # Convert to wandb Image
-    #     plot = wandb.Image(fig)
-    #     plt.close(fig)
-
-    #     return plot
+        plt.close(fig)
+        return fig
 
     def reset(self):
         # Reset all sub-metrics
