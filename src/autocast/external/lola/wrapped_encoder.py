@@ -4,12 +4,12 @@ from pathlib import Path
 import torch
 from einops import rearrange
 
-from autocast.encoders.base import Encoder
+from autocast.encoders.base import EncoderWithCond
 from autocast.external.lola.lola_autoencoder import get_autoencoder
 from autocast.types.batch import Batch
 
 
-class ChannelsFirstEncoder(Encoder):
+class ChannelsFirstEncoder(EncoderWithCond):
     """Channels-First Encoder Wrapper for Lola AutoEncoder."""
 
     wrapped_encode_func: Callable
