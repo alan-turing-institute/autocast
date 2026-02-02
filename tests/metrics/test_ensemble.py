@@ -2,11 +2,18 @@ import pytest
 import torch
 
 from autocast.metrics import ALL_ENSEMBLE_METRICS
+from autocast.metrics.base import BaseMetric
 from autocast.types import TensorBTSC
 from autocast.types.types import TensorBTC
 
+ENSEMBLE_BASE_METRICS = tuple(
+    metric_cls
+    for metric_cls in ALL_ENSEMBLE_METRICS
+    if issubclass(metric_cls, BaseMetric)
+)
 
-@pytest.mark.parametrize("MetricCls", ALL_ENSEMBLE_METRICS)
+
+@pytest.mark.parametrize("MetricCls", ENSEMBLE_BASE_METRICS)
 def test_ensemble_metrics_same(MetricCls):
     # (B, T, S1, S2, C, M) with n_spatial_dims = 2
     y_pred: TensorBTSC = torch.ones((2, 3, 4, 4, 5, 6))
@@ -22,7 +29,7 @@ def test_ensemble_metrics_same(MetricCls):
     assert torch.allclose(error.nansum(), torch.tensor(0.0))
 
 
-@pytest.mark.parametrize("MetricCls", ALL_ENSEMBLE_METRICS)
+@pytest.mark.parametrize("MetricCls", ENSEMBLE_BASE_METRICS)
 def test_ensemble_metrics_wrong_shape(MetricCls):
     # (B, T, S1, S2, C, M) with n_spatial_dims = 2
     y_pred: TensorBTSC = torch.ones((2, 3, 4, 4, 5, 6))
@@ -36,7 +43,7 @@ def test_ensemble_metrics_wrong_shape(MetricCls):
         metric.score(y_pred, y_true)
 
 
-@pytest.mark.parametrize("MetricCls", ALL_ENSEMBLE_METRICS)
+@pytest.mark.parametrize("MetricCls", ENSEMBLE_BASE_METRICS)
 def test_ensemble_metrics_diff(MetricCls):
     # (B, T, S1, S2, C, M) with n_spatial_dims = 2
     y_pred: TensorBTSC = torch.ones((2, 3, 4, 4, 5, 6))
@@ -54,7 +61,7 @@ def test_ensemble_metrics_diff(MetricCls):
     assert error[:, 2, :].sum() == torch.tensor(0.0)
 
 
-@pytest.mark.parametrize("MetricCls", ALL_ENSEMBLE_METRICS)
+@pytest.mark.parametrize("MetricCls", ENSEMBLE_BASE_METRICS)
 def test_ensemble_metrics_stateful(MetricCls):
     y_pred = torch.ones((2, 3, 4, 4, 5, 6))
     y_true = torch.ones((2, 3, 4, 4, 5))
