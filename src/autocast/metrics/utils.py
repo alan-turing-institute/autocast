@@ -5,6 +5,11 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 import lightning as L
+
+try:
+    from lightning.pytorch.loggers import WandbLogger
+except Exception:  # pragma: no cover - optional dependency / version-specific
+    WandbLogger = None  # type: ignore[assignment]
 from torchmetrics import Metric, MetricCollection
 
 from autocast.metrics import ALL_DETERMINISTIC_METRICS, ALL_ENSEMBLE_METRICS, VRMSE
@@ -82,3 +87,24 @@ class MetricsMixin:
                 on_epoch=True,
                 batch_size=batch_size,
             )
+
+    @staticmethod
+    def log_plots(
+        model: L.LightningModule, metrics: MetricCollection | None, prefix: str = "val_"
+    ) -> None:
+        """Log custom plots from metrics to WandB.
+
+        This should be called at the end of an epoch (e.g. on_validation_epoch_end).
+        """
+        if metrics is None:
+            return
+
+        # Check if we are logging to WandB
+        if WandbLogger is None or not isinstance(model.logger, WandbLogger):
+            return
+
+        for name, metric in metrics.items():
+            if hasattr(metric, "plot") and callable(metric.plot):
+                plot = metric.plot()
+                if plot is not None:
+                    model.logger.experiment.log({f"{prefix}{name}_plot": plot})

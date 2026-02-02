@@ -1,3 +1,5 @@
+from typing import Any, cast
+
 import numpy as np
 import torch
 from einops import rearrange, repeat
@@ -360,17 +362,49 @@ class MultiAlphaCoverage(Metric):
 
         self.coverage_levels = coverage_levels
         # Create a list of Coverage metrics
-        self.metrics = [Coverage(coverage_level=cl) for cl in coverage_levels]
+        self.metrics = torch.nn.ModuleList(
+            [Coverage(coverage_level=cl) for cl in coverage_levels]
+        )
 
     def update(self, y_pred, y_true):
-        for metric in self.metrics:
+        for metric in cast(list[Coverage], self.metrics):
             metric.update(y_pred, y_true)
 
-    def compute(self) -> list[Tensor]:
-        """Return a list of results for each level as ordered by `coverage_levels`."""
-        return [metric.compute() for metric in self.metrics]
+    def compute(self) -> dict[str, Tensor]:
+        """Return a dict of results, keys formatted as 'coverage_{confidence_level}'."""
+        return {
+            f"coverage_{cl}": cast(Coverage, metric).compute()
+            for cl, metric in zip(self.coverage_levels, self.metrics, strict=False)
+        }
+
+    def plot(self) -> Any:
+        try:
+            import wandb  # noqa: PLC0415 since optional dependency
+        except ImportError:
+            return None
+
+        # Gather computed values from sub-metrics
+        results = [cast(Coverage, metric).compute().item() for metric in self.metrics]
+
+        # Create a table for the calibration curve
+        table = wandb.Table(
+            data=[
+                [exp, obs]
+                for exp, obs in zip(self.coverage_levels, results, strict=True)
+            ],
+            columns=["expected_coverage", "observed_coverage"],
+        )
+
+        # Create a custom plot (Expected vs Observed)
+        plot = wandb.plot.line(
+            table,
+            "expected_coverage",
+            "observed_coverage",
+            title="Reliability Diagram (Coverage)",
+        )
+        return plot
 
     def reset(self):
         # Reset all sub-metrics
-        for metric in self.metrics:
+        for metric in cast(list[Coverage], self.metrics):
             metric.reset()
