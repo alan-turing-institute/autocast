@@ -1,9 +1,9 @@
-from autocast.encoders.base import Encoder
+from autocast.encoders.base import EncoderWithCond
 from autocast.types.batch import Batch
 from autocast.types.types import TensorBNC
 
 
-class IdentityEncoder(Encoder):
+class IdentityEncoder(EncoderWithCond):
     """Identity encoder that passes through input unchanged."""
 
     channel_axis: int = -1
@@ -14,7 +14,3 @@ class IdentityEncoder(Encoder):
 
     def encode(self, batch: Batch) -> TensorBNC:
         return batch.input_fields
-
-
-class IdentityEncoderWithCond(IdentityEncoder):
-    """Permute and concatenate Encoder."""
