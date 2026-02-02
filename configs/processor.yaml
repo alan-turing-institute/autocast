@@ -5,6 +5,7 @@ defaults:
   - model: processor
   - trainer: default
   - logging: wandb
+  - optional eval: processor
   - _self_
 
 seed: 42

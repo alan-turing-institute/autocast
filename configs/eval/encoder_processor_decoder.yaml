@@ -1,0 +1,13 @@
+# Evaluation configuration for encoder-processor-decoder models
+# Extends default eval config with EPD-specific settings
+
+defaults:
+  - default
+
+# Override with EPD-specific metrics and settings
+metrics:
+  - mse
+  - rmse
+  - vrmse
+
+max_rollout_steps: 25

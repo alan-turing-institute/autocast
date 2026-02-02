@@ -1,0 +1,27 @@
+# Default evaluation configuration
+# Path to checkpoint for evaluation (required for eval)
+checkpoint: null
+
+# Evaluation metrics to compute
+metrics:
+  - mse
+  - rmse
+
+# Output paths (default to work_dir if not specified)
+csv_path: null
+video_dir: null
+
+# Batch indices to visualize
+batch_indices: []
+
+# Video generation settings
+video_format: mp4  # gif or mp4
+video_sample_index: 0
+fps: 5
+
+# Device for evaluation
+device: auto  # auto, cpu, cuda, or mps
+
+# Rollout settings
+max_rollout_steps: 10
+free_running_only: true

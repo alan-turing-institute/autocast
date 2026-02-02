@@ -1,0 +1,12 @@
+# Evaluation configuration for processor models
+
+defaults:
+  - default
+
+# Processor models can use additional metrics
+metrics:
+  - mse
+  - rmse
+  - nmse
+
+max_rollout_steps: 25
