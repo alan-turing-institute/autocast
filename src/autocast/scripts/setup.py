@@ -5,7 +5,6 @@ import logging
 from pathlib import Path
 from typing import Any
 
-import torch
 from hydra.utils import get_class, instantiate
 from lightning.pytorch import LightningDataModule
 from omegaconf import DictConfig
@@ -168,7 +167,6 @@ def setup_autoencoder_components(
     # Update auto channel values directly in DictConfig
     if (
         encoder_config
-        and "in_channels" in encoder_config
         and isinstance(input_channels, int)
         and encoder_config.get("in_channels") in (None, "auto")
     ):
@@ -227,27 +225,17 @@ def setup_autoencoder_model(config: DictConfig, stats: dict) -> AE:
     return model
 
 
-def _infer_latent_channels(encoder: Encoder, batch: Batch) -> tuple[int, bool]:
-    """Run a forward pass to determine latent channel count and time layout."""
-    prev_training = encoder.training
-    encoder.eval()
-    try:
-        with torch.no_grad():
-            if hasattr(encoder, "encode"):
-                encoded = encoder.encode(batch)
-            else:
-                encoded = encoder(batch)
-            if isinstance(encoded, tuple):
-                encoded = encoded[0]
-            channel_dim = getattr(encoder, "channel_dim", -1)
-            time_and_channels_concat = encoded.ndim < batch.input_fields.ndim
-            return encoded.shape[channel_dim], time_and_channels_concat
-    except Exception as e:
-        msg = f"Could not infer latent channels: {e}. Defaulting to input channels."
-        log.warning(msg)
-        return batch.input_fields.shape[-1], False
-    finally:
-        encoder.train(prev_training)
+def _get_latent_channels(encoder: Encoder) -> int:
+    """Get latent channel count from encoder.
+
+    All encoders must set latent_dim in their __init__.
+    """
+    if not hasattr(encoder, "latent_dim") or not isinstance(encoder.latent_dim, int):
+        raise ValueError(
+            f"Encoder {type(encoder).__name__} must set latent_dim as an integer "
+            "in its __init__ method."
+        )
+    return encoder.latent_dim
 
 
 def _get_normalized_processor_config(model_config: DictConfig) -> DictConfig | None:
@@ -333,11 +321,9 @@ def setup_epd_model(config: DictConfig, stats: dict) -> EncoderProcessorDecoder:
         for p in decoder.parameters():
             p.requires_grad = False
 
-    latent_channels, time_channel_concat = _infer_latent_channels(
-        encoder, stats["example_batch"]
-    )
+    latent_channels = _get_latent_channels(encoder)
     stats["latent_channels"] = latent_channels
-    log.info("Inferred latent channel count: %s", latent_channels)
+    log.info("Latent channel count: %s", latent_channels)
 
     global_cond_channels = None
     if hasattr(encoder, "encode_cond"):
@@ -361,10 +347,10 @@ def setup_epd_model(config: DictConfig, stats: dict) -> EncoderProcessorDecoder:
 
     steps_in = stats["n_steps_input"]
     steps_out = stats["n_steps_output"]
-    per_step_channels = (
-        latent_channels // steps_in
-        if time_channel_concat and steps_in and latent_channels % steps_in == 0
-        else None
+
+    # Determine if latent channels are concatenated over time dimension
+    channels_per_timestep = (
+        latent_channels // steps_in if encoder.outputs_time_channel_concat else None
     )
 
     input_depends_on_channels = not isinstance(
@@ -373,18 +359,18 @@ def setup_epd_model(config: DictConfig, stats: dict) -> EncoderProcessorDecoder:
     input_noise_channels = (
         (
             extra_input_channels * steps_in
-            if time_channel_concat
+            if getattr(encoder, "outputs_time_channel_concat", False)
             else extra_input_channels
         )
         if extra_input_channels and input_depends_on_channels
         else 0
     )
 
-    n_channels_out = per_step_channels or latent_channels
+    n_channels_out = channels_per_timestep or latent_channels
     proc_kwargs = {
         "in_channels": latent_channels + input_noise_channels,
         "out_channels": n_channels_out * steps_out
-        if per_step_channels
+        if channels_per_timestep
         else n_channels_out,
         "n_channels_out": n_channels_out,
         "n_steps_input": steps_in,

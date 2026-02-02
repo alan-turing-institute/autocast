@@ -1,2 +1,3 @@
 _target_: autocast.encoders.permute_concat.PermuteConcat
+in_channels: auto
 with_constants: false

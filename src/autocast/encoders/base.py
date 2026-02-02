@@ -114,7 +114,9 @@ class Encoder(_Encoder):
     """Base encoder."""
 
     encoder_model: nn.Module
+    channel_dim: int
     latent_dim: int
+    outputs_time_channel_concat: bool = False
 
     @abstractmethod
     def encode(self, batch: Batch) -> TensorBNC:
@@ -134,9 +136,6 @@ class Encoder(_Encoder):
 
 class EncoderWithCond(Encoder):
     """Encoder that returns encoded tensor and optional conditioning."""
-
-    encoder_model: nn.Module
-    latent_dim: int
 
     def encode_cond(self, batch: Batch) -> Tensor | None:
         """Encode global conditioning tensor from the batch.
