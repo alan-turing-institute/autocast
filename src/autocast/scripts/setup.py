@@ -339,10 +339,10 @@ def setup_epd_model(config: DictConfig, stats: dict) -> EncoderProcessorDecoder:
             "inferred_global_cond_channels=%s",
         ),
         None
-        if getattr(stats["example_batch"], "constant_scalars", None) is None
+        if stats["example_batch"].constant_scalars is None
         else tuple(stats["example_batch"].constant_scalars.shape),
         None
-        if getattr(stats["example_batch"], "boundary_conditions", None) is None
+        if stats["example_batch"].boundary_conditions is None
         else tuple(stats["example_batch"].boundary_conditions.shape),
         global_cond_channels,
     )
@@ -355,13 +355,11 @@ def setup_epd_model(config: DictConfig, stats: dict) -> EncoderProcessorDecoder:
         latent_channels // steps_in if encoder.outputs_time_channel_concat else None
     )
 
-    input_depends_on_channels = not isinstance(
-        getattr(encoder, "latent_channels", None), int
-    )
+    input_depends_on_channels = not isinstance(encoder.latent_channels, int)
     input_noise_channels = (
         (
             extra_input_channels * steps_in
-            if getattr(encoder, "outputs_time_channel_concat", False)
+            if encoder.outputs_time_channel_concat
             else extra_input_channels
         )
         if extra_input_channels and input_depends_on_channels
