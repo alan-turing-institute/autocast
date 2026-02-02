@@ -275,9 +275,9 @@ def test_vae_flat_latents():
     """Ensure VAE handles flat latent representations with minimal spatial input."""
 
     input_dim = 12
-    latent_dim = 4
-    encoder = _FlatEncoder(input_dim=input_dim, latent_dim=latent_dim)
-    decoder = _FlatDecoder(latent_dim=latent_dim, output_dim=input_dim)
+    latent_channels = 4
+    encoder = _FlatEncoder(input_dim=input_dim, latent_channels=latent_channels)
+    decoder = _FlatDecoder(latent_channels=latent_channels, output_dim=input_dim)
     vae = VAE(encoder=encoder, decoder=decoder, spatial=None)
 
     # Use (B, T, 1, C) to satisfy TensorBTSC requirement of at least 1 spatial dim
@@ -295,7 +295,7 @@ def test_vae_flat_latents():
     decoded, encoded = vae.forward_with_latent(batch)
     assert decoded.shape == x.shape
     # Encoded should be (B, T, 1, 2*latent_dim) since spatial dim is preserved
-    assert encoded.shape == (x.shape[0], x.shape[1], 1, 2 * latent_dim)
+    assert encoded.shape == (x.shape[0], x.shape[1], 1, 2 * latent_channels)
 
     # Stochastic sampling only during training for flat latents
     vae.train()
@@ -313,9 +313,13 @@ def test_vae_spatial_input_flat_latent():
     """VAE can flatten spatial inputs down to 1D latent space."""
 
     input_shape = (3, 16, 16)
-    latent_dim = 32
-    encoder = _FlatteningEncoder(input_shape=input_shape, latent_dim=latent_dim)
-    decoder = _FlatteningDecoder(latent_dim=latent_dim, output_shape=input_shape)
+    latent_channels = 32
+    encoder = _FlatteningEncoder(
+        input_shape=input_shape, latent_channels=latent_channels
+    )
+    decoder = _FlatteningDecoder(
+        latent_channels=latent_channels, output_shape=input_shape
+    )
     vae = VAE(encoder=encoder, decoder=decoder, spatial=None)
 
     x = torch.rand(4, 2, *input_shape)  # Add time dimension (B, T, C, H, W)
@@ -328,7 +332,7 @@ def test_vae_spatial_input_flat_latent():
 
     decoded, encoded = vae.forward_with_latent(batch)
     assert decoded.shape == x.shape
-    assert encoded.shape == (x.shape[0], x.shape[1], 2 * latent_dim)  # (B, T, 2*C)
+    assert encoded.shape == (x.shape[0], x.shape[1], 2 * latent_channels)  # (B, T, 2*C)
 
     vae.train()
     train_out1 = vae(batch)

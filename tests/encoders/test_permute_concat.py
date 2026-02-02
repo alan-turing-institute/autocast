@@ -6,8 +6,12 @@ from autocast.encoders.permute_concat import PermuteConcat
 
 
 def test_permute_concat_with_constants():
-    encoder = PermuteConcat(with_constants=True)
     batch = _make_batch()
+    in_channels = batch.input_fields.shape[-1]
+    n_steps_input = batch.input_fields.shape[1]
+    encoder = PermuteConcat(
+        in_channels=in_channels, n_steps_input=n_steps_input, with_constants=True
+    )
 
     encoded, _ = encoder(batch)
 

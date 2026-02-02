@@ -39,7 +39,9 @@ def test_epd_ensemble_forward_shape():
     output_fields = torch.randn(batch_size, t_steps, w, h, channels)
     batch = Batch(input_fields, output_fields, None, None)
 
-    encoder = PermuteConcat(with_constants=False)
+    encoder = PermuteConcat(
+        in_channels=channels, n_steps_input=t_steps, with_constants=False
+    )
     encoder_output_channels = channels * t_steps
     decoder = ChannelsLast(output_channels=channels, time_steps=t_steps)
     encoder_decoder = EncoderDecoder(encoder=encoder, decoder=decoder)
@@ -73,7 +75,9 @@ def test_epd_ensemble_loss_latent_integration():
     output_fields = torch.randn(batch_size, t_steps, w, h, channels)
     batch = Batch(input_fields, output_fields, None, None)
 
-    encoder = PermuteConcat(with_constants=False)
+    encoder = PermuteConcat(
+        in_channels=channels, n_steps_input=t_steps, with_constants=False
+    )
     encoder_output_channels = channels * t_steps
 
     decoder = ChannelsLast(output_channels=channels, time_steps=t_steps)
@@ -118,7 +122,9 @@ def test_epd_ensemble_loss_fallback():
     output_fields = torch.randn(batch_size, t_steps, w, h, channels)
     batch = Batch(input_fields, output_fields, None, None)
 
-    encoder = PermuteConcat(with_constants=False)
+    encoder = PermuteConcat(
+        in_channels=channels, n_steps_input=t_steps, with_constants=False
+    )
     decoder = ChannelsLast(output_channels=channels, time_steps=t_steps)
     encoder_decoder = EncoderDecoder(encoder=encoder, decoder=decoder)
 

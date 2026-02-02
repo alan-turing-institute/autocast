@@ -9,7 +9,6 @@ from omegaconf import DictConfig, OmegaConf
 from autocast.scripts.setup import (
     _apply_processor_channel_defaults,
     _build_loss_func,
-    _extract_config_dict,
     _get_normalized_processor_config,
     resolve_auto_params,
 )
@@ -97,34 +96,23 @@ def test_processor_configs_exist(processor_configs: list[str]):
 # --- Tests using real configs ---
 
 
-def test_extract_datamodule_from_epd_config(config_dir: str):
-    cfg = _load_config(config_dir, "encoder_processor_decoder")
-    dm_config = _extract_config_dict(cfg, "datamodule")
-    assert isinstance(dm_config, dict)
-    assert "_target_" in dm_config
-
-
 def test_extract_optimizer_returns_empty_when_missing(config_dir: str):
     cfg = _load_config(config_dir, "autoencoder")
-    opt_config = _extract_config_dict(cfg, "optimizer")
-    # optimizer is required in ae config
-    assert opt_config != {}
+    # Check that optimizer config exists
+    assert "optimizer" in cfg
+    assert cfg.optimizer is not None
 
 
 def test_get_normalized_processor_config_from_epd(config_dir: str):
     cfg = _load_config(config_dir, "encoder_processor_decoder")
-    model_config = OmegaConf.to_container(cfg.model, resolve=True)
-    assert isinstance(model_config, dict)
-    proc_config = _get_normalized_processor_config(model_config)
-    assert isinstance(proc_config, dict)
+    proc_config = _get_normalized_processor_config(cfg.model)
+    assert proc_config is not None
     assert "_target_" in proc_config
 
 
 def test_apply_defaults_preserves_explicit_values(config_dir: str):
     cfg = _load_config(config_dir, "encoder_processor_decoder")
-    model_config = OmegaConf.to_container(cfg.model, resolve=True)
-    assert isinstance(model_config, dict)
-    proc_config = _get_normalized_processor_config(model_config)
+    proc_config = _get_normalized_processor_config(cfg.model)
     assert proc_config is not None
 
     # Store original explicit values
@@ -156,8 +144,8 @@ def test_resolve_auto_params_with_real_config(config_dir: str):
     cfg_copy = OmegaConf.create(container)
     assert isinstance(cfg_copy, DictConfig)
     if "datamodule" in cfg_copy:
-        cfg_copy.datamodule.n_steps_input = "auto"
-        cfg_copy.datamodule.n_steps_output = "auto"
+        cfg_copy.datamodule.n_steps_input = "auto"  # type: ignore[assignment]
+        cfg_copy.datamodule.n_steps_output = "auto"  # type: ignore[assignment]
 
     resolved = resolve_auto_params(cfg_copy, input_shape, output_shape)
 
@@ -168,8 +156,6 @@ def test_resolve_auto_params_with_real_config(config_dir: str):
 
 def test_build_loss_func_with_real_config(config_dir: str):
     cfg = _load_config(config_dir, "encoder_processor_decoder")
-    model_config = OmegaConf.to_container(cfg.model, resolve=True)
-    assert isinstance(model_config, dict)
-    loss = _build_loss_func(model_config)
+    loss = _build_loss_func(cfg.model)
     # Should return a valid nn.Module
     assert hasattr(loss, "forward")

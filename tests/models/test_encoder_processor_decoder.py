@@ -41,7 +41,9 @@ def test_encoder_processor_decoder_training_step_runs(make_toy_batch, dummy_load
     # Encoder merges C*T into single dimension
     merged_channels = output_channels * time_steps
 
-    encoder = PermuteConcat(with_constants=False)
+    encoder = PermuteConcat(
+        in_channels=output_channels, n_steps_input=time_steps, with_constants=False
+    )
     decoder = ChannelsLast(output_channels=output_channels, time_steps=time_steps)
     loss = nn.MSELoss()
     encoder_decoder = EncoderDecoder(encoder=encoder, decoder=decoder, loss_func=loss)
@@ -87,7 +89,9 @@ def test_global_cond_passes_from_encoder_to_processor():
         constant_fields=None,
     )
 
-    encoder = PermuteConcat(with_constants=False)
+    encoder = PermuteConcat(
+        in_channels=channels, n_steps_input=t_steps, with_constants=False
+    )
     decoder = ChannelsLast(output_channels=channels, time_steps=t_steps)
     encoder_decoder = EncoderDecoder(encoder=encoder, decoder=decoder)
 
@@ -134,7 +138,9 @@ def test_encoder_processor_decoder_rollout_handles_batches(
     merged_input_channels = output_channels * n_steps_input
     merged_output_channels = output_channels * n_steps_output
 
-    encoder = PermuteConcat(with_constants=False)
+    encoder = PermuteConcat(
+        in_channels=output_channels, n_steps_input=n_steps_input, with_constants=False
+    )
     decoder = ChannelsLast(output_channels=output_channels, time_steps=n_steps_output)
     loss = nn.MSELoss()
     encoder_decoder = EncoderDecoder(encoder=encoder, decoder=decoder, loss_func=loss)
@@ -204,7 +210,9 @@ def test_encoder_processor_decoder_rollout_handles_short_trajectory(
     merged_input_channels = output_channels * n_steps_input
     merged_output_channels = output_channels * n_steps_output
 
-    encoder = PermuteConcat(with_constants=False)
+    encoder = PermuteConcat(
+        in_channels=output_channels, n_steps_input=n_steps_input, with_constants=False
+    )
     decoder = ChannelsLast(output_channels=output_channels, time_steps=n_steps_output)
     loss = nn.MSELoss()
     encoder_decoder = EncoderDecoder(encoder=encoder, decoder=decoder, loss_func=loss)
