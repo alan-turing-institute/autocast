@@ -105,9 +105,10 @@ def _apply_processor_channel_defaults(
     if backbone_config is None:
         return
 
-    _set_if_auto(backbone_config, "in_channels", out_channels)
-    _set_if_auto(backbone_config, "out_channels", out_channels)
-    _set_if_auto(backbone_config, "cond_channels", in_channels)
+    # Backbone applies steps multiplier internally, so we pass per-step channels
+    _set_if_auto(backbone_config, "in_channels", n_channels_out)  # z has n_channels_out
+    _set_if_auto(backbone_config, "out_channels", n_channels_out)
+    _set_if_auto(backbone_config, "cond_channels", in_channels)  # x has in_channels
     _set_if_auto(backbone_config, "n_steps_input", n_steps_input)
     _set_if_auto(backbone_config, "n_steps_output", n_steps_output)
     if global_cond_channels is not None:
@@ -172,8 +173,12 @@ def setup_autoencoder_components(
     ):
         encoder_config["in_channels"] = input_channels
 
-    # Update n_steps_input for encoders that need it
-    if encoder_config and encoder_config.get("n_steps_input") in (None, "auto"):
+    # Update n_steps_input for encoders that need it (e.g., PermuteConcat)
+    if (
+        encoder_config
+        and "n_steps_input" in encoder_config
+        and encoder_config.get("n_steps_input") in (None, "auto")
+    ):
         encoder_config["n_steps_input"] = stats.get("n_steps_input")
 
     if decoder_config:
