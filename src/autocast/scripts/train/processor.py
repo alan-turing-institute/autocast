@@ -13,7 +13,9 @@ from autocast.scripts.training import run_training
 log = logging.getLogger(__name__)
 
 
-@hydra.main(version_base=None, config_path="../../../configs", config_name="processor")
+@hydra.main(
+    version_base=None, config_path="../../../../configs", config_name="processor"
+)
 def main(cfg: DictConfig) -> None:
     """CLI entrypoint for training the processor."""
     # Setup logging

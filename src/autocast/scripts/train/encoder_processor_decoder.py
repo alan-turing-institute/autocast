@@ -15,7 +15,7 @@ log = logging.getLogger(__name__)
 
 @hydra.main(
     version_base=None,
-    config_path="../../../configs",
+    config_path="../../../../configs",
     config_name="encoder_processor_decoder",
 )
 def main(cfg: DictConfig) -> None:

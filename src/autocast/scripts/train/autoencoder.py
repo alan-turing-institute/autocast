@@ -12,7 +12,7 @@ log = logging.getLogger(__name__)
 
 
 @hydra.main(
-    version_base=None, config_path="../../../configs", config_name="autoencoder"
+    version_base=None, config_path="../../../../configs", config_name="autoencoder"
 )
 def main(cfg: DictConfig) -> None:
     """CLI entrypoint for autoencoder training."""
