@@ -22,6 +22,8 @@ If contributing to the codebase, you can run
  ```
 This will setup the pre-commit checks so any pushed commits will pass the CI. 
 
+For detailed documentation on the available scripts and configuration system, see [docs/SCRIPTS_AND_CONFIGS.md](docs/SCRIPTS_AND_CONFIGS.md).
+
 ## Quickstart
 
 Train an encoder-decoder stack and evaluate the resulting checkpoint:

@@ -1,8 +1,7 @@
 # Developer Guide
-TODO
 
 ## Overview
-TODO
+AutoCast is a library for spatiotemporal forecasting. This guide covers the internal API and development practices. For information on running scripts and configuring experiments, please see [Scripts and Configuration](SCRIPTS_AND_CONFIGS.md).
 
 ## API notes
 
