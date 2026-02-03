@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import torch
 from matplotlib import pyplot as plt
 from torch.nn import ModuleList
@@ -119,7 +121,7 @@ class MultiCoverage(Metric):
             for level, value in zip(*self._compute_levels_and_values(), strict=True)
         }
 
-    def plot(self, save_path: str | None = None, title: str = "Coverage Plot"):
+    def plot(self, save_path: Path | str | None = None, title: str = "Coverage Plot"):
         """
         Plot reliability diagram showing expected vs observed coverage.
 
