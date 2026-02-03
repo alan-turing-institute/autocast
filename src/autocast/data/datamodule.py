@@ -21,9 +21,10 @@ class TheWellDataModule(LightningDataModule):
         batch_size: int = 4,
         use_normalization: bool = False,
         # TODO: consider how to pass normalization stats/path
-        normalization_type: type[ZScoreNormalization] | None = None,
+        normalization_type: type[ZScoreNormalization] | None = ZScoreNormalization,
         autoencoder_mode: bool = False,
         num_workers: int | None = None,  # Auto-detect if None
+        normalization_path: str = "../stats.yaml",
         **well_kwargs,
     ):
         super().__init__()
@@ -41,6 +42,7 @@ class TheWellDataModule(LightningDataModule):
             n_steps_output=n_steps_output,
             use_normalization=use_normalization,
             normalization_type=normalization_type,
+            normalization_path=normalization_path,
             autoencoder_mode=autoencoder_mode,
             **well_kwargs,
         )
@@ -51,6 +53,7 @@ class TheWellDataModule(LightningDataModule):
             n_steps_output=n_steps_output,
             use_normalization=use_normalization,
             normalization_type=normalization_type,
+            normalization_path=normalization_path,
             autoencoder_mode=autoencoder_mode,
             **well_kwargs,
         )
@@ -61,6 +64,7 @@ class TheWellDataModule(LightningDataModule):
             n_steps_output=n_steps_output,
             use_normalization=use_normalization,
             normalization_type=normalization_type,
+            normalization_path=normalization_path,
             autoencoder_mode=autoencoder_mode,
             **well_kwargs,
         )
@@ -73,6 +77,7 @@ class TheWellDataModule(LightningDataModule):
                 n_steps_output=n_steps_output,
                 use_normalization=use_normalization,
                 normalization_type=normalization_type,
+                normalization_path=normalization_path,
                 full_trajectory_mode=True,
                 **well_kwargs,
             )
@@ -83,6 +88,7 @@ class TheWellDataModule(LightningDataModule):
                 n_steps_output=n_steps_output,
                 use_normalization=use_normalization,
                 normalization_type=normalization_type,
+                normalization_path=normalization_path,
                 full_trajectory_mode=True,
                 **well_kwargs,
             )
