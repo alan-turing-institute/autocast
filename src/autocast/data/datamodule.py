@@ -151,7 +151,70 @@ class TheWellDataModule(LightningDataModule):
 
 
 class SpatioTemporalDataModule(LightningDataModule):
-    """A class for spatio-temporal data modules."""
+    """
+    A class for spatio-temporal data modules.
+
+    This DataModule handles loading of spatio-temporal data for training, validation,
+    and testing. It supports standard training batches as well as "rollout" evaluation
+    where the model predicts multiple steps into the future.
+
+    For datasets consisting of one or few very long trajectories
+    (e.g., climate reanalysis), you can use `rollout_n_steps_output`, `rollout_stride`,
+    and `rollout_start_idx` to configure the rollout dataloaders to produce batches of
+    sliding window segments rather than attempting to rollout the entire remaining
+    trajectory from t=0.
+
+    Parameters
+    ----------
+    data_path: str | None
+        Path to the root data directory.
+    data: dict[str, dict] | None
+        Dictionary containing pre-loaded data buffers, if not loading from disk.
+    dataset_cls: type[SpatioTemporalDataset]
+        The dataset class to instantiate (default: SpatioTemporalDataset).
+    n_steps_input: int
+        Number of input time steps given to the model (history).
+    n_steps_output: int
+        Number of output time steps to predict during training.
+    stride: int
+        Stride between training samples.
+    input_channel_idxs: tuple[int, ...] | None
+        Indices of channels to include in input.
+    output_channel_idxs: tuple[int, ...] | None
+        Indices of channels to target in output.
+    batch_size: int
+        Batch size for dataloaders.
+    dtype: torch.dtype
+        Data type for tensors (default: torch.float32).
+    ftype: str
+        File extension to look for if loading from disk ("torch" or "h5").
+    verbose: bool
+        If True, print debug info.
+    autoencoder_mode: bool
+        If True, data is set up for reconstruction (input=output).
+        Rollout dataloaders are disabled in this mode.
+    use_normalization: bool
+        If True, applies normalization to the data.
+    normalization_type: type[ZScoreNormalization] | None
+        Class to use for normalization logic (e.g. ZScoreNormalization).
+    normalization_path: str | None
+        Path to a file containing normalization statistics.
+    normalization_stats: dict | None
+        Dictionary containing normalization statistics.
+    num_workers: int | None
+        Number of subprocesses for data loading.
+    rollout_n_steps_output: int | None
+        If set, configures the rollout/evaluation dataloaders to yield trajectories of
+        this fixed length (sliding window) instead of the full remaining trajectory.
+        Useful for long time-series where you want to batch evaluation over different
+        start times.
+    rollout_stride: int | None
+        The stride/step size between starting points of rollout windows.
+        Only used if `rollout_n_steps_output` is set. If None, defaults to `stride`.
+    rollout_start_idx: int
+        The starting index in the time dimension from which to begin sampling rollout
+        windows. Only used if `rollout_n_steps_output` is set. Defaults to 0.
+    """
 
     def __init__(
         self,
@@ -174,6 +237,9 @@ class SpatioTemporalDataModule(LightningDataModule):
         normalization_path: None | str = None,
         normalization_stats: dict | None = None,
         num_workers: int | None = None,
+        rollout_n_steps_output: int | None = None,
+        rollout_stride: int | None = None,
+        rollout_start_idx: int = 0,
     ):
         super().__init__()
         self.verbose = verbose
@@ -258,37 +324,50 @@ class SpatioTemporalDataModule(LightningDataModule):
         self.batch_size = batch_size
 
         if not self.autoencoder_mode:
+            if rollout_n_steps_output is not None:
+                ro_n_steps_output = rollout_n_steps_output
+                ro_stride = rollout_stride if rollout_stride is not None else stride
+                ro_full_trajectory_mode = False
+                ro_start_timestep = rollout_start_idx
+            else:
+                ro_n_steps_output = n_steps_output
+                ro_stride = stride
+                ro_full_trajectory_mode = True
+                ro_start_timestep = 0
+
             self.rollout_val_dataset = dataset_cls(
                 data_path=str(train_path) if train_path is not None else None,
                 data=data["train"] if data is not None else None,
                 n_steps_input=n_steps_input,
-                n_steps_output=n_steps_output,
-                stride=stride,
+                n_steps_output=ro_n_steps_output,
+                stride=ro_stride,
                 input_channel_idxs=input_channel_idxs,
                 output_channel_idxs=output_channel_idxs,
-                full_trajectory_mode=True,
+                full_trajectory_mode=ro_full_trajectory_mode,
                 dtype=dtype,
                 verbose=self.verbose,
                 use_normalization=use_normalization,
                 normalization_type=normalization_type,
                 normalization_path=normalization_path,
                 normalization_stats=normalization_stats,
+                start_timestep=ro_start_timestep,
             )
             self.rollout_test_dataset = dataset_cls(
                 data_path=str(test_path) if test_path is not None else None,
                 data=data["test"] if data is not None else None,
                 n_steps_input=n_steps_input,
-                n_steps_output=n_steps_output,
-                stride=stride,
+                n_steps_output=ro_n_steps_output,
+                stride=ro_stride,
                 input_channel_idxs=input_channel_idxs,
                 output_channel_idxs=output_channel_idxs,
-                full_trajectory_mode=True,
+                full_trajectory_mode=ro_full_trajectory_mode,
                 dtype=dtype,
                 verbose=self.verbose,
                 use_normalization=use_normalization,
                 normalization_type=normalization_type,
                 normalization_path=normalization_path,
                 normalization_stats=normalization_stats,
+                start_timestep=ro_start_timestep,
             )
 
     def train_dataloader(self) -> DataLoader:

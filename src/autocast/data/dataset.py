@@ -30,7 +30,7 @@ class BatchMixin:
 class SpatioTemporalDataset(Dataset, BatchMixin):
     """A class for spatio-temporal datasets."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0915
         self,
         data_path: str | None,
         data: dict | None = None,
@@ -48,6 +48,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         normalization_type: type[ZScoreNormalization] | None = None,
         normalization_path: str | None = None,
         normalization_stats: dict | None = None,
+        start_timestep: int = 0,
     ):
         """
         Initialize the dataset.
@@ -87,6 +88,8 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             Path to normalization statistics file (yaml). Defaults to None.
         normalization_stats: dict | None
             Preloaded normalization statistics. Defaults to None.
+        start_timestep: int
+            Index of the first timestep to use. Defaults to 0.
         """
         self.dtype = dtype
         self.verbose = verbose
@@ -95,6 +98,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         self.normalization_path = normalization_path
         self.normalization_stats = normalization_stats
         self.autoencoder_mode = autoencoder_mode
+        self.start_timestep = start_timestep
 
         if data_path is not None:
             self.read_data(data_path)
@@ -115,7 +119,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             # In full trajectory mode, we want:
             # - input: first n_steps_input timesteps
             # - output: all remaining timesteps for rollout comparison
-            n_steps_output = self.data.shape[1] - n_steps_input
+            n_steps_output = self.data.shape[1] - self.start_timestep - n_steps_input
 
         self.full_trajectory_mode = full_trajectory_mode
         self.autoencoder_mode = autoencoder_mode
@@ -143,9 +147,13 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         # Create input-output pairs
         for traj_idx in range(self.n_trajectories):
             # Create subtrajectories for this trajectory
+            traj_data = self.data[traj_idx]
+            if self.start_timestep > 0:
+                traj_data = traj_data[self.start_timestep :]
             fields = (
-                self.data[traj_idx]
-                .unfold(0, self.n_steps_input + self.n_steps_output, self.stride)
+                traj_data.unfold(
+                    0, self.n_steps_input + self.n_steps_output, self.stride
+                )
                 # [num_subtrajectories, T_in + T_out, W, H, C]
                 .permute(0, -1, 1, 2, 3)
             )
@@ -437,9 +445,13 @@ class TheWell(SpatioTemporalDataset):
         transform: None | Augmentation = None,
         min_std: float = 1e-4,
         storage_options: None | dict = None,
+        start_timestep: int = 0,
     ):
         # Not calling super().__init__() - TheWell uses WellDataset, not self.data
         Dataset.__init__(self)
+        if start_timestep != 0:
+            msg = "Warning: start_timestep is not supported for TheWell dataset yet."
+            raise RuntimeError(msg)
         exclude_filters = exclude_filters or []
         include_filters = include_filters or []
         self.autoencoder_mode = autoencoder_mode
