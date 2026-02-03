@@ -230,14 +230,16 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     return anim
 
 
-def compute_coverage_scores_from_dataloader(  # noqa: PLR0912 TODO: refactor
+def compute_coverage_scores_from_dataloader(
     dataloader: torch.utils.data.DataLoader,
     model: torch.nn.Module | None = None,
     predict_fn: Callable | None = None,
     coverage_levels: list[float] | None = None,
     windows: list[tuple[int, int] | None] | None = None,
     return_tensors: bool = False,
-) -> tuple[MultiCoverage, tuple[TensorBTSCM, TensorBTSC] | None]:
+) -> tuple[
+    dict[None | tuple[int, int], MultiCoverage], tuple[TensorBTSCM, TensorBTSC] | None
+]:
     """
     Compute coverage scores from a dataloader by running model forward passes.
 
@@ -261,7 +263,10 @@ def compute_coverage_scores_from_dataloader(  # noqa: PLR0912 TODO: refactor
 
     Returns
     -------
-    tuple[MultiCoverage, tuple[TensorBTSCM, TensorBTSC] | None]
+    tuple[
+        dict[None | tuple[int, int], MultiCoverage],
+        tuple[TensorBTSCM, TensorBTSC] | None,
+    ]
         The populated MultiCoverage metric and optionally the tensors.
     """
     if model is None and predict_fn is None:
@@ -271,7 +276,10 @@ def compute_coverage_scores_from_dataloader(  # noqa: PLR0912 TODO: refactor
     coverage_levels_ = (
         coverage_levels or np.linspace(0.05, 0.95, 10, endpoint=True).tolist()
     )
-    metric = MultiCoverage(coverage_levels=coverage_levels_)
+    metrics_per_window = {
+        window: MultiCoverage(coverage_levels=coverage_levels_)
+        for window in (windows or [None])
+    }
 
     all_preds = [] if return_tensors else None
     all_trues = [] if return_tensors else None
@@ -292,31 +300,30 @@ def compute_coverage_scores_from_dataloader(  # noqa: PLR0912 TODO: refactor
                 preds = model(batch)  # type: ignore  # noqa: PGH003
                 trues = batch.output_fields
 
-            # Apply windows if specified
-            if windows is not None:
-                for window in windows:
-                    if window is None:
-                        p, t = preds, trues
-                    else:
-                        t_start, t_end = window
-                        # Assume time is dim=1 for batch tensors
-                        p = preds[:, t_start:t_end]
-                        t = trues[:, t_start:t_end]
-                    metric.update(p, t)
-                    if return_tensors:
-                        all_preds.append(p)  # type: ignore  # noqa: PGH003
-                        all_trues.append(t)  # type: ignore  # noqa: PGH003
-            else:
-                metric.update(preds, trues)
-                if return_tensors:
-                    all_preds.append(preds)  # type: ignore  # noqa: PGH003
-                    all_trues.append(trues)  # type: ignore  # noqa: PGH003
+            # Get metrics per window
+            for window, metric in metrics_per_window.items():
+                # Get windowed data
+                if window is None:
+                    p, t = preds, trues
+                else:
+                    t_start, t_end = window
+                    p = preds[:, t_start:t_end]  # assume time is dim=1
+                    t = trues[:, t_start:t_end]
 
+                # Update metric
+                metric.update(p, t)
+
+                # Append tensors if needed
+                if all_preds is not None and all_trues is not None:
+                    all_preds.append(p)
+                    all_trues.append(t)
+
+    # Concatenate tensors if needed
     tensors = None
-    if return_tensors:
+    if all_preds is not None and all_trues is not None:
         tensors = (torch.cat(all_preds, dim=0), torch.cat(all_trues, dim=0))
 
-    return metric, tensors
+    return metrics_per_window, tensors
 
 
 def plot_coverage(
