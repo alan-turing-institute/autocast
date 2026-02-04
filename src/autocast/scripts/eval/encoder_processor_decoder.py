@@ -35,6 +35,9 @@ from autocast.scripts.utils import get_default_config_path
 from autocast.utils import plot_spatiotemporal_video
 from autocast.utils.plots import compute_coverage_scores_from_dataloader
 
+# Set matmul precision for A100/H100
+torch.set_float32_matmul_precision("high")
+
 log = logging.getLogger(__name__)
 
 AVAILABLE_METRICS = {
@@ -367,6 +370,7 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0915
 
     # Setup model and loader with Fabric
     model.to(fabric.device)
+    model.eval()
     test_loader = fabric.setup_dataloaders(datamodule.test_dataloader())
 
     # Evaluation
