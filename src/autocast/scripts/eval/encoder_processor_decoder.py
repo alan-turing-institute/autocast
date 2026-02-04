@@ -120,6 +120,24 @@ def _evaluate_metrics(
     return rows
 
 
+def _map_windows(
+    windows: Sequence[Sequence[int] | None] | None,
+) -> list[tuple[int, int] | None] | None:
+    if windows is None:
+        return None
+
+    tuple_windows: list[tuple[int, int] | None] = []
+    for w in list(windows):
+        if w is not None and len(w) != 2:
+            raise ValueError(
+                f"Each coverage window must be a tuple of (start, end) indices or"
+                f"None. Got {w}."
+            )
+        tuple_windows.append(tuple(w) if w is not None else None)  # type: ignore  # noqa: PGH003
+
+    return tuple_windows
+
+
 def _evaluate_rollout_coverage(
     model: EncoderProcessorDecoderEnsemble,
     dataloader,
@@ -380,13 +398,7 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0912, PLR0915
     # test_loader is already setup above
 
     # Compute coverage using helper function
-    coverage_windows = eval_cfg.get("coverage_windows", None)
-    if coverage_windows is not None:
-        # Convert OmegaConf ListConfig to standard list of tuples/None
-        coverage_windows = [
-            tuple(w) if isinstance(w, (list, Sequence)) else w for w in coverage_windows
-        ]
-
+    coverage_windows = _map_windows(eval_cfg.get("coverage_windows", None))
     test_coverage, _ = compute_coverage_scores_from_dataloader(
         dataloader=test_loader,
         model=model,
@@ -453,11 +465,9 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0912, PLR0915
         if compute_rollout_coverage and n_members and n_members > 1:
             log.info("Computing rollout coverage metrics...")
             assert isinstance(model, EncoderProcessorDecoderEnsemble)
-            windows = eval_cfg.get("coverage_windows", [(6, 12), (13, 30)])
-            if windows is not None:
-                windows = [
-                    tuple(w) if isinstance(w, (list, Sequence)) else w for w in windows
-                ]
+            windows = _map_windows(
+                eval_cfg.get("coverage_windows", [(6, 12), (13, 30)])
+            )
             rollout_coverage_per_window = _evaluate_rollout_coverage(
                 model,
                 fabric.setup_dataloaders(
