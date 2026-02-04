@@ -79,14 +79,7 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     pred_uq_batch = pred_uq[batch_idx] if pred_uq is not None else None
 
     # Extract dimensions
-    try:
-        T, *_, C = true_batch.shape
-    except Exception as e:
-        msg = (
-            f"Expected true tensor of shape {true_batch.shape} did not match "
-            "expected format T, S, C."
-        )
-        raise RuntimeError(msg) from e
+    T, *_, C = true_batch.shape
 
     if hasattr(true_batch, "detach"):
         true_batch = true_batch.detach().cpu().numpy()
