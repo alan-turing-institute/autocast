@@ -78,17 +78,17 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     pred_batch = pred[batch_idx]
     pred_uq_batch = pred_uq[batch_idx] if pred_uq is not None else None
 
-    # Extract dimensions
+    # Extract dims and move to CPU
     T, *_, C = true_batch.shape
+    true_batch = true_batch.detach().cpu().numpy()
+    pred_batch = pred_batch.detach().cpu().numpy()
+    if pred_uq_batch is not None:
+        pred_uq_batch = pred_uq_batch.detach().cpu().numpy()
 
-    if hasattr(true_batch, "detach"):
-        true_batch = true_batch.detach().cpu().numpy()
-        pred_batch = pred_batch.detach().cpu().numpy()
-        if pred_uq_batch is not None:
-            pred_uq_batch = pred_uq_batch.detach().cpu().numpy()
-
+    # Calculate difference
     diff_batch = true_batch - pred_batch
 
+    # Set-up rows
     primary_rows = [true_batch, pred_batch]
     n_primary_rows = len(primary_rows)
 
