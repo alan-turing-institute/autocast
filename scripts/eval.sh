@@ -18,6 +18,5 @@ uv run evaluate_encoder_processor_decoder \
 	datamodule=${DATAPATH} \
 	datamodule.data_path=${AUTOCAST_DATASETS}/${DATAPATH} \
 	eval.checkpoint=${CKPT_PATH} \
-	eval.batch_indices=[0,1,2,3] \
 	eval.video_dir=${VIDEO_DIR} \
 	"$@"

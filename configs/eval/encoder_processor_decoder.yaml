@@ -11,3 +11,5 @@ metrics:
   - vrmse
 
 max_rollout_steps: 25
+compute_rollout_coverage: true
+coverage_windows: [[0, 1], [6, 12], [13, 30]]

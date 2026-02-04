@@ -284,7 +284,7 @@ def _load_state_dict(checkpoint_path: Path) -> OrderedDict[str, torch.Tensor]:
     config_path=get_default_config_path(),
     config_name="encoder_processor_decoder",
 )
-def main(cfg: DictConfig) -> None:  # noqa: PLR0915
+def main(cfg: DictConfig) -> None:  # noqa: PLR0912, PLR0915
     """Entry point for CLI-based evaluation."""
     logging.basicConfig(level=logging.INFO)
 
@@ -369,6 +369,9 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0915
     fabric.launch()
 
     # Setup model and loader with Fabric
+    log.info("Model configuration n_members: %s", model_cfg.get("n_members"))
+    log.info("Model class: %s", type(model))
+
     model.to(fabric.device)
     model.eval()
     test_loader = fabric.setup_dataloaders(datamodule.test_dataloader())
@@ -377,19 +380,36 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0915
     # test_loader is already setup above
 
     # Compute coverage using helper function
+    coverage_windows = eval_cfg.get("coverage_windows", None)
+    if coverage_windows is not None:
+        # Convert OmegaConf ListConfig to standard list of tuples/None
+        coverage_windows = [
+            tuple(w) if isinstance(w, (list, Sequence)) else w for w in coverage_windows
+        ]
+
     test_coverage, _ = compute_coverage_scores_from_dataloader(
         dataloader=test_loader,
         model=model,
         coverage_levels=None,
+        windows=coverage_windows,
         return_tensors=False,
     )
     for window, coverage_metric in test_coverage.items():
         log.info("Test coverage for window %s: %s", window, coverage_metric)
         window_str = f"{window[0]}-{window[1]}" if window is not None else "all"
-        coverage_metric.plot(
-            save_path=work_dir / f"test_coverage_window_{window}.png",
-            title=f"Test Coverage Window {window}",
-        )
+        try:
+            coverage_metric.plot(
+                save_path=work_dir / f"test_coverage_window_{window_str}.png",
+                title=f"Test Coverage Window {window}",
+            )
+        except RuntimeError as e:
+            if "No samples were provided" in str(e):
+                log.warning(
+                    "Could not plot coverage for window %s: No samples provided.",
+                    window,
+                )
+            else:
+                raise e
 
     # Compute other metrics
     rows = _evaluate_metrics(model, test_loader, metrics)
@@ -452,10 +472,21 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0915
                     coverage_metric,
                 )
                 window_str = f"{window[0]}-{window[1]}" if window is not None else "all"
-                coverage_metric.plot(
-                    save_path=csv_path / f"rollout_coverage_window_{window_str}.png",
-                    title=f"Rollout Coverage Window {window_str}",
-                )
+                try:
+                    coverage_metric.plot(
+                        save_path=csv_path.parent
+                        / f"rollout_coverage_window_{window_str}.png",
+                        title=f"Rollout Coverage Window {window}",
+                    )
+                except RuntimeError as e:
+                    if "No samples were provided" in str(e):
+                        log.warning(
+                            "Could not plot rollout coverage for window %s: No samples "
+                            "provided.",
+                            window,
+                        )
+                    else:
+                        raise e
 
 
 if __name__ == "__main__":
