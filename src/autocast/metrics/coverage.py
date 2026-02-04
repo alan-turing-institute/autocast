@@ -55,8 +55,7 @@ class Coverage(BTSCMMetric):
         q_tensor = torch.tensor(
             [q_low, q_high], device=y_pred.device, dtype=y_pred.dtype
         )
-        quantiles = torch.quantile(y_pred, q_tensor, dim=-1)
-        # quantiles shape: (2, B, T, S, C)
+        quantiles = torch.quantile(y_pred, q_tensor, dim=-1)  # (2, B, T, S, C)
 
         lower_q = quantiles[0]
         upper_q = quantiles[1]
