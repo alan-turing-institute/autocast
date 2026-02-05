@@ -1,0 +1,12 @@
+_target_: autocast.data.datamodule.SpatioTemporalDataModule
+data_path: "${oc.env:AUTOCAST_DATASETS,./datasets}/advection_diffusion_multichannel_64_64"
+batch_size: 16
+n_steps_input: 1
+n_steps_output: 4
+stride: 1
+verbose: false
+use_normalization: false
+normalization_path: null
+# use_normalization: true
+# normalization_path: "${oc.env:AUTOCAST_DATASETS,./datasets}/advection_diffusion_multichannel_64_64/stats.yaml"
+num_workers: 0

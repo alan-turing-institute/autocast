@@ -1,5 +1,5 @@
 defaults:
-  - datamodule: reaction_diffusion
+  - datamodule: advection_diffusion_multichannel_64_64
   - optional simulator: null
   - optimizer: adamw
   # Or set to TheWell dataset:
