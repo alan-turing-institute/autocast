@@ -9,7 +9,7 @@ from matplotlib import animation
 from matplotlib.colors import Normalize, TwoSlopeNorm
 from matplotlib.gridspec import GridSpec
 
-from autocast.metrics.coverage import MultiCoverage
+from autocast.metrics.coverage import MultiCoverage, MultiCoverageByTime
 from autocast.types.types import Tensor, TensorBTSC, TensorBTSCM
 
 
@@ -338,13 +338,15 @@ def plot_coverage(
     pred: TensorBTSCM,
     true: TensorBTSC,
     coverage_levels: list[float] | None = None,
+    time_zones: list[tuple[int, int]] | None = None,
     save_path: str | None = None,
     title: str = "Coverage plot",
 ):
     """
     Plot reliability diagram showing expected vs observed coverage.
 
-    This is a convenience wrapper around MultiCoverage.plot().
+    This is a convenience wrapper around MultiCoverage.plot() or
+    MultiCoverageByTime.plot() if time_zones is provided.
 
     Parameters
     ----------
@@ -354,6 +356,9 @@ def plot_coverage(
         Ground truth tensor.
     coverage_levels: list[float], optional
         Coverage levels to evaluate (default: 0.05 to 0.95).
+    time_zones: list[tuple[int, int]], optional
+        If provided, plot coverage by time zones instead of by channel.
+        Each tuple is (start_idx, end_idx) defining a time range [start, end).
     save_path: str, optional
         Path to save the plot.
     title: str
@@ -368,6 +373,11 @@ def plot_coverage(
     )
 
     # Create metric, update with data, and plot
-    metric = MultiCoverage(coverage_levels=coverage_levels_)
+    if time_zones is not None:
+        metric = MultiCoverageByTime(
+            time_zones=time_zones, coverage_levels=coverage_levels_
+        )
+    else:
+        metric = MultiCoverage(coverage_levels=coverage_levels_)
     metric.update(pred, true)
     return metric.plot(save_path=save_path, title=title)
