@@ -9,10 +9,8 @@ from pathlib import Path
 import hydra
 import lightning as L
 import torch
-from omegaconf import DictConfig, OmegaConf
-from torch import nn
+from omegaconf import DictConfig
 
-from autocast.logging import create_wandb_logger, log_metrics
 from autocast.metrics import (
     MAE,
     MSE,
@@ -24,7 +22,9 @@ from autocast.metrics import (
     VRMSE,
     LInfinity,
 )
+from autocast.metrics.base import BaseMetric
 from autocast.metrics.coverage import MultiCoverage
+from autocast.metrics.ensemble import CRPS, AlphaFairCRPS, FairCRPS
 from autocast.models.encoder_processor_decoder import EncoderProcessorDecoder
 from autocast.models.encoder_processor_decoder_ensemble import (
     EncoderProcessorDecoderEnsemble,
@@ -52,6 +52,12 @@ AVAILABLE_METRICS = {
     "linf": LInfinity,
 }
 
+AVAILABLE_METRICS_ENSEMBLE = {
+    "crps": CRPS,
+    "fcrps": FairCRPS,
+    "afcrps": AlphaFairCRPS,
+}
+
 
 def _resolve_csv_path(eval_cfg: DictConfig, work_dir: Path) -> Path:
     csv_path = eval_cfg.get("csv_path")
@@ -67,7 +73,7 @@ def _resolve_video_dir(eval_cfg: DictConfig, work_dir: Path) -> Path:
     return (work_dir / "videos").resolve()
 
 
-def _build_metrics(metric_names: Sequence[str]):
+def _build_metrics(metric_names: Sequence[str]) -> dict[str, BaseMetric]:
     names = metric_names or ("mse", "rmse", "vrmse")
     metrics = {}
     for name in names:
@@ -77,9 +83,7 @@ def _build_metrics(metric_names: Sequence[str]):
 
 
 def _evaluate_metrics(
-    model: EncoderProcessorDecoder,
-    dataloader,
-    metrics: dict[str, nn.Module],
+    model: EncoderProcessorDecoder, dataloader, metrics: dict[str, BaseMetric]
 ) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     totals = dict.fromkeys(metrics, 0.0)
@@ -189,13 +193,17 @@ def _render_rollouts(
     free_running_only: bool,
     n_members: int | None = None,
 ) -> list[Path]:
+    # Return early if no batches are requested
     if not batch_indices:
         return []
+
+    # Create sets to enable logging warnings for any missing batches
     targets = set(batch_indices)
     saved_paths: list[Path] = []
     rendered_batches: set[int] = set()
     video_dir.mkdir(parents=True, exist_ok=True)
 
+    # Perform rollouts and save videos for requested batches
     with torch.no_grad():
         for batch_idx, batch in enumerate(dataloader):
             if batch_idx not in targets:
@@ -222,9 +230,11 @@ def _render_rollouts(
                 )
                 continue
             filename = video_dir / f"batch_{batch_idx}_sample_{sample_index}.{fmt}"
+
             # Limit the rollout to the available ground truth rollout length
             if trues.shape[1] < preds.shape[1]:
                 preds = preds[:, : trues.shape[1]]
+
             # Reduce ensemble dimension for plotting if present.
             # When n_members > 1, the rollout output has shape (B, T, ..., C, M).
             if n_members is not None and n_members > 1:
@@ -235,6 +245,8 @@ def _render_rollouts(
                 preds_mean = preds
                 trues_mean = trues
                 preds_uq = None
+
+            # Plot video
             plot_spatiotemporal_video(
                 true=trues_mean.cpu(),
                 pred=preds_mean.cpu(),
@@ -248,9 +260,12 @@ def _render_rollouts(
             saved_paths.append(filename)
             rendered_batches.add(batch_idx)
             log.info("Saved rollout visualization to %s", filename)
+
+    # Check for any missing batches that were requested but not rendered
     missing = targets - rendered_batches
     for batch_idx in sorted(missing):
         log.warning("Requested batch %s was not found in the dataloader.", batch_idx)
+
     return saved_paths
 
 
@@ -350,34 +365,11 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0915
     metrics_list = eval_cfg.get("metrics", ["mse", "rmse"])
     batch_indices = eval_cfg.get("batch_indices", [])
 
-    # Setup WandB (if enabled by config)
-    resolved_cfg = OmegaConf.to_container(cfg, resolve=True)
-    logging_cfg = cfg.get("logging")
-    logging_cfg = (
-        OmegaConf.to_container(logging_cfg, resolve=True)
-        if logging_cfg is not None
-        else {}
-    )
-
-    wandb_logger, _ = create_wandb_logger(
-        logging_cfg,  # type: ignore  # noqa: PGH003
-        experiment_name=cfg.get("experiment_name"),
-        job_type="evaluate-encoder-processor-decoder",
-        work_dir=work_dir,
-        config={
-            "hydra": resolved_cfg,
-            "evaluation": {
-                "checkpoint": str(checkpoint_path),
-                "metrics": metrics_list,
-                "batch_indices": batch_indices,
-            },
-        },
-    )
-
+    # Construct metrics
     metrics = _build_metrics(metrics_list)
 
-    model_cfg = cfg.get("model", {})
-    n_members = model_cfg.get("n_members", 1)
+    # Get number of ensemble members from config if available
+    n_members = cfg.get("model", {}).get("n_members", 1)
 
     # Setup Fabric for device management
     accelerator = eval_cfg.get("device", "auto")
@@ -385,7 +377,7 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0915
     fabric.launch()
 
     # Setup model and loader with Fabric
-    log.info("Model configuration n_members: %s", model_cfg.get("n_members"))
+    log.info("Model configuration n_members: %s", n_members)
     log.info("Model class: %s", type(model))
 
     model.to(fabric.device)
@@ -414,15 +406,6 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0915
     # Compute other metrics
     rows = _evaluate_metrics(model, test_loader, metrics)
     _write_csv(rows, csv_path, list(metrics.keys()))
-
-    aggregate_row = next((row for row in rows if row.get("batch_index") == "all"), None)
-    if aggregate_row is not None:
-        payload = {
-            f"test/{name}": float(aggregate_row[name])  # type: ignore[arg-type]
-            for name in metrics
-            if name in aggregate_row
-        }
-        log_metrics(wandb_logger, payload)
 
     # Rollouts
     compute_rollout_coverage = eval_cfg.get("compute_rollout_coverage", False)
