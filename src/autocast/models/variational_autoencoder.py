@@ -68,7 +68,7 @@ class VAE(EncoderDecoder):
         encoder: EncoderWithCond,
         decoder: Decoder,
         spatial: int | None = None,
-        normalization_type: ZScoreNormalization | None = None,
+        norm: ZScoreNormalization | None = None,
     ):
         """Initialize VAE.
 
@@ -81,14 +81,12 @@ class VAE(EncoderDecoder):
         spatial : int | None
             Number of spatial dimensions in latent space (e.g., 2 for images).
             If None, assumes flat 1D latent representation.
-        normalization_type : ZScoreNormalization | None
+        norm : ZScoreNormalization | None
             Optional normalizer. If passed, it will be used to denormalize predictions
             and targets before computing metrics during evaluation. It is also
             used to denormalize prediction returned when calling predict_step().
         """
-        super().__init__(
-            encoder=encoder, decoder=decoder, normnormalization_type=normalization_type
-        )
+        super().__init__(encoder=encoder, decoder=decoder, norm=norm)
         self.spatial = spatial
         latent_channels = encoder.latent_channels
         if encoder.latent_channels != decoder.latent_channels:

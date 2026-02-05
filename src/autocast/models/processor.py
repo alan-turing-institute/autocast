@@ -41,7 +41,7 @@ class ProcessorModel(
         val_metrics: Sequence[Metric] | None = None,
         test_metrics: Sequence[Metric] | None = None,
         noise_injector: NoiseInjector | None = None,
-        normalization_type: ZScoreNormalization | None = None,
+        norm: ZScoreNormalization | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__()
@@ -53,7 +53,7 @@ class ProcessorModel(
         self.val_metrics = self._build_metrics(val_metrics, "val_")
         self.test_metrics = self._build_metrics(test_metrics, "test_")
         self.noise_injector = noise_injector
-        self.norm = normalization_type
+        self.norm = norm
         for key, value in kwargs.items():
             setattr(self, key, value)
 
