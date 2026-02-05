@@ -6,4 +6,5 @@ n_steps_output: 4
 stride: 1
 verbose: false
 use_normalization: false
+normalization_path: "${oc.env:AUTOCAST_DATASETS,./datasets}/advection_diffusion_multichannel/stats.yaml"
 num_workers: 0
