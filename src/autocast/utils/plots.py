@@ -17,6 +17,7 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     true: TensorBTSC,
     pred: TensorBTSC,
     pred_uq: TensorBTSC | None = None,
+    coverage: TensorBTSC | None = None,
     batch_idx: int = 0,
     fps: int = 5,
     vmin: float | None = None,
@@ -25,6 +26,7 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     save_path: str | None = None,
     title: str = "Ground Truth vs Prediction",
     pred_uq_label: str = "Prediction UQ",
+    coverage_label: str = "Coverage",
     colorbar_mode: Literal["none", "row", "column", "all"] = "none",
     colorbar_mode_uq: Literal["none", "row"] = "none",
     channel_names: list[str] | None = None,
@@ -77,6 +79,7 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     true_batch = true[batch_idx]
     pred_batch = pred[batch_idx]
     pred_uq_batch = pred_uq[batch_idx] if pred_uq is not None else None
+    coverage_batch = coverage[batch_idx] if coverage is not None else None
 
     # Extract dims and move to CPU
     T, *_, C = true_batch.shape
@@ -84,6 +87,8 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     pred_batch = pred_batch.detach().cpu().numpy()
     if pred_uq_batch is not None:
         pred_uq_batch = pred_uq_batch.detach().cpu().numpy()
+    if coverage_batch is not None:
+        coverage_batch = coverage_batch.detach().cpu().numpy()
 
     # Calculate difference
     diff_batch = true_batch - pred_batch
@@ -135,6 +140,9 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     ]
     if pred_uq is not None:
         rows_to_plot.append((pred_uq_batch, pred_uq_label, "inferno"))
+    if coverage is not None:
+        rows_to_plot.append((coverage_batch, coverage_label, "gray"))
+
     total_rows = len(rows_to_plot)
 
     fig = plt.figure(figsize=(C * 4, total_rows * 4))
@@ -155,9 +163,18 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
                 raise ValueError(msg)
             frame0 = rearrange(data[0, :, :, ch], "w h -> h w")
 
+            # Row indices: 0=true, 1=pred, 2=diff, 3=pred_uq (if present),
+            # 4=coverage (if both present) or 3=coverage (if only coverage)
+            pred_uq_row_idx = 3 if pred_uq_batch is not None else None
+            coverage_row_idx = (
+                (4 if pred_uq_batch is not None else 3)
+                if coverage_batch is not None
+                else None
+            )
+
             if row_idx < n_primary_rows:
                 norm = norms[row_idx][ch]
-            elif row_idx == len(rows_to_plot) - 1 and pred_uq_batch is not None:
+            elif row_idx == pred_uq_row_idx and pred_uq_batch is not None:
                 uq_min = (
                     float(pred_uq_batch[..., ch].min())
                     if colorbar_mode_uq == "none"
@@ -168,8 +185,9 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
                     if colorbar_mode_uq == "none"
                     else float(pred_uq_batch.max())
                 )
-                uq_norm = Normalize(vmin=uq_min, vmax=uq_max)
-                norm = uq_norm
+                norm = Normalize(vmin=uq_min, vmax=uq_max)
+            elif row_idx == coverage_row_idx:
+                norm = Normalize(vmin=0, vmax=1)
             else:
                 norm = diff_norm
             im = ax.imshow(frame0, cmap=row_cmap, aspect="auto", norm=norm)
@@ -208,6 +226,9 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
             images[2][ch].set_array(diff_batch[frame, :, :, ch])
             if pred_uq_batch is not None:
                 images[3][ch].set_array(pred_uq_batch[frame, :, :, ch])
+            if coverage_batch is not None:
+                coverage_row = 4 if pred_uq_batch is not None else 3
+                images[coverage_row][ch].set_array(coverage_batch[frame, :, :, ch])
         suptitle_text.set_text(
             f"{title} - Batch {batch_idx} - Time Step: {frame}/{T - 1}"
         )

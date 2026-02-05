@@ -8,7 +8,7 @@ from torch.nn import ModuleList
 from torchmetrics import Metric
 
 from autocast.metrics.ensemble import BTSCMMetric
-from autocast.types import Tensor, TensorBTC, TensorBTSC, TensorBTSCM
+from autocast.types import Tensor, TensorBSC, TensorBTC, TensorBTSC, TensorBTSCM
 
 
 class Coverage(BTSCMMetric):
@@ -34,17 +34,24 @@ class Coverage(BTSCMMetric):
             raise ValueError(f"coverage_level must be in (0, 1), got {coverage_level}")
         self.coverage_level = coverage_level
 
-    def _score(self, y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTC:
+    def _score(
+        self,
+        y_pred: TensorBTSCM,
+        y_true: TensorBTSC,
+        reduce_over: str | None = "spatial",
+    ) -> TensorBTC | TensorBSC:
         """
-        Compute coverage reduced over spatial dims.
+        Compute coverage reduced over spatial or temporal dimensions.
 
         Args:
             y_pred: (B, T, S, C, M)
             y_true: (B, T, S, C)
+            reduce_over: 'spatial' or 'temporal' or None
+            which dimensions to reduce over for final coverage output.
 
         Returns
         -------
-            coverage: (B, T, C)
+            coverage: (B, T, C) or (B, S, C) depending on reduce_over
         """
         # Calculate quantiles of the ensemble distribution
         # e.g. coverage_level=0.95 -> 0.025 and 0.975 quantiles
@@ -63,10 +70,22 @@ class Coverage(BTSCMMetric):
         # Calculate coverage (1 if inside, 0 otherwise)
         is_covered = ((y_true >= lower_q) & (y_true <= upper_q)).float()
 
-        # Reduce over spatial dimensions: (B, T, S, C) -> (B, T, C)
-        n_spatial_dims = self._infer_n_spatial_dims(is_covered)
-        spatial_dims = tuple(range(2, 2 + n_spatial_dims))
-        coverage_reduced = is_covered.mean(dim=spatial_dims)
+        if reduce_over == "spatial":
+            # Reduce over spatial dimensions: (B, T, S, C) -> (B, T, C)
+            n_spatial_dims = self._infer_n_spatial_dims(is_covered)
+            spatial_dims = tuple(range(2, 2 + n_spatial_dims))
+            coverage_reduced = is_covered.mean(dim=spatial_dims)
+        elif reduce_over == "temporal":
+            # Reduce over temporal dimension: (B, T, S, C) -> (B, S, C)
+            coverage_reduced = is_covered.mean(dim=1)
+        elif reduce_over is None:
+            # No reduction, return full coverage tensor (B, T, S, C)
+            coverage_reduced = is_covered
+        else:
+            raise ValueError(
+                f"Invalid reduce_over value: {reduce_over}. "
+                f"Must be 'spatial' or 'temporal'."
+            )
 
         return coverage_reduced
 
