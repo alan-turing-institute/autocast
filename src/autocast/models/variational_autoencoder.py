@@ -1,6 +1,7 @@
 import torch
 from azula.nn.layers import ConvNd
 from einops import rearrange
+from the_well.data.normalization import ZScoreNormalization
 from torch import nn
 
 from autocast.decoders import Decoder
@@ -63,7 +64,11 @@ class VAE(EncoderDecoder):
     fc_log_var: nn.Module
 
     def __init__(
-        self, encoder: EncoderWithCond, decoder: Decoder, spatial: int | None = None
+        self,
+        encoder: EncoderWithCond,
+        decoder: Decoder,
+        spatial: int | None = None,
+        normalization_type: ZScoreNormalization | None = None,
     ):
         """Initialize VAE.
 
@@ -76,8 +81,14 @@ class VAE(EncoderDecoder):
         spatial : int | None
             Number of spatial dimensions in latent space (e.g., 2 for images).
             If None, assumes flat 1D latent representation.
+        normalization_type : ZScoreNormalization | None
+            Optional normalizer. If passed, it will be used to denormalize predictions
+            and targets before computing metrics during evaluation. It is also
+            used to denormalize prediction returned when calling predict_step().
         """
-        super().__init__(encoder=encoder, decoder=decoder)
+        super().__init__(
+            encoder=encoder, decoder=decoder, normnormalization_type=normalization_type
+        )
         self.spatial = spatial
         latent_channels = encoder.latent_channels
         if encoder.latent_channels != decoder.latent_channels:

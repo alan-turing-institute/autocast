@@ -4,6 +4,7 @@ from typing import Any
 import lightning as L
 import torch
 from omegaconf import DictConfig
+from the_well.data.normalization import ZScoreNormalization
 from torch import nn
 from torchmetrics import Metric, MetricCollection
 
@@ -44,6 +45,7 @@ class EncoderProcessorDecoder(
         val_metrics: Sequence[Metric] | None = None,
         test_metrics: Sequence[Metric] | None = None,
         input_noise_injector: NoiseInjector | None = None,
+        normalization_type: ZScoreNormalization | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__()
@@ -56,6 +58,7 @@ class EncoderProcessorDecoder(
         self.max_rollout_steps = max_rollout_steps
         self.train_in_latent_space = train_in_latent_space
         self.input_noise_injector = input_noise_injector
+        self.norm = normalization_type
 
         if self.train_in_latent_space:
             self.encoder_decoder.freeze()
