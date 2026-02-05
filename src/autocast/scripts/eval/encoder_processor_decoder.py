@@ -34,10 +34,7 @@ from autocast.scripts.config import save_resolved_config
 from autocast.scripts.setup import setup_datamodule, setup_epd_model
 from autocast.scripts.utils import get_default_config_path
 from autocast.utils import plot_spatiotemporal_video
-from autocast.utils.plots import (
-    compute_coverage_scores_from_dataloader,
-    compute_metrics_from_dataloader,
-)
+from autocast.utils.plots import compute_metrics_from_dataloader
 
 # Set matmul precision for A100/H100
 torch.set_float32_matmul_precision("high")
@@ -86,45 +83,48 @@ def _build_metrics(metric_names: Sequence[str]) -> dict[str, BaseMetric]:
     return metrics
 
 
-def _evaluate_metrics(
-    model: EncoderProcessorDecoder, dataloader, metrics: dict[str, BaseMetric]
-) -> list[dict[str, object]]:
-    rows: list[dict[str, object]] = []
-    totals = dict.fromkeys(metrics, 0.0)
-    total_weight = 0
+def _process_metrics_results(
+    results: dict[None | tuple[int, int], dict[str, Metric]],
+    log_prefix: str = "Test",
+    plot_dir: Path | None = None,
+) -> list[dict[str, float | str]]:
+    """Process metric results into CSV rows and plots."""
+    rows = []
+    plot_dir = plot_dir or Path.cwd()
 
-    model.eval()
+    for window, window_metrics in results.items():
+        window_str = f"{window[0]}-{window[1]}" if window is not None else "all"
+        row: dict[str, float | str] = {"window": window_str}
 
-    with torch.no_grad():
-        for batch_idx, batch in enumerate(dataloader):
-            preds = model(batch)
-            trues = batch.output_fields
-            batch_size = preds.shape[0]
-            total_weight += batch_size
+        for name, metric in window_metrics.items():
+            log.info(
+                "%s metric '%s' for window %s: %s",
+                log_prefix,
+                name,
+                window,
+                metric.compute(),
+            )
 
-            row: dict[str, object] = {
-                "dataset_split": "test",
-                "batch_index": batch_idx,
-                "num_samples": batch_size,
-            }
-            for name, metric in metrics.items():
-                value = metric(preds, trues)
-                scalar = float(value.mean().item())
-                row[name] = scalar
-                totals[name] += scalar * batch_size
-            rows.append(row)
+            # If this is coverage, also plot it
+            if name == "coverage" and isinstance(metric, MultiCoverage):
+                metric.plot(
+                    save_path=plot_dir
+                    / f"{log_prefix.lower()}_coverage_window_{window_str}.png",
+                    title=f"{log_prefix} Coverage Window {window}",
+                )
 
-    if total_weight == 0:
-        return rows
+            # Try to get a scalar value for csv
+            try:
+                val = metric.compute()
+                if val.numel() == 1:
+                    row[name] = float(val.item())
+                elif hasattr(val, "mean"):
+                    row[name] = float(val.mean().item())
+            except Exception as e:
+                msg = f"Could not extract scalar for metric {name}: {e}"
+                log.warning(msg)
 
-    aggregate = {
-        "dataset_split": "test",
-        "batch_index": "all",
-        "num_samples": total_weight,
-    }
-    for name in metrics:
-        aggregate[name] = totals[name] / total_weight
-    rows.append(aggregate)
+        rows.append(row)
     return rows
 
 
@@ -273,16 +273,12 @@ def _render_rollouts(
     return saved_paths
 
 
-def _write_csv(
-    rows: list[dict[str, object]],
-    csv_path: Path,
-):
+def _write_csv(rows: list[dict[str, float | str]], csv_path: Path):
     if not rows:
         log.warning("No evaluation rows to write; skipping CSV generation.")
         return
     csv_path.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(rows).to_csv(csv_path, index=False)
-    log.info("Wrote metrics CSV to %s", csv_path)
 
 
 def _load_state_dict(checkpoint_path: Path) -> OrderedDict[str, torch.Tensor]:
@@ -362,8 +358,8 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0912, PLR0915
     metrics_list = eval_cfg.get("metrics", ["mse", "rmse"])
     batch_indices = eval_cfg.get("batch_indices", [])
 
-    # Construct metrics
-    metrics = _build_metrics(metrics_list)
+    # Construct metrics (deprecated usage in _evaluate_metrics)
+    # metrics = _build_metrics(metrics_list)
 
     # Get number of ensemble members from config if available
     n_members = cfg.get("model", {}).get("n_members", 1)
@@ -383,26 +379,45 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0912, PLR0915
 
     # Evaluation
 
-    # Compute coverage using helper function
-    coverage_windows = _map_windows(eval_cfg.get("metric_windows", None))
-    test_coverage, _ = compute_coverage_scores_from_dataloader(
+    # Prepare metric functions for test pass
+    test_metric_fns: dict[str, Callable[[], Metric]] = {}
+
+    # Add standard metrics from config
+    for name in metrics_list:
+        if name in AVAILABLE_METRICS:
+            test_metric_fns[name] = AVAILABLE_METRICS[name]
+        else:
+            msg = f"Metric {name} not found in AVAILABLE_METRICS"
+            log.warning(msg)
+
+    # Add coverage if we have an ensemble
+    compute_coverage = eval_cfg.get("compute_coverage", False)
+    if (n_members > 1) or compute_coverage:
+
+        def coverage_factory() -> Metric:
+            return MultiCoverage(coverage_levels=eval_cfg.get("coverage_levels", None))
+
+        test_metric_fns["coverage"] = coverage_factory
+
+    log.info("Computing test metrics: %s", list(test_metric_fns.keys()))
+
+    # Use metric_windows from config (apply to all metrics)
+    test_windows = _map_windows(eval_cfg.get("metric_windows", None))
+
+    test_metrics_results, _ = compute_metrics_from_dataloader(
         dataloader=test_loader,
+        metric_fns=test_metric_fns,
         predict_fn=model,
-        coverage_levels=None,
-        windows=coverage_windows,
+        windows=test_windows,
         return_tensors=False,
     )
-    for window, coverage_metric in test_coverage.items():
-        log.info("Test coverage for window %s: %s", window, coverage_metric)
-        window_str = f"{window[0]}-{window[1]}" if window is not None else "all"
-        coverage_metric.plot(
-            save_path=work_dir / f"test_coverage_window_{window_str}.png",
-            title=f"Test Coverage Window {window}",
-        )
 
-    # Compute other metrics
-    rows = _evaluate_metrics(model, test_loader, metrics)
-    _write_csv(rows, csv_path)
+    # Process and save test metrics
+    test_rows = _process_metrics_results(
+        test_metrics_results, log_prefix="Test", plot_dir=work_dir
+    )
+    _write_csv(test_rows, csv_path)
+    log.info("Wrote metrics CSV to %s", csv_path)
 
     # Rollouts
     compute_rollout_coverage = eval_cfg.get("compute_rollout_coverage", False)
@@ -475,51 +490,16 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0912, PLR0915
             )
 
             # Process and log results
-            rollout_csv_rows = []
-            for window, window_metrics in rollout_metrics_per_window.items():
-                window_str = f"{window[0]}-{window[1]}" if window is not None else "all"
-                row: dict[str, float | str] = {"window": window_str}
-
-                for name, metric in window_metrics.items():
-                    log.info(
-                        "Rollout metric '%s' for window %s: %s",
-                        name,
-                        window,
-                        metric.compute(),
-                    )
-
-                    # If this is coverage, also plot it
-                    if name == "coverage" and isinstance(metric, MultiCoverage):
-                        metric.plot(
-                            save_path=csv_path.parent
-                            / f"rollout_coverage_window_{window_str}.png",
-                            title=f"Rollout Coverage Window {window}",
-                        )
-
-                    # Try to get a scalar value for csv
-                    def metric_to_scalar(m: Metric, metric_name: str) -> float | None:
-                        try:
-                            val = m.compute()
-                            if val.numel() == 1:
-                                return float(val.item())
-                            if hasattr(val, "mean"):
-                                return float(val.mean().item())
-                        except Exception as e:
-                            msg = f"Could not extract scalar for {metric_name}: {e}"
-                            log.warning(msg)
-                        return None
-
-                    # Attempt to convert metric to scalar for csv; if it fails, skip it
-                    value = metric_to_scalar(metric, name)
-                    if value is not None:
-                        row[name] = value
-
-                rollout_csv_rows.append(row)
+            rollout_csv_rows = _process_metrics_results(
+                rollout_metrics_per_window,
+                log_prefix="Rollout",
+                plot_dir=csv_path.parent,
+            )
 
             # Save rollout metrics to CSV
             rollout_csv_path = csv_path.parent / "rollout_metrics.csv"
             if rollout_csv_rows:
-                pd.DataFrame(rollout_csv_rows).to_csv(rollout_csv_path, index=False)
+                _write_csv(rollout_csv_rows, rollout_csv_path)
                 log.info("Wrote rollout metrics to %s", rollout_csv_path)
 
 
