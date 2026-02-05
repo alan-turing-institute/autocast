@@ -19,38 +19,6 @@ class DenormMixin(L.LightningModule):
 
     norm: ZScoreNormalization | None = None
 
-    def on_fit_start(self):
-        """Automatically connect to datamodule's normalizer at training start."""
-        self._connect_normalizer()
-        super().on_fit_start()
-
-    def on_predict_start(self):
-        """Automatically connect to datamodule's normalizer at prediction start."""
-        self._connect_normalizer()
-        super().on_predict_start()
-
-    def _connect_normalizer(self):
-        """Connect to datamodule's normalizer if available.
-
-        Looks for the normalizer in trainer.datamodule.train_dataset.norm
-        and sets self.normalizer if found.
-        """
-        # Lightning raises RuntimeError when accessing trainer property if not attached
-        # Use try-except to handle this gracefully
-        try:
-            trainer = self.trainer
-        except RuntimeError:
-            return
-
-        if hasattr(trainer, "datamodule"):
-            datamodule = trainer.datamodule  # type: ignore[union-attr]
-            if hasattr(datamodule, "train_dataset") and hasattr(
-                datamodule.train_dataset, "norm"
-            ):
-                log.info("Getting normalizer from the train dataset.")
-                # SpatioTemporalDataset and WellDataset both have norm attribute
-                self.norm = datamodule.train_dataset.norm
-
     def denormalize_tensor(
         self,
         tensor: Tensor,
