@@ -4,10 +4,12 @@ from typing import Any
 import lightning as L
 import torch
 from omegaconf import DictConfig
+from the_well.data.normalization import ZScoreNormalization
 from torch import nn
 from torchmetrics import Metric, MetricCollection
 
 from autocast.metrics.utils import MetricsMixin
+from autocast.models.denorm_mixin import DenormMixin
 from autocast.models.encoder_decoder import EncoderDecoder
 from autocast.models.optimizer_mixin import OptimizerMixin
 from autocast.nn.noise.noise_injector import NoiseInjector
@@ -18,7 +20,7 @@ from autocast.types.types import TensorBTSCM
 
 
 class EncoderProcessorDecoder(
-    OptimizerMixin, RolloutMixin[Batch], L.LightningModule, MetricsMixin
+    DenormMixin, OptimizerMixin, RolloutMixin[Batch], L.LightningModule, MetricsMixin
 ):
     """Encoder-Processor-Decoder Model."""
 
@@ -43,6 +45,7 @@ class EncoderProcessorDecoder(
         val_metrics: Sequence[Metric] | None = None,
         test_metrics: Sequence[Metric] | None = None,
         input_noise_injector: NoiseInjector | None = None,
+        normalization_type: ZScoreNormalization | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__()
@@ -55,6 +58,7 @@ class EncoderProcessorDecoder(
         self.max_rollout_steps = max_rollout_steps
         self.train_in_latent_space = train_in_latent_space
         self.input_noise_injector = input_noise_injector
+        self.norm = normalization_type
 
         if self.train_in_latent_space:
             self.encoder_decoder.freeze()
@@ -125,6 +129,8 @@ class EncoderProcessorDecoder(
             if y_pred is None:
                 y_pred = self(batch)
             y_true = batch.output_fields
+            y_pred = self.denormalize_tensor(y_pred)
+            y_true = self.denormalize_tensor(y_true)
             self._update_and_log_metrics(
                 self, self.val_metrics, y_pred, y_true, batch.input_fields.shape[0]
             )
@@ -139,6 +145,8 @@ class EncoderProcessorDecoder(
             if y_pred is None:
                 y_pred = self(batch)
             y_true = batch.output_fields
+            y_pred = self.denormalize_tensor(y_pred)
+            y_true = self.denormalize_tensor(y_true)
             self._update_and_log_metrics(
                 self, self.test_metrics, y_pred, y_true, batch.input_fields.shape[0]
             )

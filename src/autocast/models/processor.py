@@ -5,10 +5,12 @@ from typing import Any
 import lightning as L
 import torch
 from omegaconf import DictConfig
+from the_well.data.normalization import ZScoreNormalization
 from torch import nn
 from torchmetrics import Metric
 
 from autocast.metrics.utils import MetricsMixin
+from autocast.models.denorm_mixin import DenormMixin
 from autocast.models.optimizer_mixin import OptimizerMixin
 from autocast.nn.noise.noise_injector import NoiseInjector
 from autocast.processors.base import Processor
@@ -17,7 +19,12 @@ from autocast.types import EncodedBatch, Tensor, TensorBNC
 
 
 class ProcessorModel(
-    OptimizerMixin, RolloutMixin[EncodedBatch], ABC, L.LightningModule, MetricsMixin
+    DenormMixin,
+    OptimizerMixin,
+    RolloutMixin[EncodedBatch],
+    ABC,
+    L.LightningModule,
+    MetricsMixin,
 ):
     """Processor Base Class."""
 
@@ -34,6 +41,7 @@ class ProcessorModel(
         val_metrics: Sequence[Metric] | None = None,
         test_metrics: Sequence[Metric] | None = None,
         noise_injector: NoiseInjector | None = None,
+        normalization_type: ZScoreNormalization | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__()
@@ -45,6 +53,7 @@ class ProcessorModel(
         self.val_metrics = self._build_metrics(val_metrics, "val_")
         self.test_metrics = self._build_metrics(test_metrics, "test_")
         self.noise_injector = noise_injector
+        self.norm = normalization_type
         for key, value in kwargs.items():
             setattr(self, key, value)
 
@@ -97,6 +106,8 @@ class ProcessorModel(
         if self.val_metrics is not None:
             y_pred = self._predict(batch)
             y_true = batch.encoded_output_fields
+            y_pred = self.denormalize_tensor(y_pred)
+            y_true = self.denormalize_tensor(y_true)
             self._update_and_log_metrics(
                 self, self.val_metrics, y_pred, y_true, batch.encoded_inputs.shape[0]
             )
@@ -110,6 +121,8 @@ class ProcessorModel(
         if self.test_metrics is not None:
             y_pred = self._predict(batch)
             y_true = batch.encoded_output_fields
+            y_pred = self.denormalize_tensor(y_pred)
+            y_true = self.denormalize_tensor(y_true)
             self._update_and_log_metrics(
                 self, self.test_metrics, y_pred, y_true, batch.encoded_inputs.shape[0]
             )

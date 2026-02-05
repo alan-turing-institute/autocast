@@ -67,7 +67,7 @@ def run_training(
 
     # Run testing if not skipped
     if not skip_test:
-        trainer.test(model=model, dataloaders=datamodule.test_dataloader())
+        trainer.test(model=model, datamodule=datamodule)
 
     # Save final checkpoint
     ckpt_name = output_checkpoint_path or output_cfg.get(
