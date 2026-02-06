@@ -6,7 +6,31 @@ n_steps_output: 4
 stride: 1
 verbose: false
 use_normalization: false
-normalization_path: null
-# use_normalization: true
-# normalization_path: "${oc.env:AUTOCAST_DATASETS,./datasets}/advection_diffusion_multichannel_64_64/stats.yaml"
+normalization_stats:
+  stats:
+    # From train dataset: [1.2449e-01, -1.1992e-11, -2.7925e-12, -6.8906e-13]
+    mean:
+      vorticity: 1.2449e-01
+      velocity_x: -1.1992e-11
+      velocity_y: -2.7925e-12
+      streamfunction: -6.8906e-13
+    std:
+      # From train dataset: [0.1922, 0.1775, 0.1911, 0.3913]
+      vorticity: 0.1922
+      velocity_x: 0.1775
+      velocity_y: 0.1911
+      streamfunction: 0.3913
+    # Placeholders for delta
+    mean_delta:
+      vorticity: 0.0
+      velocity_x: 0.0
+      velocity_y: 0.0
+      streamfunction: 0.0
+    std_delta:
+      vorticity: 1.0
+      velocity_x: 1.0
+      velocity_y: 1.0
+      streamfunction: 1.0
+  core_field_names: ["vorticity", "velocity_x", "velocity_y", "streamfunction"]
+  constant_field_names: []
 num_workers: 0
