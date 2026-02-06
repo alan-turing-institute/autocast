@@ -146,8 +146,9 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         for traj_idx in range(self.n_trajectories):
             # Create subtrajectories for this trajectory
             fields = (
-                self.data[traj_idx]
-                .unfold(0, self.n_steps_input + self.n_steps_output, self.stride)
+                self.data[traj_idx].unfold(
+                    0, self.n_steps_input + self.n_steps_output, self.stride
+                )
                 # [num_subtrajectories, T_in + T_out, W, H, C]
                 .permute(0, -1, 1, 2, 3)
             )
@@ -290,15 +291,6 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
 
     def set_up_normalization(self):
         """Set up normalizer (`None` if `self.use_normalization = False`)."""
-        # TODO: The well uses both attributes but cant we just use normalization_type ?
-        if (self.use_normalization and self.normalization_type is None) or (
-            not self.use_normalization and self.normalization_type is not None
-        ):
-            msg = (
-                "Both `use_normalization` and `normalization_type` must be set "
-                "consistently."
-            )
-            raise ValueError(msg)
         if self.use_normalization and self.normalization_type:
             # TODO: consider checking if only stats dict or path is provided
             if self.normalization_stats is None:
