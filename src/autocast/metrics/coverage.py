@@ -39,19 +39,22 @@ class Coverage(BTSCMMetric):
         y_pred: TensorBTSCM,
         y_true: TensorBTSC,
         reduce_over: str | None = "spatial",
-    ) -> TensorBTC | TensorBSC:
+    ) -> TensorBTC | TensorBSC | TensorBTSC:
         """
-        Compute coverage reduced over spatial or temporal dimensions.
+        Compute coverage reduced over different dimensions.
 
         Args:
             y_pred: (B, T, S, C, M)
             y_true: (B, T, S, C)
             reduce_over: 'spatial' or 'temporal' or None
+                Spatial reduction: average over spatial dimensions to get (B, T, C)
+                Temporal reduction: average over temporal dimension to get (B, S, C)
+                None: no reduction, return (B, T, S, C)
             which dimensions to reduce over for final coverage output.
 
         Returns
         -------
-            coverage: (B, T, C) or (B, S, C) depending on reduce_over
+            coverage: (B, T, C) or (B, S, C) or (B, T, S, C) depending on reduce_over
         """
         # Calculate quantiles of the ensemble distribution
         # e.g. coverage_level=0.95 -> 0.025 and 0.975 quantiles
@@ -84,7 +87,7 @@ class Coverage(BTSCMMetric):
         else:
             raise ValueError(
                 f"Invalid reduce_over value: {reduce_over}. "
-                f"Must be 'spatial' or 'temporal'."
+                f"Must be 'spatial' or 'temporal' or None."
             )
 
         return coverage_reduced
