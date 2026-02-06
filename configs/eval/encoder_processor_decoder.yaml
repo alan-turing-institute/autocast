@@ -7,10 +7,12 @@ defaults:
 # Override with EPD-specific metrics and settings
 metrics:
   - mse
+  - mae
   - rmse
   - vrmse
 
 max_rollout_steps: 25
 compute_rollout_coverage: true
+compute_rollout_metrics: true
 metric_windows: [null]
-metric_windows_rollout: [[0, 1], [6, 12], [13, 30]]
+metric_windows_rollout: [[0, 1], [6, 12], [13, 30], [31, 99]]

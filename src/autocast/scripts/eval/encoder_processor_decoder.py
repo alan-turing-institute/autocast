@@ -85,6 +85,7 @@ def _build_metrics(metric_names: Sequence[str]) -> dict[str, BaseMetric]:
 
 def _process_metrics_results(
     results: dict[None | tuple[int, int], dict[str, Metric]],
+    per_batch_rows: list[dict[str, float | str]] | None = None,
     log_prefix: str = "Test",
     plot_dir: Path | None = None,
 ) -> list[dict[str, float | str]]:
@@ -94,7 +95,7 @@ def _process_metrics_results(
 
     for window, window_metrics in results.items():
         window_str = f"{window[0]}-{window[1]}" if window is not None else "all"
-        row: dict[str, float | str] = {"window": window_str}
+        row: dict[str, float | str] = {"window": window_str, "batch_idx": "all"}
 
         for name, metric in window_metrics.items():
             log.info(
@@ -125,6 +126,10 @@ def _process_metrics_results(
                 log.warning(msg)
 
         rows.append(row)
+
+    if per_batch_rows:
+        rows.extend(per_batch_rows)
+
     return rows
 
 
@@ -153,7 +158,10 @@ def _evaluate_rollout_metrics(
     n_members: int | None,
     metric_fns: dict[str, Callable[[], Metric]],
     windows: list[tuple[int, int] | None] | None = None,
-) -> dict[None | tuple[int, int], dict[str, Metric]]:
+) -> tuple[
+    dict[None | tuple[int, int], dict[str, Metric]],
+    list[dict[str, float | str]] | None,
+]:
     """Evaluate rollout metrics using the dataloader helper."""
 
     def rollout_predict(batch):
@@ -173,15 +181,15 @@ def _evaluate_rollout_metrics(
         return preds[:, :min_len], trues[:, :min_len]
 
     # Use the helper function with predict_fn
-    metrics_per_window, _ = compute_metrics_from_dataloader(
+    metrics_per_window, _, per_batch_rows = compute_metrics_from_dataloader(
         dataloader=dataloader,
         metric_fns=metric_fns,
         predict_fn=rollout_predict,
         windows=windows,
-        return_tensors=False,
+        return_per_batch=True,
     )
 
-    return metrics_per_window
+    return metrics_per_window, per_batch_rows
 
 
 def _render_rollouts(
@@ -404,17 +412,20 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0912, PLR0915
     # Use metric_windows from config (apply to all metrics)
     test_windows = _map_windows(eval_cfg.get("metric_windows", None))
 
-    test_metrics_results, _ = compute_metrics_from_dataloader(
+    test_metrics_results, _, test_per_batch_rows = compute_metrics_from_dataloader(
         dataloader=test_loader,
         metric_fns=test_metric_fns,
         predict_fn=model,
         windows=test_windows,
-        return_tensors=False,
+        return_per_batch=True,
     )
 
     # Process and save test metrics
     test_rows = _process_metrics_results(
-        test_metrics_results, log_prefix="Test", plot_dir=work_dir
+        test_metrics_results,
+        per_batch_rows=test_per_batch_rows,
+        log_prefix="Test",
+        plot_dir=work_dir,
     )
     _write_csv(test_rows, csv_path)
     log.info("Wrote metrics CSV to %s", csv_path)
@@ -476,22 +487,25 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0912, PLR0915
             )
 
             # Run the generic rollout metrics evaluation
-            rollout_metrics_per_window = _evaluate_rollout_metrics(
-                model,
-                fabric.setup_dataloaders(
-                    datamodule.rollout_test_dataloader(batch_size=eval_batch_size)
-                ),
-                stride=rollout_stride,
-                max_rollout_steps=max_rollout_steps,
-                free_running_only=eval_cfg.get("free_running_only", True),
-                n_members=n_members,
-                metric_fns=rollout_metric_fns,
-                windows=windows,
+            rollout_metrics_per_window, rollout_per_batch_rows = (
+                _evaluate_rollout_metrics(
+                    model,
+                    fabric.setup_dataloaders(
+                        datamodule.rollout_test_dataloader(batch_size=eval_batch_size)
+                    ),
+                    stride=rollout_stride,
+                    max_rollout_steps=max_rollout_steps,
+                    free_running_only=eval_cfg.get("free_running_only", True),
+                    n_members=n_members,
+                    metric_fns=rollout_metric_fns,
+                    windows=windows,
+                )
             )
 
             # Process and log results
             rollout_csv_rows = _process_metrics_results(
                 rollout_metrics_per_window,
+                per_batch_rows=rollout_per_batch_rows,
                 log_prefix="Rollout",
                 plot_dir=csv_path.parent,
             )
