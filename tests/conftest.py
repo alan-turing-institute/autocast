@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 import torch
@@ -7,6 +8,7 @@ from einops import rearrange
 from torch import Tensor, nn
 from torch.utils.data import DataLoader, Dataset
 
+from autocast.data.datamodule import SpatioTemporalDataModule
 from autocast.processors.base import Processor
 from autocast.types import Batch, EncodedBatch
 from autocast.utils import get_optimizer_config  # noqa: F401 as imported in tests
@@ -142,6 +144,16 @@ def dummy_loader(batch_dataset: Dataset) -> DataLoader:
         collate_fn=_single_item_collate,
         num_workers=0,
     )
+
+
+@pytest.fixture
+def dummy_datamodule():
+    """Create a minimal mock datamodule for testing."""
+    datamodule = Mock(spec=SpatioTemporalDataModule)
+    train_dataset = Mock()
+    train_dataset.norm = None  # No normalization by default
+    datamodule.train_dataset = train_dataset
+    return datamodule
 
 
 @pytest.fixture

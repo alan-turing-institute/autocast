@@ -67,6 +67,7 @@ def build_datamodule(config: DictConfig) -> SpatioTemporalDataModule:
         )
     if "dtype" in dm_container:
         dm_container["dtype"] = _as_dtype(dm_container["dtype"])
+
     return instantiate(dm_container)
 
 

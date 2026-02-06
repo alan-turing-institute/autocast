@@ -55,7 +55,7 @@ class AE(EncoderDecoder):
         train_metrics: Sequence[Metric] | None = [],
         val_metrics: Sequence[Metric] | None = None,
         test_metrics: Sequence[Metric] | None = None,
-        normalization_type: ZScoreNormalization | None = None,
+        norm: ZScoreNormalization | None = None,
     ):
         super().__init__(
             encoder=encoder,
@@ -65,7 +65,7 @@ class AE(EncoderDecoder):
             train_metrics=train_metrics,
             val_metrics=val_metrics,
             test_metrics=test_metrics,
-            normalization_type=normalization_type,
+            norm=norm,
         )
 
     def forward(self, batch: Batch) -> TensorBNC:

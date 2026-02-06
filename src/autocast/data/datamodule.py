@@ -3,6 +3,7 @@ from pathlib import Path
 
 import torch
 from lightning.pytorch import LightningDataModule
+from omegaconf import DictConfig
 from the_well.data.normalization import ZScoreNormalization
 from torch.utils.data import DataLoader
 
@@ -170,9 +171,9 @@ class SpatioTemporalDataModule(LightningDataModule):
         verbose: bool = False,
         autoencoder_mode: bool = False,
         use_normalization: bool = False,
-        normalization_type: type[ZScoreNormalization] | None = None,
+        normalization_type: type[ZScoreNormalization] | None = ZScoreNormalization,
         normalization_path: None | str = None,
-        normalization_stats: dict | None = None,
+        normalization_stats: dict | DictConfig | None = None,
         num_workers: int | None = None,
     ):
         super().__init__()

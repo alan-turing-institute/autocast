@@ -155,7 +155,7 @@ def train_autoencoder(config: DictConfig, work_dir: Path) -> Path:
 
     datamodule, config, stats = setup_datamodule(config)
 
-    model = setup_autoencoder_model(config, stats)
+    model = setup_autoencoder_model(config, stats, datamodule=datamodule)
     maybe_watch_model(wandb_logger, model, watch_cfg)
 
     trainer_cfg = config.get("trainer")

@@ -58,7 +58,7 @@ def _stats_from_encoded_batch(batch: EncodedBatch) -> dict:
 
 
 def test_autoencoder_config_trainer_fit_smoke(
-    config_dir: str, toy_batch: Batch, dummy_loader
+    config_dir: str, toy_batch: Batch, dummy_loader, dummy_datamodule
 ):
     model_cfg = _load_config(config_dir, "model/autoencoder")
     cfg = _wrap_model_config(model_cfg)
@@ -69,7 +69,7 @@ def test_autoencoder_config_trainer_fit_smoke(
             "n_steps_output": toy_batch.output_fields.shape[1],
         }
     stats = _stats_from_batch(toy_batch)
-    model = setup_autoencoder_model(cfg, stats)
+    model = setup_autoencoder_model(cfg, stats, dummy_datamodule)
 
     trainer = L.Trainer(
         accelerator="cpu",
@@ -85,7 +85,7 @@ def test_autoencoder_config_trainer_fit_smoke(
     trainer.fit(model, train_dataloaders=dummy_loader, val_dataloaders=dummy_loader)
 
 
-def test_processor_config_training_step_smoke(config_dir: str):
+def test_processor_config_training_step_smoke(config_dir: str, dummy_datamodule):
     processor_cfg = _load_config(config_dir, "processor/flow_matching").processor
     with open_dict(processor_cfg):
         processor_cfg.backbone.include_global_cond = False
@@ -114,14 +114,14 @@ def test_processor_config_training_step_smoke(config_dir: str):
         encoded_info={},
     )
     stats = _stats_from_encoded_batch(batch)
-    model = setup_processor_model(cfg, stats)
+    model = setup_processor_model(cfg, stats, dummy_datamodule)
 
     loss = model.training_step(batch, batch_idx=0)
     assert torch.is_tensor(loss)
     assert loss.ndim == 0
 
 
-def test_epd_config_forward_smoke(config_dir: str, toy_batch: Batch):
+def test_epd_config_forward_smoke(config_dir: str, toy_batch: Batch, dummy_datamodule):
     model_cfg = _load_config(
         config_dir,
         "model/encoder_processor_decoder",
@@ -142,7 +142,7 @@ def test_epd_config_forward_smoke(config_dir: str, toy_batch: Batch):
         cfg.model.processor.backbone.include_global_cond = False
         cfg.model.processor.backbone.global_cond_channels = 0
     stats = _stats_from_batch(toy_batch)
-    model = setup_epd_model(cfg, stats)
+    model = setup_epd_model(cfg, stats, dummy_datamodule)
 
     output = model(toy_batch)
     assert output.shape == toy_batch.output_fields.shape

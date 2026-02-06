@@ -33,7 +33,7 @@ class EncoderDecoder(DenormMixin, OptimizerMixin, L.LightningModule, MetricsMixi
         train_metrics: Sequence[Metric] | None = [],
         val_metrics: Sequence[Metric] | None = None,
         test_metrics: Sequence[Metric] | None = None,
-        normalization_type: ZScoreNormalization | None = None,
+        norm: ZScoreNormalization | None = None,
         **kwargs: Any,
     ):
         super().__init__()
@@ -44,7 +44,7 @@ class EncoderDecoder(DenormMixin, OptimizerMixin, L.LightningModule, MetricsMixi
         self.train_metrics = self._build_metrics(train_metrics, "train_")
         self.val_metrics = self._build_metrics(val_metrics, "val_")
         self.test_metrics = self._build_metrics(test_metrics, "test_")
-        self.norm = normalization_type
+        self.norm = norm
 
     def forward(self, batch: Batch) -> TensorBTSC:
         return self.decoder(self.encoder(batch))

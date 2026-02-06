@@ -4,6 +4,7 @@ from typing import Any, Literal
 import h5py
 import torch
 import yaml
+from omegaconf import DictConfig
 from the_well.data import Augmentation, WellDataset
 from the_well.data.normalization import ZScoreNormalization
 from torch.utils.data import Dataset
@@ -45,9 +46,9 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         dtype: torch.dtype = torch.float32,
         verbose: bool = False,
         use_normalization: bool = False,
-        normalization_type: type[ZScoreNormalization] | None = None,
+        normalization_type: type[ZScoreNormalization] | None = ZScoreNormalization,
         normalization_path: str | None = None,
-        normalization_stats: dict | None = None,
+        normalization_stats: dict | DictConfig | None = None,
     ):
         """
         Initialize the dataset.
@@ -82,7 +83,8 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         use_normalization: bool
             Whether to apply Z-score normalization. Defaults to False.
         normalization_type: type[ZScoreNormalization] | None
-            Normalization object (computed from training data). Defaults to None.
+            Normalization object (computed from training data). Defaults to
+            ZScoreNormalization.
         normalization_path: str | None
             Path to normalization statistics file (yaml). Defaults to None.
         normalization_stats: dict | None
@@ -288,15 +290,6 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
 
     def set_up_normalization(self):
         """Set up normalizer (`None` if `self.use_normalization = False`)."""
-        # TODO: The well uses both attributes but cant we just use normalization_type ?
-        if (self.use_normalization and self.normalization_type is None) or (
-            not self.use_normalization and self.normalization_type is not None
-        ):
-            msg = (
-                "Both `use_normalization` and `normalization_type` must be set "
-                "consistently."
-            )
-            raise ValueError(msg)
         if self.use_normalization and self.normalization_type:
             # TODO: consider checking if only stats dict or path is provided
             if self.normalization_stats is None:
