@@ -12,6 +12,9 @@ metrics:
   - vrmse
 
 max_rollout_steps: 25
+
+# Coverage requires model.n_members > 1 (ensemble mode)
+n_members: 10
 compute_rollout_coverage: true
 compute_rollout_metrics: true
 metric_windows: [null]

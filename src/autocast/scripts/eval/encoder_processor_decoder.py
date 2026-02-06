@@ -9,7 +9,7 @@ import hydra
 import lightning as L
 import pandas as pd
 import torch
-from omegaconf import DictConfig
+from omegaconf import DictConfig, open_dict
 from torchmetrics import Metric
 
 from autocast.metrics import (
@@ -346,6 +346,14 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0912, PLR0915
 
     # Setup datamodule and resolve config
     datamodule, cfg, stats = setup_datamodule(cfg)
+
+    # Override model n_members from eval config if specified
+    if "n_members" in eval_cfg:
+        with open_dict(cfg.model):
+            cfg.model.n_members = eval_cfg.n_members
+        log.info(
+            "Overriding model.n_members with %s from eval config", eval_cfg.n_members
+        )
 
     # Setup Model
     model = setup_epd_model(cfg, stats)
