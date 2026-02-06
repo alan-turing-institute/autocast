@@ -54,7 +54,7 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 # ---------------- Code to train and evaluate the model ----------------
 
 # Train
-uv run train_autoencoder \
+srun uv run train_autoencoder \
     hydra.run.dir=${WORKING_DIR} \
     model=autoencoder_dc_f32c64_small \
     datamodule=the_well \

@@ -49,11 +49,11 @@ exec > "${WORKING_DIR}/slurm_${SLURM_JOB_NAME}_${SLURM_JOB_ID}.out" \
 # ---------------- Code to train and evaluate the model ----------------
 
 # Train
-uv run train_encoder_processor_decoder \
+srun uv run train_encoder_processor_decoder \
     hydra.run.dir=${WORKING_DIR}
-	
+
 # Evaluate
-uv run evaluate_encoder_processor_decoder \
+srun uv run evaluate_encoder_processor_decoder \
 	hydra.run.dir=${WORKING_DIR} \
 	eval=encoder_processor_decoder \
 	eval.checkpoint=${WORKING_DIR}/autocast/*/checkpoints/last.ckpt \

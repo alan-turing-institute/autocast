@@ -82,14 +82,14 @@ echo "${SLURM_ARRAY_TASK_ID},${MAX_EPOCH},${BATCH_SIZE}" >> "${LOOKUP_FILE}"
 
 # ---------------- Train and Evaluate Model ----------------
 # Train
-uv run train_encoder_processor_decoder \
+srun uv run train_encoder_processor_decoder \
 	hydra.run.dir=${WORKING_DIR} \
 	trainer.max_epochs=${MAX_EPOCH} \
 	datamodule.batch_size=${BATCH_SIZE}
 
 	
 # Evaluate
-uv run evaluate_encoder_processor_decoder \
+srun uv run evaluate_encoder_processor_decoder \
 	hydra.run.dir=${WORKING_DIR} \
 	eval=encoder_processor_decoder \
 	eval.checkpoint=${WORKING_DIR}/autocast/*/checkpoints/last.ckpt \

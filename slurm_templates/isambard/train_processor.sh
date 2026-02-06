@@ -39,7 +39,7 @@ exec > "${WORKING_DIR}/slurm_${SLURM_JOB_NAME}_${SLURM_JOB_ID}.out" \
 # ---------------- Code to train and evaluate the model ----------------
 
 # Train
-uv run train_processor \
+srun uv run train_processor \
     hydra.run.dir=${WORKING_DIR} \
     datamodule.data_path=datasets/rayleigh_benard/1e3z5x2c_rayleigh_benard_dcae_f32c64_large/cache/rayleigh_benard \
     datamodule.batch_size=64 \

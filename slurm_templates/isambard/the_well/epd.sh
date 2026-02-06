@@ -54,7 +54,7 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 # ---------------- Code to train and evaluate the model ----------------
 
 # Train
-uv run train_encoder_processor_decoder \
+srun uv run train_encoder_processor_decoder \
     hydra.run.dir=${WORKING_DIR} \
     model=encoder_processor_decoder \
     encoder@model.encoder=dc_f32c64_small \
@@ -73,9 +73,9 @@ uv run train_encoder_processor_decoder \
     trainer.callbacks.0.every_n_train_steps=5000 \
     "autoencoder_checkpoint='outputs/autoencoder_run/20251217_121300/autocast/0nttzj9a/checkpoints/step-step=7900.ckpt'"
 	# trainer.enable_checkpointing=false \
-    
+
 # Evaluate
-uv run evaluate_encoder_processor_decoder \
+srun uv run evaluate_encoder_processor_decoder \
     hydra.run.dir=${WORKING_DIR} \
     eval=encoder_processor_decoder \
 	eval.checkpoint=${WORKING_DIR}/autocast/*/checkpoints/last.ckpt \
