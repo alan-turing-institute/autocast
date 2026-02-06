@@ -146,9 +146,8 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         for traj_idx in range(self.n_trajectories):
             # Create subtrajectories for this trajectory
             fields = (
-                self.data[traj_idx].unfold(
-                    0, self.n_steps_input + self.n_steps_output, self.stride
-                )
+                self.data[traj_idx]
+                .unfold(0, self.n_steps_input + self.n_steps_output, self.stride)
                 # [num_subtrajectories, T_in + T_out, W, H, C]
                 .permute(0, -1, 1, 2, 3)
             )
