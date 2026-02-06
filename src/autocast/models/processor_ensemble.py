@@ -104,6 +104,7 @@ class ProcessorModelEnsemble(ProcessorModel):
             preds = rearrange(preds, "(b m) ... -> b ... m", b=b, m=n_members)
             if trues is not None:
                 trues = rearrange(trues, "(b m) ... -> b ... m", b=b, m=n_members)
+                trues = trues[..., 0]  # Only keep one since same across members
 
         # Return outputs with trues if not None
         if trues is not None:

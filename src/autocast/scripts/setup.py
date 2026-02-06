@@ -316,7 +316,9 @@ def setup_processor_model(config: DictConfig, stats: dict) -> ProcessorModel:
     return cls(**kwargs)
 
 
-def setup_epd_model(config: DictConfig, stats: dict) -> EncoderProcessorDecoder:
+def setup_epd_model(
+    config: DictConfig, stats: dict
+) -> EncoderProcessorDecoder | EncoderProcessorDecoderEnsemble:
     """Orchestrate the creation of the full Encoder-Processor-Decoder model."""
     model_config = config.get("model", {})
     noise_injector, extra_input_channels = _resolve_input_noise_injector(model_config)

@@ -1,13 +1,17 @@
+from collections.abc import Callable, Iterable
 from typing import Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
+import torch
 from einops import rearrange
 from matplotlib import animation
 from matplotlib.colors import Normalize, TwoSlopeNorm
 from matplotlib.gridspec import GridSpec
+from torchmetrics import Metric
 
-from autocast.types.types import Tensor, TensorBTSC
+from autocast.metrics.coverage import MultiCoverage
+from autocast.types import Tensor, TensorBTSC, TensorBTSCM
 
 
 def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
@@ -75,16 +79,17 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     pred_batch = pred[batch_idx]
     pred_uq_batch = pred_uq[batch_idx] if pred_uq is not None else None
 
-    T, _, _, C = true_batch.shape
+    # Extract dims and move to CPU
+    T, *_, C = true_batch.shape
+    true_batch = true_batch.detach().cpu().numpy()
+    pred_batch = pred_batch.detach().cpu().numpy()
+    if pred_uq_batch is not None:
+        pred_uq_batch = pred_uq_batch.detach().cpu().numpy()
 
-    if hasattr(true_batch, "detach"):
-        true_batch = true_batch.detach().cpu().numpy()
-        pred_batch = pred_batch.detach().cpu().numpy()
-        if pred_uq_batch is not None:
-            pred_uq_batch = pred_uq_batch.detach().cpu().numpy()
-
+    # Calculate difference
     diff_batch = true_batch - pred_batch
 
+    # Set-up rows
     primary_rows = [true_batch, pred_batch]
     n_primary_rows = len(primary_rows)
 
@@ -225,3 +230,227 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
 
     plt.close()
     return anim
+
+
+def compute_metrics_from_dataloader(
+    dataloader: Iterable,
+    metric_fns: dict[str, Callable[[], Metric]],
+    predict_fn: Callable,
+    windows: list[tuple[int, int] | None] | None = None,
+    return_tensors: bool = False,
+    return_per_batch: bool = False,
+) -> tuple[
+    dict[None | tuple[int, int], dict[str, Metric]],
+    tuple[TensorBTSCM, TensorBTSC] | None,
+    list[dict[str, float | str]] | None,
+]:
+    """
+    Compute metrics from a dataloader by running model forward passes.
+
+    Parameters
+    ----------
+    dataloader: Iterable
+        DataLoader that yields batches.
+    metric_fns: dict[str, Callable[[], Metric]]
+        Dictionary of functions that return fresh metric instances, keyed by metric
+        name.
+    predict_fn: Callable
+        Custom function (batch) -> (preds, trues) for cases like rollout or simply
+        the model forward. Should return a tuple of (preds, trues) tensors or a
+        single tensor of predictions (in which case trues will be taken from batch).
+    windows: list[tuple[int, int] | None], optional
+        List of (t_start, t_end) windows to evaluate. None means use all timesteps.
+        If multiple windows provided, evaluates each independently.
+    return_tensors: bool
+        If True, also return concatenated (pred, true) tensors.
+    return_per_batch: bool
+        If True, also return a list of dictionaries containing metrics for each batch.
+
+    Returns
+    -------
+    tuple[
+        dict[None | tuple[int, int], dict[str, Metric]],
+        tuple[TensorBTSCM, TensorBTSC] | None,
+        list[dict[str, float | str]] | None,
+    ]
+        The populated metrics, optionally the tensors, and optionally per-batch metrics.
+    """
+    metrics_per_window = {
+        window: {name: fn() for name, fn in metric_fns.items()}
+        for window in (windows or [None])
+    }
+    all_preds = [] if return_tensors else None
+    all_trues = [] if return_tensors else None
+    per_batch_rows = [] if return_per_batch else None
+
+    def _get_val(m):
+        """Extract scalar values safely."""
+        try:
+            val = m.compute()
+            if val.numel() == 1:
+                return float(val.item())
+            if hasattr(val, "mean"):
+                return float(val.mean().item())
+        except Exception:
+            pass
+        return None
+
+    with torch.no_grad():
+        for batch_idx, batch in enumerate(dataloader):
+            result = predict_fn(batch)
+            if result is None:
+                continue
+
+            # Extract preds/trues
+            preds, trues = (
+                result
+                if (isinstance(result, tuple) and len(result) == 2)
+                # TODO: consider making generic over batch type with outputs() method
+                else (result, getattr(batch, "output_fields", None))
+            )
+            if not (isinstance(preds, Tensor) and isinstance(trues, Tensor)):
+                continue
+
+            # Move to CPU for metric computation
+            preds, trues = preds.cpu(), trues.cpu()
+
+            # Get metrics for each window
+            for window, metrics_dict in metrics_per_window.items():
+                p, t = (
+                    (preds, trues)
+                    if window is None
+                    else (
+                        preds[:, window[0] : window[1]],
+                        trues[:, window[0] : window[1]],
+                    )
+                )
+                if p.numel() == 0 or t.numel() == 0:
+                    continue
+
+                # Update accumulated metrics
+                for metric in metrics_dict.values():
+                    metric.update(p, t)
+
+                # Store tensors if requested
+                if all_preds is not None:
+                    all_preds.append(p)
+                if all_trues is not None:
+                    all_trues.append(t)
+
+                # Per-batch metrics
+                if per_batch_rows is not None:
+                    row = {
+                        "window": f"{window[0]}-{window[1]}" if window else "all",
+                        "batch_idx": batch_idx,
+                    }
+                    for name, fn in metric_fns.items():
+                        m = fn()
+                        m.update(p, t)
+                        if (val := _get_val(m)) is not None:
+                            row[name] = val
+                    per_batch_rows.append(row)
+
+    # Concatenate tensors if needed
+    tensors = None
+    if all_preds is not None and all_trues is not None:
+        tensors = (torch.cat(all_preds, dim=0), torch.cat(all_trues, dim=0))
+
+    return metrics_per_window, tensors, per_batch_rows
+
+
+def compute_coverage_scores_from_dataloader(
+    dataloader: Iterable,
+    predict_fn: Callable,
+    coverage_levels: list[float] | None = None,
+    windows: list[tuple[int, int] | None] | None = None,
+    return_tensors: bool = False,
+) -> tuple[
+    dict[None | tuple[int, int], MultiCoverage], tuple[TensorBTSCM, TensorBTSC] | None
+]:
+    """
+    Compute coverage scores from a dataloader by running model forward passes.
+
+    Parameters
+    ----------
+    dataloader: DataLoader
+        DataLoader that yields batches.
+    model: nn.Module, optional
+        Model with forward(batch) that returns predictions with ensemble dimension.
+        Either model or predict_fn must be provided.
+    predict_fn: Callable, optional
+        Custom function (batch) -> (preds, trues) for cases like rollout.
+        Either model or predict_fn must be provided.
+    coverage_levels: list[float], optional
+        Coverage levels to evaluate (default: 0.05 to 0.95).
+    windows: list[tuple[int, int] | None], optional
+        List of (t_start, t_end) windows to evaluate. None means use all timesteps.
+        If multiple windows provided, evaluates each independently.
+    return_tensors: bool
+        If True, also return concatenated (pred, true) tensors.
+
+    Returns
+    -------
+    tuple[
+        dict[None | tuple[int, int], MultiCoverage],
+        tuple[TensorBTSCM, TensorBTSC] | None,
+    ]
+        The populated MultiCoverage metric and optionally the tensors.
+    """
+    coverage_levels_ = (
+        coverage_levels or np.linspace(0.05, 0.95, 10, endpoint=True).tolist()
+    )
+
+    def metric_fn() -> MultiCoverage:
+        return MultiCoverage(coverage_levels=coverage_levels_)
+
+    metrics_per_window_dict, tensors, _ = compute_metrics_from_dataloader(
+        dataloader=dataloader,
+        metric_fns={"coverage": metric_fn},
+        predict_fn=predict_fn,
+        windows=windows,
+        return_tensors=return_tensors,
+        return_per_batch=False,
+    )
+
+    metrics_per_window = {k: v["coverage"] for k, v in metrics_per_window_dict.items()}
+
+    return metrics_per_window, tensors  # type: ignore since only metric is coverage
+
+
+def plot_coverage(
+    pred: TensorBTSCM,
+    true: TensorBTSC,
+    coverage_levels: list[float] | None = None,
+    save_path: str | None = None,
+    title: str = "Coverage plot",
+):
+    """
+    Plot reliability diagram showing expected vs observed coverage.
+
+    This is a convenience wrapper around MultiCoverage.plot().
+
+    Parameters
+    ----------
+    pred: TensorBTSCM
+        Ensemble predictions (last dimension is ensemble members).
+    true: TensorBTSC
+        Ground truth tensor.
+    coverage_levels: list[float], optional
+        Coverage levels to evaluate (default: 0.05 to 0.95).
+    save_path: str, optional
+        Path to save the plot.
+    title: str
+        Plot title.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+    """
+    coverage_levels_ = (
+        coverage_levels or np.linspace(0.05, 0.95, 10, endpoint=True).tolist()
+    )
+
+    # Create metric, update with data, and plot
+    metric = MultiCoverage(coverage_levels=coverage_levels_)
+    metric.update(pred, true)
+    return metric.plot(save_path=save_path, title=title)
