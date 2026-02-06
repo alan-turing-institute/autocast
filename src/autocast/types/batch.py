@@ -82,6 +82,28 @@ class Batch:
             ),
         )
 
+    def to(self, device: torch.device | str) -> "Batch":
+        """Move batch to device."""
+        return Batch(
+            input_fields=self.input_fields.to(device),
+            output_fields=self.output_fields.to(device),
+            constant_scalars=(
+                self.constant_scalars.to(device)
+                if self.constant_scalars is not None
+                else None
+            ),
+            constant_fields=(
+                self.constant_fields.to(device)
+                if self.constant_fields is not None
+                else None
+            ),
+            boundary_conditions=(
+                self.boundary_conditions.to(device)
+                if self.boundary_conditions is not None
+                else None
+            ),
+        )
+
 
 @dataclass
 class EncodedBatch:
@@ -116,6 +138,17 @@ class EncodedBatch:
             encoded_info={
                 k: v.repeat_interleave(m, dim=0) for k, v in self.encoded_info.items()
             },
+        )
+
+    def to(self, device: torch.device | str) -> "EncodedBatch":
+        """Move batch to device."""
+        return EncodedBatch(
+            encoded_inputs=self.encoded_inputs.to(device),
+            encoded_output_fields=self.encoded_output_fields.to(device),
+            global_cond=(
+                self.global_cond.to(device) if self.global_cond is not None else None
+            ),
+            encoded_info={k: v.to(device) for k, v in self.encoded_info.items()},
         )
 
 
