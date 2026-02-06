@@ -1,6 +1,6 @@
 _target_: autocast.processors.fno.FNOProcessor
 in_channels: null
 out_channels: null
-n_modes: [16, 16]
-hidden_channels: 64
-n_layers: 4
+n_modes: [16, 16] # Matches the Well 
+hidden_channels: 128 # Matches the Well 
+n_layers: 4 # Matches the Well 

@@ -22,6 +22,8 @@ def get_datamodule(
     overwrite_tmp: bool = False,
     num_workers: int = 8,
     batch_size: int = 16,
+    use_normalization: bool = True,
+    normalization_path: str = "../stats.yaml",  # TODO: choose better default
 ):
     """Get the configured datamodule.
 
@@ -57,6 +59,10 @@ def get_datamodule(
         Number of workers for data loading.
     batch_size: int = 16,
         Batch size for the datamodule.
+    use_normalization: bool
+        Whether to use normalization.
+    normalization_path: str
+        Path to normalization statistics.
     """
 
     def generate_split(simulator):
@@ -105,6 +111,8 @@ def get_datamodule(
             stride=n_steps_output,
             autoencoder_mode=autoencoder_mode,
             batch_size=batch_size,
+            use_normalization=use_normalization,
+            normalization_path=normalization_path,
             num_workers=num_workers,
         )
 
@@ -116,7 +124,8 @@ def get_datamodule(
         n_steps_output=n_steps_output,
         min_dt_stride=stride,
         max_dt_stride=stride,
-        use_normalization=True,
+        use_normalization=use_normalization,
+        normalization_path=normalization_path,
         autoencoder_mode=autoencoder_mode,
         num_workers=num_workers,
         batch_size=batch_size,
