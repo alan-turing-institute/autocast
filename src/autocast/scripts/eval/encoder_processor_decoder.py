@@ -12,17 +12,7 @@ import torch
 from omegaconf import DictConfig, open_dict
 from torchmetrics import Metric
 
-from autocast.metrics import (
-    MAE,
-    MSE,
-    NMAE,
-    NMSE,
-    NRMSE,
-    RMSE,
-    VMSE,
-    VRMSE,
-    LInfinity,
-)
+from autocast.metrics import MAE, MSE, NMAE, NMSE, NRMSE, RMSE, VMSE, VRMSE, LInfinity
 from autocast.metrics.base import BaseMetric
 from autocast.metrics.coverage import MultiCoverage
 from autocast.metrics.ensemble import CRPS, AlphaFairCRPS, FairCRPS
@@ -356,7 +346,7 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0912, PLR0915
         )
 
     # Setup Model
-    model = setup_epd_model(cfg, stats)
+    model = setup_epd_model(cfg, stats, datamodule=datamodule)
 
     # Load checkpoint
     log.info("Loading checkpoint from %s", checkpoint_path)

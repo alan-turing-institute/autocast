@@ -67,7 +67,7 @@ def run_training(
 
     # Run testing if not skipped
     if not skip_test:
-        trainer.test(model=model, dataloaders=datamodule.test_dataloader())
+        trainer.test(model=model, datamodule=datamodule)
 
     # Save final checkpoint
     ckpt_name = output_checkpoint_path or output_cfg.get(
@@ -155,7 +155,7 @@ def train_autoencoder(config: DictConfig, work_dir: Path) -> Path:
 
     datamodule, config, stats = setup_datamodule(config)
 
-    model = setup_autoencoder_model(config, stats)
+    model = setup_autoencoder_model(config, stats, datamodule=datamodule)
     maybe_watch_model(wandb_logger, model, watch_cfg)
 
     trainer_cfg = config.get("trainer")

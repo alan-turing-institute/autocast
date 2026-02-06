@@ -34,7 +34,7 @@ def main(cfg: DictConfig) -> None:
     L.seed_everything(cfg.get("seed", 42), workers=True)
 
     # Setup Model
-    model = setup_processor_model(cfg, stats)
+    model = setup_processor_model(cfg, stats, datamodule=datamodule)
 
     # Get output config
     output_cfg = cfg.get("output", {})

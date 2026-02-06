@@ -2,6 +2,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from omegaconf import DictConfig
+from the_well.data.normalization import ZScoreNormalization
 from torch import nn
 from torchmetrics import Metric
 
@@ -54,6 +55,7 @@ class AE(EncoderDecoder):
         train_metrics: Sequence[Metric] | None = [],
         val_metrics: Sequence[Metric] | None = None,
         test_metrics: Sequence[Metric] | None = None,
+        norm: ZScoreNormalization | None = None,
     ):
         super().__init__(
             encoder=encoder,
@@ -63,6 +65,7 @@ class AE(EncoderDecoder):
             train_metrics=train_metrics,
             val_metrics=val_metrics,
             test_metrics=test_metrics,
+            norm=norm,
         )
 
     def forward(self, batch: Batch) -> TensorBNC:

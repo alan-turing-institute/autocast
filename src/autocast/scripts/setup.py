@@ -218,18 +218,22 @@ def setup_autoencoder_components(
     return encoder, decoder
 
 
-def setup_autoencoder_model(config: DictConfig, stats: dict) -> AE:
+def setup_autoencoder_model(
+    config: DictConfig, stats: dict, datamodule: SpatioTemporalDataModule
+) -> AE:
     """Build the full autoencoder model (encoder, decoder, loss)."""
     encoder, decoder = setup_autoencoder_components(config, stats)
     model_config = config.get("model", {})
     loss_config = model_config.get("loss")
     loss = instantiate(loss_config) if loss_config is not None else None
     optimizer_config = _get_optimizer_config(config)
+    norm = getattr(datamodule.train_dataset, "norm", None)
     model = AE(
         encoder=encoder,
         decoder=decoder,
         loss_func=loss,
         optimizer_config=optimizer_config,
+        norm=norm,
     )
     return model
 
@@ -283,7 +287,9 @@ def _build_loss_func(model_config: DictConfig) -> nn.Module:
     return instantiate(loss_func_config)
 
 
-def setup_processor_model(config: DictConfig, stats: dict) -> ProcessorModel:
+def setup_processor_model(
+    config: DictConfig, stats: dict, datamodule: SpatioTemporalDataModule
+) -> ProcessorModel:
     """Set up just the processor model for training on latents."""
     model_config = config.get("model", {})
     noise_injector, extra_input_channels = _resolve_input_noise_injector(model_config)
@@ -303,12 +309,14 @@ def setup_processor_model(config: DictConfig, stats: dict) -> ProcessorModel:
 
     data_config = config.get("datamodule", {})
     optimizer_config = _get_optimizer_config(config)
+    norm = getattr(datamodule.train_dataset, "norm", None)
     kwargs = {
         "processor": processor,
         "stride": data_config.get("stride", stats["n_steps_output"]),
         "loss_func": loss_func,
         "optimizer_config": optimizer_config,
         "noise_injector": noise_injector,
+        "norm": norm,
     }
     if is_ensemble:
         kwargs["n_members"] = model_config.get("n_members")
@@ -317,7 +325,7 @@ def setup_processor_model(config: DictConfig, stats: dict) -> ProcessorModel:
 
 
 def setup_epd_model(
-    config: DictConfig, stats: dict
+    config: DictConfig, stats: dict, datamodule: SpatioTemporalDataModule
 ) -> EncoderProcessorDecoder | EncoderProcessorDecoderEnsemble:
     """Orchestrate the creation of the full Encoder-Processor-Decoder model."""
     model_config = config.get("model", {})
@@ -349,12 +357,16 @@ def setup_epd_model(
             "boundary_conditions=%s, "
             "inferred_global_cond_channels=%s",
         ),
-        None
-        if stats["example_batch"].constant_scalars is None
-        else tuple(stats["example_batch"].constant_scalars.shape),
-        None
-        if stats["example_batch"].boundary_conditions is None
-        else tuple(stats["example_batch"].boundary_conditions.shape),
+        (
+            None
+            if stats["example_batch"].constant_scalars is None
+            else tuple(stats["example_batch"].constant_scalars.shape)
+        ),
+        (
+            None
+            if stats["example_batch"].boundary_conditions is None
+            else tuple(stats["example_batch"].boundary_conditions.shape)
+        ),
         global_cond_channels,
     )
 
@@ -392,6 +404,7 @@ def setup_epd_model(
     cls = EncoderProcessorDecoderEnsemble if is_ensemble else EncoderProcessorDecoder
 
     optimizer_config = _get_optimizer_config(config)
+    norm = getattr(datamodule.train_dataset, "norm", None)
     kwargs = {
         "encoder_decoder": EncoderDecoder(
             encoder,
@@ -404,6 +417,7 @@ def setup_epd_model(
         "optimizer_config": optimizer_config,
         "loss_func": loss_func,
         "input_noise_injector": noise_injector,
+        "norm": norm,
     }
     if is_ensemble:
         kwargs["n_members"] = model_config.get("n_members")
