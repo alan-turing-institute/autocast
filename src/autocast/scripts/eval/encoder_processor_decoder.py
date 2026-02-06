@@ -1,15 +1,16 @@
 """Evaluation CLI for encoder-processor-decoder checkpoints."""
 
-import csv
 import logging
 from collections import OrderedDict
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
 import hydra
 import lightning as L
+import pandas as pd
 import torch
 from omegaconf import DictConfig
+from torchmetrics import Metric
 
 from autocast.metrics import (
     MAE,
@@ -33,7 +34,7 @@ from autocast.scripts.config import save_resolved_config
 from autocast.scripts.setup import setup_datamodule, setup_epd_model
 from autocast.scripts.utils import get_default_config_path
 from autocast.utils import plot_spatiotemporal_video
-from autocast.utils.plots import compute_coverage_scores_from_dataloader
+from autocast.utils.plots import compute_metrics_from_dataloader
 
 # Set matmul precision for A100/H100
 torch.set_float32_matmul_precision("high")
@@ -82,45 +83,53 @@ def _build_metrics(metric_names: Sequence[str]) -> dict[str, BaseMetric]:
     return metrics
 
 
-def _evaluate_metrics(
-    model: EncoderProcessorDecoder, dataloader, metrics: dict[str, BaseMetric]
-) -> list[dict[str, object]]:
-    rows: list[dict[str, object]] = []
-    totals = dict.fromkeys(metrics, 0.0)
-    total_weight = 0
+def _process_metrics_results(
+    results: dict[None | tuple[int, int], dict[str, Metric]],
+    per_batch_rows: list[dict[str, float | str]] | None = None,
+    log_prefix: str = "Test",
+    plot_dir: Path | None = None,
+) -> list[dict[str, float | str]]:
+    """Process metric results into CSV rows and plots."""
+    rows = []
+    plot_dir = plot_dir or Path.cwd()
 
-    model.eval()
+    for window, window_metrics in results.items():
+        window_str = f"{window[0]}-{window[1]}" if window is not None else "all"
+        row: dict[str, float | str] = {"window": window_str, "batch_idx": "all"}
 
-    with torch.no_grad():
-        for batch_idx, batch in enumerate(dataloader):
-            preds = model(batch)
-            trues = batch.output_fields
-            batch_size = preds.shape[0]
-            total_weight += batch_size
+        for name, metric in window_metrics.items():
+            log.info(
+                "%s metric '%s' for window %s: %s",
+                log_prefix,
+                name,
+                window,
+                metric.compute(),
+            )
 
-            row: dict[str, object] = {
-                "dataset_split": "test",
-                "batch_index": batch_idx,
-                "num_samples": batch_size,
-            }
-            for name, metric in metrics.items():
-                value = metric(preds, trues)
-                scalar = float(value.mean().item())
-                row[name] = scalar
-                totals[name] += scalar * batch_size
-            rows.append(row)
+            # If this is coverage, also plot it
+            if name == "coverage" and isinstance(metric, MultiCoverage):
+                metric.plot(
+                    save_path=plot_dir
+                    / f"{log_prefix.lower()}_coverage_window_{window_str}.png",
+                    title=f"{log_prefix} Coverage Window {window}",
+                )
 
-    if total_weight == 0:
-        return rows
+            # Try to get a scalar value for csv
+            try:
+                val = metric.compute()
+                if val.numel() == 1:
+                    row[name] = float(val.item())
+                elif hasattr(val, "mean"):
+                    row[name] = float(val.mean().item())
+            except Exception as e:
+                msg = f"Could not extract scalar for metric {name}: {e}"
+                log.warning(msg)
 
-    aggregate = {
-        "dataset_split": "test",
-        "batch_index": "all",
-        "num_samples": total_weight,
-    }
-    for name in metrics:
-        aggregate[name] = totals[name] / total_weight
-    rows.append(aggregate)
+        rows.append(row)
+
+    if per_batch_rows:
+        rows.extend(per_batch_rows)
+
     return rows
 
 
@@ -140,17 +149,20 @@ def _map_windows(
     return tuple_windows
 
 
-def _evaluate_rollout_coverage(
-    model: EncoderProcessorDecoderEnsemble,
+def _evaluate_rollout_metrics(
+    model: EncoderProcessorDecoderEnsemble | EncoderProcessorDecoder,
     dataloader,
     stride: int,
     max_rollout_steps: int,
     free_running_only: bool,
     n_members: int | None,
+    metric_fns: dict[str, Callable[[], Metric]],
     windows: list[tuple[int, int] | None] | None = None,
-    coverage_levels: list[float] | None = None,
-) -> dict[None | tuple[int, int], MultiCoverage]:
-    """Evaluate rollout coverage using the dataloader helper."""
+) -> tuple[
+    dict[None | tuple[int, int], dict[str, Metric]],
+    list[dict[str, float | str]] | None,
+]:
+    """Evaluate rollout metrics using the dataloader helper."""
 
     def rollout_predict(batch):
         """Predict function for rollout evaluation."""
@@ -169,19 +181,19 @@ def _evaluate_rollout_coverage(
         return preds[:, :min_len], trues[:, :min_len]
 
     # Use the helper function with predict_fn
-    metrics_per_window, _ = compute_coverage_scores_from_dataloader(
+    metrics_per_window, _, per_batch_rows = compute_metrics_from_dataloader(
         dataloader=dataloader,
+        metric_fns=metric_fns,
         predict_fn=rollout_predict,
-        coverage_levels=coverage_levels,
         windows=windows,
-        return_tensors=False,
+        return_per_batch=True,
     )
 
-    return metrics_per_window
+    return metrics_per_window, per_batch_rows
 
 
 def _render_rollouts(
-    model: EncoderProcessorDecoder,
+    model: EncoderProcessorDecoder | EncoderProcessorDecoderEnsemble,
     dataloader,
     batch_indices: Sequence[int],
     video_dir: Path,
@@ -269,23 +281,12 @@ def _render_rollouts(
     return saved_paths
 
 
-def _write_csv(
-    rows: list[dict[str, object]],
-    csv_path: Path,
-    metric_names: Sequence[str],
-):
+def _write_csv(rows: list[dict[str, float | str]], csv_path: Path):
     if not rows:
         log.warning("No evaluation rows to write; skipping CSV generation.")
         return
     csv_path.parent.mkdir(parents=True, exist_ok=True)
-    base_fields = ["dataset_split", "batch_index", "num_samples"]
-    fieldnames = base_fields + list(metric_names)
-    with open(csv_path, "w", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow(row)
-    log.info("Wrote metrics CSV to %s", csv_path)
+    pd.DataFrame(rows).to_csv(csv_path, index=False)
 
 
 def _load_state_dict(checkpoint_path: Path) -> OrderedDict[str, torch.Tensor]:
@@ -315,7 +316,7 @@ def _load_state_dict(checkpoint_path: Path) -> OrderedDict[str, torch.Tensor]:
     config_path=get_default_config_path(),
     config_name="encoder_processor_decoder",
 )
-def main(cfg: DictConfig) -> None:  # noqa: PLR0915
+def main(cfg: DictConfig) -> None:  # noqa: PLR0912, PLR0915
     """Entry point for CLI-based evaluation."""
     logging.basicConfig(level=logging.INFO)
 
@@ -365,8 +366,8 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0915
     metrics_list = eval_cfg.get("metrics", ["mse", "rmse"])
     batch_indices = eval_cfg.get("batch_indices", [])
 
-    # Construct metrics
-    metrics = _build_metrics(metrics_list)
+    # Construct metrics (deprecated usage in _evaluate_metrics)
+    # metrics = _build_metrics(metrics_list)
 
     # Get number of ensemble members from config if available
     n_members = cfg.get("model", {}).get("n_members", 1)
@@ -386,30 +387,54 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0915
 
     # Evaluation
 
-    # Compute coverage using helper function
-    coverage_windows = _map_windows(eval_cfg.get("coverage_windows", None))
-    test_coverage, _ = compute_coverage_scores_from_dataloader(
-        dataloader=test_loader,
-        model=model,
-        coverage_levels=None,
-        windows=coverage_windows,
-        return_tensors=False,
-    )
-    for window, coverage_metric in test_coverage.items():
-        log.info("Test coverage for window %s: %s", window, coverage_metric)
-        window_str = f"{window[0]}-{window[1]}" if window is not None else "all"
-        coverage_metric.plot(
-            save_path=work_dir / f"test_coverage_window_{window_str}.png",
-            title=f"Test Coverage Window {window}",
-        )
+    # Prepare metric functions for test pass
+    test_metric_fns: dict[str, Callable[[], Metric]] = {}
 
-    # Compute other metrics
-    rows = _evaluate_metrics(model, test_loader, metrics)
-    _write_csv(rows, csv_path, list(metrics.keys()))
+    # Add standard metrics from config
+    for name in metrics_list:
+        if name in AVAILABLE_METRICS:
+            test_metric_fns[name] = AVAILABLE_METRICS[name]
+        else:
+            msg = f"Metric {name} not found in AVAILABLE_METRICS"
+            log.warning(msg)
+
+    # Add coverage if we have an ensemble
+    compute_coverage = eval_cfg.get("compute_coverage", False)
+    if (n_members > 1) or compute_coverage:
+
+        def coverage_factory() -> Metric:
+            return MultiCoverage(coverage_levels=eval_cfg.get("coverage_levels", None))
+
+        test_metric_fns["coverage"] = coverage_factory
+
+    log.info("Computing test metrics: %s", list(test_metric_fns.keys()))
+
+    # Use metric_windows from config (apply to all metrics)
+    test_windows = _map_windows(eval_cfg.get("metric_windows", None))
+
+    test_metrics_results, _, test_per_batch_rows = compute_metrics_from_dataloader(
+        dataloader=test_loader,
+        metric_fns=test_metric_fns,
+        predict_fn=model,
+        windows=test_windows,
+        return_per_batch=True,
+    )
+
+    # Process and save test metrics
+    test_rows = _process_metrics_results(
+        test_metrics_results,
+        per_batch_rows=test_per_batch_rows,
+        log_prefix="Test",
+        plot_dir=work_dir,
+    )
+    _write_csv(test_rows, csv_path)
+    log.info("Wrote metrics CSV to %s", csv_path)
 
     # Rollouts
     compute_rollout_coverage = eval_cfg.get("compute_rollout_coverage", False)
-    if batch_indices or compute_rollout_coverage:
+    compute_rollout_metrics = eval_cfg.get("compute_rollout_metrics", False)
+
+    if batch_indices or compute_rollout_coverage or compute_rollout_metrics:
         max_rollout_steps = eval_cfg.get("max_rollout_steps", 10)
 
         # Use rollout_stride config or fallback to n_steps_output (from stats)
@@ -433,35 +458,63 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0915
                 n_members=n_members,
             )
 
+        # Prepare metric functions for rollouts
+        rollout_metric_fns: dict[str, Callable[[], Metric]] = {}
+
+        if compute_rollout_metrics:
+            for name in metrics_list:
+                if name in AVAILABLE_METRICS:
+                    rollout_metric_fns[name] = AVAILABLE_METRICS[name]
+                else:
+                    msg = f"Metric {name} not found in AVAILABLE_METRICS"
+                    log.warning(msg)
+
         if compute_rollout_coverage and n_members and n_members > 1:
-            log.info("Computing rollout coverage metrics...")
+            log.info("Adding rollout coverage to metrics...")
             assert isinstance(model, EncoderProcessorDecoderEnsemble)
+
+            def coverage_factory() -> Metric:
+                return MultiCoverage(
+                    coverage_levels=eval_cfg.get("coverage_levels", None)
+                )
+
+            rollout_metric_fns["coverage"] = coverage_factory
+
+        if rollout_metric_fns:
+            log.info("Computing rollout metrics: %s", list(rollout_metric_fns.keys()))
             windows = _map_windows(
-                eval_cfg.get("coverage_windows_rollout", [(0, 1), (6, 12), (13, 30)])
+                eval_cfg.get("metric_windows_rollout", [(0, 1), (6, 12), (13, 30)])
             )
-            rollout_coverage_per_window = _evaluate_rollout_coverage(
-                model,
-                fabric.setup_dataloaders(
-                    datamodule.rollout_test_dataloader(batch_size=eval_batch_size)
-                ),
-                stride=rollout_stride,
-                max_rollout_steps=max_rollout_steps,
-                free_running_only=eval_cfg.get("free_running_only", True),
-                windows=windows,
-                n_members=n_members,
+
+            # Run the generic rollout metrics evaluation
+            rollout_metrics_per_window, rollout_per_batch_rows = (
+                _evaluate_rollout_metrics(
+                    model,
+                    fabric.setup_dataloaders(
+                        datamodule.rollout_test_dataloader(batch_size=eval_batch_size)
+                    ),
+                    stride=rollout_stride,
+                    max_rollout_steps=max_rollout_steps,
+                    free_running_only=eval_cfg.get("free_running_only", True),
+                    n_members=n_members,
+                    metric_fns=rollout_metric_fns,
+                    windows=windows,
+                )
             )
-            for window, coverage_metric in rollout_coverage_per_window.items():
-                log.info(
-                    "Rollout coverage for window %s: %s",
-                    window,
-                    coverage_metric,
-                )
-                window_str = f"{window[0]}-{window[1]}" if window is not None else "all"
-                coverage_metric.plot(
-                    save_path=csv_path.parent
-                    / f"rollout_coverage_window_{window_str}.png",
-                    title=f"Rollout Coverage Window {window}",
-                )
+
+            # Process and log results
+            rollout_csv_rows = _process_metrics_results(
+                rollout_metrics_per_window,
+                per_batch_rows=rollout_per_batch_rows,
+                log_prefix="Rollout",
+                plot_dir=csv_path.parent,
+            )
+
+            # Save rollout metrics to CSV
+            rollout_csv_path = csv_path.parent / "rollout_metrics.csv"
+            if rollout_csv_rows:
+                _write_csv(rollout_csv_rows, rollout_csv_path)
+                log.info("Wrote rollout metrics to %s", rollout_csv_path)
 
 
 if __name__ == "__main__":

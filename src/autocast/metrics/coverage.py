@@ -201,7 +201,7 @@ class MultiCoverage(Metric):
 
         # Plot mean coverage in bold
         ax.plot(levels, observed_means, "k-", linewidth=3, label="Mean")
-        ax.set_xlabel("Coverage level, $\alpha$")
+        ax.set_xlabel(r"Coverage level, $\alpha$")
         ax.set_ylabel("Observed Coverage")
         ax.set_title(title)
         ax.set_xlim(0, 1)
