@@ -42,7 +42,7 @@ MODEL_PARAMS=(
 #      "+model.train_metrics.crps._target_=autocast.metrics.ensemble.CRPS"
 # )
 
-CKPT="${WORKDIR}/autoencoder.ckpt"
+CKPT="${WORKING_DIR}/autoencoder.ckpt"
 if [ -f "${CKPT}" ]; then
     MODEL_PARAMS+=( "+autoencoder_checkpoint=${CKPT}" )
 fi
