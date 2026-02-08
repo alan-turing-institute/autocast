@@ -44,7 +44,7 @@ MODEL_PARAMS=(
 
 CKPT="${WORKDIR}/autoencoder.ckpt"
 if [ -f "${CKPT}" ]; then
-        MODEL_PARAMS+=( "+autoencoder_checkpoint=${CKPT}" )
+    MODEL_PARAMS+=( "+autoencoder_checkpoint=${CKPT}" )
 fi
 
 srun uv run train_encoder_processor_decoder \
@@ -54,7 +54,7 @@ srun uv run train_encoder_processor_decoder \
 	datamodule.use_normalization="${USE_NORMALIZATION}" \
 	trainer.max_epochs=100 \
 	logging.wandb.enabled=true \
-	 "${OVERRIDES[@]}"
+	 "${MODEL_PARAMS[@]}"
 	
 	
 	
@@ -69,4 +69,4 @@ uv run evaluate_encoder_processor_decoder \
         eval.checkpoint=${CKPT_PATH} \
         eval.batch_indices=[0,1,2,3] \
         eval.video_dir="${EVAL_DIR}/videos" \
-	"${OVERRIDES[@]}"
+	"${MODEL_PARAMS[@]}"
