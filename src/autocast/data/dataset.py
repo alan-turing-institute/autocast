@@ -248,9 +248,20 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             input_fields if self.autoencoder_mode else self.all_output_fields[idx]
         )
         if self.use_normalization and self.norm is not None:
-            # Vectorized normalization to avoid per-channel tensor churn.
-            input_fields = self.norm.normalize_flattened(input_fields, "variable")
-            output_fields = self.norm.normalize_flattened(output_fields, "variable")
+            # Optimized normalization using cached stats to avoid extensive tensor
+            # allocation/copying per step
+            if hasattr(self, "_cached_norm_mean"):
+                input_fields = (
+                    input_fields - self._cached_norm_mean
+                ) / self._cached_norm_std
+                output_fields = (
+                    output_fields - self._cached_norm_mean
+                ) / self._cached_norm_std
+            else:
+                # Fallback if meant/std weren't cached (though setUpNormalization should
+                # handle it)
+                input_fields = self.norm.normalize_flattened(input_fields, "variable")
+                output_fields = self.norm.normalize_flattened(output_fields, "variable")
 
         item = {
             "input_fields": input_fields,
@@ -284,6 +295,16 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
                 self.normalization_stats.get("core_field_names", []),
                 self.normalization_stats.get("constant_field_names", []),
             )
+
+            # Cache mean/std on dataset to avoid repeated to(device) calls in inner loop
+            # and ensure they are float32 (match data dtype)
+            if hasattr(self.norm, "flattened_means"):
+                self._cached_norm_mean = self.norm.flattened_means["variable"].to(
+                    self.dtype
+                )
+                self._cached_norm_std = self.norm.flattened_stds["variable"].to(
+                    self.dtype
+                )
         else:
             self.norm = None
 
