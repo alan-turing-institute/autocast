@@ -12,9 +12,21 @@ set -e
 uv sync --extra dev
 
 export AUTOCAST_DATASETS="$PWD/datasets"
+
+# Set configuration parameters
 DATAPATH="advection_diffusion_multichannel_64_64"
-WORKING_DIR="$PWD/outputs/2026-02-06/${DATAPATH}_crps_no_norm/"
 USE_NORMALIZATION="false"
+MODEL="vit_large"
+HIDDEN_DIM=256
+MODEL_NOISE="cln" # Options: "cln", "concat"
+
+# Derive remaining parameters based on the dataset and model choices
+if [ ${DATAPATH} == "advection_diffusion_multichannel_64_64" ]; then
+    NOISE_CHANNELS=4096
+else
+    NOISE_CHANNELS=1024
+fi
+WORKING_DIR="$PWD/outputs/2026-02-09/${DATAPATH}_${MODEL}_${MODEL_NOISE}_crps_no_norm/"
 
 mkdir -p $WORKING_DIR
 exec > "${WORKING_DIR}/slurm_${SLURM_JOB_NAME}_${SLURM_JOB_ID}.out" \
@@ -28,16 +40,37 @@ exec > "${WORKING_DIR}/slurm_${SLURM_JOB_NAME}_${SLURM_JOB_ID}.out" \
 #     "decoder@model.decoder=dc_deep_256"
 # )
 
+# Hidden dimension parameters
+if [ ${MODEL} == "vit_large" ]; then
+    HIDDEN_PARAMS="model.processor.hidden_dim=${HIDDEN_DIM}"
+else
+    HIDDEN_PARAMS="model.processor.hidden_channels=${HIDDEN_DIM}"
+fi
 
-# CRPS loss with ViT_large
+# Input noise injection
+if [ ${MODEL_NOISE} == "cln" ]; then
+    MODEL_NOISE_PARAMS="model.processor.n_noise_channels=${NOISE_CHANNELS}"
+else
+    MODEL_NOISE_PARAMS="input_noise_injector@model.input_noise_injector=concat"
+fi
+
+# Spatial resolution parameters
+if [ ${DATAPATH} == "advection_diffusion_multichannel_64_64" ]; then
+    SPATIAL_RESOLUTION_PARAMS="model.processor.spatial_resolution=[64,64]"
+else
+    SPATIAL_RESOLUTION_PARAMS="model.processor.spatial_resolution=[32,32]"
+fi
+
 MODEL_PARAMS=(
      "optimizer.learning_rate=0.0002"
      "encoder@model.encoder=permute_concat"
+     "model.encoder.with_constants=true"
      "decoder@model.decoder=channels_last"
      "processor@model.processor=vit_large"
-     "model.processor.n_noise_channels=4096"
-     "model.processor.spatial_resolution=[64,64]"
-     "model.processor.patch_size=2"
+     "${MODEL_NOISE_PARAMS}"
+     "${SPATIAL_RESOLUTION_PARAMS}"
+     "${HIDDEN_PARAMS}"
+     "model.processor.patch_size=null"
      "+model.n_members=10"
      "model.loss_func._target_=autocast.losses.ensemble.CRPSLoss"
      "+model.train_metrics.crps._target_=autocast.metrics.ensemble.CRPS"
@@ -54,7 +87,7 @@ srun uv run train_encoder_processor_decoder \
 	datamodule.data_path="${AUTOCAST_DATASETS}/${DATAPATH}" \
 	datamodule.use_normalization="${USE_NORMALIZATION}" \
 	trainer.max_epochs=100 \
-    datamodule.batch_size=64 \
+    datamodule.batch_size=128 \
 	logging.wandb.enabled=true \
 	 "${MODEL_PARAMS[@]}"
 	
@@ -64,12 +97,12 @@ CKPT_PATH="${WORKING_DIR}/encoder_processor_decoder.ckpt"
 EVAL_DIR="${WORKING_DIR}/eval"
 
 uv run evaluate_encoder_processor_decoder \
-        hydra.run.dir="${EVAL_DIR}" \
-        eval=encoder_processor_decoder \
-        datamodule="${DATAPATH}" \
-        datamodule.data_path="${AUTOCAST_DATASETS}/${DATAPATH}" \
-        datamodule.batch_size=64 \
-        eval.checkpoint=${CKPT_PATH} \
-        eval.batch_indices=[0,1,2,3] \
-        eval.video_dir="${EVAL_DIR}/videos" \
-	"${MODEL_PARAMS[@]}"
+    hydra.run.dir="${EVAL_DIR}" \
+    eval=encoder_processor_decoder \
+    datamodule="${DATAPATH}" \
+    datamodule.data_path="${AUTOCAST_DATASETS}/${DATAPATH}" \
+    datamodule.batch_size=128 \
+    eval.checkpoint=${CKPT_PATH} \
+    eval.batch_indices=[0,1,2,3] \
+    eval.video_dir="${EVAL_DIR}/videos" \
+    "${MODEL_PARAMS[@]}"
