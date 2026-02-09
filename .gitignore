@@ -6,8 +6,8 @@ dist/
 *.egg-info/
 exploratory/data
 .DS_Store
-outputs/
-lightning_logs/
+outputs
+lightning_logs
 datasets
 slurm_scripts
 logs
