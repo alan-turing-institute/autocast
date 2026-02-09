@@ -16,9 +16,9 @@ export AUTOCAST_DATASETS="$PWD/datasets"
 # Set configuration parameters
 DATAPATH="advection_diffusion_multichannel_64_64"
 USE_NORMALIZATION="false"
-MODEL="vit_large"
+MODEL="fno"
 HIDDEN_DIM=256
-MODEL_NOISE="cln" # Options: "cln", "concat"
+MODEL_NOISE="concat" # Options: "cln", "concat"
 
 # Derive remaining parameters based on the dataset and model choices
 if [ ${DATAPATH} == "advection_diffusion_multichannel_64_64" ]; then

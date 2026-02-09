@@ -17,7 +17,7 @@ export AUTOCAST_DATASETS="$PWD/datasets"
 DATAPATH="advection_diffusion_multichannel_64_64"
 USE_NORMALIZATION="false"
 MODEL="vit_large"
-HIDDEN_DIM=256
+HIDDEN_DIM=512
 MODEL_NOISE="cln" # Options: "cln", "concat"
 
 # Derive remaining parameters based on the dataset and model choices
