@@ -1,6 +1,7 @@
 from collections.abc import Sequence
 from typing import Any
 
+import torch
 from omegaconf import DictConfig
 from the_well.data.normalization import ZScoreNormalization
 from torch import nn
@@ -86,11 +87,16 @@ class AE(EncoderDecoder):
             "train_loss", loss, prog_bar=True, batch_size=batch.input_fields.shape[0]
         )
         if self.train_metrics is not None:
-            y_pred = self(batch)
-            y_true = batch.output_fields
-            self._update_and_log_metrics(
-                self, self.train_metrics, y_pred, y_true, batch.input_fields.shape[0]
-            )
+            with torch.no_grad():
+                y_pred = self(batch)
+                y_true = batch.output_fields
+                self._update_and_log_metrics(
+                    self,
+                    self.train_metrics,
+                    y_pred,
+                    y_true,
+                    batch.input_fields.shape[0],
+                )
         return loss
 
     def validation_step(self, batch: Batch, batch_idx: int) -> Tensor:  # noqa: ARG002
