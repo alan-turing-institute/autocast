@@ -57,6 +57,9 @@ class BaseMetric(Metric, Generic[TPred, TTrue], ABC):
         # Sum over batch dimension: (B, T, C) -> (T, C)
         score_summed = torch.sum(score_spatial, dim=0)
 
+        # Detach from graph since computation graph not needed for metric accumulation
+        score_summed = score_summed.detach()
+
         # Lazily set correct shape for sum_score on first batch
         if not self._initialized:
             self.sum_score = torch.zeros_like(score_summed)
