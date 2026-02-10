@@ -1,5 +1,5 @@
 defaults:
-  - /backbone@backbone: vit
+  - /backbone@backbone: vit_small
   - _self_
 
 _target_: autocast.processors.diffusion.DiffusionProcessor
