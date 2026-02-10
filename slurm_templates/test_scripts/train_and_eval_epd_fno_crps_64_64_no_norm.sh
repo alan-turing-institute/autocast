@@ -9,7 +9,6 @@
 #SBATCH --error=logs/epd_and_eval%j.err
 
 set -e
-uv sync --extra dev
 
 export AUTOCAST_DATASETS="$PWD/datasets"
 
