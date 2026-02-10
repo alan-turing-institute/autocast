@@ -18,6 +18,13 @@ DATAPATH="advection_diffusion_multichannel_64_64" # Options: "advection_diffusio
 USE_NORMALIZATION="false" # Options: "true" or "false"
 MODEL="flow_matching_vit" # Options (any compatible config in configs/processors/), currently: "flow_matching_vit", "diffusion_vit"
 
+if [ ${DATAPATH} == "advection_diffusion_multichannel_64_64" ]; then
+    AE_CHECKPOINT="/projects/u5gf/ai4physics/outputs/2026-02-06/advection_diffusion_multichannel_64_64_no_norm/autoencoder.ckpt"
+elif [ ${DATAPATH} == "advection_diffusion_multichannel" ]; then
+    AE_CHECKPOINT="/projects/u5gf/ai4physics/outputs/2026-02-06/advection_diffusion_multichannel_no_norm/autoencoder.ckpt"
+fi
+
+
 # # Hidden dimension parameters
 # if [ ${MODEL} == "vit_large" ]; then
 #     HIDDEN_PARAMS="model.processor.hidden_dim=${HIDDEN_DIM}"
@@ -44,6 +51,9 @@ RUN_NAME="diff_${DATAPATH}_${MODEL}_${MODEL_NOISE}_${HIDDEN_DIM}_${GIT_HASH}_${U
 WORKING_DIR="$PWD/outputs/$(date +%F)/${RUN_NAME}/"
 
 # Check if there's a pretrained autoencoder checkpoint in the working directory
+cd "${WORKING_DIR}"
+ln -s "${AE_CHECKPOINT}" autoencoder.ckpt
+cd -
 CKPT="${WORKING_DIR}/autoencoder.ckpt"
 if [ -f "${CKPT}" ]; then
     MODEL_PARAMS+=( "+autoencoder_checkpoint=${CKPT}" )
