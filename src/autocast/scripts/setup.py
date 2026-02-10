@@ -127,9 +127,19 @@ def setup_datamodule(
     if isinstance(batch, Batch):
         train_inputs = batch.input_fields
         train_outputs = batch.output_fields
+        n_constant_scalars = (
+            batch.constant_scalars.shape[-1]
+            if batch.constant_scalars is not None
+            else 0
+        )
+        n_constant_field_channels = (
+            batch.constant_fields.shape[-1] if batch.constant_fields is not None else 0
+        )
     elif isinstance(batch, EncodedBatch):
         train_inputs = batch.encoded_inputs
         train_outputs = batch.encoded_output_fields
+        n_constant_scalars = None
+        n_constant_field_channels = None
     else:
         raise TypeError(f"Unsupported batch type: {type(batch)}")
 
@@ -142,6 +152,8 @@ def setup_datamodule(
         "channel_count": input_shape[-1],
         "n_steps_input": data_config.get("n_steps_input", input_shape[1]),
         "n_steps_output": data_config.get("n_steps_output", output_shape[1]),
+        "n_constant_scalars": n_constant_scalars,
+        "n_constant_field_channels": n_constant_field_channels,
         "input_shape": input_shape,
         "output_shape": output_shape,
         "example_batch": batch,
@@ -158,6 +170,11 @@ def setup_autoencoder_components(
     encoder_config = model_config.get("encoder")
     decoder_config = model_config.get("decoder")
 
+    log.info(
+        "Model config before resolving auto channels:\nEncoder: %s\nDecoder: %s",
+        encoder_config,
+        decoder_config,
+    )
     base_channels = stats.get("channel_count")
     input_channels = (
         (base_channels + extra_input_channels)
@@ -171,6 +188,12 @@ def setup_autoencoder_components(
         and isinstance(input_channels, int)
         and encoder_config.get("in_channels") in (None, "auto")
     ):
+        # TODO: add more robust approach to inlcuding extra constant channels
+        # handling here is specifically for the case when the encoder_config
+        # includes `with_constants` - this is currently `PermuteConcat`
+        if encoder_config.get("with_constants") and input_channels is not None:
+            input_channels += stats.get("n_constant_scalars", 0)
+            input_channels += stats.get("n_constant_field_channels", 0)
         encoder_config["in_channels"] = input_channels
 
     # Update n_steps_input for encoders that need it (e.g., PermuteConcat)
@@ -195,6 +218,11 @@ def setup_autoencoder_components(
         ):
             decoder_config["output_channels"] = base_channels
 
+    log.info(
+        "Model config after resolving auto channels:\nEncoder: %s\nDecoder: %s",
+        encoder_config,
+        decoder_config,
+    )
     encoder = instantiate(encoder_config)
     decoder = instantiate(decoder_config)
     checkpoint = config.get("autoencoder_checkpoint")
@@ -251,6 +279,21 @@ def _get_latent_channels(encoder: Encoder) -> int:
             "in its __init__ method."
         )
     return encoder.latent_channels
+
+
+def _get_latent_channels_out(decoder: Decoder) -> int:
+    """Get latent channel count from decoder.
+
+    All decoders must set latent_channels in their __init__.
+    """
+    if not hasattr(decoder, "latent_channels") or not isinstance(
+        decoder.latent_channels, int
+    ):
+        raise ValueError(
+            f"Decoder {type(decoder).__name__} must set latent_channels as an integer "
+            "in its __init__ method."
+        )
+    return decoder.latent_channels
 
 
 def _get_normalized_processor_config(model_config: DictConfig) -> DictConfig | None:
@@ -343,8 +386,11 @@ def setup_epd_model(
             p.requires_grad = False
 
     latent_channels = _get_latent_channels(encoder)
+    latent_channels_out = _get_latent_channels_out(decoder)
     stats["latent_channels"] = latent_channels
-    log.info("Latent channel count: %s", latent_channels)
+    stats["latent_channels_out"] = latent_channels_out
+    log.info("Latent channel in count: %s", latent_channels)
+    log.info("Latent channel out count: %s", latent_channels_out)
 
     global_cond_channels = None
     if hasattr(encoder, "encode_cond"):
@@ -384,16 +430,12 @@ def setup_epd_model(
         else 0
     )
 
-    # For time-concat: latent_channels is C*T, divide by steps_in to get C
-    n_channels_out = (
-        latent_channels // steps_in
-        if encoder.outputs_time_channel_concat
-        else latent_channels
-    )
+    # TODO: currently "out_channels" and "in_channels" are only used in the config for
+    # ViT and FNO, while "n_channels_out" is used in flow_matching and diffusions
     proc_kwargs = {
         "in_channels": latent_channels + input_noise_channels,
-        "out_channels": n_channels_out * steps_out,
-        "n_channels_out": n_channels_out,
+        "out_channels": latent_channels_out,
+        "n_channels_out": latent_channels_out,
         "n_steps_input": steps_in,
         "n_steps_output": steps_out,
     }

@@ -8,6 +8,8 @@ from autocast.types import Tensor, TensorBNC, TensorBTSC
 class Decoder(nn.Module, ABC):
     """Base Decoder."""
 
+    latent_channels: int
+
     def postprocess(self, decoded: Tensor) -> TensorBTSC:
         """Optionally transform the decoded tensor before returning.
 
