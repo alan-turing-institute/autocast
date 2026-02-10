@@ -419,21 +419,10 @@ def setup_epd_model(
     steps_in = stats["n_steps_input"]
     steps_out = stats["n_steps_output"]
 
-    # For time-concat encoders, latent_channels is C*T, otherwise it's C
-    input_noise_channels = (
-        (
-            extra_input_channels * steps_in
-            if encoder.outputs_time_channel_concat
-            else extra_input_channels
-        )
-        if extra_input_channels
-        else 0
-    )
-
     # TODO: currently "out_channels" and "in_channels" are only used in the config for
     # ViT and FNO, while "n_channels_out" is used in flow_matching and diffusions
     proc_kwargs = {
-        "in_channels": latent_channels + input_noise_channels,
+        "in_channels": latent_channels,
         "out_channels": latent_channels_out,
         "n_channels_out": latent_channels_out,
         "n_steps_input": steps_in,
