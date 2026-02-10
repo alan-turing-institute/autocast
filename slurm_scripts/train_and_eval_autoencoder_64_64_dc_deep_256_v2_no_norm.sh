@@ -53,4 +53,5 @@ srun uv run train_autoencoder \
 	logging.wandb.enabled=true \
 	logging.wandb.name="${RUN_NAME}" \
 	trainer.max_epochs=200 \
+	optimizer.learning_rate=0.00002 \
 	"${MODEL_PARAMS[@]}"	
