@@ -88,7 +88,6 @@ srun uv run train_encoder_processor_decoder \
 	datamodule="${DATAPATH}" \
 	datamodule.data_path="${AUTOCAST_DATASETS}/${DATAPATH}" \
 	datamodule.use_normalization="${USE_NORMALIZATION}" \
-	trainer.max_epochs=100 \
     datamodule.batch_size=128 \
 	logging.wandb.enabled=true \
 	logging.wandb.name="${RUN_NAME}" \
