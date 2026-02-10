@@ -61,18 +61,33 @@ else
     SPATIAL_RESOLUTION_PARAMS="model.processor.spatial_resolution=[32,32]"
 fi
 
+if [ ${MODEL} == "vit_large" ]; then
+    MODEL_SPECIFIC_PARAMS=(
+        "processor@model.processor=${MODEL}"
+        "${MODEL_NOISE_PARAMS}"
+        "${SPATIAL_RESOLUTION_PARAMS}"
+        "${HIDDEN_PARAMS}"
+        "model.processor.patch_size=null"
+    )
+elif [ ${MODEL} == "fno" ]; then
+    MODEL_SPECIFIC_PARAMS=(
+        "processor@model.processor=${MODEL}"
+        "${HIDDEN_PARAMS}"
+        "${MODEL_NOISE_PARAMS}"
+    )
+fi
+
+# Combine all model parameters
 MODEL_PARAMS=(
      "optimizer.learning_rate=0.0002"
      "encoder@model.encoder=permute_concat"
      "model.encoder.with_constants=true"
      "decoder@model.decoder=channels_last"
-     "processor@model.processor=${MODEL}"
-     "${MODEL_NOISE_PARAMS}"
-     "${SPATIAL_RESOLUTION_PARAMS}"
-     "${HIDDEN_PARAMS}"
-     "model.processor.patch_size=null"
-     "+model.n_members=10"
+)
+MODEL_PARAMS+=("${MODEL_SPECIFIC_PARAMS[@]}")
+MODEL_PARAMS+=(
 	 "model.train_in_latent_space=false"
+     "+model.n_members=10"
      "model.loss_func._target_=autocast.losses.ensemble.CRPSLoss"
      "+model.train_metrics.crps._target_=autocast.metrics.ensemble.CRPS"
 )
