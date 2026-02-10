@@ -77,6 +77,7 @@ MODEL_PARAMS=(
 )
 MODEL_PARAMS+=("${MODEL_SPECIFIC_PARAMS[@]}")
 MODEL_PARAMS+=(
+    "trainer.max_epochs=100"
 	 "model.train_in_latent_space=false"
      "+model.n_members=10"
      "model.loss_func._target_=autocast.losses.ensemble.CRPSLoss"
