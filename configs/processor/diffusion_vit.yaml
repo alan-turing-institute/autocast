@@ -8,5 +8,5 @@ schedule:
 denoiser_type: karras
 n_steps_output: null
 n_channels_out: null
-sampler_steps: 50
+sampler_steps: 20
 sampler: euler
