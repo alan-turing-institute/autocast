@@ -19,16 +19,16 @@ export AUTOCAST_DATASETS="$PWD/datasets"
 # Set configuration parameters
 DATAPATH="advection_diffusion_multichannel_64_64" # Options: "advection_diffusion_multichannel_64_64", "advection_diffusion_multichannel"
 USE_NORMALIZATION="false" # Options: "true" or "false"
-MODEL="flow_matching_vit" # Options (any compatible config in configs/processors/), currently: "flow_matching_vit", "diffusion_vit"
-
+MODEL="dc_deep_256_v2" # Options (any compatible config in configs/processors/), currently: "flow_matching_vit", "diffusion_vit"
+EPOCHS=100
 
 # Hidden dimension parameters
 HIDDEN_DIM=512 # Options: 512, 1024
 
 # One model params block for now since shared config pattern
 MODEL_PARAMS=(
-    "encoder@model.encoder=dc_deep_256_v2"
-    "decoder@model.decoder=dc_deep_256_v2"
+    "encoder@model.encoder=${MODEL}"
+    "decoder@model.decoder=${MODEL}"
 )
 
 # Derive code and unique run identifiers
