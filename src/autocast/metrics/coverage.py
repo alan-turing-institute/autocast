@@ -162,7 +162,7 @@ class MultiCoverage(Metric):
             val = metric.compute()
             val_c = val.mean(dim=0).cpu().numpy()  # (C,)
             observed_channels.append(val_c)
-            observed_means.append(val_c.mean())
+            observed_means.append(float(val_c.mean()))
 
         # Create matplotlib figure
         fig, ax = plt.subplots(figsize=(8, 8))
