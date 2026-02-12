@@ -1,5 +1,6 @@
 """Utility functions for AutoCast scripts."""
 
+import fnmatch
 import logging
 import re
 from pathlib import Path
@@ -42,22 +43,39 @@ def get_default_config_path() -> str:
 class RunCollator:
     """Collate results from multiple runs in an outputs directory.
 
+    Supports glob-like pattern matching for flexible config parameter extraction.
+
     Parameters
     ----------
     outputs_dir : str | Path, default="outputs"
         Path to the outputs directory containing runs.
     config_params : dict[str, str] | None, default=None
-        Dictionary mapping output column names to config paths.
-        If None, uses default parameters. Example:
-        {"encoder": "model.encoder._target_"}
+        Dictionary mapping output column names to config path patterns.
+        If None, uses default parameters. Supports glob wildcards:
+        - Exact paths: "model.encoder._target_"
+        - Wildcards: "model.*.hidden_dim" (matches any single key)
+        - End wildcards: "model.processor.hidden_*" (matches any suffix)
+
+    Examples
+    --------
+    >>> # Use with wildcard patterns
+    >>> collator = RunCollator(
+    ...     config_params={
+    ...         "encoder": "model.encoder._target_",
+    ...         "hidden_size": "model.processor.hidden_*",  # Flexible matching
+    ...     }
+    ... )
+    >>> df = collator.collate()
     """
 
     # Default parameters to extract from config files
+    # Supports glob patterns (*, ?) for flexible matching across varying configs
     DEFAULT_CONFIG_PARAMS: ClassVar[dict[str, str]] = {
         "encoder": "model.encoder._target_",
         "processor": "model.processor._target_",
         "decoder": "model.decoder._target_",
-        "hidden_size": "model.processor.hidden_dim",
+        # Matches hidden_dim, hidden_channels, etc.
+        "hidden_size": "model.processor.hidden_*",
         "n_members": "model.n_members",
         "batch_size": "datamodule.batch_size",
         "use_normalization": "datamodule.use_normalization",
@@ -153,31 +171,83 @@ class RunCollator:
 
         return metadata
 
+    def _find_matching_paths(self, config: dict, pattern: str) -> list[tuple[str, Any]]:
+        """Find all config paths matching the glob pattern.
+
+        Parameters
+        ----------
+        config : dict
+            Configuration dictionary.
+        pattern : str
+            Dot-separated pattern with optional wildcards.
+            Examples: "model.encoder._target_", "model.*.hidden_dim"
+
+        Returns
+        -------
+        list[tuple[str, Any]]
+            List of (path, value) tuples for all matching paths.
+        """
+        parts = pattern.split(".")
+        results = []
+
+        def _traverse(
+            obj: Any, remaining_parts: list[str], current_path: str = ""
+        ) -> None:
+            """Recursively traverse and match pattern parts."""
+            if not remaining_parts:
+                # Reached end of pattern - this is a match
+                results.append((current_path.lstrip("."), obj))
+                return
+
+            if not isinstance(obj, dict):
+                # Can't traverse further
+                return
+
+            current_pattern = remaining_parts[0]
+            rest = remaining_parts[1:]
+
+            # Check if pattern contains wildcards
+            if "*" in current_pattern or "?" in current_pattern:
+                # Wildcard - try matching against all keys
+                for key in obj:
+                    if fnmatch.fnmatch(key, current_pattern):
+                        _traverse(obj[key], rest, f"{current_path}.{key}")
+            # Exact match
+            elif current_pattern in obj:
+                _traverse(
+                    obj[current_pattern], rest, f"{current_path}.{current_pattern}"
+                )
+
+        _traverse(config, parts)
+        return results
+
     def _get_nested_value(self, config: dict, path: str, default: Any = "N/A") -> Any:
-        """Get a value from nested dictionary using dot notation.
+        """Get a value from nested dictionary using glob patterns.
+
+        Supports both exact paths and wildcard patterns:
+        - "model.encoder._target_" (exact match)
+        - "model.*.hidden_dim" (wildcard - matches any key)
+        - "model.processor.hidden_*" (wildcard at end)
 
         Parameters
         ----------
         config : dict
             Configuration dictionary.
         path : str
-            Dot-separated path (e.g., "model.encoder._target_").
+            Dot-separated path with optional wildcards
+            (e.g., "model.encoder._target_" or "model.*.hidden_dim").
         default : Any, default="N/A"
             Default value if path not found.
 
         Returns
         -------
         Any
-            Value at the specified path, or default if not found.
+            Value at the first matching path, or default if not found.
         """
-        keys = path.split(".")
-        value = config
-        for key in keys:
-            if isinstance(value, dict) and key in value:
-                value = value[key]
-            else:
-                return default
-        return value
+        matches = self._find_matching_paths(config, path)
+        if matches:
+            return matches[0][1]  # Return first match value
+        return default
 
     def _simplify_target_name(self, target: str) -> str:
         """Simplify a _target_ value by extracting the last component.
