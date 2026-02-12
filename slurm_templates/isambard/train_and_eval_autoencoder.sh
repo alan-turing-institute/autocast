@@ -35,8 +35,11 @@ MODEL_PARAMS=(
 GIT_HASH=$(git rev-parse --short=7 HEAD | tr -d '\n')
 UUID=$(uuidgen | tr -d '\n' | tail -c 7)
 
+# Load dataset aliases
+source "$(dirname "$0")/dataset_aliases.sh"
+
 # Run name and working directory
-RUN_NAME="ae_${DATAPATH}_${MODEL}_${GIT_HASH}_${UUID}"
+RUN_NAME="ae_${DATA_SHORT}_${MODEL}_${GIT_HASH}_${UUID}"
 WORKING_DIR="$PWD/outputs/$(date +%F)/${RUN_NAME}/"
 
 

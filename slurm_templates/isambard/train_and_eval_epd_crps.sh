@@ -96,8 +96,11 @@ MODEL_PARAMS+=(
 GIT_HASH=$(git rev-parse --short=7 HEAD | tr -d '\n')
 UUID=$(uuidgen | tr -d '\n' | tail -c 7)
 
+# Load dataset aliases
+source "$(dirname "$0")/dataset_aliases.sh"
+
 # Run name and working directory
-RUN_NAME="crps_${DATAPATH}_${MODEL}_${MODEL_NOISE}_${HIDDEN_DIM}_${GIT_HASH}_${UUID}"
+RUN_NAME="crps_${DATA_SHORT}_${MODEL}_${MODEL_NOISE}_${HIDDEN_DIM}_${GIT_HASH}_${UUID}"
 
 if [ ${EVAL_ONLY} = "false" ]; then
 	WORKING_DIR="$PWD/outputs/$(date +%F)/${RUN_NAME}/"
