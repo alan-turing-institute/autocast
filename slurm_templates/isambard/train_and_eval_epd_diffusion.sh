@@ -21,8 +21,9 @@ DATAPATH="advection_diffusion_multichannel_64_64" # Options: "advection_diffusio
 USE_NORMALIZATION="false" # Options: "true" or "false"
 MODEL="flow_matching_vit" # Options (any compatible config in configs/processors/), currently: "flow_matching_vit", "diffusion_vit"
 EPOCHS=100
+BACKBONE="vit_512" # options: "vit_512", "vit_256"
 EVAL_BATCH_SIZE=16
-LEARNING_RATE=0.0002
+LEARNING_RATE=0.001
 EVAL_ONLY="false"
 WORKING_DIR=""
 
@@ -32,20 +33,16 @@ elif [ ${DATAPATH} == "advection_diffusion_multichannel" ]; then
     AE_CHECKPOINT="/projects/u5gf/ai4physics/outputs/2026-02-06/advection_diffusion_multichannel_no_norm/autoencoder.ckpt"
 fi
 
-
-# Hidden dimension parameters
-HIDDEN_DIM=512 # Options: 512, 1024
-
 # One model params block for now since shared config pattern
 MODEL_PARAMS=(
     "processor@model.processor=${MODEL}"
+    "backbone@model.processor.backbone=${BACKBONE}"
     "datamodule.batch_size=128"
-    "optimizer.learning_rate=0.0002"
-    "encoder@model.encoder=dc_deep_256"
-    "decoder@model.decoder=dc_deep_256"
+    "optimizer.learning_rate=${LEARNING_RATE}"
+    "encoder@model.encoder=dc_deep_256_v2"
+    "decoder@model.decoder=dc_deep_256_v2"
     "model.train_in_latent_space=true"
-    "model.processor.backbone.hid_channels=${HIDDEN_DIM}"
-    "trainer.max_epochs=200"
+    "trainer.max_epochs=${EPOCHS}"
 )
 
 # Derive code and unique run identifiers
