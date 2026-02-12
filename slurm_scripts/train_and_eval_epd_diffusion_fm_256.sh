@@ -53,7 +53,7 @@ UUID=$(uuidgen | tr -d '\n' | tail -c 7)
 source "$PWD/slurm_templates/isambard/dataset_aliases.sh"
 
 # Run name and working directory
-RUN_NAME="diff_${DATA_SHORT}_${MODEL}_${HIDDEN_DIM}_${GIT_HASH}_${UUID}"
+RUN_NAME="diff_${DATA_SHORT}_${MODEL}_${BACKBONE}_${GIT_HASH}_${UUID}"
 
 if [ ${EVAL_ONLY} = "false" ]; then
 	WORKING_DIR="$PWD/outputs/$(date +%F)/${RUN_NAME}/"
