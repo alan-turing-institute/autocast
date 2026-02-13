@@ -45,7 +45,7 @@ MODEL_PARAMS=(
     "decoder@model.decoder=dc_deep_256"
     "model.train_in_latent_space=true"
     "model.processor.backbone.hid_channels=${HIDDEN_DIM}"
-    "trainer.max_epochs=200"
+    "trainer.max_epochs=${EPOCHS}"
 )
 
 # Derive code and unique run identifiers
