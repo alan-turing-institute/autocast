@@ -22,9 +22,6 @@ USE_NORMALIZATION="false" # Options: "true" or "false"
 MODEL="dc_deep_256_v2" # Options (any compatible config in configs/processors/), currently: "flow_matching_vit", "diffusion_vit"
 EPOCHS=100
 
-# Hidden dimension parameters
-HIDDEN_DIM=512 # Options: 512, 1024
-
 # One model params block for now since shared config pattern
 MODEL_PARAMS=(
     "encoder@model.encoder=${MODEL}"
