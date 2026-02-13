@@ -107,6 +107,26 @@ Or alternatively with the included bash script:
 ./scripts/eval.sh rd 00 reaction_diffusion
 ```
 
+## Dashboard
+
+View and compare experiment results with the interactive Streamlit dashboard. The dashboard looks for experiment runs in an `outputs/` directory by default, so ensure your evaluation results are located there before running.
+
+```bash
+# Install dashboard dependencies
+uv sync --extra dashboard
+
+# Run the dashboard
+uv run streamlit run dashboard.py
+```
+
+The dashboard provides four main features:
+- **Metrics Comparison**: Compare evaluation and rollout metrics across multiple runs
+- **Image Comparison**: View coverage plots side-by-side
+- **Video Comparison**: Compare rollout videos with synchronized playback
+- **Leaderboard**: Ranked heatmap showing all metrics across all runs and time windows
+
+**Note:** If your evaluation results are in a different location, you can specify the directory path in the dashboard's sidebar settings after launching.
+
 ## Experiment Tracking with Weights & Biases
 
 AutoCast now ships with an optional [Weights & Biases](https://wandb.ai/) integration that is
