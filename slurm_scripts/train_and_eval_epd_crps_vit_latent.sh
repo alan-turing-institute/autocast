@@ -19,9 +19,9 @@ export AUTOCAST_DATASETS="$PWD/datasets"
 # Set configuration parameters
 DATAPATH="advection_diffusion_multichannel_64_64" # Options: "advection_diffusion_multichannel_64_64", "advection_diffusion_multichannel"
 USE_NORMALIZATION="false" # Options: "true" or "false"
-MODEL="vit_large" # Options (any compatible config in configs/processors/), currently: "vit", "vit_large", "fno"
+MODEL="vit_latent" # Options (any compatible config in configs/processors/), currently: "vit", "vit_large", "fno"
 HIDDEN_DIM=256 # Any positive integer, e.g. 256, 512, 1024, etc.
-MODEL_NOISE="concat" # Options: "cln", "concat", "additive"
+MODEL_NOISE="cln" # Options: "cln", "concat", "additive"
 EPOCHS=100
 EVAL_BATCH_SIZE=16
 LEARNING_RATE=0.0002
@@ -36,7 +36,7 @@ elif [ ${DATAPATH} == "advection_diffusion_multichannel" ]; then
 fi
 
 # Hidden dimension parameters
-if [ ${MODEL} == "vit_large" ]; then
+if [ ${MODEL} == "vit_latent" ]; then
     HIDDEN_PARAMS="model.processor.hidden_dim=${HIDDEN_DIM}"
 else
     HIDDEN_PARAMS="model.processor.hidden_channels=${HIDDEN_DIM}"
@@ -51,20 +51,25 @@ elif [ ${MODEL_NOISE} == "additive" ]; then
     MODEL_NOISE_PARAMS="input_noise_injector@model.input_noise_injector=additive"
 fi
 
-# Spatial resolution parameters
+# # Spatial resolution parameters
+# if [ ${DATAPATH} == "advection_diffusion_multichannel_64_64" ]; then
+#     SPATIAL_RESOLUTION_PARAMS="model.processor.spatial_resolution=[64,64]"
+# else
+#     SPATIAL_RESOLUTION_PARAMS="model.processor.spatial_resolution=[32,32]"
+# fi
+
+# Autoencoder checkpoint paths based on dataset
 if [ ${DATAPATH} == "advection_diffusion_multichannel_64_64" ]; then
-    SPATIAL_RESOLUTION_PARAMS="model.processor.spatial_resolution=[64,64]"
-else
-    SPATIAL_RESOLUTION_PARAMS="model.processor.spatial_resolution=[32,32]"
+    AE_CHECKPOINT="/home/u5gf/ltcx7228.u5gf/autocast/outputs/autoencoders/adm_64_1000.ckpt"
+elif [ ${DATAPATH} == "advection_diffusion_multichannel" ]; then
+    AE_CHECKPOINT="/projects/u5gf/ai4physics/outputs/2026-02-06/advection_diffusion_multichannel_no_norm/autoencoder.ckpt"
 fi
 
-if [ ${MODEL} == "vit_large" ]; then
+if [ ${MODEL} == "vit_latent" ]; then
     MODEL_SPECIFIC_PARAMS=(
         "processor@model.processor=${MODEL}"
         "${MODEL_NOISE_PARAMS}"
-        "${SPATIAL_RESOLUTION_PARAMS}"
         "${HIDDEN_PARAMS}"
-        "model.processor.patch_size=null"
 		"datamodule.batch_size=64"
     )
 elif [ ${MODEL} == "fno" ]; then
@@ -78,18 +83,19 @@ fi
 
 # Combine all model parameters
 MODEL_PARAMS=(
-     "optimizer.learning_rate=${LEARNING_RATE}"
-     "encoder@model.encoder=permute_concat"
-     "model.encoder.with_constants=true"
-     "decoder@model.decoder=channels_last"
+    "optimizer.learning_rate=${LEARNING_RATE}"
+    "encoder@model.encoder=dc_deep_256_v2"
+    "decoder@model.decoder=dc_deep_256_v2"
+    "model.train_in_latent_space=true"
 )
 MODEL_PARAMS+=("${MODEL_SPECIFIC_PARAMS[@]}")
 MODEL_PARAMS+=(
     "trainer.max_epochs=${EPOCHS}"
-	 "model.train_in_latent_space=false"
-     "+model.n_members=10"
-     "model.loss_func._target_=autocast.losses.ensemble.CRPSLoss"
-     "+model.train_metrics.crps._target_=autocast.metrics.ensemble.CRPS"
+	"model.train_in_latent_space=false"
+    "model.freeze_encoder_decoder=true"
+    "+model.n_members=10"
+    "model.loss_func._target_=autocast.losses.ensemble.CRPSLoss"
+    "+model.train_metrics.crps._target_=autocast.metrics.ensemble.CRPS"
 )
 
 # Derive code and unique run identifiers
@@ -112,10 +118,17 @@ else
 fi
 
 # Check if there's a pretrained autoencoder checkpoint in the working directory
+if [ ${EVAL_ONLY} = "false" ]; then
+	mkdir -p "${WORKING_DIR}"
+	cd "${WORKING_DIR}"
+	ln -s "${AE_CHECKPOINT}" autoencoder.ckpt
+	cd -
+fi
 CKPT="${WORKING_DIR}/autoencoder.ckpt"
 if [ -f "${CKPT}" ]; then
-        MODEL_PARAMS+=( "+autoencoder_checkpoint=${CKPT}" )
+    MODEL_PARAMS+=( "+autoencoder_checkpoint=${CKPT}" )
 fi
+
 
 # Make directories and redirect output and error logs to the working directory
 if [ ${EVAL_ONLY} = "false" ]; then
@@ -151,3 +164,20 @@ srun uv run evaluate_encoder_processor_decoder \
     eval.video_dir="${EVAL_DIR}/videos" \
     "${MODEL_PARAMS[@]}" \
     datamodule.batch_size=${EVAL_BATCH_SIZE}
+
+
+
+# Initial tested example for vit_latent with CRPS loss:
+# ./scripts/epd.sh 2026/adm 04_vit_latent advection_diffusion_multichannel \
+#     encoder@model.encoder=dc_deep \
+# 	  decoder@model.decoder=dc_deep \
+#     processor@model.processor=vit_latent \
+#     model.processor.n_noise_channels=1000 \
+#     +model.n_members=10 \
+#     model.loss_func._target_=autocast.losses.ensemble.CRPSLoss \
+#     +model.train_metrics.crps._target_=autocast.metrics.ensemble.CRPS \
+#     logging.wandb.enabled=false \
+# 	  model.freeze_encoder_decoder=true \
+# 	  model.train_in_latent_space=false \
+#     optimizer.learning_rate=0.0002 \
+#     trainer.max_epochs=5
