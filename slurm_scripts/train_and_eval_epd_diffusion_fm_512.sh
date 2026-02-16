@@ -20,10 +20,10 @@ export AUTOCAST_DATASETS="$PWD/datasets"
 DATAPATH="advection_diffusion_multichannel_64_64" # Options: "advection_diffusion_multichannel_64_64", "advection_diffusion_multichannel"
 USE_NORMALIZATION="false" # Options: "true" or "false"
 MODEL="flow_matching" # Options (any compatible config in configs/processors/), currently: "flow_matching", "diffusion"
-EPOCHS=100
+EPOCHS=120
 BACKBONE="vit_512" # options: "vit_512", "vit_256"
 EVAL_BATCH_SIZE=16
-LEARNING_RATE=0.001
+LEARNING_RATE=0.0002
 EVAL_ONLY="false"
 WORKING_DIR=""
 
