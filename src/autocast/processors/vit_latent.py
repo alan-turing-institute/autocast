@@ -19,6 +19,7 @@ class AViTLatentProcessor(Processor[EncodedBatch]):
         out_channels: int,
         global_cond_channels: int,
         include_global_cond: bool,
+        n_steps_input: int,
         n_steps_output: int,
         spatial_resolution: Sequence[int],
         hidden_dim: int = 64,
@@ -33,13 +34,16 @@ class AViTLatentProcessor(Processor[EncodedBatch]):
         self.n_spatial_dims = len(spatial_resolution)
         self.global_cond_channels = global_cond_channels
         self.include_global_cond = include_global_cond
+        self.n_steps_input = n_steps_input
         self.n_steps_output = n_steps_output
 
+        per_step_in_channels = (
+            in_channels + global_cond_channels if include_global_cond else in_channels
+        )
+
         self.model = AViT(
-            dim_in=in_channels + global_cond_channels
-            if include_global_cond
-            else in_channels,
-            dim_out=out_channels,
+            dim_in=per_step_in_channels * n_steps_input,
+            dim_out=out_channels * n_steps_output,
             n_spatial_dims=self.n_spatial_dims,
             spatial_resolution=spatial_resolution,
             hidden_dim=hidden_dim,

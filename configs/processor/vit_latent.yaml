@@ -3,6 +3,7 @@ in_channels: auto
 out_channels: auto
 global_cond_channels: auto
 include_global_cond: true
+n_steps_input: auto
 n_steps_output: auto
 spatial_resolution: [16, 16]
 hidden_dim: 128
