@@ -40,6 +40,7 @@ class EncoderProcessorDecoder(
         teacher_forcing_ratio: float = 0.5,
         max_rollout_steps: int = 10,
         train_in_latent_space: bool = False,
+        freeze_encoder_decoder: bool = False,
         loss_func: nn.Module | None = None,
         train_metrics: Sequence[Metric] | None = [],
         val_metrics: Sequence[Metric] | None = None,
@@ -57,10 +58,11 @@ class EncoderProcessorDecoder(
         self.teacher_forcing_ratio = teacher_forcing_ratio
         self.max_rollout_steps = max_rollout_steps
         self.train_in_latent_space = train_in_latent_space
+        self.freeze_encoder_decoder = freeze_encoder_decoder
         self.input_noise_injector = input_noise_injector
         self.norm = norm
 
-        if self.train_in_latent_space:
+        if self.train_in_latent_space or self.freeze_encoder_decoder:
             self.encoder_decoder.freeze()
         self.loss_func = loss_func
 

@@ -7,5 +7,6 @@ defaults:
   - /input_noise_injector: null
   - _self_
 train_in_latent_space: true
+freeze_encoder_decoder: true
 loss_func:
   _target_: torch.nn.MSELoss
