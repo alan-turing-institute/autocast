@@ -32,6 +32,8 @@ class AViTLatentProcessor(Processor[EncodedBatch]):
     ):
         super().__init__()
         self.n_spatial_dims = len(spatial_resolution)
+        self.in_channels = in_channels
+        self.out_channels = out_channels
         self.global_cond_channels = global_cond_channels
         self.include_global_cond = include_global_cond
         self.n_steps_input = n_steps_input
@@ -58,7 +60,7 @@ class AViTLatentProcessor(Processor[EncodedBatch]):
         self.loss_func = loss_func or nn.MSELoss()
         self.n_noise_channels = n_noise_channels
 
-    def _permute_concat(self, x: TensorBNC, global_cond: TensorBC) -> TensorBNC:
+    def _concat(self, x: TensorBNC, global_cond: TensorBC) -> TensorBNC:
         """Combine the input tensor and global cond with permuting and concatenating.
 
         x: TensorBNC (B, T, S, C_latent)
@@ -85,23 +87,23 @@ class AViTLatentProcessor(Processor[EncodedBatch]):
             # Concat to: (B, T, S, C_latent + C_cond)
             x = torch.cat([x, cond], dim=-1)
 
-        # Permute to (B, (T, C_latent + C_cond), S)
-        x = rearrange(x, "b t ... c -> b (t c) ...")
+        # Stack time in channels (B, S, (T C_latent + C_cond))
+        x = rearrange(x, "b t ... c -> b ... (t c)")
 
         return x
 
     def _channels_last(self, output: TensorBNC) -> TensorBNC:
         return rearrange(
             output,
-            "b (t c) ... -> b t ... c",
+            "b ... (t c) -> b t ... c",
             t=self.n_steps_output,
-            c=output.shape[1] // self.n_steps_output,
+            c=output.shape[-1] // self.n_steps_output,
         )
 
     def forward(
         self, x: TensorBNC, global_cond: TensorBC, x_noise: Tensor | None = None
     ) -> Tensor:
-        x = self._permute_concat(x, global_cond)
+        x = self._concat(x, global_cond)
         y = self.model(x, x_noise)
         return self._channels_last(y)
 

@@ -5,7 +5,7 @@ global_cond_channels: auto
 include_global_cond: true
 n_steps_input: auto
 n_steps_output: auto
-spatial_resolution: [16, 16]
+spatial_resolution: auto
 hidden_dim: 128
 num_heads: 4
 n_layers: 4

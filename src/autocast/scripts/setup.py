@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+import torch
 from hydra.utils import get_class, instantiate
 from omegaconf import DictConfig
 from torch import nn
@@ -75,7 +76,7 @@ def _filter_kwargs_for_target(
     return {k: v for k, v in kwargs.items() if k in allowed}
 
 
-def _set_if_auto(cfg: DictConfig, key: str, value: int | None) -> None:
+def _set_if_auto(cfg: DictConfig, key: str, value: Any) -> None:
     """Set config key to value if current value is None or 'auto'."""
     if key in cfg and cfg.get(key) in (None, "auto"):
         cfg[key] = value
@@ -90,6 +91,7 @@ def _apply_processor_channel_defaults(
     n_steps_output: int,
     n_channels_out: int,
     global_cond_channels: int | None = None,
+    spatial_resolution: tuple[int, ...] | None = None,
 ) -> None:
     """Apply inferred channel/step defaults to processor and backbone configs."""
     if processor_config is None:
@@ -101,6 +103,11 @@ def _apply_processor_channel_defaults(
     _set_if_auto(processor_config, "n_steps_output", n_steps_output)
     _set_if_auto(processor_config, "n_channels_out", n_channels_out)
     _set_if_auto(processor_config, "global_cond_channels", global_cond_channels)
+    _set_if_auto(
+        processor_config,
+        "spatial_resolution",
+        list(spatial_resolution) if spatial_resolution is not None else None,
+    )
 
     backbone_config = processor_config.get("backbone")
     if backbone_config is None:
@@ -148,11 +155,10 @@ def setup_datamodule(
     output_shape = train_outputs.shape
 
     config = resolve_auto_params(config, input_shape, output_shape)
-    data_config = config.get("datamodule", {})
     logic_stats = {
         "channel_count": input_shape[-1],
-        "n_steps_input": data_config.get("n_steps_input", input_shape[1]),
-        "n_steps_output": data_config.get("n_steps_output", output_shape[1]),
+        "n_steps_input": input_shape[1],
+        "n_steps_output": output_shape[1],
         "n_constant_scalars": n_constant_scalars,
         "n_constant_field_channels": n_constant_field_channels,
         "input_shape": input_shape,
@@ -317,6 +323,7 @@ def _build_processor(
         n_steps_output=proc_kwargs["n_steps_output"],
         n_channels_out=proc_kwargs["n_channels_out"],
         global_cond_channels=global_cond_channels,
+        spatial_resolution=proc_kwargs.get("spatial_resolution"),
     )
     target = processor_config.get("_target_") if processor_config else None
     filtered_kwargs = _filter_kwargs_for_target(target, proc_kwargs)
@@ -344,6 +351,7 @@ def setup_processor_model(
         "n_steps_input": stats["n_steps_input"],
         "n_steps_output": stats["n_steps_output"],
         "n_channels_out": stats["channel_count"],
+        "spatial_resolution": tuple(stats["input_shape"][2:-1]),
     }
     processor = _build_processor(model_config, proc_kwargs)
     loss_func = _build_loss_func(model_config)
@@ -419,6 +427,9 @@ def setup_epd_model(
 
     steps_in = stats["n_steps_input"]
     steps_out = stats["n_steps_output"]
+    with torch.no_grad():
+        encoded_example, _ = encoder.encode_with_cond(stats["example_batch"])
+    latent_spatial_resolution = tuple(encoded_example.shape[2:-1])
 
     # TODO: currently "out_channels" and "in_channels" are only used in the config for
     # ViT and FNO, while "n_channels_out" is used in flow_matching and diffusions
@@ -428,6 +439,7 @@ def setup_epd_model(
         "n_channels_out": latent_channels_out,
         "n_steps_input": steps_in,
         "n_steps_output": steps_out,
+        "spatial_resolution": latent_spatial_resolution,
     }
     processor = _build_processor(model_config, proc_kwargs, global_cond_channels)
     loss_func = _build_loss_func(model_config)
