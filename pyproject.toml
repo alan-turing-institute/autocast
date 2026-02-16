@@ -21,6 +21,7 @@ dependencies = [
     "timm>=0.9",
     "torch>=2.9.1",
     "wandb>=0.18.7",
+    "pdeforge",
 ]
 
 [project.optional-dependencies]
@@ -118,6 +119,7 @@ torch = [
 torchvision = [
   { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
 ]
+pdeforge = { git = "https://github.com/alan-turing-institute/PDEforge" }
 
 [tool.pytest.ini_options]
 filterwarnings = [
