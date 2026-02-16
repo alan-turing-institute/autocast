@@ -65,7 +65,7 @@ if [ ${MODEL} == "vit_large" ]; then
         "${SPATIAL_RESOLUTION_PARAMS}"
         "${HIDDEN_PARAMS}"
         "model.processor.patch_size=4"
-		"datamodule.batch_size="
+		"datamodule.batch_size=64"
     )
 elif [ ${MODEL} == "fno" ]; then
     MODEL_SPECIFIC_PARAMS=(

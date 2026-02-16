@@ -22,7 +22,7 @@ USE_NORMALIZATION="false" # Options: "true" or "false"
 MODEL="vit_large" # Options (any compatible config in configs/processors/), currently: "vit", "vit_large", "fno"
 HIDDEN_DIM=256 # Any positive integer, e.g. 256, 512, 1024, etc.
 MODEL_NOISE="cln" # Options: "cln", "concat", "additive"
-EPOCHS=400
+EPOCHS=50
 EVAL_BATCH_SIZE=8
 LEARNING_RATE=0.0002
 EVAL_ONLY="false"
@@ -65,7 +65,7 @@ if [ ${MODEL} == "vit_large" ]; then
         "${SPATIAL_RESOLUTION_PARAMS}"
         "${HIDDEN_PARAMS}"
         "model.processor.patch_size=1"
-		"datamodule.batch_size=8"
+		"datamodule.batch_size=16"
     )
 elif [ ${MODEL} == "fno" ]; then
     MODEL_SPECIFIC_PARAMS=(
