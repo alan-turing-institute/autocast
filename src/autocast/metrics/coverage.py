@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import torch
 from matplotlib import pyplot as plt
 from matplotlib.lines import Line2D
@@ -128,6 +129,7 @@ class MultiCoverage(Metric):
         save_path: Path | str | None = None,
         title: str = "Coverage Plot",
         cmap_str: str = "viridis",
+        save_csv: bool = True,
     ):
         """
         Plot reliability diagram showing expected vs observed coverage.
@@ -135,11 +137,15 @@ class MultiCoverage(Metric):
         Parameters
         ----------
         save_path: str, optional
-            Path to save the plot.
+            Path to save the plot (PNG). If provided and save_csv=True,
+            a CSV file with the same name will also be saved.
         title: str
             Plot title.
         cmap_str: str
             Color map string from matplotlib.
+        save_csv: bool, default=True
+            If True and save_path is provided, save plot data as CSV
+            before creating the plot.
 
         Returns
         -------
@@ -156,7 +162,7 @@ class MultiCoverage(Metric):
             val = metric.compute()
             val_c = val.mean(dim=0).cpu().numpy()  # (C,)
             observed_channels.append(val_c)
-            observed_means.append(val_c.mean())
+            observed_means.append(val_c.mean().item())
 
         # Create matplotlib figure
         fig, ax = plt.subplots(figsize=(8, 8))
@@ -166,6 +172,16 @@ class MultiCoverage(Metric):
 
         # Plot channels
         observed_arr = np.stack(observed_channels)  # (L, C)
+
+        # Save CSV data if requested
+        if save_path and save_csv:
+            self._save_csv_data(
+                save_path=save_path,
+                levels=levels,
+                observed_means=observed_means,
+                observed_channels=observed_arr,
+            )
+
         cmap = plt.get_cmap(cmap_str)  # cmap for each channel
         n_channels = observed_channels[0].shape[0]
         for c in range(n_channels):
@@ -206,6 +222,47 @@ class MultiCoverage(Metric):
 
         plt.close(fig)
         return fig
+
+    def _save_csv_data(
+        self,
+        save_path: Path | str,
+        levels: list[float],
+        observed_means: list[float],
+        observed_channels: np.ndarray,
+    ) -> None:
+        """
+        Save coverage plot data to CSV file.
+
+        Parameters
+        ----------
+        save_path: Path or str
+            Path for the PNG file. CSV will use the same path with .csv extension.
+        levels: list of float
+            Coverage levels (expected coverage values).
+        observed_means: list of float
+            Mean observed coverage across all channels for each level.
+        observed_channels: np.ndarray, shape (L, C)
+            Observed coverage per level per channel.
+        """
+        # Generate CSV path from PNG path
+        csv_path = Path(save_path).with_suffix(".csv")
+
+        # Build DataFrame
+        data = {
+            "coverage_level": levels,
+            "observed_mean": observed_means,
+        }
+
+        # Add per-channel columns
+        n_channels = observed_channels.shape[1]
+        for c in range(n_channels):
+            data[f"channel_{c}"] = observed_channels[:, c].tolist()
+
+        df = pd.DataFrame(data)
+
+        # Save CSV
+        csv_path.parent.mkdir(parents=True, exist_ok=True)
+        df.to_csv(csv_path, index=False)
 
     def reset(self):
         # Reset all sub-metrics
