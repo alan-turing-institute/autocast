@@ -20,10 +20,11 @@ export AUTOCAST_DATASETS="$PWD/datasets"
 DATAPATH="advection_diffusion_multichannel_64_64" # Options: "advection_diffusion_multichannel_64_64", "advection_diffusion_multichannel"
 USE_NORMALIZATION="false" # Options: "true" or "false"
 MODEL="vit_latent" # Options (any compatible config in configs/processors/), currently: "vit", "vit_large", "fno"
-HIDDEN_DIM=256 # Any positive integer, e.g. 256, 512, 1024, etc.
+HIDDEN_DIM=512 # Any positive integer, e.g. 256, 512, 1024, etc.
+PATCH_SIZE=1 # Any positive integer that divides the spatial dimensions, e.g. 4, 8, 16, etc.
 MODEL_NOISE="cln" # Options: "cln", "concat", "additive"
-EPOCHS=25
-EVAL_BATCH_SIZE=16
+EPOCHS=12
+EVAL_BATCH_SIZE=8
 LEARNING_RATE=0.0002
 EVAL_ONLY="false"
 WORKING_DIR=""
@@ -70,7 +71,8 @@ if [ ${MODEL} == "vit_latent" ]; then
         "processor@model.processor=${MODEL}"
         "${MODEL_NOISE_PARAMS}"
         "${HIDDEN_PARAMS}"
-		"datamodule.batch_size=16"
+        "model.processor.patch_size=${PATCH_SIZE}"
+		"datamodule.batch_size=8"
     )
 elif [ ${MODEL} == "fno" ]; then
     MODEL_SPECIFIC_PARAMS=(
