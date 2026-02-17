@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --gpus=1
 #SBATCH --ntasks=1
-#SBATCH --time=24:00:00        
+#SBATCH --time=12:00:00        
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=0
 #SBATCH --job-name epd_and_eval
@@ -23,7 +23,7 @@ MODEL="vit_latent" # Options (any compatible config in configs/processors/), cur
 HIDDEN_DIM=128 # Any positive integer, e.g. 256, 512, 1024, etc.
 PATCH_SIZE=4 # Any positive integer that divides the spatial dimensions, e.g. 4, 8, 16, etc.
 MODEL_NOISE="cln" # Options: "cln", "concat", "additive"
-EPOCHS=300
+EPOCHS=200
 EVAL_BATCH_SIZE=16
 LEARNING_RATE=0.0002
 EVAL_ONLY="false"
