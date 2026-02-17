@@ -82,15 +82,19 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     # Extract dims and move to CPU
     T, *_, C = true_batch.shape
     true_batch = true_batch.detach().cpu().numpy()
-    pred_batch = pred_batch.detach().cpu().numpy()
+    if pred_batch is not None:
+        pred_batch = pred_batch.detach().cpu().numpy()
     if pred_uq_batch is not None:
         pred_uq_batch = pred_uq_batch.detach().cpu().numpy()
 
+    primary_rows = [true_batch]
+
     # Calculate difference
-    diff_batch = true_batch - pred_batch
+    if pred_batch is not None:
+        diff_batch = true_batch - pred_batch
+        primary_rows.append(pred_batch)
 
     # Set-up rows
-    primary_rows = [true_batch, pred_batch]
     n_primary_rows = len(primary_rows)
 
     def _range_from_arrays(arrays):
