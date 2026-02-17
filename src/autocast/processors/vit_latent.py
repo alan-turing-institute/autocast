@@ -29,6 +29,7 @@ class AViTLatentProcessor(Processor[EncodedBatch]):
         groups: int = 8,
         loss_func: nn.Module | None = None,
         n_noise_channels: int | None = None,
+        patch_size: int = 1,
     ):
         super().__init__()
         self.n_spatial_dims = len(spatial_resolution)
@@ -54,7 +55,7 @@ class AViTLatentProcessor(Processor[EncodedBatch]):
             drop_path=drop_path,
             groups=groups,
             n_noise_channels=n_noise_channels,
-            patch_size=1,  # Always use patch size 1 as using pre-trained encoder
+            patch_size=patch_size,
         )
 
         self.loss_func = loss_func or nn.MSELoss()
