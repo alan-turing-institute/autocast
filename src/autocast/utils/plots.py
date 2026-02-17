@@ -16,7 +16,7 @@ from autocast.types import Tensor, TensorBTSC, TensorBTSCM
 
 def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     true: TensorBTSC,
-    pred: TensorBTSC,
+    pred: TensorBTSC | None = None,
     pred_uq: TensorBTSC | None = None,
     batch_idx: int = 0,
     fps: int = 5,
@@ -37,7 +37,7 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     true: array_like (B, T, W, H, C)
         Ground-truth tensor.
     pred: array_like
-        Predicted tensor of shape (B, T, W, H, C).
+        Optional predicted tensor of shape (B, T, W, H, C).
     batch_idx: int
         Which batch index to visualize (default: 0).
     fps: int, optional
@@ -76,7 +76,7 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
         )
 
     true_batch = true[batch_idx]
-    pred_batch = pred[batch_idx]
+    pred_batch = pred[batch_idx] if pred is not None else None
     pred_uq_batch = pred_uq[batch_idx] if pred_uq is not None else None
 
     # Extract dims and move to CPU
@@ -131,9 +131,10 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
 
     rows_to_plot: list[tuple[np.ndarray | Tensor | None, str, str]] = [
         (true_batch, "Ground Truth", cmap),
-        (pred_batch, "Prediction", cmap),
-        (diff_batch, "Difference (True - Pred)", "RdBu"),
     ]
+    if pred is not None:
+        rows_to_plot.append((pred_batch, "Prediction", cmap))
+        rows_to_plot.append((diff_batch, "Difference (True - Pred)", "RdBu"))
     if pred_uq is not None:
         rows_to_plot.append((pred_uq_batch, pred_uq_label, "inferno"))
     total_rows = len(rows_to_plot)
@@ -176,9 +177,11 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
             im = ax.imshow(frame0, cmap=row_cmap, aspect="auto", norm=norm)
 
             if row_idx == 0:
-                ax.set_title(
-                    f"Channel {ch}"
-                ) if channel_names is None else ax.set_title(f"{channel_names[ch]}")
+                (
+                    ax.set_title(f"Channel {ch}")
+                    if channel_names is None
+                    else ax.set_title(f"{channel_names[ch]}")
+                )
             if ch == 0:
                 ax.set_ylabel(row_label)
 
@@ -205,8 +208,9 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     def update(frame):
         for ch in range(C):
             images[0][ch].set_array(true_batch[frame, :, :, ch])
-            images[1][ch].set_array(pred_batch[frame, :, :, ch])
-            images[2][ch].set_array(diff_batch[frame, :, :, ch])
+            if pred is not None:
+                images[1][ch].set_array(pred_batch[frame, :, :, ch])
+                images[2][ch].set_array(diff_batch[frame, :, :, ch])
             if pred_uq_batch is not None:
                 images[3][ch].set_array(pred_uq_batch[frame, :, :, ch])
         suptitle_text.set_text(
