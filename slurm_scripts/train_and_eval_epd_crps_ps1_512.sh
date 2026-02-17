@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --gpus=1
 #SBATCH --ntasks=1
-#SBATCH --time=24:00:00        
+#SBATCH --time=12:00:00        
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=0
 #SBATCH --job-name epd_and_eval

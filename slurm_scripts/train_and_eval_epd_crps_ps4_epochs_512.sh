@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --gpus=1
 #SBATCH --ntasks=1
-#SBATCH --time=24:00:00        
+#SBATCH --time=12:00:00        
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=0
 #SBATCH --job-name epd_and_eval
@@ -22,7 +22,7 @@ USE_NORMALIZATION="false" # Options: "true" or "false"
 MODEL="vit_large" # Options (any compatible config in configs/processors/), currently: "vit", "vit_large", "fno"
 HIDDEN_DIM=512 # Any positive integer, e.g. 256, 512, 1024, etc.
 MODEL_NOISE="cln" # Options: "cln", "concat", "additive"
-EPOCHS=150
+EPOCHS=100
 EVAL_BATCH_SIZE=16
 LEARNING_RATE=0.0002
 EVAL_ONLY="false"
