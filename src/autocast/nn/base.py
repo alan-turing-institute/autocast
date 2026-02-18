@@ -31,6 +31,7 @@ class TemporalBackboneBase(nn.Module, ABC):
         n_steps_input: int,
         global_cond_channels: int | None,
         include_global_cond: bool,
+        include_time_embedding: bool = True,
         mod_features: int = 256,
         temporal_method: str = "none",
         temporal_attention_heads: int = 8,
@@ -77,14 +78,18 @@ class TemporalBackboneBase(nn.Module, ABC):
             raise ValueError(msg)
         self.global_cond_channels = global_cond_channels
         self.include_global_cond = include_global_cond
+        self.include_time_embedding = include_time_embedding
 
         # Time embedding for diffusion timestep
-        self.time_embedding = nn.Sequential(
-            SineEncoding(mod_features),
-            nn.Linear(mod_features, mod_features),
-            nn.SiLU(),
-            nn.Linear(mod_features, mod_features),
-        )
+        if include_time_embedding:
+            self.time_embedding = nn.Sequential(
+                SineEncoding(mod_features),
+                nn.Linear(mod_features, mod_features),
+                nn.SiLU(),
+                nn.Linear(mod_features, mod_features),
+            )
+        else:
+            self.time_embedding = None
 
         self.global_cond_embedding = (
             nn.Sequential(
@@ -201,7 +206,7 @@ class TemporalBackboneBase(nn.Module, ABC):
     def forward(
         self,
         x_t: TensorBTSC,
-        t: Tensor,
+        t: Tensor | None,
         cond: TensorBTSC,
         global_cond: Tensor | None = None,
     ) -> TensorBTSC:
@@ -209,7 +214,7 @@ class TemporalBackboneBase(nn.Module, ABC):
 
         Args:
             x_t: Noisy data (B, T, W, H, C) - spatial dims before channels
-            t: Diffusion time steps (B,)
+            t: Diffusion time steps (B,). Optional when time embedding is disabled.
             cond: Conditioning input (B, T_cond, W, H, C)
             global_cond: Optional global conditioning/modulation vector (B, D)
 
@@ -219,15 +224,27 @@ class TemporalBackboneBase(nn.Module, ABC):
         """
         _, T_out, _, _, C = x_t.shape
 
-        # Embed diffusion timestep
-        t_emb = self.time_embedding(t)
+        # Build modulation embedding
+        t_emb = None
+        if self.include_time_embedding:
+            if t is None:
+                msg = (
+                    "Model initialized with include_time_embedding=True "
+                    "but no t provided"
+                )
+                raise ValueError(msg)
+            assert self.time_embedding is not None
+            t_emb = self.time_embedding(t)
 
-        # Combine with global conditioning embedding if provided
         if self.global_cond_embedding is not None:
             if global_cond is None:
                 msg = "Model init with global_cond_channels but no global_cond provided"
                 raise ValueError(msg)
-            t_emb = t_emb + self.global_cond_embedding(global_cond)
+            global_emb = self.global_cond_embedding(global_cond)
+            t_emb = global_emb if t_emb is None else t_emb + global_emb
+
+        if t_emb is None:
+            t_emb = x_t.new_zeros((x_t.shape[0], self.mod_features))
 
         # Apply temporal processing
         x_t_temporal, cond_temporal = self.apply_temporal_processing(x_t, cond)
