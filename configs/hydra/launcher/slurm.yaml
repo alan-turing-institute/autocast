@@ -1,12 +1,10 @@
-# @package _global_
+# @package hydra.launcher
 defaults:
-  - override /hydra/launcher: submitit_slurm
+  - submitit_slurm
 
-hydra:
-  launcher:
-    timeout_min: 1440
-    cpus_per_task: 16
-    gpus_per_node: 1
-    tasks_per_node: 1
-    additional_parameters:
-      mem: 0
+timeout_min: 1440
+cpus_per_task: 16
+gpus_per_node: 1
+tasks_per_node: 1
+additional_parameters:
+  mem: 0
