@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --gpus=1
 #SBATCH --ntasks=1
-#SBATCH --time=12:00:00        
+#SBATCH --time=3:00:00        
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=0
 #SBATCH --job-name epd_and_eval
@@ -23,7 +23,7 @@ MODEL="vit_latent" # Options (any compatible config in configs/processors/), cur
 HIDDEN_DIM=512 # Any positive integer, e.g. 256, 512, 1024, etc.
 PATCH_SIZE=4 # Any positive integer that divides the spatial dimensions, e.g. 4, 8, 16, etc.
 MODEL_NOISE="cln" # Options: "cln", "concat", "additive"
-EPOCHS=100
+EPOCHS=25
 EVAL_BATCH_SIZE=16
 LEARNING_RATE=0.0002
 EVAL_ONLY="false"
@@ -71,7 +71,7 @@ if [ ${MODEL} == "vit_latent" ]; then
         "processor@model.processor=${MODEL}"
         "${MODEL_NOISE_PARAMS}"
         "${HIDDEN_PARAMS}"
-		"datamodule.batch_size=64"
+		"datamodule.batch_size=16"
         "model.processor.patch_size=${PATCH_SIZE}"
     )
 elif [ ${MODEL} == "fno" ]; then
