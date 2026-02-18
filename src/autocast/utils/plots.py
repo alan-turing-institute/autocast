@@ -130,6 +130,7 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
                 min_val, max_val = _range_from_arrays([row[:, :, :, ch]])
                 norms[row_idx][ch] = Normalize(vmin=min_val, vmax=max_val)
 
+    diff_norm = None
     if diff_batch is not None:
         diff_max = float(np.abs(diff_batch).max())
         diff_span = diff_max if diff_max > 0 else 1e-9
@@ -214,8 +215,9 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     def update(frame):
         for ch in range(C):
             images[0][ch].set_array(true_batch[frame, :, :, ch])
-            if pred is not None:
+            if pred_batch is not None:
                 images[1][ch].set_array(pred_batch[frame, :, :, ch])
+            if diff_batch is not None:
                 images[2][ch].set_array(diff_batch[frame, :, :, ch])
             if pred_uq_batch is not None:
                 images[3][ch].set_array(pred_uq_batch[frame, :, :, ch])
