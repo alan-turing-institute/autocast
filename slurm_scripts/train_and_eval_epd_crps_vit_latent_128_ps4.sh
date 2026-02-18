@@ -71,7 +71,7 @@ if [ ${MODEL} == "vit_latent" ]; then
         "processor@model.processor=${MODEL}"
         "${MODEL_NOISE_PARAMS}"
         "${HIDDEN_PARAMS}"
-		"datamodule.batch_size=64"
+		"datamodule.batch_size=16"
         "model.processor.patch_size=${PATCH_SIZE}"
     )
 elif [ ${MODEL} == "fno" ]; then
