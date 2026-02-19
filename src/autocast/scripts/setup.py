@@ -247,7 +247,9 @@ def setup_autoencoder_components(
 
 
 def setup_autoencoder_model(
-    config: DictConfig, stats: dict, datamodule: SpatioTemporalDataModule
+    config: DictConfig,
+    stats: dict,
+    datamodule: SpatioTemporalDataModule | TheWellDataModule,
 ) -> AE:
     """Build the full autoencoder model (encoder, decoder, loss)."""
     encoder, decoder = setup_autoencoder_components(config, stats)
@@ -331,7 +333,9 @@ def _build_loss_func(model_config: DictConfig) -> nn.Module:
 
 
 def setup_processor_model(
-    config: DictConfig, stats: dict, datamodule: SpatioTemporalDataModule
+    config: DictConfig,
+    stats: dict,
+    datamodule: SpatioTemporalDataModule | TheWellDataModule,
 ) -> ProcessorModel:
     """Set up just the processor model for training on latents."""
     model_config = config.get("model", {})
@@ -368,7 +372,9 @@ def setup_processor_model(
 
 
 def setup_epd_model(
-    config: DictConfig, stats: dict, datamodule: SpatioTemporalDataModule
+    config: DictConfig,
+    stats: dict,
+    datamodule: SpatioTemporalDataModule | TheWellDataModule,
 ) -> EncoderProcessorDecoder | EncoderProcessorDecoderEnsemble:
     """Orchestrate the creation of the full Encoder-Processor-Decoder model."""
     model_config = config.get("model", {})
