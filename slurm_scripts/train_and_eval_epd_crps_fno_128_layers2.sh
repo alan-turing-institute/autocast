@@ -22,8 +22,8 @@ USE_NORMALIZATION="false" # Options: "true" or "false"
 MODEL="fno" # Options (any compatible config in configs/processors/), currently: "vit", "vit_large", "fno"
 HIDDEN_DIM=128 # Any positive integer, e.g. 256, 512, 1024, etc.
 PATCH_SIZE=4 # Any positive integer that divides the spatial dimensions, e.g. 4, 8, 16, etc.
-MODEL_NOISE="cln" # Options: "cln", "concat", "additive"
-EPOCHS=40
+MODEL_NOISE="concat" # Options: "cln", "concat", "additive"
+EPOCHS=220
 EVAL_BATCH_SIZE=16
 LEARNING_RATE=0.0002
 EVAL_ONLY="false"
@@ -87,9 +87,9 @@ fi
 # Combine all model parameters
 MODEL_PARAMS=(
     "optimizer.learning_rate=${LEARNING_RATE}"
-    "encoder@model.encoder=dc_deep_256_v2"
-    "decoder@model.decoder=dc_deep_256_v2"
-    "model.train_in_latent_space=true"
+    "encoder@model.encoder=permute_concat"
+    "model.encoder.with_constants=true"
+    "decoder@model.decoder=channels_last"
 )
 MODEL_PARAMS+=("${MODEL_SPECIFIC_PARAMS[@]}")
 MODEL_PARAMS+=(
