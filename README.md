@@ -68,23 +68,51 @@ uv run train_autoencoder \
 	logging.wandb.enabled=true
 ```
 
-Or alternatively with the included bash script:
+Or alternatively with the unified workflow CLI:
 ```bash
-./scripts/ae.sh rd 00 reaction_diffusion
+uv run autocast_run ae \
+	--dataset reaction_diffusion \
+	--date rd \
+	--run-name 00
 ```
 
-All scripts in `scripts/` support both local and SLURM launch modes:
+Unified workflow CLI supports both local and SLURM launch modes:
 
 ```bash
 # Local (default)
-./scripts/epd.sh my_label my_run reaction_diffusion trainer.max_epochs=5
+uv run autocast_run epd \
+	--dataset reaction_diffusion \
+	--date my_label \
+	--run-name my_run \
+	--override trainer.max_epochs=5
 
 # SLURM via Hydra submitit launcher
-LAUNCH_MODE=slurm ./scripts/epd.sh my_label my_run reaction_diffusion trainer.max_epochs=5
+uv run autocast_run epd \
+	--mode slurm \
+	--dataset reaction_diffusion \
+	--date my_label \
+	--run-name my_run \
+	--override trainer.max_epochs=5
 ```
 
-When `LAUNCH_MODE=slurm`, scripts submit through Hydra's SLURM launcher and write
+When `--mode slurm`, jobs submit through Hydra's SLURM launcher and write
 outputs under `outputs/<run_label>/<run_id>` (no extra `run/` layer).
+
+Resume training from a checkpoint:
+```bash
+uv run autocast_run epd \
+	--dataset reaction_diffusion \
+	--workdir outputs/rd/00 \
+	--resume-from outputs/rd/00/encoder_processor_decoder.ckpt
+```
+
+Train + evaluate in one command:
+```bash
+uv run autocast_run train-eval \
+	--dataset reaction_diffusion \
+	--date rd \
+	--run-name 00
+```
 
 ### Train processor
 
@@ -99,9 +127,12 @@ uv run train_encoder_processor_decoder \
 	'autoencoder_checkpoint=outputs/rd/00/autoencoder.ckpt'
 ```
 
-Or alternatively with the included bash script:
+Or alternatively with the unified workflow CLI:
 ```bash
-./scripts/epd.sh rd 00 reaction_diffusion
+uv run autocast_run epd \
+	--dataset reaction_diffusion \
+	--date rd \
+	--run-name 00
 ```
 
 ### Evaluation
@@ -115,9 +146,11 @@ uv run evaluate_encoder_processor_decoder \
 	datamodule.use_simulator=false
 ```
 
-Or alternatively with the included bash script:
+Or alternatively with the unified workflow CLI:
 ```bash
-./scripts/eval.sh rd 00 reaction_diffusion
+uv run autocast_run eval \
+	--dataset reaction_diffusion \
+	--workdir outputs/rd/00
 ```
 
 ## Experiment Tracking with Weights & Biases

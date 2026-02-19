@@ -5,6 +5,7 @@ from __future__ import annotations
 import subprocess
 import uuid
 from collections.abc import Mapping
+from datetime import datetime
 from pathlib import Path
 
 from omegaconf import DictConfig
@@ -123,6 +124,36 @@ def generate_run_name(cfg: DictConfig, prefix: str) -> str:
     parts.append(uuid.uuid4().hex[:7])
 
     return "_".join(parts)
+
+
+def default_run_name(prefix: str = "run") -> str:
+    """Generate a short default run name when none is provided."""
+    return f"{prefix}_{uuid.uuid4().hex[:7]}"
+
+
+def resolve_work_dir(
+    *,
+    output_base: str | Path = "outputs",
+    date_str: str | None = None,
+    run_name: str | None = None,
+    work_dir: str | Path | None = None,
+    prefix: str = "run",
+) -> tuple[Path, str]:
+    """Resolve final work directory and run name.
+
+    Priority:
+    1. If ``work_dir`` is provided, use it directly.
+    2. Otherwise build ``<output_base>/<date>/<run_name>``.
+    3. If ``run_name`` is missing, generate a short default.
+    """
+    if work_dir is not None:
+        resolved = Path(work_dir).expanduser().resolve()
+        return resolved, (run_name or resolved.name)
+
+    date_value = date_str or datetime.now().strftime("%Y-%m-%d")
+    resolved_name = run_name or default_run_name(prefix=prefix)
+    resolved = (Path(output_base) / date_value / resolved_name).expanduser().resolve()
+    return resolved, resolved_name
 
 
 def get_default_config_path() -> str:

@@ -64,8 +64,19 @@ def run_training(
     if output_cfg.get("save_config"):
         save_resolved_config(config, work_dir)
 
+    resume_checkpoint = config.get("resume_from_checkpoint") or output_cfg.get(
+        "resume_from_checkpoint"
+    )
+
     log.info("Starting training...")
-    trainer.fit(model=model, datamodule=datamodule)
+    if resume_checkpoint is not None:
+        trainer.fit(
+            model=model,
+            datamodule=datamodule,
+            ckpt_path=str(Path(resume_checkpoint).expanduser().resolve()),
+        )
+    else:
+        trainer.fit(model=model, datamodule=datamodule)
 
     # Run testing if not skipped
     if not skip_test:
@@ -176,7 +187,17 @@ def train_autoencoder(
             config, work_dir, filename="resolved_autoencoder_config.yaml"
         )
 
-    trainer.fit(model=model, datamodule=datamodule)
+    resume_checkpoint = config.get("resume_from_checkpoint") or output_cfg.get(
+        "resume_from_checkpoint"
+    )
+    if resume_checkpoint is not None:
+        trainer.fit(
+            model=model,
+            datamodule=datamodule,
+            ckpt_path=str(Path(resume_checkpoint).expanduser().resolve()),
+        )
+    else:
+        trainer.fit(model=model, datamodule=datamodule)
 
     checkpoint_name = output_cfg.get("checkpoint_name", "autoencoder.ckpt")
     checkpoint_target = Path(checkpoint_name)

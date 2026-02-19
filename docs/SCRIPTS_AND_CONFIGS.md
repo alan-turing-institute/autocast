@@ -126,15 +126,35 @@ uv run train_encoder_processor_decoder \
 ### 3. Hyperparameter Sweep (SLURM)
 See `slurm_templates/encoder-processor-decoder-parameter_sweep.sh` for an example of how to run sweeps using SLURM arrays and Hydra overrides.
 
-## Shell Scripts
-For convenience, we provide shell scripts in `scripts/` that wrap the python commands. These are useful for quickly running experiments without typing the full `uv run ...` command.
-
-*   `scripts/ae.sh`: Wraps `train_autoencoder`
-*   `scripts/epd.sh`: Wraps `train_encoder_processor_decoder`
-*   `scripts/eval.sh`: Wraps `evaluate_encoder_processor_decoder`
+## Workflow CLI
+Use the unified Python workflow command `autocast_run` instead of bash wrappers.
 
 Example usage:
 ```bash
-./scripts/ae.sh <run_label> <run_id> <dataset_name> [overrides...]
+# Train autoencoder locally
+uv run autocast_run ae \
+    --dataset reaction_diffusion \
+    --date rd \
+    --run-name 00
+
+# Train EPD on SLURM
+uv run autocast_run epd \
+    --mode slurm \
+    --dataset reaction_diffusion \
+    --date rd \
+    --run-name 00 \
+    --override trainer.max_epochs=10
+
+# Re-run evaluation from an existing workdir
+uv run autocast_run eval \
+    --dataset reaction_diffusion \
+    --workdir outputs/rd/00
 ```
-This will create a work directory at `outputs/<run_label>/<run_id>`.
+
+For restart training, pass:
+```bash
+uv run autocast_run epd \
+    --dataset reaction_diffusion \
+    --workdir outputs/rd/00 \
+    --resume-from outputs/rd/00/encoder_processor_decoder.ckpt
+```
