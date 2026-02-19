@@ -24,8 +24,6 @@ echo "uv run autocast ae --mode slurm --dataset ${AE_DATAPATH} datamodule.use_no
 # 2) train_and_eval_epd_crps_fno_additive.sh
 # -----------------------------------------------------------------------------
 CRPS_DATAPATH="advection_diffusion_multichannel_64_64"
-CRPS_MODEL="fno"
-CRPS_NOISE="additive"
 
 CRPS_COMMON=(
   datamodule.use_normalization=false
@@ -47,7 +45,7 @@ CRPS_COMMON=(
 
 echo
 echo "# EPD CRPS FNO additive equivalent"
-echo "uv run autocast train-eval --mode slurm --detach --dataset ${CRPS_DATAPATH} ${CRPS_COMMON[*]} ::eval:: ${CRPS_COMMON[*]} eval.batch_indices=[0,1,2,3]"
+echo "uv run autocast train-eval --mode slurm --detach --dataset ${CRPS_DATAPATH} ${CRPS_COMMON[*]} --eval-overrides eval.batch_indices=[0,1,2,3]"
 
 # -----------------------------------------------------------------------------
 # 3) train_and_eval_epd_diffusion_flow_matching_200.sh
@@ -73,4 +71,4 @@ DIFF_COMMON=(
 
 echo
 echo "# EPD diffusion flow-matching equivalent"
-echo "uv run autocast train-eval --mode slurm --detach --dataset ${DIFF_DATAPATH} ${DIFF_COMMON[*]} ::eval:: ${DIFF_COMMON[*]} +model.n_members=10 eval.batch_indices=[0,1,2,3]"
+echo "uv run autocast train-eval --mode slurm --detach --dataset ${DIFF_DATAPATH} ${DIFF_COMMON[*]} --eval-overrides +model.n_members=10 eval.batch_indices=[0,1,2,3]"

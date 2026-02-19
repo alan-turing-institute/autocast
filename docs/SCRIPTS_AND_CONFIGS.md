@@ -157,14 +157,14 @@ uv run autocast epd \
     --resume-from outputs/rd/00/encoder_processor_decoder.ckpt
 ```
 
-For `train-eval`, direct overrides are applied to training by default; split eval
-overrides with `::eval::`, e.g.:
+For `train-eval`, direct overrides are applied to training by default. Pass eval
+settings with `--eval-overrides`, e.g.:
 ```bash
 uv run autocast train-eval \
     --dataset reaction_diffusion \
     --run-label rd \
     trainer.max_epochs=1 \
-    ::eval:: eval.batch_indices=[0,1]
+    --eval-overrides eval.batch_indices=[0,1]
 ```
 
 For non-blocking SLURM train+eval submission from login nodes:

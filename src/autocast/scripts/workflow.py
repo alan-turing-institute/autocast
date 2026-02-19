@@ -21,7 +21,6 @@ TRAIN_MODULES = {
     "processor": "autocast.scripts.train.processor",
 }
 EVAL_MODULE = "autocast.scripts.eval.encoder_processor_decoder"
-EVAL_SPLIT_TOKEN = "::eval::"
 
 
 def _sanitize_name_part(value: str) -> str:
@@ -613,10 +612,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Hydra override for the training step; can be passed multiple times.",
     )
     train_eval_parser.add_argument(
-        "--eval-override",
-        action="append",
+        "--eval-overrides",
+        nargs="+",
         default=[],
-        help="Hydra override for the eval step; can be passed multiple times.",
+        help=(
+            "Hydra overrides for the eval step passed in one group, e.g. "
+            "--eval-overrides eval.batch_indices=[0,1] +model.n_members=10"
+        ),
     )
     train_eval_parser.add_argument(
         "--detach",
@@ -629,23 +631,10 @@ def build_parser() -> argparse.ArgumentParser:
     train_eval_parser.add_argument(
         "overrides",
         nargs="*",
-        help=(
-            "Direct overrides. Apply to train by default; split eval overrides with "
-            f"'{EVAL_SPLIT_TOKEN}', e.g. ... trainer.max_epochs=1 "
-            f"{EVAL_SPLIT_TOKEN} eval.batch_indices=[0,1]"
-        ),
+        help=("Direct Hydra overrides for training, e.g. trainer.max_epochs=1"),
     )
 
     return parser
-
-
-def _split_train_eval_overrides(overrides: list[str]) -> tuple[list[str], list[str]]:
-    """Split direct overrides into train and eval groups using token delimiter."""
-    if EVAL_SPLIT_TOKEN not in overrides:
-        return overrides, []
-
-    split_idx = overrides.index(EVAL_SPLIT_TOKEN)
-    return overrides[:split_idx], overrides[split_idx + 1 :]
 
 
 def main() -> None:
@@ -686,9 +675,8 @@ def main() -> None:
         return
 
     if args.command == "train-eval":
-        train_direct, eval_direct = _split_train_eval_overrides(args.overrides)
-        train_overrides = [*args.train_override, *train_direct]
-        eval_overrides = [*args.eval_override, *eval_direct]
+        train_overrides = [*args.train_override, *args.overrides]
+        eval_overrides = [*args.eval_overrides]
 
         if args.detach:
             if args.mode != "slurm":
