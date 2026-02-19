@@ -406,7 +406,9 @@ class TheWell(SpatioTemporalDataset):
         include_filters: list[str] | None = None,
         exclude_filters: list[str] | None = None,
         use_normalization: bool = False,
-        normalization_type: None | Callable[..., Any] = None,
+        normalization_type: (
+            None | Callable[..., Any] | ZScoreNormalization
+        ) = ZScoreNormalization,
         max_rollout_steps=100,
         n_steps_input: int = 1,
         n_steps_output: int = 1,
@@ -443,7 +445,7 @@ class TheWell(SpatioTemporalDataset):
             include_filters=include_filters,
             exclude_filters=exclude_filters,
             use_normalization=use_normalization,
-            normalization_type=normalization_type,
+            normalization_type=normalization_type,  # type: ignore ZScoreNormalization can be used here
             max_rollout_steps=max_rollout_steps,
             n_steps_input=n_steps_input,
             n_steps_output=n_steps_output if not autoencoder_mode else 0,
