@@ -73,6 +73,19 @@ Or alternatively with the included bash script:
 ./scripts/ae.sh rd 00 reaction_diffusion
 ```
 
+All scripts in `scripts/` support both local and SLURM launch modes:
+
+```bash
+# Local (default)
+./scripts/epd.sh my_label my_run reaction_diffusion trainer.max_epochs=5
+
+# SLURM via Hydra submitit launcher
+LAUNCH_MODE=slurm ./scripts/epd.sh my_label my_run reaction_diffusion trainer.max_epochs=5
+```
+
+When `LAUNCH_MODE=slurm`, scripts submit through Hydra's SLURM launcher and write
+outputs under `outputs/<run_label>/<run_id>` (no extra `run/` layer).
+
 ### Train processor
 
 ```bash
