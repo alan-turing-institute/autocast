@@ -130,6 +130,16 @@ This submits two sbatch jobs with `afterok` dependency and returns immediately.
 
 Use `--dry-run` to print resolved commands/scripts without executing.
 
+Equivalent CLI commands for removed `slurm_scripts/*.sh` examples:
+```bash
+bash scripts/cli_equivalents.sh
+```
+
+Launch many prewritten runs from a manifest file:
+```bash
+bash scripts/launch_from_manifest.sh configs/run_manifests/example_runs.txt
+```
+
 Date handling is automatic: if `--date` is omitted, current date is used.
 Pass `--date` only to reproduce an exact legacy path.
 
@@ -202,20 +212,33 @@ be used without a W&B account.
 
 ## Running on HPC 
 
+### Legacy SLURM Scripts
+
+Legacy scripts under `slurm_scripts/` have been retired to reduce duplication and
+maintenance overhead. Use the unified `autocast` CLI workflows instead:
+
+```bash
+# non-blocking train->eval submission from login node
+uv run autocast train-eval --mode slurm --detach --dataset reaction_diffusion
+
+# run many prewritten jobs from a manifest
+bash scripts/launch_from_manifest.sh configs/run_manifests/example_runs.txt
+```
+
 In the [slurm_templates](/slurm_templates/) folders, template slurm scripts can be found for the following use cases: 
 
 - train_and_eval_autoencoder.sh : Training and evaluation of the autoencoder 
 - train_and_eval_encoder-processor-decoder.sh : Training and evaluation of the encoder-processor-decoder approach
 - encoder-processor-decoder-parameter_sweep : Same as above but runs a parameter sweep 
 
-We advise you copy these scripts into a folder called `slurm_scripts` (which is in the gitignore) and edit as you see fit. 
+If you need custom scheduler wrappers, copy from `slurm_templates/` into a private
+folder outside this repository.
 
 ### Single Job 
 
-To run, simply navigate to the top level of this repository, and run: 
+To run a single job from this repository, use `autocast` directly, for example:
 
-`sbatch scripts/train_and_eval_encoder-processor-decoder.sh` or 
-`sbatch scripts/train_and_eval_autoencoder.sh` depending on which model you would like to run.
+`uv run autocast epd --mode slurm --dataset reaction_diffusion trainer.max_epochs=10`
 
 This will train and evaluate the model using the settings in the corresponding config (found in the configs folder). Outputs from both train and eval will be written out to an outputs folder with the following naming convention: 
 
@@ -223,25 +246,8 @@ This will train and evaluate the model using the settings in the corresponding c
 
 ### Multiple Jobs
 
-`scripts/encoder-processor-decoder-parameter_sweep.sh` is an example parameter sweep. 
-
-It uses slurm arrays and hydra override functionality to sweep through combinations of parameters. The resulting output structure looks like this: 
-
-- outputs	
-	- {job_name}
-		- job-{job_id} # Unique for each sweep run 
-			- parameter_lookup.csv # csv file mapping task id to parameter values. 
-			- task-0 # 0 is the slurm array task id. It is unique for each set of parameters
-			- task-1
-			- etc. 
-
-A checklist of things to change in the example script:
-
-- `--array=0-8` : This is the number of parallel jobs to run. This should be equal to the number of parameter combinations you want to run. 
-- `JOB_NAME="encoder_processor_decoder_sweep"` : Name of the Job. This is the top level directory. 
-- The whole Define Parameter Grid section. 
-- The columns to be writte to the parameter csv file 
-- The flags in the python script to overright the hydra config. e.g. `trainer.max_epochs=${MAX_EPOCH}`
+Use Hydra multi-run directly for sweeps (or the manifest launcher), e.g.
+`uv run autocast epd --mode slurm --dataset reaction_diffusion trainer.max_epochs=5,10`.
 
 ## Contributors ✨
 

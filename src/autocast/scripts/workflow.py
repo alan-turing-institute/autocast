@@ -40,6 +40,10 @@ def _dataset_overrides(dataset: str, datasets_root: Path) -> list[str]:
     ]
 
 
+def _datasets_root() -> Path:
+    return Path(os.environ.get("AUTOCAST_DATASETS", Path.cwd() / "datasets"))
+
+
 def _format_command(command: list[str]) -> str:
     return " ".join(shlex.quote(part) for part in command)
 
@@ -131,53 +135,7 @@ def _contains_override(overrides: list[str], key_prefix: str) -> bool:
     return any(override.startswith(key_prefix) for override in overrides)
 
 
-def _train_command(
-    *,
-    kind: str,
-    mode: str,
-    dataset: str,
-    output_base: str,
-    date_str: str | None,
-    run_name: str | None,
-    work_dir: str | None,
-    wandb_name: str | None,
-    resume_from: str | None,
-    overrides: list[str],
-    dry_run: bool = False,
-) -> tuple[Path, str]:
-    final_work_dir, resolved_run_name = resolve_work_dir(
-        output_base=output_base,
-        date_str=date_str,
-        run_name=run_name,
-        work_dir=work_dir,
-        prefix=kind,
-    )
-
-    datasets_root = Path(os.environ.get("AUTOCAST_DATASETS", Path.cwd() / "datasets"))
-
-    launch = _build_common_launch_overrides(mode=mode, work_dir=final_work_dir)
-    command_overrides = [
-        *launch,
-        *_dataset_overrides(dataset=dataset, datasets_root=datasets_root),
-    ]
-
-    if resume_from is not None and not _contains_override(
-        overrides, "resume_from_checkpoint="
-    ):
-        command_overrides.append(f"+resume_from_checkpoint={resume_from}")
-
-    if wandb_name is not None:
-        command_overrides.append(f"logging.wandb.name={wandb_name}")
-    elif not _contains_override(overrides, "logging.wandb.name="):
-        command_overrides.append(f"logging.wandb.name={resolved_run_name}")
-
-    command_overrides.extend(overrides)
-
-    _run_module(TRAIN_MODULES[kind], command_overrides, dry_run=dry_run)
-    return final_work_dir, resolved_run_name
-
-
-def _train_command_overrides(
+def _build_train_overrides(
     *,
     kind: str,
     mode: str,
@@ -190,7 +148,7 @@ def _train_command_overrides(
     resume_from: str | None,
     overrides: list[str],
 ) -> tuple[Path, str, list[str]]:
-    """Resolve training workdir/run-name and final override list."""
+    """Resolve workdir/name and build final overrides for training commands."""
     final_work_dir, resolved_run_name = resolve_work_dir(
         output_base=output_base,
         date_str=date_str,
@@ -199,12 +157,9 @@ def _train_command_overrides(
         prefix=kind,
     )
 
-    datasets_root = Path(os.environ.get("AUTOCAST_DATASETS", Path.cwd() / "datasets"))
-
-    launch = _build_common_launch_overrides(mode=mode, work_dir=final_work_dir)
     command_overrides = [
-        *launch,
-        *_dataset_overrides(dataset=dataset, datasets_root=datasets_root),
+        *_build_common_launch_overrides(mode=mode, work_dir=final_work_dir),
+        *_dataset_overrides(dataset=dataset, datasets_root=_datasets_root()),
     ]
 
     if resume_from is not None and not _contains_override(
@@ -219,6 +174,70 @@ def _train_command_overrides(
 
     command_overrides.extend(overrides)
     return final_work_dir, resolved_run_name, command_overrides
+
+
+def _build_eval_overrides(
+    *,
+    mode: str,
+    dataset: str,
+    work_dir: str,
+    checkpoint: str | None,
+    eval_subdir: str,
+    video_dir: str | None,
+    batch_indices: str,
+    overrides: list[str],
+) -> tuple[Path, list[str]]:
+    """Resolve eval workdir/checkpoint and build final eval overrides."""
+    base_work_dir = Path(work_dir).expanduser().resolve()
+    eval_dir = (base_work_dir / eval_subdir).resolve()
+
+    ckpt = _resolve_eval_checkpoint(work_dir=base_work_dir, checkpoint=checkpoint)
+    resolved_video_dir = (
+        Path(video_dir).expanduser().resolve() if video_dir else (eval_dir / "videos")
+    )
+
+    command_overrides = [
+        *_build_common_launch_overrides(mode=mode, work_dir=eval_dir),
+        "eval=encoder_processor_decoder",
+        *_dataset_overrides(dataset=dataset, datasets_root=_datasets_root()),
+        f"eval.checkpoint={ckpt}",
+        f"eval.batch_indices={batch_indices}",
+        f"eval.video_dir={resolved_video_dir}",
+        *overrides,
+    ]
+
+    return eval_dir, command_overrides
+
+
+def _train_command(
+    *,
+    kind: str,
+    mode: str,
+    dataset: str,
+    output_base: str,
+    date_str: str | None,
+    run_name: str | None,
+    work_dir: str | None,
+    wandb_name: str | None,
+    resume_from: str | None,
+    overrides: list[str],
+    dry_run: bool = False,
+) -> tuple[Path, str]:
+    final_work_dir, resolved_run_name, command_overrides = _build_train_overrides(
+        kind=kind,
+        mode=mode,
+        dataset=dataset,
+        output_base=output_base,
+        date_str=date_str,
+        run_name=run_name,
+        work_dir=work_dir,
+        wandb_name=wandb_name,
+        resume_from=resume_from,
+        overrides=overrides,
+    )
+
+    _run_module(TRAIN_MODULES[kind], command_overrides, dry_run=dry_run)
+    return final_work_dir, resolved_run_name
 
 
 def _resolve_eval_checkpoint(work_dir: Path, checkpoint: str | None) -> Path:
@@ -246,62 +265,18 @@ def _eval_command(
     overrides: list[str],
     dry_run: bool = False,
 ) -> None:
-    base_work_dir = Path(work_dir).expanduser().resolve()
-    eval_dir = (base_work_dir / eval_subdir).resolve()
-    datasets_root = Path(os.environ.get("AUTOCAST_DATASETS", Path.cwd() / "datasets"))
-
-    ckpt = _resolve_eval_checkpoint(work_dir=base_work_dir, checkpoint=checkpoint)
-    resolved_video_dir = (
-        Path(video_dir).expanduser().resolve() if video_dir else (eval_dir / "videos")
+    _eval_dir, command_overrides = _build_eval_overrides(
+        mode=mode,
+        dataset=dataset,
+        work_dir=work_dir,
+        checkpoint=checkpoint,
+        eval_subdir=eval_subdir,
+        video_dir=video_dir,
+        batch_indices=batch_indices,
+        overrides=overrides,
     )
-
-    launch = _build_common_launch_overrides(mode=mode, work_dir=eval_dir)
-    command_overrides = [
-        *launch,
-        "eval=encoder_processor_decoder",
-        *_dataset_overrides(dataset=dataset, datasets_root=datasets_root),
-        f"eval.checkpoint={ckpt}",
-        f"eval.batch_indices={batch_indices}",
-        f"eval.video_dir={resolved_video_dir}",
-        *overrides,
-    ]
 
     _run_module(EVAL_MODULE, command_overrides, dry_run=dry_run)
-
-
-def _eval_command_overrides(
-    *,
-    mode: str,
-    dataset: str,
-    work_dir: str,
-    checkpoint: str | None,
-    eval_subdir: str,
-    video_dir: str | None,
-    batch_indices: str,
-    overrides: list[str],
-) -> tuple[Path, list[str]]:
-    """Resolve eval workdir/checkpoint and final override list."""
-    base_work_dir = Path(work_dir).expanduser().resolve()
-    eval_dir = (base_work_dir / eval_subdir).resolve()
-    datasets_root = Path(os.environ.get("AUTOCAST_DATASETS", Path.cwd() / "datasets"))
-
-    ckpt = _resolve_eval_checkpoint(work_dir=base_work_dir, checkpoint=checkpoint)
-    resolved_video_dir = (
-        Path(video_dir).expanduser().resolve() if video_dir else (eval_dir / "videos")
-    )
-
-    launch = _build_common_launch_overrides(mode=mode, work_dir=eval_dir)
-    command_overrides = [
-        *launch,
-        "eval=encoder_processor_decoder",
-        *_dataset_overrides(dataset=dataset, datasets_root=datasets_root),
-        f"eval.checkpoint={ckpt}",
-        f"eval.batch_indices={batch_indices}",
-        f"eval.video_dir={resolved_video_dir}",
-        *overrides,
-    ]
-
-    return eval_dir, command_overrides
 
 
 def _write_sbatch_script(
@@ -371,7 +346,7 @@ def _submit_train_eval_chain(
     dry_run: bool,
 ) -> tuple[str, str, Path]:
     """Submit non-blocking SLURM train→eval chain using sbatch dependency."""
-    workdir, resolved_name, train_command_overrides = _train_command_overrides(
+    workdir, resolved_name, train_command_overrides = _build_train_overrides(
         kind="epd",
         mode="local",
         dataset=dataset,
@@ -383,7 +358,7 @@ def _submit_train_eval_chain(
         resume_from=resume_from,
         overrides=train_overrides,
     )
-    eval_dir, eval_command_overrides = _eval_command_overrides(
+    eval_dir, eval_command_overrides = _build_eval_overrides(
         mode="local",
         dataset=dataset,
         work_dir=str(workdir),

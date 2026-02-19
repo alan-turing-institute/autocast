@@ -1,0 +1,10 @@
+# One run per line. Each line is passed after: uv run autocast
+
+# Autoencoder train on slurm
+ae --mode slurm --dataset advection_diffusion_multichannel_64_64 --date 2026-02-19 --run-name ae_demo trainer.max_epochs=1
+
+# EPD train+eval non-blocking chain on slurm
+train-eval --mode slurm --detach --dataset advection_diffusion_multichannel_64_64 --date 2026-02-19 --run-name epd_demo trainer.max_epochs=1 ::eval:: eval.batch_indices=[0,1]
+
+# Re-run eval from an existing run directory
+eval --mode slurm --workdir outputs/2026-02-19/epd_demo --dataset advection_diffusion_multichannel_64_64 eval.batch_indices=[0,1]

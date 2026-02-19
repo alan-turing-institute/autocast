@@ -168,6 +168,7 @@ uv run autocast train-eval \
     --run-name 00 \
     trainer.max_epochs=1 \
     ::eval:: eval.batch_indices=[0,1]
+```
 
 For non-blocking SLURM train+eval submission from login nodes:
 ```bash
@@ -182,4 +183,14 @@ This submits two sbatch jobs with `afterok` dependency and returns immediately.
 
 Use `--dry-run` with any command to print resolved commands/scripts without
 executing them.
+
+CLI equivalents of removed `slurm_scripts/*.sh` examples are provided in:
+```bash
+bash scripts/cli_equivalents.sh
+```
+
+For launching many prewritten runs from a manifest list:
+```bash
+bash scripts/launch_from_manifest.sh configs/run_manifests/example_runs.txt
+```
 ```
