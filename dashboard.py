@@ -66,7 +66,9 @@ def load_metrics(base_dir: Path, run_path: str, metric_type: str) -> pd.DataFram
     """
     run_full_path = Path(base_dir) / run_path
     csv_name = (
-        "evaluation_metrics.csv" if metric_type == "Evaluation" else "rollout_metrics.csv"
+        "evaluation_metrics.csv"
+        if metric_type == "Evaluation"
+        else "rollout_metrics.csv"
     )
     csv_path = run_full_path / "eval" / csv_name
 
@@ -372,12 +374,13 @@ def plot_metric_comparison(
 
     # Create DataFrame and plot
     plot_df = pd.DataFrame(data)
+    metric_scope = f"Rollout ({window})" if window is not None else "Overall"
     fig = px.bar(
         plot_df,
         y="Run",
         x=metric.upper(),
         orientation="h",
-        title=f"{metric.upper()} Comparison",
+        title=f"{metric.upper()} Comparison ({metric_scope})",
     )
     fig.update_layout(height=max(300, len(data) * 50))
 
@@ -475,21 +478,30 @@ def plot_leaderboard_heatmap(
         # Get evaluation metrics
         eval_df = load_metrics(base_dir, run, "Evaluation")
         if not eval_df.empty:
-            eval_filtered = eval_df[(eval_df["window"] == "all") & (eval_df["batch_idx"] == batch_idx)]
+            eval_filtered = eval_df[
+                (eval_df["window"] == "all") & (eval_df["batch_idx"] == batch_idx)
+            ]
             if not eval_filtered.empty:
                 for metric in base_metrics:
                     if metric in eval_filtered.columns:
-                        row_data[f"{metric.upper()} (Eval)"] = eval_filtered[metric].iloc[0]
+                        row_data[f"{metric.upper()} (Eval)"] = eval_filtered[
+                            metric
+                        ].iloc[0]
 
         # Get rollout metrics for all windows
         rollout_df = load_metrics(base_dir, run, "Rollout")
         if not rollout_df.empty:
             for window in windows[1:]:  # Skip None (already did eval)
-                window_filtered = rollout_df[(rollout_df["window"] == window) & (rollout_df["batch_idx"] == batch_idx)]
+                window_filtered = rollout_df[
+                    (rollout_df["window"] == window)
+                    & (rollout_df["batch_idx"] == batch_idx)
+                ]
                 if not window_filtered.empty:
                     for metric in base_metrics:
                         if metric in window_filtered.columns:
-                            row_data[f"{metric.upper()} ({window})"] = window_filtered[metric].iloc[0]
+                            row_data[f"{metric.upper()} ({window})"] = window_filtered[
+                                metric
+                            ].iloc[0]
 
         all_data.append(row_data)
 
@@ -550,16 +562,18 @@ def plot_leaderboard_heatmap(
         hover_text.append(hover_row)
 
     # Create heatmap with single color gradient (dark blue = best/rank 1, light = worst)
-    fig = go.Figure(data=go.Heatmap(
-        z=rank_matrix,
-        x=metric_cols,
-        y=df["Run"],
-        text=hover_text,
-        hovertemplate='%{text}<extra></extra>',
-        colorscale='Blues_r',  # Reversed Blues: dark blue = best (low rank), light = worst
-        colorbar=dict(title="Rank"),
-        reversescale=False,
-    ))
+    fig = go.Figure(
+        data=go.Heatmap(
+            z=rank_matrix,
+            x=metric_cols,
+            y=df["Run"],
+            text=hover_text,
+            hovertemplate="%{text}<extra></extra>",
+            colorscale="Blues_r",  # Reversed Blues: dark blue = best (low rank), light = worst
+            colorbar=dict(title="Rank"),
+            reversescale=False,
+        )
+    )
 
     fig.update_layout(
         title="Model Leaderboard - All Metrics (Dark Blue=Best, Light=Worst, Lower is Better for All)",
@@ -625,11 +639,13 @@ def plot_metric_crossplot(
         if not df.empty and metric_x in df.columns and metric_y in df.columns:
             x_value = df[metric_x].iloc[0]
             y_value = df[metric_y].iloc[0]
-            data.append({
-                "Run": run,
-                metric_x.upper(): x_value,
-                metric_y.upper(): y_value,
-            })
+            data.append(
+                {
+                    "Run": run,
+                    metric_x.upper(): x_value,
+                    metric_y.upper(): y_value,
+                }
+            )
 
     if not data:
         # Return empty figure with message
@@ -646,13 +662,14 @@ def plot_metric_crossplot(
 
     # Create DataFrame and plot
     plot_df = pd.DataFrame(data)
+    metric_scope = f"Rollout ({window})" if window is not None else "Overall"
     fig = px.scatter(
         plot_df,
         x=metric_x.upper(),
         y=metric_y.upper(),
         color="Run",
         hover_name="Run",
-        title=f"{metric_y.upper()} vs {metric_x.upper()}",
+        title=f"{metric_y.upper()} vs {metric_x.upper()} ({metric_scope})",
     )
     fig.update_traces(marker=dict(size=12))
     fig.update_layout(height=600, showlegend=True)
@@ -685,7 +702,12 @@ with st.sidebar:
 
 # Tab layout
 tab1, tab2, tab3, tab4 = st.tabs(
-    ["📊 Metrics Comparison", "🖼️ Image Comparison", "🎥 Video Comparison", "🏆 Leaderboard"]
+    [
+        "📊 Metrics Comparison",
+        "🖼️ Image Comparison",
+        "🎥 Video Comparison",
+        "🏆 Leaderboard",
+    ]
 )
 
 # Tab 1: Metrics Comparison
@@ -697,7 +719,7 @@ with tab1:
         "Visualization Mode",
         ["Bar Chart", "Cross Plot"],
         horizontal=True,
-        help="Bar Chart: Compare a single metric across runs. Cross Plot: Plot two metrics against each other."
+        help="Bar Chart: Compare a single metric across runs. Cross Plot: Plot two metrics against each other.",
     )
 
     st.markdown("---")
@@ -721,10 +743,16 @@ with tab1:
             )
         else:  # Cross Plot
             metric_x = st.selectbox(
-                "X-Axis Metric", ["mse", "mae", "rmse", "vrmse", "coverage"], index=0, key="metric_x"
+                "X-Axis Metric",
+                ["mse", "mae", "rmse", "vrmse", "coverage"],
+                index=0,
+                key="metric_x",
             )
             metric_y = st.selectbox(
-                "Y-Axis Metric", ["mse", "mae", "rmse", "vrmse", "coverage"], index=4, key="metric_y"
+                "Y-Axis Metric",
+                ["mse", "mae", "rmse", "vrmse", "coverage"],
+                index=4,
+                key="metric_y",
             )
 
         if metric_type == "Rollout":
@@ -745,14 +773,22 @@ with tab1:
             )
         else:  # Cross Plot
             fig = plot_metric_crossplot(
-                base_dir, selected_runs, metric_x, metric_y, metric_type, window, batch_idx
+                base_dir,
+                selected_runs,
+                metric_x,
+                metric_y,
+                metric_type,
+                window,
+                batch_idx,
             )
-        st.plotly_chart(fig, width='stretch')
+        st.plotly_chart(fig, width="stretch")
 
         # Show complete metrics table underneath
         st.markdown("---")
         st.subheader("Complete Metrics Table")
-        metrics_table_df = create_leaderboard(base_dir, selected_runs, metric_type, window, batch_idx)
+        metrics_table_df = create_leaderboard(
+            base_dir, selected_runs, metric_type, window, batch_idx
+        )
         if not metrics_table_df.empty:
             st.dataframe(metrics_table_df, use_container_width=True, hide_index=True)
         else:
@@ -804,7 +840,7 @@ with tab2:
                 st.image(
                     str(images1[img1_name]),
                     caption=f"{run1} - {img1_name}",
-                    width='stretch',
+                    width="stretch",
                 )
             else:
                 st.warning(f"No images found for {run1}")
@@ -834,7 +870,7 @@ with tab2:
                     st.image(
                         str(images2[img2_name]),
                         caption=f"{run2} - {img2_name}",
-                        width='stretch',
+                        width="stretch",
                     )
                 else:
                     st.warning(f"Image '{img2_name}' not found in {run2}")
@@ -865,23 +901,20 @@ with tab3:
         if common_videos:
             with col3:
                 selected_video = st.selectbox(
-                    "Select Video",
-                    sorted(list(common_videos)),
-                    key="selected_vid"
+                    "Select Video", sorted(list(common_videos)), key="selected_vid"
                 )
 
             # Display synchronized videos
             st.markdown("---")
-            st.info("💡 Use the controls below to play/pause, seek, and change playback speed for both videos simultaneously")
+            st.info(
+                "💡 Use the controls below to play/pause, seek, and change playback speed for both videos simultaneously"
+            )
 
             video1_path = videos1[selected_video]
             video2_path = videos2[selected_video]
 
             html_player = create_synchronized_video_player(
-                video1_path,
-                video2_path,
-                f"Run 1: {run1_vid}",
-                f"Run 2: {run2_vid}"
+                video1_path, video2_path, f"Run 1: {run1_vid}", f"Run 2: {run2_vid}"
             )
 
             components.html(html_player, height=800, scrolling=True)
@@ -897,13 +930,15 @@ with tab3:
 # Tab 4: Leaderboard
 with tab4:
     st.header("Model Leaderboard")
-    st.info("📊 Heatmap showing all metrics (Evaluation + All Rollout Windows). Colored by rank for each metric independently. Dark Blue = Best, Light = Worst. Lower is better for ALL metrics.")
+    st.info(
+        "📊 Heatmap showing all metrics (Evaluation + All Rollout Windows). Colored by rank for each metric independently. Dark Blue = Best, Light = Worst. Lower is better for ALL metrics."
+    )
 
     batch_idx_lb = st.selectbox(
         "Batch",
         ["all"],
         help="Select batch index (currently showing aggregated 'all' only)",
-        key="lb_batch"
+        key="lb_batch",
     )
 
     st.markdown("---")
