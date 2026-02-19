@@ -9,7 +9,7 @@ from hydra.utils import instantiate
 from matplotlib import pyplot as plt
 from omegaconf import DictConfig, OmegaConf
 
-from autocast.data.datamodule import SpatioTemporalDataModule
+from autocast.data.datamodule import SpatioTemporalDataModule, TheWellDataModule
 from autocast.logging import create_wandb_logger
 from autocast.logging.wandb import maybe_watch_model
 from autocast.models.autoencoder import AE
@@ -81,7 +81,7 @@ def run_training(
 @torch.no_grad()
 def _save_reconstructions(
     model: AE,
-    datamodule: SpatioTemporalDataModule,
+    datamodule: SpatioTemporalDataModule | TheWellDataModule,
     work_dir: Path,
     max_batches: int = 4,
     cmap: str = "viridis",

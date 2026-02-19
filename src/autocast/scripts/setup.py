@@ -9,7 +9,7 @@ from hydra.utils import get_class, instantiate
 from omegaconf import DictConfig
 from torch import nn
 
-from autocast.data.datamodule import SpatioTemporalDataModule
+from autocast.data.datamodule import SpatioTemporalDataModule, TheWellDataModule
 from autocast.decoders.base import Decoder
 from autocast.encoders.base import Encoder, EncoderWithCond
 from autocast.models.autoencoder import AE, AELoss
@@ -117,7 +117,7 @@ def _apply_processor_channel_defaults(
 
 def setup_datamodule(
     config: DictConfig,
-) -> tuple[SpatioTemporalDataModule, DictConfig, dict]:
+) -> tuple[SpatioTemporalDataModule | TheWellDataModule, DictConfig, dict]:
     """Create the datamodule and infer data shapes."""
     datamodule = build_datamodule(config)
 
@@ -347,12 +347,16 @@ def setup_epd_model(config: DictConfig, stats: dict) -> EncoderProcessorDecoder:
             "boundary_conditions=%s, "
             "inferred_global_cond_channels=%s",
         ),
-        None
-        if stats["example_batch"].constant_scalars is None
-        else tuple(stats["example_batch"].constant_scalars.shape),
-        None
-        if stats["example_batch"].boundary_conditions is None
-        else tuple(stats["example_batch"].boundary_conditions.shape),
+        (
+            None
+            if stats["example_batch"].constant_scalars is None
+            else tuple(stats["example_batch"].constant_scalars.shape)
+        ),
+        (
+            None
+            if stats["example_batch"].boundary_conditions is None
+            else tuple(stats["example_batch"].boundary_conditions.shape)
+        ),
         global_cond_channels,
     )
 
