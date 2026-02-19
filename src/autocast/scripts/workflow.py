@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shlex
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 
 from omegaconf import DictConfig, OmegaConf
@@ -20,6 +22,92 @@ TRAIN_MODULES = {
 }
 EVAL_MODULE = "autocast.scripts.eval.encoder_processor_decoder"
 EVAL_SPLIT_TOKEN = "::eval::"
+
+
+def _sanitize_name_part(value: str) -> str:
+    """Sanitize a run-name token to filesystem-friendly characters."""
+    stripped = value.strip().strip('"').strip("'")
+    sanitized = re.sub(r"[^A-Za-z0-9._-]+", "-", stripped)
+    return sanitized.strip("-")
+
+
+def _git_hash() -> str:
+    """Return short git hash, or fallback token when unavailable."""
+    try:
+        return (
+            subprocess.check_output(
+                ["git", "rev-parse", "--short=7", "HEAD"],
+                stderr=subprocess.DEVNULL,
+            )
+            .decode()
+            .strip()
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return "nogit"
+
+
+def _short_uuid() -> str:
+    """Return short random suffix used for unique run names."""
+    return uuid.uuid4().hex[:7]
+
+
+def _auto_run_name(kind: str, dataset: str, overrides: list[str]) -> str:
+    """Build legacy-style run name without requiring manual --run-name.
+
+    Pattern:
+      <prefix>_<dataset>_<model>[_<noise>][_<hidden>]_<git>_<uuid>
+    """
+    dataset_part = _sanitize_name_part(dataset)
+
+    if kind == "ae":
+        prefix = "ae"
+    else:
+        loss_target = (
+            _extract_override_value(overrides, "model.loss_func._target_") or ""
+        ).lower()
+        processor_ref = (
+            _extract_override_value(overrides, "processor@model.processor") or ""
+        ).lower()
+        processor_target = (
+            _extract_override_value(overrides, "model.processor._target_") or ""
+        ).lower()
+        processor_text = processor_ref or processor_target
+
+        if "crps" in loss_target:
+            prefix = "crps"
+        elif "flow_matching" in processor_text or "diffusion" in processor_text:
+            prefix = "diff"
+        else:
+            prefix = "epd"
+
+    model_name = _extract_override_value(overrides, "processor@model.processor")
+    if model_name is None:
+        processor_target = _extract_override_value(
+            overrides, "model.processor._target_"
+        )
+        if processor_target:
+            model_name = processor_target.split(".")[-2]
+
+    noise_name = _extract_override_value(
+        overrides, "input_noise_injector@model.input_noise_injector"
+    )
+    hidden = (
+        _extract_override_value(overrides, "model.processor.hidden_dim")
+        or _extract_override_value(overrides, "model.processor.hidden_channels")
+        or _extract_override_value(overrides, "model.processor.backbone.hid_channels")
+    )
+
+    parts = [prefix, dataset_part]
+    if model_name:
+        parts.append(_sanitize_name_part(model_name))
+    if noise_name:
+        parts.append(_sanitize_name_part(noise_name))
+    if hidden:
+        parts.append(_sanitize_name_part(str(hidden)))
+    parts.append(_git_hash())
+    parts.append(_short_uuid())
+
+    return "_".join(part for part in parts if part)
 
 
 def _build_common_launch_overrides(mode: str, work_dir: Path) -> list[str]:
@@ -149,10 +237,16 @@ def _build_train_overrides(
     overrides: list[str],
 ) -> tuple[Path, str, list[str]]:
     """Resolve workdir/name and build final overrides for training commands."""
+    effective_run_name = run_name
+    if effective_run_name is None and work_dir is None:
+        effective_run_name = _auto_run_name(
+            kind=kind, dataset=dataset, overrides=overrides
+        )
+
     final_work_dir, resolved_run_name = resolve_work_dir(
         output_base=output_base,
         date_str=date_str,
-        run_name=run_name,
+        run_name=effective_run_name,
         work_dir=work_dir,
         prefix=kind,
     )

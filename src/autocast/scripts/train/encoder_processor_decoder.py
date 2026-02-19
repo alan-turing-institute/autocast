@@ -9,11 +9,7 @@ from omegaconf import DictConfig
 
 from autocast.scripts.setup import setup_datamodule, setup_epd_model
 from autocast.scripts.training import run_training
-from autocast.scripts.utils import (
-    determine_epd_run_prefix,
-    generate_run_name,
-    get_default_config_path,
-)
+from autocast.scripts.utils import get_default_config_path
 
 log = logging.getLogger(__name__)
 
@@ -40,8 +36,6 @@ def main(cfg: DictConfig) -> None:
     # Setup Model (includes AE loading, processor creation, ensemble logic)
     model = setup_epd_model(cfg, stats, datamodule=datamodule)
 
-    run_name = generate_run_name(cfg, prefix=determine_epd_run_prefix(cfg))
-
     # Get output config
     output_cfg = cfg.get("output", {})
     skip_test = output_cfg.get("skip_test", False)
@@ -56,7 +50,6 @@ def main(cfg: DictConfig) -> None:
         skip_test=skip_test,
         output_checkpoint_path=output_checkpoint,
         job_type="train-encoder-processor-decoder",
-        run_name=run_name,
     )
 
 

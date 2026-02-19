@@ -72,8 +72,7 @@ Or alternatively with the unified workflow CLI:
 ```bash
 uv run autocast ae \
 	--dataset reaction_diffusion \
-	--run-label rd \
-	--run-name 00
+	--run-label rd
 ```
 
 Unified workflow CLI supports both local and SLURM launch modes:
@@ -83,7 +82,6 @@ Unified workflow CLI supports both local and SLURM launch modes:
 uv run autocast epd \
 	--dataset reaction_diffusion \
 	--run-label my_label \
-	--run-name my_run \
 	trainer.max_epochs=5
 
 # SLURM via Hydra submitit launcher
@@ -91,7 +89,6 @@ uv run autocast epd \
 	--mode slurm \
 	--dataset reaction_diffusion \
 	--run-label my_label \
-	--run-name my_run \
 	trainer.max_epochs=5
 ```
 
@@ -110,8 +107,7 @@ Train + evaluate in one command:
 ```bash
 uv run autocast train-eval \
 	--dataset reaction_diffusion \
-	--run-label rd \
-	--run-name 00
+	--run-label rd
 ```
 
 For `train-eval`, evaluation starts only after training has completed successfully
@@ -123,8 +119,7 @@ uv run autocast train-eval \
 	--mode slurm \
 	--detach \
 	--dataset reaction_diffusion \
-	--run-label rd \
-	--run-name 00
+	--run-label rd
 ```
 This submits two sbatch jobs with `afterok` dependency and returns immediately.
 
@@ -141,6 +136,9 @@ bash scripts/launch_from_manifest.sh configs/run_manifests/example_runs.txt
 ```
 
 Date handling is automatic: if `--date` is omitted, current date is used.
+Run naming is also automatic: if `--run-name` is omitted, `autocast` generates
+a legacy-style run id (dataset/model/hash/uuid based) and uses it for both
+the run folder and default `logging.wandb.name`.
 Pass `--run-label` (or legacy alias `--date`) only to override the top-level folder label.
 
 Multi-GPU is supported by passing trainer/Hydra overrides, e.g.:
@@ -167,8 +165,7 @@ Or alternatively with the unified workflow CLI:
 ```bash
 uv run autocast epd \
 	--dataset reaction_diffusion \
-	--run-label rd \
-	--run-name 00
+	--run-label rd
 ```
 
 ### Evaluation

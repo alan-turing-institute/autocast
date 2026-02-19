@@ -134,15 +134,13 @@ Example usage:
 # Train autoencoder locally
 uv run autocast ae \
     --dataset reaction_diffusion \
-    --run-label rd \
-    --run-name 00
+    --run-label rd
 
 # Train EPD on SLURM
 uv run autocast epd \
     --mode slurm \
     --dataset reaction_diffusion \
     --run-label rd \
-    --run-name 00 \
     trainer.max_epochs=10
 
 # Re-run evaluation from an existing workdir
@@ -165,7 +163,6 @@ overrides with `::eval::`, e.g.:
 uv run autocast train-eval \
     --dataset reaction_diffusion \
     --run-label rd \
-    --run-name 00 \
     trainer.max_epochs=1 \
     ::eval:: eval.batch_indices=[0,1]
 ```
@@ -176,13 +173,14 @@ uv run autocast train-eval \
     --mode slurm \
     --detach \
     --dataset reaction_diffusion \
-    --run-label rd \
-    --run-name 00
+    --run-label rd
 ```
 This submits two sbatch jobs with `afterok` dependency and returns immediately.
 
 `--run-label` controls the top-level output folder (defaults to current date).
 `--date` remains available as a backward-compatible alias.
+If `--run-name` is omitted, `autocast` auto-generates a legacy-style run id and
+uses it for both output folder naming and default `logging.wandb.name`.
 
 Use `--dry-run` with any command to print resolved commands/scripts without
 executing them.
