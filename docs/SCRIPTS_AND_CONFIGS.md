@@ -10,12 +10,12 @@ AutoCast uses a set of Python scripts located in `src/autocast/scripts/` as entr
 
 1.  **`train_autoencoder`** (`src/autocast/scripts/train/autoencoder.py`)
     *   **Purpose**: Trains an Autoencoder (Encoder + Decoder) on a given dataset.
-    *   **Config Group**: `autoencoder` (defaults to `configs/autoencoder.yaml`).
+    *   **Config Group**: `autoencoder` (defaults to `src/autocast/configs/autoencoder.yaml`).
     *   **Key Output**: `autoencoder.ckpt` (Lightning checkpoint).
 
 2.  **`train_encoder_processor_decoder`** (`src/autocast/scripts/train/encoder_processor_decoder.py`)
     *   **Purpose**: Trains a Processor model in the latent space of a pre-trained Autoencoder (or trains end-to-end).
-    *   **Config Group**: `encoder_processor_decoder` (defaults to `configs/encoder_processor_decoder.yaml`).
+    *   **Config Group**: `encoder_processor_decoder` (defaults to `src/autocast/configs/encoder_processor_decoder.yaml`).
     *   **Key Dependencies**: Takes a pre-trained Autoencoder checkpoint (optional, but recommended for latent training).
 
 3.  **`evaluate_encoder_processor_decoder`** (`src/autocast/scripts/eval/encoder_processor_decoder.py`)
@@ -26,12 +26,12 @@ AutoCast uses a set of Python scripts located in `src/autocast/scripts/` as entr
 
 ## Configuration System (Hydra)
 
-AutoCast uses [Hydra](https://hydra.cc/) for configuration management. All configurations are YAML files located in the `configs/` directory.
+AutoCast uses [Hydra](https://hydra.cc/) for configuration management. All configurations are YAML files located in `src/autocast/configs/`.
 
 ### Directory Structure
 
 ```text
-configs/
+src/autocast/configs/
 ├── autoencoder.yaml             # default config for train_autoencoder
 ├── encoder_processor_decoder.yaml # default config for train_epd
 ├── backbone/                    # Architectures (UNet, ViT)
@@ -182,7 +182,7 @@ eval inside a single Hydra/Submitit SLURM job.
 
 ### Config-to-CLI mapping (to avoid override confusion)
 
-- Hydra launcher config path: `configs/hydra/launcher/slurm.yaml`
+- Hydra launcher config path: `src/autocast/configs/hydra/launcher/slurm.yaml`
 - Mapping rule: config key `X` maps to CLI override `hydra.launcher.X=<value>`
     - `timeout_min` -> `hydra.launcher.timeout_min=...`
     - `cpus_per_task` -> `hydra.launcher.cpus_per_task=...`
@@ -207,13 +207,13 @@ uv run autocast train-eval --mode slurm --detach \
 
 File permissions / group-write:
 - Submitit path reads config key `umask` (default `0002` in
-    `configs/encoder_processor_decoder.yaml`).
+    `src/autocast/configs/encoder_processor_decoder.yaml`).
 - Detached sbatch path reads env var `AUTOCAST_UMASK` (default `0002`).
 
 To avoid long CLI override lists, put experiment defaults in a preset config
-under `configs/experiment/` and enable it with `experiment=<name>`.
+under `src/autocast/configs/experiment/` and enable it with `experiment=<name>`.
 
-Example preset: `configs/experiment/epd_flow_matching_64_fast.yaml`
+Example preset: `src/autocast/configs/experiment/epd_flow_matching_64_fast.yaml`
 
 ```bash
 uv run autocast train-eval --mode slurm --detach \
@@ -229,8 +229,8 @@ uv run autocast train-eval --mode slurm --detach \
 If `--run-name` is omitted, `autocast` auto-generates a legacy-style run id and
 uses it for both output folder naming and default `logging.wandb.name`.
 
-Private/local experiment presets can be placed under
-`configs/experiment_local/` and enabled with `experiment_local=<name>`.
+Private/local experiment presets can be placed under repo-level
+`experiment_local/` and enabled with `experiment_local=<name>`.
 YAML files in this folder are git-ignored by default.
 
 If you keep configs outside this repository (or when running from an installed
@@ -253,6 +253,6 @@ bash scripts/cli_equivalents.sh
 
 For launching many prewritten runs from a manifest list:
 ```bash
-bash scripts/launch_from_manifest.sh configs/run_manifests/example_runs.txt
+bash scripts/launch_from_manifest.sh run_manifests/example_runs.txt
 ```
 ```

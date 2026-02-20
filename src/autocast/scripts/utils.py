@@ -44,7 +44,7 @@ def get_default_config_path() -> str:
 
     Resolution order:
     1. ``AUTOCAST_CONFIG_PATH`` environment variable (if set and exists).
-    2. Repository ``configs/`` directory (detected via ``pyproject.toml``).
+    2. Repository ``src/autocast/configs/`` directory (detected via ``pyproject.toml``).
     3. Packaged ``autocast/configs`` resources (for wheel/sdist installs).
 
     This allows local development with repository configs while supporting
@@ -71,7 +71,7 @@ def get_default_config_path() -> str:
     current = Path(__file__).resolve().parent
     while current != current.parent:  # Stop at filesystem root
         if (current / "pyproject.toml").exists():
-            config_dir = current / "configs"
+            config_dir = current / "src" / "autocast" / "configs"
             if not config_dir.exists():
                 msg = f"Project root found at {current}, but configs directory missing"
                 raise FileNotFoundError(msg)

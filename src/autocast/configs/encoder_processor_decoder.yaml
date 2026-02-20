@@ -29,6 +29,8 @@ output:
   skip_test: false  # Skip running trainer.test() after training
 
 hydra:
+  searchpath:
+    - file://${hydra:runtime.cwd}
   run:
     dir: outputs/${experiment_name}/${now:%Y-%m-%d_%H-%M-%S}
   job:

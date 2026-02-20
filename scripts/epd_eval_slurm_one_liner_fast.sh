@@ -1,9 +1,9 @@
 #!/bin/bash
 # Mapping guide:
-# - Keys from configs/hydra/launcher/slurm.yaml map to CLI as
+# - Keys from src/autocast/configs/hydra/launcher/slurm.yaml map to CLI as
 #   hydra.launcher.<key>=<value>
 #   e.g. timeout_min -> hydra.launcher.timeout_min=30
-# - Experiment preset lives in configs/experiment/epd_flow_matching_64_fast.yaml
+# - Experiment preset lives in src/autocast/configs/experiment/epd_flow_matching_64_fast.yaml
 #   and is applied with experiment=epd_flow_matching_64_fast.
 # - In `autocast train-eval`, positional overrides apply to TRAIN.
 # - Eval-specific settings go under `--eval-overrides`.

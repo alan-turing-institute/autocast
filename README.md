@@ -127,9 +127,9 @@ uv run autocast train-eval \
 ```
 This submits two sbatch jobs with `afterok` dependency and returns immediately.
 
-Keep private experiment presets in `configs/experiment_local/` and select them
-with `experiment_local=<name>`. Files in that folder are ignored by git by
-default.
+Keep private experiment presets in `experiment_local/` (repo root) and select
+them with `experiment_local=<name>`. YAML files in that folder are ignored by
+git by default.
 
 To load configs from a separate directory (including packaged installs), set:
 
@@ -138,7 +138,7 @@ export AUTOCAST_CONFIG_PATH=/absolute/path/to/configs
 ```
 
 Override mapping quick reference:
-- `configs/hydra/launcher/slurm.yaml` key `X` maps to CLI `hydra.launcher.X=...`
+- `src/autocast/configs/hydra/launcher/slurm.yaml` key `X` maps to CLI `hydra.launcher.X=...`
 - In `autocast train-eval`, positional overrides are train-only.
 - Eval-only overrides go in `--eval-overrides ...`.
 - Different train/eval timeouts example:
@@ -158,7 +158,7 @@ bash scripts/cli_equivalents.sh
 
 Launch many prewritten runs from a manifest file:
 ```bash
-bash scripts/launch_from_manifest.sh configs/run_manifests/example_runs.txt
+bash scripts/launch_from_manifest.sh run_manifests/example_runs.txt
 ```
 
 Date handling is automatic: if `--date` is omitted, current date is used.
@@ -215,7 +215,7 @@ uv run autocast eval \
 ## Experiment Tracking with Weights & Biases
 
 AutoCast now ships with an optional [Weights & Biases](https://wandb.ai/) integration that is
-fully driven by the Hydra config under `configs/logging/wandb.yaml`.
+fully driven by the Hydra config under `src/autocast/configs/logging/wandb.yaml`.
 
 - Enable logging for CLI workflows by passing Hydra config overrides as positional arguments:
 
@@ -245,7 +245,7 @@ maintenance overhead. Use the unified `autocast` CLI workflows instead:
 uv run autocast train-eval --mode slurm --detach --dataset reaction_diffusion
 
 # run many prewritten jobs from a manifest
-bash scripts/launch_from_manifest.sh configs/run_manifests/example_runs.txt
+bash scripts/launch_from_manifest.sh run_manifests/example_runs.txt
 ```
 
 In the [slurm_templates](/slurm_templates/) folders, template slurm scripts can be found for the following use cases: 

@@ -10,8 +10,8 @@ set -euo pipefail
 #   epd --mode slurm --dataset reaction_diffusion --date rd --run-name 00 trainer.max_epochs=5
 #
 # Usage:
-#   bash scripts/launch_from_manifest.sh configs/run_manifests/example_runs.txt
-#   bash scripts/launch_from_manifest.sh configs/run_manifests/example_runs.txt --dry-run
+#   bash scripts/launch_from_manifest.sh run_manifests/example_runs.txt
+#   bash scripts/launch_from_manifest.sh run_manifests/example_runs.txt --dry-run
 
 if [ "$#" -lt 1 ]; then
   echo "Usage: $0 <manifest-file> [--dry-run]"

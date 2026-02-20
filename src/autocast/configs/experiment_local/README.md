@@ -2,7 +2,7 @@
 
 Use this folder for private/local Hydra experiment presets that should not be committed.
 
-Create files like `configs/experiment_local/my_private_run.yaml` with:
+Create files like `src/autocast/configs/experiment_local/my_private_run.yaml` with:
 
 ```yaml
 # @package _global_
