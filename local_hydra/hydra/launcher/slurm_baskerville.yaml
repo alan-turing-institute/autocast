@@ -1,7 +1,4 @@
 # @package hydra.launcher
-defaults:
-  - submitit_slurm
-
 # Baskerville defaults
 # Override any of these via CLI, e.g. hydra.launcher.timeout_min=720
 timeout_min: 720

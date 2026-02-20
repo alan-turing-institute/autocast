@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import itertools
 import os
 import re
 import shlex
@@ -10,6 +11,8 @@ import subprocess
 import sys
 import uuid
 from pathlib import Path
+
+from omegaconf import OmegaConf
 
 from autocast.scripts.utils import resolve_work_dir
 
@@ -142,7 +145,394 @@ def _hydra_string_list_literal(values: list[str]) -> str:
     return f"[{','.join(quoted)}]"
 
 
-def _run_module(module: str, overrides: list[str], dry_run: bool = False) -> None:
+def _load_launcher_defaults(launcher_name: str) -> dict:
+    candidate_paths = [
+        Path(__file__).resolve().parents[1]
+        / "configs"
+        / "hydra"
+        / "launcher"
+        / f"{launcher_name}.yaml",
+        Path.cwd() / "local_hydra" / "hydra" / "launcher" / f"{launcher_name}.yaml",
+    ]
+
+    for path in candidate_paths:
+        if path.exists():
+            cfg = OmegaConf.load(path)
+            loaded = OmegaConf.to_container(cfg, resolve=True)
+            if isinstance(loaded, dict):
+                loaded.pop("defaults", None)
+                return loaded
+
+    if launcher_name != "slurm":
+        raise ValueError(f"Unable to resolve hydra launcher preset '{launcher_name}'.")
+    return {}
+
+
+def _parse_override_scalar(value: str) -> int | str:
+    stripped = value.strip().strip('"').strip("'")
+    if stripped.isdigit():
+        return int(stripped)
+    return stripped
+
+
+def _nested_set(target: dict, dotted_key: str, value: int | str) -> None:
+    parts = dotted_key.split(".")
+    current = target
+    for part in parts[:-1]:
+        next_level = current.get(part)
+        if not isinstance(next_level, dict):
+            next_level = {}
+            current[part] = next_level
+        current = next_level
+    current[parts[-1]] = value
+
+
+def _extract_launcher_overrides(overrides: list[str]) -> tuple[str, dict, list[str]]:
+    launcher_name = "slurm"
+    launcher_specific: dict = {}
+    remaining: list[str] = []
+
+    for override in overrides:
+        normalized = override[1:] if override.startswith("+") else override
+        if normalized.startswith("hydra/launcher="):
+            launcher_name = normalized.split("=", 1)[1]
+            continue
+        if normalized.startswith("hydra.launcher."):
+            key, raw_value = normalized.split("=", 1)
+            launcher_key = key.removeprefix("hydra.launcher.")
+            _nested_set(
+                launcher_specific,
+                launcher_key,
+                _parse_override_scalar(raw_value),
+            )
+            continue
+        remaining.append(override)
+
+    return launcher_name, launcher_specific, remaining
+
+
+def _derive_sbatch_job_name(module: str, output_dir: Path, overrides: list[str]) -> str:
+    module_suffix = module.rsplit(".", maxsplit=1)[-1]
+    run_name = (
+        _extract_override_value(overrides, "logging.wandb.name")
+        or _extract_override_value(overrides, "hydra.job.name")
+        or output_dir.name
+    )
+    raw_name = f"{module_suffix}_{run_name}"
+    sanitized = _sanitize_name_part(raw_name)
+    if not sanitized:
+        sanitized = f"autocast_{module_suffix}"
+    return sanitized[:120]
+
+
+def _strip_hydra_sweep_controls(overrides: list[str]) -> list[str]:
+    filtered: list[str] = []
+    for override in overrides:
+        normalized = override[1:] if override.startswith("+") else override
+        if normalized.startswith("hydra.mode="):
+            continue
+        if normalized.startswith("hydra.sweep."):
+            continue
+        filtered.append(override)
+    return filtered
+
+
+def _split_top_level_csv(value: str) -> list[str]:
+    parts: list[str] = []
+    current: list[str] = []
+    in_quote: str | None = None
+    paren_depth = 0
+    bracket_depth = 0
+    brace_depth = 0
+
+    for char in value:
+        if in_quote is not None:
+            current.append(char)
+            if char == in_quote:
+                in_quote = None
+            continue
+
+        if char in {'"', "'"}:
+            in_quote = char
+            current.append(char)
+            continue
+
+        if char == "(":
+            paren_depth += 1
+            current.append(char)
+            continue
+        if char == ")":
+            paren_depth = max(0, paren_depth - 1)
+            current.append(char)
+            continue
+        if char == "[":
+            bracket_depth += 1
+            current.append(char)
+            continue
+        if char == "]":
+            bracket_depth = max(0, bracket_depth - 1)
+            current.append(char)
+            continue
+        if char == "{":
+            brace_depth += 1
+            current.append(char)
+            continue
+        if char == "}":
+            brace_depth = max(0, brace_depth - 1)
+            current.append(char)
+            continue
+
+        if char == "," and paren_depth == 0 and bracket_depth == 0 and brace_depth == 0:
+            token = "".join(current).strip()
+            parts.append(token)
+            current = []
+            continue
+
+        current.append(char)
+
+    token = "".join(current).strip()
+    parts.append(token)
+    return parts
+
+
+def _expand_sweep_overrides(overrides: list[str]) -> list[list[str]]:
+    choice_groups: list[list[str]] = []
+
+    for override in overrides:
+        normalized = override[1:] if override.startswith("+") else override
+        if "=" not in normalized:
+            choice_groups.append([override])
+            continue
+
+        key, value = override.split("=", 1)
+        values = _split_top_level_csv(value)
+        if len(values) <= 1:
+            choice_groups.append([override])
+            continue
+
+        choice_groups.append([f"{key}={value_item}" for value_item in values])
+
+    product_size = 1
+    for group in choice_groups:
+        product_size *= len(group)
+
+    if product_size > 512:
+        raise ValueError(
+            f"Refusing to submit {product_size} sweep jobs (>512). "
+            "Reduce sweep cardinality."
+        )
+
+    return [list(combo) for combo in itertools.product(*choice_groups)]
+
+
+def _set_override(overrides: list[str], key: str, value: str) -> list[str]:
+    updated = []
+    key_prefix = f"{key}="
+    for override in overrides:
+        normalized = override[1:] if override.startswith("+") else override
+        if normalized.startswith(key_prefix):
+            continue
+        updated.append(override)
+    updated.append(f"{key}={value}")
+    return updated
+
+
+def _submit_one_sbatch_job(
+    *,
+    module: str,
+    output_dir: Path,
+    job_overrides: list[str],
+    setup_commands: list[str],
+    merged_launcher_cfg: dict,
+    batch_script_path: Path,
+    job_name_suffix: str | None = None,
+) -> tuple[str, str]:
+    job_name = _derive_sbatch_job_name(module, output_dir, job_overrides)
+    if job_name_suffix:
+        suffix = _sanitize_name_part(job_name_suffix)
+        if suffix:
+            job_name = f"{job_name}_{suffix}"[:120]
+
+    command_text = _format_command(_run_module_command(module, job_overrides))
+    script_lines = [
+        "#!/bin/bash",
+        "set -euo pipefail",
+        f"cd {shlex.quote(str(Path.cwd().resolve()))}",
+    ]
+    script_lines.extend(str(line) for line in setup_commands)
+    script_lines.append(f"exec {command_text}")
+    batch_script_path.parent.mkdir(parents=True, exist_ok=True)
+    batch_script_path.write_text("\n".join(script_lines) + "\n", encoding="utf-8")
+    os.chmod(batch_script_path, 0o755)
+
+    sbatch_cmd = [
+        "sbatch",
+        "--parsable",
+        f"--job-name={job_name}",
+        f"--output={output_dir / 'slurm-%j.out'}",
+        f"--error={output_dir / 'slurm-%j.err'}",
+    ]
+
+    timeout_min = merged_launcher_cfg.get("timeout_min")
+    formatted_time = _format_sbatch_time(timeout_min)
+    if formatted_time is not None:
+        sbatch_cmd.append(f"--time={formatted_time}")
+
+    cpus_per_task = merged_launcher_cfg.get("cpus_per_task")
+    if cpus_per_task is not None:
+        sbatch_cmd.append(f"--cpus-per-task={cpus_per_task}")
+
+    gpus_per_node = merged_launcher_cfg.get("gpus_per_node")
+    if gpus_per_node is not None:
+        sbatch_cmd.append(f"--gpus-per-node={gpus_per_node}")
+
+    tasks_per_node = merged_launcher_cfg.get("tasks_per_node")
+    if tasks_per_node is not None:
+        sbatch_cmd.append(f"--ntasks-per-node={tasks_per_node}")
+
+    additional_parameters = merged_launcher_cfg.get("additional_parameters", {})
+    if isinstance(additional_parameters, dict):
+        for key, value in additional_parameters.items():
+            sbatch_cmd.append(f"--{key}={value}")
+
+    sbatch_cmd.append(str(batch_script_path))
+
+    result = subprocess.run(
+        sbatch_cmd,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    raw_job_id = result.stdout.strip().splitlines()[-1] if result.stdout else ""
+    job_id = raw_job_id.split(";", 1)[0]
+    return job_id, job_name
+
+
+def _format_sbatch_time(timeout_min: int | str | None) -> str | None:
+    if timeout_min is None:
+        return None
+    if isinstance(timeout_min, str):
+        if timeout_min.isdigit():
+            timeout_min = int(timeout_min)
+        else:
+            return timeout_min
+    if timeout_min <= 0:
+        return None
+    hours, minutes = divmod(timeout_min, 60)
+    return f"{hours:02d}:{minutes:02d}:00"
+
+
+def _submit_via_sbatch(
+    module: str,
+    overrides: list[str],
+    dry_run: bool = False,
+) -> None:
+    if dry_run:
+        print(f"DRY-RUN: {_format_command(_run_module_command(module, overrides))}")
+        return
+
+    sweep_dir = _extract_override_value(overrides, "hydra.sweep.dir")
+    run_dir_override = _extract_override_value(overrides, "hydra.run.dir")
+    output_dir_raw = sweep_dir or run_dir_override
+    output_dir = (
+        Path(output_dir_raw).expanduser().resolve()
+        if output_dir_raw is not None
+        else Path.cwd().resolve()
+    )
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    (
+        launcher_name,
+        launcher_override_cfg,
+        module_overrides,
+    ) = _extract_launcher_overrides(overrides)
+    launcher_cfg = _load_launcher_defaults(launcher_name)
+    merged_launcher_cfg = OmegaConf.to_container(
+        OmegaConf.merge(launcher_cfg, launcher_override_cfg),
+        resolve=True,
+    )
+    if not isinstance(merged_launcher_cfg, dict):
+        merged_launcher_cfg = {}
+
+    module_run_overrides = [
+        *(
+            override
+            for override in module_overrides
+            if not override.startswith("hydra.run.dir=")
+        ),
+        f"hydra.run.dir={output_dir}",
+    ]
+    module_run_overrides = _strip_hydra_sweep_controls(module_run_overrides)
+
+    setup_commands = merged_launcher_cfg.get("setup", [])
+    if not isinstance(setup_commands, list):
+        setup_commands = []
+
+    expanded_jobs = _expand_sweep_overrides(module_run_overrides)
+
+    if len(expanded_jobs) == 1:
+        batch_script_path = (output_dir / "submit_job.sh").resolve()
+        job_id, job_name = _submit_one_sbatch_job(
+            module=module,
+            output_dir=output_dir,
+            job_overrides=expanded_jobs[0],
+            setup_commands=setup_commands,
+            merged_launcher_cfg=merged_launcher_cfg,
+            batch_script_path=batch_script_path,
+        )
+        print(f"Submitted SLURM job {job_id} via {batch_script_path}")
+        print(f"SLURM job name: {job_name}")
+        print(f"SLURM logs: {output_dir / 'slurm-%j.out'}")
+        return
+
+    submitted: list[tuple[str, Path, str]] = []
+    for index, base_job_overrides in enumerate(expanded_jobs):
+        case_dir = (output_dir / f"sweep_{index:04d}").resolve()
+        case_overrides = _set_override(
+            base_job_overrides,
+            "hydra.run.dir",
+            str(case_dir),
+        )
+
+        wandb_name = _extract_override_value(case_overrides, "logging.wandb.name")
+        if wandb_name:
+            case_overrides = _set_override(
+                case_overrides,
+                "logging.wandb.name",
+                f"{wandb_name}_s{index:04d}",
+            )
+
+        batch_script_path = (
+            output_dir / ".sbatch" / f"submit_{index:04d}.sh"
+        ).resolve()
+        job_id, job_name = _submit_one_sbatch_job(
+            module=module,
+            output_dir=case_dir,
+            job_overrides=case_overrides,
+            setup_commands=setup_commands,
+            merged_launcher_cfg=merged_launcher_cfg,
+            batch_script_path=batch_script_path,
+        )
+        submitted.append((job_id, batch_script_path, job_name))
+
+    print(f"Submitted {len(submitted)} SLURM jobs for sweep")
+    preview = submitted[:5]
+    for job_id, script_path, job_name in preview:
+        print(f"  - {job_id}: {job_name} via {script_path}")
+    if len(submitted) > len(preview):
+        print(f"  ... and {len(submitted) - len(preview)} more")
+
+
+def _run_module(
+    module: str,
+    overrides: list[str],
+    dry_run: bool = False,
+    mode: str = "local",
+) -> None:
+    if mode == "slurm":
+        _submit_via_sbatch(module, overrides, dry_run=dry_run)
+        return
+
     cmd = [sys.executable, "-m", module, *overrides]
     if dry_run:
         print(f"DRY-RUN: {_format_command(cmd)}")
@@ -306,7 +696,12 @@ def _train_command(
         overrides=overrides,
     )
 
-    _run_module(TRAIN_MODULES[kind], command_overrides, dry_run=dry_run)
+    _run_module(
+        TRAIN_MODULES[kind],
+        command_overrides,
+        dry_run=dry_run,
+        mode=mode,
+    )
     return final_work_dir, resolved_run_name
 
 
@@ -346,7 +741,12 @@ def _eval_command(
         overrides=overrides,
     )
 
-    _run_module(EVAL_MODULE, command_overrides, dry_run=dry_run)
+    _run_module(
+        EVAL_MODULE,
+        command_overrides,
+        dry_run=dry_run,
+        mode=mode,
+    )
 
 
 def _train_eval_single_job_command(
@@ -391,7 +791,12 @@ def _train_eval_single_job_command(
             f"train_eval.eval_overrides={_hydra_string_list_literal(eval_overrides)}"
         )
 
-    _run_module(TRAIN_EVAL_MODULE, command_overrides, dry_run=dry_run)
+    _run_module(
+        TRAIN_EVAL_MODULE,
+        command_overrides,
+        dry_run=dry_run,
+        mode=mode,
+    )
     return final_work_dir, resolved_run_name
 
 

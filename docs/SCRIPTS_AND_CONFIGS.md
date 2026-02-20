@@ -174,7 +174,8 @@ uv run autocast train-eval \
     --dataset reaction_diffusion \
     --run-label rd
 ```
-This runs train and eval inside a single Hydra/Submitit SLURM job.
+This submits one SLURM job via `sbatch`; the CLI exits immediately after
+submission.
 
 ### Config-to-CLI mapping (to avoid override confusion)
 
@@ -193,7 +194,7 @@ This runs train and eval inside a single Hydra/Submitit SLURM job.
     - If the same key appears in both, eval uses the eval value.
 
 File permissions / group-write:
-- Submitit path reads config key `umask` (default `0002` in
+- Training/eval scripts read config key `umask` (default `0002` in
     `src/autocast/configs/encoder_processor_decoder.yaml`).
 
 To avoid long CLI override lists, put experiment defaults in a preset config

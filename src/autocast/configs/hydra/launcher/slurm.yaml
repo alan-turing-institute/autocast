@@ -1,7 +1,4 @@
 # @package hydra.launcher
-defaults:
-  - submitit_slurm
-
 timeout_min: 1440
 cpus_per_task: 16
 gpus_per_node: 1

@@ -84,7 +84,7 @@ uv run autocast epd \
 	--run-label my_label \
 	trainer.max_epochs=5
 
-# SLURM via Hydra submitit launcher
+# SLURM submit-and-exit via sbatch
 uv run autocast epd \
 	--mode slurm \
 	--dataset reaction_diffusion \
@@ -92,8 +92,8 @@ uv run autocast epd \
 	trainer.max_epochs=5
 ```
 
-When `--mode slurm`, jobs submit through Hydra's SLURM launcher and write
-outputs under `outputs/<run_label>/<run_id>` (no extra `run/` layer).
+When `--mode slurm`, `autocast` writes an sbatch script, submits it, and exits
+immediately. Outputs are written under `outputs/<run_label>/<run_id>`.
 
 Resume training from a checkpoint:
 ```bash
@@ -114,7 +114,7 @@ For `train-eval`, evaluation starts only after training has completed successful
 (including in `--mode slurm`).
 
 Execution modes for `train-eval`:
-- one Hydra/Submitit SLURM job runs train then eval.
+- one SLURM job runs train then eval.
 
 Keep private experiment presets in `local_hydra/local_experiment/` and select
 them with `local_experiment=<name>`. YAML files in that folder are ignored by
@@ -134,7 +134,7 @@ Override mapping quick reference:
 - Eval-only overrides go in `--eval-overrides ...`.
 
 Permissions quick reference:
-- Submitit path uses config key `umask` (default `0002` in `encoder_processor_decoder`).
+- Training/eval scripts use config key `umask` (default `0002` in `encoder_processor_decoder`).
 
 Use `--dry-run` to print resolved commands/scripts without executing.
 
