@@ -1,0 +1,38 @@
+# @package _global_
+defaults:
+  - override /datamodule: advection_diffusion_multichannel_64_64
+  - override /encoder@model.encoder: permute_concat
+  - override /decoder@model.decoder: channels_last
+  - override /processor@model.processor: fno
+  - override /input_noise_injector@model.input_noise_injector: concat
+  - _self_
+
+experiment_name: epd_crps_fno_128_layers2
+
+datamodule:
+  use_normalization: false
+  batch_size: 16
+
+logging:
+  wandb:
+    enabled: true
+
+optimizer:
+  learning_rate: 0.0002
+
+model:
+  train_in_latent_space: false
+  n_members: 10
+  encoder:
+    with_constants: true
+  processor:
+    hidden_channels: 128
+    n_layers: 2
+  loss_func:
+    _target_: autocast.losses.ensemble.CRPSLoss
+  train_metrics:
+    crps:
+      _target_: autocast.metrics.ensemble.CRPS
+
+trainer:
+  max_epochs: 220
