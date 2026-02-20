@@ -159,7 +159,6 @@ Multi-GPU is supported by passing trainer/Hydra overrides, e.g.:
 uv run autocast epd --mode slurm --dataset reaction_diffusion \
 	trainer.devices=4 trainer.strategy=ddp hydra.launcher.gpus_per_node=4
 ```
-```
 
 ### Train processor
 
@@ -241,9 +240,18 @@ To run a single job from this repository, use `autocast` directly, for example:
 
 `uv run autocast epd --mode slurm --dataset reaction_diffusion trainer.max_epochs=10`
 
-This will train and evaluate the model using the settings in the corresponding config (found in the configs folder). Outputs from both train and eval will be written out to an outputs folder with the following naming convention: 
+This submits one training job and exits immediately.
 
-`outputs/{job_name}/{$date +%Y%m%d_%H%M%S}`. 
+For train+eval in one SLURM job, use:
+
+`uv run autocast train-eval --mode slurm --dataset reaction_diffusion`
+
+Outputs are written under:
+
+`outputs/<run_label>/<run_id>`
+
+where `run_label` defaults to the current date (or `--run-label` / `--date`) and
+`run_id` defaults to the auto-generated run name (or `--run-name`).
 
 ### Multiple Jobs
 
