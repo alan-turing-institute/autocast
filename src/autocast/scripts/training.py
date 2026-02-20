@@ -119,6 +119,7 @@ def run_training(
     skip_test: bool = False,
     output_checkpoint_path: Path | str | None = None,
     job_type: str = "train",
+    run_name: str | None = None,
 ):
     """Standardized training loop."""
     # Ensure work_dir is a Path
@@ -126,14 +127,15 @@ def run_training(
 
     # Setup logger
     logging_cfg = config.get("logging")
-    logging_cfg = (
+    logging_cfg_resolved = (
         OmegaConf.to_container(logging_cfg, resolve=True)
         if logging_cfg is not None
         else {}
     )
     wandb_logger, _watch_cfg = create_wandb_logger(
-        logging_cfg,  # type: ignore TODO: fix
+        logging_cfg_resolved,  # type: ignore TODO: fix
         experiment_name=config.get("experiment_name"),
+        run_name=run_name,
         job_type=job_type,
         work_dir=work_dir,
         config={"hydra": OmegaConf.to_container(config, resolve=True)},
@@ -177,8 +179,19 @@ def run_training(
     if output_cfg.get("save_config"):
         save_resolved_config(config, work_dir)
 
+    resume_checkpoint = config.get("resume_from_checkpoint") or output_cfg.get(
+        "resume_from_checkpoint"
+    )
+
     log.info("Starting training...")
-    trainer.fit(model=model, datamodule=datamodule)
+    if resume_checkpoint is not None:
+        trainer.fit(
+            model=model,
+            datamodule=datamodule,
+            ckpt_path=str(Path(resume_checkpoint).expanduser().resolve()),
+        )
+    else:
+        trainer.fit(model=model, datamodule=datamodule)
 
     # Run testing if not skipped
     if not skip_test:
@@ -251,7 +264,11 @@ def _save_reconstructions(
             break
 
 
-def train_autoencoder(config: DictConfig, work_dir: Path) -> Path:
+def train_autoencoder(
+    config: DictConfig,
+    work_dir: Path,
+    run_name: str | None = None,
+) -> Path:
     """Train the autoencoder defined in `cfg` and return the checkpoint path."""
     log.info("Starting autoencoder experiment: %s", config.get("experiment_name"))
     L.seed_everything(config.get("seed", 42), workers=True)
@@ -259,14 +276,15 @@ def train_autoencoder(config: DictConfig, work_dir: Path) -> Path:
     resolved_cfg = OmegaConf.to_container(config, resolve=True)
 
     logging_cfg = config.get("logging")
-    logging_cfg = (
+    logging_cfg_resolved = (
         OmegaConf.to_container(logging_cfg, resolve=True)
         if logging_cfg is not None
         else {}
     )
     wandb_logger, watch_cfg = create_wandb_logger(
-        logging_cfg,  # type: ignore TODO: fix
+        logging_cfg_resolved,  # type: ignore TODO: fix
         experiment_name=config.get("experiment_name"),
+        run_name=run_name,
         job_type="train-autoencoder",
         work_dir=work_dir,
         config={"hydra": resolved_cfg},
@@ -288,7 +306,17 @@ def train_autoencoder(config: DictConfig, work_dir: Path) -> Path:
             config, work_dir, filename="resolved_autoencoder_config.yaml"
         )
 
-    trainer.fit(model=model, datamodule=datamodule)
+    resume_checkpoint = config.get("resume_from_checkpoint") or output_cfg.get(
+        "resume_from_checkpoint"
+    )
+    if resume_checkpoint is not None:
+        trainer.fit(
+            model=model,
+            datamodule=datamodule,
+            ckpt_path=str(Path(resume_checkpoint).expanduser().resolve()),
+        )
+    else:
+        trainer.fit(model=model, datamodule=datamodule)
 
     checkpoint_name = output_cfg.get("checkpoint_name", "autoencoder.ckpt")
     checkpoint_target = Path(checkpoint_name)

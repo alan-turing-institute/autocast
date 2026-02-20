@@ -68,9 +68,96 @@ uv run train_autoencoder \
 	logging.wandb.enabled=true
 ```
 
-Or alternatively with the included bash script:
+Or alternatively with the unified workflow CLI:
 ```bash
-./scripts/ae.sh rd 00 reaction_diffusion
+uv run autocast ae \
+	--dataset reaction_diffusion \
+	--run-label rd
+```
+
+Unified workflow CLI supports both local and SLURM launch modes:
+
+```bash
+# Local (default)
+uv run autocast epd \
+	--dataset reaction_diffusion \
+	--run-label my_label \
+	trainer.max_epochs=5
+
+# SLURM submit-and-exit via sbatch
+uv run autocast epd \
+	--mode slurm \
+	--dataset reaction_diffusion \
+	--run-label my_label \
+	trainer.max_epochs=5
+```
+
+When `--mode slurm`, `autocast` writes an sbatch script, submits it, and exits
+immediately. Outputs are written under `outputs/<run_label>/<run_id>`.
+
+Resume training from a checkpoint:
+```bash
+uv run autocast epd \
+	--dataset reaction_diffusion \
+	--workdir outputs/rd/00 \
+	--resume-from outputs/rd/00/encoder_processor_decoder.ckpt
+```
+
+Train + evaluate in one command:
+```bash
+uv run autocast train-eval \
+	--dataset reaction_diffusion \
+	--run-label rd
+```
+
+For `train-eval`, evaluation starts only after training has completed successfully
+(including in `--mode slurm`).
+
+Execution modes for `train-eval`:
+- one SLURM job runs train then eval.
+
+Keep private experiment presets in `local_hydra/local_experiment/` and select
+them with `local_experiment=<name>`. YAML files in that folder are ignored by
+git by default.
+
+To load configs from a separate directory (including packaged installs), set:
+
+```bash
+export AUTOCAST_CONFIG_PATH=/absolute/path/to/configs
+```
+
+Override mapping quick reference:
+- `configs/hydra/launcher/slurm.yaml` key `X` maps to CLI `hydra.launcher.X=...`
+- Use `hydra/launcher=slurm_baskerville` for Baskerville module/setup defaults
+	from `local_hydra/hydra/launcher/slurm_baskerville.yaml`.
+- In `autocast train-eval`, positional overrides are train-only.
+- Eval-only overrides go in `--eval-overrides ...`.
+
+Permissions quick reference:
+- Training/eval scripts use config key `umask` (default `0002` in `encoder_processor_decoder`).
+
+Use `--dry-run` to print resolved commands/scripts without executing.
+
+Equivalent CLI commands for removed `slurm_scripts/*.sh` examples:
+```bash
+bash scripts/cli_equivalents.sh
+```
+
+Launch many prewritten runs from a manifest file:
+```bash
+bash scripts/launch_from_manifest.sh run_manifests/example_runs.txt
+```
+
+Date handling is automatic: if `--date` is omitted, current date is used.
+Run naming is also automatic: if `--run-name` is omitted, `autocast` generates
+a legacy-style run id (dataset/model/hash/uuid based) and uses it for both
+the run folder and default `logging.wandb.name`.
+Pass `--run-label` (or legacy alias `--date`) only to override the top-level folder label.
+
+Multi-GPU is supported by passing trainer/Hydra overrides, e.g.:
+```bash
+uv run autocast epd --mode slurm --dataset reaction_diffusion \
+	trainer.devices=4 trainer.strategy=ddp hydra.launcher.gpus_per_node=4
 ```
 
 ### Train processor
@@ -86,9 +173,11 @@ uv run train_encoder_processor_decoder \
 	'autoencoder_checkpoint=outputs/rd/00/autoencoder.ckpt'
 ```
 
-Or alternatively with the included bash script:
+Or alternatively with the unified workflow CLI:
 ```bash
-./scripts/epd.sh rd 00 reaction_diffusion
+uv run autocast epd \
+	--dataset reaction_diffusion \
+	--run-label rd
 ```
 
 ### Evaluation
@@ -102,15 +191,17 @@ uv run evaluate_encoder_processor_decoder \
 	datamodule.use_simulator=false
 ```
 
-Or alternatively with the included bash script:
+Or alternatively with the unified workflow CLI:
 ```bash
-./scripts/eval.sh rd 00 reaction_diffusion
+uv run autocast eval \
+	--dataset reaction_diffusion \
+	--workdir outputs/rd/00
 ```
 
 ## Experiment Tracking with Weights & Biases
 
 AutoCast now ships with an optional [Weights & Biases](https://wandb.ai/) integration that is
-fully driven by the Hydra config under `configs/logging/wandb.yaml`.
+fully driven by the Hydra config under `src/autocast/configs/logging/wandb.yaml`.
 
 - Enable logging for CLI workflows by passing Hydra config overrides as positional arguments:
 
@@ -130,46 +221,42 @@ be used without a W&B account.
 
 ## Running on HPC 
 
-In the [slurm_templates](/slurm_templates/) folders, template slurm scripts can be found for the following use cases: 
+### Legacy SLURM Scripts
 
-- train_and_eval_autoencoder.sh : Training and evaluation of the autoencoder 
-- train_and_eval_encoder-processor-decoder.sh : Training and evaluation of the encoder-processor-decoder approach
-- encoder-processor-decoder-parameter_sweep : Same as above but runs a parameter sweep 
+Legacy scripts under `slurm_scripts/` have been retired to reduce duplication and
+maintenance overhead. Use the unified `autocast` CLI workflows instead:
 
-We advise you copy these scripts into a folder called `slurm_scripts` (which is in the gitignore) and edit as you see fit. 
+```bash
+# train->eval in one SLURM job
+uv run autocast train-eval --mode slurm --dataset reaction_diffusion
+
+# run many prewritten jobs from a manifest
+bash scripts/launch_from_manifest.sh run_manifests/example_runs.txt
+```
 
 ### Single Job 
 
-To run, simply navigate to the top level of this repository, and run: 
+To run a single job from this repository, use `autocast` directly, for example:
 
-`sbatch scripts/train_and_eval_encoder-processor-decoder.sh` or 
-`sbatch scripts/train_and_eval_autoencoder.sh` depending on which model you would like to run.
+`uv run autocast epd --mode slurm --dataset reaction_diffusion trainer.max_epochs=10`
 
-This will train and evaluate the model using the settings in the corresponding config (found in the configs folder). Outputs from both train and eval will be written out to an outputs folder with the following naming convention: 
+This submits one training job and exits immediately.
 
-`outputs/{job_name}/{$date +%Y%m%d_%H%M%S}`. 
+For train+eval in one SLURM job, use:
+
+`uv run autocast train-eval --mode slurm --dataset reaction_diffusion`
+
+Outputs are written under:
+
+`outputs/<run_label>/<run_id>`
+
+where `run_label` defaults to the current date (or `--run-label` / `--date`) and
+`run_id` defaults to the auto-generated run name (or `--run-name`).
 
 ### Multiple Jobs
 
-`scripts/encoder-processor-decoder-parameter_sweep.sh` is an example parameter sweep. 
-
-It uses slurm arrays and hydra override functionality to sweep through combinations of parameters. The resulting output structure looks like this: 
-
-- outputs	
-	- {job_name}
-		- job-{job_id} # Unique for each sweep run 
-			- parameter_lookup.csv # csv file mapping task id to parameter values. 
-			- task-0 # 0 is the slurm array task id. It is unique for each set of parameters
-			- task-1
-			- etc. 
-
-A checklist of things to change in the example script:
-
-- `--array=0-8` : This is the number of parallel jobs to run. This should be equal to the number of parameter combinations you want to run. 
-- `JOB_NAME="encoder_processor_decoder_sweep"` : Name of the Job. This is the top level directory. 
-- The whole Define Parameter Grid section. 
-- The columns to be writte to the parameter csv file 
-- The flags in the python script to overright the hydra config. e.g. `trainer.max_epochs=${MAX_EPOCH}`
+Use Hydra multi-run directly for sweeps (or the manifest launcher), e.g.
+`uv run autocast epd --mode slurm --dataset reaction_diffusion trainer.max_epochs=5,10`.
 
 ## Contributors ✨
 

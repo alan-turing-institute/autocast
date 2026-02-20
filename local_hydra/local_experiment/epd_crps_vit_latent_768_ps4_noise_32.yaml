@@ -1,0 +1,37 @@
+# @package _global_
+defaults:
+  - override /datamodule: advection_diffusion_multichannel_64_64
+  - override /encoder@model.encoder: dc_deep_256_v2
+  - override /decoder@model.decoder: dc_deep_256_v2
+  - override /processor@model.processor: vit_latent
+  - _self_
+
+experiment_name: epd_crps_vit_latent_768_ps4_noise_32
+
+datamodule:
+  use_normalization: false
+  batch_size: 16
+
+logging:
+  wandb:
+    enabled: true
+
+optimizer:
+  learning_rate: 0.0002
+
+model:
+  train_in_latent_space: false
+  n_members: 10
+  processor:
+    hidden_dim: 768
+    n_noise_channels: 32
+    spatial_resolution: auto
+    patch_size: 4
+  loss_func:
+    _target_: autocast.losses.ensemble.CRPSLoss
+  train_metrics:
+    crps:
+      _target_: autocast.metrics.ensemble.CRPS
+
+trainer:
+  max_epochs: 70

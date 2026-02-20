@@ -1,0 +1,27 @@
+defaults:
+  - datamodule: miniwell
+  - optional simulator: null
+  - optimizer: adamw
+  - model: processor
+  - trainer: default
+  - logging: wandb
+  - optional eval: processor
+  - _self_
+
+seed: 42
+experiment_name: processor
+
+output:
+  checkpoint_name: processor.ckpt
+  checkpoint_path: null  # Override checkpoint path (defaults to work_dir/checkpoint_name)
+  save_config: true
+  skip_test: false  # Skip running trainer.test() after training
+
+
+hydra:
+  searchpath:
+    - file://${oc.env:PWD}/local_hydra
+  run:
+    dir: outputs/${experiment_name}/${now:%Y-%m-%d_%H-%M-%S}
+  job:
+    chdir: true
