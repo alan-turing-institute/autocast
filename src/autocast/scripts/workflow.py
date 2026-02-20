@@ -236,6 +236,37 @@ def _contains_override(overrides: list[str], key_prefix: str) -> bool:
     return any(override.startswith(key_prefix) for override in overrides)
 
 
+def _build_effective_eval_overrides(
+    train_overrides: list[str], eval_overrides: list[str]
+) -> list[str]:
+    """Forward model/datamodule-related train overrides to eval.
+
+    This keeps eval model construction aligned with training architecture while
+    allowing explicit eval overrides to take precedence.
+    """
+    train_only_prefixes = (
+        "trainer.",
+        "+trainer.",
+        "optimizer.",
+        "+optimizer.",
+        "logging.",
+        "+logging.",
+        "hydra.",
+        "+hydra.",
+        "resume_from_checkpoint=",
+        "+resume_from_checkpoint=",
+        "eval.",
+        "+eval.",
+    )
+
+    forwarded = [
+        override
+        for override in train_overrides
+        if not override.startswith(train_only_prefixes)
+    ]
+    return [*forwarded, *eval_overrides]
+
+
 def _build_train_overrides(
     *,
     kind: str,
@@ -696,7 +727,9 @@ def main() -> None:
 
     if args.command == "train-eval":
         train_overrides = [*args.train_override, *args.overrides]
-        eval_overrides = [*args.eval_overrides]
+        eval_overrides = _build_effective_eval_overrides(
+            train_overrides, [*args.eval_overrides]
+        )
 
         if args.detach:
             if args.mode != "slurm":
