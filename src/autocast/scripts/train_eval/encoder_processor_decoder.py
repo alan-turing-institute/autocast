@@ -1,29 +1,17 @@
 """Train-then-evaluate encoder-processor-decoder in a single Hydra job."""
 
 import logging
-import os
 from pathlib import Path
 from typing import cast
 
 import hydra
-import lightning as L
 from omegaconf import DictConfig, OmegaConf, open_dict
 
 from autocast.scripts.eval.encoder_processor_decoder import run_evaluation
-from autocast.scripts.setup import setup_datamodule, setup_epd_model
-from autocast.scripts.training import run_training
+from autocast.scripts.train.encoder_processor_decoder import run_epd_training
 from autocast.scripts.utils import get_default_config_path
 
 log = logging.getLogger(__name__)
-
-
-def _apply_umask(cfg: DictConfig) -> None:
-    umask_value = cfg.get("umask")
-    if umask_value is None:
-        return
-    parsed = int(str(umask_value), 8)
-    os.umask(parsed)
-    log.info("Applied process umask %s", umask_value)
 
 
 def _resolve_train_checkpoint(cfg: DictConfig, work_dir: Path) -> Path:
@@ -63,28 +51,9 @@ def _apply_eval_overrides(cfg: DictConfig) -> DictConfig:
 def main(cfg: DictConfig) -> None:
     """Hydra entrypoint for single-job train→eval flow."""
     logging.basicConfig(level=logging.INFO)
-    _apply_umask(cfg)
 
     work_dir = Path.cwd()
-
-    datamodule, cfg, stats = setup_datamodule(cfg)
-    L.seed_everything(cfg.get("seed", 42), workers=True)
-
-    model = setup_epd_model(cfg, stats, datamodule=datamodule)
-
-    output_cfg = cfg.get("output", {})
-    skip_test = output_cfg.get("skip_test", False)
-    output_checkpoint = output_cfg.get("checkpoint_path")
-
-    run_training(
-        cfg,
-        model,
-        datamodule,
-        work_dir,
-        skip_test=skip_test,
-        output_checkpoint_path=output_checkpoint,
-        job_type="train-encoder-processor-decoder",
-    )
+    cfg = run_epd_training(cfg, work_dir=work_dir)
 
     checkpoint_path = _resolve_train_checkpoint(cfg, work_dir)
 

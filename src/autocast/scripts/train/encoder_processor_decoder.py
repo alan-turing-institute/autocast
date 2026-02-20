@@ -15,39 +15,31 @@ from autocast.scripts.utils import get_default_config_path
 log = logging.getLogger(__name__)
 
 
-@hydra.main(
-    version_base=None,
-    config_path=get_default_config_path(),
-    config_name="encoder_processor_decoder",
-)
-def main(cfg: DictConfig) -> None:
-    """CLI entrypoint for training the encoder-processor-decoder."""
-    # Setup logging
-    logging.basicConfig(level=logging.INFO)
-
+def _apply_umask(cfg: DictConfig) -> None:
     umask_value = cfg.get("umask")
     if umask_value is not None:
         os.umask(int(str(umask_value), 8))
         log.info("Applied process umask %s", umask_value)
 
-    # Work directory is managed by Hydra
-    work_dir = Path.cwd()
 
-    # Setup datamodule and resolve config
+def run_epd_training(
+    cfg: DictConfig,
+    *,
+    work_dir: Path | None = None,
+    job_type: str = "train-encoder-processor-decoder",
+) -> DictConfig:
+    """Run EPD training from a composed config and return resolved config."""
+    _apply_umask(cfg)
+    work_dir = work_dir or Path.cwd()
+
     datamodule, cfg, stats = setup_datamodule(cfg)
-
-    # Seed
     L.seed_everything(cfg.get("seed", 42), workers=True)
-
-    # Setup Model (includes AE loading, processor creation, ensemble logic)
     model = setup_epd_model(cfg, stats, datamodule=datamodule)
 
-    # Get output config
     output_cfg = cfg.get("output", {})
     skip_test = output_cfg.get("skip_test", False)
     output_checkpoint = output_cfg.get("checkpoint_path")
 
-    # Run Training
     run_training(
         cfg,
         model,
@@ -55,8 +47,21 @@ def main(cfg: DictConfig) -> None:
         work_dir,
         skip_test=skip_test,
         output_checkpoint_path=output_checkpoint,
-        job_type="train-encoder-processor-decoder",
+        job_type=job_type,
     )
+
+    return cfg
+
+
+@hydra.main(
+    version_base=None,
+    config_path=get_default_config_path(),
+    config_name="encoder_processor_decoder",
+)
+def main(cfg: DictConfig) -> None:
+    """CLI entrypoint for training the encoder-processor-decoder."""
+    logging.basicConfig(level=logging.INFO)
+    run_epd_training(cfg, work_dir=Path.cwd())
 
 
 if __name__ == "__main__":
