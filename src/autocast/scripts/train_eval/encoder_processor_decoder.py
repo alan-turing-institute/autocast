@@ -36,7 +36,25 @@ def _apply_eval_overrides(cfg: DictConfig) -> DictConfig:
     eval_overrides = list(train_eval_cfg.get("eval_overrides", []))
     if not eval_overrides:
         return cast(DictConfig, cfg)
-    merged = OmegaConf.merge(cfg, OmegaConf.from_dotlist(eval_overrides))
+
+    merged = OmegaConf.merge(cfg)
+    for override in eval_overrides:
+        force_add = override.startswith("+")
+        normalized = override[1:] if force_add else override
+        if "=" not in normalized:
+            msg = f"Invalid eval override (expected key=value): {override}"
+            raise ValueError(msg)
+
+        key, raw_value = normalized.split("=", 1)
+        parsed = OmegaConf.from_dotlist([f"v={raw_value}"])
+        OmegaConf.update(
+            merged,
+            key,
+            parsed.v,
+            merge=True,
+            force_add=force_add,
+        )
+
     if not isinstance(merged, DictConfig):
         msg = "Expected DictConfig after applying eval overrides"
         raise TypeError(msg)

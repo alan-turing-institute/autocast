@@ -718,7 +718,9 @@ def _extract_override_value(overrides: list[str], key: str) -> str | None:
 
 
 def _contains_override(overrides: list[str], key_prefix: str) -> bool:
-    return any(override.startswith(key_prefix) for override in overrides)
+    return any(
+        _normalized_override(override).startswith(key_prefix) for override in overrides
+    )
 
 
 def _build_effective_eval_overrides(
@@ -1062,7 +1064,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         help=(
             "Hydra overrides for the eval step passed in one group, e.g. "
-            "--eval-overrides eval.batch_indices=[0,1] +model.n_members=10"
+            "--eval-overrides eval.batch_indices=[0,1] eval.n_members=10"
         ),
     )
     train_eval_parser.add_argument(

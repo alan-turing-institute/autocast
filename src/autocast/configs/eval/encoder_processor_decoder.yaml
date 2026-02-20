@@ -12,6 +12,9 @@ metrics:
   - vrmse
 
 max_rollout_steps: 25
+batch_size: 1
+max_test_batches: null
+max_rollout_batches: null
 
 # Coverage requires model.n_members > 1 (ensemble mode)
 n_members: 10

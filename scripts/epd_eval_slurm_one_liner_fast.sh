@@ -17,5 +17,10 @@ uv run autocast train-eval --mode slurm \
     hydra.launcher.timeout_min=30 \
     autoencoder_checkpoint=/projects/u5gf/ai4physics/outputs/autoencoders/adm_64_1000.ckpt \
     --eval-overrides \
-    +model.n_members=10
+    eval.n_members=10 \
+    datamodule.batch_size=8 \
+    eval.max_test_batches=1 \
+    eval.max_rollout_batches=1 \
+    eval.batch_indices=[0]
+
 

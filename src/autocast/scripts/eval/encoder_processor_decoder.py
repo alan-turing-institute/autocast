@@ -67,6 +67,19 @@ def _resolve_video_dir(eval_cfg: DictConfig, work_dir: Path) -> Path:
     return (work_dir / "videos").resolve()
 
 
+def _limit_batches(dataloader, max_batches: int | None):
+    if max_batches is None or max_batches <= 0:
+        return dataloader
+
+    def _generator():
+        for index, batch in enumerate(dataloader):
+            if index >= max_batches:
+                break
+            yield batch
+
+    return _generator()
+
+
 def _build_metrics(metric_names: Sequence[str]) -> dict[str, BaseMetric]:
     names = metric_names or ("mse", "rmse", "vrmse")
     metrics = {}
@@ -581,6 +594,8 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     # Get eval config
     eval_cfg = cfg.get("eval", {})
     eval_batch_size: int = eval_cfg.get("batch_size", 1)
+    max_test_batches = eval_cfg.get("max_test_batches")
+    max_rollout_batches = eval_cfg.get("max_rollout_batches", max_test_batches)
 
     # Validate that checkpoint is provided
     checkpoint_path = eval_cfg.get("checkpoint")
@@ -647,7 +662,10 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
 
     model.to(fabric.device)
     model.eval()
-    test_loader = fabric.setup_dataloaders(datamodule.test_dataloader())
+    test_loader = _limit_batches(
+        fabric.setup_dataloaders(datamodule.test_dataloader()),
+        max_test_batches,
+    )
 
     # Evaluation
 
@@ -721,11 +739,15 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
         rollout_stride = data_config.get("rollout_stride") or stats["n_steps_output"]
 
         if batch_indices:
-            _render_rollouts(
-                model,
+            rollout_loader = _limit_batches(
                 fabric.setup_dataloaders(
                     datamodule.rollout_test_dataloader(batch_size=eval_batch_size)
                 ),
+                max_rollout_batches,
+            )
+            _render_rollouts(
+                model,
+                rollout_loader,
                 batch_indices,
                 video_dir,
                 eval_cfg.get("video_sample_index", 0),
@@ -788,11 +810,16 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
 
             rollout_eval_start_s = perf_counter()
 
+            rollout_metrics_loader = _limit_batches(
+                fabric.setup_dataloaders(
+                    datamodule.rollout_test_dataloader(batch_size=eval_batch_size)
+                ),
+                max_rollout_batches,
+            )
+
             rollout_metrics_per_window, _, rollout_per_batch_rows = (
                 compute_metrics_from_dataloader(
-                    dataloader=fabric.setup_dataloaders(
-                        datamodule.rollout_test_dataloader(batch_size=eval_batch_size)
-                    ),
+                    dataloader=rollout_metrics_loader,
                     metric_fns=rollout_metric_fns,
                     predict_fn=timed_rollout_predict,
                     windows=windows,
