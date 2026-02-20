@@ -1,14 +1,14 @@
 defaults:
   - datamodule: advection_diffusion_multichannel
   - optional simulator: null
-  - optional experiment: null
-  - optional local_experiment: null
   - optimizer: adamw
   - model: encoder_processor_decoder
   - trainer: default
   - logging: wandb
   - optional eval: encoder_processor_decoder
   - _self_
+  - optional experiment: null
+  - optional local_experiment: null
 
 seed: 42
 experiment_name: epd

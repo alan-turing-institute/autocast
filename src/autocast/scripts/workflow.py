@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import itertools
 import os
 import re
 import shlex
+import stat
 import subprocess
 import sys
 import uuid
@@ -225,6 +227,47 @@ def _derive_sbatch_job_name(module: str, output_dir: Path, overrides: list[str])
     return sanitized[:120]
 
 
+def _resolve_umask_from_overrides(
+    overrides: list[str],
+    default: str = "0002",
+) -> int:
+    umask_value = _extract_override_value(overrides, "umask") or default
+    normalized = str(umask_value).strip().strip('"').strip("'")
+    try:
+        return int(normalized, 8)
+    except ValueError:
+        return int(default, 8)
+
+
+def _ensure_group_writable_parents(target_dir: Path) -> None:
+    """Best-effort ensure g+w on target dir and its parents.
+
+    Walks from the nearest existing ancestor down to target_dir, adding group
+    write and setgid bits where permissions allow. Permission errors are ignored
+    so this can run safely on shared filesystem roots.
+    """
+    resolved = target_dir.resolve()
+    for directory in [resolved, *resolved.parents]:
+        if not directory.exists() or not directory.is_dir():
+            continue
+        try:
+            mode = stat.S_IMODE(directory.stat().st_mode)
+            desired_mode = mode | stat.S_IWGRP | stat.S_ISGID
+            if desired_mode != mode:
+                os.chmod(directory, desired_mode)
+        except PermissionError:
+            continue
+
+
+@contextlib.contextmanager
+def _temporary_umask(umask_value: int):
+    previous = os.umask(umask_value)
+    try:
+        yield
+    finally:
+        os.umask(previous)
+
+
 def _strip_hydra_sweep_controls(overrides: list[str]) -> list[str]:
     filtered: list[str] = []
     for override in overrides:
@@ -346,6 +389,7 @@ def _submit_one_sbatch_job(
     merged_launcher_cfg: dict,
     batch_script_path: Path,
     job_name_suffix: str | None = None,
+    umask_value: int,
 ) -> tuple[str, str]:
     job_name = _derive_sbatch_job_name(module, output_dir, job_overrides)
     if job_name_suffix:
@@ -361,9 +405,13 @@ def _submit_one_sbatch_job(
     ]
     script_lines.extend(str(line) for line in setup_commands)
     script_lines.append(f"exec {command_text}")
-    batch_script_path.parent.mkdir(parents=True, exist_ok=True)
-    batch_script_path.write_text("\n".join(script_lines) + "\n", encoding="utf-8")
-    os.chmod(batch_script_path, 0o755)
+    with _temporary_umask(umask_value):
+        output_dir.mkdir(parents=True, exist_ok=True)
+        batch_script_path.parent.mkdir(parents=True, exist_ok=True)
+        batch_script_path.write_text("\n".join(script_lines) + "\n", encoding="utf-8")
+
+    script_mode = 0o777 & (~umask_value)
+    os.chmod(batch_script_path, script_mode)
 
     sbatch_cmd = [
         "sbatch",
@@ -431,6 +479,8 @@ def _submit_via_sbatch(
         print(f"DRY-RUN: {_format_command(_run_module_command(module, overrides))}")
         return
 
+    umask_value = _resolve_umask_from_overrides(overrides)
+
     sweep_dir = _extract_override_value(overrides, "hydra.sweep.dir")
     run_dir_override = _extract_override_value(overrides, "hydra.run.dir")
     output_dir_raw = sweep_dir or run_dir_override
@@ -439,7 +489,9 @@ def _submit_via_sbatch(
         if output_dir_raw is not None
         else Path.cwd().resolve()
     )
-    output_dir.mkdir(parents=True, exist_ok=True)
+    with _temporary_umask(umask_value):
+        output_dir.mkdir(parents=True, exist_ok=True)
+    _ensure_group_writable_parents(output_dir)
 
     (
         launcher_name,
@@ -479,6 +531,7 @@ def _submit_via_sbatch(
             setup_commands=setup_commands,
             merged_launcher_cfg=merged_launcher_cfg,
             batch_script_path=batch_script_path,
+            umask_value=umask_value,
         )
         print(f"Submitted SLURM job {job_id} via {batch_script_path}")
         print(f"SLURM job name: {job_name}")
@@ -488,6 +541,7 @@ def _submit_via_sbatch(
     submitted: list[tuple[str, Path, str]] = []
     for index, base_job_overrides in enumerate(expanded_jobs):
         case_dir = (output_dir / f"sweep_{index:04d}").resolve()
+        _ensure_group_writable_parents(case_dir.parent)
         case_overrides = _set_override(
             base_job_overrides,
             "hydra.run.dir",
@@ -512,6 +566,7 @@ def _submit_via_sbatch(
             setup_commands=setup_commands,
             merged_launcher_cfg=merged_launcher_cfg,
             batch_script_path=batch_script_path,
+            umask_value=umask_value,
         )
         submitted.append((job_id, batch_script_path, job_name))
 
