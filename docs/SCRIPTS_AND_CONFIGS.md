@@ -179,6 +179,7 @@ This runs train and eval inside a single Hydra/Submitit SLURM job.
 ### Config-to-CLI mapping (to avoid override confusion)
 
 - Hydra launcher config path: `src/autocast/configs/hydra/launcher/slurm.yaml`
+- Cluster preset available: `hydra/launcher/slurm_baskerville.yaml` (repo-level)
 - Mapping rule: config key `X` maps to CLI override `hydra.launcher.X=<value>`
     - `timeout_min` -> `hydra.launcher.timeout_min=...`
     - `cpus_per_task` -> `hydra.launcher.cpus_per_task=...`
@@ -207,6 +208,13 @@ uv run autocast train-eval --mode slurm \
     autoencoder_checkpoint=/path/to/autoencoder.ckpt \
     hydra.launcher.timeout_min=30 \
     --eval-overrides +model.n_members=10
+```
+
+To use Baskerville module setup + scheduler defaults:
+
+```bash
+uv run autocast epd --mode slurm --dataset reaction_diffusion \
+    hydra/launcher=slurm_baskerville
 ```
 
 `--run-label` controls the top-level output folder (defaults to current date).

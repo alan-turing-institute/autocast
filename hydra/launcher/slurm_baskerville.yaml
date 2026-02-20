@@ -1,0 +1,24 @@
+# @package hydra.launcher
+defaults:
+  - submitit_slurm
+
+# Baskerville defaults
+# Override any of these via CLI, e.g. hydra.launcher.timeout_min=720
+timeout_min: 720
+cpus_per_task: 16
+gpus_per_node: 1
+tasks_per_node: 1
+
+additional_parameters:
+  account: vjgo8416-ai-phy-sys
+  qos: turing
+  mem: 256G
+
+# Job setup commands executed before the Python entrypoint.
+# Keep these idempotent and lightweight for reliable submissions.
+setup:
+  - module purge
+  - module load baskerville
+  - module load bask-apps/live
+  - module load Python/3.11.3-GCCcore-12.3.0
+  - module load FFmpeg/6.0-GCCcore-12.3.0
