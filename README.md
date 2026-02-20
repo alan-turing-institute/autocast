@@ -116,8 +116,8 @@ For `train-eval`, evaluation starts only after training has completed successful
 Execution modes for `train-eval`:
 - one Hydra/Submitit SLURM job runs train then eval.
 
-Keep private experiment presets in `experiment_local/` (repo root) and select
-them with `experiment_local=<name>`. YAML files in that folder are ignored by
+Keep private experiment presets in `local_hydra/local_experiment/` and select
+them with `local_experiment=<name>`. YAML files in that folder are ignored by
 git by default.
 
 To load configs from a separate directory (including packaged installs), set:
@@ -128,7 +128,8 @@ export AUTOCAST_CONFIG_PATH=/absolute/path/to/configs
 
 Override mapping quick reference:
 - `src/autocast/configs/hydra/launcher/slurm.yaml` key `X` maps to CLI `hydra.launcher.X=...`
-- Use `hydra/launcher=slurm_baskerville` for Baskerville module/setup defaults.
+- Use `hydra/launcher=slurm_baskerville` for Baskerville module/setup defaults
+	from `local_hydra/hydra/launcher/slurm_baskerville.yaml`.
 - In `autocast train-eval`, positional overrides are train-only.
 - Eval-only overrides go in `--eval-overrides ...`.
 

@@ -25,7 +25,7 @@ output:
 
 hydra:
   searchpath:
-    - file://${hydra:runtime.cwd}
+    - file://${oc.env:PWD}/local_hydra
   run:
     dir: outputs/${experiment_name}/${now:%Y-%m-%d_%H-%M-%S}
   job:

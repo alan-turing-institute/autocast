@@ -2,7 +2,7 @@ defaults:
   - datamodule: advection_diffusion_multichannel
   - optional simulator: null
   - optional experiment: null
-  - optional experiment_local: null
+  - optional local_experiment: null
   - optimizer: adamw
   - model: encoder_processor_decoder
   - trainer: default
@@ -30,7 +30,7 @@ output:
 
 hydra:
   searchpath:
-    - file://${hydra:runtime.cwd}
+    - file://${oc.env:PWD}/local_hydra
   run:
     dir: outputs/${experiment_name}/${now:%Y-%m-%d_%H-%M-%S}
   job:

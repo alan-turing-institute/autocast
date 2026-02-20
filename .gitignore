@@ -11,7 +11,5 @@ lightning_logs
 datasets
 slurm_scripts
 logs
-experiment_local/*.yaml
-!experiment_local/README.md
-src/autocast/configs/experiment_local/*.yaml
-!src/autocast/configs/experiment_local/README.md
+local_hydra/local_experiment/*.yaml
+!local_hydra/local_experiment/README.md

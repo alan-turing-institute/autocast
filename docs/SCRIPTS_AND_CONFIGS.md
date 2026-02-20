@@ -179,7 +179,7 @@ This runs train and eval inside a single Hydra/Submitit SLURM job.
 ### Config-to-CLI mapping (to avoid override confusion)
 
 - Hydra launcher config path: `src/autocast/configs/hydra/launcher/slurm.yaml`
-- Cluster preset available: `hydra/launcher/slurm_baskerville.yaml` (repo-level)
+- Cluster preset available: `local_hydra/hydra/launcher/slurm_baskerville.yaml` (repo-level)
 - Mapping rule: config key `X` maps to CLI override `hydra.launcher.X=<value>`
     - `timeout_min` -> `hydra.launcher.timeout_min=...`
     - `cpus_per_task` -> `hydra.launcher.cpus_per_task=...`
@@ -223,7 +223,7 @@ If `--run-name` is omitted, `autocast` auto-generates a legacy-style run id and
 uses it for both output folder naming and default `logging.wandb.name`.
 
 Private/local experiment presets can be placed under repo-level
-`experiment_local/` and enabled with `experiment_local=<name>`.
+`local_hydra/local_experiment/` and enabled with `local_experiment=<name>`.
 YAML files in this folder are git-ignored by default.
 
 If you keep configs outside this repository (or when running from an installed
