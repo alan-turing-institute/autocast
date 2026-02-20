@@ -124,7 +124,7 @@ uv run train_encoder_processor_decoder \
 ```
 
 ### 3. Hyperparameter Sweep (SLURM)
-See `slurm_templates/encoder-processor-decoder-parameter_sweep.sh` for an example of how to run sweeps using SLURM arrays and Hydra overrides.
+Use Hydra multi-run directly (or the manifest launcher) for sweeps, e.g. `uv run autocast epd --mode slurm --dataset reaction_diffusion trainer.max_epochs=5,10`.
 
 ## Workflow CLI
 Use the unified Python workflow command `autocast` instead of bash wrappers.
@@ -167,18 +167,14 @@ uv run autocast train-eval \
     --eval-overrides eval.batch_indices=[0,1]
 ```
 
-For non-blocking SLURM train+eval submission from login nodes:
+For SLURM train+eval submission:
 ```bash
 uv run autocast train-eval \
     --mode slurm \
-    --detach \
     --dataset reaction_diffusion \
     --run-label rd
 ```
-This submits two sbatch jobs with `afterok` dependency and returns immediately.
-
-By default (without `--detach`), `autocast train-eval --mode slurm` runs train and
-eval inside a single Hydra/Submitit SLURM job.
+This runs train and eval inside a single Hydra/Submitit SLURM job.
 
 ### Config-to-CLI mapping (to avoid override confusion)
 
@@ -194,21 +190,10 @@ eval inside a single Hydra/Submitit SLURM job.
     - Positional overrides apply to **train**.
     - `--eval-overrides` applies to **eval**.
     - If the same key appears in both, eval uses the eval value.
-    - Different train/eval SLURM resources are only supported in `--detach` mode.
-
-Example with different train/eval time limits:
-```bash
-uv run autocast train-eval --mode slurm --detach \
-    --dataset reaction_diffusion \
-    hydra.launcher.timeout_min=30 \
-    trainer.max_epochs=1 \
-    --eval-overrides hydra.launcher.timeout_min=10 eval.batch_indices=[0,1]
-```
 
 File permissions / group-write:
 - Submitit path reads config key `umask` (default `0002` in
     `src/autocast/configs/encoder_processor_decoder.yaml`).
-- Detached sbatch path reads env var `AUTOCAST_UMASK` (default `0002`).
 
 To avoid long CLI override lists, put experiment defaults in a preset config
 under `src/autocast/configs/experiment/` and enable it with `experiment=<name>`.
@@ -216,12 +201,12 @@ under `src/autocast/configs/experiment/` and enable it with `experiment=<name>`.
 Example preset: `src/autocast/configs/experiment/epd_flow_matching_64_fast.yaml`
 
 ```bash
-uv run autocast train-eval --mode slurm --detach \
+uv run autocast train-eval --mode slurm \
     --dataset advection_diffusion_multichannel_64_64 \
     experiment=epd_flow_matching_64_fast \
     autoencoder_checkpoint=/path/to/autoencoder.ckpt \
     hydra.launcher.timeout_min=30 \
-    --eval-overrides hydra.launcher.timeout_min=10 +model.n_members=10
+    --eval-overrides +model.n_members=10
 ```
 
 `--run-label` controls the top-level output folder (defaults to current date).

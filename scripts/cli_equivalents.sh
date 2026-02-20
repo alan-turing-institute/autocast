@@ -7,7 +7,7 @@ set -euo pipefail
 #   bash scripts/cli_equivalents.sh
 #
 # Notes:
-# - These examples submit non-blocking train/eval chains on SLURM via --detach.
+# - These examples run train+eval in a single SLURM workflow job.
 # - Naming is handled internally by the workflow CLI (single source of truth).
 
 export AUTOCAST_DATASETS="${AUTOCAST_DATASETS:-$PWD/datasets}"
@@ -45,7 +45,7 @@ CRPS_COMMON=(
 
 echo
 echo "# EPD CRPS FNO additive equivalent"
-echo "uv run autocast train-eval --mode slurm --detach --dataset ${CRPS_DATAPATH} ${CRPS_COMMON[*]} --eval-overrides eval.batch_indices=[0,1,2,3]"
+echo "uv run autocast train-eval --mode slurm --dataset ${CRPS_DATAPATH} ${CRPS_COMMON[*]} --eval-overrides eval.batch_indices=[0,1,2,3]"
 
 # -----------------------------------------------------------------------------
 # 3) train_and_eval_epd_diffusion_flow_matching_200.sh
@@ -71,4 +71,4 @@ DIFF_COMMON=(
 
 echo
 echo "# EPD diffusion flow-matching equivalent"
-echo "uv run autocast train-eval --mode slurm --detach --dataset ${DIFF_DATAPATH} ${DIFF_COMMON[*]} --eval-overrides +model.n_members=10 eval.batch_indices=[0,1,2,3]"
+echo "uv run autocast train-eval --mode slurm --dataset ${DIFF_DATAPATH} ${DIFF_COMMON[*]} --eval-overrides +model.n_members=10 eval.batch_indices=[0,1,2,3]"

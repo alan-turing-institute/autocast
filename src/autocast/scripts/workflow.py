@@ -11,9 +11,7 @@ import sys
 import uuid
 from pathlib import Path
 
-from omegaconf import DictConfig, OmegaConf
-
-from autocast.scripts.utils import get_default_config_path, resolve_work_dir
+from autocast.scripts.utils import resolve_work_dir
 
 TRAIN_MODULES = {
     "ae": "autocast.scripts.train.autoencoder",
@@ -164,81 +162,6 @@ def _extract_override_value(overrides: list[str], key: str) -> str | None:
         if normalized.startswith(f"{key}="):
             return normalized.split("=", 1)[1]
     return None
-
-
-def _minutes_to_slurm_time(timeout_min: int) -> str:
-    hours, minutes = divmod(timeout_min, 60)
-    return f"{hours:02d}:{minutes:02d}:00"
-
-
-def _resolve_detach_slurm_resources(
-    train_overrides: list[str],
-) -> tuple[str, int, int, int, str, str | None, str | None]:
-    """Resolve detached sbatch resources from hydra launcher config + overrides."""
-    slurm_cfg_path = (
-        Path(get_default_config_path()) / "hydra" / "launcher" / "slurm.yaml"
-    )
-    raw_cfg = OmegaConf.load(slurm_cfg_path)
-    if not isinstance(raw_cfg, DictConfig):
-        msg = f"Unexpected SLURM launcher config format at {slurm_cfg_path}"
-        raise TypeError(msg)
-
-    timeout_min = int(raw_cfg.get("timeout_min", 1440))
-    cpus = int(raw_cfg.get("cpus_per_task", 16))
-    gpus = int(raw_cfg.get("gpus_per_node", 1))
-    tasks_per_node = int(raw_cfg.get("tasks_per_node", 1))
-    additional_cfg = raw_cfg.get("additional_parameters")
-    additional = additional_cfg if isinstance(additional_cfg, DictConfig) else {}
-    mem = str(additional.get("mem", 0))
-    account = additional.get("account")
-    partition = additional.get("partition")
-
-    timeout_override = _extract_override_value(
-        train_overrides, "hydra.launcher.timeout_min"
-    )
-    cpus_override = _extract_override_value(
-        train_overrides, "hydra.launcher.cpus_per_task"
-    )
-    gpus_override = _extract_override_value(
-        train_overrides, "hydra.launcher.gpus_per_node"
-    )
-    tasks_override = _extract_override_value(
-        train_overrides, "hydra.launcher.tasks_per_node"
-    )
-    mem_override = _extract_override_value(
-        train_overrides, "hydra.launcher.additional_parameters.mem"
-    )
-    account_override = _extract_override_value(
-        train_overrides, "hydra.launcher.additional_parameters.account"
-    )
-    partition_override = _extract_override_value(
-        train_overrides, "hydra.launcher.additional_parameters.partition"
-    )
-
-    if timeout_override is not None:
-        timeout_min = int(timeout_override)
-    if cpus_override is not None:
-        cpus = int(cpus_override)
-    if gpus_override is not None:
-        gpus = int(gpus_override)
-    if tasks_override is not None:
-        tasks_per_node = int(tasks_override)
-    if mem_override is not None:
-        mem = str(mem_override)
-    if account_override is not None:
-        account = account_override
-    if partition_override is not None:
-        partition = partition_override
-
-    return (
-        _minutes_to_slurm_time(timeout_min),
-        cpus,
-        gpus,
-        tasks_per_node,
-        mem,
-        account,
-        partition,
-    )
 
 
 def _contains_override(overrides: list[str], key_prefix: str) -> bool:
@@ -472,176 +395,6 @@ def _train_eval_single_job_command(
     return final_work_dir, resolved_run_name
 
 
-def _write_sbatch_script(
-    *,
-    script_path: Path,
-    job_name: str,
-    out_path: Path,
-    err_path: Path,
-    command: list[str],
-    time: str,
-    cpus: int,
-    gpus: int,
-    tasks_per_node: int,
-    mem: str,
-    account: str | None,
-    partition: str | None,
-) -> None:
-    """Write a minimal sbatch script executing the given command via srun."""
-    command_str = " ".join(shlex.quote(part) for part in command)
-    umask_value = os.environ.get("AUTOCAST_UMASK", "0002")
-    lines = [
-        "#!/bin/bash",
-        f"#SBATCH --job-name={job_name}",
-        f"#SBATCH --output={out_path}",
-        f"#SBATCH --error={err_path}",
-        f"#SBATCH --time={time}",
-        f"#SBATCH --cpus-per-task={cpus}",
-        f"#SBATCH --ntasks-per-node={tasks_per_node}",
-        f"#SBATCH --gpus={gpus}",
-        f"#SBATCH --mem={mem}",
-    ]
-    if account:
-        lines.append(f"#SBATCH --account={account}")
-    if partition:
-        lines.append(f"#SBATCH --partition={partition}")
-    lines.extend(
-        [
-            "",
-            "set -e",
-            f"umask {umask_value}",
-            "",
-            f"srun --ntasks-per-node={tasks_per_node} {command_str}",
-            "",
-        ]
-    )
-    script_path.parent.mkdir(parents=True, exist_ok=True)
-    script_path.write_text("\n".join(lines), encoding="utf-8")
-
-
-def _submit_sbatch_script(
-    script_path: Path, dependency_job_id: str | None = None
-) -> str:
-    """Submit sbatch script and return job ID."""
-    cmd = ["sbatch"]
-    if dependency_job_id is not None:
-        cmd.append(f"--dependency=afterok:{dependency_job_id}")
-    cmd.append(str(script_path))
-    result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-    output = result.stdout.strip()
-    job_id = output.split()[-1]
-    return job_id
-
-
-def _submit_train_eval_chain(
-    *,
-    dataset: str,
-    output_base: str,
-    date_str: str | None,
-    run_name: str | None,
-    work_dir: str | None,
-    wandb_name: str | None,
-    resume_from: str | None,
-    checkpoint: str | None,
-    eval_subdir: str,
-    video_dir: str | None,
-    batch_indices: str,
-    train_overrides: list[str],
-    eval_overrides: list[str],
-    dry_run: bool,
-) -> tuple[str, str, Path]:
-    """Submit non-blocking SLURM train→eval chain using sbatch dependency."""
-    workdir, resolved_name, train_command_overrides = _build_train_overrides(
-        kind="epd",
-        mode="local",
-        dataset=dataset,
-        output_base=output_base,
-        date_str=date_str,
-        run_name=run_name,
-        work_dir=work_dir,
-        wandb_name=wandb_name,
-        resume_from=resume_from,
-        overrides=train_overrides,
-    )
-    eval_dir, eval_command_overrides = _build_eval_overrides(
-        mode="local",
-        dataset=dataset,
-        work_dir=str(workdir),
-        checkpoint=checkpoint,
-        eval_subdir=eval_subdir,
-        video_dir=video_dir,
-        batch_indices=batch_indices,
-        overrides=eval_overrides,
-    )
-
-    train_cmd = _run_module_command(TRAIN_MODULES["epd"], train_command_overrides)
-    eval_cmd = _run_module_command(EVAL_MODULE, eval_command_overrides)
-
-    (
-        train_time,
-        train_cpus,
-        train_gpus,
-        train_tasks_per_node,
-        train_mem,
-        train_account,
-        train_partition,
-    ) = _resolve_detach_slurm_resources(train_overrides)
-    eval_resource_overrides = [*train_overrides, *eval_overrides]
-    (
-        eval_time,
-        eval_cpus,
-        eval_gpus,
-        eval_tasks_per_node,
-        eval_mem,
-        eval_account,
-        eval_partition,
-    ) = _resolve_detach_slurm_resources(eval_resource_overrides)
-
-    slurm_dir = workdir / ".slurm"
-    train_script = slurm_dir / "train.sbatch"
-    eval_script = slurm_dir / "eval.sbatch"
-
-    _write_sbatch_script(
-        script_path=train_script,
-        job_name=f"epd_{resolved_name}",
-        out_path=workdir / "slurm_train_%j.out",
-        err_path=workdir / "slurm_train_%j.err",
-        command=train_cmd,
-        time=train_time,
-        cpus=train_cpus,
-        gpus=train_gpus,
-        tasks_per_node=train_tasks_per_node,
-        mem=train_mem,
-        account=train_account,
-        partition=train_partition,
-    )
-    _write_sbatch_script(
-        script_path=eval_script,
-        job_name=f"eval_{resolved_name}",
-        out_path=eval_dir / "slurm_eval_%j.out",
-        err_path=eval_dir / "slurm_eval_%j.err",
-        command=eval_cmd,
-        time=eval_time,
-        cpus=eval_cpus,
-        gpus=eval_gpus,
-        tasks_per_node=eval_tasks_per_node,
-        mem=eval_mem,
-        account=eval_account,
-        partition=eval_partition,
-    )
-
-    if dry_run:
-        print(f"DRY-RUN: sbatch {train_script}")
-        print(
-            f"DRY-RUN: sbatch --dependency=afterok:<TRAIN_JOB_ID> {eval_script}",
-        )
-        return "DRYRUN", "DRYRUN", workdir
-
-    train_job_id = _submit_sbatch_script(train_script)
-    eval_job_id = _submit_sbatch_script(eval_script, dependency_job_id=train_job_id)
-    return train_job_id, eval_job_id, workdir
-
-
 def build_parser() -> argparse.ArgumentParser:
     """Build the argparse parser for the unified workflow CLI."""
     parser = argparse.ArgumentParser(
@@ -745,14 +498,6 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     train_eval_parser.add_argument(
-        "--detach",
-        action="store_true",
-        help=(
-            "For --mode slurm, submit train/eval as non-blocking sbatch jobs with "
-            "afterok dependency and return immediately."
-        ),
-    )
-    train_eval_parser.add_argument(
         "overrides",
         nargs="*",
         help=("Direct Hydra overrides for training, e.g. trainer.max_epochs=1"),
@@ -800,37 +545,6 @@ def main() -> None:
 
     if args.command == "train-eval":
         train_overrides = [*args.overrides]
-
-        if args.detach:
-            if args.mode != "slurm":
-                msg = "--detach is only supported with --mode slurm"
-                raise ValueError(msg)
-
-            eval_overrides = _build_effective_eval_overrides(
-                train_overrides, [*args.eval_overrides]
-            )
-
-            train_job_id, eval_job_id, workdir = _submit_train_eval_chain(
-                dataset=args.dataset,
-                output_base=args.output_base,
-                date_str=args.date_str,
-                run_name=args.run_name,
-                work_dir=args.workdir,
-                wandb_name=args.wandb_name,
-                resume_from=args.resume_from,
-                checkpoint=args.checkpoint,
-                eval_subdir=args.eval_subdir,
-                video_dir=args.video_dir,
-                batch_indices=args.batch_indices,
-                train_overrides=train_overrides,
-                eval_overrides=eval_overrides,
-                dry_run=args.dry_run,
-            )
-            print(
-                f"Submitted train job {train_job_id} and eval job {eval_job_id} "
-                f"(afterok dependency) in {workdir}",
-            )
-            return
 
         _final_work_dir, _run_name = _train_eval_single_job_command(
             mode=args.mode,

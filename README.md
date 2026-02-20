@@ -114,18 +114,7 @@ For `train-eval`, evaluation starts only after training has completed successful
 (including in `--mode slurm`).
 
 Execution modes for `train-eval`:
-- default (no `--detach`): one Hydra/Submitit SLURM job runs train then eval.
-- `--detach`: writes two sbatch scripts and links them with `afterok`.
-
-To submit non-blocking train→eval from a login node, use:
-```bash
-uv run autocast train-eval \
-	--mode slurm \
-	--detach \
-	--dataset reaction_diffusion \
-	--run-label rd
-```
-This submits two sbatch jobs with `afterok` dependency and returns immediately.
+- one Hydra/Submitit SLURM job runs train then eval.
 
 Keep private experiment presets in `experiment_local/` (repo root) and select
 them with `experiment_local=<name>`. YAML files in that folder are ignored by
@@ -141,13 +130,9 @@ Override mapping quick reference:
 - `src/autocast/configs/hydra/launcher/slurm.yaml` key `X` maps to CLI `hydra.launcher.X=...`
 - In `autocast train-eval`, positional overrides are train-only.
 - Eval-only overrides go in `--eval-overrides ...`.
-- Different train/eval timeouts example:
-	- train: `hydra.launcher.timeout_min=30`
-	- eval: `--eval-overrides hydra.launcher.timeout_min=10`
 
 Permissions quick reference:
 - Submitit path uses config key `umask` (default `0002` in `encoder_processor_decoder`).
-- Detached sbatch path uses env var `AUTOCAST_UMASK` (default `0002`).
 
 Use `--dry-run` to print resolved commands/scripts without executing.
 
@@ -241,21 +226,12 @@ Legacy scripts under `slurm_scripts/` have been retired to reduce duplication an
 maintenance overhead. Use the unified `autocast` CLI workflows instead:
 
 ```bash
-# non-blocking train->eval submission from login node
-uv run autocast train-eval --mode slurm --detach --dataset reaction_diffusion
+# train->eval in one SLURM job
+uv run autocast train-eval --mode slurm --dataset reaction_diffusion
 
 # run many prewritten jobs from a manifest
 bash scripts/launch_from_manifest.sh run_manifests/example_runs.txt
 ```
-
-In the [slurm_templates](/slurm_templates/) folders, template slurm scripts can be found for the following use cases: 
-
-- train_and_eval_autoencoder.sh : Training and evaluation of the autoencoder 
-- train_and_eval_encoder-processor-decoder.sh : Training and evaluation of the encoder-processor-decoder approach
-- encoder-processor-decoder-parameter_sweep : Same as above but runs a parameter sweep 
-
-If you need custom scheduler wrappers, copy from `slurm_templates/` into a private
-folder outside this repository.
 
 ### Single Job 
 

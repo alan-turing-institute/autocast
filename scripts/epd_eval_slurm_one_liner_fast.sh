@@ -11,12 +11,11 @@
 #   TRAIN: hydra.launcher.timeout_min=<minutes>
 #   EVAL:  --eval-overrides hydra.launcher.timeout_min=<minutes>
 
-uv run autocast train-eval --mode slurm --detach \
+uv run autocast train-eval --mode slurm \
     --dataset advection_diffusion_multichannel_64_64 \
     experiment=epd_flow_matching_64_fast \
     hydra.launcher.timeout_min=30 \
     autoencoder_checkpoint=/projects/u5gf/ai4physics/outputs/2026-02-06/advection_diffusion_multichannel_64_64_no_norm/autoencoder.ckpt \
     --eval-overrides \
-    hydra.launcher.timeout_min=10 \
     +model.n_members=10
 
