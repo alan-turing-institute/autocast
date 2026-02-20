@@ -8,7 +8,7 @@ from torch.nn import ModuleList
 from torchmetrics import Metric
 
 from autocast.metrics.ensemble import BTSCMMetric
-from autocast.types import Tensor, TensorBSC, TensorBTC, TensorBTSC, TensorBTSCM
+from autocast.types import Tensor, TensorBTSC, TensorBTSCM
 
 
 class Coverage(BTSCMMetric):
@@ -34,63 +34,30 @@ class Coverage(BTSCMMetric):
             raise ValueError(f"coverage_level must be in (0, 1), got {coverage_level}")
         self.coverage_level = coverage_level
 
-    def _score(
-        self,
-        y_pred: TensorBTSCM,
-        y_true: TensorBTSC,
-        reduce_over: str | None = "spatial",
-    ) -> TensorBTC | TensorBSC | TensorBTSC:
+    def _score(self, y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTSC:
         """
-        Compute coverage reduced over different dimensions.
+        Compute per-gridpoint coverage indicator.
 
         Args:
             y_pred: (B, T, S, C, M)
             y_true: (B, T, S, C)
-            reduce_over: 'spatial' or 'temporal' or None
-                Spatial reduction: average over spatial dimensions to get (B, T, C)
-                Temporal reduction: average over temporal dimension to get (B, S, C)
-                None: no reduction, return (B, T, S, C)
-            which dimensions to reduce over for final coverage output.
 
         Returns
         -------
-            coverage: (B, T, C) or (B, S, C) or (B, T, S, C) depending on reduce_over
+            coverage: (B, T, S, C) — 1.0 where y_true falls inside the interval,
+                else 0.0
         """
-        # Calculate quantiles of the ensemble distribution
         # e.g. coverage_level=0.95 -> 0.025 and 0.975 quantiles
         q_low = 0.5 - self.coverage_level / 2
         q_high = 0.5 + self.coverage_level / 2
 
-        # Calculate quantiles
         q_tensor = torch.tensor(
             [q_low, q_high], device=y_pred.device, dtype=y_pred.dtype
         )
         quantiles = torch.quantile(y_pred, q_tensor, dim=-1)  # (2, B, T, S, C)
 
-        lower_q = quantiles[0]
-        upper_q = quantiles[1]
-
-        # Calculate coverage (1 if inside, 0 otherwise)
-        is_covered = ((y_true >= lower_q) & (y_true <= upper_q)).float()
-
-        if reduce_over == "spatial":
-            # Reduce over spatial dimensions: (B, T, S, C) -> (B, T, C)
-            n_spatial_dims = self._infer_n_spatial_dims(is_covered)
-            spatial_dims = tuple(range(2, 2 + n_spatial_dims))
-            coverage_reduced = is_covered.mean(dim=spatial_dims)
-        elif reduce_over == "temporal":
-            # Reduce over temporal dimension: (B, T, S, C) -> (B, S, C)
-            coverage_reduced = is_covered.mean(dim=1)
-        elif reduce_over is None:
-            # No reduction, return full coverage tensor (B, T, S, C)
-            coverage_reduced = is_covered
-        else:
-            raise ValueError(
-                f"Invalid reduce_over value: {reduce_over}. "
-                f"Must be 'spatial' or 'temporal' or None."
-            )
-
-        return coverage_reduced
+        is_covered = ((y_true >= quantiles[0]) & (y_true <= quantiles[1])).float()
+        return is_covered
 
 
 class MultiCoverage(Metric):
