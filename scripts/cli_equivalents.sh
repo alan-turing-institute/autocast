@@ -66,7 +66,7 @@ DIFF_COMMON=(
   model.train_in_latent_space=true
   model.processor.backbone.hid_channels=512
   trainer.max_epochs=200
-  +autoencoder_checkpoint="${DIFF_AE_CHECKPOINT}"
+  autoencoder_checkpoint="${DIFF_AE_CHECKPOINT}"
 )
 
 echo

@@ -127,7 +127,7 @@ export AUTOCAST_CONFIG_PATH=/absolute/path/to/configs
 ```
 
 Override mapping quick reference:
-- `src/autocast/configs/hydra/launcher/slurm.yaml` key `X` maps to CLI `hydra.launcher.X=...`
+- `configs/hydra/launcher/slurm.yaml` key `X` maps to CLI `hydra.launcher.X=...`
 - Use `hydra/launcher=slurm_baskerville` for Baskerville module/setup defaults
 	from `local_hydra/hydra/launcher/slurm_baskerville.yaml`.
 - In `autocast train-eval`, positional overrides are train-only.
