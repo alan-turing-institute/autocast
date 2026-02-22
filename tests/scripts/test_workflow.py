@@ -370,11 +370,6 @@ def test_build_parser_train_eval_with_eval_overrides(
     assert "trainer.z=3" in args.overrides
 
 
-def test_build_parser_detach_flag(parser: argparse.ArgumentParser):
-    args = parser.parse_args(["ae", "--dataset", "d", "--detach"])
-    assert args.detach is True
-
-
 def test_build_parser_override_flag(parser: argparse.ArgumentParser):
     args = parser.parse_args(
         [
@@ -405,6 +400,32 @@ def test_build_parser_override_and_positional_combined(
     )
     assert args.override == ["k1=v1"]
     assert args.overrides == ["k2=v2"]
+
+
+def test_build_parser_config_name_passthrough(parser: argparse.ArgumentParser):
+    args = parser.parse_args(
+        [
+            "ae",
+            "--dataset",
+            "d",
+            "--config-name",
+            "custom_autoencoder",
+        ]
+    )
+    assert args.config_name == "custom_autoencoder"
+
+
+def test_build_parser_config_path_passthrough(parser: argparse.ArgumentParser):
+    args = parser.parse_args(
+        [
+            "ae",
+            "--dataset",
+            "d",
+            "--config-path",
+            "src/autocast/configs/variants",
+        ]
+    )
+    assert args.config_path == "src/autocast/configs/variants"
 
 
 def test_build_parser_train_eval_has_override(
@@ -474,6 +495,44 @@ def test_main_train_eval_dispatches_combined_overrides(monkeypatch):
     assert captured["eval_overrides"] == [
         "eval.batch_indices=[0,1]",
         "eval.n_members=10",
+    ]
+
+
+def test_main_ae_dispatches_hydra_config_passthrough(monkeypatch):
+    captured = {}
+
+    def _fake_train_command(**kwargs):
+        captured.update(kwargs)
+        return None, "dummy"
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.cli.train_command",
+        _fake_train_command,
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "autocast",
+            "ae",
+            "--dataset",
+            "demo_dataset",
+            "--config-name",
+            "my_ae_top_level",
+            "--config-path",
+            "src/autocast/configs",
+            "trainer.max_epochs=1",
+        ],
+    )
+
+    workflow_cli.main()
+
+    assert captured["overrides"] == [
+        "--config-name",
+        "my_ae_top_level",
+        "--config-path",
+        "src/autocast/configs",
+        "trainer.max_epochs=1",
     ]
 
 

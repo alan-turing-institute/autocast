@@ -7,7 +7,7 @@ set -euo pipefail
 # Manifest format (one run per line):
 #   <subcommand and args exactly as passed to `autocast`>
 # Example:
-#   epd --mode slurm --dataset reaction_diffusion --date rd --run-name 00 trainer.max_epochs=5
+#   epd --mode slurm --dataset reaction_diffusion --run-label rd --run-name 00 trainer.max_epochs=5
 #
 # Usage:
 #   bash scripts/launch_from_manifest.sh run_manifests/example_runs.txt

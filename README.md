@@ -148,11 +148,11 @@ Launch many prewritten runs from a manifest file:
 bash scripts/launch_from_manifest.sh run_manifests/example_runs.txt
 ```
 
-Date handling is automatic: if `--date` is omitted, current date is used.
+Date handling is automatic: if `--run-label` is omitted, current date is used.
 Run naming is also automatic: if `--run-name` is omitted, `autocast` generates
 a legacy-style run id (dataset/model/hash/uuid based) and uses it for both
 the run folder and default `logging.wandb.name`.
-Pass `--run-label` (or legacy alias `--date`) only to override the top-level folder label.
+Pass `--run-label` only to override the top-level folder label.
 
 Multi-GPU is supported by passing trainer/Hydra overrides, e.g.:
 ```bash
@@ -250,7 +250,7 @@ Outputs are written under:
 
 `outputs/<run_label>/<run_id>`
 
-where `run_label` defaults to the current date (or `--run-label` / `--date`) and
+where `run_label` defaults to the current date (or `--run-label`) and
 `run_id` defaults to the auto-generated run name (or `--run-name`).
 
 ### Multiple Jobs

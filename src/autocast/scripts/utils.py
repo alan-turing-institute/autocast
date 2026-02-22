@@ -24,7 +24,7 @@ def default_run_name(prefix: str = "run") -> str:
 def resolve_work_dir(
     *,
     output_base: str | Path = "outputs",
-    date_str: str | None = None,
+    run_label: str | None = None,
     run_name: str | None = None,
     work_dir: str | Path | None = None,
     prefix: str = "run",
@@ -33,14 +33,19 @@ def resolve_work_dir(
 
     Priority:
     1. If ``work_dir`` is provided, use it directly.
-    2. Otherwise build ``<output_base>/<date>/<run_name>``.
+    2. Otherwise build ``<output_base>/<run_label>/<run_name>``.
     3. If ``run_name`` is missing, generate a short default.
+
+    Parameters
+    ----------
+    run_label
+        Preferred top-level output folder label.
     """
     if work_dir is not None:
         resolved = Path(work_dir).expanduser().resolve()
         return resolved, (run_name or resolved.name)
 
-    date_value = date_str or datetime.now().strftime("%Y-%m-%d")
+    date_value = run_label or datetime.now().strftime("%Y-%m-%d")
     resolved_name = run_name or default_run_name(prefix=prefix)
     resolved = (Path(output_base) / date_value / resolved_name).expanduser().resolve()
     return resolved, resolved_name

@@ -22,12 +22,12 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--mode", choices=["local", "slurm"], default="local")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument(
-        "--detach",
-        action="store_true",
-        help=(
-            "No-op for SLURM mode (jobs are non-blocking by default). "
-            "Reserved for future local background support."
-        ),
+        "--config-name",
+        help="Hydra top-level config name passthrough.",
+    )
+    parser.add_argument(
+        "--config-path",
+        help="Hydra config path passthrough.",
     )
     parser.add_argument(
         "--override",
@@ -51,12 +51,8 @@ def _add_train_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--output-base", default="outputs")
     parser.add_argument(
         "--run-label",
-        "--date",
-        dest="date_str",
-        help=(
-            "Top-level output folder label (defaults to current date). "
-            "--date is kept as a backward-compatible alias."
-        ),
+        dest="run_label",
+        help="Top-level output folder label (defaults to current date).",
     )
     parser.add_argument("--run-name")
     parser.add_argument("--workdir")
@@ -162,8 +158,13 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
 
-    # Merge both override mechanisms consistently across all subcommands.
-    combined_overrides = [*args.override, *args.overrides]
+    # Merge passthrough Hydra globals and both override mechanisms consistently.
+    combined_overrides = []
+    if args.config_name is not None:
+        combined_overrides.extend(["--config-name", args.config_name])
+    if args.config_path is not None:
+        combined_overrides.extend(["--config-path", args.config_path])
+    combined_overrides.extend([*args.override, *args.overrides])
 
     if args.command in {"ae", "epd", "processor"}:
         dataset = _resolve_dataset_or_raise(
@@ -182,7 +183,7 @@ def main() -> None:
             mode=args.mode,
             dataset=dataset,
             output_base=args.output_base,
-            date_str=args.date_str,
+            run_label=args.run_label,
             run_name=args.run_name,
             work_dir=args.workdir,
             wandb_name=args.wandb_name,
@@ -228,7 +229,7 @@ def main() -> None:
             mode=args.mode,
             dataset=dataset,
             output_base=args.output_base,
-            date_str=args.date_str,
+            run_label=args.run_label,
             run_name=args.run_name,
             work_dir=args.workdir,
             wandb_name=args.wandb_name,

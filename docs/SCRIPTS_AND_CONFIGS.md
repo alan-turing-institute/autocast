@@ -219,7 +219,7 @@ uv run autocast epd --mode slurm --dataset reaction_diffusion \
 ```
 
 `--run-label` controls the top-level output folder (defaults to current date).
-`--date` remains available as a backward-compatible alias.
+Use `--run-label` to set the top-level output folder label.
 If `--run-name` is omitted, `autocast` auto-generates a legacy-style run id and
 uses it for both output folder naming and default `logging.wandb.name`.
 
