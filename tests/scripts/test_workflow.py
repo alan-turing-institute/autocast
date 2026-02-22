@@ -12,6 +12,8 @@ from autocast.scripts.workflow import cli as workflow_cli
 from autocast.scripts.workflow.cli import build_parser
 from autocast.scripts.workflow.commands import (
     build_effective_eval_overrides,
+    infer_dataset_from_workdir,
+    infer_resume_checkpoint,
     resolve_eval_checkpoint,
 )
 from autocast.scripts.workflow.naming import (
@@ -294,6 +296,34 @@ def test_build_effective_eval_overrides_order_preserved():
     assert result == ["model.a=1", "model.b=2"]
 
 
+def test_infer_dataset_from_workdir_from_datamodule_data_path(tmp_path):
+    (tmp_path / "resolved_config.yaml").write_text(
+        "datamodule:\n  data_path: /tmp/datasets/reaction_diffusion\n",
+        encoding="utf-8",
+    )
+    assert infer_dataset_from_workdir(tmp_path) == "reaction_diffusion"
+
+
+def test_infer_dataset_from_workdir_from_datamodule_string(tmp_path):
+    (tmp_path / "resolved_config.yaml").write_text(
+        'datamodule: "advection_diffusion_multichannel_64_64"\n',
+        encoding="utf-8",
+    )
+    assert (
+        infer_dataset_from_workdir(tmp_path) == "advection_diffusion_multichannel_64_64"
+    )
+
+
+def test_infer_resume_checkpoint_kind_specific(tmp_path):
+    ckpt = tmp_path / "encoder_processor_decoder.ckpt"
+    ckpt.touch()
+    assert infer_resume_checkpoint("epd", tmp_path) == ckpt.resolve()
+
+
+def test_infer_resume_checkpoint_returns_none_when_missing(tmp_path):
+    assert infer_resume_checkpoint("epd", tmp_path) is None
+
+
 # ---------------------------------------------------------------------------
 # CLI parser
 # ---------------------------------------------------------------------------
@@ -445,3 +475,62 @@ def test_main_train_eval_dispatches_combined_overrides(monkeypatch):
         "eval.batch_indices=[0,1]",
         "eval.n_members=10",
     ]
+
+
+def test_main_eval_dispatches_inferred_dataset_from_workdir(monkeypatch, tmp_path):
+    (tmp_path / "resolved_config.yaml").write_text(
+        "datamodule:\n  data_path: /tmp/datasets/reaction_diffusion\n",
+        encoding="utf-8",
+    )
+
+    captured = {}
+
+    def _fake_eval_command(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.cli.eval_command",
+        _fake_eval_command,
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["autocast", "eval", "--workdir", str(tmp_path), "--dry-run"],
+    )
+
+    workflow_cli.main()
+
+    assert captured["dataset"] == "reaction_diffusion"
+    assert captured["work_dir"] == str(tmp_path)
+
+
+def test_main_train_dispatches_inferred_dataset_and_resume(monkeypatch, tmp_path):
+    (tmp_path / "resolved_config.yaml").write_text(
+        "datamodule:\n"
+        "  data_path: /tmp/datasets/advection_diffusion_multichannel_64_64\n",
+        encoding="utf-8",
+    )
+    ckpt = tmp_path / "encoder_processor_decoder.ckpt"
+    ckpt.touch()
+
+    captured = {}
+
+    def _fake_train_command(**kwargs):
+        captured.update(kwargs)
+        return tmp_path, "dummy"
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.cli.train_command",
+        _fake_train_command,
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["autocast", "epd", "--workdir", str(tmp_path), "--dry-run"],
+    )
+
+    workflow_cli.main()
+
+    assert captured["dataset"] == "advection_diffusion_multichannel_64_64"
+    assert captured["resume_from"] == str(ckpt.resolve())
+    assert captured["kind"] == "epd"

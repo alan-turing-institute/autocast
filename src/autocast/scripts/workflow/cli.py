@@ -6,6 +6,8 @@ import argparse
 
 from autocast.scripts.workflow.commands import (
     eval_command,
+    infer_dataset_from_workdir,
+    infer_resume_checkpoint,
     train_command,
     train_eval_single_job_command,
 )
@@ -42,7 +44,10 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
 
 def _add_train_args(parser: argparse.ArgumentParser) -> None:
     """Arguments shared by training subcommands (ae, epd, processor, train-eval)."""
-    parser.add_argument("--dataset", required=True)
+    parser.add_argument(
+        "--dataset",
+        help="Dataset config name (required unless --workdir has resolved config).",
+    )
     parser.add_argument("--output-base", default="outputs")
     parser.add_argument(
         "--run-label",
@@ -88,7 +93,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     # -- eval --------------------------------------------------------------
     eval_parser = subparsers.add_parser("eval")
-    eval_parser.add_argument("--dataset", required=True)
+    eval_parser.add_argument(
+        "--dataset",
+        help="Dataset config name (required unless --workdir has resolved config).",
+    )
     eval_parser.add_argument("--workdir", required=True)
     _add_eval_args(eval_parser)
     _add_common_args(eval_parser)
@@ -116,6 +124,39 @@ def build_parser() -> argparse.ArgumentParser:
 # ---------------------------------------------------------------------------
 
 
+def _resolve_dataset_or_raise(
+    *,
+    dataset: str | None,
+    work_dir: str | None,
+    command_name: str,
+) -> str:
+    resolved_dataset = dataset
+    if resolved_dataset is None and work_dir is not None:
+        resolved_dataset = infer_dataset_from_workdir(work_dir)
+
+    if resolved_dataset is None:
+        msg = (
+            f"Dataset is required for {command_name} unless --workdir contains "
+            "a resolved config from which dataset can be inferred."
+        )
+        raise ValueError(msg)
+
+    return resolved_dataset
+
+
+def _resolve_resume_from(
+    *,
+    kind: str,
+    work_dir: str | None,
+    resume_from: str | None,
+) -> str | None:
+    if resume_from is not None or work_dir is None:
+        return resume_from
+
+    inferred_resume = infer_resume_checkpoint(kind, work_dir)
+    return str(inferred_resume) if inferred_resume is not None else None
+
+
 def main() -> None:
     """Parse command-line args and execute the selected workflow command."""
     parser = build_parser()
@@ -125,25 +166,42 @@ def main() -> None:
     combined_overrides = [*args.override, *args.overrides]
 
     if args.command in {"ae", "epd", "processor"}:
+        dataset = _resolve_dataset_or_raise(
+            dataset=args.dataset,
+            work_dir=args.workdir,
+            command_name="training",
+        )
+        resume_from = _resolve_resume_from(
+            kind=args.command,
+            work_dir=args.workdir,
+            resume_from=args.resume_from,
+        )
+
         train_command(
             kind=args.command,
             mode=args.mode,
-            dataset=args.dataset,
+            dataset=dataset,
             output_base=args.output_base,
             date_str=args.date_str,
             run_name=args.run_name,
             work_dir=args.workdir,
             wandb_name=args.wandb_name,
-            resume_from=args.resume_from,
+            resume_from=resume_from,
             overrides=combined_overrides,
             dry_run=args.dry_run,
         )
         return
 
     if args.command == "eval":
+        dataset = _resolve_dataset_or_raise(
+            dataset=args.dataset,
+            work_dir=args.workdir,
+            command_name="eval",
+        )
+
         eval_command(
             mode=args.mode,
-            dataset=args.dataset,
+            dataset=dataset,
             work_dir=args.workdir,
             checkpoint=args.checkpoint,
             eval_subdir=args.eval_subdir,
@@ -155,15 +213,26 @@ def main() -> None:
         return
 
     if args.command == "train-eval":
+        dataset = _resolve_dataset_or_raise(
+            dataset=args.dataset,
+            work_dir=args.workdir,
+            command_name="train-eval",
+        )
+        resume_from = _resolve_resume_from(
+            kind="epd",
+            work_dir=args.workdir,
+            resume_from=args.resume_from,
+        )
+
         train_eval_single_job_command(
             mode=args.mode,
-            dataset=args.dataset,
+            dataset=dataset,
             output_base=args.output_base,
             date_str=args.date_str,
             run_name=args.run_name,
             work_dir=args.workdir,
             wandb_name=args.wandb_name,
-            resume_from=args.resume_from,
+            resume_from=resume_from,
             checkpoint=args.checkpoint,
             eval_subdir=args.eval_subdir,
             video_dir=args.video_dir,

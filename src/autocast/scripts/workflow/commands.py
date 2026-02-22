@@ -6,6 +6,8 @@ import os
 import subprocess
 from pathlib import Path
 
+from omegaconf import OmegaConf
+
 from autocast.scripts.utils import resolve_work_dir
 from autocast.scripts.workflow.constants import (
     EVAL_MODULE,
@@ -48,6 +50,81 @@ def dataset_overrides(dataset: str, datasets_root: Path) -> list[str]:
 def datasets_root() -> Path:
     """Return the root datasets directory (honouring ``AUTOCAST_DATASETS``)."""
     return Path(os.environ.get("AUTOCAST_DATASETS", Path.cwd() / "datasets"))
+
+
+def _load_resolved_config_from_workdir(work_dir: str | Path) -> dict | None:
+    base = Path(work_dir).expanduser().resolve()
+    candidates = [
+        base / "resolved_config.yaml",
+        base / "resolved_autoencoder_config.yaml",
+        base / "resolved_eval_config.yaml",
+        base / "run" / "resolved_config.yaml",
+        base / "run" / "resolved_autoencoder_config.yaml",
+        base / "run" / "resolved_eval_config.yaml",
+    ]
+
+    for candidate in candidates:
+        if not candidate.exists():
+            continue
+        loaded = OmegaConf.to_container(OmegaConf.load(candidate), resolve=True)
+        if isinstance(loaded, dict):
+            return loaded
+
+    return None
+
+
+def infer_dataset_from_workdir(work_dir: str | Path) -> str | None:
+    """Infer dataset name from a run work directory.
+
+    Reads resolved config YAML if available and infers dataset from:
+    - ``datamodule`` when it is a string
+    - ``datamodule.data_path`` basename
+    - ``dataset`` top-level key as a fallback
+    """
+    cfg = _load_resolved_config_from_workdir(work_dir)
+    if not isinstance(cfg, dict):
+        return None
+
+    datamodule_cfg = cfg.get("datamodule")
+    if isinstance(datamodule_cfg, str):
+        return datamodule_cfg
+
+    if isinstance(datamodule_cfg, dict):
+        dataset_name = datamodule_cfg.get("dataset")
+        if isinstance(dataset_name, str) and dataset_name:
+            return dataset_name
+
+        data_path = datamodule_cfg.get("data_path")
+        if isinstance(data_path, os.PathLike | str):
+            return Path(data_path).name
+
+    top_level_dataset = cfg.get("dataset")
+    if isinstance(top_level_dataset, str) and top_level_dataset:
+        return top_level_dataset
+
+    return None
+
+
+def infer_resume_checkpoint(kind: str, work_dir: str | Path) -> Path | None:
+    """Infer a restart checkpoint path from *work_dir* for a training kind."""
+    base = Path(work_dir).expanduser().resolve()
+
+    candidates_by_kind = {
+        "ae": ["autoencoder.ckpt", "model.ckpt"],
+        "epd": ["encoder_processor_decoder.ckpt", "model.ckpt"],
+        "processor": ["processor.ckpt", "model.ckpt"],
+    }
+    names = candidates_by_kind.get(kind, ["model.ckpt"])
+
+    candidates = [
+        *(base / name for name in names),
+        *(base / "run" / name for name in names),
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate.resolve()
+
+    return None
 
 
 def resolve_eval_checkpoint(work_dir: Path, checkpoint: str | None) -> Path:
