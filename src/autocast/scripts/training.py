@@ -185,12 +185,15 @@ def run_training(
 
     log.info("Starting training...")
     if resume_checkpoint is not None:
+        resolved_resume_checkpoint = Path(resume_checkpoint).expanduser().resolve()
+        log.info("Resuming training from checkpoint: %s", resolved_resume_checkpoint)
         trainer.fit(
             model=model,
             datamodule=datamodule,
-            ckpt_path=str(Path(resume_checkpoint).expanduser().resolve()),
+            ckpt_path=str(resolved_resume_checkpoint),
         )
     else:
+        log.info("Starting training from scratch (no resume checkpoint).")
         trainer.fit(model=model, datamodule=datamodule)
 
     # Run testing if not skipped
@@ -310,12 +313,15 @@ def train_autoencoder(
         "resume_from_checkpoint"
     )
     if resume_checkpoint is not None:
+        resolved_resume_checkpoint = Path(resume_checkpoint).expanduser().resolve()
+        log.info("Resuming training from checkpoint: %s", resolved_resume_checkpoint)
         trainer.fit(
             model=model,
             datamodule=datamodule,
-            ckpt_path=str(Path(resume_checkpoint).expanduser().resolve()),
+            ckpt_path=str(resolved_resume_checkpoint),
         )
     else:
+        log.info("Starting training from scratch (no resume checkpoint).")
         trainer.fit(model=model, datamodule=datamodule)
 
     checkpoint_name = output_cfg.get("checkpoint_name", "autoencoder.ckpt")

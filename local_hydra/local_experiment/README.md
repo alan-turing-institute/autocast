@@ -7,6 +7,7 @@ This folder now includes a curated subset of presets converted from the
 
 Current presets:
 
+- `ae_quick_local.yaml`
 - `epd_crps_fno.yaml`
 - `epd_crps_vit_large.yaml`
 - `epd_crps_vit_latent.yaml`

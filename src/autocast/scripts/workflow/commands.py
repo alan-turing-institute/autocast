@@ -232,7 +232,8 @@ def build_train_overrides(
     if resume_from is not None and not contains_override(
         overrides, "resume_from_checkpoint="
     ):
-        command_overrides.append(f"+resume_from_checkpoint={resume_from}")
+        resolved_resume_from = Path(resume_from).expanduser().resolve()
+        command_overrides.append(f"+resume_from_checkpoint={resolved_resume_from}")
 
     if wandb_name is not None:
         command_overrides.append(f"logging.wandb.name={wandb_name}")

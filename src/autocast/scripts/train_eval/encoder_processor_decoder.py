@@ -71,9 +71,20 @@ def main(cfg: DictConfig) -> None:
     logging.basicConfig(level=logging.INFO)
 
     work_dir = Path.cwd()
+    resume_checkpoint = cfg.get("resume_from_checkpoint")
+    if resume_checkpoint is not None:
+        resolved_resume_checkpoint = Path(resume_checkpoint).expanduser().resolve()
+        log.info(
+            "Train-eval: resuming training phase from checkpoint: %s",
+            resolved_resume_checkpoint,
+        )
+    else:
+        log.info("Train-eval: starting training phase from scratch.")
+
     cfg = run_epd_training(cfg, work_dir=work_dir)
 
     checkpoint_path = _resolve_train_checkpoint(cfg, work_dir)
+    log.info("Train-eval: using checkpoint for eval phase: %s", checkpoint_path)
 
     train_eval_cfg = cast(DictConfig, cfg.get("train_eval", {}))
     eval_subdir = train_eval_cfg.get("eval_subdir", "eval")

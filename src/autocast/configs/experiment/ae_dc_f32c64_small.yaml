@@ -1,0 +1,17 @@
+# @package _global_
+defaults:
+  - override /datamodule: advection_diffusion_multichannel_64_64
+  - override /model: autoencoder_dc_f32c64_small
+  - _self_
+
+experiment_name: ae_dc_f32c64_small
+
+datamodule:
+  use_normalization: false
+
+logging:
+  wandb:
+    enabled: false
+
+trainer:
+  max_epochs: 200

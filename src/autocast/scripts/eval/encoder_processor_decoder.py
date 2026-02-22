@@ -80,6 +80,14 @@ def _limit_batches(dataloader, max_batches: int | None):
     return _generator()
 
 
+def _resolve_rollout_batch_limit(eval_cfg: DictConfig) -> int | None:
+    max_test_batches = eval_cfg.get("max_test_batches")
+    max_rollout_batches = eval_cfg.get("max_rollout_batches")
+    if max_rollout_batches is None:
+        return max_test_batches
+    return max_rollout_batches
+
+
 def _build_metrics(metric_names: Sequence[str]) -> dict[str, BaseMetric]:
     names = metric_names or ("mse", "rmse", "vrmse")
     metrics = {}
@@ -595,7 +603,12 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     eval_cfg = cfg.get("eval", {})
     eval_batch_size: int = eval_cfg.get("batch_size", 1)
     max_test_batches = eval_cfg.get("max_test_batches")
-    max_rollout_batches = eval_cfg.get("max_rollout_batches", max_test_batches)
+    max_rollout_batches = _resolve_rollout_batch_limit(eval_cfg)
+    log.info(
+        "Batch limits: max_test_batches=%s, max_rollout_batches=%s",
+        max_test_batches,
+        max_rollout_batches,
+    )
 
     # Validate that checkpoint is provided
     checkpoint_path = eval_cfg.get("checkpoint")

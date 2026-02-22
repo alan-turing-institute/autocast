@@ -12,6 +12,7 @@ from autocast.scripts.workflow import cli as workflow_cli
 from autocast.scripts.workflow.cli import build_parser
 from autocast.scripts.workflow.commands import (
     build_effective_eval_overrides,
+    build_train_overrides,
     infer_dataset_from_workdir,
     infer_resume_checkpoint,
     resolve_eval_checkpoint,
@@ -324,6 +325,27 @@ def test_infer_resume_checkpoint_returns_none_when_missing(tmp_path):
     assert infer_resume_checkpoint("epd", tmp_path) is None
 
 
+def test_build_train_overrides_normalizes_relative_resume_path(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    relative_ckpt = "outputs/2026-02-22/run/autoencoder.ckpt"
+    expected_ckpt = (tmp_path / relative_ckpt).resolve()
+
+    _work_dir, _run_name, command_overrides = build_train_overrides(
+        kind="ae",
+        mode="local",
+        dataset="reaction_diffusion",
+        output_base="outputs",
+        run_label="2026-02-22",
+        run_name="ae_test",
+        work_dir=str(tmp_path / "my_workdir"),
+        wandb_name=None,
+        resume_from=relative_ckpt,
+        overrides=[],
+    )
+
+    assert f"+resume_from_checkpoint={expected_ckpt}" in command_overrides
+
+
 # ---------------------------------------------------------------------------
 # CLI parser
 # ---------------------------------------------------------------------------
@@ -593,3 +615,35 @@ def test_main_train_dispatches_inferred_dataset_and_resume(monkeypatch, tmp_path
     assert captured["dataset"] == "advection_diffusion_multichannel_64_64"
     assert captured["resume_from"] == str(ckpt.resolve())
     assert captured["kind"] == "epd"
+
+
+def test_main_ae_dispatches_inferred_dataset_and_resume(monkeypatch, tmp_path):
+    (tmp_path / "resolved_config.yaml").write_text(
+        "datamodule:\n"
+        "  data_path: /tmp/datasets/advection_diffusion_multichannel_64_64\n",
+        encoding="utf-8",
+    )
+    ckpt = tmp_path / "autoencoder.ckpt"
+    ckpt.touch()
+
+    captured = {}
+
+    def _fake_train_command(**kwargs):
+        captured.update(kwargs)
+        return tmp_path, "dummy"
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.cli.train_command",
+        _fake_train_command,
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["autocast", "ae", "--workdir", str(tmp_path), "--dry-run"],
+    )
+
+    workflow_cli.main()
+
+    assert captured["dataset"] == "advection_diffusion_multichannel_64_64"
+    assert captured["resume_from"] == str(ckpt.resolve())
+    assert captured["kind"] == "ae"

@@ -10,6 +10,8 @@ defaults:
   # TODO: implement autoencoder eval config
   # - optional eval: default
   - _self_
+  - optional experiment: null
+  - optional local_experiment: null
 
 seed: 42
 experiment_name: ae
