@@ -19,6 +19,7 @@ from autocast.scripts.workflow.commands import (
     infer_resume_checkpoint,
     resolve_eval_checkpoint,
 )
+from autocast.scripts.workflow.helpers import run_module_command
 from autocast.scripts.workflow.naming import (
     auto_run_name,
     dataset_name_token,
@@ -379,6 +380,41 @@ def test_eval_command_auto_infers_hydra_config(monkeypatch, tmp_path):
     assert "--config-path" in overrides
     assert "resolved_config" in overrides
     assert str(tmp_path.resolve()) in overrides
+    # Defaults-group overrides must be absent when using a resolved config
+    assert "eval=encoder_processor_decoder" not in overrides
+    assert not any(o.startswith("datamodule=") for o in overrides)
+    # Dot-path overrides (e.g. datamodule.data_path) should still be present
+    assert any(o.startswith("datamodule.data_path=") for o in overrides)
+
+
+def test_eval_command_includes_defaults_without_resolved_config(monkeypatch, tmp_path):
+    # No resolved_config.yaml in workdir
+    (tmp_path / "encoder_processor_decoder.ckpt").touch()
+    captured: dict[str, object] = {}
+
+    def _fake_run_module(module, overrides, dry_run=False, mode="local"):
+        captured["overrides"] = overrides
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.commands.run_module", _fake_run_module
+    )
+
+    eval_command(
+        mode="local",
+        dataset="reaction_diffusion",
+        work_dir=str(tmp_path),
+        checkpoint=None,
+        eval_subdir="eval",
+        video_dir=None,
+        batch_indices="[0]",
+        overrides=[],
+        dry_run=True,
+    )
+
+    overrides = captured["overrides"]
+    assert isinstance(overrides, list)
+    assert "eval=encoder_processor_decoder" in overrides
+    assert any(o.startswith("datamodule=") for o in overrides)
 
 
 def test_eval_command_keeps_explicit_hydra_config(monkeypatch, tmp_path):
@@ -432,6 +468,27 @@ def test_build_train_overrides_normalizes_relative_resume_path(tmp_path, monkeyp
     )
 
     assert f"+resume_from_checkpoint={expected_ckpt}" in command_overrides
+
+
+def test_run_module_command_places_config_flags_before_overrides():
+    command = run_module_command(
+        "autocast.scripts.eval.encoder_processor_decoder",
+        [
+            "eval.batch_indices=[0,1]",
+            "datamodule.batch_size=16",
+            "--config-name",
+            "resolved_config",
+            "--config-path",
+            "/tmp/workdir",
+        ],
+    )
+
+    assert "--config-name" in command
+    assert "resolved_config" in command
+    assert "--config-path" in command
+    assert "/tmp/workdir" in command
+    assert command.index("--config-name") < command.index("eval.batch_indices=[0,1]")
+    assert command.index("--config-path") < command.index("eval.batch_indices=[0,1]")
 
 
 # ---------------------------------------------------------------------------

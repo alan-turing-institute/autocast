@@ -11,6 +11,53 @@ from pathlib import Path
 
 from autocast.scripts.workflow.overrides import extract_override_value
 
+_HYDRA_FLAGS_WITH_VALUES = {
+    "--config-name",
+    "--config-path",
+    "--config-dir",
+    "--cfg",
+    "--package",
+    "--info",
+    "--experimental-rerun",
+}
+
+_HYDRA_FLAGS_VALUELESS = {
+    "--run",
+    "--multirun",
+    "--resolve",
+    "--shell-completion",
+}
+
+
+def _split_hydra_cli_args(args: list[str]) -> tuple[list[str], list[str]]:
+    """Split Hydra CLI flags from positional override arguments."""
+    cli_args: list[str] = []
+    overrides: list[str] = []
+
+    index = 0
+    while index < len(args):
+        arg = args[index]
+
+        if any(arg.startswith(f"{flag}=") for flag in _HYDRA_FLAGS_WITH_VALUES):
+            cli_args.append(arg)
+            index += 1
+            continue
+
+        if arg in _HYDRA_FLAGS_VALUELESS:
+            cli_args.append(arg)
+            index += 1
+            continue
+
+        if arg in _HYDRA_FLAGS_WITH_VALUES and index + 1 < len(args):
+            cli_args.extend([arg, args[index + 1]])
+            index += 2
+            continue
+
+        overrides.append(arg)
+        index += 1
+
+    return cli_args, overrides
+
 
 def format_command(command: list[str]) -> str:
     """Format a command list as a shell-safe string."""
@@ -19,7 +66,8 @@ def format_command(command: list[str]) -> str:
 
 def run_module_command(module: str, overrides: list[str]) -> list[str]:
     """Build the ``python -m`` command list for *module* with *overrides*."""
-    return [sys.executable, "-m", module, *overrides]
+    cli_args, hydra_overrides = _split_hydra_cli_args(overrides)
+    return [sys.executable, "-m", module, *cli_args, *hydra_overrides]
 
 
 def resolve_umask_from_overrides(

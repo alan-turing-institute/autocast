@@ -282,6 +282,7 @@ def build_eval_overrides(
     video_dir: str | None,
     batch_indices: str,
     overrides: list[str],
+    using_resolved_config: bool = False,
 ) -> tuple[Path, list[str]]:
     """Build evaluation overrides from CLI arguments."""
     base_work_dir = Path(work_dir).expanduser().resolve()
@@ -294,13 +295,28 @@ def build_eval_overrides(
 
     command_overrides = [
         *build_common_launch_overrides(mode=mode, work_dir=eval_dir),
-        "eval=encoder_processor_decoder",
-        *dataset_overrides(dataset=dataset, datasets_root=datasets_root()),
-        f"eval.checkpoint={ckpt}",
-        f"eval.batch_indices={batch_indices}",
-        f"eval.video_dir={resolved_video_dir}",
-        *overrides,
     ]
+
+    # Defaults-group overrides (eval=..., datamodule=...) are only valid when
+    # using the default Hydra config which contains a ``defaults`` list. A
+    # resolved config already has these sections fully inlined, so we must
+    # skip group selectors and only emit dot-path value overrides.
+    if not using_resolved_config:
+        command_overrides.append("eval=encoder_processor_decoder")
+        command_overrides.extend(
+            dataset_overrides(dataset=dataset, datasets_root=datasets_root())
+        )
+    else:
+        command_overrides.append(f"datamodule.data_path={datasets_root() / dataset}")
+
+    command_overrides.extend(
+        [
+            f"eval.checkpoint={ckpt}",
+            f"eval.batch_indices={batch_indices}",
+            f"eval.video_dir={resolved_video_dir}",
+            *overrides,
+        ]
+    )
     return eval_dir, command_overrides
 
 
@@ -358,6 +374,7 @@ def eval_command(
     has_config_name = _has_cli_flag(effective_overrides, "--config-name")
     has_config_path = _has_cli_flag(effective_overrides, "--config-path")
 
+    using_resolved_config = False
     if not (has_config_name or has_config_path):
         inferred_config = infer_hydra_config_from_workdir(work_dir)
         if inferred_config is not None:
@@ -369,6 +386,7 @@ def eval_command(
                 config_path,
                 *effective_overrides,
             ]
+            using_resolved_config = True
 
     _eval_dir, command_overrides = build_eval_overrides(
         mode=mode,
@@ -379,6 +397,7 @@ def eval_command(
         video_dir=video_dir,
         batch_indices=batch_indices,
         overrides=effective_overrides,
+        using_resolved_config=using_resolved_config,
     )
 
     run_module(EVAL_MODULE, command_overrides, dry_run=dry_run, mode=mode)
