@@ -413,6 +413,50 @@ class RunCollator:
 
         return metrics
 
+    def _parse_metadata_csvs(self, run_dir: Path) -> pd.DataFrame:
+        """Parse evaluation/rollout metadata CSVs for a single run.
+
+        Parameters
+        ----------
+        run_dir : Path
+            Path to the run directory.
+
+        Returns
+        -------
+        pd.DataFrame
+            Combined metadata DataFrame for the run. Empty if no metadata CSVs
+            are present or parseable.
+        """
+        metadata_frames: list[pd.DataFrame] = []
+
+        metadata_sources = {
+            "evaluation": run_dir / "eval" / "evaluation_metadata.csv",
+            "rollout": run_dir / "eval" / "rollout_metadata.csv",
+        }
+
+        for source_name, csv_path in metadata_sources.items():
+            if not csv_path.exists():
+                continue
+            try:
+                df_source = pd.read_csv(csv_path)
+                if df_source.empty:
+                    continue
+                df_source = df_source.copy()
+                df_source["metadata_source"] = source_name
+                metadata_frames.append(df_source)
+            except Exception as e:
+                self.log.warning("Failed to parse metadata CSV %s: %s", csv_path, e)
+
+        if not metadata_frames:
+            return pd.DataFrame()
+
+        df_metadata = pd.concat(metadata_frames, ignore_index=True)
+        run_metadata = self._extract_run_metadata(run_dir)
+        for key, value in run_metadata.items():
+            df_metadata[key] = value
+
+        return df_metadata
+
     def _process_single_run(self, run_dir: Path) -> dict[str, Any] | None:
         """Process a single run directory, handling errors gracefully.
 
@@ -481,7 +525,8 @@ class RunCollator:
         self,
         output_csv: str | Path = "collated_results.csv",
         save_csv: bool = True,
-    ) -> pd.DataFrame:
+        include_metadata_dataframes: bool = False,
+    ) -> pd.DataFrame | tuple[pd.DataFrame, dict[str, pd.DataFrame]]:
         """Collate results from multiple runs in the outputs directory.
 
         Parameters
@@ -490,11 +535,17 @@ class RunCollator:
             Path where the CSV file will be saved.
         save_csv : bool, default=True
             Whether to save the DataFrame to CSV.
+        include_metadata_dataframes : bool, default=False
+            Whether to also return per-run metadata DataFrames loaded from
+            ``eval/evaluation_metadata.csv`` and ``eval/rollout_metadata.csv``.
 
         Returns
         -------
-        pd.DataFrame
-            DataFrame with columns for run metadata and metrics.
+        pd.DataFrame | tuple[pd.DataFrame, dict[str, pd.DataFrame]]
+            If ``include_metadata_dataframes`` is False, returns the collated
+            metrics DataFrame. If True, returns a tuple of:
+            1) collated metrics DataFrame
+            2) dict mapping run_path -> metadata DataFrame for that run
         """
         # Discover runs
         runs = self._discover_runs()
@@ -502,10 +553,17 @@ class RunCollator:
 
         # Process each run
         results = []
+        metadata_by_run: dict[str, pd.DataFrame] = {}
         for run_dir in runs:
             run_data = self._process_single_run(run_dir)
             if run_data is not None:
                 results.append(run_data)
+
+                if include_metadata_dataframes:
+                    run_path = str(run_dir.relative_to(self.outputs_path))
+                    df_metadata = self._parse_metadata_csvs(run_dir)
+                    if not df_metadata.empty:
+                        metadata_by_run[run_path] = df_metadata
 
         # Create DataFrame
         df = pd.DataFrame(results)
@@ -516,6 +574,9 @@ class RunCollator:
             output_path = Path(output_csv).expanduser().resolve()
             self._save_results(df, output_path)
 
+        if include_metadata_dataframes:
+            return df, metadata_by_run
+
         return df
 
 
@@ -524,7 +585,8 @@ def collate_run_results(
     output_csv: str | Path = "collated_results.csv",
     save_csv: bool = True,
     config_params: dict[str, str] | None = None,
-) -> pd.DataFrame:
+    include_metadata_dataframes: bool = False,
+) -> pd.DataFrame | tuple[pd.DataFrame, dict[str, pd.DataFrame]]:
     """Collate results from multiple runs in the outputs directory.
 
     This is a convenience function that creates a RunCollator instance
@@ -541,11 +603,19 @@ def collate_run_results(
     config_params : dict[str, str] | None, default=None
         Dictionary mapping output column names to config paths (dot notation).
         If None, uses default parameters.
+    include_metadata_dataframes : bool, default=False
+        Whether to also return per-run metadata DataFrames loaded from
+        ``eval/evaluation_metadata.csv`` and ``eval/rollout_metadata.csv``.
 
     Returns
     -------
-    pd.DataFrame
-        DataFrame with columns for run metadata and metrics.
+    pd.DataFrame | tuple[pd.DataFrame, dict[str, pd.DataFrame]]
+        If ``include_metadata_dataframes`` is False, returns the collated
+        metrics DataFrame. If True, returns ``(metrics_df, metadata_by_run)``.
     """
     collator = RunCollator(outputs_dir=outputs_dir, config_params=config_params)
-    return collator.collate(output_csv=output_csv, save_csv=save_csv)
+    return collator.collate(
+        output_csv=output_csv,
+        save_csv=save_csv,
+        include_metadata_dataframes=include_metadata_dataframes,
+    )

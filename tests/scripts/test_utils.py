@@ -1,5 +1,6 @@
 """Tests for autocast.scripts.utils module."""
 
+import pandas as pd
 import pytest
 
 from autocast.scripts.utils import RunCollator
@@ -329,3 +330,93 @@ def test_empty_pattern_parts(collator, sample_config):
     matches = collator._find_matching_paths(sample_config, "model.")
     # Should handle gracefully (implementation dependent)
     assert isinstance(matches, list)
+
+
+def test_parse_metadata_csvs_combines_sources(collator, tmp_path):
+    """Metadata parser should read and merge evaluation/rollout metadata CSVs."""
+    run_dir = tmp_path / "outputs" / "2026-02-24" / "test_run"
+    eval_dir = run_dir / "eval"
+    eval_dir.mkdir(parents=True)
+
+    pd.DataFrame(
+        [
+            {
+                "window": "meta",
+                "batch_idx": "all",
+                "category": "runtime",
+                "metric": "total_s",
+                "value": 1.23,
+            },
+        ]
+    ).to_csv(eval_dir / "evaluation_metadata.csv", index=False)
+
+    pd.DataFrame(
+        [
+            {
+                "window": "meta",
+                "batch_idx": "all",
+                "category": "runtime_rollout",
+                "metric": "total_s",
+                "value": 2.34,
+            },
+        ]
+    ).to_csv(eval_dir / "rollout_metadata.csv", index=False)
+
+    parsed = collator._parse_metadata_csvs(run_dir)
+
+    assert not parsed.empty
+    assert "metadata_source" in parsed.columns
+    assert set(parsed["metadata_source"].astype(str).unique()) == {
+        "evaluation",
+        "rollout",
+    }
+    assert "run_path" in parsed.columns
+    assert (parsed["run_name"] == "test_run").all()
+
+
+def test_collate_returns_metadata_dataframes_when_requested(collator, tmp_path):
+    """Collate should optionally return per-run metadata DataFrames."""
+    run_dir = tmp_path / "outputs" / "2026-02-24" / "run_abc"
+    eval_dir = run_dir / "eval"
+    eval_dir.mkdir(parents=True)
+
+    (run_dir / "resolved_config.yaml").write_text(
+        "model: {}\ndatamodule: {}\noptimizer: {}\n"
+    )
+
+    pd.DataFrame(
+        [
+            {
+                "window": "all",
+                "batch_idx": "all",
+                "mse": 0.1,
+                "mae": 0.2,
+                "rmse": 0.3,
+                "vrmse": 0.4,
+                "coverage": 0.5,
+            },
+        ]
+    ).to_csv(eval_dir / "evaluation_metrics.csv", index=False)
+
+    pd.DataFrame(
+        [
+            {
+                "window": "meta",
+                "batch_idx": "all",
+                "category": "runtime_eval",
+                "metric": "total_s",
+                "value": 9.99,
+            },
+        ]
+    ).to_csv(eval_dir / "evaluation_metadata.csv", index=False)
+
+    df_metrics, metadata_by_run = collator.collate(
+        save_csv=False,
+        include_metadata_dataframes=True,
+    )
+
+    assert not df_metrics.empty
+    assert "2026-02-24/run_abc" in metadata_by_run
+    df_metadata = metadata_by_run["2026-02-24/run_abc"]
+    assert not df_metadata.empty
+    assert "metadata_source" in df_metadata.columns
