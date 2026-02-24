@@ -19,7 +19,7 @@ from autocast.types import Batch, EncodedBatch
 
 @pytest.fixture
 def config_dir(REPO_ROOT: Path) -> str:
-    return str(REPO_ROOT / "configs")
+    return str(REPO_ROOT / "src" / "autocast" / "configs")
 
 
 def _load_config(

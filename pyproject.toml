@@ -35,6 +35,7 @@ dev = [
 ]
 
 [project.scripts]
+autocast = "autocast.scripts.workflow:main"
 train_encoder_processor_decoder = "autocast.scripts.train.encoder_processor_decoder:main"
 train_autoencoder = "autocast.scripts.train.autoencoder:main"
 evaluate_encoder_processor_decoder = "autocast.scripts.eval.encoder_processor_decoder:main"

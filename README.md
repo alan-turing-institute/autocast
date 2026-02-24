@@ -26,30 +26,21 @@ For detailed documentation on the available scripts and configuration system, se
 
 ## Quickstart
 
-Train an encoder-decoder stack and evaluate the resulting checkpoint:
+The `autocast` CLI is built on top of [Hydra](https://hydra.cc/), meaning you can pass configuration overrides directly to the commands.
+
+Train an encoder-decoder stack:
 
 ```bash
-# Train
-uv run train_autoencoder
+uv run autocast ae trainer.max_epochs=5
 ```
 
-Train an encoder-processor-decoder stack and evaluate the resulting checkpoint:
+Train and evaluate an encoder-processor-decoder stack:
 
 ```bash
-# Train
-uv run train_encoder_processor_decoder \
-	hydra.run.dir=outputs/encoder_processor_decoder_run
-	
-# Evaluate
-uv run evaluate_encoder_processor_decoder \
-	hydra.run.dir=outputs/processor_eval \
-	eval.checkpoint=outputs/encoder_processor_decoder_run/encoder_processor_decoder.ckpt \
-	eval.batch_indices=[0,1] \
-	eval.video_dir=outputs/encoder_processor_decoder_run/videos
+uv run autocast train-eval datamodule=reaction_diffusion
 ```
 
-Evaluation writes a CSV of aggregate metrics to `eval.csv_path` (defaults to
-`<work-dir>/evaluation_metrics.csv`) and, when `eval.batch_indices` is provided,
+Evaluation writes a CSV of aggregate metrics to `eval.csv_path` and, when `eval.batch_indices` is provided,
 stores rollout animations for the specified test batches.
 
 ## Example pipeline
@@ -57,7 +48,130 @@ stores rollout animations for the specified test batches.
 This assumes you have the `reaction_diffusion` dataset stored at the path specified by
 the `AUTOCAST_DATASETS` environment variable.
 
-### Train autoencoder
+### Autocast API
+
+#### Core commands and workflow options
+```bash
+uv run autocast ae \
+	datamodule=reaction_diffusion \
+	--run-group rd
+```
+
+Unified workflow CLI supports both local and SLURM launch modes:
+
+```bash
+# Local (default)
+uv run autocast epd \
+	datamodule=reaction_diffusion \
+	--run-group my_label \
+	trainer.max_epochs=5
+
+# SLURM submit-and-exit via sbatch
+uv run autocast epd \
+	--mode slurm \
+	datamodule=reaction_diffusion \
+	--run-group my_label \
+	trainer.max_epochs=5
+```
+
+When `--mode slurm`, `autocast` writes an sbatch script, submits it, and exits
+immediately. Outputs are written under `outputs/<run_group>/<run_id>`.
+
+Resume training from a checkpoint:
+```bash
+uv run autocast epd \
+	datamodule=reaction_diffusion \
+	--workdir outputs/rd/00 \
+	--resume-from outputs/rd/00/encoder_processor_decoder.ckpt
+```
+
+Train + evaluate in one command:
+```bash
+uv run autocast train-eval \
+	datamodule=reaction_diffusion \
+	--run-group rd
+```
+
+For `train-eval`, evaluation starts only after training has completed successfully
+(including in `--mode slurm`).
+
+To run  `eval` on a previously trained model, set `--workdir` to the run folder containing the configuration and checkpoint to evaluate:
+```bash
+uv run autocast eval --workdir outputs/rd/00
+```
+
+#### Configuration and overrides
+Keep private experiment presets in `local_hydra/local_experiment/` and select
+them with `local_experiment=<name>`. YAML files in that folder are ignored by
+git by default.
+
+To load configs from a separate directory (including packaged installs), set:
+
+```bash
+export AUTOCAST_CONFIG_PATH=/absolute/path/to/configs
+```
+
+Override mapping quick reference:
+- `configs/hydra/launcher/slurm.yaml` key `X` maps to CLI `hydra.launcher.X=...`
+- Use `hydra/launcher=slurm_baskerville` for Baskerville module/setup defaults
+from `local_hydra/hydra/launcher/slurm_baskerville.yaml`.
+- In `autocast train-eval`, positional overrides are train-only.
+- Eval-only overrides go in `--eval-overrides ...`.
+- `--eval-overrides` is a separator: place train overrides before it and eval
+overrides after it.
+
+Permissions quick reference:
+- Lower-level Hydra training/evaluation scripts use config key `umask` (default `0002` in `encoder_processor_decoder`).
+
+Use `--dry-run` to print resolved commands/scripts without executing.
+
+Launch many prewritten runs from a manifest file:
+```bash
+bash scripts/launch_from_manifest.sh run_manifests/example_runs.txt
+```
+
+Date handling is automatic: if `--run-group` is omitted, current date is used.
+Run naming is also automatic: if `--run-id` is omitted, `autocast` generates
+a legacy-style run id (dataset/model/hash/uuid based) and uses it for both
+the run folder and default `logging.wandb.name`.
+Pass `--run-group` only to override the top-level folder label.
+Backward-compatible aliases remain available: `--run-label` and `--run-name`.
+
+W&B naming behavior:
+- `--run-group` only changes the parent output folder (`outputs/<run_group>/...`).
+- `--run-id` sets the run folder name and, by default, `logging.wandb.name`.
+- Set `logging.wandb.name=...` via Hydra overrides to explicitly name the W&B run.
+
+Multi-GPU is supported by passing trainer/Hydra overrides, e.g.:
+```bash
+uv run autocast epd --mode slurm \
+	datamodule=reaction_diffusion \
+	trainer.devices=4 trainer.strategy=ddp hydra.launcher.gpus_per_node=4
+```
+
+### Experiment Tracking with Weights & Biases
+
+AutoCast optionally integrates with [Weights & Biases](https://wandb.ai/) that is
+ driven by the Hydra config under `src/autocast/configs/logging/wandb.yaml`.
+
+Enable logging by passing Hydra config overrides as positional arguments:
+
+```bash
+uv run autocast epd \
+	logging.wandb.enabled=true \
+	logging.wandb.project=autocast-experiments \
+	logging.wandb.name=processor-baseline
+```
+
+All example notebooks contain a dedicated cell that instantiates a `wandb_logger` via `autocast.logging.create_wandb_logger`. Toggle the `enabled` flag in that cell to control tracking when experimenting interactively.
+
+When `enabled` remains `false` (the default), the logger is skipped entirely, so the stack can be used without a W&B account.
+
+## Direct usage of lower-level Hydra scripts
+
+The `autocast` CLI is a convenient wrapper around the lower-level Hydra scripts in `src/autocast/scripts/`. You can run those directly if you prefer, for example:
+
+#### Train autoencoder script
 ```bash
 uv run train_autoencoder \
 	hydra.run.dir=outputs/rd/00 \
@@ -68,13 +182,7 @@ uv run train_autoencoder \
 	logging.wandb.enabled=true
 ```
 
-Or alternatively with the included bash script:
-```bash
-./scripts/ae.sh rd 00 reaction_diffusion
-```
-
-### Train processor
-
+#### Train processor script
 ```bash
 uv run train_encoder_processor_decoder \
 	hydra.run.dir=outputs/rd/00 \
@@ -86,12 +194,7 @@ uv run train_encoder_processor_decoder \
 	'autoencoder_checkpoint=outputs/rd/00/autoencoder.ckpt'
 ```
 
-Or alternatively with the included bash script:
-```bash
-./scripts/epd.sh rd 00 reaction_diffusion
-```
-
-### Evaluation
+#### Evaluation script
 ```bash
 uv run evaluate_encoder_processor_decoder \
 	hydra.run.dir=outputs/rd/00/eval \
@@ -102,74 +205,22 @@ uv run evaluate_encoder_processor_decoder \
 	datamodule.use_simulator=false
 ```
 
-Or alternatively with the included bash script:
-```bash
-./scripts/eval.sh rd 00 reaction_diffusion
-```
-
-## Experiment Tracking with Weights & Biases
-
-AutoCast now ships with an optional [Weights & Biases](https://wandb.ai/) integration that is
-fully driven by the Hydra config under `configs/logging/wandb.yaml`.
-
-- Enable logging for CLI workflows by passing Hydra config overrides as positional arguments:
-
-	```bash
-	uv run train_encoder_processor_decoder \
-		logging.wandb.enabled=true \
-		logging.wandb.project=autocast-experiments \
-		logging.wandb.name=processor-baseline
-	```
-
-- The autoencoder/processor training CLIs pass the configured `WandbLogger` directly into Lightning so that metrics, checkpoints, and artifacts are synchronized automatically.
-- The evaluation CLI reports aggregate test metrics to the same run when logging is enabled, making it easy to compare training and evaluation outputs in one dashboard.
-- All notebooks contain a dedicated cell that instantiates a `wandb_logger` via `autocast.logging.create_wandb_logger`. Toggle the `enabled` flag in that cell to control tracking when experimenting interactively.
-
-When `enabled` remains `false` (the default), the logger is skipped entirely, so the stack can
-be used without a W&B account.
-
 ## Running on HPC 
 
-In the [slurm_templates](/slurm_templates/) folders, template slurm scripts can be found for the following use cases: 
+The `autocast` CLI directly supports SLURM submission via `--mode slurm`.
+This section is a quick reference for common HPC usage.
 
-- train_and_eval_autoencoder.sh : Training and evaluation of the autoencoder 
-- train_and_eval_encoder-processor-decoder.sh : Training and evaluation of the encoder-processor-decoder approach
-- encoder-processor-decoder-parameter_sweep : Same as above but runs a parameter sweep 
-
-We advise you copy these scripts into a folder called `slurm_scripts` (which is in the gitignore) and edit as you see fit. 
-
-### Single Job 
-
-To run, simply navigate to the top level of this repository, and run: 
-
-`sbatch scripts/train_and_eval_encoder-processor-decoder.sh` or 
-`sbatch scripts/train_and_eval_autoencoder.sh` depending on which model you would like to run.
-
-This will train and evaluate the model using the settings in the corresponding config (found in the configs folder). Outputs from both train and eval will be written out to an outputs folder with the following naming convention: 
-
-`outputs/{job_name}/{$date +%Y%m%d_%H%M%S}`. 
+For single-job SLURM usage (`autocast epd --mode slurm` or
+`autocast train-eval --mode slurm`), see the examples above in
+`Example pipeline`.
 
 ### Multiple Jobs
 
-`scripts/encoder-processor-decoder-parameter_sweep.sh` is an example parameter sweep. 
+Use Hydra multi-run directly for sweeps, e.g.
+`uv run autocast epd --mode slurm datamodule=reaction_diffusion trainer.max_epochs=5,10`.
 
-It uses slurm arrays and hydra override functionality to sweep through combinations of parameters. The resulting output structure looks like this: 
-
-- outputs	
-	- {job_name}
-		- job-{job_id} # Unique for each sweep run 
-			- parameter_lookup.csv # csv file mapping task id to parameter values. 
-			- task-0 # 0 is the slurm array task id. It is unique for each set of parameters
-			- task-1
-			- etc. 
-
-A checklist of things to change in the example script:
-
-- `--array=0-8` : This is the number of parallel jobs to run. This should be equal to the number of parameter combinations you want to run. 
-- `JOB_NAME="encoder_processor_decoder_sweep"` : Name of the Job. This is the top level directory. 
-- The whole Define Parameter Grid section. 
-- The columns to be writte to the parameter csv file 
-- The flags in the python script to overright the hydra config. e.g. `trainer.max_epochs=${MAX_EPOCH}`
+Or launch prewritten jobs from a manifest:
+`bash scripts/launch_from_manifest.sh run_manifests/example_runs.txt`.
 
 ## Contributors ✨
 
