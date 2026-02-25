@@ -168,6 +168,40 @@ def infer_resume_checkpoint(kind: str, work_dir: str | Path) -> Path | None:
     return None
 
 
+def infer_eval_checkpoint(work_dir: str | Path) -> Path | None:
+    """Infer an evaluation checkpoint path from *work_dir*."""
+    base = Path(work_dir).expanduser().resolve()
+
+    resolved_cfg = _load_resolved_config_from_workdir(base)
+    candidate_names: list[str] = []
+
+    if isinstance(resolved_cfg, dict):
+        output_cfg = resolved_cfg.get("output")
+        if isinstance(output_cfg, dict):
+            checkpoint_name = output_cfg.get("checkpoint_name")
+            if isinstance(checkpoint_name, str) and checkpoint_name:
+                candidate_names.append(checkpoint_name)
+
+        eval_cfg = resolved_cfg.get("eval")
+        if isinstance(eval_cfg, dict):
+            configured_checkpoint = eval_cfg.get("checkpoint")
+            if isinstance(configured_checkpoint, str) and configured_checkpoint:
+                candidate_names.append(configured_checkpoint)
+
+    candidate_names.extend(["encoder_processor_decoder.ckpt", "model.ckpt"])
+
+    for name in dict.fromkeys(candidate_names):
+        as_path = Path(name).expanduser()
+        if as_path.is_absolute() and as_path.exists():
+            return as_path.resolve()
+
+        for candidate in (base / as_path, base / "run" / as_path):
+            if candidate.exists():
+                return candidate.resolve()
+
+    return None
+
+
 def run_module(
     module: str,
     overrides: list[str],
@@ -361,6 +395,11 @@ def eval_command(
                 *effective_overrides,
             ]
             using_resolved_config = True
+
+    if not contains_override(effective_overrides, "eval.checkpoint="):
+        inferred_eval_checkpoint = infer_eval_checkpoint(work_dir)
+        if inferred_eval_checkpoint is not None:
+            effective_overrides.append(f"eval.checkpoint={inferred_eval_checkpoint}")
 
     _eval_dir, command_overrides = build_eval_overrides(
         mode=mode,

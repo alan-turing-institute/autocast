@@ -15,6 +15,7 @@ from autocast.scripts.workflow.commands import (
     build_train_overrides,
     eval_command,
     infer_dataset_from_workdir,
+    infer_eval_checkpoint,
     infer_hydra_config_from_workdir,
     infer_resume_checkpoint,
 )
@@ -320,6 +321,24 @@ def test_infer_resume_checkpoint_returns_none_when_missing(tmp_path):
     assert infer_resume_checkpoint("epd", tmp_path) is None
 
 
+def test_infer_eval_checkpoint_prefers_output_checkpoint_name(tmp_path):
+    (tmp_path / "resolved_config.yaml").write_text(
+        "output:\n  checkpoint_name: custom_epd.ckpt\n",
+        encoding="utf-8",
+    )
+    ckpt = tmp_path / "custom_epd.ckpt"
+    ckpt.touch()
+
+    assert infer_eval_checkpoint(tmp_path) == ckpt.resolve()
+
+
+def test_infer_eval_checkpoint_falls_back_to_default_name(tmp_path):
+    ckpt = tmp_path / "encoder_processor_decoder.ckpt"
+    ckpt.touch()
+
+    assert infer_eval_checkpoint(tmp_path) == ckpt.resolve()
+
+
 def test_infer_hydra_config_from_workdir_prefers_resolved_config(tmp_path):
     (tmp_path / "resolved_autoencoder_config.yaml").write_text(
         "x: 1\n", encoding="utf-8"
@@ -373,6 +392,8 @@ def test_eval_command_auto_infers_hydra_config(monkeypatch, tmp_path):
     assert not any(o.startswith("datamodule=") for o in overrides)
     # Dot-path overrides (e.g. datamodule.data_path) should still be present
     assert any(o.startswith("datamodule.data_path=") for o in overrides)
+    # Missing eval.checkpoint should be inferred from workdir
+    assert any(o.startswith("eval.checkpoint=") for o in overrides)
 
 
 def test_eval_command_includes_defaults_without_resolved_config(monkeypatch, tmp_path):
@@ -399,6 +420,7 @@ def test_eval_command_includes_defaults_without_resolved_config(monkeypatch, tmp
     assert isinstance(overrides, list)
     assert "eval=encoder_processor_decoder" in overrides
     assert any(o.startswith("datamodule=") for o in overrides)
+    assert any(o.startswith("eval.checkpoint=") for o in overrides)
 
 
 def test_eval_command_keeps_explicit_hydra_config(monkeypatch, tmp_path):
@@ -427,6 +449,7 @@ def test_eval_command_keeps_explicit_hydra_config(monkeypatch, tmp_path):
     assert overrides.count("--config-path") == 1
     assert "custom" in overrides
     assert "custom/path" in overrides
+    assert any(o.startswith("eval.checkpoint=") for o in overrides)
 
 
 def test_eval_command_explicit_resolved_config_skips_defaults(monkeypatch, tmp_path):
@@ -458,6 +481,33 @@ def test_eval_command_explicit_resolved_config_skips_defaults(monkeypatch, tmp_p
     assert "eval=encoder_processor_decoder" not in overrides
     assert not any(o.startswith("datamodule=") for o in overrides)
     assert any(o.startswith("datamodule.data_path=") for o in overrides)
+    assert any(o.startswith("eval.checkpoint=") for o in overrides)
+
+
+def test_eval_command_preserves_explicit_checkpoint_override(monkeypatch, tmp_path):
+    (tmp_path / "encoder_processor_decoder.ckpt").touch()
+    captured: dict[str, object] = {}
+
+    def _fake_run_module(module, overrides, dry_run=False, mode="local"):  # noqa: ARG001 unused but included for clarity
+        captured["overrides"] = overrides
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.commands.run_module", _fake_run_module
+    )
+
+    eval_command(
+        mode="local",
+        dataset="reaction_diffusion",
+        work_dir=str(tmp_path),
+        overrides=["eval.checkpoint=manual.ckpt"],
+        dry_run=True,
+    )
+
+    overrides = captured["overrides"]
+    assert isinstance(overrides, list)
+    assert "eval.checkpoint=manual.ckpt" in overrides
+    inferred = [o for o in overrides if o.startswith("eval.checkpoint=")]
+    assert inferred == ["eval.checkpoint=manual.ckpt"]
 
 
 def test_build_train_overrides_normalizes_relative_resume_path(tmp_path, monkeypatch):
