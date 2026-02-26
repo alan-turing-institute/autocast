@@ -1,5 +1,5 @@
 _target_: autocast.data.datamodule.SpatioTemporalDataModule
-data_path: "${oc.env:AUTOCAST_DATASETS,./datasets}/lattice_boltzmann"
+data_path: "${oc.env:AUTOCAST_DATASETS,./datasets}/conditioned_navier_stokes"
 batch_size: 16
 n_steps_input: 1
 n_steps_output: 4
@@ -10,25 +10,21 @@ normalization_stats:
   # TODO
   stats:
     mean:
+      u: 0.0
       velocity_x: 0.0
       velocity_y: 0.0
-      rho: 0.0
-      vorticity: 0.0
     std:
-      velocity_x: 1.0
-      velocity_y: 1.0
-      rho: 1.0
-      vorticity: 1.0
-    mean_delta:
+      u: 1.0
       velocity_x: 0.0
       velocity_y: 0.0
-      rho: 0.0
-      vorticity: 0.0
+    mean_delta:
+      u: 0.0
+      velocity_x: 0.0
+      velocity_y: 0.0
     std_delta:
-      velocity_x: 1.0
-      velocity_y: 1.0
-      rho: 1.0
-      vorticity: 1.0
-  core_field_names: ["velocity_x", "velocity_y", "rho", "vorticity"]
+      u: 1.0
+      velocity_x: 0.0
+      velocity_y: 0.0
+  core_field_names: ["u", "velocity_x", "velocity_y"]
   constant_field_names: []
 num_workers: 0
