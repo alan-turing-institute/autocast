@@ -123,22 +123,40 @@ def make_synthetic_batch(cfg, batch_size: int) -> Batch:
 
 
 def measure_flops(model, cfg, batch_size: int) -> dict:
-    """Count FLOPs for one forward pass (runs on CPU; FLOPs are device-agnostic)."""
+    """Count FLOPs for one forward pass.
+
+    Runs with batch_size=1 on the model's current device (GPU after Trainer) to
+    avoid OOM from running a large CPU forward pass. FLOPs scale linearly with
+    batch size, so per-batch FLOPs are derived by multiplying.
+    """
     if FlopCounterMode is None:
         return {}
 
-    batch = make_synthetic_batch(cfg, batch_size)
+    device = next(model.parameters()).device
+    single = make_synthetic_batch(cfg, 1)
+    single = Batch(
+        input_fields=single.input_fields.to(device),
+        output_fields=single.output_fields.to(device),
+        constant_scalars=(
+            single.constant_scalars.to(device)
+            if single.constant_scalars is not None
+            else None
+        ),
+        constant_fields=None,
+        boundary_conditions=None,
+    )
     model.eval()
     with torch.no_grad(), FlopCounterMode(display=False) as fc:
         try:
-            model.predict_step(batch, 0)
+            model.predict_step(single, 0)
         except Exception:
-            model(batch)
-    total = fc.get_total_flops()
+            model(single)
+    flops_per_sample = fc.get_total_flops()
+    flops_per_batch = flops_per_sample * batch_size
     return {
-        "flops_per_batch": total,
-        "gflops_per_batch": round(total / 1e9, 3),
-        "gflops_per_sample": round(total / 1e9 / batch_size, 4),
+        "flops_per_batch": flops_per_batch,
+        "gflops_per_batch": round(flops_per_batch / 1e9, 3),
+        "gflops_per_sample": round(flops_per_sample / 1e9, 4),
     }
 
 
@@ -199,8 +217,6 @@ class ThroughputCallback(Callback):
 def benchmark_model(
     model, cfg, n_warmup: int, n_benchmark: int, batch_size: int, num_workers: int = 0
 ) -> dict:
-    flop_metrics = measure_flops(model, cfg, batch_size)
-
     batches = [
         make_synthetic_batch(cfg, batch_size) for _ in range(n_warmup + n_benchmark)
     ]
@@ -220,6 +236,9 @@ def benchmark_model(
         logger=False,
     )
     trainer.predict(model, dataloaders=loader)
+    # Measure FLOPs after Trainer so the model is already on GPU; avoids
+    # the large CPU RAM allocation that caused OOM when run beforehand.
+    flop_metrics = measure_flops(model, cfg, batch_size)
     return {**callback.metrics(), **flop_metrics}
 
 
