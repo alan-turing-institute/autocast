@@ -122,7 +122,7 @@ def make_synthetic_batch(cfg, batch_size: int) -> Batch:
     )
 
 
-def measure_flops(model, cfg, batch_size: int) -> dict:
+def measure_flops(model, cfg) -> dict:
     """Count FLOPs for one forward pass.
 
     Runs with batch_size=1 on the model's current device (GPU after Trainer) to
@@ -152,10 +152,7 @@ def measure_flops(model, cfg, batch_size: int) -> dict:
         except Exception:
             model(single)
     flops_per_sample = fc.get_total_flops()
-    flops_per_batch = flops_per_sample * batch_size
     return {
-        "flops_per_batch": flops_per_batch,
-        "gflops_per_batch": round(flops_per_batch / 1e9, 3),
         "gflops_per_sample": round(flops_per_sample / 1e9, 4),
     }
 
@@ -238,7 +235,7 @@ def benchmark_model(
     trainer.predict(model, dataloaders=loader)
     # Measure FLOPs after Trainer so the model is already on GPU; avoids
     # the large CPU RAM allocation that caused OOM when run beforehand.
-    flop_metrics = measure_flops(model, cfg, batch_size)
+    flop_metrics = measure_flops(model, cfg)
     return {**callback.metrics(), **flop_metrics}
 
 
@@ -307,11 +304,8 @@ def main():
             )
             if "peak_gpu_memory_mb" in metrics:
                 print(f"  GPU memory: {metrics['peak_gpu_memory_mb']:.0f} MB (peak)")
-            if "gflops_per_batch" in metrics:
-                print(
-                    f"  FLOPs:      {metrics['gflops_per_batch']:.1f} GFLOPs/batch  "
-                    f"({metrics['gflops_per_sample']:.2f} GFLOPs/sample)"
-                )
+            if "gflops_per_sample" in metrics:
+                print(f"  FLOPs:      {metrics['gflops_per_sample']:.2f} GFLOPs/sample")
         except Exception as e:
             print(f"  FAILED: {e}")
             results.append({"run_id": run_id, "error": str(e)})
