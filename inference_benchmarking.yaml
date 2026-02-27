@@ -1,0 +1,20 @@
+outputs_stem: /Users/wbrown/Documents/alan-turing-institute/autocast/outputs
+output_csv: inference_benchmarking_results.csv
+
+benchmark:
+  batch_size: 1
+  n_warmup: 5
+  n_benchmark: 50
+
+runs:
+  FNO: crps_adm64_fno_concat_256_416c86d_1d4d1e6
+  ViT_p1: crps_adm64_vit_large_cln_128_7c9f3ba_74275e8
+  ViT_p4: crps_adm64_vit_large_cln_128_7c9f3ba_dc7c6cc
+  ViT_latent: crps_adm64_vit_latent_cln_64_d5ebd6f_7fc8bda
+  Diffusion: diff_adm64_diffusion_vit_512_a5ad325_db3f170
+  Flow_matching: diff_adm64_flow_matching_vit_512_a5ad325_4e14e6f
+  Diffusion_small: diff_adm64_diffusion_vit_2d156c4_d127217
+  Flow_matching_small: diff_adm64_flow_matching_vit_2d156c4_b349093
+  ViT_latent_32_noise_channels: crps_adm64_vit_latent_132450d_5c44ec9
+  ViT_latent_large: crps_adm64_vit_latent_cln_768_5100bb5_0d57d75
+  FNO_small: crps_adm64_fno_concat_128_0025526_2b520bf
