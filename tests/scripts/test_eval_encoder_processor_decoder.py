@@ -1,9 +1,12 @@
 """Unit tests for evaluation batch-limit resolution."""
 
+from types import SimpleNamespace
+
 from omegaconf import OmegaConf
 
 from autocast.scripts.eval.encoder_processor_decoder import (
     _resolve_rollout_batch_limit,
+    _resolve_rollout_channel_names,
     _split_metric_and_metadata_rows,
 )
 
@@ -58,3 +61,31 @@ def test_split_metric_and_metadata_rows_separates_meta_rows():
             "value": 1.2,
         }
     ]
+
+
+def test_resolve_rollout_channel_names_from_norm_with_output_selection():
+    dataset = SimpleNamespace(
+        norm=SimpleNamespace(core_field_names=["u", "v", "p"]),
+        output_channel_idxs=(2, 0),
+    )
+
+    assert _resolve_rollout_channel_names(dataset) == ["p", "u"]
+
+
+def test_resolve_rollout_channel_names_returns_none_without_norm_names():
+    dataset = SimpleNamespace(
+        norm=None,
+        metadata=SimpleNamespace(field_names={0: ["velocity_x", "velocity_y"]}),
+        output_channel_idxs=None,
+    )
+
+    assert _resolve_rollout_channel_names(dataset) is None
+
+
+def test_resolve_rollout_channel_names_returns_none_on_invalid_output_indices():
+    dataset = SimpleNamespace(
+        norm=SimpleNamespace(core_field_names=["u", "v"]),
+        output_channel_idxs=(0, 3),
+    )
+
+    assert _resolve_rollout_channel_names(dataset) is None
