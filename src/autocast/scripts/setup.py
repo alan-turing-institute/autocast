@@ -231,6 +231,23 @@ def setup_autoencoder_components(
         decoder_config,
     )
     encoder = instantiate(encoder_config)
+
+    if (
+        decoder_config
+        and "in_channels" in decoder_config
+        and decoder_config.get("in_channels") in (None, "auto")
+    ):
+        if hasattr(encoder, "latent_channels") and isinstance(
+            encoder.latent_channels, int
+        ):
+            decoder_config["in_channels"] = encoder.latent_channels
+        else:
+            msg = (
+                "decoder.in_channels is auto, but encoder latent_channels is not "
+                "available."
+            )
+            raise ValueError(msg)
+
     decoder = instantiate(decoder_config)
     checkpoint = config.get("autoencoder_checkpoint")
 
