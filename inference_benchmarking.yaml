@@ -1,10 +1,11 @@
-outputs_stem: /Users/wbrown/Documents/alan-turing-institute/autocast/outputs
+outputs_stem: /projects/u5gf/ai4physics/outputs
 output_csv: inference_benchmarking_results.csv
 
 benchmark:
   batch_size: 1
   n_warmup: 5
   n_benchmark: 50
+  num_workers: 0
 
 runs:
   FNO: crps_adm64_fno_concat_256_416c86d_1d4d1e6

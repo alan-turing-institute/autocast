@@ -159,13 +159,14 @@ class ThroughputCallback(Callback):
 
 
 def benchmark_model(
-    model, cfg, n_warmup: int, n_benchmark: int, batch_size: int
+    model, cfg, n_warmup: int, n_benchmark: int, batch_size: int, num_workers: int = 0
 ) -> dict:
     batches = [
         make_synthetic_batch(cfg, batch_size) for _ in range(n_warmup + n_benchmark)
     ]
     loader = DataLoader(
-        SyntheticDataset(batches), batch_size=1, collate_fn=lambda x: x[0]
+        SyntheticDataset(batches), batch_size=1, collate_fn=lambda x: x[0],
+        num_workers=num_workers,
     )
 
     callback = ThroughputCallback(n_warmup=n_warmup, batch_size=batch_size)
@@ -197,6 +198,7 @@ def main():
     batch_size = bcfg.benchmark.batch_size
     n_warmup = bcfg.benchmark.n_warmup
     n_benchmark = bcfg.benchmark.n_benchmark
+    num_workers = bcfg.benchmark.get("num_workers", 0)
     run_ids = list(OmegaConf.to_container(bcfg.runs).values())
 
     results = []
@@ -218,7 +220,9 @@ def main():
             state_dict = _extract_state_dict(checkpoint)
             model.load_state_dict(state_dict, strict=True)
 
-            metrics = benchmark_model(model, cfg, n_warmup, n_benchmark, batch_size)
+            metrics = benchmark_model(
+                model, cfg, n_warmup, n_benchmark, batch_size, num_workers
+            )
 
             results.append(
                 {
