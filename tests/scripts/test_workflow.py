@@ -510,6 +510,34 @@ def test_eval_command_preserves_explicit_checkpoint_override(monkeypatch, tmp_pa
     assert inferred == ["eval.checkpoint=manual.ckpt"]
 
 
+def test_eval_command_quotes_inferred_checkpoint_with_equals(monkeypatch, tmp_path):
+    ckpt = tmp_path / "step-step=10000.ckpt"
+    ckpt.touch()
+    (tmp_path / "resolved_config.yaml").write_text(
+        "output:\n  checkpoint_name: step-step=10000.ckpt\n", encoding="utf-8"
+    )
+    captured: dict[str, object] = {}
+
+    def _fake_run_module(module, overrides, dry_run=False, mode="local"):  # noqa: ARG001 unused but included for clarity
+        captured["overrides"] = overrides
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.commands.run_module", _fake_run_module
+    )
+
+    eval_command(
+        mode="local",
+        dataset="reaction_diffusion",
+        work_dir=str(tmp_path),
+        overrides=[],
+        dry_run=True,
+    )
+
+    overrides = captured["overrides"]
+    assert isinstance(overrides, list)
+    assert f'eval.checkpoint="{ckpt.resolve()}"' in overrides
+
+
 def test_build_train_overrides_normalizes_relative_resume_path(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     relative_ckpt = "outputs/2026-02-22/run/autoencoder.ckpt"
