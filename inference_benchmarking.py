@@ -3,6 +3,11 @@ import re
 import time
 from pathlib import Path
 
+try:
+    from torch.utils.flop_counter import FlopCounterMode
+except ImportError:
+    FlopCounterMode = None
+
 import pandas as pd
 import torch
 from hydra.utils import instantiate
@@ -117,6 +122,26 @@ def make_synthetic_batch(cfg, batch_size: int) -> Batch:
     )
 
 
+def measure_flops(model, cfg, batch_size: int) -> dict:
+    """Count FLOPs for one forward pass (runs on CPU; FLOPs are device-agnostic)."""
+    if FlopCounterMode is None:
+        return {}
+
+    batch = make_synthetic_batch(cfg, batch_size)
+    model.eval()
+    with torch.no_grad(), FlopCounterMode(display=False) as fc:
+        try:
+            model.predict_step(batch, 0)
+        except Exception:
+            model(batch)
+    total = fc.get_total_flops()
+    return {
+        "flops_per_batch": total,
+        "gflops_per_batch": round(total / 1e9, 3),
+        "gflops_per_sample": round(total / 1e9 / batch_size, 4),
+    }
+
+
 class SyntheticDataset(Dataset):
     def __init__(self, batches: list):
         self.batches = batches
@@ -134,10 +159,13 @@ class ThroughputCallback(Callback):
         self.batch_size = batch_size
         self._batch_times: list[float] = []
         self._t: float | None = None
+        self._peak_gpu_memory_bytes: int = 0
 
     def on_predict_batch_start(
         self, trainer, pl_module, batch, batch_idx, dataloader_idx=0
     ):
+        if batch_idx == self.n_warmup and torch.cuda.is_available():
+            torch.cuda.reset_peak_memory_stats()
         if batch_idx >= self.n_warmup:
             self._t = time.perf_counter()
 
@@ -146,26 +174,40 @@ class ThroughputCallback(Callback):
     ):
         if batch_idx >= self.n_warmup and self._t is not None:
             self._batch_times.append(time.perf_counter() - self._t)
+            if torch.cuda.is_available():
+                self._peak_gpu_memory_bytes = max(
+                    self._peak_gpu_memory_bytes,
+                    torch.cuda.max_memory_allocated(),
+                )
 
     def metrics(self) -> dict:
         total = sum(self._batch_times)
         n = len(self._batch_times)
         latency_batch_ms = total / n * 1000
-        return {
+        result = {
             "throughput_samples_per_sec": (n * self.batch_size) / total,
             "latency_ms_per_batch": latency_batch_ms,
             "latency_ms_per_sample": latency_batch_ms / self.batch_size,
         }
+        if self._peak_gpu_memory_bytes > 0:
+            result["peak_gpu_memory_mb"] = round(
+                self._peak_gpu_memory_bytes / 1024**2, 1
+            )
+        return result
 
 
 def benchmark_model(
     model, cfg, n_warmup: int, n_benchmark: int, batch_size: int, num_workers: int = 0
 ) -> dict:
+    flop_metrics = measure_flops(model, cfg, batch_size)
+
     batches = [
         make_synthetic_batch(cfg, batch_size) for _ in range(n_warmup + n_benchmark)
     ]
     loader = DataLoader(
-        SyntheticDataset(batches), batch_size=1, collate_fn=lambda x: x[0],
+        SyntheticDataset(batches),
+        batch_size=1,
+        collate_fn=lambda x: x[0],
         num_workers=num_workers,
     )
 
@@ -178,7 +220,7 @@ def benchmark_model(
         logger=False,
     )
     trainer.predict(model, dataloaders=loader)
-    return callback.metrics()
+    return {**callback.metrics(), **flop_metrics}
 
 
 def main():
@@ -244,6 +286,13 @@ def main():
                 f"  Latency:    {metrics['latency_ms_per_batch']:.1f} ms/batch  "
                 f"({metrics['latency_ms_per_sample']:.2f} ms/sample)"
             )
+            if "peak_gpu_memory_mb" in metrics:
+                print(f"  GPU memory: {metrics['peak_gpu_memory_mb']:.0f} MB (peak)")
+            if "gflops_per_batch" in metrics:
+                print(
+                    f"  FLOPs:      {metrics['gflops_per_batch']:.1f} GFLOPs/batch  "
+                    f"({metrics['gflops_per_sample']:.2f} GFLOPs/sample)"
+                )
         except Exception as e:
             print(f"  FAILED: {e}")
             results.append({"run_id": run_id, "error": str(e)})
