@@ -12,6 +12,7 @@ from autocast.scripts.setup import (
     _get_latent_channels,
     _set_if_auto,
     resolve_auto_params,
+    setup_autoencoder_components,
 )
 from autocast.types import Batch
 
@@ -191,3 +192,27 @@ def test_get_latent_channels_requires_attribute():
     encoder = BrokenEncoder()
     with pytest.raises(ValueError, match="must set latent_channels"):
         _get_latent_channels(encoder)
+
+
+def test_setup_autoencoder_components_resolves_decoder_in_channels_auto():
+    cfg = OmegaConf.create(
+        {
+            "model": {
+                "encoder": {
+                    "_target_": "autocast.encoders.identity.IdentityEncoder",
+                    "in_channels": "auto",
+                },
+                "decoder": {
+                    "_target_": "autocast.decoders.identity.IdentityDecoder",
+                    "in_channels": "auto",
+                },
+            },
+            "autoencoder_checkpoint": None,
+        }
+    )
+    stats = {"channel_count": 3, "n_steps_input": 2, "n_steps_output": 2}
+
+    encoder, decoder = setup_autoencoder_components(cfg, stats)
+
+    assert encoder.latent_channels == 3
+    assert decoder.latent_channels == 3
