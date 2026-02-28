@@ -21,4 +21,10 @@ DATASET_NAME_TOKENS: dict[str, str] = {
     "advection_diffusion_multichannel": "adm32",
     "advection_diffusion_singlechannel": "ad32",
     "reaction_diffusion": "rd32",
+    "gray_scott_spirals": "gss64",
+    "gray_scott_gliders": "gsg64",
+    "gray_scott_range_spirals": "gsrs64",
+    "gray_scott_range_gliders": "gsrg64",
+    "lattice_boltzmann": "lb64",
+    "conditioned_navier_stokes": "cns64",
 }
