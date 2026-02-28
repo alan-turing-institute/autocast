@@ -1,5 +1,5 @@
 _target_: lightning.pytorch.trainer.trainer.Trainer
-max_time: "12:00:00" # Hours or datetime string, e.g. "2024-12-31 23:59:59"
+max_time: "00:12:00:00" # Hours or datetime string, e.g. "2024-12-31 23:59:59"
 accelerator: auto
 strategy: auto
 num_nodes: 1
