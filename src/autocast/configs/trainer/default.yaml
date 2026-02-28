@@ -18,4 +18,5 @@ callbacks:
     every_n_epochs: 5
     save_on_train_epoch_end: true
     filename: "latest-5ep-{epoch:04d}"
+    auto_insert_metric_name: false
 
