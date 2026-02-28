@@ -21,7 +21,7 @@ from autocast.models.encoder_processor_decoder_ensemble import (
 )
 from autocast.models.processor import ProcessorModel
 from autocast.models.processor_ensemble import ProcessorModelEnsemble
-from autocast.scripts.data import build_datamodule
+from autocast.scripts.data import batch_to_device, build_datamodule
 from autocast.types.batch import Batch, EncodedBatch
 
 log = logging.getLogger(__name__)
@@ -428,9 +428,14 @@ def setup_epd_model(
     log.info("Latent channel in count: %s", latent_channels)
     log.info("Latent channel out count: %s", latent_channels_out)
 
+    example_batch = stats["example_batch"]
+    if isinstance(example_batch, Batch):
+        encoder_device = next(encoder.parameters()).device
+        example_batch = batch_to_device(example_batch, encoder_device)
+
     global_cond_channels = None
     if hasattr(encoder, "encode_cond"):
-        cond = encoder.encode_cond(stats["example_batch"])
+        cond = encoder.encode_cond(example_batch)
         if cond is not None:
             global_cond_channels = cond.shape[-1]
     log.info(
@@ -455,7 +460,7 @@ def setup_epd_model(
     steps_in = stats["n_steps_input"]
     steps_out = stats["n_steps_output"]
     with torch.no_grad():
-        encoded_example, _ = encoder.encode_with_cond(stats["example_batch"])
+        encoded_example, _ = encoder.encode_with_cond(example_batch)
     latent_spatial_resolution = tuple(encoded_example.shape[2:-1])
 
     # TODO: currently "out_channels" and "in_channels" are only used in the config for
