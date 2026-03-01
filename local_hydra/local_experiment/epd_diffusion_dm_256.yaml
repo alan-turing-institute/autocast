@@ -26,4 +26,4 @@ model:
       hid_channels: 256
 
 trainer:
-  max_epochs: 720
+  max_time: "00:12:00:00"

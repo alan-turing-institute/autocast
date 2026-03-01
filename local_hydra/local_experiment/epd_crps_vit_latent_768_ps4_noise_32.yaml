@@ -34,4 +34,4 @@ model:
       _target_: autocast.metrics.ensemble.CRPS
 
 trainer:
-  max_epochs: 70
+  max_time: "00:12:00:00"
