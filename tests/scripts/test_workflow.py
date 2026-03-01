@@ -269,6 +269,26 @@ def test_auto_run_name_hidden_dim_included():
     assert "256" in name
 
 
+def test_auto_run_name_local_experiment_accepts_optional_yaml_suffix():
+    with (
+        patch("autocast.scripts.workflow.naming._git_hash", return_value="abc1234"),
+        patch("autocast.scripts.workflow.naming._short_uuid", return_value="xyz7890"),
+    ):
+        no_ext = auto_run_name(
+            "epd",
+            "lattice_boltzmann_128_32",
+            ["local_experiment=epd_diffusion_fm_256"],
+        )
+        with_ext = auto_run_name(
+            "epd",
+            "lattice_boltzmann_128_32",
+            ["local_experiment=epd_diffusion_fm_256.yaml"],
+        )
+
+    assert no_ext == with_ext
+    assert no_ext.startswith("diff_lb128x32_")
+
+
 # ---------------------------------------------------------------------------
 # commands
 # ---------------------------------------------------------------------------

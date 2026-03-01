@@ -95,10 +95,22 @@ def _extract_naming_hints_from_preset(path: Path) -> list[str]:
     ]
 
 
+def _preset_name(name: str | None) -> str | None:
+    """Normalize preset names to stem form (accept optional .yaml suffix)."""
+    if not name:
+        return None
+    stripped = name.strip().strip('"').strip("'")
+    if stripped.lower().endswith(".yaml"):
+        return stripped[:-5]
+    return stripped
+
+
 def _preset_overrides_for_naming(overrides: list[str]) -> list[str]:
     """Collect naming-relevant hints from ``experiment=`` / ``local_experiment=``."""
-    local_experiment = extract_override_value(overrides, "local_experiment")
-    experiment = extract_override_value(overrides, "experiment")
+    local_experiment = _preset_name(
+        extract_override_value(overrides, "local_experiment")
+    )
+    experiment = _preset_name(extract_override_value(overrides, "experiment"))
 
     hints: list[str] = []
     if experiment:
