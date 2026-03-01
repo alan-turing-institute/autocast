@@ -27,7 +27,7 @@ model:
   processor:
     hidden_dim: 256
     n_noise_channels: 4096
-    spatial_resolution: [64, 64]
+    spatial_resolution: auto
     patch_size: 1
   loss_func:
     _target_: autocast.losses.ensemble.CRPSLoss
@@ -36,4 +36,4 @@ model:
       _target_: autocast.metrics.ensemble.CRPS
 
 trainer:
-  max_epochs: 25
+  max_time: "00:12:00:00"
