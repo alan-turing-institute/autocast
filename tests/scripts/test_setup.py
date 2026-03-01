@@ -10,6 +10,8 @@ from autocast.scripts.setup import (
     _build_loss_func,
     _filter_kwargs_for_target,
     _get_latent_channels,
+    _get_module_device,
+    _resolve_module_device,
     _set_if_auto,
     resolve_auto_params,
     setup_autoencoder_components,
@@ -41,6 +43,34 @@ def test_set_if_auto_ignores_missing_key():
     cfg = OmegaConf.create({"other": "auto"})
     _set_if_auto(cfg, "key", 42)
     assert "key" not in cfg
+
+
+def test_get_module_device_prefers_parameter_device():
+    module = torch.nn.Linear(4, 2)
+    device = _get_module_device(module)
+    assert device == next(module.parameters()).device
+
+
+def test_get_module_device_uses_buffer_when_no_parameters():
+    class BufferOnly(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.register_buffer("state", torch.ones(1))
+
+    module = BufferOnly()
+    device = _get_module_device(module)
+    assert device == module.state.device
+
+
+def test_get_module_device_returns_none_for_parameterless_bufferless_module():
+    module = torch.nn.Identity()
+    assert _get_module_device(module) is None
+
+
+def test_resolve_module_device_defaults_to_cpu_for_parameterless_modules():
+    module_a = torch.nn.Identity()
+    module_b = torch.nn.Identity()
+    assert _resolve_module_device(module_a, module_b) == torch.device("cpu")
 
 
 # --- _filter_kwargs_for_target ---
