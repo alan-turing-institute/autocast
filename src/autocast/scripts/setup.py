@@ -21,7 +21,7 @@ from autocast.models.encoder_processor_decoder_ensemble import (
 )
 from autocast.models.processor import ProcessorModel
 from autocast.models.processor_ensemble import ProcessorModelEnsemble
-from autocast.scripts.data import batch_to_device, build_datamodule
+from autocast.scripts.data import build_datamodule
 from autocast.types.batch import Batch, EncodedBatch
 
 log = logging.getLogger(__name__)
@@ -231,23 +231,6 @@ def setup_autoencoder_components(
         decoder_config,
     )
     encoder = instantiate(encoder_config)
-
-    if (
-        decoder_config
-        and "in_channels" in decoder_config
-        and decoder_config.get("in_channels") in (None, "auto")
-    ):
-        if hasattr(encoder, "latent_channels") and isinstance(
-            encoder.latent_channels, int
-        ):
-            decoder_config["in_channels"] = encoder.latent_channels
-        else:
-            msg = (
-                "decoder.in_channels is auto, but encoder latent_channels is not "
-                "available."
-            )
-            raise ValueError(msg)
-
     decoder = instantiate(decoder_config)
     checkpoint = config.get("autoencoder_checkpoint")
 
@@ -345,7 +328,25 @@ def _build_processor(
         spatial_resolution=proc_kwargs.get("spatial_resolution"),
     )
     target = processor_config.get("_target_") if processor_config else None
+    
+    # Load mask if this is MaskedFlowMatchingProcessor
+    mask = None
+    if "masked_flow_matching" in (target or ""):
+        mask_path = processor_config.get("mask_path")
+        if mask_path:
+            log.info("Loading mask from %s", mask_path)
+            mask = torch.load(mask_path)
+        # Remove mask_path from config (it's only for setup, not for processor init)
+        # Temporarily disable struct mode to allow removal
+        from omegaconf import OmegaConf
+        struct_mode = OmegaConf.is_struct(processor_config)
+        OmegaConf.set_struct(processor_config, False)
+        processor_config.pop("mask_path", None)
+        OmegaConf.set_struct(processor_config, struct_mode)
+    
     filtered_kwargs = _filter_kwargs_for_target(target, proc_kwargs)
+    if mask is not None:
+        filtered_kwargs["mask"] = mask
     return instantiate(processor_config, **filtered_kwargs)
 
 
@@ -428,14 +429,9 @@ def setup_epd_model(
     log.info("Latent channel in count: %s", latent_channels)
     log.info("Latent channel out count: %s", latent_channels_out)
 
-    example_batch = stats["example_batch"]
-    if isinstance(example_batch, Batch):
-        encoder_device = next(encoder.parameters()).device
-        example_batch = batch_to_device(example_batch, encoder_device)
-
     global_cond_channels = None
     if hasattr(encoder, "encode_cond"):
-        cond = encoder.encode_cond(example_batch)
+        cond = encoder.encode_cond(stats["example_batch"])
         if cond is not None:
             global_cond_channels = cond.shape[-1]
     log.info(
@@ -460,7 +456,7 @@ def setup_epd_model(
     steps_in = stats["n_steps_input"]
     steps_out = stats["n_steps_output"]
     with torch.no_grad():
-        encoded_example, _ = encoder.encode_with_cond(example_batch)
+        encoded_example, _ = encoder.encode_with_cond(stats["example_batch"])
     latent_spatial_resolution = tuple(encoded_example.shape[2:-1])
 
     # TODO: currently "out_channels" and "in_channels" are only used in the config for
