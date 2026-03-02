@@ -1,1 +1,2 @@
 _target_: autocast.decoders.identity.IdentityDecoder
+in_channels: auto

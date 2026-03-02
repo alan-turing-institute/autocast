@@ -94,6 +94,38 @@ def _resolve_rollout_batch_limit(eval_cfg: DictConfig) -> int | None:
     return max_rollout_batches
 
 
+def _resolve_rollout_channel_names(dataset: Any) -> list[str] | None:
+    if dataset is None:
+        return None
+
+    norm = getattr(dataset, "norm", None)
+    norm_field_names = getattr(norm, "core_field_names", None)
+    if isinstance(norm_field_names, Sequence) and not isinstance(norm_field_names, str):
+        names = [str(name) for name in norm_field_names]
+        if names:
+            channel_names = names
+        else:
+            return None
+    else:
+        return None
+
+    assert channel_names is not None
+
+    output_channel_idxs = getattr(dataset, "output_channel_idxs", None)
+    if output_channel_idxs is not None:
+        try:
+            channel_names = [channel_names[idx] for idx in output_channel_idxs]
+        except (TypeError, IndexError):
+            log.warning(
+                "Could not apply output_channel_idxs=%s to channel names %s.",
+                output_channel_idxs,
+                channel_names,
+            )
+            return None
+
+    return channel_names
+
+
 def _build_metrics(metric_names: Sequence[str]) -> dict[str, BaseMetric]:
     names = metric_names or ("mse", "rmse", "vrmse")
     metrics = {}
@@ -224,6 +256,7 @@ def _render_rollouts(
     max_rollout_steps: int,
     free_running_only: bool,
     n_members: int | None = None,
+    channel_names: list[str] | None = None,
 ) -> list[Path]:
     # Return early if no batches are requested
     if not batch_indices:
@@ -278,6 +311,17 @@ def _render_rollouts(
                 trues_mean = trues
                 preds_uq = None
 
+            names_for_plot = channel_names
+            n_channels = int(trues_mean.shape[-1])
+            if names_for_plot is not None and len(names_for_plot) != n_channels:
+                log.warning(
+                    "Ignoring channel names for video plotting due to length mismatch "
+                    "(names=%s, channels=%s).",
+                    len(names_for_plot),
+                    n_channels,
+                )
+                names_for_plot = None
+
             # Plot video
             plot_spatiotemporal_video(
                 true=trues_mean.cpu(),
@@ -288,6 +332,7 @@ def _render_rollouts(
                 save_path=str(filename),
                 colorbar_mode="column",
                 pred_uq_label="Ensemble Std Dev",
+                channel_names=names_for_plot,
             )
             saved_paths.append(filename)
             rendered_batches.add(batch_idx)
@@ -941,10 +986,25 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
         rollout_stride = data_config.get("rollout_stride") or stats["n_steps_output"]
 
         if batch_indices:
+            rollout_test_loader = fabric.setup_dataloaders(
+                datamodule.rollout_test_dataloader(batch_size=eval_batch_size)
+            )
+            rollout_channel_names = _resolve_rollout_channel_names(
+                getattr(rollout_test_loader, "dataset", None)
+            )
+            if rollout_channel_names is not None:
+                log.info(
+                    "Using rollout video channel labels from core_field_names: %s",
+                    rollout_channel_names,
+                )
+            else:
+                log.info(
+                    "No rollout video channel labels found in core_field_names; "
+                    "falling back to generic channel indices."
+                )
+
             rollout_loader = _limit_batches(
-                fabric.setup_dataloaders(
-                    datamodule.rollout_test_dataloader(batch_size=eval_batch_size)
-                ),
+                rollout_test_loader,
                 max_rollout_batches,
             )
             _render_rollouts(
@@ -959,6 +1019,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 max_rollout_steps=max_rollout_steps,
                 free_running_only=eval_cfg.get("free_running_only", True),
                 n_members=n_members,
+                channel_names=rollout_channel_names,
             )
 
         # Prepare metric functions for rollouts

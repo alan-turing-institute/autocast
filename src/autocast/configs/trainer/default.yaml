@@ -1,5 +1,5 @@
 _target_: lightning.pytorch.trainer.trainer.Trainer
-max_epochs: 10
+max_time: "12:00:00" # Hours or datetime string, e.g. "2024-12-31 23:59:59"
 accelerator: auto
 strategy: auto
 num_nodes: 1
@@ -15,9 +15,8 @@ gradient_clip_val: null
 callbacks:
   - _target_: lightning.pytorch.callbacks.ModelCheckpoint
     save_top_k: 1
-    monitor: train_loss
-    mode: min
-    every_n_train_steps: 5000
-    save_on_train_epoch_end: false
-    filename: "step-{step}"
+    every_n_epochs: 5
+    save_on_train_epoch_end: true
+    filename: "latest-5ep-{epoch:04d}"
+    auto_insert_metric_name: false
 

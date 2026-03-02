@@ -1,6 +1,6 @@
 defaults:
-  - /encoder: dc_deep_256
-  - /decoder: dc_deep_256
+  - /encoder: dc_deep_256_v2
+  - /decoder: dc_deep_256_v2
   - _self_
 
 loss:

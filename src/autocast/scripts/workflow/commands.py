@@ -39,6 +39,11 @@ _RESOLVED_CONFIG_STEMS = (
 )
 
 
+def _hydra_quote_string(value: str) -> str:
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
 def build_common_launch_overrides(mode: str, work_dir: Path) -> list[str]:
     """Return Hydra overrides for directory routing in *mode*."""
     if mode == "slurm":
@@ -434,7 +439,8 @@ def eval_command(
     if not contains_override(effective_overrides, "eval.checkpoint="):
         inferred_eval_checkpoint = infer_eval_checkpoint(work_dir)
         if inferred_eval_checkpoint is not None:
-            effective_overrides.append(f"eval.checkpoint={inferred_eval_checkpoint}")
+            checkpoint_value = _hydra_quote_string(str(inferred_eval_checkpoint))
+            effective_overrides.append(f"eval.checkpoint={checkpoint_value}")
 
     _eval_dir, command_overrides = build_eval_overrides(
         mode=mode,
