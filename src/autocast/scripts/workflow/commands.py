@@ -91,6 +91,38 @@ def _flatten_overrides(prefix: str, value: object) -> list[str]:
     return [f"{prefix}={json.dumps(value)}"]
 
 
+def _path_exists_in_mapping(mapping: object, path: str) -> bool:
+    """Return whether dot-path exists in a nested dict-like mapping."""
+    current = mapping
+    for key in path.split("."):
+        if not isinstance(current, dict) or key not in current:
+            return False
+        current = current[key]
+    return True
+
+
+def _struct_safe_overrides(
+    overrides: list[str], resolved_cfg: dict[str, object] | None
+) -> list[str]:
+    """Prefix with '+' when override key is missing under Hydra struct configs."""
+    if not isinstance(resolved_cfg, dict):
+        return overrides
+
+    adjusted: list[str] = []
+    for override in overrides:
+        if override.startswith("+") or "=" not in override:
+            adjusted.append(override)
+            continue
+
+        key, value = override.split("=", 1)
+        if _path_exists_in_mapping(resolved_cfg, key):
+            adjusted.append(override)
+        else:
+            adjusted.append(f"+{key}={value}")
+
+    return adjusted
+
+
 def _resolved_eval_default_overrides() -> list[str]:
     """Return eval.* overrides from the live eval config for stale resolved configs."""
     cfg_path = (
@@ -372,7 +404,10 @@ def build_eval_overrides(
         # The resolved config may be stale (saved before current eval defaults
         # were added). Re-inject key EPD eval defaults from the source eval config.
         # These are placed before `overrides` so callers can still override them.
-        command_overrides.extend(_resolved_eval_default_overrides())
+        resolved_cfg = _load_resolved_config_from_workdir(base_work_dir)
+        command_overrides.extend(
+            _struct_safe_overrides(_resolved_eval_default_overrides(), resolved_cfg)
+        )
         if dataset is not None:
             command_overrides.append(
                 f"datamodule.data_path={datasets_root() / dataset}"
