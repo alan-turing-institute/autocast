@@ -342,16 +342,18 @@ def submit_via_sbatch(
         print(f"  ... and {len(submitted) - len(preview)} more")
 
 
-def submit_manifest_via_sbatch(
+def submit_manifest_via_sbatch(  # noqa: PLR0915
     manifest: Path,
     lines: list[str],
+    work_dirs: list[str],
     overrides: list[str],
     dry_run: bool = False,
 ) -> None:
     r"""Submit all *lines* from *manifest* as a **single** SLURM job.
 
-    Runs are executed sequentially inside one SLURM allocation.  Use this
-    when you want a single queue reservation for a batch of benchmarks.
+    Runs are executed sequentially inside one SLURM allocation.  A combine
+    step is appended that concatenates per-run ``benchmark_metrics.csv``
+    files into ``<manifest_stem>_combined.csv`` next to the manifest.
 
     SLURM allocation is configured via ``hydra.launcher.*`` overrides, e.g.::
 
@@ -396,6 +398,19 @@ def submit_manifest_via_sbatch(
         # Each manifest line is a full `benchmark --workdir X ...` invocation.
         # Run it locally (no --mode slurm) inside the allocated node.
         script_lines.append(f"uv run autocast {line}")
+    # Combine step: concatenate per-run CSVs into one file next to the manifest.
+    csv_paths_repr = repr([str(Path(wd) / "benchmark_metrics.csv") for wd in work_dirs])
+    combined_path_repr = repr(
+        str(manifest.parent.resolve() / f"{manifest.stem}_combined.csv")
+    )
+    combine_snippet = (
+        "import pandas as pd, pathlib; "
+        f"_ps=[p for p in {csv_paths_repr} if pathlib.Path(p).exists()]; "
+        f"pd.concat([pd.read_csv(p) for p in _ps], ignore_index=True)"
+        f".to_csv({combined_path_repr}, index=False) if _ps else None; "
+        f"print('Combined benchmark CSV:', {combined_path_repr})"
+    )
+    script_lines.append(f"uv run python -c {shlex.quote(combine_snippet)}")
     script_lines.append("echo '=== Completed '$(date) '==='")
 
     script_text = "\n".join(script_lines) + "\n"

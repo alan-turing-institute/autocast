@@ -7,6 +7,7 @@ import shlex
 import subprocess
 from pathlib import Path
 
+import pandas as pd
 from omegaconf import OmegaConf
 
 from autocast.scripts.utils import resolve_work_dir
@@ -502,6 +503,31 @@ def _read_manifest_lines(manifest: Path) -> list[str]:
     return lines
 
 
+def _write_combined_benchmark_csv(work_dirs: list[str], manifest: Path) -> Path | None:
+    """Concatenate per-run ``benchmark_metrics.csv`` files into one combined CSV.
+
+    The combined file is written to ``<manifest_dir>/<manifest_stem>_combined.csv``.
+    Runs whose CSV is missing (e.g. due to an earlier failure) are skipped with a
+    warning rather than aborting the whole combine step.
+    """
+    frames: list[pd.DataFrame] = []
+    for wd in work_dirs:
+        csv_path = Path(wd) / "benchmark_metrics.csv"
+        if csv_path.exists():
+            frames.append(pd.read_csv(csv_path))
+        else:
+            print(f"WARNING: no benchmark_metrics.csv at {csv_path} — skipping")
+
+    if not frames:
+        print("WARNING: no benchmark CSV files found; combined CSV not written.")
+        return None
+
+    combined_path = manifest.parent / f"{manifest.stem}_combined.csv"
+    combined_path.parent.mkdir(parents=True, exist_ok=True)
+    pd.concat(frames, ignore_index=True).to_csv(combined_path, index=False)
+    return combined_path
+
+
 def _parse_benchmark_manifest_line(line: str) -> tuple[str, list[str]]:
     """Parse a manifest line into ``(work_dir, extra_overrides)``.
 
@@ -544,10 +570,13 @@ def benchmark_manifest_command(
 ) -> None:
     """Run benchmarks for every entry in *manifest*.
 
-    With ``mode='local'``, runs are executed sequentially in this process.
+    With ``mode='local'``, runs are executed sequentially in this process and
+    a combined ``<manifest_stem>_combined.csv`` is written once all runs
+    finish.
     With ``mode='slurm'``, all runs are submitted as a **single** SLURM job
-    (sequential on one allocated node). Pass ``hydra.launcher.*`` overrides
-    to configure the allocation (partition, timeout, GPUs, etc.).
+    (sequential on one allocated node) and the same combine step is appended
+    to the batch script. Pass ``hydra.launcher.*`` overrides to configure the
+    allocation (partition, timeout, GPUs, etc.).
     """
     if not manifest.exists():
         msg = f"Manifest file not found: {manifest}"
@@ -558,18 +587,22 @@ def benchmark_manifest_command(
         msg = f"No runnable lines found in manifest: {manifest}"
         raise ValueError(msg)
 
+    # Parse upfront so we have work_dirs for both modes.
+    parsed = [_parse_benchmark_manifest_line(line) for line in lines]
+    work_dirs = [wd for wd, _ in parsed]
+
     if mode == "slurm":
         submit_manifest_via_sbatch(
             manifest=manifest,
             lines=lines,
+            work_dirs=work_dirs,
             overrides=overrides,
             dry_run=dry_run,
         )
         return
 
-    # Local: run each line sequentially.
-    for line in lines:
-        work_dir, extra_overrides = _parse_benchmark_manifest_line(line)
+    # Local: run each line sequentially, then write a combined CSV.
+    for work_dir, extra_overrides in parsed:
         dataset = infer_dataset_from_workdir(work_dir)
         benchmark_command(
             mode="local",
@@ -578,6 +611,11 @@ def benchmark_manifest_command(
             overrides=[*overrides, *extra_overrides],
             dry_run=dry_run,
         )
+
+    if not dry_run:
+        combined_path = _write_combined_benchmark_csv(work_dirs, manifest)
+        if combined_path is not None:
+            print(f"Combined benchmark CSV: {combined_path}")
 
 
 def train_eval_single_job_command(
