@@ -2,7 +2,6 @@
 
 import logging
 import os
-from collections import OrderedDict
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from time import perf_counter
@@ -12,7 +11,6 @@ import hydra
 import lightning as L
 import pandas as pd
 import torch
-from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig, open_dict
 from torchmetrics import Metric
 
@@ -26,6 +24,11 @@ from autocast.models.encoder_processor_decoder_ensemble import (
     EncoderProcessorDecoderEnsemble,
 )
 from autocast.scripts.config import save_resolved_config
+from autocast.scripts.execution import (
+    extract_state_dict,
+    load_checkpoint_payload,
+    resolve_hydra_work_dir,
+)
 from autocast.scripts.setup import setup_datamodule, setup_epd_model
 from autocast.scripts.utils import get_default_config_path
 from autocast.types.batch import Batch
@@ -325,37 +328,6 @@ def _split_metric_and_metadata_rows(
     return metric_rows, metadata_rows
 
 
-def _load_checkpoint_payload(checkpoint_path: Path) -> Mapping[str, Any]:
-    checkpoint_real = checkpoint_path.expanduser().resolve()
-    checkpoint = torch.load(
-        checkpoint_real,
-        map_location="cpu",
-        weights_only=False,
-    )
-    if not isinstance(checkpoint, Mapping):
-        msg = f"Checkpoint {checkpoint_real} does not contain a valid payload."
-        raise TypeError(msg)
-    return checkpoint
-
-
-def _extract_state_dict(
-    checkpoint: Mapping[str, Any],
-) -> OrderedDict[str, torch.Tensor]:
-    if isinstance(checkpoint, Mapping):
-        state_dict = checkpoint.get("state_dict", checkpoint)
-    else:
-        state_dict = checkpoint
-    if not isinstance(state_dict, Mapping):
-        msg = "Checkpoint payload does not contain a valid state_dict."
-        raise TypeError(msg)
-    if isinstance(state_dict, OrderedDict):
-        state_dict = state_dict.copy()
-    else:
-        state_dict = OrderedDict(state_dict)
-    state_dict.pop("_metadata", None)
-    return state_dict
-
-
 def _make_metadata_row(
     *,
     category: str,
@@ -639,18 +611,6 @@ def _benchmark_metadata_rows(
     return rows
 
 
-def _resolve_work_dir(work_dir: Path | None) -> Path:
-    if work_dir is not None:
-        return work_dir
-
-    if HydraConfig.initialized():
-        output_dir = HydraConfig.get().runtime.output_dir
-        if output_dir:
-            return Path(output_dir).resolve()
-
-    return Path.cwd()
-
-
 @hydra.main(
     version_base=None,
     config_path=get_default_config_path(),
@@ -670,7 +630,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
         os.umask(int(str(umask_value), 8))
         log.info("Applied process umask %s", umask_value)
 
-    work_dir = _resolve_work_dir(work_dir)
+    work_dir = resolve_hydra_work_dir(work_dir)
 
     # Get eval config
     eval_cfg = cfg.get("eval", {})
@@ -727,8 +687,8 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
 
     # Load checkpoint
     log.info("Loading checkpoint from %s", checkpoint_path)
-    checkpoint_payload = _load_checkpoint_payload(checkpoint_path)
-    state_dict = _extract_state_dict(checkpoint_payload)
+    checkpoint_payload = load_checkpoint_payload(checkpoint_path)
+    state_dict = extract_state_dict(checkpoint_payload)
     load_result = model.load_state_dict(state_dict, strict=True)
     if load_result.missing_keys or load_result.unexpected_keys:
         msg = (

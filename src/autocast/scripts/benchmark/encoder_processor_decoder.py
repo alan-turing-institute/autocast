@@ -8,33 +8,21 @@ from pathlib import Path
 
 import hydra
 import pandas as pd
-import torch
-from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig
 
 from autocast.benchmarking import benchmark_model
 from autocast.scripts.config import save_resolved_config
-from autocast.scripts.eval.encoder_processor_decoder import (
-    _extract_state_dict,
-    _load_checkpoint_payload,
+from autocast.scripts.execution import (
+    extract_state_dict,
+    load_checkpoint_payload,
+    resolve_device,
+    resolve_hydra_work_dir,
 )
 from autocast.scripts.setup import setup_datamodule, setup_epd_model
 from autocast.scripts.utils import get_default_config_path
 from autocast.types.batch import Batch
 
 log = logging.getLogger(__name__)
-
-
-def _resolve_work_dir(work_dir: Path | None) -> Path:
-    if work_dir is not None:
-        return work_dir
-
-    if HydraConfig.initialized():
-        output_dir = HydraConfig.get().runtime.output_dir
-        if output_dir:
-            return Path(output_dir).resolve()
-
-    return Path.cwd()
 
 
 def _resolve_csv_path(eval_cfg: DictConfig, work_dir: Path) -> Path:
@@ -66,16 +54,6 @@ def _resolve_checkpoint_path(eval_cfg: DictConfig, work_dir: Path) -> Path:
     return workdir_candidate
 
 
-def _resolve_device(device: str) -> torch.device:
-    if device != "auto":
-        return torch.device(device)
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-    if torch.backends.mps.is_available():
-        return torch.device("mps")
-    return torch.device("cpu")
-
-
 @hydra.main(
     version_base=None,
     config_path=get_default_config_path(),
@@ -95,7 +73,7 @@ def run_benchmark(cfg: DictConfig, work_dir: Path | None = None) -> Path:
         os.umask(int(str(umask_value), 8))
         log.info("Applied process umask %s", umask_value)
 
-    work_dir = _resolve_work_dir(work_dir)
+    work_dir = resolve_hydra_work_dir(work_dir)
     eval_cfg = cfg.get("eval", {})
     benchmark_cfg = eval_cfg.get("benchmark", {})
 
@@ -107,8 +85,8 @@ def run_benchmark(cfg: DictConfig, work_dir: Path | None = None) -> Path:
     datamodule, cfg, stats = setup_datamodule(cfg)
     model = setup_epd_model(cfg, stats, datamodule=datamodule)
 
-    checkpoint_payload = _load_checkpoint_payload(checkpoint_path)
-    state_dict = _extract_state_dict(checkpoint_payload)
+    checkpoint_payload = load_checkpoint_payload(checkpoint_path)
+    state_dict = extract_state_dict(checkpoint_payload)
     load_result = model.load_state_dict(state_dict, strict=True)
     if load_result.missing_keys or load_result.unexpected_keys:
         msg = (
@@ -118,7 +96,7 @@ def run_benchmark(cfg: DictConfig, work_dir: Path | None = None) -> Path:
         )
         raise RuntimeError(msg)
 
-    device = _resolve_device(eval_cfg.get("device", "auto"))
+    device = resolve_device(str(eval_cfg.get("device", "auto")))
     model.to(device)
     model.eval()
 

@@ -7,9 +7,10 @@ import torch
 from omegaconf import DictConfig, OmegaConf
 
 from autocast.benchmarking import benchmark_model
-from autocast.scripts.eval.encoder_processor_decoder import (
-    _extract_state_dict,
-    _load_checkpoint_payload,
+from autocast.scripts.execution import (
+    extract_state_dict,
+    load_checkpoint_payload,
+    resolve_device,
 )
 from autocast.scripts.setup import setup_datamodule, setup_epd_model
 from autocast.scripts.workflow.commands import infer_eval_checkpoint
@@ -24,14 +25,6 @@ def find_run_folder(stem: str, run_id: str) -> Path:
     if not dirs:
         raise FileNotFoundError(f"Run folder not found for: {run_id}")
     return dirs[0]
-
-
-def _resolve_device() -> torch.device:
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-    if torch.backends.mps.is_available():
-        return torch.device("mps")
-    return torch.device("cpu")
 
 
 def _benchmark_run(
@@ -59,8 +52,8 @@ def _benchmark_run(
         datamodule, cfg, stats = setup_datamodule(cfg)
         model = setup_epd_model(cfg, stats, datamodule=datamodule)
 
-        checkpoint = _load_checkpoint_payload(ckpt_path)
-        state_dict = _extract_state_dict(checkpoint)
+        checkpoint = load_checkpoint_payload(ckpt_path)
+        state_dict = extract_state_dict(checkpoint)
         model.load_state_dict(state_dict, strict=True)
         model.to(device)
         model.eval()
@@ -133,7 +126,7 @@ def main():
     run_ids = [str(value) for value in run_cfg.values()]
 
     results = []
-    device = _resolve_device()
+    device = resolve_device()
 
     for run_id in run_ids:
         print(f"\n--- {run_id} ---")
