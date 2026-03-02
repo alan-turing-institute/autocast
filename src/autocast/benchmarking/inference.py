@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
+import os
 from time import perf_counter
 
+import lightning as L
 import torch
 
 from autocast.types.batch import Batch
@@ -36,9 +39,12 @@ def make_synthetic_batch(example_batch: Batch, batch_size: int) -> Batch:
 
 def _predict_once(model: torch.nn.Module, batch: Batch) -> None:
     with torch.no_grad():
-        try:
-            model.predict_step(batch, 0)
-        except Exception:
+        if isinstance(model, L.LightningModule):
+            try:
+                model.predict_step(batch, 0)
+            except Exception:
+                model(batch)
+        else:
             model(batch)
 
 
@@ -118,4 +124,120 @@ def benchmark_model(
         metrics["peak_gpu_memory_mb"] = round(peak_bytes / 1024**2, 1)
 
     metrics.update(measure_flops(model, example_batch))
+    return metrics
+
+
+@contextlib.contextmanager
+def _tqdm_disabled():
+    """Temporarily suppress tqdm output via the TQDM_DISABLE env var."""
+    prev = os.environ.get("TQDM_DISABLE")
+    os.environ["TQDM_DISABLE"] = "1"
+    try:
+        yield
+    finally:
+        if prev is None:
+            os.environ.pop("TQDM_DISABLE", None)
+        else:
+            os.environ["TQDM_DISABLE"] = prev
+
+
+def _rollout_once(
+    model: torch.nn.Module,
+    batch: Batch,
+    stride: int,
+    max_rollout_steps: int,
+    free_running_only: bool,
+) -> None:
+    """Run one full rollout, suppressing tqdm progress bars."""
+    with torch.no_grad(), _tqdm_disabled():
+        model.rollout(  # type: ignore[operator]
+            batch,
+            stride=stride,
+            max_rollout_steps=max_rollout_steps,
+            free_running_only=free_running_only,
+        )
+
+
+def benchmark_rollout(
+    model: torch.nn.Module,
+    example_batch: Batch,
+    *,
+    stride: int,
+    max_rollout_steps: int,
+    n_warmup: int,
+    n_benchmark: int,
+    batch_size: int,
+    free_running_only: bool = True,
+) -> dict[str, float]:
+    """Benchmark model rollout throughput and latency using synthetic batches.
+
+    Uses the same methodology as :func:`benchmark_model`: warmup runs are
+    discarded and CUDA synchronisation is applied on GPU for accurate
+    wall-clock timings.  tqdm progress output is suppressed during the run.
+
+    Returns
+    -------
+    dict[str, float]
+        throughput_steps_per_sec
+            Rollout output steps produced per second
+            (``n_measured * max_rollout_steps * batch_size / total_s``).
+        latency_ms_per_rollout
+            Mean wall-clock time in ms for one full rollout call.
+        latency_ms_per_step
+            Mean time in ms per autoregressive step.
+        latency_ms_per_sample_per_step
+            Per-sample per-step latency in ms.
+        peak_gpu_memory_mb
+            Peak GPU memory allocated in MB (CUDA only).
+    """
+    if n_benchmark <= 0:
+        msg = "n_benchmark must be > 0"
+        raise ValueError(msg)
+
+    device = next(model.parameters()).device
+    synthetic_batch = make_synthetic_batch(example_batch, batch_size=batch_size).to(
+        device
+    )
+
+    model.eval()
+    rollout_times_s: list[float] = []
+
+    if device.type == "cuda" and torch.cuda.is_available():
+        torch.cuda.reset_peak_memory_stats(device)
+
+    total_runs = n_warmup + n_benchmark
+    for run in range(total_runs):
+        if device.type == "cuda" and torch.cuda.is_available():
+            torch.cuda.synchronize(device)
+        start_s = perf_counter()
+        _rollout_once(
+            model, synthetic_batch, stride, max_rollout_steps, free_running_only
+        )
+        if device.type == "cuda" and torch.cuda.is_available():
+            torch.cuda.synchronize(device)
+        elapsed_s = perf_counter() - start_s
+        if run >= n_warmup:
+            rollout_times_s.append(elapsed_s)
+
+    total_s = sum(rollout_times_s)
+    if total_s <= 0:
+        msg = "Measured rollout benchmark duration is zero; cannot compute throughput."
+        raise RuntimeError(msg)
+
+    n_measured = len(rollout_times_s)
+    latency_rollout_ms = (total_s / n_measured) * 1000.0
+
+    metrics: dict[str, float] = {
+        "throughput_steps_per_sec": (n_measured * max_rollout_steps * batch_size)
+        / total_s,
+        "latency_ms_per_rollout": latency_rollout_ms,
+        "latency_ms_per_step": latency_rollout_ms / max_rollout_steps,
+        "latency_ms_per_sample_per_step": latency_rollout_ms
+        / (batch_size * max_rollout_steps),
+    }
+
+    if device.type == "cuda" and torch.cuda.is_available():
+        peak_bytes = int(torch.cuda.max_memory_allocated(device))
+        metrics["peak_gpu_memory_mb"] = round(peak_bytes / 1024**2, 1)
+
     return metrics

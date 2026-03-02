@@ -32,3 +32,13 @@ benchmark:
   batch_size: 1
   n_warmup: 5
   n_benchmark: 50
+
+# Rollout benchmark settings (synthetic batch, multi-step autoregressive)
+# stride and max_rollout_steps default to the eval-level settings when not set.
+benchmark_rollout:
+  enabled: false
+  batch_size: 1
+  n_warmup: 5
+  n_benchmark: 20
+  stride: null
+  max_rollout_steps: null

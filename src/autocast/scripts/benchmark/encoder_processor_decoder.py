@@ -10,7 +10,7 @@ import hydra
 import pandas as pd
 from omegaconf import DictConfig
 
-from autocast.benchmarking import benchmark_model
+from autocast.benchmarking import benchmark_model, benchmark_rollout
 from autocast.scripts.config import save_resolved_config
 from autocast.scripts.execution import (
     extract_state_dict,
@@ -64,7 +64,7 @@ def main(cfg: DictConfig) -> None:
     run_benchmark(cfg)
 
 
-def run_benchmark(cfg: DictConfig, work_dir: Path | None = None) -> Path:
+def run_benchmark(cfg: DictConfig, work_dir: Path | None = None) -> Path:  # noqa: PLR0915
     """Run benchmark using an already-composed config and write a CSV."""
     logging.basicConfig(level=logging.INFO)
 
@@ -125,6 +125,55 @@ def run_benchmark(cfg: DictConfig, work_dir: Path | None = None) -> Path:
         "device": str(device),
         **metrics,
     }
+
+    rollout_benchmark_cfg = eval_cfg.get("benchmark_rollout", {})
+    if rollout_benchmark_cfg.get("enabled", False):
+        rb_batch_size = int(rollout_benchmark_cfg.get("batch_size", batch_size))
+        rb_n_warmup = int(rollout_benchmark_cfg.get("n_warmup", 5))
+        rb_n_benchmark = int(rollout_benchmark_cfg.get("n_benchmark", 20))
+        rb_max_rollout_steps = int(
+            rollout_benchmark_cfg.get("max_rollout_steps")
+            or eval_cfg.get("max_rollout_steps", 10)
+        )
+        rb_free_running_only = bool(
+            rollout_benchmark_cfg.get(
+                "free_running_only", eval_cfg.get("free_running_only", True)
+            )
+        )
+        data_config = cfg.get("datamodule", {})
+        rb_stride = int(
+            rollout_benchmark_cfg.get("stride")
+            or data_config.get("rollout_stride")
+            or stats["n_steps_output"]
+        )
+        log.info(
+            (
+                "Running rollout benchmark "
+                "(batch_size=%s, n_warmup=%s, n_benchmark=%s, "
+                "stride=%s, max_rollout_steps=%s)"
+            ),
+            rb_batch_size,
+            rb_n_warmup,
+            rb_n_benchmark,
+            rb_stride,
+            rb_max_rollout_steps,
+        )
+        rollout_metrics = benchmark_rollout(
+            model,
+            example_batch,
+            stride=rb_stride,
+            max_rollout_steps=rb_max_rollout_steps,
+            n_warmup=rb_n_warmup,
+            n_benchmark=rb_n_benchmark,
+            batch_size=rb_batch_size,
+            free_running_only=rb_free_running_only,
+        )
+        row["rollout_batch_size"] = rb_batch_size
+        row["rollout_n_warmup"] = rb_n_warmup
+        row["rollout_n_benchmark"] = rb_n_benchmark
+        row["rollout_stride"] = rb_stride
+        row["rollout_max_rollout_steps"] = rb_max_rollout_steps
+        row.update({f"rollout_{k}": v for k, v in rollout_metrics.items()})
 
     csv_path = _resolve_csv_path(eval_cfg, work_dir)
     csv_path.parent.mkdir(parents=True, exist_ok=True)

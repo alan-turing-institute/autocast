@@ -82,6 +82,21 @@ def test_benchmark_metadata_rows_include_config_and_metrics():
     assert ("benchmark", "n_benchmark") in metrics
     assert ("benchmark", "throughput_samples_per_sec") in metrics
     assert ("benchmark", "latency_ms_per_batch") in metrics
+    # default loader is "synthetic"
+    loaders = {row["loader"] for row in rows}
+    assert loaders == {"synthetic"}
+
+
+def test_benchmark_metadata_rows_custom_loader():
+    rows = _benchmark_metadata_rows(
+        {"throughput_steps_per_sec": 50.0},
+        batch_size=1,
+        n_warmup=2,
+        n_benchmark=5,
+        loader="synthetic_rollout",
+    )
+    loaders = {row["loader"] for row in rows}
+    assert loaders == {"synthetic_rollout"}
 
 
 # --- _extract_training_runtime_total_s ---

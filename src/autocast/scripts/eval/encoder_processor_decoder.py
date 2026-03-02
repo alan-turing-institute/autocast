@@ -14,7 +14,7 @@ import torch
 from omegaconf import DictConfig, open_dict
 from torchmetrics import Metric
 
-from autocast.benchmarking import benchmark_model
+from autocast.benchmarking import benchmark_model, benchmark_rollout
 from autocast.metrics import MAE, MSE, NMAE, NMSE, NRMSE, RMSE, VMSE, VRMSE, LInfinity
 from autocast.metrics.base import BaseMetric
 from autocast.metrics.coverage import MultiCoverage
@@ -626,25 +626,26 @@ def _benchmark_metadata_rows(
     batch_size: int,
     n_warmup: int,
     n_benchmark: int,
+    loader: str = "synthetic",
 ) -> list[dict[str, float | str]]:
     rows = [
         _make_metadata_row(
             category="benchmark",
             metric="batch_size",
             value=batch_size,
-            loader="synthetic",
+            loader=loader,
         ),
         _make_metadata_row(
             category="benchmark",
             metric="n_warmup",
             value=n_warmup,
-            loader="synthetic",
+            loader=loader,
         ),
         _make_metadata_row(
             category="benchmark",
             metric="n_benchmark",
             value=n_benchmark,
-            loader="synthetic",
+            loader=loader,
         ),
     ]
     for metric, value in benchmark_metrics.items():
@@ -653,7 +654,7 @@ def _benchmark_metadata_rows(
                 category="benchmark",
                 metric=metric,
                 value=value,
-                loader="synthetic",
+                loader=loader,
             )
         )
     return rows
@@ -867,6 +868,65 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
             log.warning(
                 "Skipping inference benchmark: expected Batch example, got %s",
                 type(example_batch),
+            )
+
+    rollout_benchmark_cfg = eval_cfg.get("benchmark_rollout", {})
+    if rollout_benchmark_cfg.get("enabled", False):
+        rb_batch_size = int(rollout_benchmark_cfg.get("batch_size", eval_batch_size))
+        rb_n_warmup = int(rollout_benchmark_cfg.get("n_warmup", 5))
+        rb_n_benchmark = int(rollout_benchmark_cfg.get("n_benchmark", 20))
+        rb_max_rollout_steps = int(
+            rollout_benchmark_cfg.get("max_rollout_steps")
+            or eval_cfg.get("max_rollout_steps", 10)
+        )
+        rb_free_running_only = bool(
+            rollout_benchmark_cfg.get(
+                "free_running_only", eval_cfg.get("free_running_only", True)
+            )
+        )
+        data_config = cfg.get("datamodule", {})
+        rb_stride = int(
+            rollout_benchmark_cfg.get("stride")
+            or data_config.get("rollout_stride")
+            or stats["n_steps_output"]
+        )
+        rb_example_batch = stats.get("example_batch")
+        if isinstance(rb_example_batch, Batch):
+            log.info(
+                (
+                    "Running rollout benchmark "
+                    "(batch_size=%s, n_warmup=%s, n_benchmark=%s, "
+                    "stride=%s, max_rollout_steps=%s)"
+                ),
+                rb_batch_size,
+                rb_n_warmup,
+                rb_n_benchmark,
+                rb_stride,
+                rb_max_rollout_steps,
+            )
+            rollout_benchmark_metrics = benchmark_rollout(
+                model,
+                rb_example_batch,
+                stride=rb_stride,
+                max_rollout_steps=rb_max_rollout_steps,
+                n_warmup=rb_n_warmup,
+                n_benchmark=rb_n_benchmark,
+                batch_size=rb_batch_size,
+                free_running_only=rb_free_running_only,
+            )
+            evaluation_rows.extend(
+                _benchmark_metadata_rows(
+                    rollout_benchmark_metrics,
+                    batch_size=rb_batch_size,
+                    n_warmup=rb_n_warmup,
+                    n_benchmark=rb_n_benchmark,
+                    loader="synthetic_rollout",
+                )
+            )
+        else:
+            log.warning(
+                "Skipping rollout benchmark: expected Batch example, got %s",
+                type(rb_example_batch),
             )
 
     # Rollouts
