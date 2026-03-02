@@ -2,7 +2,6 @@
 
 import logging
 import os
-from collections import OrderedDict
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from time import perf_counter
@@ -12,10 +11,10 @@ import hydra
 import lightning as L
 import pandas as pd
 import torch
-from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig, open_dict
 from torchmetrics import Metric
 
+from autocast.benchmarking import benchmark_model, benchmark_rollout
 from autocast.metrics import MAE, MSE, NMAE, NMSE, NRMSE, RMSE, VMSE, VRMSE, LInfinity
 from autocast.metrics.base import BaseMetric
 from autocast.metrics.coverage import MultiCoverage
@@ -25,8 +24,14 @@ from autocast.models.encoder_processor_decoder_ensemble import (
     EncoderProcessorDecoderEnsemble,
 )
 from autocast.scripts.config import save_resolved_config
+from autocast.scripts.execution import (
+    extract_state_dict,
+    load_checkpoint_payload,
+    resolve_hydra_work_dir,
+)
 from autocast.scripts.setup import setup_datamodule, setup_epd_model
 from autocast.scripts.utils import get_default_config_path
+from autocast.types.batch import Batch
 from autocast.utils import plot_spatiotemporal_video
 from autocast.utils.plots import compute_metrics_from_dataloader
 
@@ -370,37 +375,6 @@ def _split_metric_and_metadata_rows(
     return metric_rows, metadata_rows
 
 
-def _load_checkpoint_payload(checkpoint_path: Path) -> Mapping[str, Any]:
-    checkpoint_real = checkpoint_path.expanduser().resolve()
-    checkpoint = torch.load(
-        checkpoint_real,
-        map_location="cpu",
-        weights_only=False,
-    )
-    if not isinstance(checkpoint, Mapping):
-        msg = f"Checkpoint {checkpoint_real} does not contain a valid payload."
-        raise TypeError(msg)
-    return checkpoint
-
-
-def _extract_state_dict(
-    checkpoint: Mapping[str, Any],
-) -> OrderedDict[str, torch.Tensor]:
-    if isinstance(checkpoint, Mapping):
-        state_dict = checkpoint.get("state_dict", checkpoint)
-    else:
-        state_dict = checkpoint
-    if not isinstance(state_dict, Mapping):
-        msg = "Checkpoint payload does not contain a valid state_dict."
-        raise TypeError(msg)
-    if isinstance(state_dict, OrderedDict):
-        state_dict = state_dict.copy()
-    else:
-        state_dict = OrderedDict(state_dict)
-    state_dict.pop("_metadata", None)
-    return state_dict
-
-
 def _make_metadata_row(
     *,
     category: str,
@@ -468,22 +442,46 @@ def _parameter_count_rows(
 def _extract_training_runtime_total_s(
     checkpoint_payload: Mapping[str, Any],
 ) -> float | None:
+    # Top-level checkpoint keys (legacy / manually-saved runs)
     for key in ("training_runtime_total_s", "train_runtime_total_s", "runtime_total_s"):
         value = checkpoint_payload.get(key)
         if isinstance(value, int | float):
             return float(value)
 
+    # Callback state dicts — TrainingTimerCallback stores training_runtime_total_s here
     callbacks = checkpoint_payload.get("callbacks")
     if isinstance(callbacks, Mapping):
         for callback_state in callbacks.values():
             if not isinstance(callback_state, Mapping):
                 continue
-            for key in ("time_elapsed", "time_elapsed_s", "total_time", "total_time_s"):
+            for key in (
+                "training_runtime_total_s",
+                "time_elapsed",
+                "time_elapsed_s",
+                "total_time",
+                "total_time_s",
+            ):
                 value = callback_state.get(key)
                 if isinstance(value, int | float):
                     return float(value)
 
     return None
+
+
+def _extract_epoch_times_from_checkpoint(
+    checkpoint_payload: Mapping[str, Any],
+) -> list[float]:
+    """Return per-epoch wall-clock times saved by TrainingTimerCallback, or []."""
+    callbacks = checkpoint_payload.get("callbacks")
+    if not isinstance(callbacks, Mapping):
+        return []
+    for callback_state in callbacks.values():
+        if not isinstance(callback_state, Mapping):
+            continue
+        times = callback_state.get("epoch_times_s")
+        if isinstance(times, list) and times:
+            return [float(t) for t in times if isinstance(t, int | float)]
+    return []
 
 
 def _training_runtime_rows(
@@ -532,11 +530,35 @@ def _training_runtime_rows(
         )
     )
 
-    if epochs_completed is not None and epochs_completed > 0:
+    # Use actual per-epoch times from TrainingTimerCallback when available;
+    # fall back to average derived from total / epoch count.
+    epoch_times = _extract_epoch_times_from_checkpoint(checkpoint_payload)
+    if epoch_times:
+        mean_s = sum(epoch_times) / len(epoch_times)
+        rows.append(
+            _make_metadata_row(
+                category="runtime_train", metric="mean_epoch_s", value=mean_s
+            )
+        )
         rows.append(
             _make_metadata_row(
                 category="runtime_train",
-                metric="per_epoch_s",
+                metric="min_epoch_s",
+                value=min(epoch_times),
+            )
+        )
+        rows.append(
+            _make_metadata_row(
+                category="runtime_train",
+                metric="max_epoch_s",
+                value=max(epoch_times),
+            )
+        )
+    elif epochs_completed is not None and epochs_completed > 0:
+        rows.append(
+            _make_metadata_row(
+                category="runtime_train",
+                metric="mean_epoch_s",
                 value=total_runtime_s / epochs_completed,
             )
         )
@@ -645,16 +667,44 @@ def _rollout_metadata_rows(
     )
 
 
-def _resolve_work_dir(work_dir: Path | None) -> Path:
-    if work_dir is not None:
-        return work_dir
-
-    if HydraConfig.initialized():
-        output_dir = HydraConfig.get().runtime.output_dir
-        if output_dir:
-            return Path(output_dir).resolve()
-
-    return Path.cwd()
+def _benchmark_metadata_rows(
+    benchmark_metrics: Mapping[str, float],
+    *,
+    batch_size: int,
+    n_warmup: int,
+    n_benchmark: int,
+    loader: str = "synthetic",
+) -> list[dict[str, float | str]]:
+    rows = [
+        _make_metadata_row(
+            category="benchmark",
+            metric="batch_size",
+            value=batch_size,
+            loader=loader,
+        ),
+        _make_metadata_row(
+            category="benchmark",
+            metric="n_warmup",
+            value=n_warmup,
+            loader=loader,
+        ),
+        _make_metadata_row(
+            category="benchmark",
+            metric="n_benchmark",
+            value=n_benchmark,
+            loader=loader,
+        ),
+    ]
+    for metric, value in benchmark_metrics.items():
+        rows.append(
+            _make_metadata_row(
+                category="benchmark",
+                metric=metric,
+                value=value,
+                loader=loader,
+            )
+        )
+    return rows
 
 
 @hydra.main(
@@ -676,7 +726,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
         os.umask(int(str(umask_value), 8))
         log.info("Applied process umask %s", umask_value)
 
-    work_dir = _resolve_work_dir(work_dir)
+    work_dir = resolve_hydra_work_dir(work_dir)
 
     # Get eval config
     eval_cfg = cfg.get("eval", {})
@@ -733,8 +783,8 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
 
     # Load checkpoint
     log.info("Loading checkpoint from %s", checkpoint_path)
-    checkpoint_payload = _load_checkpoint_payload(checkpoint_path)
-    state_dict = _extract_state_dict(checkpoint_payload)
+    checkpoint_payload = load_checkpoint_payload(checkpoint_path)
+    state_dict = extract_state_dict(checkpoint_payload)
     load_result = model.load_state_dict(state_dict, strict=True)
     if load_result.missing_keys or load_result.unexpected_keys:
         msg = (
@@ -829,6 +879,102 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
             test_batch_runtimes_s=test_batch_runtimes_s,
         )
     )
+
+    benchmark_cfg = eval_cfg.get("benchmark", {})
+    if benchmark_cfg.get("enabled", False):
+        benchmark_batch_size = int(benchmark_cfg.get("batch_size", eval_batch_size))
+        benchmark_n_warmup = int(benchmark_cfg.get("n_warmup", 5))
+        benchmark_n_benchmark = int(benchmark_cfg.get("n_benchmark", 50))
+        example_batch = stats.get("example_batch")
+        if isinstance(example_batch, Batch):
+            log.info(
+                (
+                    "Running inference benchmark "
+                    "(batch_size=%s, n_warmup=%s, n_benchmark=%s)"
+                ),
+                benchmark_batch_size,
+                benchmark_n_warmup,
+                benchmark_n_benchmark,
+            )
+            benchmark_metrics = benchmark_model(
+                model,
+                example_batch,
+                n_warmup=benchmark_n_warmup,
+                n_benchmark=benchmark_n_benchmark,
+                batch_size=benchmark_batch_size,
+            )
+            evaluation_rows.extend(
+                _benchmark_metadata_rows(
+                    benchmark_metrics,
+                    batch_size=benchmark_batch_size,
+                    n_warmup=benchmark_n_warmup,
+                    n_benchmark=benchmark_n_benchmark,
+                )
+            )
+        else:
+            log.warning(
+                "Skipping inference benchmark: expected Batch example, got %s",
+                type(example_batch),
+            )
+
+    rollout_benchmark_cfg = eval_cfg.get("benchmark_rollout", {})
+    if rollout_benchmark_cfg.get("enabled", False):
+        rb_batch_size = int(rollout_benchmark_cfg.get("batch_size", eval_batch_size))
+        rb_n_warmup = int(rollout_benchmark_cfg.get("n_warmup", 5))
+        rb_n_benchmark = int(rollout_benchmark_cfg.get("n_benchmark", 20))
+        rb_max_rollout_steps = int(
+            rollout_benchmark_cfg.get("max_rollout_steps")
+            or eval_cfg.get("max_rollout_steps", 10)
+        )
+        rb_free_running_only = bool(
+            rollout_benchmark_cfg.get(
+                "free_running_only", eval_cfg.get("free_running_only", True)
+            )
+        )
+        data_config = cfg.get("datamodule", {})
+        rb_stride = int(
+            rollout_benchmark_cfg.get("stride")
+            or data_config.get("rollout_stride")
+            or stats["n_steps_output"]
+        )
+        rb_example_batch = stats.get("example_batch")
+        if isinstance(rb_example_batch, Batch):
+            log.info(
+                (
+                    "Running rollout benchmark "
+                    "(batch_size=%s, n_warmup=%s, n_benchmark=%s, "
+                    "stride=%s, max_rollout_steps=%s)"
+                ),
+                rb_batch_size,
+                rb_n_warmup,
+                rb_n_benchmark,
+                rb_stride,
+                rb_max_rollout_steps,
+            )
+            rollout_benchmark_metrics = benchmark_rollout(
+                model,
+                rb_example_batch,
+                stride=rb_stride,
+                max_rollout_steps=rb_max_rollout_steps,
+                n_warmup=rb_n_warmup,
+                n_benchmark=rb_n_benchmark,
+                batch_size=rb_batch_size,
+                free_running_only=rb_free_running_only,
+            )
+            evaluation_rows.extend(
+                _benchmark_metadata_rows(
+                    rollout_benchmark_metrics,
+                    batch_size=rb_batch_size,
+                    n_warmup=rb_n_warmup,
+                    n_benchmark=rb_n_benchmark,
+                    loader="synthetic_rollout",
+                )
+            )
+        else:
+            log.warning(
+                "Skipping rollout benchmark: expected Batch example, got %s",
+                type(rb_example_batch),
+            )
 
     # Rollouts
     compute_rollout_coverage = eval_cfg.get("compute_rollout_coverage", False)

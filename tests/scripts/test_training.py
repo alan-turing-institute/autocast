@@ -14,6 +14,7 @@ from autocast.scripts.setup import (
     setup_epd_model,
     setup_processor_model,
 )
+from autocast.scripts.training import TrainingTimerCallback
 from autocast.types import Batch, EncodedBatch
 
 
@@ -119,6 +120,44 @@ def test_processor_config_training_step_smoke(config_dir: str, dummy_datamodule)
     loss = model.training_step(batch, batch_idx=0)
     assert torch.is_tensor(loss)
     assert loss.ndim == 0
+
+
+# --- TrainingTimerCallback ---
+
+
+def test_training_timer_callback_state_dict_empty_before_training():
+    cb = TrainingTimerCallback()
+    sd = cb.state_dict()
+    assert sd["training_runtime_total_s"] is None
+    assert sd["epoch_times_s"] == []
+
+
+def test_training_timer_callback_state_dict_after_simulated_run():
+    cb = TrainingTimerCallback()
+    # Simulate training lifecycle without a real trainer
+    cb._train_start = 0.0
+    cb._epoch_times_s = [1.0, 2.0, 3.0]
+    cb.training_runtime_total_s = 10.0
+
+    sd = cb.state_dict()
+    assert sd["training_runtime_total_s"] == 10.0
+    assert sd["epoch_times_s"] == [1.0, 2.0, 3.0]
+    assert sd["mean_epoch_s"] == pytest.approx(2.0)
+    assert sd["min_epoch_s"] == pytest.approx(1.0)
+    assert sd["max_epoch_s"] == pytest.approx(3.0)
+
+
+def test_training_timer_callback_load_state_dict_round_trips():
+    cb = TrainingTimerCallback()
+    cb._epoch_times_s = [1.5, 2.5]
+    cb.training_runtime_total_s = 4.0
+
+    state = cb.state_dict()
+
+    cb2 = TrainingTimerCallback()
+    cb2.load_state_dict(state)
+    assert cb2.training_runtime_total_s == 4.0
+    assert cb2._epoch_times_s == [1.5, 2.5]
 
 
 def test_epd_config_forward_smoke(config_dir: str, toy_batch: Batch, dummy_datamodule):

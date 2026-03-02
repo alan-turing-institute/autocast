@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
 from pathlib import Path
 
+import pandas as pd
 from omegaconf import OmegaConf
 
 from autocast.scripts.utils import resolve_work_dir
 from autocast.scripts.workflow.constants import (
+    BENCHMARK_MODULE,
     EVAL_MODULE,
     TRAIN_EVAL_MODULE,
     TRAIN_MODULES,
@@ -20,7 +23,10 @@ from autocast.scripts.workflow.overrides import (
     contains_override,
     hydra_string_list_literal,
 )
-from autocast.scripts.workflow.slurm import submit_via_sbatch
+from autocast.scripts.workflow.slurm import (
+    submit_manifest_via_sbatch,
+    submit_via_sbatch,
+)
 
 # ---------------------------------------------------------------------------
 # Shared building blocks
@@ -339,6 +345,35 @@ def build_eval_overrides(
     return eval_dir, command_overrides
 
 
+def build_benchmark_overrides(
+    *,
+    mode: str,
+    dataset: str | None,
+    work_dir: str,
+    overrides: list[str],
+    using_resolved_config: bool = False,
+) -> tuple[Path, list[str]]:
+    """Build benchmark overrides from CLI arguments."""
+    base_work_dir = Path(work_dir).expanduser().resolve()
+    benchmark_dir = (base_work_dir / "benchmark").resolve()
+
+    command_overrides = [
+        *build_common_launch_overrides(mode=mode, work_dir=benchmark_dir),
+    ]
+
+    if not using_resolved_config:
+        command_overrides.append("eval=encoder_processor_decoder")
+        if dataset is not None:
+            command_overrides.extend(
+                dataset_overrides(dataset=dataset, datasets_root=datasets_root())
+            )
+    elif dataset is not None:
+        command_overrides.append(f"datamodule.data_path={datasets_root() / dataset}")
+
+    command_overrides.extend(overrides)
+    return benchmark_dir, command_overrides
+
+
 # ---------------------------------------------------------------------------
 # Top-level commands
 # ---------------------------------------------------------------------------
@@ -416,6 +451,177 @@ def eval_command(
     )
 
     run_module(EVAL_MODULE, command_overrides, dry_run=dry_run, mode=mode)
+
+
+def benchmark_command(
+    *,
+    mode: str,
+    dataset: str | None,
+    work_dir: str,
+    overrides: list[str],
+    dry_run: bool = False,
+) -> None:
+    """Run a benchmark command."""
+    effective_overrides = list(overrides)
+    has_config_name = _has_cli_flag(effective_overrides, "--config-name")
+    has_config_path = _has_cli_flag(effective_overrides, "--config-path")
+
+    using_resolved_config = _uses_resolved_config(effective_overrides)
+    if not (has_config_name or has_config_path):
+        inferred_config = infer_hydra_config_from_workdir(work_dir)
+        if inferred_config is not None:
+            config_path, config_name = inferred_config
+            effective_overrides = [
+                "--config-name",
+                config_name,
+                "--config-path",
+                config_path,
+                *effective_overrides,
+            ]
+            using_resolved_config = True
+
+    if not contains_override(effective_overrides, "eval.checkpoint="):
+        inferred_eval_checkpoint = infer_eval_checkpoint(work_dir)
+        if inferred_eval_checkpoint is not None:
+            effective_overrides.append(f"eval.checkpoint={inferred_eval_checkpoint}")
+
+    if not contains_override(effective_overrides, "eval.benchmark.enabled="):
+        effective_overrides.append("eval.benchmark.enabled=true")
+
+    _benchmark_dir, command_overrides = build_benchmark_overrides(
+        mode=mode,
+        dataset=dataset,
+        work_dir=work_dir,
+        overrides=effective_overrides,
+        using_resolved_config=using_resolved_config,
+    )
+
+    run_module(BENCHMARK_MODULE, command_overrides, dry_run=dry_run, mode=mode)
+
+
+def _read_manifest_lines(manifest: Path) -> list[str]:
+    """Return non-blank, non-comment lines from *manifest*."""
+    lines: list[str] = []
+    for raw in manifest.read_text(encoding="utf-8").splitlines():
+        stripped = raw.strip()
+        if stripped and not stripped.startswith("#"):
+            lines.append(stripped)
+    return lines
+
+
+def _write_combined_benchmark_csv(work_dirs: list[str], manifest: Path) -> Path | None:
+    """Concatenate per-run ``benchmark_metrics.csv`` files into one combined CSV.
+
+    The combined file is written to ``<manifest_dir>/<manifest_stem>_combined.csv``.
+    Runs whose CSV is missing (e.g. due to an earlier failure) are skipped with a
+    warning rather than aborting the whole combine step.
+    """
+    frames: list[pd.DataFrame] = []
+    for wd in work_dirs:
+        csv_path = Path(wd) / "benchmark_metrics.csv"
+        if csv_path.exists():
+            frames.append(pd.read_csv(csv_path))
+        else:
+            print(f"WARNING: no benchmark_metrics.csv at {csv_path} — skipping")
+
+    if not frames:
+        print("WARNING: no benchmark CSV files found; combined CSV not written.")
+        return None
+
+    combined_path = manifest.parent / f"{manifest.stem}_combined.csv"
+    combined_path.parent.mkdir(parents=True, exist_ok=True)
+    pd.concat(frames, ignore_index=True).to_csv(combined_path, index=False)
+    return combined_path
+
+
+def _parse_benchmark_manifest_line(line: str) -> tuple[str, list[str]]:
+    """Parse a manifest line into ``(work_dir, extra_overrides)``.
+
+    Accepts lines with or without the leading ``benchmark`` token, e.g.::
+
+        benchmark --workdir outputs/run_a eval.benchmark_rollout.enabled=true
+        --workdir outputs/run_a eval.benchmark_rollout.enabled=true
+    """
+    tokens = shlex.split(line)
+    if tokens and tokens[0] == "benchmark":
+        tokens = tokens[1:]
+
+    work_dir: str | None = None
+    remaining: list[str] = []
+    i = 0
+    while i < len(tokens):
+        if tokens[i] == "--workdir" and i + 1 < len(tokens):
+            work_dir = tokens[i + 1]
+            i += 2
+        elif tokens[i].startswith("--workdir="):
+            work_dir = tokens[i].split("=", 1)[1]
+            i += 1
+        else:
+            remaining.append(tokens[i])
+            i += 1
+
+    if work_dir is None:
+        msg = f"No --workdir found in manifest line: {line!r}"
+        raise ValueError(msg)
+
+    return work_dir, remaining
+
+
+def benchmark_manifest_command(
+    *,
+    mode: str,
+    manifest: Path,
+    overrides: list[str],
+    dry_run: bool = False,
+) -> None:
+    """Run benchmarks for every entry in *manifest*.
+
+    With ``mode='local'``, runs are executed sequentially in this process and
+    a combined ``<manifest_stem>_combined.csv`` is written once all runs
+    finish.
+    With ``mode='slurm'``, all runs are submitted as a **single** SLURM job
+    (sequential on one allocated node) and the same combine step is appended
+    to the batch script. Pass ``hydra.launcher.*`` overrides to configure the
+    allocation (partition, timeout, GPUs, etc.).
+    """
+    if not manifest.exists():
+        msg = f"Manifest file not found: {manifest}"
+        raise FileNotFoundError(msg)
+
+    lines = _read_manifest_lines(manifest)
+    if not lines:
+        msg = f"No runnable lines found in manifest: {manifest}"
+        raise ValueError(msg)
+
+    # Parse upfront so we have work_dirs for both modes.
+    parsed = [_parse_benchmark_manifest_line(line) for line in lines]
+    work_dirs = [wd for wd, _ in parsed]
+
+    if mode == "slurm":
+        submit_manifest_via_sbatch(
+            manifest=manifest,
+            lines=lines,
+            work_dirs=work_dirs,
+            overrides=overrides,
+            dry_run=dry_run,
+        )
+        return
+
+    # Local: run each line sequentially, then write a combined CSV.
+    for work_dir, extra_overrides in parsed:
+        dataset = infer_dataset_from_workdir(work_dir)
+        benchmark_command(
+            mode="local",
+            dataset=dataset,
+            work_dir=work_dir,
+            overrides=[*overrides, *extra_overrides],
+            dry_run=dry_run,
+        )
+
+    if not dry_run:
+        combined_path = _write_combined_benchmark_csv(work_dirs, manifest)
+        if combined_path is not None:
+            print(f"Combined benchmark CSV: {combined_path}")
 
 
 def train_eval_single_job_command(
