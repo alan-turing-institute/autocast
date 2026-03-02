@@ -72,6 +72,14 @@ def _resolve_video_dir(eval_cfg: DictConfig, work_dir: Path) -> Path:
     return (work_dir / "videos").resolve()
 
 
+def _resolve_benchmark_csv_path(eval_cfg: DictConfig, work_dir: Path) -> Path:
+    benchmark_cfg = eval_cfg.get("benchmark", {})
+    csv_path = benchmark_cfg.get("csv_path")
+    if csv_path is not None:
+        return Path(csv_path).expanduser().resolve()
+    return (work_dir / "benchmark_metrics.csv").resolve()
+
+
 def _limit_batches(dataloader, max_batches: int | None):
     if max_batches is None or max_batches <= 0:
         return dataloader
@@ -499,46 +507,6 @@ def _evaluation_metadata_rows(
     return rows
 
 
-def _benchmark_metadata_rows(
-    benchmark_metrics: Mapping[str, float],
-    *,
-    batch_size: int,
-    n_warmup: int,
-    n_benchmark: int,
-    loader: str = "synthetic",
-) -> list[dict[str, float | str]]:
-    rows = [
-        _make_metadata_row(
-            category="benchmark",
-            metric="batch_size",
-            value=batch_size,
-            loader=loader,
-        ),
-        _make_metadata_row(
-            category="benchmark",
-            metric="n_warmup",
-            value=n_warmup,
-            loader=loader,
-        ),
-        _make_metadata_row(
-            category="benchmark",
-            metric="n_benchmark",
-            value=n_benchmark,
-            loader=loader,
-        ),
-    ]
-    for metric, value in benchmark_metrics.items():
-        rows.append(
-            _make_metadata_row(
-                category="benchmark",
-                metric=metric,
-                value=value,
-                loader=loader,
-            )
-        )
-    return rows
-
-
 @hydra.main(
     version_base=None,
     config_path=get_default_config_path(),
@@ -703,6 +671,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
             model=model,
         )
     )
+    benchmark_rows: list[dict[str, float | str]] = []
 
     benchmark_cfg = eval_cfg.get("benchmark", {})
     if benchmark_cfg.get("enabled", False):
@@ -727,13 +696,16 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 n_benchmark=benchmark_n_benchmark,
                 batch_size=benchmark_batch_size,
             )
-            evaluation_rows.extend(
-                _benchmark_metadata_rows(
-                    benchmark_metrics,
-                    batch_size=benchmark_batch_size,
-                    n_warmup=benchmark_n_warmup,
-                    n_benchmark=benchmark_n_benchmark,
-                )
+            benchmark_rows.append(
+                {
+                    "benchmark_type": "model",
+                    "checkpoint": str(checkpoint_path),
+                    "batch_size": benchmark_batch_size,
+                    "n_warmup": benchmark_n_warmup,
+                    "n_benchmark": benchmark_n_benchmark,
+                    "device": str(fabric.device),
+                    **benchmark_metrics,
+                }
             )
         else:
             log.warning(
@@ -785,14 +757,18 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 batch_size=rb_batch_size,
                 free_running_only=rb_free_running_only,
             )
-            evaluation_rows.extend(
-                _benchmark_metadata_rows(
-                    rollout_benchmark_metrics,
-                    batch_size=rb_batch_size,
-                    n_warmup=rb_n_warmup,
-                    n_benchmark=rb_n_benchmark,
-                    loader="synthetic_rollout",
-                )
+            benchmark_rows.append(
+                {
+                    "benchmark_type": "rollout",
+                    "checkpoint": str(checkpoint_path),
+                    "batch_size": rb_batch_size,
+                    "n_warmup": rb_n_warmup,
+                    "n_benchmark": rb_n_benchmark,
+                    "stride": rb_stride,
+                    "max_rollout_steps": rb_max_rollout_steps,
+                    "device": str(fabric.device),
+                    **rollout_benchmark_metrics,
+                }
             )
         else:
             log.warning(
@@ -941,6 +917,12 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     if metadata_rows:
         _write_csv(metadata_rows, metadata_csv_path)
         log.info("Wrote evaluation metadata to %s", metadata_csv_path)
+
+    if benchmark_rows:
+        benchmark_csv_path = _resolve_benchmark_csv_path(eval_cfg, work_dir)
+        benchmark_csv_path.parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame(benchmark_rows).to_csv(benchmark_csv_path, index=False)
+        log.info("Wrote benchmark CSV to %s", benchmark_csv_path)
 
 
 if __name__ == "__main__":
