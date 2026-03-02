@@ -106,17 +106,19 @@ def _resolve_rollout_channel_names(dataset: Any) -> list[str] | None:
         return None
 
     norm = getattr(dataset, "norm", None)
-    norm_field_names = getattr(norm, "core_field_names", None)
-    if isinstance(norm_field_names, Sequence) and not isinstance(norm_field_names, str):
-        names = [str(name) for name in norm_field_names]
-        if names:
-            channel_names = names
-        else:
-            return None
-    else:
+    raw_names = getattr(norm, "core_field_names", None)
+
+    if not isinstance(raw_names, Sequence) or isinstance(raw_names, str):
+        normalization_stats = getattr(dataset, "normalization_stats", None)
+        if isinstance(normalization_stats, Mapping):
+            raw_names = normalization_stats.get("core_field_names")
+
+    if not isinstance(raw_names, Sequence) or isinstance(raw_names, str):
         return None
 
-    assert channel_names is not None
+    channel_names = [str(name) for name in raw_names]
+    if not channel_names:
+        return None
 
     output_channel_idxs = getattr(dataset, "output_channel_idxs", None)
     if output_channel_idxs is not None:

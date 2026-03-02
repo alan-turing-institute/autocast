@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shlex
 import subprocess
@@ -10,7 +11,7 @@ from pathlib import Path
 import pandas as pd
 from omegaconf import OmegaConf
 
-from autocast.scripts.utils import resolve_work_dir
+from autocast.scripts.utils import get_default_config_path, resolve_work_dir
 from autocast.scripts.workflow.constants import (
     BENCHMARK_MODULE,
     EVAL_MODULE,
@@ -74,6 +75,35 @@ def _resolved_config_candidates(base: Path) -> list[Path]:
         *(base / f"{stem}.yaml" for stem in _RESOLVED_CONFIG_STEMS),
         *(base / "run" / f"{stem}.yaml" for stem in _RESOLVED_CONFIG_STEMS),
     ]
+
+
+def _flatten_overrides(prefix: str, value: object) -> list[str]:
+    """Flatten nested mappings/lists into Hydra dot-path overrides."""
+    if isinstance(value, dict):
+        overrides: list[str] = []
+        for key, nested in value.items():
+            if not isinstance(key, str):
+                continue
+            if key == "defaults":
+                continue
+            overrides.extend(_flatten_overrides(f"{prefix}.{key}", nested))
+        return overrides
+    return [f"{prefix}={json.dumps(value)}"]
+
+
+def _resolved_eval_default_overrides() -> list[str]:
+    """Return eval.* overrides from the live eval config for stale resolved configs."""
+    cfg_path = (
+        Path(get_default_config_path()) / "eval" / "encoder_processor_decoder.yaml"
+    )
+    if not cfg_path.exists():
+        return []
+
+    loaded = OmegaConf.to_container(OmegaConf.load(cfg_path), resolve=True)
+    if not isinstance(loaded, dict):
+        return []
+
+    return _flatten_overrides("eval", loaded)
 
 
 def _load_resolved_config_from_workdir(work_dir: str | Path) -> dict | None:
@@ -338,8 +368,15 @@ def build_eval_overrides(
             command_overrides.extend(
                 dataset_overrides(dataset=dataset, datasets_root=datasets_root())
             )
-    elif dataset is not None:
-        command_overrides.append(f"datamodule.data_path={datasets_root() / dataset}")
+    else:
+        # The resolved config may be stale (saved before current eval defaults
+        # were added). Re-inject key EPD eval defaults from the source eval config.
+        # These are placed before `overrides` so callers can still override them.
+        command_overrides.extend(_resolved_eval_default_overrides())
+        if dataset is not None:
+            command_overrides.append(
+                f"datamodule.data_path={datasets_root() / dataset}"
+            )
 
     command_overrides.extend(overrides)
     return eval_dir, command_overrides
