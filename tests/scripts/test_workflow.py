@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 from unittest.mock import patch
 
+import pandas as pd
 import pytest
 
 from autocast.scripts.workflow import cli as workflow_cli
 from autocast.scripts.workflow.cli import build_parser
 from autocast.scripts.workflow.commands import (
+    benchmark_manifest_command,
     build_effective_eval_overrides,
     build_train_overrides,
     eval_command,
@@ -35,7 +38,11 @@ from autocast.scripts.workflow.overrides import (
     split_top_level_csv,
     strip_hydra_sweep_controls,
 )
-from autocast.scripts.workflow.slurm import _parse_override_scalar, _should_use_srun
+from autocast.scripts.workflow.slurm import (
+    _parse_override_scalar,
+    _should_use_srun,
+    submit_manifest_via_sbatch,
+)
 
 
 @pytest.fixture
@@ -909,6 +916,112 @@ def test_main_benchmark_dispatches_inferred_dataset_from_workdir(monkeypatch, tm
 
     assert captured["dataset"] == "reaction_diffusion"
     assert captured["work_dir"] == str(tmp_path)
+
+
+def test_benchmark_manifest_command_local_writes_combined_csv(monkeypatch, tmp_path):
+    work_a = tmp_path / "run_a"
+    work_b = tmp_path / "run_b"
+    work_a.mkdir()
+    work_b.mkdir()
+
+    manifest = tmp_path / "benchmarks.txt"
+    manifest.write_text(
+        "\n".join(
+            [
+                f"benchmark --workdir {work_a}",
+                f"benchmark --workdir {work_b}",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    def _fake_infer_dataset(_work_dir):
+        return "reaction_diffusion"
+
+    def _fake_benchmark_command(**kwargs):
+        wd = kwargs["work_dir"]
+        value = 1.0 if wd == str(work_a) else 2.0
+        csv_path = Path(wd) / "benchmark_metrics.csv"
+        pd.DataFrame([{"work_dir": wd, "metric": value}]).to_csv(csv_path, index=False)
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.commands.infer_dataset_from_workdir",
+        _fake_infer_dataset,
+    )
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.commands.benchmark_command",
+        _fake_benchmark_command,
+    )
+
+    benchmark_manifest_command(
+        mode="local",
+        manifest=manifest,
+        overrides=[],
+        dry_run=False,
+    )
+
+    combined_path = tmp_path / "benchmarks_combined.csv"
+    assert combined_path.exists()
+    combined = pd.read_csv(combined_path)
+    assert len(combined) == 2
+    assert set(combined["work_dir"].tolist()) == {str(work_a), str(work_b)}
+
+
+def test_benchmark_manifest_command_slurm_passes_work_dirs(monkeypatch, tmp_path):
+    work_a = tmp_path / "run_a"
+    work_b = tmp_path / "run_b"
+    manifest = tmp_path / "benchmarks.txt"
+    manifest.write_text(
+        "\n".join(
+            [
+                f"benchmark --workdir {work_a} eval.benchmark.batch_size=2",
+                f"benchmark --workdir={work_b} eval.benchmark.batch_size=4",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    captured = {}
+
+    def _fake_submit_manifest_via_sbatch(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.commands.submit_manifest_via_sbatch",
+        _fake_submit_manifest_via_sbatch,
+    )
+
+    benchmark_manifest_command(
+        mode="slurm",
+        manifest=manifest,
+        overrides=["hydra.launcher.partition=gpu"],
+        dry_run=True,
+    )
+
+    assert captured["manifest"] == manifest
+    assert captured["work_dirs"] == [str(work_a), str(work_b)]
+    assert captured["overrides"] == ["hydra.launcher.partition=gpu"]
+    assert captured["dry_run"] is True
+
+
+def test_submit_manifest_via_sbatch_dry_run_includes_combine_step(capsys, tmp_path):
+    manifest = tmp_path / "benchmarks.txt"
+    manifest.write_text("# test\n", encoding="utf-8")
+
+    submit_manifest_via_sbatch(
+        manifest=manifest,
+        lines=["benchmark --workdir outputs/2026-02-19/run_a"],
+        work_dirs=["outputs/2026-02-19/run_a"],
+        overrides=[],
+        dry_run=True,
+    )
+
+    out = capsys.readouterr().out
+    assert "uv run python -c" in out
+    assert "Combined benchmark CSV:" in out
+    assert f"{manifest.stem}_combined.csv" in out
 
 
 def test_resolve_dataset_from_datamodule_override():
