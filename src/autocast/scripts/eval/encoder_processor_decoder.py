@@ -16,6 +16,7 @@ from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig, open_dict
 from torchmetrics import Metric
 
+from autocast.benchmarking import benchmark_model
 from autocast.metrics import MAE, MSE, NMAE, NMSE, NRMSE, RMSE, VMSE, VRMSE, LInfinity
 from autocast.metrics.base import BaseMetric
 from autocast.metrics.coverage import MultiCoverage
@@ -27,6 +28,7 @@ from autocast.models.encoder_processor_decoder_ensemble import (
 from autocast.scripts.config import save_resolved_config
 from autocast.scripts.setup import setup_datamodule, setup_epd_model
 from autocast.scripts.utils import get_default_config_path
+from autocast.types.batch import Batch
 from autocast.utils import plot_spatiotemporal_video
 from autocast.utils.plots import compute_metrics_from_dataloader
 
@@ -598,6 +600,45 @@ def _rollout_metadata_rows(
     )
 
 
+def _benchmark_metadata_rows(
+    benchmark_metrics: Mapping[str, float],
+    *,
+    batch_size: int,
+    n_warmup: int,
+    n_benchmark: int,
+) -> list[dict[str, float | str]]:
+    rows = [
+        _make_metadata_row(
+            category="benchmark",
+            metric="batch_size",
+            value=batch_size,
+            loader="synthetic",
+        ),
+        _make_metadata_row(
+            category="benchmark",
+            metric="n_warmup",
+            value=n_warmup,
+            loader="synthetic",
+        ),
+        _make_metadata_row(
+            category="benchmark",
+            metric="n_benchmark",
+            value=n_benchmark,
+            loader="synthetic",
+        ),
+    ]
+    for metric, value in benchmark_metrics.items():
+        rows.append(
+            _make_metadata_row(
+                category="benchmark",
+                metric=metric,
+                value=value,
+                loader="synthetic",
+            )
+        )
+    return rows
+
+
 def _resolve_work_dir(work_dir: Path | None) -> Path:
     if work_dir is not None:
         return work_dir
@@ -782,6 +823,43 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
             test_batch_runtimes_s=test_batch_runtimes_s,
         )
     )
+
+    benchmark_cfg = eval_cfg.get("benchmark", {})
+    if benchmark_cfg.get("enabled", False):
+        benchmark_batch_size = int(benchmark_cfg.get("batch_size", eval_batch_size))
+        benchmark_n_warmup = int(benchmark_cfg.get("n_warmup", 5))
+        benchmark_n_benchmark = int(benchmark_cfg.get("n_benchmark", 50))
+        example_batch = stats.get("example_batch")
+        if isinstance(example_batch, Batch):
+            log.info(
+                (
+                    "Running inference benchmark "
+                    "(batch_size=%s, n_warmup=%s, n_benchmark=%s)"
+                ),
+                benchmark_batch_size,
+                benchmark_n_warmup,
+                benchmark_n_benchmark,
+            )
+            benchmark_metrics = benchmark_model(
+                model,
+                example_batch,
+                n_warmup=benchmark_n_warmup,
+                n_benchmark=benchmark_n_benchmark,
+                batch_size=benchmark_batch_size,
+            )
+            evaluation_rows.extend(
+                _benchmark_metadata_rows(
+                    benchmark_metrics,
+                    batch_size=benchmark_batch_size,
+                    n_warmup=benchmark_n_warmup,
+                    n_benchmark=benchmark_n_benchmark,
+                )
+            )
+        else:
+            log.warning(
+                "Skipping inference benchmark: expected Batch example, got %s",
+                type(example_batch),
+            )
 
     # Rollouts
     compute_rollout_coverage = eval_cfg.get("compute_rollout_coverage", False)

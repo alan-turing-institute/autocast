@@ -10,6 +10,7 @@ from omegaconf import OmegaConf
 
 from autocast.scripts.utils import resolve_work_dir
 from autocast.scripts.workflow.constants import (
+    BENCHMARK_MODULE,
     EVAL_MODULE,
     TRAIN_EVAL_MODULE,
     TRAIN_MODULES,
@@ -334,6 +335,35 @@ def build_eval_overrides(
     return eval_dir, command_overrides
 
 
+def build_benchmark_overrides(
+    *,
+    mode: str,
+    dataset: str | None,
+    work_dir: str,
+    overrides: list[str],
+    using_resolved_config: bool = False,
+) -> tuple[Path, list[str]]:
+    """Build benchmark overrides from CLI arguments."""
+    base_work_dir = Path(work_dir).expanduser().resolve()
+    benchmark_dir = (base_work_dir / "benchmark").resolve()
+
+    command_overrides = [
+        *build_common_launch_overrides(mode=mode, work_dir=benchmark_dir),
+    ]
+
+    if not using_resolved_config:
+        command_overrides.append("eval=encoder_processor_decoder")
+        if dataset is not None:
+            command_overrides.extend(
+                dataset_overrides(dataset=dataset, datasets_root=datasets_root())
+            )
+    elif dataset is not None:
+        command_overrides.append(f"datamodule.data_path={datasets_root() / dataset}")
+
+    command_overrides.extend(overrides)
+    return benchmark_dir, command_overrides
+
+
 # ---------------------------------------------------------------------------
 # Top-level commands
 # ---------------------------------------------------------------------------
@@ -410,6 +440,52 @@ def eval_command(
     )
 
     run_module(EVAL_MODULE, command_overrides, dry_run=dry_run, mode=mode)
+
+
+def benchmark_command(
+    *,
+    mode: str,
+    dataset: str | None,
+    work_dir: str,
+    overrides: list[str],
+    dry_run: bool = False,
+) -> None:
+    """Run a benchmark command."""
+    effective_overrides = list(overrides)
+    has_config_name = _has_cli_flag(effective_overrides, "--config-name")
+    has_config_path = _has_cli_flag(effective_overrides, "--config-path")
+
+    using_resolved_config = _uses_resolved_config(effective_overrides)
+    if not (has_config_name or has_config_path):
+        inferred_config = infer_hydra_config_from_workdir(work_dir)
+        if inferred_config is not None:
+            config_path, config_name = inferred_config
+            effective_overrides = [
+                "--config-name",
+                config_name,
+                "--config-path",
+                config_path,
+                *effective_overrides,
+            ]
+            using_resolved_config = True
+
+    if not contains_override(effective_overrides, "eval.checkpoint="):
+        inferred_eval_checkpoint = infer_eval_checkpoint(work_dir)
+        if inferred_eval_checkpoint is not None:
+            effective_overrides.append(f"eval.checkpoint={inferred_eval_checkpoint}")
+
+    if not contains_override(effective_overrides, "eval.benchmark.enabled="):
+        effective_overrides.append("eval.benchmark.enabled=true")
+
+    _benchmark_dir, command_overrides = build_benchmark_overrides(
+        mode=mode,
+        dataset=dataset,
+        work_dir=work_dir,
+        overrides=effective_overrides,
+        using_resolved_config=using_resolved_config,
+    )
+
+    run_module(BENCHMARK_MODULE, command_overrides, dry_run=dry_run, mode=mode)
 
 
 def train_eval_single_job_command(

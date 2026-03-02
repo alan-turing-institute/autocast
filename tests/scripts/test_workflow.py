@@ -631,6 +631,12 @@ def test_build_parser_eval_basic(parser: argparse.ArgumentParser):
     assert args.workdir == "/tmp/w"
 
 
+def test_build_parser_benchmark_basic(parser: argparse.ArgumentParser):
+    args = parser.parse_args(["benchmark", "--workdir", "/tmp/w"])
+    assert args.command == "benchmark"
+    assert args.workdir == "/tmp/w"
+
+
 def test_build_parser_train_eval_with_eval_overrides(
     parser: argparse.ArgumentParser,
 ):
@@ -870,6 +876,33 @@ def test_main_eval_dispatches_inferred_dataset_from_workdir(monkeypatch, tmp_pat
         sys,
         "argv",
         ["autocast", "eval", "--workdir", str(tmp_path), "--dry-run"],
+    )
+
+    workflow_cli.main()
+
+    assert captured["dataset"] == "reaction_diffusion"
+    assert captured["work_dir"] == str(tmp_path)
+
+
+def test_main_benchmark_dispatches_inferred_dataset_from_workdir(monkeypatch, tmp_path):
+    (tmp_path / "resolved_config.yaml").write_text(
+        "datamodule:\n  data_path: /tmp/datasets/reaction_diffusion\n",
+        encoding="utf-8",
+    )
+
+    captured = {}
+
+    def _fake_benchmark_command(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.cli.benchmark_command",
+        _fake_benchmark_command,
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["autocast", "benchmark", "--workdir", str(tmp_path), "--dry-run"],
     )
 
     workflow_cli.main()

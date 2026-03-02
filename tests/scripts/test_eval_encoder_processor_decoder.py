@@ -3,6 +3,7 @@
 from omegaconf import OmegaConf
 
 from autocast.scripts.eval.encoder_processor_decoder import (
+    _benchmark_metadata_rows,
     _resolve_rollout_batch_limit,
     _split_metric_and_metadata_rows,
 )
@@ -58,3 +59,22 @@ def test_split_metric_and_metadata_rows_separates_meta_rows():
             "value": 1.2,
         }
     ]
+
+
+def test_benchmark_metadata_rows_include_config_and_metrics():
+    rows = _benchmark_metadata_rows(
+        {
+            "throughput_samples_per_sec": 123.4,
+            "latency_ms_per_batch": 10.0,
+        },
+        batch_size=2,
+        n_warmup=5,
+        n_benchmark=20,
+    )
+
+    metrics = {(row["category"], row["metric"]) for row in rows}
+    assert ("benchmark", "batch_size") in metrics
+    assert ("benchmark", "n_warmup") in metrics
+    assert ("benchmark", "n_benchmark") in metrics
+    assert ("benchmark", "throughput_samples_per_sec") in metrics
+    assert ("benchmark", "latency_ms_per_batch") in metrics

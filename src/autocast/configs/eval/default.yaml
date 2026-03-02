@@ -25,3 +25,10 @@ device: auto  # auto, cpu, cuda, or mps
 # Rollout settings
 max_rollout_steps: 10
 free_running_only: true
+
+# Inference benchmark settings (synthetic batch with matching tensor shapes)
+benchmark:
+  enabled: false
+  batch_size: 1
+  n_warmup: 5
+  n_benchmark: 50

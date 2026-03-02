@@ -6,6 +6,7 @@ import argparse
 from pathlib import Path
 
 from autocast.scripts.workflow.commands import (
+    benchmark_command,
     eval_command,
     infer_dataset_from_workdir,
     infer_resume_checkpoint,
@@ -85,6 +86,11 @@ def build_parser() -> argparse.ArgumentParser:
     eval_parser = subparsers.add_parser("eval")
     eval_parser.add_argument("--workdir", required=True)
     _add_common_args(eval_parser)
+
+    # -- benchmark ---------------------------------------------------------
+    benchmark_parser = subparsers.add_parser("benchmark")
+    benchmark_parser.add_argument("--workdir", required=True)
+    _add_common_args(benchmark_parser)
 
     # -- train-eval --------------------------------------------------------
     te_parser = subparsers.add_parser("train-eval")
@@ -197,6 +203,21 @@ def main() -> None:
         )
 
         eval_command(
+            mode=args.mode,
+            dataset=dataset,
+            work_dir=args.workdir,
+            overrides=combined_overrides,
+            dry_run=args.dry_run,
+        )
+        return
+
+    if args.command == "benchmark":
+        dataset = _resolve_dataset(
+            work_dir=args.workdir,
+            overrides=combined_overrides,
+        )
+
+        benchmark_command(
             mode=args.mode,
             dataset=dataset,
             work_dir=args.workdir,
