@@ -395,22 +395,46 @@ def _parameter_count_rows(
 def _extract_training_runtime_total_s(
     checkpoint_payload: Mapping[str, Any],
 ) -> float | None:
+    # Top-level checkpoint keys (legacy / manually-saved runs)
     for key in ("training_runtime_total_s", "train_runtime_total_s", "runtime_total_s"):
         value = checkpoint_payload.get(key)
         if isinstance(value, int | float):
             return float(value)
 
+    # Callback state dicts — TrainingTimerCallback stores training_runtime_total_s here
     callbacks = checkpoint_payload.get("callbacks")
     if isinstance(callbacks, Mapping):
         for callback_state in callbacks.values():
             if not isinstance(callback_state, Mapping):
                 continue
-            for key in ("time_elapsed", "time_elapsed_s", "total_time", "total_time_s"):
+            for key in (
+                "training_runtime_total_s",
+                "time_elapsed",
+                "time_elapsed_s",
+                "total_time",
+                "total_time_s",
+            ):
                 value = callback_state.get(key)
                 if isinstance(value, int | float):
                     return float(value)
 
     return None
+
+
+def _extract_epoch_times_from_checkpoint(
+    checkpoint_payload: Mapping[str, Any],
+) -> list[float]:
+    """Return per-epoch wall-clock times saved by TrainingTimerCallback, or []."""
+    callbacks = checkpoint_payload.get("callbacks")
+    if not isinstance(callbacks, Mapping):
+        return []
+    for callback_state in callbacks.values():
+        if not isinstance(callback_state, Mapping):
+            continue
+        times = callback_state.get("epoch_times_s")
+        if isinstance(times, list) and times:
+            return [float(t) for t in times if isinstance(t, int | float)]
+    return []
 
 
 def _training_runtime_rows(
@@ -459,11 +483,35 @@ def _training_runtime_rows(
         )
     )
 
-    if epochs_completed is not None and epochs_completed > 0:
+    # Use actual per-epoch times from TrainingTimerCallback when available;
+    # fall back to average derived from total / epoch count.
+    epoch_times = _extract_epoch_times_from_checkpoint(checkpoint_payload)
+    if epoch_times:
+        mean_s = sum(epoch_times) / len(epoch_times)
+        rows.append(
+            _make_metadata_row(
+                category="runtime_train", metric="mean_epoch_s", value=mean_s
+            )
+        )
         rows.append(
             _make_metadata_row(
                 category="runtime_train",
-                metric="per_epoch_s",
+                metric="min_epoch_s",
+                value=min(epoch_times),
+            )
+        )
+        rows.append(
+            _make_metadata_row(
+                category="runtime_train",
+                metric="max_epoch_s",
+                value=max(epoch_times),
+            )
+        )
+    elif epochs_completed is not None and epochs_completed > 0:
+        rows.append(
+            _make_metadata_row(
+                category="runtime_train",
+                metric="mean_epoch_s",
                 value=total_runtime_s / epochs_completed,
             )
         )

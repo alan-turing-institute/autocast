@@ -4,6 +4,7 @@ import logging
 import os
 import shutil
 from pathlib import Path
+from time import perf_counter
 
 import lightning as L
 import torch
@@ -111,6 +112,62 @@ class CheckpointAliasSymlinkCallback(Callback):
         self._refresh_alias(trainer)
 
 
+class TrainingTimerCallback(Callback):
+    """Measures wall-clock training time and persists it to the checkpoint.
+
+    Records total training time and per-epoch durations.  The values are
+    stored via ``state_dict()`` so the eval script can read them directly
+    from the checkpoint's ``callbacks`` block.
+    """
+
+    def __init__(self) -> None:
+        self._train_start: float | None = None
+        self._epoch_start: float | None = None
+        self._epoch_times_s: list[float] = []
+        self.training_runtime_total_s: float | None = None
+
+    def on_train_start(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
+        del trainer, pl_module
+        self._train_start = perf_counter()
+        self._epoch_times_s = []
+
+    def on_train_epoch_start(
+        self, trainer: L.Trainer, pl_module: L.LightningModule
+    ) -> None:
+        del trainer, pl_module
+        self._epoch_start = perf_counter()
+
+    def on_train_epoch_end(
+        self, trainer: L.Trainer, pl_module: L.LightningModule
+    ) -> None:
+        del trainer, pl_module
+        if self._epoch_start is not None:
+            self._epoch_times_s.append(perf_counter() - self._epoch_start)
+
+    def on_train_end(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
+        del trainer, pl_module
+        if self._train_start is not None:
+            self.training_runtime_total_s = perf_counter() - self._train_start
+
+    def state_dict(self) -> dict:  # type: ignore[override]
+        d: dict = {
+            "training_runtime_total_s": self.training_runtime_total_s,
+            "epoch_times_s": list(self._epoch_times_s),
+        }
+        if self._epoch_times_s:
+            n = len(self._epoch_times_s)
+            d["mean_epoch_s"] = sum(self._epoch_times_s) / n
+            d["min_epoch_s"] = min(self._epoch_times_s)
+            d["max_epoch_s"] = max(self._epoch_times_s)
+        return d
+
+    def load_state_dict(  # type: ignore[override]
+        self, state_dict: dict
+    ) -> None:
+        self.training_runtime_total_s = state_dict.get("training_runtime_total_s")
+        self._epoch_times_s = list(state_dict.get("epoch_times_s", []))
+
+
 def run_training(
     config: DictConfig,
     model: L.LightningModule,
@@ -168,6 +225,7 @@ def run_training(
             callback.setdefault("save_last", "link")
 
     callbacks.append(CheckpointAliasSymlinkCallback(checkpoint_path))
+    callbacks.append(TrainingTimerCallback())
     trainer_cfg["callbacks"] = callbacks
 
     trainer = instantiate(
