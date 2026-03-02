@@ -29,6 +29,7 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     colorbar_mode: Literal["none", "row", "column", "all"] = "none",
     colorbar_mode_uq: Literal["none", "row"] = "none",
     channel_names: list[str] | None = None,
+    preserve_aspect: bool = False,
 ):
     """Create a video comparing ground truth and predicted spatiotemporal time series.
 
@@ -61,6 +62,10 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
         - "all": one colorbar shared across the first two rows.
     channel_names: list[str] | None
         Optional list of channel names for titles.
+    preserve_aspect: bool
+        If True, keep pixel geometry (no stretching) by using
+        ``aspect='equal'``. If False (default), use ``aspect='auto'``
+        to fill subplot space.
 
     Returns
     -------
@@ -146,11 +151,24 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
         rows_to_plot.append((pred_uq_batch, pred_uq_label, "inferno"))
     total_rows = len(rows_to_plot)
 
-    fig = plt.figure(figsize=(C * 4, total_rows * 4))
+    panel_width = 4.0
+    panel_height = 4.0
+
+    fig = plt.figure(figsize=(C * panel_width, total_rows * panel_height))
     gs = GridSpec(total_rows, C, figure=fig, hspace=0.3, wspace=0.3)
 
     axes = []
     images = []
+
+    aspect = "equal" if preserve_aspect else "auto"
+
+    def _to_imshow_frame(
+        frame: np.ndarray | Tensor, transpose: bool = False
+    ) -> np.ndarray:
+        frame = np.asarray(frame)
+        if transpose:
+            frame = np.asarray(rearrange(frame, "s1 s2 -> s2 s1"))
+        return frame
 
     for row_idx, (data, row_label, row_cmap) in enumerate(rows_to_plot):
         row_axes = []
@@ -162,7 +180,7 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
             if data is None:
                 msg = "Data for plotting cannot be None."
                 raise ValueError(msg)
-            frame0 = rearrange(data[0, :, :, ch], "w h -> h w")
+            frame0 = _to_imshow_frame(data[0, :, :, ch])
 
             if row_idx < n_primary_rows:
                 norm = norms[row_idx][ch]
@@ -181,7 +199,7 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
                 norm = uq_norm
             else:
                 norm = diff_norm
-            im = ax.imshow(frame0, cmap=row_cmap, aspect="auto", norm=norm)
+            im = ax.imshow(frame0, cmap=row_cmap, aspect=aspect, norm=norm)
 
             if row_idx == 0:
                 (
@@ -201,12 +219,25 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     def _attach_colorbars():
         for row_idx, row_axes in enumerate(axes):
             for ch_idx, ax in enumerate(row_axes):
-                fig.colorbar(
-                    images[row_idx][ch_idx],
-                    ax=ax,
-                    fraction=0.046,
-                    pad=0.04,
-                )
+                if preserve_aspect:
+                    frame_h, frame_w = images[row_idx][ch_idx].get_array().shape
+                    fig.colorbar(
+                        images[row_idx][ch_idx],
+                        ax=ax,
+                        fraction=0.046,
+                        pad=0.04,
+                        shrink=min(
+                            1.0,
+                            max(0.25, frame_h / max(frame_w, 1)),
+                        ),
+                    )
+                else:
+                    fig.colorbar(
+                        images[row_idx][ch_idx],
+                        ax=ax,
+                        fraction=0.046,
+                        pad=0.04,
+                    )
 
     _attach_colorbars()
 
@@ -214,13 +245,15 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
 
     def update(frame):
         for ch in range(C):
-            images[0][ch].set_array(true_batch[frame, :, :, ch])
+            images[0][ch].set_array(_to_imshow_frame(true_batch[frame, :, :, ch]))
             if pred_batch is not None:
-                images[1][ch].set_array(pred_batch[frame, :, :, ch])
+                images[1][ch].set_array(_to_imshow_frame(pred_batch[frame, :, :, ch]))
             if diff_batch is not None:
-                images[2][ch].set_array(diff_batch[frame, :, :, ch])
+                images[2][ch].set_array(_to_imshow_frame(diff_batch[frame, :, :, ch]))
             if pred_uq_batch is not None:
-                images[3][ch].set_array(pred_uq_batch[frame, :, :, ch])
+                images[3][ch].set_array(
+                    _to_imshow_frame(pred_uq_batch[frame, :, :, ch])
+                )
         suptitle_text.set_text(
             f"{title} - Batch {batch_idx} - Time Step: {frame}/{T - 1}"
         )
