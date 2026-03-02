@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -21,7 +22,10 @@ from autocast.scripts.workflow.overrides import (
     contains_override,
     hydra_string_list_literal,
 )
-from autocast.scripts.workflow.slurm import submit_via_sbatch
+from autocast.scripts.workflow.slurm import (
+    submit_manifest_via_sbatch,
+    submit_via_sbatch,
+)
 
 # ---------------------------------------------------------------------------
 # Shared building blocks
@@ -486,6 +490,94 @@ def benchmark_command(
     )
 
     run_module(BENCHMARK_MODULE, command_overrides, dry_run=dry_run, mode=mode)
+
+
+def _read_manifest_lines(manifest: Path) -> list[str]:
+    """Return non-blank, non-comment lines from *manifest*."""
+    lines: list[str] = []
+    for raw in manifest.read_text(encoding="utf-8").splitlines():
+        stripped = raw.strip()
+        if stripped and not stripped.startswith("#"):
+            lines.append(stripped)
+    return lines
+
+
+def _parse_benchmark_manifest_line(line: str) -> tuple[str, list[str]]:
+    """Parse a manifest line into ``(work_dir, extra_overrides)``.
+
+    Accepts lines with or without the leading ``benchmark`` token, e.g.::
+
+        benchmark --workdir outputs/run_a eval.benchmark_rollout.enabled=true
+        --workdir outputs/run_a eval.benchmark_rollout.enabled=true
+    """
+    tokens = shlex.split(line)
+    if tokens and tokens[0] == "benchmark":
+        tokens = tokens[1:]
+
+    work_dir: str | None = None
+    remaining: list[str] = []
+    i = 0
+    while i < len(tokens):
+        if tokens[i] == "--workdir" and i + 1 < len(tokens):
+            work_dir = tokens[i + 1]
+            i += 2
+        elif tokens[i].startswith("--workdir="):
+            work_dir = tokens[i].split("=", 1)[1]
+            i += 1
+        else:
+            remaining.append(tokens[i])
+            i += 1
+
+    if work_dir is None:
+        msg = f"No --workdir found in manifest line: {line!r}"
+        raise ValueError(msg)
+
+    return work_dir, remaining
+
+
+def benchmark_manifest_command(
+    *,
+    mode: str,
+    manifest: Path,
+    overrides: list[str],
+    dry_run: bool = False,
+) -> None:
+    """Run benchmarks for every entry in *manifest*.
+
+    With ``mode='local'``, runs are executed sequentially in this process.
+    With ``mode='slurm'``, all runs are submitted as a **single** SLURM job
+    (sequential on one allocated node). Pass ``hydra.launcher.*`` overrides
+    to configure the allocation (partition, timeout, GPUs, etc.).
+    """
+    if not manifest.exists():
+        msg = f"Manifest file not found: {manifest}"
+        raise FileNotFoundError(msg)
+
+    lines = _read_manifest_lines(manifest)
+    if not lines:
+        msg = f"No runnable lines found in manifest: {manifest}"
+        raise ValueError(msg)
+
+    if mode == "slurm":
+        submit_manifest_via_sbatch(
+            manifest=manifest,
+            lines=lines,
+            overrides=overrides,
+            dry_run=dry_run,
+        )
+        return
+
+    # Local: run each line sequentially.
+    for line in lines:
+        work_dir, extra_overrides = _parse_benchmark_manifest_line(line)
+        dataset = infer_dataset_from_workdir(work_dir)
+        benchmark_command(
+            mode="local",
+            dataset=dataset,
+            work_dir=work_dir,
+            overrides=[*overrides, *extra_overrides],
+            dry_run=dry_run,
+        )
 
 
 def train_eval_single_job_command(
