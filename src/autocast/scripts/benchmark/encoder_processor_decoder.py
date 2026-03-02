@@ -64,7 +64,7 @@ def main(cfg: DictConfig) -> None:
     run_benchmark(cfg)
 
 
-def run_benchmark(cfg: DictConfig, work_dir: Path | None = None) -> Path:  # noqa: PLR0915
+def run_benchmark(cfg: DictConfig, work_dir: Path | None = None) -> Path:
     """Run benchmark using an already-composed config and write a CSV."""
     logging.basicConfig(level=logging.INFO)
 
@@ -117,14 +117,17 @@ def run_benchmark(cfg: DictConfig, work_dir: Path | None = None) -> Path:  # noq
         batch_size=batch_size,
     )
 
-    row = {
-        "checkpoint": str(checkpoint_path),
-        "batch_size": batch_size,
-        "n_warmup": n_warmup,
-        "n_benchmark": n_benchmark,
-        "device": str(device),
-        **metrics,
-    }
+    rows = [
+        {
+            "benchmark_type": "model",
+            "checkpoint": str(checkpoint_path),
+            "batch_size": batch_size,
+            "n_warmup": n_warmup,
+            "n_benchmark": n_benchmark,
+            "device": str(device),
+            **metrics,
+        }
+    ]
 
     rollout_benchmark_cfg = eval_cfg.get("benchmark_rollout", {})
     if rollout_benchmark_cfg.get("enabled", False):
@@ -168,16 +171,23 @@ def run_benchmark(cfg: DictConfig, work_dir: Path | None = None) -> Path:  # noq
             batch_size=rb_batch_size,
             free_running_only=rb_free_running_only,
         )
-        row["rollout_batch_size"] = rb_batch_size
-        row["rollout_n_warmup"] = rb_n_warmup
-        row["rollout_n_benchmark"] = rb_n_benchmark
-        row["rollout_stride"] = rb_stride
-        row["rollout_max_rollout_steps"] = rb_max_rollout_steps
-        row.update({f"rollout_{k}": v for k, v in rollout_metrics.items()})
+        rows.append(
+            {
+                "benchmark_type": "rollout",
+                "checkpoint": str(checkpoint_path),
+                "batch_size": rb_batch_size,
+                "n_warmup": rb_n_warmup,
+                "n_benchmark": rb_n_benchmark,
+                "stride": rb_stride,
+                "max_rollout_steps": rb_max_rollout_steps,
+                "device": str(device),
+                **rollout_metrics,
+            }
+        )
 
     csv_path = _resolve_csv_path(eval_cfg, work_dir)
     csv_path.parent.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame([row]).to_csv(csv_path, index=False)
+    pd.DataFrame(rows).to_csv(csv_path, index=False)
     log.info("Wrote benchmark CSV to %s", csv_path)
     return csv_path
 

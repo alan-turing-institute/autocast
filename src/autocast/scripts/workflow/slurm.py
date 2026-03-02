@@ -398,7 +398,7 @@ def submit_manifest_via_sbatch(  # noqa: PLR0915
         # Each manifest line is a full `benchmark --workdir X ...` invocation.
         # Run it locally (no --mode slurm) inside the allocated node.
         script_lines.append(f"uv run autocast {line}")
-    # Combine step: concatenate per-run CSVs into one file next to the manifest.
+    # Combine step: concatenate per-run benchmark_metrics.csv files next to manifest.
     csv_paths_repr = repr([str(Path(wd) / "benchmark_metrics.csv") for wd in work_dirs])
     combined_path_repr = repr(
         str(manifest.parent.resolve() / f"{manifest.stem}_combined.csv")

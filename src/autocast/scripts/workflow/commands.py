@@ -509,29 +509,40 @@ def _read_manifest_lines(manifest: Path) -> list[str]:
     return lines
 
 
-def _write_combined_benchmark_csv(work_dirs: list[str], manifest: Path) -> Path | None:
-    """Concatenate per-run ``benchmark_metrics.csv`` files into one combined CSV.
-
-    The combined file is written to ``<manifest_dir>/<manifest_stem>_combined.csv``.
-    Runs whose CSV is missing (e.g. due to an earlier failure) are skipped with a
-    warning rather than aborting the whole combine step.
-    """
+def _write_combined_csv(
+    work_dirs: list[str],
+    manifest: Path,
+    *,
+    input_name: str,
+    output_name: str,
+) -> Path | None:
+    """Concatenate per-run CSVs into a single combined CSV next to manifest."""
     frames: list[pd.DataFrame] = []
     for wd in work_dirs:
-        csv_path = Path(wd) / "benchmark_metrics.csv"
+        csv_path = Path(wd) / input_name
         if csv_path.exists():
             frames.append(pd.read_csv(csv_path))
         else:
-            print(f"WARNING: no benchmark_metrics.csv at {csv_path} — skipping")
+            print(f"WARNING: no {input_name} at {csv_path} — skipping")
 
     if not frames:
-        print("WARNING: no benchmark CSV files found; combined CSV not written.")
+        print(f"WARNING: no {input_name} files found; combined CSV not written.")
         return None
 
-    combined_path = manifest.parent / f"{manifest.stem}_combined.csv"
+    combined_path = manifest.parent / output_name
     combined_path.parent.mkdir(parents=True, exist_ok=True)
     pd.concat(frames, ignore_index=True).to_csv(combined_path, index=False)
     return combined_path
+
+
+def _write_combined_benchmark_csv(work_dirs: list[str], manifest: Path) -> Path | None:
+    """Concatenate per-run ``benchmark_metrics.csv`` files into one combined CSV."""
+    return _write_combined_csv(
+        work_dirs,
+        manifest,
+        input_name="benchmark_metrics.csv",
+        output_name=f"{manifest.stem}_combined.csv",
+    )
 
 
 def _parse_benchmark_manifest_line(line: str) -> tuple[str, list[str]]:
