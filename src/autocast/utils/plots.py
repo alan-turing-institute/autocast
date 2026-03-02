@@ -63,9 +63,9 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     channel_names: list[str] | None
         Optional list of channel names for titles.
     preserve_aspect: bool
-        If True, keep pixel geometry (no stretching) by using
-        ``aspect='equal'``. If False (default), use ``aspect='auto'``
-        to fill subplot space.
+        If True, resize each subplot panel to match the spatial WxH ratio of the
+        data so the image fills the panel without distortion. If False (default),
+        panels are square and the image is stretched to fill via ``aspect='auto'``.
 
     Returns
     -------
@@ -85,7 +85,7 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     pred_uq_batch = pred_uq[batch_idx] if pred_uq is not None else None
 
     # Extract dims and move to CPU
-    T, *_, C = true_batch.shape
+    T, *spatial, C = true_batch.shape
     true_batch = true_batch.detach().cpu().numpy()
     if pred_batch is not None:
         pred_batch = pred_batch.detach().cpu().numpy()
@@ -151,16 +151,32 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
         rows_to_plot.append((pred_uq_batch, pred_uq_label, "inferno"))
     total_rows = len(rows_to_plot)
 
-    panel_width = 4.0
-    panel_height = 4.0
+    _base = 4.0
+    if preserve_aspect and len(spatial) == 2:
+        W, H = spatial
+        # _to_imshow_frame does NOT transpose by default, so imshow receives (W, H):
+        # rows = W (figure height), cols = H (figure width).
+        # Scale the smaller base dimension and cap to avoid excessively large figures.
+        if H > 0 and W > 0:
+            ratio = W / H  # rows / cols
+            if ratio >= 1:  # taller than wide
+                panel_width = _base
+                panel_height = min(_base * ratio, 3 * _base)
+            else:  # wider than tall
+                panel_height = _base
+                panel_width = min(_base / ratio, 3 * _base)
+        else:
+            panel_width = _base
+            panel_height = _base
+    else:
+        panel_width = _base
+        panel_height = _base
 
     fig = plt.figure(figsize=(C * panel_width, total_rows * panel_height))
     gs = GridSpec(total_rows, C, figure=fig, hspace=0.3, wspace=0.3)
 
     axes = []
     images = []
-
-    aspect = "equal" if preserve_aspect else "auto"
 
     def _to_imshow_frame(
         frame: np.ndarray | Tensor, transpose: bool = False
@@ -199,7 +215,7 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
                 norm = uq_norm
             else:
                 norm = diff_norm
-            im = ax.imshow(frame0, cmap=row_cmap, aspect=aspect, norm=norm)
+            im = ax.imshow(frame0, cmap=row_cmap, aspect="auto", norm=norm)
 
             if row_idx == 0:
                 (
@@ -219,25 +235,12 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     def _attach_colorbars():
         for row_idx, row_axes in enumerate(axes):
             for ch_idx, ax in enumerate(row_axes):
-                if preserve_aspect:
-                    frame_h, frame_w = images[row_idx][ch_idx].get_array().shape
-                    fig.colorbar(
-                        images[row_idx][ch_idx],
-                        ax=ax,
-                        fraction=0.046,
-                        pad=0.04,
-                        shrink=min(
-                            1.0,
-                            max(0.25, frame_h / max(frame_w, 1)),
-                        ),
-                    )
-                else:
-                    fig.colorbar(
-                        images[row_idx][ch_idx],
-                        ax=ax,
-                        fraction=0.046,
-                        pad=0.04,
-                    )
+                fig.colorbar(
+                    images[row_idx][ch_idx],
+                    ax=ax,
+                    fraction=0.046,
+                    pad=0.04,
+                )
 
     _attach_colorbars()
 
