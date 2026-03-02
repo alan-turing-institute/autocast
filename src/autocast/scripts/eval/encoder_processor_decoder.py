@@ -4,7 +4,6 @@ import logging
 import os
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from time import perf_counter
 from typing import Any
 
 import hydra
@@ -437,49 +436,28 @@ def _parameter_count_rows(
     ]
 
 
-def _extract_training_runtime_total_s(
+def _extract_training_timer_callback_state(
     checkpoint_payload: Mapping[str, Any],
-) -> float | None:
-    # Top-level checkpoint keys (legacy / manually-saved runs)
-    for key in ("training_runtime_total_s", "train_runtime_total_s", "runtime_total_s"):
-        value = checkpoint_payload.get(key)
-        if isinstance(value, int | float):
-            return float(value)
-
-    # Callback state dicts — TrainingTimerCallback stores training_runtime_total_s here
-    callbacks = checkpoint_payload.get("callbacks")
-    if isinstance(callbacks, Mapping):
-        for callback_state in callbacks.values():
-            if not isinstance(callback_state, Mapping):
-                continue
-            for key in (
-                "training_runtime_total_s",
-                "time_elapsed",
-                "time_elapsed_s",
-                "total_time",
-                "total_time_s",
-            ):
-                value = callback_state.get(key)
-                if isinstance(value, int | float):
-                    return float(value)
-
-    return None
-
-
-def _extract_epoch_times_from_checkpoint(
-    checkpoint_payload: Mapping[str, Any],
-) -> list[float]:
-    """Return per-epoch wall-clock times saved by TrainingTimerCallback, or []."""
+) -> Mapping[str, Any] | None:
+    """Return the TrainingTimerCallback state dict from checkpoint callbacks."""
     callbacks = checkpoint_payload.get("callbacks")
     if not isinstance(callbacks, Mapping):
-        return []
+        return None
     for callback_state in callbacks.values():
         if not isinstance(callback_state, Mapping):
             continue
-        times = callback_state.get("epoch_times_s")
-        if isinstance(times, list) and times:
-            return [float(t) for t in times if isinstance(t, int | float)]
-    return []
+        if any(
+            key in callback_state
+            for key in (
+                "training_runtime_total_s",
+                "mean_epoch_s",
+                "min_epoch_s",
+                "max_epoch_s",
+                "epoch_times_s",
+            )
+        ):
+            return callback_state
+    return None
 
 
 def _training_runtime_rows(
@@ -487,182 +465,38 @@ def _training_runtime_rows(
 ) -> list[dict[str, float | str]]:
     rows: list[dict[str, float | str]] = []
 
-    epoch_value = checkpoint_payload.get("epoch")
-    global_step_value = checkpoint_payload.get("global_step")
-
-    epochs_completed = (
-        int(epoch_value) + 1
-        if isinstance(epoch_value, int) and epoch_value >= 0
-        else None
-    )
-    global_steps = (
-        int(global_step_value) if isinstance(global_step_value, int) else None
-    )
-
-    if epochs_completed is not None:
-        rows.append(
-            _make_metadata_row(
-                category="runtime_train",
-                metric="epochs_completed",
-                value=epochs_completed,
-            )
-        )
-    if global_steps is not None:
-        rows.append(
-            _make_metadata_row(
-                category="runtime_train",
-                metric="steps_completed",
-                value=global_steps,
-            )
-        )
-
-    total_runtime_s = _extract_training_runtime_total_s(checkpoint_payload)
-    if total_runtime_s is None or total_runtime_s <= 0:
+    callback_state = _extract_training_timer_callback_state(checkpoint_payload)
+    if callback_state is None:
         return rows
 
-    rows.append(
-        _make_metadata_row(
-            category="runtime_train",
-            metric="total_s",
-            value=total_runtime_s,
-        )
-    )
-
-    # Use actual per-epoch times from TrainingTimerCallback when available;
-    # fall back to average derived from total / epoch count.
-    epoch_times = _extract_epoch_times_from_checkpoint(checkpoint_payload)
-    if epoch_times:
-        mean_s = sum(epoch_times) / len(epoch_times)
-        rows.append(
-            _make_metadata_row(
-                category="runtime_train", metric="mean_epoch_s", value=mean_s
-            )
-        )
-        rows.append(
-            _make_metadata_row(
-                category="runtime_train",
-                metric="min_epoch_s",
-                value=min(epoch_times),
-            )
-        )
-        rows.append(
-            _make_metadata_row(
-                category="runtime_train",
-                metric="max_epoch_s",
-                value=max(epoch_times),
-            )
-        )
-    elif epochs_completed is not None and epochs_completed > 0:
-        rows.append(
-            _make_metadata_row(
-                category="runtime_train",
-                metric="mean_epoch_s",
-                value=total_runtime_s / epochs_completed,
-            )
-        )
-
-    if global_steps is not None and global_steps > 0:
-        rows.append(
-            _make_metadata_row(
-                category="runtime_train",
-                metric="per_step_s",
-                value=total_runtime_s / global_steps,
-            )
-        )
-
-    return rows
-
-
-def _eval_runtime_rows(
-    loader_name: str,
-    total_runtime_s: float,
-    per_batch_runtimes_s: Sequence[float],
-) -> list[dict[str, float | str]]:
-    rows: list[dict[str, float | str]] = []
-
-    rows.append(
-        _make_metadata_row(
-            category="runtime_eval",
-            metric="total_s",
-            value=total_runtime_s,
-            loader=loader_name,
-        )
-    )
-
-    batch_count = len(per_batch_runtimes_s)
-    rows.append(
-        _make_metadata_row(
-            category="runtime_eval",
-            metric="batch_count",
-            value=batch_count,
-            loader=loader_name,
-        )
-    )
-
-    if batch_count > 0:
-        rows.append(
-            _make_metadata_row(
-                category="runtime_eval",
-                metric="per_batch_mean_s",
-                value=total_runtime_s / batch_count,
-                loader=loader_name,
-            )
-        )
-        for batch_idx, batch_runtime_s in enumerate(per_batch_runtimes_s):
+    metric_map = {
+        "training_runtime_total_s": "total_s",
+        "mean_epoch_s": "mean_epoch_s",
+        "min_epoch_s": "min_epoch_s",
+        "max_epoch_s": "max_epoch_s",
+    }
+    for callback_key, metric_name in metric_map.items():
+        value = callback_state.get(callback_key)
+        if isinstance(value, int | float) and float(value) > 0:
             rows.append(
                 _make_metadata_row(
-                    category="runtime_eval",
-                    metric="per_batch_s",
-                    value=batch_runtime_s,
-                    loader=loader_name,
-                    batch_idx=batch_idx,
+                    category="runtime_train",
+                    metric=metric_name,
+                    value=float(value),
                 )
             )
 
     return rows
 
 
-def _with_batch_timing(
-    predict_fn: Callable,
-    per_batch_runtimes_s: list[float],
-) -> Callable:
-    def wrapped(batch):
-        start_s = perf_counter()
-        result = predict_fn(batch)
-        per_batch_runtimes_s.append(perf_counter() - start_s)
-        return result
-
-    return wrapped
-
-
 def _evaluation_metadata_rows(
     checkpoint_payload: Mapping[str, Any],
     model: EncoderProcessorDecoderEnsemble | EncoderProcessorDecoder,
-    test_eval_total_s: float,
-    test_batch_runtimes_s: Sequence[float],
 ) -> list[dict[str, float | str]]:
     rows: list[dict[str, float | str]] = []
     rows.extend(_training_runtime_rows(checkpoint_payload))
-    rows.extend(
-        _eval_runtime_rows(
-            "test_dataloader",
-            test_eval_total_s,
-            test_batch_runtimes_s,
-        )
-    )
     rows.extend(_parameter_count_rows(model))
     return rows
-
-
-def _rollout_metadata_rows(
-    rollout_eval_total_s: float,
-    rollout_batch_runtimes_s: Sequence[float],
-) -> list[dict[str, float | str]]:
-    return _eval_runtime_rows(
-        "rollout_dataloader",
-        rollout_eval_total_s,
-        rollout_batch_runtimes_s,
-    )
 
 
 def _benchmark_metadata_rows(
@@ -845,19 +679,13 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     # Use metric_windows from config (apply to all metrics)
     test_windows = _map_windows(eval_cfg.get("metric_windows", None))
 
-    test_batch_runtimes_s: list[float] = []
-    timed_test_predict = _with_batch_timing(model, test_batch_runtimes_s)
-
-    test_eval_start_s = perf_counter()
-
     test_metrics_results, _, test_per_batch_rows = compute_metrics_from_dataloader(
         dataloader=test_loader,
         metric_fns=test_metric_fns,
-        predict_fn=timed_test_predict,
+        predict_fn=model,
         windows=test_windows,
         return_per_batch=True,
     )
-    test_eval_total_s = perf_counter() - test_eval_start_s
 
     # Process and save test metrics
     test_rows = _process_metrics_results(
@@ -873,8 +701,6 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
         _evaluation_metadata_rows(
             checkpoint_payload=checkpoint_payload,
             model=model,
-            test_eval_total_s=test_eval_total_s,
-            test_batch_runtimes_s=test_batch_runtimes_s,
         )
     )
 
@@ -1050,8 +876,6 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 eval_cfg.get("metric_windows_rollout", [(0, 1), (6, 12), (13, 30)])
             )
 
-            rollout_batch_runtimes_s: list[float] = []
-
             def rollout_predict(batch):
                 preds, trues = model.rollout(
                     batch,
@@ -1066,13 +890,6 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 min_len = min(preds.shape[1], trues.shape[1])
                 return preds[:, :min_len], trues[:, :min_len]
 
-            timed_rollout_predict = _with_batch_timing(
-                rollout_predict,
-                rollout_batch_runtimes_s,
-            )
-
-            rollout_eval_start_s = perf_counter()
-
             rollout_metrics_loader = _limit_batches(
                 fabric.setup_dataloaders(
                     datamodule.rollout_test_dataloader(batch_size=eval_batch_size)
@@ -1084,18 +901,11 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 compute_metrics_from_dataloader(
                     dataloader=rollout_metrics_loader,
                     metric_fns=rollout_metric_fns,
-                    predict_fn=timed_rollout_predict,
+                    predict_fn=rollout_predict,
                     windows=windows,
                     return_per_batch=True,
                 )
             )
-            rollout_eval_total_s = perf_counter() - rollout_eval_start_s
-
-            rollout_runtime_rows = _rollout_metadata_rows(
-                rollout_eval_total_s,
-                rollout_batch_runtimes_s,
-            )
-            evaluation_rows.extend(rollout_runtime_rows)
 
             # Process and log results
             rollout_csv_rows = _process_metrics_results(
@@ -1107,7 +917,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
 
             # Save rollout metrics to CSV
             rollout_csv_path = csv_path.parent / "rollout_metrics.csv"
-            rollout_combined_rows = [*rollout_csv_rows, *rollout_runtime_rows]
+            rollout_combined_rows = [*rollout_csv_rows]
             rollout_metric_rows, rollout_metadata_rows = (
                 _split_metric_and_metadata_rows(rollout_combined_rows)
             )
