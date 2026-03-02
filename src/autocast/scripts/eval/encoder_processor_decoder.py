@@ -252,6 +252,7 @@ def _render_rollouts(
     free_running_only: bool,
     n_members: int | None = None,
     channel_names: list[str] | None = None,
+    preserve_aspect: bool = False,
 ) -> list[Path]:
     # Return early if no batches are requested
     if not batch_indices:
@@ -328,6 +329,7 @@ def _render_rollouts(
                 colorbar_mode="column",
                 pred_uq_label="Ensemble Std Dev",
                 channel_names=names_for_plot,
+                preserve_aspect=preserve_aspect,
             )
             saved_paths.append(filename)
             rendered_batches.add(batch_idx)
@@ -874,6 +876,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 free_running_only=eval_cfg.get("free_running_only", True),
                 n_members=n_members,
                 channel_names=rollout_channel_names,
+                preserve_aspect=eval_cfg.get("preserve_aspect", False),
             )
 
         # Prepare metric functions for rollouts
