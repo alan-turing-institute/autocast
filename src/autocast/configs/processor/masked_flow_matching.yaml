@@ -1,0 +1,9 @@
+defaults:
+  - /backbone@backbone: unet
+  - _self_
+
+_target_: autocast.processors.masked_flow_matching.MaskedFlowMatchingProcessor
+flow_ode_steps: 4
+n_steps_output: null
+n_channels_out: null
+mask_path: null  # User provides this via CLI or config
