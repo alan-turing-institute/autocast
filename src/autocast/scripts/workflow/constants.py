@@ -30,4 +30,8 @@ DATASET_NAME_TOKENS: dict[str, str] = {
     "lattice_boltzmann": "lb64",
     "lattice_boltzmann_128_32": "lb128x32",
     "conditioned_navier_stokes": "cns64",
+    "gpe_low_complexity": "gpelc",
+    "gpe_laser_only": "gpelo",
+    "gpe_speckle_only": "gpeso",
+    "gpe_laser_and_speckle": "gpels",
 }
