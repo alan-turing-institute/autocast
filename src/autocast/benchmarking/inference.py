@@ -179,7 +179,10 @@ def benchmark_rollout(
     -------
     dict[str, float]
         throughput_samples_per_sec
-            Total samples (batch_size * max_rollout_steps) produced per second.
+            Batch elements (samples) processed per second: ``n * batch_size / t``.
+            One "sample" is one batch element completing the full rollout.
+            Use ``latency_ms_per_step`` to compare per-step cost against
+            :func:`benchmark_model`.
         latency_ms_per_batch
             Mean wall-clock time in ms for one full rollout call (analogous to
             ``latency_ms_per_batch`` in :func:`benchmark_model`).
@@ -228,8 +231,7 @@ def benchmark_rollout(
     latency_batch_ms = (total_s / n_measured) * 1000.0
 
     metrics: dict[str, float] = {
-        "throughput_samples_per_sec": (n_measured * max_rollout_steps * batch_size)
-        / total_s,
+        "throughput_samples_per_sec": (n_measured * batch_size) / total_s,
         "latency_ms_per_batch": latency_batch_ms,
         "latency_ms_per_sample": latency_batch_ms / batch_size,
         "latency_ms_per_step": latency_batch_ms / max_rollout_steps,
