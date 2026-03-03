@@ -33,6 +33,37 @@ def _resolve_csv_path(eval_cfg: DictConfig, work_dir: Path) -> Path:
     return (work_dir / "benchmark_metrics.csv").resolve()
 
 
+def _benchmark_metric_rows(
+    *,
+    benchmark_type: str,
+    checkpoint_path: Path,
+    device: str,
+    batch_size: int,
+    n_warmup: int,
+    n_benchmark: int,
+    metrics: dict[str, float],
+    stride: int | None = None,
+    max_rollout_steps: int | None = None,
+) -> list[dict[str, float | str | int | None]]:
+    rows: list[dict[str, float | str | int | None]] = []
+    for metric, value in metrics.items():
+        rows.append(
+            {
+                "benchmark_type": benchmark_type,
+                "checkpoint": str(checkpoint_path),
+                "device": device,
+                "batch_size": batch_size,
+                "n_warmup": n_warmup,
+                "n_benchmark": n_benchmark,
+                "stride": stride,
+                "max_rollout_steps": max_rollout_steps,
+                "metric": metric,
+                "value": float(value),
+            }
+        )
+    return rows
+
+
 def _resolve_checkpoint_path(eval_cfg: DictConfig, work_dir: Path) -> Path:
     checkpoint_path = eval_cfg.get("checkpoint")
     if checkpoint_path is None:
@@ -117,17 +148,15 @@ def run_benchmark(cfg: DictConfig, work_dir: Path | None = None) -> Path:
         batch_size=batch_size,
     )
 
-    rows = [
-        {
-            "benchmark_type": "model",
-            "checkpoint": str(checkpoint_path),
-            "batch_size": batch_size,
-            "n_warmup": n_warmup,
-            "n_benchmark": n_benchmark,
-            "device": str(device),
-            **metrics,
-        }
-    ]
+    rows = _benchmark_metric_rows(
+        benchmark_type="model",
+        checkpoint_path=checkpoint_path,
+        device=str(device),
+        batch_size=batch_size,
+        n_warmup=n_warmup,
+        n_benchmark=n_benchmark,
+        metrics=metrics,
+    )
 
     rollout_benchmark_cfg = eval_cfg.get("benchmark_rollout", {})
     if rollout_benchmark_cfg.get("enabled", False):
@@ -171,18 +200,18 @@ def run_benchmark(cfg: DictConfig, work_dir: Path | None = None) -> Path:
             batch_size=rb_batch_size,
             free_running_only=rb_free_running_only,
         )
-        rows.append(
-            {
-                "benchmark_type": "rollout",
-                "checkpoint": str(checkpoint_path),
-                "batch_size": rb_batch_size,
-                "n_warmup": rb_n_warmup,
-                "n_benchmark": rb_n_benchmark,
-                "stride": rb_stride,
-                "max_rollout_steps": rb_max_rollout_steps,
-                "device": str(device),
-                **rollout_metrics,
-            }
+        rows.extend(
+            _benchmark_metric_rows(
+                benchmark_type="rollout",
+                checkpoint_path=checkpoint_path,
+                device=str(device),
+                batch_size=rb_batch_size,
+                n_warmup=rb_n_warmup,
+                n_benchmark=rb_n_benchmark,
+                metrics=rollout_metrics,
+                stride=rb_stride,
+                max_rollout_steps=rb_max_rollout_steps,
+            )
         )
 
     csv_path = _resolve_csv_path(eval_cfg, work_dir)

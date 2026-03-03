@@ -178,15 +178,15 @@ def benchmark_rollout(
     Returns
     -------
     dict[str, float]
-        throughput_steps_per_sec
-            Rollout output steps produced per second
-            (``n_measured * max_rollout_steps * batch_size / total_s``).
-        latency_ms_per_rollout
-            Mean wall-clock time in ms for one full rollout call.
+        throughput_samples_per_sec
+            Total samples (batch_size * max_rollout_steps) produced per second.
+        latency_ms_per_batch
+            Mean wall-clock time in ms for one full rollout call (analogous to
+            ``latency_ms_per_batch`` in :func:`benchmark_model`).
+        latency_ms_per_sample
+            ``latency_ms_per_batch / batch_size``.
         latency_ms_per_step
             Mean time in ms per autoregressive step.
-        latency_ms_per_sample_per_step
-            Per-sample per-step latency in ms.
         peak_gpu_memory_mb
             Peak GPU memory allocated in MB (CUDA only).
     """
@@ -225,15 +225,14 @@ def benchmark_rollout(
         raise RuntimeError(msg)
 
     n_measured = len(rollout_times_s)
-    latency_rollout_ms = (total_s / n_measured) * 1000.0
+    latency_batch_ms = (total_s / n_measured) * 1000.0
 
     metrics: dict[str, float] = {
-        "throughput_steps_per_sec": (n_measured * max_rollout_steps * batch_size)
+        "throughput_samples_per_sec": (n_measured * max_rollout_steps * batch_size)
         / total_s,
-        "latency_ms_per_rollout": latency_rollout_ms,
-        "latency_ms_per_step": latency_rollout_ms / max_rollout_steps,
-        "latency_ms_per_sample_per_step": latency_rollout_ms
-        / (batch_size * max_rollout_steps),
+        "latency_ms_per_batch": latency_batch_ms,
+        "latency_ms_per_sample": latency_batch_ms / batch_size,
+        "latency_ms_per_step": latency_batch_ms / max_rollout_steps,
     }
 
     if device.type == "cuda" and torch.cuda.is_available():

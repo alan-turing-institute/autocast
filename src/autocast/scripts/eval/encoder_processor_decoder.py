@@ -80,6 +80,37 @@ def _resolve_benchmark_csv_path(eval_cfg: DictConfig, work_dir: Path) -> Path:
     return (work_dir / "benchmark_metrics.csv").resolve()
 
 
+def _benchmark_metric_rows(
+    *,
+    benchmark_type: str,
+    checkpoint_path: Path,
+    device: str,
+    batch_size: int,
+    n_warmup: int,
+    n_benchmark: int,
+    metrics: Mapping[str, float],
+    stride: int | None = None,
+    max_rollout_steps: int | None = None,
+) -> list[dict[str, float | str | int | None]]:
+    rows: list[dict[str, float | str | int | None]] = []
+    for metric, value in metrics.items():
+        rows.append(
+            {
+                "benchmark_type": benchmark_type,
+                "checkpoint": str(checkpoint_path),
+                "device": device,
+                "batch_size": batch_size,
+                "n_warmup": n_warmup,
+                "n_benchmark": n_benchmark,
+                "stride": stride,
+                "max_rollout_steps": max_rollout_steps,
+                "metric": metric,
+                "value": float(value),
+            }
+        )
+    return rows
+
+
 def _limit_batches(dataloader, max_batches: int | None):
     if max_batches is None or max_batches <= 0:
         return dataloader
@@ -673,7 +704,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
             model=model,
         )
     )
-    benchmark_rows: list[dict[str, float | str]] = []
+    benchmark_rows: list[dict[str, float | str | int | None]] = []
 
     benchmark_cfg = eval_cfg.get("benchmark", {})
     if benchmark_cfg.get("enabled", False):
@@ -698,16 +729,16 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 n_benchmark=benchmark_n_benchmark,
                 batch_size=benchmark_batch_size,
             )
-            benchmark_rows.append(
-                {
-                    "benchmark_type": "model",
-                    "checkpoint": str(checkpoint_path),
-                    "batch_size": benchmark_batch_size,
-                    "n_warmup": benchmark_n_warmup,
-                    "n_benchmark": benchmark_n_benchmark,
-                    "device": str(fabric.device),
-                    **benchmark_metrics,
-                }
+            benchmark_rows.extend(
+                _benchmark_metric_rows(
+                    benchmark_type="model",
+                    checkpoint_path=checkpoint_path,
+                    device=str(fabric.device),
+                    batch_size=benchmark_batch_size,
+                    n_warmup=benchmark_n_warmup,
+                    n_benchmark=benchmark_n_benchmark,
+                    metrics=benchmark_metrics,
+                )
             )
         else:
             log.warning(
@@ -759,18 +790,18 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 batch_size=rb_batch_size,
                 free_running_only=rb_free_running_only,
             )
-            benchmark_rows.append(
-                {
-                    "benchmark_type": "rollout",
-                    "checkpoint": str(checkpoint_path),
-                    "batch_size": rb_batch_size,
-                    "n_warmup": rb_n_warmup,
-                    "n_benchmark": rb_n_benchmark,
-                    "stride": rb_stride,
-                    "max_rollout_steps": rb_max_rollout_steps,
-                    "device": str(fabric.device),
-                    **rollout_benchmark_metrics,
-                }
+            benchmark_rows.extend(
+                _benchmark_metric_rows(
+                    benchmark_type="rollout",
+                    checkpoint_path=checkpoint_path,
+                    device=str(fabric.device),
+                    batch_size=rb_batch_size,
+                    n_warmup=rb_n_warmup,
+                    n_benchmark=rb_n_benchmark,
+                    metrics=rollout_benchmark_metrics,
+                    stride=rb_stride,
+                    max_rollout_steps=rb_max_rollout_steps,
+                )
             )
         else:
             log.warning(
