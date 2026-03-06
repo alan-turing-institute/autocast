@@ -189,6 +189,50 @@ def _uses_resolved_config(overrides: list[str]) -> bool:
     return config_name in _RESOLVED_CONFIG_STEMS
 
 
+def _with_inferred_resolved_config(
+    work_dir: str | Path,
+    overrides: list[str],
+) -> tuple[list[str], bool]:
+    """Add inferred resolved-config flags when no explicit config flags are set."""
+    effective_overrides = list(overrides)
+    has_config_name = _has_cli_flag(effective_overrides, "--config-name")
+    has_config_path = _has_cli_flag(effective_overrides, "--config-path")
+
+    using_resolved_config = _uses_resolved_config(effective_overrides)
+    if not (has_config_name or has_config_path):
+        inferred_config = infer_hydra_config_from_workdir(work_dir)
+        if inferred_config is not None:
+            config_path, config_name = inferred_config
+            effective_overrides = [
+                "--config-name",
+                config_name,
+                "--config-path",
+                config_path,
+                *effective_overrides,
+            ]
+            using_resolved_config = True
+
+    return effective_overrides, using_resolved_config
+
+
+def _append_inferred_eval_checkpoint(
+    work_dir: str | Path,
+    overrides: list[str],
+) -> list[str]:
+    """Append inferred eval.checkpoint override if one is not already provided."""
+    effective_overrides = list(overrides)
+    if contains_override(effective_overrides, "eval.checkpoint="):
+        return effective_overrides
+
+    inferred_eval_checkpoint = infer_eval_checkpoint(work_dir)
+    if inferred_eval_checkpoint is None:
+        return effective_overrides
+
+    checkpoint_value = _hydra_quote_string(str(inferred_eval_checkpoint))
+    effective_overrides.append(f"eval.checkpoint={checkpoint_value}")
+    return effective_overrides
+
+
 def infer_dataset_from_workdir(work_dir: str | Path) -> str | None:
     """Infer dataset name from a run work directory.
 
@@ -492,29 +536,12 @@ def eval_command(
     dry_run: bool = False,
 ) -> None:
     """Run an evaluation command."""
-    effective_overrides = list(overrides)
-    has_config_name = _has_cli_flag(effective_overrides, "--config-name")
-    has_config_path = _has_cli_flag(effective_overrides, "--config-path")
-
-    using_resolved_config = _uses_resolved_config(effective_overrides)
-    if not (has_config_name or has_config_path):
-        inferred_config = infer_hydra_config_from_workdir(work_dir)
-        if inferred_config is not None:
-            config_path, config_name = inferred_config
-            effective_overrides = [
-                "--config-name",
-                config_name,
-                "--config-path",
-                config_path,
-                *effective_overrides,
-            ]
-            using_resolved_config = True
-
-    if not contains_override(effective_overrides, "eval.checkpoint="):
-        inferred_eval_checkpoint = infer_eval_checkpoint(work_dir)
-        if inferred_eval_checkpoint is not None:
-            checkpoint_value = _hydra_quote_string(str(inferred_eval_checkpoint))
-            effective_overrides.append(f"eval.checkpoint={checkpoint_value}")
+    effective_overrides, using_resolved_config = _with_inferred_resolved_config(
+        work_dir, overrides
+    )
+    effective_overrides = _append_inferred_eval_checkpoint(
+        work_dir, effective_overrides
+    )
 
     _eval_dir, command_overrides = build_eval_overrides(
         mode=mode,
@@ -536,28 +563,12 @@ def benchmark_command(
     dry_run: bool = False,
 ) -> None:
     """Run a benchmark command."""
-    effective_overrides = list(overrides)
-    has_config_name = _has_cli_flag(effective_overrides, "--config-name")
-    has_config_path = _has_cli_flag(effective_overrides, "--config-path")
-
-    using_resolved_config = _uses_resolved_config(effective_overrides)
-    if not (has_config_name or has_config_path):
-        inferred_config = infer_hydra_config_from_workdir(work_dir)
-        if inferred_config is not None:
-            config_path, config_name = inferred_config
-            effective_overrides = [
-                "--config-name",
-                config_name,
-                "--config-path",
-                config_path,
-                *effective_overrides,
-            ]
-            using_resolved_config = True
-
-    if not contains_override(effective_overrides, "eval.checkpoint="):
-        inferred_eval_checkpoint = infer_eval_checkpoint(work_dir)
-        if inferred_eval_checkpoint is not None:
-            effective_overrides.append(f"eval.checkpoint={inferred_eval_checkpoint}")
+    effective_overrides, using_resolved_config = _with_inferred_resolved_config(
+        work_dir, overrides
+    )
+    effective_overrides = _append_inferred_eval_checkpoint(
+        work_dir, effective_overrides
+    )
 
     if not contains_override(effective_overrides, "eval.benchmark.enabled="):
         effective_overrides.append("eval.benchmark.enabled=true")

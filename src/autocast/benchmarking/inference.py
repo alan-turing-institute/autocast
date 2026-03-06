@@ -42,7 +42,7 @@ def _predict_once(model: torch.nn.Module, batch: Batch) -> None:
         if isinstance(model, L.LightningModule):
             try:
                 model.predict_step(batch, 0)
-            except Exception:
+            except NotImplementedError:
                 model(batch)
         else:
             model(batch)

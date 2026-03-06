@@ -13,8 +13,11 @@ from omegaconf import DictConfig
 from autocast.benchmarking import benchmark_model, benchmark_rollout
 from autocast.scripts.config import save_resolved_config
 from autocast.scripts.execution import (
+    benchmark_metric_rows,
     extract_state_dict,
     load_checkpoint_payload,
+    resolve_benchmark_csv_path,
+    resolve_checkpoint_path,
     resolve_device,
     resolve_hydra_work_dir,
 )
@@ -23,66 +26,6 @@ from autocast.scripts.utils import get_default_config_path
 from autocast.types.batch import Batch
 
 log = logging.getLogger(__name__)
-
-
-def _resolve_csv_path(eval_cfg: DictConfig, work_dir: Path) -> Path:
-    benchmark_cfg = eval_cfg.get("benchmark", {})
-    csv_path = benchmark_cfg.get("csv_path")
-    if csv_path is not None:
-        return Path(csv_path).expanduser().resolve()
-    return (work_dir / "benchmark_metrics.csv").resolve()
-
-
-def _benchmark_metric_rows(
-    *,
-    benchmark_type: str,
-    checkpoint_path: Path,
-    device: str,
-    batch_size: int,
-    n_warmup: int,
-    n_benchmark: int,
-    metrics: dict[str, float],
-    stride: int | None = None,
-    max_rollout_steps: int | None = None,
-) -> list[dict[str, float | str | int | None]]:
-    rows: list[dict[str, float | str | int | None]] = []
-    for metric, value in metrics.items():
-        rows.append(
-            {
-                "benchmark_type": benchmark_type,
-                "checkpoint": str(checkpoint_path),
-                "device": device,
-                "batch_size": batch_size,
-                "n_warmup": n_warmup,
-                "n_benchmark": n_benchmark,
-                "stride": stride,
-                "max_rollout_steps": max_rollout_steps,
-                "metric": metric,
-                "value": float(value),
-            }
-        )
-    return rows
-
-
-def _resolve_checkpoint_path(eval_cfg: DictConfig, work_dir: Path) -> Path:
-    checkpoint_path = eval_cfg.get("checkpoint")
-    if checkpoint_path is None:
-        msg = (
-            "No checkpoint specified. Provide eval.checkpoint=/path/to/checkpoint.ckpt"
-        )
-        raise ValueError(msg)
-
-    resolved_path = Path(checkpoint_path)
-    if resolved_path.is_absolute():
-        return resolved_path
-
-    workdir_candidate = (work_dir / resolved_path).resolve()
-    parent_candidate = (work_dir.parent / resolved_path).resolve()
-    if workdir_candidate.exists():
-        return workdir_candidate
-    if parent_candidate.exists():
-        return parent_candidate
-    return workdir_candidate
 
 
 @hydra.main(
@@ -108,7 +51,13 @@ def run_benchmark(cfg: DictConfig, work_dir: Path | None = None) -> Path:
     eval_cfg = cfg.get("eval", {})
     benchmark_cfg = eval_cfg.get("benchmark", {})
 
-    checkpoint_path = _resolve_checkpoint_path(eval_cfg, work_dir)
+    checkpoint_path = resolve_checkpoint_path(
+        eval_cfg,
+        work_dir,
+        missing_message=(
+            "No checkpoint specified. Provide eval.checkpoint=/path/to/checkpoint.ckpt"
+        ),
+    )
 
     if cfg.get("output", {}).get("save_config"):
         save_resolved_config(cfg, work_dir, filename="resolved_benchmark_config.yaml")
@@ -148,7 +97,7 @@ def run_benchmark(cfg: DictConfig, work_dir: Path | None = None) -> Path:
         batch_size=batch_size,
     )
 
-    rows = _benchmark_metric_rows(
+    rows = benchmark_metric_rows(
         benchmark_type="model",
         checkpoint_path=checkpoint_path,
         device=str(device),
@@ -201,7 +150,7 @@ def run_benchmark(cfg: DictConfig, work_dir: Path | None = None) -> Path:
             free_running_only=rb_free_running_only,
         )
         rows.extend(
-            _benchmark_metric_rows(
+            benchmark_metric_rows(
                 benchmark_type="rollout",
                 checkpoint_path=checkpoint_path,
                 device=str(device),
@@ -214,7 +163,7 @@ def run_benchmark(cfg: DictConfig, work_dir: Path | None = None) -> Path:
             )
         )
 
-    csv_path = _resolve_csv_path(eval_cfg, work_dir)
+    csv_path = resolve_benchmark_csv_path(eval_cfg, work_dir)
     csv_path.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(rows).to_csv(csv_path, index=False)
     log.info("Wrote benchmark CSV to %s", csv_path)

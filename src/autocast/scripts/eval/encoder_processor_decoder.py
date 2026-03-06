@@ -15,7 +15,6 @@ from torchmetrics import Metric
 
 from autocast.benchmarking import benchmark_model, benchmark_rollout
 from autocast.metrics import MAE, MSE, NMAE, NMSE, NRMSE, RMSE, VMSE, VRMSE, LInfinity
-from autocast.metrics.base import BaseMetric
 from autocast.metrics.coverage import MultiCoverage
 from autocast.metrics.ensemble import CRPS, AlphaFairCRPS, FairCRPS
 from autocast.models.encoder_processor_decoder import EncoderProcessorDecoder
@@ -24,8 +23,11 @@ from autocast.models.encoder_processor_decoder_ensemble import (
 )
 from autocast.scripts.config import save_resolved_config
 from autocast.scripts.execution import (
+    benchmark_metric_rows,
     extract_state_dict,
     load_checkpoint_payload,
+    resolve_benchmark_csv_path,
+    resolve_checkpoint_path,
     resolve_hydra_work_dir,
 )
 from autocast.scripts.setup import setup_datamodule, setup_epd_model
@@ -70,45 +72,6 @@ def _resolve_video_dir(eval_cfg: DictConfig, work_dir: Path) -> Path:
     if video_dir is not None:
         return Path(video_dir).expanduser().resolve()
     return (work_dir / "videos").resolve()
-
-
-def _resolve_benchmark_csv_path(eval_cfg: DictConfig, work_dir: Path) -> Path:
-    benchmark_cfg = eval_cfg.get("benchmark", {})
-    csv_path = benchmark_cfg.get("csv_path")
-    if csv_path is not None:
-        return Path(csv_path).expanduser().resolve()
-    return (work_dir / "benchmark_metrics.csv").resolve()
-
-
-def _benchmark_metric_rows(
-    *,
-    benchmark_type: str,
-    checkpoint_path: Path,
-    device: str,
-    batch_size: int,
-    n_warmup: int,
-    n_benchmark: int,
-    metrics: Mapping[str, float],
-    stride: int | None = None,
-    max_rollout_steps: int | None = None,
-) -> list[dict[str, float | str | int | None]]:
-    rows: list[dict[str, float | str | int | None]] = []
-    for metric, value in metrics.items():
-        rows.append(
-            {
-                "benchmark_type": benchmark_type,
-                "checkpoint": str(checkpoint_path),
-                "device": device,
-                "batch_size": batch_size,
-                "n_warmup": n_warmup,
-                "n_benchmark": n_benchmark,
-                "stride": stride,
-                "max_rollout_steps": max_rollout_steps,
-                "metric": metric,
-                "value": float(value),
-            }
-        )
-    return rows
 
 
 def _limit_batches(dataloader, max_batches: int | None):
@@ -164,15 +127,6 @@ def _resolve_rollout_channel_names(dataset: Any) -> list[str] | None:
             return None
 
     return channel_names
-
-
-def _build_metrics(metric_names: Sequence[str]) -> dict[str, BaseMetric]:
-    names = metric_names or ("mse", "rmse", "vrmse")
-    metrics = {}
-    for name in names:
-        metric_cls = AVAILABLE_METRICS[name]
-        metrics[name] = metric_cls()
-    return metrics
 
 
 def _process_metrics_results(
@@ -239,49 +193,6 @@ def _map_windows(
             raise ValueError(msg)
         tuple_windows.append((w[0], w[1]) if w is not None else None)
     return tuple_windows
-
-
-def _evaluate_rollout_metrics(
-    model: EncoderProcessorDecoderEnsemble | EncoderProcessorDecoder,
-    dataloader,
-    stride: int,
-    max_rollout_steps: int,
-    free_running_only: bool,
-    n_members: int | None,
-    metric_fns: dict[str, Callable[[], Metric]],
-    windows: list[tuple[int, int] | None] | None = None,
-) -> tuple[
-    dict[None | tuple[int, int], dict[str, Metric]],
-    list[dict[str, float | str]] | None,
-]:
-    """Evaluate rollout metrics using the dataloader helper."""
-
-    def rollout_predict(batch):
-        """Predict function for rollout evaluation."""
-        preds, trues = model.rollout(
-            batch,
-            stride=stride,
-            max_rollout_steps=max_rollout_steps,
-            free_running_only=free_running_only,
-            n_members=n_members if n_members and n_members > 1 else None,
-        )
-        if trues is None:
-            return None, None
-
-        # Match dimensions
-        min_len = min(preds.shape[1], trues.shape[1])
-        return preds[:, :min_len], trues[:, :min_len]
-
-    # Use the helper function with predict_fn
-    metrics_per_window, _, per_batch_rows = compute_metrics_from_dataloader(
-        dataloader=dataloader,
-        metric_fns=metric_fns,
-        predict_fn=rollout_predict,
-        windows=windows,
-        return_per_batch=True,
-    )
-
-    return metrics_per_window, per_batch_rows
 
 
 def _render_rollouts(
@@ -540,171 +451,18 @@ def _evaluation_metadata_rows(
     return rows
 
 
-@hydra.main(
-    version_base=None,
-    config_path=get_default_config_path(),
-    config_name="encoder_processor_decoder",
-)
-def main(cfg: DictConfig) -> None:
-    """Entry point for CLI-based evaluation."""
-    run_evaluation(cfg)
-
-
-def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # noqa: PLR0912, PLR0915
-    """Run evaluation using an already-composed config."""
-    logging.basicConfig(level=logging.INFO)
-
-    umask_value = cfg.get("umask")
-    if umask_value is not None:
-        os.umask(int(str(umask_value), 8))
-        log.info("Applied process umask %s", umask_value)
-
-    work_dir = resolve_hydra_work_dir(work_dir)
-
-    # Get eval config
-    eval_cfg = cfg.get("eval", {})
-    eval_batch_size: int = eval_cfg.get("batch_size", 1)
-    max_test_batches = eval_cfg.get("max_test_batches")
-    max_rollout_batches = _resolve_rollout_batch_limit(eval_cfg)
-    log.info(
-        "Batch limits: max_test_batches=%s, max_rollout_batches=%s",
-        max_test_batches,
-        max_rollout_batches,
-    )
-
-    # Validate that checkpoint is provided
-    checkpoint_path = eval_cfg.get("checkpoint")
-    if checkpoint_path is None:
-        msg = (
-            "No checkpoint specified. Please provide a checkpoint path via:\n"
-            "  eval.checkpoint=/path/to/checkpoint.ckpt\n"
-            "Or add it to your config file."
-        )
-        raise ValueError(msg)
-    checkpoint_path = Path(checkpoint_path)
-    if not checkpoint_path.is_absolute():
-        # i.e. training workdir/eval/checkpoint
-        workdir_candidate = (work_dir / checkpoint_path).resolve()
-        # i.e. training workdir/checkpoint
-        parent_candidate = (work_dir.parent / checkpoint_path).resolve()
-        if workdir_candidate.exists():
-            checkpoint_path = workdir_candidate
-        elif parent_candidate.exists():
-            checkpoint_path = parent_candidate
-        else:
-            checkpoint_path = workdir_candidate
-
-    if cfg.get("output", {}).get("save_config"):
-        save_resolved_config(cfg, work_dir, filename="resolved_eval_config.yaml")
-
-    csv_path = _resolve_csv_path(eval_cfg, work_dir)
-    video_dir = _resolve_video_dir(eval_cfg, work_dir)
-
-    # Setup datamodule and resolve config
-    datamodule, cfg, stats = setup_datamodule(cfg)
-
-    # Override model n_members from eval config if specified
-    if "n_members" in eval_cfg:
-        with open_dict(cfg.model):
-            cfg.model.n_members = eval_cfg.n_members
-        log.info(
-            "Overriding model.n_members with %s from eval config", eval_cfg.n_members
-        )
-
-    # Setup Model
-    model = setup_epd_model(cfg, stats, datamodule=datamodule)
-
-    # Load checkpoint
-    log.info("Loading checkpoint from %s", checkpoint_path)
-    checkpoint_payload = load_checkpoint_payload(checkpoint_path)
-    state_dict = extract_state_dict(checkpoint_payload)
-    load_result = model.load_state_dict(state_dict, strict=True)
-    if load_result.missing_keys or load_result.unexpected_keys:
-        msg = (
-            "Checkpoint parameters do not match the instantiated model. "
-            f"Missing keys: {load_result.missing_keys}. "
-            f"Unexpected keys: {load_result.unexpected_keys}."
-        )
-        raise RuntimeError(msg)
-
-    # Get eval parameters from config
-    metrics_list = eval_cfg.get("metrics", ["mse", "rmse"])
-    batch_indices = eval_cfg.get("batch_indices", [])
-
-    # Construct metrics (deprecated usage in _evaluate_metrics)
-    # metrics = _build_metrics(metrics_list)
-
-    # Get number of ensemble members from config if available
-    n_members = cfg.get("model", {}).get("n_members", 1)
-
-    # Setup Fabric for device management
-    accelerator = eval_cfg.get("device", "auto")
-    fabric = L.Fabric(accelerator=accelerator, devices=1)
-    fabric.launch()
-
-    # Setup model and loader with Fabric
-    log.info("Model configuration n_members: %s", n_members)
-    log.info("Model class: %s", type(model))
-
-    model.to(fabric.device)
-    model.eval()
-    test_loader = _limit_batches(
-        fabric.setup_dataloaders(datamodule.test_dataloader()),
-        max_test_batches,
-    )
-
-    # Evaluation
-
-    # Prepare metric functions for test pass
-    test_metric_fns: dict[str, Callable[[], Metric]] = {}
-
-    # Add standard metrics from config
-    for name in metrics_list:
-        if name in AVAILABLE_METRICS:
-            test_metric_fns[name] = AVAILABLE_METRICS[name]
-        else:
-            msg = f"Metric {name} not found in AVAILABLE_METRICS"
-            log.warning(msg)
-
-    # Add coverage if we have an ensemble
-    compute_coverage = eval_cfg.get("compute_coverage", False)
-    if (n_members > 1) or compute_coverage:
-
-        def coverage_factory() -> Metric:
-            return MultiCoverage(coverage_levels=eval_cfg.get("coverage_levels", None))
-
-        test_metric_fns["coverage"] = coverage_factory
-
-    log.info("Computing test metrics: %s", list(test_metric_fns.keys()))
-
-    # Use metric_windows from config (apply to all metrics)
-    test_windows = _map_windows(eval_cfg.get("metric_windows", None))
-
-    test_metrics_results, _, test_per_batch_rows = compute_metrics_from_dataloader(
-        dataloader=test_loader,
-        metric_fns=test_metric_fns,
-        predict_fn=model,
-        windows=test_windows,
-        return_per_batch=True,
-    )
-
-    # Process and save test metrics
-    test_rows = _process_metrics_results(
-        test_metrics_results,
-        per_batch_rows=test_per_batch_rows,
-        log_prefix="Test",
-        plot_dir=work_dir,
-    )
-
-    evaluation_rows: list[dict[str, float | str]] = []
-    evaluation_rows.extend(test_rows)
-    evaluation_rows.extend(
-        _evaluation_metadata_rows(
-            checkpoint_payload=checkpoint_payload,
-            model=model,
-        )
-    )
-    benchmark_rows: list[dict[str, float | str | int | None]] = []
+def _collect_benchmark_rows(
+    *,
+    eval_cfg: DictConfig,
+    cfg: DictConfig,
+    stats: Mapping[str, Any],
+    model: EncoderProcessorDecoderEnsemble | EncoderProcessorDecoder,
+    checkpoint_path: Path,
+    device: str,
+    eval_batch_size: int,
+) -> list[dict[str, float | str | int | None]]:
+    """Collect benchmark rows for model and optional rollout benchmark runs."""
+    rows: list[dict[str, float | str | int | None]] = []
 
     benchmark_cfg = eval_cfg.get("benchmark", {})
     if benchmark_cfg.get("enabled", False):
@@ -729,11 +487,11 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 n_benchmark=benchmark_n_benchmark,
                 batch_size=benchmark_batch_size,
             )
-            benchmark_rows.extend(
-                _benchmark_metric_rows(
+            rows.extend(
+                benchmark_metric_rows(
                     benchmark_type="model",
                     checkpoint_path=checkpoint_path,
-                    device=str(fabric.device),
+                    device=device,
                     batch_size=benchmark_batch_size,
                     n_warmup=benchmark_n_warmup,
                     n_benchmark=benchmark_n_benchmark,
@@ -790,11 +548,11 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 batch_size=rb_batch_size,
                 free_running_only=rb_free_running_only,
             )
-            benchmark_rows.extend(
-                _benchmark_metric_rows(
+            rows.extend(
+                benchmark_metric_rows(
                     benchmark_type="rollout",
                     checkpoint_path=checkpoint_path,
-                    device=str(fabric.device),
+                    device=device,
                     batch_size=rb_batch_size,
                     n_warmup=rb_n_warmup,
                     n_benchmark=rb_n_benchmark,
@@ -808,6 +566,164 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 "Skipping rollout benchmark: expected Batch example, got %s",
                 type(rb_example_batch),
             )
+
+    return rows
+
+
+@hydra.main(
+    version_base=None,
+    config_path=get_default_config_path(),
+    config_name="encoder_processor_decoder",
+)
+def main(cfg: DictConfig) -> None:
+    """Entry point for CLI-based evaluation."""
+    run_evaluation(cfg)
+
+
+def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # noqa: PLR0912, PLR0915
+    """Run evaluation using an already-composed config."""
+    logging.basicConfig(level=logging.INFO)
+
+    umask_value = cfg.get("umask")
+    if umask_value is not None:
+        os.umask(int(str(umask_value), 8))
+        log.info("Applied process umask %s", umask_value)
+
+    work_dir = resolve_hydra_work_dir(work_dir)
+
+    # Get eval config
+    eval_cfg = cfg.get("eval", {})
+    eval_batch_size: int = eval_cfg.get("batch_size", 1)
+    max_test_batches = eval_cfg.get("max_test_batches")
+    max_rollout_batches = _resolve_rollout_batch_limit(eval_cfg)
+    log.info(
+        "Batch limits: max_test_batches=%s, max_rollout_batches=%s",
+        max_test_batches,
+        max_rollout_batches,
+    )
+
+    checkpoint_path = resolve_checkpoint_path(
+        eval_cfg,
+        work_dir,
+        missing_message=(
+            "No checkpoint specified. Please provide a checkpoint path via:\n"
+            "  eval.checkpoint=/path/to/checkpoint.ckpt\n"
+            "Or add it to your config file."
+        ),
+    )
+
+    if cfg.get("output", {}).get("save_config"):
+        save_resolved_config(cfg, work_dir, filename="resolved_eval_config.yaml")
+
+    csv_path = _resolve_csv_path(eval_cfg, work_dir)
+    video_dir = _resolve_video_dir(eval_cfg, work_dir)
+
+    # Setup datamodule and resolve config
+    datamodule, cfg, stats = setup_datamodule(cfg)
+
+    # Override model n_members from eval config if specified
+    if "n_members" in eval_cfg:
+        with open_dict(cfg.model):
+            cfg.model.n_members = eval_cfg.n_members
+        log.info(
+            "Overriding model.n_members with %s from eval config", eval_cfg.n_members
+        )
+
+    # Setup Model
+    model = setup_epd_model(cfg, stats, datamodule=datamodule)
+
+    # Load checkpoint
+    log.info("Loading checkpoint from %s", checkpoint_path)
+    checkpoint_payload = load_checkpoint_payload(checkpoint_path)
+    state_dict = extract_state_dict(checkpoint_payload)
+    load_result = model.load_state_dict(state_dict, strict=True)
+    if load_result.missing_keys or load_result.unexpected_keys:
+        msg = (
+            "Checkpoint parameters do not match the instantiated model. "
+            f"Missing keys: {load_result.missing_keys}. "
+            f"Unexpected keys: {load_result.unexpected_keys}."
+        )
+        raise RuntimeError(msg)
+
+    # Get eval parameters from config
+    metrics_list = eval_cfg.get("metrics", ["mse", "rmse"])
+    batch_indices = eval_cfg.get("batch_indices", [])
+
+    # Get number of ensemble members from config if available
+    n_members = cfg.get("model", {}).get("n_members", 1)
+
+    # Setup Fabric for device management
+    accelerator = eval_cfg.get("device", "auto")
+    fabric = L.Fabric(accelerator=accelerator, devices=1)
+    fabric.launch()
+
+    # Setup model and loader with Fabric
+    log.info("Model configuration n_members: %s", n_members)
+    log.info("Model class: %s", type(model))
+
+    model.to(fabric.device)
+    model.eval()
+    test_loader = _limit_batches(
+        fabric.setup_dataloaders(datamodule.test_dataloader()),
+        max_test_batches,
+    )
+
+    # Evaluation
+
+    compute_coverage = eval_cfg.get("compute_coverage", False)
+    test_metric_fns: dict[str, Callable[[], Metric]] = {}
+
+    for name in metrics_list:
+        if name in AVAILABLE_METRICS:
+            test_metric_fns[name] = AVAILABLE_METRICS[name]
+        else:
+            log.warning("Metric %s not found in AVAILABLE_METRICS", name)
+
+    if (n_members > 1) or compute_coverage:
+
+        def coverage_factory() -> Metric:
+            return MultiCoverage(coverage_levels=eval_cfg.get("coverage_levels", None))
+
+        test_metric_fns["coverage"] = coverage_factory
+
+    log.info("Computing test metrics: %s", list(test_metric_fns.keys()))
+
+    # Use metric_windows from config (apply to all metrics)
+    test_windows = _map_windows(eval_cfg.get("metric_windows", None))
+
+    test_metrics_results, _, test_per_batch_rows = compute_metrics_from_dataloader(
+        dataloader=test_loader,
+        metric_fns=test_metric_fns,
+        predict_fn=model,
+        windows=test_windows,
+        return_per_batch=True,
+    )
+
+    # Process and save test metrics
+    test_rows = _process_metrics_results(
+        test_metrics_results,
+        per_batch_rows=test_per_batch_rows,
+        log_prefix="Test",
+        plot_dir=work_dir,
+    )
+
+    evaluation_rows: list[dict[str, float | str]] = []
+    evaluation_rows.extend(test_rows)
+    evaluation_rows.extend(
+        _evaluation_metadata_rows(
+            checkpoint_payload=checkpoint_payload,
+            model=model,
+        )
+    )
+    benchmark_rows = _collect_benchmark_rows(
+        eval_cfg=eval_cfg,
+        cfg=cfg,
+        stats=stats,
+        model=model,
+        checkpoint_path=checkpoint_path,
+        device=str(fabric.device),
+        eval_batch_size=eval_batch_size,
+    )
 
     # Rollouts
     compute_rollout_coverage = eval_cfg.get("compute_rollout_coverage", False)
@@ -952,7 +868,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
         log.info("Wrote evaluation metadata to %s", metadata_csv_path)
 
     if benchmark_rows:
-        benchmark_csv_path = _resolve_benchmark_csv_path(eval_cfg, work_dir)
+        benchmark_csv_path = resolve_benchmark_csv_path(eval_cfg, work_dir)
         benchmark_csv_path.parent.mkdir(parents=True, exist_ok=True)
         pd.DataFrame(benchmark_rows).to_csv(benchmark_csv_path, index=False)
         log.info("Wrote benchmark CSV to %s", benchmark_csv_path)

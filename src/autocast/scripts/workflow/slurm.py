@@ -7,7 +7,6 @@ import shlex
 import subprocess
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 from omegaconf import OmegaConf
 
@@ -140,17 +139,6 @@ def _submission_timestamp() -> str:
     return datetime.now().strftime("%Y%m%d_%H%M%S_%f")
 
 
-def _coerce_positive_int(value: Any) -> int:
-    if isinstance(value, bool):
-        return 1 if value else 0
-    if isinstance(value, int):
-        return value if value > 0 else 0
-    if isinstance(value, str) and value.isdigit():
-        parsed = int(value)
-        return parsed if parsed > 0 else 0
-    return 0
-
-
 def _should_use_srun(launcher_cfg: dict) -> bool:
     explicit = launcher_cfg.get("use_srun")
     if isinstance(explicit, bool):
@@ -162,9 +150,57 @@ def _should_use_srun(launcher_cfg: dict) -> bool:
         if lowered in {"false", "0", "no", "off"}:
             return False
 
-    tasks_per_node = _coerce_positive_int(launcher_cfg.get("tasks_per_node"))
-    gpus_per_node = _coerce_positive_int(launcher_cfg.get("gpus_per_node"))
+    def _as_positive_int(value: object) -> int:
+        if isinstance(value, bool):
+            return int(value)
+        try:
+            parsed = int(str(value).strip())
+        except (TypeError, ValueError):
+            return 0
+        return parsed if parsed > 0 else 0
+
+    tasks_per_node = _as_positive_int(launcher_cfg.get("tasks_per_node"))
+    gpus_per_node = _as_positive_int(launcher_cfg.get("gpus_per_node"))
     return tasks_per_node > 1 or gpus_per_node > 1
+
+
+def _build_sbatch_command(
+    *,
+    job_name: str,
+    log_dir: Path,
+    launcher_cfg: dict,
+    batch_script_path: Path,
+) -> list[str]:
+    """Build the sbatch command for a generated batch script."""
+    sbatch_cmd = [
+        "sbatch",
+        "--parsable",
+        f"--job-name={job_name}",
+        f"--output={log_dir / 'slurm-%j.out'}",
+        f"--error={log_dir / 'slurm-%j.err'}",
+    ]
+
+    formatted_time = _format_sbatch_time(launcher_cfg.get("timeout_min"))
+    if formatted_time is not None:
+        sbatch_cmd.append(f"--time={formatted_time}")
+
+    for cfg_key, sbatch_flag in [
+        ("cpus_per_task", "cpus-per-task"),
+        ("gpus_per_node", "gpus-per-node"),
+        ("tasks_per_node", "ntasks-per-node"),
+        ("partition", "partition"),
+    ]:
+        val = launcher_cfg.get(cfg_key)
+        if val is not None:
+            sbatch_cmd.append(f"--{sbatch_flag}={val}")
+
+    additional_parameters = launcher_cfg.get("additional_parameters", {})
+    if isinstance(additional_parameters, dict):
+        for key, value in additional_parameters.items():
+            sbatch_cmd.append(f"--{key}={value}")
+
+    sbatch_cmd.append(str(batch_script_path))
+    return sbatch_cmd
 
 
 def _submit_one_sbatch_job(
@@ -206,34 +242,12 @@ def _submit_one_sbatch_job(
     script_mode = 0o777 & (~umask_value)
     os.chmod(batch_script_path, script_mode)
 
-    sbatch_cmd = [
-        "sbatch",
-        "--parsable",
-        f"--job-name={job_name}",
-        f"--output={output_dir / 'slurm-%j.out'}",
-        f"--error={output_dir / 'slurm-%j.err'}",
-    ]
-
-    formatted_time = _format_sbatch_time(merged_launcher_cfg.get("timeout_min"))
-    if formatted_time is not None:
-        sbatch_cmd.append(f"--time={formatted_time}")
-
-    for cfg_key, sbatch_flag in [
-        ("cpus_per_task", "cpus-per-task"),
-        ("gpus_per_node", "gpus-per-node"),
-        ("tasks_per_node", "ntasks-per-node"),
-        ("partition", "partition"),
-    ]:
-        val = merged_launcher_cfg.get(cfg_key)
-        if val is not None:
-            sbatch_cmd.append(f"--{sbatch_flag}={val}")
-
-    additional_parameters = merged_launcher_cfg.get("additional_parameters", {})
-    if isinstance(additional_parameters, dict):
-        for key, value in additional_parameters.items():
-            sbatch_cmd.append(f"--{key}={value}")
-
-    sbatch_cmd.append(str(batch_script_path))
+    sbatch_cmd = _build_sbatch_command(
+        job_name=job_name,
+        log_dir=output_dir,
+        launcher_cfg=merged_launcher_cfg,
+        batch_script_path=batch_script_path,
+    )
 
     result = subprocess.run(sbatch_cmd, check=True, capture_output=True, text=True)
     raw_job_id = result.stdout.strip().splitlines()[-1] if result.stdout else ""
@@ -342,7 +356,7 @@ def submit_via_sbatch(
         print(f"  ... and {len(submitted) - len(preview)} more")
 
 
-def submit_manifest_via_sbatch(  # noqa: PLR0915
+def submit_manifest_via_sbatch(
     manifest: Path,
     lines: list[str],
     work_dirs: list[str],
@@ -429,34 +443,12 @@ def submit_manifest_via_sbatch(  # noqa: PLR0915
     batch_script_path.write_text(script_text, encoding="utf-8")
     os.chmod(batch_script_path, script_mode)
 
-    sbatch_cmd = [
-        "sbatch",
-        "--parsable",
-        f"--job-name={job_name}",
-        f"--output={log_dir / 'slurm-%j.out'}",
-        f"--error={log_dir / 'slurm-%j.err'}",
-    ]
-
-    formatted_time = _format_sbatch_time(merged_launcher_cfg.get("timeout_min"))
-    if formatted_time is not None:
-        sbatch_cmd.append(f"--time={formatted_time}")
-
-    for cfg_key, sbatch_flag in [
-        ("cpus_per_task", "cpus-per-task"),
-        ("gpus_per_node", "gpus-per-node"),
-        ("tasks_per_node", "ntasks-per-node"),
-        ("partition", "partition"),
-    ]:
-        val = merged_launcher_cfg.get(cfg_key)
-        if val is not None:
-            sbatch_cmd.append(f"--{sbatch_flag}={val}")
-
-    additional_parameters = merged_launcher_cfg.get("additional_parameters", {})
-    if isinstance(additional_parameters, dict):
-        for key, value in additional_parameters.items():
-            sbatch_cmd.append(f"--{key}={value}")
-
-    sbatch_cmd.append(str(batch_script_path))
+    sbatch_cmd = _build_sbatch_command(
+        job_name=job_name,
+        log_dir=log_dir,
+        launcher_cfg=merged_launcher_cfg,
+        batch_script_path=batch_script_path,
+    )
 
     result = subprocess.run(sbatch_cmd, check=True, capture_output=True, text=True)
     raw_job_id = result.stdout.strip().splitlines()[-1] if result.stdout else ""
