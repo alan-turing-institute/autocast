@@ -41,7 +41,9 @@ _RESOLVED_CONFIG_STEMS = (
 
 
 def _hydra_quote_string(value: str) -> str:
-    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    # CLI overrides are passed as argv items (not through a shell), so we only
+    # escape embedded double quotes and keep native path separators untouched.
+    escaped = value.replace('"', '\\"')
     return f'"{escaped}"'
 
 
@@ -625,7 +627,9 @@ def _parse_benchmark_manifest_line(line: str) -> tuple[str, list[str]]:
         benchmark --workdir outputs/run_a eval.benchmark_rollout.enabled=true
         --workdir outputs/run_a eval.benchmark_rollout.enabled=true
     """
-    tokens = shlex.split(line)
+    # On Windows, POSIX tokenization treats backslashes as escapes and can
+    # corrupt paths like C:\Users\... -> C:Users....
+    tokens = shlex.split(line, posix=(os.name != "nt"))
     if tokens and tokens[0] == "benchmark":
         tokens = tokens[1:]
 
