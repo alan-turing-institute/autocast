@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+from collections.abc import Callable
 from time import perf_counter
 
 import lightning as L
@@ -69,6 +70,27 @@ def measure_flops(
     }
 
 
+def _time_calls(
+    fn: Callable[[], None],
+    device: torch.device,
+    n_warmup: int,
+    n_benchmark: int,
+) -> list[float]:
+    """Return n_benchmark wall-clock timings after n_warmup discarded warmup calls."""
+    times_s: list[float] = []
+    for step in range(n_warmup + n_benchmark):
+        if device.type == "cuda" and torch.cuda.is_available():
+            torch.cuda.synchronize(device)
+        start_s = perf_counter()
+        fn()
+        if device.type == "cuda" and torch.cuda.is_available():
+            torch.cuda.synchronize(device)
+        elapsed_s = perf_counter() - start_s
+        if step >= n_warmup:
+            times_s.append(elapsed_s)
+    return times_s
+
+
 def benchmark_model(
     model: torch.nn.Module,
     example_batch: Batch,
@@ -88,22 +110,12 @@ def benchmark_model(
     )
 
     model.eval()
-    batch_times_s: list[float] = []
-
     if device.type == "cuda" and torch.cuda.is_available():
         torch.cuda.reset_peak_memory_stats(device)
 
-    total_steps = n_warmup + n_benchmark
-    for step in range(total_steps):
-        if device.type == "cuda" and torch.cuda.is_available():
-            torch.cuda.synchronize(device)
-        start_s = perf_counter()
-        _predict_once(model, synthetic_batch)
-        if device.type == "cuda" and torch.cuda.is_available():
-            torch.cuda.synchronize(device)
-        elapsed_s = perf_counter() - start_s
-        if step >= n_warmup:
-            batch_times_s.append(elapsed_s)
+    batch_times_s = _time_calls(
+        lambda: _predict_once(model, synthetic_batch), device, n_warmup, n_benchmark
+    )
 
     total_s = sum(batch_times_s)
     if total_s <= 0:
@@ -203,24 +215,17 @@ def benchmark_rollout(
     )
 
     model.eval()
-    rollout_times_s: list[float] = []
-
     if device.type == "cuda" and torch.cuda.is_available():
         torch.cuda.reset_peak_memory_stats(device)
 
-    total_runs = n_warmup + n_benchmark
-    for run in range(total_runs):
-        if device.type == "cuda" and torch.cuda.is_available():
-            torch.cuda.synchronize(device)
-        start_s = perf_counter()
-        _rollout_once(
+    rollout_times_s = _time_calls(
+        lambda: _rollout_once(
             model, synthetic_batch, stride, max_rollout_steps, free_running_only
-        )
-        if device.type == "cuda" and torch.cuda.is_available():
-            torch.cuda.synchronize(device)
-        elapsed_s = perf_counter() - start_s
-        if run >= n_warmup:
-            rollout_times_s.append(elapsed_s)
+        ),
+        device,
+        n_warmup,
+        n_benchmark,
+    )
 
     total_s = sum(rollout_times_s)
     if total_s <= 0:

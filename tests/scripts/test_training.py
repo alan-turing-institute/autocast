@@ -132,9 +132,8 @@ def test_training_timer_callback_state_dict_empty_before_training():
     assert sd["epoch_times_s"] == []
 
 
-def test_training_timer_callback_state_dict_after_simulated_run():
+def test_training_timer_callback_state_dict_and_round_trip():
     cb = TrainingTimerCallback()
-    # Simulate training lifecycle without a real trainer
     cb._train_start = 0.0
     cb._epoch_times_s = [1.0, 2.0, 3.0]
     cb.training_runtime_total_s = 10.0
@@ -146,18 +145,10 @@ def test_training_timer_callback_state_dict_after_simulated_run():
     assert sd["min_epoch_s"] == pytest.approx(1.0)
     assert sd["max_epoch_s"] == pytest.approx(3.0)
 
-
-def test_training_timer_callback_load_state_dict_round_trips():
-    cb = TrainingTimerCallback()
-    cb._epoch_times_s = [1.5, 2.5]
-    cb.training_runtime_total_s = 4.0
-
-    state = cb.state_dict()
-
     cb2 = TrainingTimerCallback()
-    cb2.load_state_dict(state)
-    assert cb2.training_runtime_total_s == 4.0
-    assert cb2._epoch_times_s == [1.5, 2.5]
+    cb2.load_state_dict(sd)
+    assert cb2.training_runtime_total_s == 10.0
+    assert cb2._epoch_times_s == [1.0, 2.0, 3.0]
 
 
 def test_epd_config_forward_smoke(config_dir: str, toy_batch: Batch, dummy_datamodule):
