@@ -230,11 +230,14 @@ def benchmark_rollout(
     n_measured = len(rollout_times_s)
     latency_batch_ms = (total_s / n_measured) * 1000.0
 
+    throughput_samples_per_sec = (n_measured * batch_size) / total_s
+    latency_ms_per_step = latency_batch_ms / max_rollout_steps
+
     metrics: dict[str, float] = {
-        "throughput_samples_per_sec": (n_measured * batch_size) / total_s,
+        "throughput_samples_per_sec": throughput_samples_per_sec,
         "latency_ms_per_batch": latency_batch_ms,
         "latency_ms_per_sample": latency_batch_ms / batch_size,
-        "latency_ms_per_step": latency_batch_ms / max_rollout_steps,
+        "latency_ms_per_step": latency_ms_per_step,
     }
 
     if device.type == "cuda" and torch.cuda.is_available():
