@@ -95,7 +95,7 @@ def test_benchmark_rollout_metrics():
         model,
         batch,
         stride=1,
-        max_rollout_steps=3,
+        max_rollout_steps=4,
         n_warmup=1,
         n_benchmark=2,
         batch_size=1,
@@ -108,23 +108,10 @@ def test_benchmark_rollout_metrics():
     assert metrics["latency_ms_per_batch"] > 0
     assert metrics["latency_ms_per_sample"] > 0
     assert metrics["latency_ms_per_step"] > 0
-
-
-def test_benchmark_rollout_latency_per_step_consistent_with_per_rollout():
-    model = _FakeRolloutModel()
-    batch = _make_batch()
-    max_rollout_steps = 4
-    metrics = benchmark_rollout(
-        model,
-        batch,
-        stride=1,
-        max_rollout_steps=max_rollout_steps,
-        n_warmup=1,
-        n_benchmark=2,
-        batch_size=1,
+    # verify step latency is exactly batch / steps
+    assert metrics["latency_ms_per_step"] == pytest.approx(
+        metrics["latency_ms_per_batch"] / 4
     )
-    expected = metrics["latency_ms_per_batch"] / max_rollout_steps
-    assert metrics["latency_ms_per_step"] == pytest.approx(expected)
 
 
 def test_benchmark_rollout_raises_on_zero_n_benchmark():
