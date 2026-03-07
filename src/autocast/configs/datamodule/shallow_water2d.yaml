@@ -1,0 +1,30 @@
+_target_: autocast.data.datamodule.SpatioTemporalDataModule
+data_path: "${oc.env:AUTOCAST_DATASETS,./datasets}/shallow_water2d_3953f3d"
+batch_size: 16
+n_steps_input: 1
+n_steps_output: 4
+stride: 1
+verbose: false
+use_normalization: false
+normalization_stats:
+  # TODO
+  stats:
+    mean:
+      h: 0.0
+      u: 0.0
+      v: 0.0
+    std:
+      h: 1.0
+      u: 1.0
+      v: 1.0
+    mean_delta:
+      h: 0.0
+      u: 0.0
+      v: 0.0
+    std_delta:
+      h: 1.0
+      u: 1.0
+      v: 1.0
+  core_field_names: ["h", "u", "v"]
+  constant_field_names: []
+num_workers: 0
