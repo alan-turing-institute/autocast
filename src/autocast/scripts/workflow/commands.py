@@ -41,7 +41,9 @@ _RESOLVED_CONFIG_STEMS = (
 
 
 def _hydra_quote_string(value: str) -> str:
-    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    # CLI overrides are passed as argv items (not through a shell), so we only
+    # escape embedded double quotes and keep native path separators untouched.
+    escaped = value.replace('"', '\\"')
     return f'"{escaped}"'
 
 
@@ -185,6 +187,50 @@ def _extract_cli_flag_value(overrides: list[str], flag: str) -> str | None:
 def _uses_resolved_config(overrides: list[str]) -> bool:
     config_name = _extract_cli_flag_value(overrides, "--config-name")
     return config_name in _RESOLVED_CONFIG_STEMS
+
+
+def _with_inferred_resolved_config(
+    work_dir: str | Path,
+    overrides: list[str],
+) -> tuple[list[str], bool]:
+    """Add inferred resolved-config flags when no explicit config flags are set."""
+    effective_overrides = list(overrides)
+    has_config_name = _has_cli_flag(effective_overrides, "--config-name")
+    has_config_path = _has_cli_flag(effective_overrides, "--config-path")
+
+    using_resolved_config = _uses_resolved_config(effective_overrides)
+    if not (has_config_name or has_config_path):
+        inferred_config = infer_hydra_config_from_workdir(work_dir)
+        if inferred_config is not None:
+            config_path, config_name = inferred_config
+            effective_overrides = [
+                "--config-name",
+                config_name,
+                "--config-path",
+                config_path,
+                *effective_overrides,
+            ]
+            using_resolved_config = True
+
+    return effective_overrides, using_resolved_config
+
+
+def _append_inferred_eval_checkpoint(
+    work_dir: str | Path,
+    overrides: list[str],
+) -> list[str]:
+    """Append inferred eval.checkpoint override if one is not already provided."""
+    effective_overrides = list(overrides)
+    if contains_override(effective_overrides, "eval.checkpoint="):
+        return effective_overrides
+
+    inferred_eval_checkpoint = infer_eval_checkpoint(work_dir)
+    if inferred_eval_checkpoint is None:
+        return effective_overrides
+
+    checkpoint_value = _hydra_quote_string(str(inferred_eval_checkpoint))
+    effective_overrides.append(f"eval.checkpoint={checkpoint_value}")
+    return effective_overrides
 
 
 def infer_dataset_from_workdir(work_dir: str | Path) -> str | None:
@@ -417,35 +463,6 @@ def build_eval_overrides(
     return eval_dir, command_overrides
 
 
-def build_benchmark_overrides(
-    *,
-    mode: str,
-    dataset: str | None,
-    work_dir: str,
-    overrides: list[str],
-    using_resolved_config: bool = False,
-) -> tuple[Path, list[str]]:
-    """Build benchmark overrides from CLI arguments."""
-    base_work_dir = Path(work_dir).expanduser().resolve()
-    benchmark_dir = (base_work_dir / "benchmark").resolve()
-
-    command_overrides = [
-        *build_common_launch_overrides(mode=mode, work_dir=benchmark_dir),
-    ]
-
-    if not using_resolved_config:
-        command_overrides.append("eval=encoder_processor_decoder")
-        if dataset is not None:
-            command_overrides.extend(
-                dataset_overrides(dataset=dataset, datasets_root=datasets_root())
-            )
-    elif dataset is not None:
-        command_overrides.append(f"datamodule.data_path={datasets_root() / dataset}")
-
-    command_overrides.extend(overrides)
-    return benchmark_dir, command_overrides
-
-
 # ---------------------------------------------------------------------------
 # Top-level commands
 # ---------------------------------------------------------------------------
@@ -490,29 +507,12 @@ def eval_command(
     dry_run: bool = False,
 ) -> None:
     """Run an evaluation command."""
-    effective_overrides = list(overrides)
-    has_config_name = _has_cli_flag(effective_overrides, "--config-name")
-    has_config_path = _has_cli_flag(effective_overrides, "--config-path")
-
-    using_resolved_config = _uses_resolved_config(effective_overrides)
-    if not (has_config_name or has_config_path):
-        inferred_config = infer_hydra_config_from_workdir(work_dir)
-        if inferred_config is not None:
-            config_path, config_name = inferred_config
-            effective_overrides = [
-                "--config-name",
-                config_name,
-                "--config-path",
-                config_path,
-                *effective_overrides,
-            ]
-            using_resolved_config = True
-
-    if not contains_override(effective_overrides, "eval.checkpoint="):
-        inferred_eval_checkpoint = infer_eval_checkpoint(work_dir)
-        if inferred_eval_checkpoint is not None:
-            checkpoint_value = _hydra_quote_string(str(inferred_eval_checkpoint))
-            effective_overrides.append(f"eval.checkpoint={checkpoint_value}")
+    effective_overrides, using_resolved_config = _with_inferred_resolved_config(
+        work_dir, overrides
+    )
+    effective_overrides = _append_inferred_eval_checkpoint(
+        work_dir, effective_overrides
+    )
 
     _eval_dir, command_overrides = build_eval_overrides(
         mode=mode,
@@ -534,39 +534,29 @@ def benchmark_command(
     dry_run: bool = False,
 ) -> None:
     """Run a benchmark command."""
-    effective_overrides = list(overrides)
-    has_config_name = _has_cli_flag(effective_overrides, "--config-name")
-    has_config_path = _has_cli_flag(effective_overrides, "--config-path")
-
-    using_resolved_config = _uses_resolved_config(effective_overrides)
-    if not (has_config_name or has_config_path):
-        inferred_config = infer_hydra_config_from_workdir(work_dir)
-        if inferred_config is not None:
-            config_path, config_name = inferred_config
-            effective_overrides = [
-                "--config-name",
-                config_name,
-                "--config-path",
-                config_path,
-                *effective_overrides,
-            ]
-            using_resolved_config = True
-
-    if not contains_override(effective_overrides, "eval.checkpoint="):
-        inferred_eval_checkpoint = infer_eval_checkpoint(work_dir)
-        if inferred_eval_checkpoint is not None:
-            effective_overrides.append(f"eval.checkpoint={inferred_eval_checkpoint}")
+    effective_overrides, using_resolved_config = _with_inferred_resolved_config(
+        work_dir, overrides
+    )
+    effective_overrides = _append_inferred_eval_checkpoint(
+        work_dir, effective_overrides
+    )
 
     if not contains_override(effective_overrides, "eval.benchmark.enabled="):
         effective_overrides.append("eval.benchmark.enabled=true")
 
-    _benchmark_dir, command_overrides = build_benchmark_overrides(
-        mode=mode,
-        dataset=dataset,
-        work_dir=work_dir,
-        overrides=effective_overrides,
-        using_resolved_config=using_resolved_config,
-    )
+    benchmark_dir = (Path(work_dir).expanduser().resolve() / "benchmark").resolve()
+    command_overrides = [
+        *build_common_launch_overrides(mode=mode, work_dir=benchmark_dir),
+    ]
+    if not using_resolved_config:
+        command_overrides.append("eval=encoder_processor_decoder")
+        if dataset is not None:
+            command_overrides.extend(
+                dataset_overrides(dataset=dataset, datasets_root=datasets_root())
+            )
+    elif dataset is not None:
+        command_overrides.append(f"datamodule.data_path={datasets_root() / dataset}")
+    command_overrides.extend(effective_overrides)
 
     run_module(BENCHMARK_MODULE, command_overrides, dry_run=dry_run, mode=mode)
 
@@ -625,7 +615,9 @@ def _parse_benchmark_manifest_line(line: str) -> tuple[str, list[str]]:
         benchmark --workdir outputs/run_a eval.benchmark_rollout.enabled=true
         --workdir outputs/run_a eval.benchmark_rollout.enabled=true
     """
-    tokens = shlex.split(line)
+    # On Windows, POSIX tokenization treats backslashes as escapes and can
+    # corrupt paths like C:\Users\... -> C:Users....
+    tokens = shlex.split(line, posix=(os.name != "nt"))
     if tokens and tokens[0] == "benchmark":
         tokens = tokens[1:]
 

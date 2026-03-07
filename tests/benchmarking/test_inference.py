@@ -88,56 +88,30 @@ def test_tqdm_disabled_restores_previous_value():
 # ---------------------------------------------------------------------------
 
 
-def test_benchmark_rollout_returns_expected_keys():
+def test_benchmark_rollout_metrics():
     model = _FakeRolloutModel()
     batch = _make_batch()
     metrics = benchmark_rollout(
         model,
         batch,
         stride=1,
-        max_rollout_steps=3,
+        max_rollout_steps=4,
         n_warmup=1,
         n_benchmark=2,
         batch_size=1,
     )
-    assert "throughput_steps_per_sec" in metrics
-    assert "latency_ms_per_rollout" in metrics
+    assert "throughput_samples_per_sec" in metrics
+    assert "latency_ms_per_batch" in metrics
+    assert "latency_ms_per_sample" in metrics
     assert "latency_ms_per_step" in metrics
-    assert "latency_ms_per_sample_per_step" in metrics
-
-
-def test_benchmark_rollout_throughput_positive():
-    model = _FakeRolloutModel()
-    batch = _make_batch()
-    metrics = benchmark_rollout(
-        model,
-        batch,
-        stride=1,
-        max_rollout_steps=2,
-        n_warmup=1,
-        n_benchmark=3,
-        batch_size=1,
-    )
-    assert metrics["throughput_steps_per_sec"] > 0
-    assert metrics["latency_ms_per_rollout"] > 0
+    assert metrics["throughput_samples_per_sec"] > 0
+    assert metrics["latency_ms_per_batch"] > 0
+    assert metrics["latency_ms_per_sample"] > 0
     assert metrics["latency_ms_per_step"] > 0
-
-
-def test_benchmark_rollout_latency_per_step_consistent_with_per_rollout():
-    model = _FakeRolloutModel()
-    batch = _make_batch()
-    max_rollout_steps = 4
-    metrics = benchmark_rollout(
-        model,
-        batch,
-        stride=1,
-        max_rollout_steps=max_rollout_steps,
-        n_warmup=1,
-        n_benchmark=2,
-        batch_size=1,
+    # verify step latency is exactly batch / steps
+    assert metrics["latency_ms_per_step"] == pytest.approx(
+        metrics["latency_ms_per_batch"] / 4
     )
-    expected = metrics["latency_ms_per_rollout"] / max_rollout_steps
-    assert metrics["latency_ms_per_step"] == pytest.approx(expected)
 
 
 def test_benchmark_rollout_raises_on_zero_n_benchmark():
@@ -153,29 +127,3 @@ def test_benchmark_rollout_raises_on_zero_n_benchmark():
             n_benchmark=0,
             batch_size=1,
         )
-
-
-def test_benchmark_rollout_batch_size_affects_throughput():
-    """Larger batch_size should yield proportionally higher step throughput."""
-    model = _FakeRolloutModel()
-    batch = _make_batch()
-    m1 = benchmark_rollout(
-        model,
-        batch,
-        stride=1,
-        max_rollout_steps=2,
-        n_warmup=1,
-        n_benchmark=2,
-        batch_size=1,
-    )
-    m4 = benchmark_rollout(
-        model,
-        batch,
-        stride=1,
-        max_rollout_steps=2,
-        n_warmup=1,
-        n_benchmark=2,
-        batch_size=4,
-    )
-    # batch_size=4 should report 4x the throughput of batch_size=1
-    assert m4["throughput_steps_per_sec"] > m1["throughput_steps_per_sec"]

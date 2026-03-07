@@ -13,6 +13,7 @@ import pytest
 from autocast.scripts.workflow import cli as workflow_cli
 from autocast.scripts.workflow.cli import build_parser
 from autocast.scripts.workflow.commands import (
+    benchmark_command,
     benchmark_manifest_command,
     build_effective_eval_overrides,
     build_train_overrides,
@@ -553,6 +554,36 @@ def test_eval_command_quotes_inferred_checkpoint_with_equals(monkeypatch, tmp_pa
     )
 
     eval_command(
+        mode="local",
+        dataset="reaction_diffusion",
+        work_dir=str(tmp_path),
+        overrides=[],
+        dry_run=True,
+    )
+
+    overrides = captured["overrides"]
+    assert isinstance(overrides, list)
+    assert f'eval.checkpoint="{ckpt.resolve()}"' in overrides
+
+
+def test_benchmark_command_quotes_inferred_checkpoint_with_equals(
+    monkeypatch, tmp_path
+):
+    ckpt = tmp_path / "step-step=10000.ckpt"
+    ckpt.touch()
+    (tmp_path / "resolved_config.yaml").write_text(
+        "output:\n  checkpoint_name: step-step=10000.ckpt\n", encoding="utf-8"
+    )
+    captured: dict[str, object] = {}
+
+    def _fake_run_module(module, overrides, dry_run=False, mode="local"):  # noqa: ARG001 unused but included for clarity
+        captured["overrides"] = overrides
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.commands.run_module", _fake_run_module
+    )
+
+    benchmark_command(
         mode="local",
         dataset="reaction_diffusion",
         work_dir=str(tmp_path),
