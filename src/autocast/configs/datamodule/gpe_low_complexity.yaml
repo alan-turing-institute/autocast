@@ -1,5 +1,5 @@
 _target_: autocast.data.datamodule.SpatioTemporalDataModule
-data_path: "${oc.env:AUTOCAST_DATASETS,./datasets}/gpe_low_complexity"
+data_path: "${oc.env:AUTOCAST_DATASETS,./datasets}/gpe_low_complexity_c83e770"
 batch_size: 16
 n_steps_input: 1
 n_steps_output: 4
