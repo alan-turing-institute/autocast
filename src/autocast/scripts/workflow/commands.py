@@ -59,11 +59,10 @@ def build_common_launch_overrides(mode: str, work_dir: Path) -> list[str]:
     return [f"hydra.run.dir={work_dir}"]
 
 
-def dataset_overrides(dataset: str, datasets_root: Path) -> list[str]:
+def dataset_overrides(dataset: str) -> list[str]:
     """Return Hydra overrides selecting *dataset*."""
     return [
         f"datamodule={dataset}",
-        f"datamodule.data_path={datasets_root / dataset}",
     ]
 
 
@@ -403,9 +402,7 @@ def build_train_overrides(
         *build_common_launch_overrides(mode=mode, work_dir=final_work_dir),
     ]
     if dataset is not None:
-        command_overrides.extend(
-            dataset_overrides(dataset=dataset, datasets_root=datasets_root())
-        )
+        command_overrides.extend(dataset_overrides(dataset=dataset))
 
     if resume_from is not None and not contains_override(
         overrides, "resume_from_checkpoint="
@@ -443,9 +440,7 @@ def build_eval_overrides(
     if not using_resolved_config:
         command_overrides.append("eval=encoder_processor_decoder")
         if dataset is not None:
-            command_overrides.extend(
-                dataset_overrides(dataset=dataset, datasets_root=datasets_root())
-            )
+            command_overrides.extend(dataset_overrides(dataset=dataset))
     else:
         # The resolved config may be stale (saved before current eval defaults
         # were added). Re-inject key EPD eval defaults from the source eval config.
@@ -551,9 +546,7 @@ def benchmark_command(
     if not using_resolved_config:
         command_overrides.append("eval=encoder_processor_decoder")
         if dataset is not None:
-            command_overrides.extend(
-                dataset_overrides(dataset=dataset, datasets_root=datasets_root())
-            )
+            command_overrides.extend(dataset_overrides(dataset=dataset))
     elif dataset is not None:
         command_overrides.append(f"datamodule.data_path={datasets_root() / dataset}")
     command_overrides.extend(effective_overrides)
