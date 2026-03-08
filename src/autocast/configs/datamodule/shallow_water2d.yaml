@@ -1,5 +1,5 @@
 _target_: autocast.data.datamodule.SpatioTemporalDataModule
-data_path: "${oc.env:AUTOCAST_DATASETS,./datasets}/shallow_water2d_3953f3d"
+data_path: "${oc.env:AUTOCAST_DATASETS,./datasets}/shallow_water2d_9057134"
 batch_size: 16
 n_steps_input: 1
 n_steps_output: 4
