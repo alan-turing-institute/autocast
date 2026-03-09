@@ -22,6 +22,7 @@ from autocast.scripts.workflow.commands import (
     infer_eval_checkpoint,
     infer_hydra_config_from_workdir,
     infer_resume_checkpoint,
+    train_eval_single_job_command,
 )
 from autocast.scripts.workflow.helpers import run_module_command
 from autocast.scripts.workflow.naming import (
@@ -391,11 +392,11 @@ def test_eval_command_auto_infers_hydra_config(monkeypatch, tmp_path):
     (tmp_path / "encoder_processor_decoder.ckpt").touch()
     captured: dict[str, object] = {}
 
-    def _fake_run_module(module, overrides, dry_run=False, mode="local"):
-        captured["module"] = module
+    def _fake_run_module(_module, overrides, _dry_run=False, _mode="local"):
+        captured["module"] = _module
         captured["overrides"] = overrides
-        captured["dry_run"] = dry_run
-        captured["mode"] = mode
+        captured["dry_run"] = _dry_run
+        captured["mode"] = _mode
 
     monkeypatch.setattr(
         "autocast.scripts.workflow.commands.run_module", _fake_run_module
@@ -429,7 +430,7 @@ def test_eval_command_includes_defaults_without_resolved_config(monkeypatch, tmp
     (tmp_path / "encoder_processor_decoder.ckpt").touch()
     captured: dict[str, object] = {}
 
-    def _fake_run_module(module, overrides, dry_run=False, mode="local"):  # noqa: ARG001 unused but included for clarity
+    def _fake_run_module(_module, overrides, _dry_run=False, _mode="local"):
         captured["overrides"] = overrides
 
     monkeypatch.setattr(
@@ -456,7 +457,7 @@ def test_eval_command_keeps_explicit_hydra_config(monkeypatch, tmp_path):
     (tmp_path / "encoder_processor_decoder.ckpt").touch()
     captured: dict[str, object] = {}
 
-    def _fake_run_module(module, overrides, dry_run=False, mode="local"):  # noqa: ARG001 unused but included for clarity
+    def _fake_run_module(_module, overrides, _dry_run=False, _mode="local"):
         captured["overrides"] = overrides
 
     monkeypatch.setattr(
@@ -484,7 +485,7 @@ def test_eval_command_explicit_resolved_config_skips_defaults(monkeypatch, tmp_p
     (tmp_path / "encoder_processor_decoder.ckpt").touch()
     captured: dict[str, object] = {}
 
-    def _fake_run_module(module, overrides, dry_run=False, mode="local"):  # noqa: ARG001 unused but included for clarity
+    def _fake_run_module(_module, overrides, _dry_run=False, _mode="local"):
         captured["overrides"] = overrides
 
     monkeypatch.setattr(
@@ -516,7 +517,7 @@ def test_eval_command_preserves_explicit_checkpoint_override(monkeypatch, tmp_pa
     (tmp_path / "encoder_processor_decoder.ckpt").touch()
     captured: dict[str, object] = {}
 
-    def _fake_run_module(module, overrides, dry_run=False, mode="local"):  # noqa: ARG001 unused but included for clarity
+    def _fake_run_module(_module, overrides, _dry_run=False, _mode="local"):
         captured["overrides"] = overrides
 
     monkeypatch.setattr(
@@ -546,7 +547,7 @@ def test_eval_command_quotes_inferred_checkpoint_with_equals(monkeypatch, tmp_pa
     )
     captured: dict[str, object] = {}
 
-    def _fake_run_module(module, overrides, dry_run=False, mode="local"):  # noqa: ARG001 unused but included for clarity
+    def _fake_run_module(_module, overrides, _dry_run=False, _mode="local"):
         captured["overrides"] = overrides
 
     monkeypatch.setattr(
@@ -576,7 +577,7 @@ def test_benchmark_command_quotes_inferred_checkpoint_with_equals(
     )
     captured: dict[str, object] = {}
 
-    def _fake_run_module(module, overrides, dry_run=False, mode="local"):  # noqa: ARG001 unused but included for clarity
+    def _fake_run_module(_module, overrides, _dry_run=False, _mode="local"):
         captured["overrides"] = overrides
 
     monkeypatch.setattr(
@@ -633,6 +634,23 @@ def test_build_train_overrides_default_wandb_name_uses_run_id():
     assert "logging.wandb.name=explicit_run" in command_overrides
 
 
+def test_build_train_overrides_does_not_duplicate_explicit_datamodule_override():
+    _work_dir, _resolved_run_id, command_overrides = build_train_overrides(
+        kind="epd",
+        mode="local",
+        dataset="reaction_diffusion",
+        output_base="outputs",
+        run_group="2026-02-23",
+        run_id="explicit_run",
+        work_dir=None,
+        resume_from=None,
+        overrides=["datamodule=reaction_diffusion"],
+    )
+
+    datamodule_entries = [o for o in command_overrides if o.startswith("datamodule=")]
+    assert datamodule_entries == ["datamodule=reaction_diffusion"]
+
+
 def test_build_train_overrides_explicit_logging_override_wins_default():
     _work_dir, _resolved_run_id, command_overrides = build_train_overrides(
         kind="epd",
@@ -669,7 +687,185 @@ def test_build_train_overrides_explicit_logging_override_only_once():
     assert wandb_entries == ["logging.wandb.name=from_override"]
 
 
-def test_run_module_command_places_config_flags_before_overrides():
+def test_train_eval_single_job_command_auto_infers_hydra_config(monkeypatch, tmp_path):
+    (tmp_path / "resolved_config.yaml").write_text("x: 1\n", encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    def _fake_run_module(_module, overrides, _dry_run=False, _mode="local"):
+        captured["module"] = _module
+        captured["overrides"] = overrides
+        captured["dry_run"] = _dry_run
+        captured["mode"] = _mode
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.commands.run_module", _fake_run_module
+    )
+
+    train_eval_single_job_command(
+        mode="local",
+        dataset="reaction_diffusion",
+        output_base="outputs",
+        run_group="rg",
+        run_id="rid",
+        work_dir=str(tmp_path),
+        resume_from=None,
+        train_overrides=["trainer.max_epochs=1"],
+        eval_overrides=[],
+        dry_run=True,
+    )
+
+    overrides = captured["overrides"]
+    assert isinstance(overrides, list)
+    assert "--config-name" in overrides
+    assert "--config-path" in overrides
+    assert "resolved_config" in overrides
+    assert str(tmp_path.resolve()) in overrides
+    assert not any(o.startswith("datamodule=") for o in overrides)
+    assert any(o.startswith("datamodule.data_path=") for o in overrides)
+
+
+def test_train_eval_single_job_command_keeps_defaults_without_resolved_config(
+    monkeypatch, tmp_path
+):
+    captured: dict[str, object] = {}
+
+    def _fake_run_module(_module, overrides, _dry_run=False, _mode="local"):
+        captured["overrides"] = overrides
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.commands.run_module", _fake_run_module
+    )
+
+    train_eval_single_job_command(
+        mode="local",
+        dataset="reaction_diffusion",
+        output_base="outputs",
+        run_group="rg",
+        run_id="rid",
+        work_dir=str(tmp_path),
+        resume_from=None,
+        train_overrides=["trainer.max_epochs=1"],
+        eval_overrides=[],
+        dry_run=True,
+    )
+
+    overrides = captured["overrides"]
+    assert isinstance(overrides, list)
+    assert "--config-name" not in overrides
+    assert "--config-path" not in overrides
+    assert any(o.startswith("datamodule=") for o in overrides)
+
+
+def test_train_eval_single_job_command_resolved_config_normalizes_resume_override(
+    monkeypatch, tmp_path
+):
+    (tmp_path / "resolved_config.yaml").write_text(
+        "resume_from_checkpoint: old.ckpt\n", encoding="utf-8"
+    )
+    resume_ckpt = tmp_path / "new.ckpt"
+    resume_ckpt.touch()
+    captured: dict[str, object] = {}
+
+    def _fake_run_module(_module, overrides, _dry_run=False, _mode="local"):
+        captured["overrides"] = overrides
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.commands.run_module", _fake_run_module
+    )
+
+    train_eval_single_job_command(
+        mode="local",
+        dataset="reaction_diffusion",
+        output_base="outputs",
+        run_group="rg",
+        run_id="rid",
+        work_dir=str(tmp_path),
+        resume_from=str(resume_ckpt),
+        train_overrides=[],
+        eval_overrides=[],
+        dry_run=True,
+    )
+
+    overrides = captured["overrides"]
+    assert isinstance(overrides, list)
+    assert not any(o.startswith("+resume_from_checkpoint=") for o in overrides)
+    assert f"resume_from_checkpoint={resume_ckpt.resolve()}" in overrides
+
+
+def test_train_eval_single_job_command_resolved_config_drops_duplicate_resume_override(
+    monkeypatch, tmp_path
+):
+    resume_ckpt = (tmp_path / "same.ckpt").resolve()
+    resume_ckpt.touch()
+    (tmp_path / "resolved_config.yaml").write_text(
+        f"resume_from_checkpoint: {resume_ckpt}\n", encoding="utf-8"
+    )
+    captured: dict[str, object] = {}
+
+    def _fake_run_module(_module, overrides, _dry_run=False, _mode="local"):
+        captured["overrides"] = overrides
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.commands.run_module", _fake_run_module
+    )
+
+    train_eval_single_job_command(
+        mode="local",
+        dataset="reaction_diffusion",
+        output_base="outputs",
+        run_group="rg",
+        run_id="rid",
+        work_dir=str(tmp_path),
+        resume_from=str(resume_ckpt),
+        train_overrides=[],
+        eval_overrides=[],
+        dry_run=True,
+    )
+
+    overrides = captured["overrides"]
+    assert isinstance(overrides, list)
+    assert not any(o.startswith("+resume_from_checkpoint=") for o in overrides)
+    assert not any(o.startswith("resume_from_checkpoint=") for o in overrides)
+
+
+def test_train_eval_single_job_command_resolved_config_keeps_plus_when_key_absent(
+    monkeypatch, tmp_path
+):
+    """When resolved config exists but does NOT have resume_from_checkpoint,
+    the +resume_from_checkpoint= override must be preserved (Hydra needs + to
+    append a key that isn't in the struct)."""
+    # resolved_config.yaml with no resume_from_checkpoint key
+    (tmp_path / "resolved_config.yaml").write_text(
+        "trainer:\n  max_epochs: 10\n", encoding="utf-8"
+    )
+    resume_ckpt = tmp_path / "new.ckpt"
+    resume_ckpt.touch()
+    captured: dict[str, object] = {}
+
+    def _fake_run_module(_module, overrides, _dry_run=False, _mode="local"):
+        captured["overrides"] = overrides
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.commands.run_module", _fake_run_module
+    )
+
+    train_eval_single_job_command(
+        mode="local",
+        dataset="reaction_diffusion",
+        output_base="outputs",
+        run_group="rg",
+        run_id="rid",
+        work_dir=str(tmp_path),
+        resume_from=str(resume_ckpt),
+        train_overrides=[],
+        eval_overrides=[],
+        dry_run=True,
+    )
+
+    overrides = captured["overrides"]
+    assert isinstance(overrides, list)
+    # + must be preserved — key absent from struct
+    assert f"+resume_from_checkpoint={resume_ckpt.resolve()}" in overrides
     command = run_module_command(
         "autocast.scripts.eval.encoder_processor_decoder",
         [

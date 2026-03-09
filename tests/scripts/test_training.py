@@ -7,6 +7,7 @@ import pytest
 import torch
 from conftest import get_optimizer_config
 from hydra import compose, initialize_config_dir
+from lightning.pytorch.callbacks import Timer
 from omegaconf import DictConfig, OmegaConf, open_dict
 
 from autocast.scripts.setup import (
@@ -14,7 +15,12 @@ from autocast.scripts.setup import (
     setup_epd_model,
     setup_processor_model,
 )
-from autocast.scripts.training import TrainingTimerCallback
+from autocast.scripts.training import (
+    ResetResumeTimerCallback,
+    TrainingTimerCallback,
+    _attach_reset_timer_callback,
+    _validate_resume_settings,
+)
 from autocast.types import Batch, EncodedBatch
 
 
@@ -149,6 +155,74 @@ def test_training_timer_callback_state_dict_and_round_trip():
     cb2.load_state_dict(sd)
     assert cb2.training_runtime_total_s == 10.0
     assert cb2._epoch_times_s == [1.0, 2.0, 3.0]
+
+
+def test_validate_resume_settings_raises_for_weights_only_without_checkpoint():
+    with pytest.raises(ValueError, match="resume_weights_only=true requires"):
+        _validate_resume_settings(
+            resume_checkpoint=None,
+            resume_weights_only=True,
+        )
+
+
+def test_validate_resume_settings_allows_weights_only_with_checkpoint(tmp_path: Path):
+    ckpt = tmp_path / "model.ckpt"
+    _validate_resume_settings(
+        resume_checkpoint=ckpt,
+        resume_weights_only=True,
+    )
+
+
+def test_validate_resume_settings_raises_for_reset_timer_without_checkpoint():
+    with pytest.raises(ValueError, match="reset_resume_time_budget=true requires"):
+        _validate_resume_settings(
+            resume_checkpoint=None,
+            resume_weights_only=False,
+            reset_resume_time_budget=True,
+        )
+
+
+def test_validate_resume_settings_raises_for_reset_timer_with_weights_only(
+    tmp_path: Path,
+):
+    ckpt = tmp_path / "model.ckpt"
+    with pytest.raises(
+        ValueError,
+        match="reset_resume_time_budget=true is only meaningful for full-state resume",
+    ):
+        _validate_resume_settings(
+            resume_checkpoint=ckpt,
+            resume_weights_only=True,
+            reset_resume_time_budget=True,
+        )
+
+
+def test_validate_resume_settings_allows_reset_timer_with_checkpoint(tmp_path: Path):
+    ckpt = tmp_path / "model.ckpt"
+    _validate_resume_settings(
+        resume_checkpoint=ckpt,
+        resume_weights_only=False,
+        reset_resume_time_budget=True,
+    )
+
+
+def test_attach_reset_timer_callback_inserts_before_timer():
+    trainer = L.Trainer(
+        max_time="00:00:00:10",
+        logger=False,
+        enable_checkpointing=False,
+        enable_progress_bar=False,
+        enable_model_summary=False,
+    )
+    _attach_reset_timer_callback(trainer, enabled=True)
+    callbacks = list(getattr(trainer, "callbacks", []))
+    reset_idx = next(
+        idx
+        for idx, cb in enumerate(callbacks)
+        if isinstance(cb, ResetResumeTimerCallback)
+    )
+    timer_idx = next(idx for idx, cb in enumerate(callbacks) if isinstance(cb, Timer))
+    assert reset_idx < timer_idx
 
 
 def test_epd_config_forward_smoke(config_dir: str, toy_batch: Batch, dummy_datamodule):
