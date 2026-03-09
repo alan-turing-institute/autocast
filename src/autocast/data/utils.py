@@ -1,10 +1,12 @@
 from pathlib import Path
+from typing import Any
 
 import torch
 from autoemulate.simulations.reaction_diffusion import ReactionDiffusion
 
 from autocast.data.advection_diffusion import AdvectionDiffusion
 from autocast.data.datamodule import SpatioTemporalDataModule, TheWellDataModule
+from autocast.data.dataset import ReactionDiffusionDataset, SpatioTemporalDataset
 
 
 def get_datamodule(
@@ -24,6 +26,7 @@ def get_datamodule(
     batch_size: int = 16,
     use_normalization: bool = True,
     normalization_path: str = "../stats.yaml",  # TODO: choose better default
+    normalization_stats: dict[str, Any] | None = None,
 ):
     """Get the configured datamodule.
 
@@ -63,6 +66,9 @@ def get_datamodule(
         Whether to use normalization.
     normalization_path: str
         Path to normalization statistics.
+    normalization_stats: dict | None
+        Preloaded normalization statistics (e.g. from Hydra config). When
+        provided, used instead of normalization_path.
     """
 
     def generate_split(simulator):
@@ -103,6 +109,11 @@ def get_datamodule(
                 )
                 torch.save(combined_data[split], Path(split_path, "data.pt"))
 
+        dataset_cls = (
+            ReactionDiffusionDataset
+            if simulation_name == "reaction_diffusion"
+            else SpatioTemporalDataset
+        )
         return SpatioTemporalDataModule(
             data=None,
             data_path=str(cache_path),
@@ -112,7 +123,9 @@ def get_datamodule(
             autoencoder_mode=autoencoder_mode,
             batch_size=batch_size,
             use_normalization=use_normalization,
-            normalization_path=normalization_path,
+            normalization_path=None if normalization_stats else normalization_path,
+            normalization_stats=normalization_stats,
+            dataset_cls=dataset_cls,
             num_workers=num_workers,
         )
 
