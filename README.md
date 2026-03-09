@@ -85,6 +85,32 @@ uv run autocast epd \
 	--resume-from outputs/rd/00/encoder_processor_decoder.ckpt
 ```
 
+Resume modes (applies to `ae`, `epd`, and `train-eval`):
+- Full-state resume (default): restores model + optimizer/scheduler/trainer loop state.
+- Weights-only resume: restores model weights only (fresh optimizer/trainer state), useful for "train for another N hours" workflows with `trainer.max_time`.
+- Full-state + reset timer budget: keeps optimizer/scheduler state and clears the restored elapsed-time offset for Lightning's `max_time` timer.
+
+```bash
+# Weights-only resume (example for train-eval)
+uv run autocast train-eval \
+	--workdir outputs/rd/00 \
+	--resume-from outputs/rd/00/encoder_processor_decoder.ckpt \
+	trainer.max_time="00:04:00:00" \
+	+train_eval.resume_weights_only=true
+```
+
+If `resume_weights_only=true` is set without a checkpoint, AutoCast raises an error.
+
+If you want to keep optimizer state and still run for a fresh `max_time` window, use:
+
+```bash
+uv run autocast train-eval \
+	--workdir outputs/rd/00 \
+	--resume-from outputs/rd/00/encoder_processor_decoder.ckpt \
+	trainer.max_time="00:04:00:00" \
+	+train_eval.reset_resume_time_budget=true
+```
+
 Train + evaluate in one command:
 ```bash
 uv run autocast train-eval \
@@ -142,6 +168,11 @@ W&B naming behavior:
 - `--run-id` sets the run folder name and, by default, `logging.wandb.name`.
 - Set `logging.wandb.name=...` via Hydra overrides to explicitly name the W&B run.
 
+Workdir/chdir behavior:
+- The workflow wrapper always forwards `--workdir` to Hydra as `hydra.run.dir=<workdir>`.
+- Training configs set `hydra.job.chdir=true`, so script execution runs inside that run directory.
+- Script internals resolve workdir via Hydra runtime output dir (`resolve_hydra_work_dir(...)`), avoiding cwd/path mismatches.
+
 Multi-GPU is supported by passing trainer/Hydra overrides, e.g.:
 ```bash
 uv run autocast epd --mode slurm \
@@ -162,6 +193,15 @@ uv run autocast epd \
 	logging.wandb.project=autocast-experiments \
 	logging.wandb.name=processor-baseline
 ```
+
+To continue an existing W&B run on resume, set both:
+- `logging.wandb.id=<existing_run_id>`
+- `logging.wandb.resume=allow` (or `must`)
+
+Without `id`+`resume`, W&B creates a new run even if `logging.wandb.name` matches.
+Also note:
+- Full-state resume continues Lightning global step/epoch progression.
+- Weights-only resume starts trainer loop counters from zero (new optimizer/trainer state).
 
 All example notebooks contain a dedicated cell that instantiates a `wandb_logger` via `autocast.logging.create_wandb_logger`. Toggle the `enabled` flag in that cell to control tracking when experimenting interactively.
 
