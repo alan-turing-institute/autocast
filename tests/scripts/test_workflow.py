@@ -215,7 +215,7 @@ def test_dataset_name_token_unknown_passthrough():
 
 def test_dataset_name_token_datamodule_override_takes_precedence():
     overrides = ["datamodule=reaction_diffusion"]
-    assert dataset_name_token("something_else", overrides) == "rd32"
+    assert dataset_name_token("something_else", overrides) == "rd64"
 
 
 def test_auto_run_name_ae():
@@ -235,7 +235,7 @@ def test_auto_run_name_epd():
         patch("autocast.scripts.workflow.naming._short_uuid", return_value="xyz7890"),
     ):
         name = auto_run_name("epd", "reaction_diffusion", [])
-    assert name.startswith("epd_rd32_")
+    assert name.startswith("epd_rd64_")
 
 
 def test_auto_run_name_diff_prefix():
