@@ -544,19 +544,16 @@ def benchmark_command(
     if not contains_override(effective_overrides, "eval.benchmark.enabled="):
         effective_overrides.append("eval.benchmark.enabled=true")
 
-    eval_dir = (Path(work_dir).expanduser().resolve() / "eval").resolve()
-    command_overrides = [
-        *build_common_launch_overrides(mode=mode, work_dir=eval_dir),
-    ]
-    if not using_resolved_config:
-        command_overrides.append("eval=encoder_processor_decoder")
-        if dataset is not None:
-            command_overrides.extend(
-                dataset_overrides(dataset=dataset, datasets_root=datasets_root())
-            )
-    elif dataset is not None:
-        command_overrides.append(f"datamodule.data_path={datasets_root() / dataset}")
-    command_overrides.extend(effective_overrides)
+    # Mirror eval_command behaviour: when running from an inferred resolved config,
+    # re-inject current eval defaults (including benchmark sections) so older runs
+    # created before these defaults existed can still be benchmarked reliably.
+    _eval_dir, command_overrides = build_eval_overrides(
+        mode=mode,
+        dataset=dataset,
+        work_dir=work_dir,
+        overrides=effective_overrides,
+        using_resolved_config=using_resolved_config,
+    )
 
     run_module(BENCHMARK_MODULE, command_overrides, dry_run=dry_run, mode=mode)
 
