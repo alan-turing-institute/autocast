@@ -67,9 +67,17 @@ def get_datamodule(
     normalization_path: str
         Path to normalization statistics.
     normalization_stats: dict | None
-        Preloaded normalization statistics (e.g. from Hydra config). When
-        provided, used instead of normalization_path.
+        Preloaded normalization statistics (e.g. from Hydra config). Only
+        supported for non-The Well datasets; when provided, used instead of
+        normalization_path.
     """
+    if the_well and normalization_stats is not None:
+        msg = (
+            "normalization_stats is not supported when the_well=True. "
+            "The Well normalization is configured via normalization_path "
+            "(handled by the underlying WellDataset)."
+        )
+        raise ValueError(msg)
 
     def generate_split(simulator):
         """Generate training, validation, and test splits from the simulator."""
