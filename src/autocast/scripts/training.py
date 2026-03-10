@@ -118,6 +118,16 @@ class TrainingTimerCallback(Callback):
     Records total training time and per-epoch durations.  The values are
     stored via ``state_dict()`` so the eval script can read them directly
     from the checkpoint's ``callbacks`` block.
+
+    Note
+    ----
+    Lightning often saves checkpoints during ``on_train_epoch_end`` (e.g. when
+    ``ModelCheckpoint(save_on_train_epoch_end=True)`` is configured). That is
+    *before* ``on_train_end`` runs. To avoid mixing two meanings in one field:
+    - ``training_runtime_total_s`` is only set once training has ended.
+    - ``training_runtime_elapsed_s`` is a snapshot of wall-clock time *so far*.
+    Consumers (e.g. eval scripts) can prefer ``*_total_s`` and fall back to
+    ``*_elapsed_s`` if needed.
     """
 
     def __init__(self) -> None:
@@ -125,6 +135,12 @@ class TrainingTimerCallback(Callback):
         self._epoch_start: float | None = None
         self._epoch_times_s: list[float] = []
         self.training_runtime_total_s: float | None = None
+
+    def _current_elapsed_runtime_s(self) -> float | None:
+        """Return elapsed runtime since train start (wall-clock seconds)."""
+        if self._train_start is None:
+            return None
+        return perf_counter() - self._train_start
 
     def on_train_start(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
         del trainer, pl_module
@@ -150,8 +166,10 @@ class TrainingTimerCallback(Callback):
             self.training_runtime_total_s = perf_counter() - self._train_start
 
     def state_dict(self) -> dict:  # type: ignore[override]
+        runtime_elapsed_s = self._current_elapsed_runtime_s()
         d: dict = {
             "training_runtime_total_s": self.training_runtime_total_s,
+            "training_runtime_elapsed_s": runtime_elapsed_s,
             "epoch_times_s": list(self._epoch_times_s),
         }
         if self._epoch_times_s:

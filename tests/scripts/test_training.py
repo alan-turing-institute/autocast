@@ -1,6 +1,7 @@
 """Tests that exercise real configs end-to-end."""
 
 from pathlib import Path
+from time import perf_counter
 
 import lightning as L
 import pytest
@@ -129,6 +130,7 @@ def test_training_timer_callback_state_dict_empty_before_training():
     cb = TrainingTimerCallback()
     sd = cb.state_dict()
     assert sd["training_runtime_total_s"] is None
+    assert sd["training_runtime_elapsed_s"] is None
     assert sd["epoch_times_s"] == []
 
 
@@ -140,6 +142,8 @@ def test_training_timer_callback_state_dict_and_round_trip():
 
     sd = cb.state_dict()
     assert sd["training_runtime_total_s"] == 10.0
+    assert isinstance(sd["training_runtime_elapsed_s"], float)
+    assert sd["training_runtime_elapsed_s"] >= 0.0
     assert sd["epoch_times_s"] == [1.0, 2.0, 3.0]
     assert sd["mean_epoch_s"] == pytest.approx(2.0)
     assert sd["min_epoch_s"] == pytest.approx(1.0)
@@ -149,6 +153,17 @@ def test_training_timer_callback_state_dict_and_round_trip():
     cb2.load_state_dict(sd)
     assert cb2.training_runtime_total_s == 10.0
     assert cb2._epoch_times_s == [1.0, 2.0, 3.0]
+
+
+def test_training_timer_callback_state_dict_reports_elapsed_before_train_end():
+    cb = TrainingTimerCallback()
+    cb._train_start = perf_counter() - 0.05
+    cb.training_runtime_total_s = None
+
+    sd = cb.state_dict()
+    assert sd["training_runtime_total_s"] is None
+    assert isinstance(sd["training_runtime_elapsed_s"], float)
+    assert sd["training_runtime_elapsed_s"] > 0.0
 
 
 def test_epd_config_forward_smoke(config_dir: str, toy_batch: Batch, dummy_datamodule):
