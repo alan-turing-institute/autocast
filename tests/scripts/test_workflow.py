@@ -372,11 +372,12 @@ def test_eval_command_auto_infers_hydra_config(monkeypatch, tmp_path):
     (tmp_path / "encoder_processor_decoder.ckpt").touch()
     captured: dict[str, object] = {}
 
-    def _fake_run_module(_module, overrides, _dry_run=False, _mode="local"):
+    def _fake_run_module(_module, overrides, dry_run=False, mode="local", **_kwargs):
         captured["module"] = _module
         captured["overrides"] = overrides
-        captured["dry_run"] = _dry_run
-        captured["mode"] = _mode
+        captured["dry_run"] = dry_run
+        captured["mode"] = mode
+        del _kwargs  # accept run_module's keyword args
 
     monkeypatch.setattr(
         "autocast.scripts.workflow.commands.run_module", _fake_run_module
@@ -410,8 +411,9 @@ def test_eval_command_includes_defaults_without_resolved_config(monkeypatch, tmp
     (tmp_path / "encoder_processor_decoder.ckpt").touch()
     captured: dict[str, object] = {}
 
-    def _fake_run_module(_module, overrides, _dry_run=False, _mode="local"):
+    def _fake_run_module(_module, overrides, dry_run=False, mode="local", **_kwargs):
         captured["overrides"] = overrides
+        del dry_run, mode, _kwargs  # accept run_module's keyword args
 
     monkeypatch.setattr(
         "autocast.scripts.workflow.commands.run_module", _fake_run_module
@@ -437,8 +439,9 @@ def test_eval_command_keeps_explicit_hydra_config(monkeypatch, tmp_path):
     (tmp_path / "encoder_processor_decoder.ckpt").touch()
     captured: dict[str, object] = {}
 
-    def _fake_run_module(_module, overrides, _dry_run=False, _mode="local"):
+    def _fake_run_module(_module, overrides, dry_run=False, mode="local", **_kwargs):
         captured["overrides"] = overrides
+        del dry_run, mode, _kwargs  # accept run_module's keyword args
 
     monkeypatch.setattr(
         "autocast.scripts.workflow.commands.run_module", _fake_run_module
@@ -465,8 +468,9 @@ def test_eval_command_explicit_resolved_config_skips_defaults(monkeypatch, tmp_p
     (tmp_path / "encoder_processor_decoder.ckpt").touch()
     captured: dict[str, object] = {}
 
-    def _fake_run_module(_module, overrides, _dry_run=False, _mode="local"):
+    def _fake_run_module(_module, overrides, dry_run=False, mode="local", **_kwargs):
         captured["overrides"] = overrides
+        del dry_run, mode, _kwargs  # accept run_module's keyword args
 
     monkeypatch.setattr(
         "autocast.scripts.workflow.commands.run_module", _fake_run_module
@@ -497,8 +501,9 @@ def test_eval_command_preserves_explicit_checkpoint_override(monkeypatch, tmp_pa
     (tmp_path / "encoder_processor_decoder.ckpt").touch()
     captured: dict[str, object] = {}
 
-    def _fake_run_module(_module, overrides, _dry_run=False, _mode="local"):
+    def _fake_run_module(_module, overrides, dry_run=False, mode="local", **_kwargs):
         captured["overrides"] = overrides
+        del dry_run, mode, _kwargs  # accept run_module's keyword args
 
     monkeypatch.setattr(
         "autocast.scripts.workflow.commands.run_module", _fake_run_module
@@ -527,8 +532,9 @@ def test_eval_command_quotes_inferred_checkpoint_with_equals(monkeypatch, tmp_pa
     )
     captured: dict[str, object] = {}
 
-    def _fake_run_module(_module, overrides, _dry_run=False, _mode="local"):
+    def _fake_run_module(_module, overrides, dry_run=False, mode="local", **_kwargs):
         captured["overrides"] = overrides
+        del dry_run, mode, _kwargs  # accept run_module's keyword args
 
     monkeypatch.setattr(
         "autocast.scripts.workflow.commands.run_module", _fake_run_module
@@ -557,8 +563,9 @@ def test_benchmark_command_quotes_inferred_checkpoint_with_equals(
     )
     captured: dict[str, object] = {}
 
-    def _fake_run_module(_module, overrides, _dry_run=False, _mode="local"):
+    def _fake_run_module(_module, overrides, dry_run=False, mode="local", **_kwargs):
         captured["overrides"] = overrides
+        del dry_run, mode, _kwargs  # accept run_module's keyword args
 
     monkeypatch.setattr(
         "autocast.scripts.workflow.commands.run_module", _fake_run_module
@@ -671,11 +678,12 @@ def test_train_eval_single_job_command_auto_infers_hydra_config(monkeypatch, tmp
     (tmp_path / "resolved_config.yaml").write_text("x: 1\n", encoding="utf-8")
     captured: dict[str, object] = {}
 
-    def _fake_run_module(_module, overrides, _dry_run=False, _mode="local"):
+    def _fake_run_module(_module, overrides, dry_run=False, mode="local", **_kwargs):
         captured["module"] = _module
         captured["overrides"] = overrides
-        captured["dry_run"] = _dry_run
-        captured["mode"] = _mode
+        captured["dry_run"] = dry_run
+        captured["mode"] = mode
+        del _kwargs  # accept run_module's keyword args
 
     monkeypatch.setattr(
         "autocast.scripts.workflow.commands.run_module", _fake_run_module
@@ -709,8 +717,9 @@ def test_train_eval_single_job_command_keeps_defaults_without_resolved_config(
 ):
     captured: dict[str, object] = {}
 
-    def _fake_run_module(_module, overrides, _dry_run=False, _mode="local"):
+    def _fake_run_module(_module, overrides, dry_run=False, mode="local", **_kwargs):
         captured["overrides"] = overrides
+        del dry_run, mode, _kwargs  # accept run_module's keyword args
 
     monkeypatch.setattr(
         "autocast.scripts.workflow.commands.run_module", _fake_run_module
@@ -746,8 +755,9 @@ def test_train_eval_single_job_command_resolved_config_normalizes_resume_overrid
     resume_ckpt.touch()
     captured: dict[str, object] = {}
 
-    def _fake_run_module(_module, overrides, _dry_run=False, _mode="local"):
+    def _fake_run_module(_module, overrides, dry_run=False, mode="local", **_kwargs):
         captured["overrides"] = overrides
+        del dry_run, mode, _kwargs  # accept run_module's keyword args
 
     monkeypatch.setattr(
         "autocast.scripts.workflow.commands.run_module", _fake_run_module
@@ -782,8 +792,9 @@ def test_train_eval_single_job_command_resolved_config_drops_duplicate_resume_ov
     )
     captured: dict[str, object] = {}
 
-    def _fake_run_module(_module, overrides, _dry_run=False, _mode="local"):
+    def _fake_run_module(_module, overrides, dry_run=False, mode="local", **_kwargs):
         captured["overrides"] = overrides
+        del dry_run, mode, _kwargs  # accept run_module's keyword args
 
     monkeypatch.setattr(
         "autocast.scripts.workflow.commands.run_module", _fake_run_module
@@ -822,8 +833,9 @@ def test_train_eval_single_job_command_resolved_config_keeps_plus_when_key_absen
     resume_ckpt.touch()
     captured: dict[str, object] = {}
 
-    def _fake_run_module(_module, overrides, _dry_run=False, _mode="local"):
+    def _fake_run_module(_module, overrides, dry_run=False, mode="local", **_kwargs):
         captured["overrides"] = overrides
+        del dry_run, mode, _kwargs  # accept run_module's keyword args
 
     monkeypatch.setattr(
         "autocast.scripts.workflow.commands.run_module", _fake_run_module
