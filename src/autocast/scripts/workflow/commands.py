@@ -544,9 +544,9 @@ def benchmark_command(
     if not contains_override(effective_overrides, "eval.benchmark.enabled="):
         effective_overrides.append("eval.benchmark.enabled=true")
 
-    benchmark_dir = (Path(work_dir).expanduser().resolve() / "benchmark").resolve()
+    eval_dir = (Path(work_dir).expanduser().resolve() / "eval").resolve()
     command_overrides = [
-        *build_common_launch_overrides(mode=mode, work_dir=benchmark_dir),
+        *build_common_launch_overrides(mode=mode, work_dir=eval_dir),
     ]
     if not using_resolved_config:
         command_overrides.append("eval=encoder_processor_decoder")
@@ -598,11 +598,11 @@ def _write_combined_csv(
 
 
 def _write_combined_benchmark_csv(work_dirs: list[str], manifest: Path) -> Path | None:
-    """Concatenate per-run ``benchmark_metrics.csv`` files into one combined CSV."""
+    """Concatenate per-run ``eval/benchmark_metrics.csv`` files into one CSV."""
     return _write_combined_csv(
         work_dirs,
         manifest,
-        input_name="benchmark_metrics.csv",
+        input_name="eval/benchmark_metrics.csv",
         output_name=f"{manifest.stem}_combined.csv",
     )
 

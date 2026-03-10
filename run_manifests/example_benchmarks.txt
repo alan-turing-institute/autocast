@@ -33,7 +33,7 @@
 #   - auto-detect the dataset and checkpoint from the workdir
 #   - always run the single-step forward-pass benchmark (benchmark_model)
 #   - run the rollout benchmark if eval.benchmark_rollout.enabled=true
-#   - write results to <workdir>/benchmark_metrics.csv
+#   - write results to <workdir>/eval/benchmark_metrics.csv
 #
 # Benchmark config knobs (all have defaults, override as needed):
 #   eval.benchmark.batch_size=1        single-step synthetic batch size
