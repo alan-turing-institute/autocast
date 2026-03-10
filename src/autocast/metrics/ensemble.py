@@ -315,3 +315,63 @@ class AlphaFairCRPS(BTSCMMetric):
             afCRPS: (B, T, S, C)
         """
         return _alpha_fair_crps_score(y_pred, y_true, self.alpha)
+
+
+class SpreadSkillRatio(BTSCMMetric):
+    r"""
+    Corrected spread-to-skill ratio (SSR) for ensemble forecasts.
+
+    Notes
+    -----
+    Uses the corrected finite-ensemble form:
+    .. math::
+        \text{SSR}_{\text{corrected}} = \frac{\text{Spread}}{\text{Skill}}
+        \sqrt{\frac{M + 1}{M}},
+    where skill is RMSE of ensemble mean and spread is ensemble standard deviation,
+    both aggregated over spatial dimensions.
+
+    """
+
+    name: str = "ssr"
+
+    def __init__(self, eps: float = 1e-6):
+        super().__init__()
+        if eps <= 0:
+            msg = "eps must be > 0"
+            raise ValueError(msg)
+        self.eps = eps
+
+    def _score(self, y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTC:
+        """
+        Compute corrected spread-to-skill ratio reduced over spatial dims.
+
+        Args:
+            y_pred: (B, T, S, C, M)
+            y_true: (B, T, S, C)
+
+        Returns
+        -------
+            SSR: (B, T, C)
+        """
+        n_ensemble = y_pred.shape[-1]
+        if n_ensemble < 2:
+            raise ValueError(
+                "SpreadSkillRatio requires at least 2 ensemble members "
+                f"(got {n_ensemble})."
+            )
+
+        # Ensemble mean forecast: (B, T, S, C)
+        ensemble_mean = y_pred.mean(dim=-1)
+        n_spatial_dims = self._infer_n_spatial_dims(ensemble_mean)
+        spatial_dims = tuple(range(2, 2 + n_spatial_dims))
+
+        # Skill = RMSE of ensemble mean over spatial dims: (B, T, C)
+        skill = torch.sqrt(((ensemble_mean - y_true) ** 2).mean(dim=spatial_dims))
+
+        # Spread = sqrt(mean spatial ensemble variance): (B, T, C)
+        spread_variance = y_pred.var(dim=-1, unbiased=True)
+        spread = torch.sqrt(spread_variance.mean(dim=spatial_dims))
+
+        correction = float(np.sqrt((n_ensemble + 1) / n_ensemble))
+        ssr = (spread / torch.clamp(skill, min=self.eps)) * correction
+        return ssr
