@@ -359,7 +359,30 @@ class RunCollator:
 
         return info
 
-    def _parse_metrics(self, run_dir: Path) -> dict[str, Any]:
+    def _extract_dataset_from_config(self, config: dict) -> str | None:
+        """Extract dataset name from config (datamodule or dataset).
+
+        Mirrors infer_dataset_from_workdir logic for use when config is already loaded.
+        """
+        datamodule_cfg = config.get("datamodule")
+        if isinstance(datamodule_cfg, str):
+            return datamodule_cfg
+        if isinstance(datamodule_cfg, dict):
+            dataset_name = datamodule_cfg.get("dataset")
+            if isinstance(dataset_name, str) and dataset_name:
+                return dataset_name
+            data_path = datamodule_cfg.get("data_path")
+            if data_path is not None:
+                try:
+                    return Path(str(data_path)).name
+                except (TypeError, ValueError):
+                    pass
+        top_level = config.get("dataset")
+        if isinstance(top_level, str) and top_level:
+            return top_level
+        return None
+
+    def _parse_metrics(self, run_dir: Path) -> dict[str, Any]:  # noqa: PLR0912
         """Parse both evaluation_metrics.csv and rollout_metrics.csv.
 
         Parameters
@@ -374,6 +397,9 @@ class RunCollator:
         """
         metrics: dict[str, Any] = {}
 
+        # Base metric columns: support both scalar and multi-level coverage
+        base_cols = ["mse", "mae", "rmse", "vrmse"]
+
         # Parse overall metrics
         eval_csv = run_dir / "eval" / "evaluation_metrics.csv"
         if eval_csv.exists():
@@ -384,11 +410,20 @@ class RunCollator:
                     (df_eval["window"] == "all") & (df_eval["batch_idx"] == "all")
                 ]
                 if not overall_row.empty:
-                    for col in ["mse", "mae", "rmse", "vrmse", "coverage"]:
+                    for col in base_cols:
                         if col in overall_row.columns:
-                            # Get the scalar value from the first row
                             value = overall_row.iloc[0][col]
                             metrics[f"overall_{col}"] = value
+                    # Coverage: support "coverage" or coverage_0.5, coverage_0.9, etc.
+                    cov_cols_found = [
+                        c
+                        for c in overall_row.columns
+                        if c == "coverage" or c.startswith("coverage_")
+                    ]
+                    for col in cov_cols_found:
+                        value = overall_row.iloc[0][col]
+                        suffix = col.replace("coverage", "", 1) or ""
+                        metrics[f"overall_coverage{suffix}"] = value
             except Exception as e:
                 self.log.warning(
                     "Failed to parse evaluation metrics from %s: %s", eval_csv, e
@@ -403,9 +438,24 @@ class RunCollator:
                 windowed = df_rollout[df_rollout["batch_idx"] == "all"]
                 for _, row in windowed.iterrows():
                     window = str(row["window"])
-                    for col in ["mse", "mae", "rmse", "vrmse", "coverage"]:
+                    for col in base_cols:
                         if col in row.index:
                             metrics[f"{col}_{window}"] = float(row[col])
+                    cov_cols_found = [
+                        c
+                        for c in row.index
+                        if c == "coverage"
+                        or (isinstance(c, str) and c.startswith("coverage_"))
+                    ]
+                    for col in cov_cols_found:
+                        try:
+                            val = row[col]
+                            if not isinstance(col, str):
+                                continue
+                            suffix = col.replace("coverage", "", 1) or ""
+                            metrics[f"coverage{suffix}_{window}"] = float(val)
+                        except (TypeError, ValueError):
+                            pass
             except Exception as e:
                 self.log.warning(
                     "Failed to parse rollout metrics from %s: %s", rollout_csv, e
@@ -432,6 +482,7 @@ class RunCollator:
         metadata_sources = {
             "evaluation": run_dir / "eval" / "evaluation_metadata.csv",
             "rollout": run_dir / "eval" / "rollout_metadata.csv",
+            "benchmark": run_dir / "eval" / "benchmark_metrics.csv",
         }
 
         for source_name, csv_path in metadata_sources.items():
@@ -481,6 +532,10 @@ class RunCollator:
                     config = yaml.safe_load(f)
                 config_info = self._extract_config_params(config)
                 run_data.update(config_info)
+                # Extract dataset from datamodule config
+                dataset = self._extract_dataset_from_config(config)
+                if dataset:
+                    run_data["dataset"] = dataset
             except Exception as e:
                 self.log.warning("Failed to parse config for %s: %s", run_dir.name, e)
                 # Continue with missing config info
@@ -619,3 +674,118 @@ def collate_run_results(
         save_csv=save_csv,
         include_metadata_dataframes=include_metadata_dataframes,
     )
+
+
+def flatten_metadata_by_run(
+    metadata_by_run: dict[str, pd.DataFrame],
+) -> pd.DataFrame:
+    """Flatten per-run metadata frames into one wide row per run.
+
+    This helper is intended for notebooks/analysis. It consumes the dict returned
+    by ``RunCollator.collate(include_metadata_dataframes=True)`` and produces a
+    wide DataFrame with columns such as:
+    - training time: ``train_total_s``, ``train_mean_epoch_s``
+    - params: ``params_model_total``, ``params_model_trainable``, etc.
+    - benchmark: ``model_latency_ms_per_sample``, ``model_throughput_samples_per_sec``,
+      ``model_gflops_per_sample``, and analogous ``rollout_*`` fields
+
+    Notes
+    -----
+    - If multiple benchmark rows exist for the same (benchmark_type, metric),
+      values are averaged.
+    - Only rows with ``window == 'meta'`` and ``batch_idx == 'all'`` are used for
+      evaluation/rollout metadata.
+    """
+    rows: list[dict[str, Any]] = []
+    for run_path, df_meta in metadata_by_run.items():
+        if df_meta is None or df_meta.empty:
+            rows.append({"run_path": run_path})
+            continue
+
+        row: dict[str, Any] = {"run_path": run_path}
+
+        # Carry through identifiers when present.
+        for col in ["run_name", "date"]:
+            if col in df_meta.columns:
+                vals = df_meta[col].dropna().unique()
+                if len(vals) > 0:
+                    row[col] = vals[0]
+
+        # evaluation / rollout metadata: long format (category, metric, value)
+        if "metadata_source" in df_meta.columns and "value" in df_meta.columns:
+            mask_base = True
+            if "window" in df_meta.columns:
+                mask_base = mask_base & (df_meta["window"] == "meta")
+            if "batch_idx" in df_meta.columns:
+                mask_base = mask_base & (df_meta["batch_idx"] == "all")
+
+            df_er = df_meta[
+                mask_base
+                & df_meta["metadata_source"].isin(["evaluation", "rollout"])
+                & df_meta["category"].notna()
+                & df_meta["metric"].notna()
+            ].copy()
+            if not df_er.empty:
+                df_er["key"] = (
+                    df_er["metadata_source"].astype(str)
+                    + "_"
+                    + df_er["category"].astype(str)
+                    + "_"
+                    + df_er["metric"].astype(str)
+                )
+                wide = (
+                    df_er.groupby("key", as_index=True)["value"]
+                    .mean(numeric_only=True)
+                    .to_dict()
+                )
+                row.update(wide)
+
+        # benchmark metadata: long-ish format (benchmark_type, metric, value)
+        if (
+            "metadata_source" in df_meta.columns
+            and "benchmark_type" in df_meta.columns
+            and "metric" in df_meta.columns
+            and "value" in df_meta.columns
+        ):
+            df_bench = df_meta[
+                (df_meta["metadata_source"] == "benchmark")
+                & df_meta["benchmark_type"].notna()
+                & df_meta["metric"].notna()
+                & df_meta["value"].notna()
+            ].copy()
+        else:
+            df_bench = pd.DataFrame()
+        if not df_bench.empty:
+            df_bench["key"] = (
+                df_bench["benchmark_type"].astype(str)
+                + "_"
+                + df_bench["metric"].astype(str)
+            )
+            wide = (
+                df_bench.groupby("key", as_index=True)["value"]
+                .mean(numeric_only=True)
+                .to_dict()
+            )
+            row.update(wide)
+
+        rows.append(row)
+
+    df_wide = pd.DataFrame(rows)
+
+    # Friendly aliases for commonly used metrics (if present).
+    rename_map = {
+        "evaluation_runtime_train_total_s": "train_total_s",
+        "evaluation_runtime_train_mean_epoch_s": "train_mean_epoch_s",
+        "evaluation_runtime_train_min_epoch_s": "train_min_epoch_s",
+        "evaluation_runtime_train_max_epoch_s": "train_max_epoch_s",
+        "evaluation_params_model_total": "params_model_total",
+        "evaluation_params_model_trainable": "params_model_trainable",
+        "evaluation_params_encoder_total": "params_encoder_total",
+        "evaluation_params_decoder_total": "params_decoder_total",
+        "evaluation_params_processor_total": "params_processor_total",
+    }
+    df_wide = df_wide.rename(
+        columns={k: v for k, v in rename_map.items() if k in df_wide.columns}
+    )
+
+    return df_wide

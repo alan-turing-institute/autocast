@@ -1,4 +1,6 @@
-notebooks/
+notebooks/*
+!notebooks/08_collating_multiple_results.ipynb
+!notebooks/09_diff_vs_crps_dataset_comparison.ipynb
 __pycache__/
 .pytest_cache/
 dist/
