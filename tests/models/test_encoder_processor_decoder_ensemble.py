@@ -158,10 +158,6 @@ def test_epd_ensemble_denormalize_tensor_handles_member_axis():
     w, h = 8, 8
     channels = 2
 
-    input_fields = torch.randn(batch_size, t_steps, w, h, channels)
-    output_fields = torch.randn(batch_size, t_steps, w, h, channels)
-    batch = Batch(input_fields, output_fields, None, None)
-
     encoder = PermuteConcat(
         in_channels=channels, n_steps_input=t_steps, with_constants=False
     )
