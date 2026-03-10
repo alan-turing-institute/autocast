@@ -1,3 +1,7 @@
+import importlib.util
+import json
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -173,3 +177,134 @@ def test_datamodule_with_and_without_normalization(deterministic_data, stats_dic
 
     assert dm_with_norm.train_dataset.norm is not None
     assert dm_with_norm.val_dataset.norm is not None
+
+
+@pytest.mark.skipif(
+    sys.platform.startswith("win") and importlib.util.find_spec("psutil") is None,
+    reason="On Windows, this RSS probe requires psutil",
+)
+def test_normalized_dataloader_rss_growth_is_bounded() -> None:
+    """Normalized dataloader iteration should not show runaway RSS growth.
+
+    Runs in a subprocess so measurement is isolated from pytest process memory.
+    """
+    code = r"""
+import json
+import os
+import sys
+
+import torch
+
+from autocast.data.datamodule import SpatioTemporalDataModule
+from autocast.data.dataset import ReactionDiffusionDataset
+
+
+def rss_mb() -> float:
+    # Preferred cross-platform path.
+    try:
+        import psutil
+
+        return psutil.Process(os.getpid()).memory_info().rss / (1024.0 * 1024.0)
+    except Exception:
+        pass
+
+    # Stdlib fallback (macOS/Linux). Note: ru_maxrss is peak RSS.
+    try:
+        import resource
+
+        rss_raw = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        if sys.platform == "darwin":
+            return rss_raw / (1024.0 * 1024.0)
+        return rss_raw / 1024.0
+    except Exception:
+        pass
+
+    # Linux procfs fallback for current RSS.
+    try:
+        with open("/proc/self/status") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1]) / 1024.0
+    except Exception:
+        pass
+
+    raise RuntimeError("Unable to determine RSS on this platform")
+
+
+def build_data() -> dict:
+    data = torch.randn(16, 24, 16, 16, 2, dtype=torch.float32)
+    return {
+        "data": data,
+        "constant_scalars": torch.randn(16, 2, dtype=torch.float32),
+        "constant_fields": None,
+    }
+
+
+stats = {
+    "stats": {
+        "mean": {"U": 2.0, "V": 4.0},
+        "std": {"U": 1.0, "V": 2.0},
+        "mean_delta": {"U": 0.0, "V": 0.0},
+        "std_delta": {"U": 0.1, "V": 0.2},
+    },
+    "core_field_names": ["U", "V"],
+    "constant_field_names": [],
+}
+
+
+def probe(use_norm: bool) -> list[float]:
+    data = build_data()
+    dm = SpatioTemporalDataModule(
+        data_path=None,
+        data={"train": data, "valid": data, "test": data},
+        dataset_cls=ReactionDiffusionDataset,
+        n_steps_input=2,
+        n_steps_output=2,
+        batch_size=8,
+        num_workers=0,
+        use_normalization=use_norm,
+        normalization_stats=stats,
+    )
+
+    loader = dm.train_dataloader()
+    it = iter(loader)
+    points = []
+    for i in range(1200):
+        try:
+            _ = next(it)
+        except StopIteration:
+            it = iter(loader)
+            _ = next(it)
+        if i % 100 == 0:
+            points.append(rss_mb())
+    return points
+
+
+off = probe(False)
+on = probe(True)
+print(json.dumps({"off": off, "on": on}))
+"""
+
+    proc = subprocess.run(
+        [sys.executable, "-c", code],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(proc.stdout.strip())
+    off_points = payload["off"]
+    on_points = payload["on"]
+
+    off_growth = off_points[-1] - off_points[0]
+    on_growth = on_points[-1] - on_points[0]
+
+    # Keep generous bounds for CI variance while rejecting strong linear drift.
+    assert on_growth < 64.0, (
+        f"Normalized dataloader RSS grew by {on_growth:.1f} MB (points={on_points})"
+    )
+    assert on_growth <= off_growth + 32.0, (
+        "Normalized RSS growth exceeded baseline by too much: "
+        f"on={on_growth:.1f} MB, off={off_growth:.1f} MB, "
+        f"on_points={on_points}, off_points={off_points}"
+    )

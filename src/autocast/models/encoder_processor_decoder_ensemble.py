@@ -38,6 +38,28 @@ class EncoderProcessorDecoderEnsemble(EncoderProcessorDecoder):
         """Prediction for rollout (retains flattened batch dim)."""
         return super().forward(batch)
 
+    def denormalize_tensor(self, tensor: Tensor, delta: bool = False) -> Tensor:
+        """Denormalize ensemble outputs with member dim as the last axis.
+
+        Base denormalization expects channels on the last dimension. Ensemble
+        outputs are shaped ``... C M``, so we fold ``M`` into batch only when
+        needed and then restore the original layout.
+        """
+        try:
+            return super().denormalize_tensor(tensor, delta=delta)
+        except AssertionError:
+            if tensor.shape[-1] != self.n_members:
+                raise
+
+            b = tensor.shape[0]
+            flat_members = rearrange(
+                tensor,
+                "b ... c m -> (b m) ... c",
+                m=self.n_members,
+            )
+            denorm = super().denormalize_tensor(flat_members, delta=delta)
+            return rearrange(denorm, "(b m) ... c -> b ... c m", b=b, m=self.n_members)
+
     def loss(self, batch: Batch) -> tuple[Tensor, Tensor | None]:
         """Compute ensemble-aware loss.
 
