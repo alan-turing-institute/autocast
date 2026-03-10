@@ -4,6 +4,7 @@ import torch
 from autocast.metrics import ALL_ENSEMBLE_METRICS
 from autocast.metrics.base import BaseMetric
 from autocast.metrics.coverage import Coverage
+from autocast.metrics.ensemble import SpreadSkillRatio
 from autocast.types import TensorBTSC
 from autocast.types.types import TensorBTC
 
@@ -13,7 +14,9 @@ ENSEMBLE_BASE_METRICS = tuple(
     if issubclass(metric_cls, BaseMetric)
 )
 
-ENSEMBLE_ERROR_METRICS = tuple(m for m in ENSEMBLE_BASE_METRICS if m not in [Coverage])
+ENSEMBLE_ERROR_METRICS = tuple(
+    m for m in ENSEMBLE_BASE_METRICS if m not in [Coverage, SpreadSkillRatio]
+)
 
 
 @pytest.mark.parametrize("MetricCls", ENSEMBLE_ERROR_METRICS)
@@ -74,3 +77,26 @@ def test_ensemble_metrics_stateful(MetricCls):
     value = metric.compute()
 
     assert torch.allclose(value, torch.tensor(0.0))
+
+
+def test_spread_skill_ratio_matches_reference_formula():
+    # Shape: (B=1, T=1, S=1, C=1, M=2)
+    # Members: [0, 2], truth: [0]
+    # ensemble_mean = 1 -> skill = sqrt((1 - 0)^2) = 1
+    # unbiased ensemble variance = ((0-1)^2 + (2-1)^2) / (2-1) = 2
+    # spread = sqrt(2)
+    # correction = sqrt((M+1)/M) = sqrt(3/2)
+    # corrected SSR = sqrt(2) * sqrt(3/2) = sqrt(3)
+    y_pred = torch.tensor([[[[[0.0, 2.0]]]]])
+    y_true = torch.tensor([[[[0.0]]]])
+
+    value = SpreadSkillRatio(eps=1e-12)(y_pred, y_true)
+    assert torch.allclose(value, torch.tensor(3.0**0.5), atol=1e-6)
+
+
+def test_spread_skill_ratio_requires_multiple_ensemble_members():
+    y_pred = torch.ones((1, 1, 1, 1, 1))
+    y_true = torch.ones((1, 1, 1, 1))
+
+    with pytest.raises(ValueError, match="at least 2 ensemble members"):
+        SpreadSkillRatio()(y_pred, y_true)
