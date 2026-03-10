@@ -345,7 +345,25 @@ def _build_processor(
         spatial_resolution=proc_kwargs.get("spatial_resolution"),
     )
     target = processor_config.get("_target_") if processor_config else None
+    
+    # Load mask if this is MaskedFlowMatchingProcessor
+    mask = None
+    if "masked_flow_matching" in (target or ""):
+        mask_path = processor_config.get("mask_path")
+        if mask_path:
+            log.info("Loading mask from %s", mask_path)
+            mask = torch.load(mask_path)
+        # Remove mask_path from config (it's only for setup, not for processor init)
+        # Temporarily disable struct mode to allow removal
+        from omegaconf import OmegaConf
+        struct_mode = OmegaConf.is_struct(processor_config)
+        OmegaConf.set_struct(processor_config, False)
+        processor_config.pop("mask_path", None)
+        OmegaConf.set_struct(processor_config, struct_mode)
+    
     filtered_kwargs = _filter_kwargs_for_target(target, proc_kwargs)
+    if mask is not None:
+        filtered_kwargs["mask"] = mask
     return instantiate(processor_config, **filtered_kwargs)
 
 

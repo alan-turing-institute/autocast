@@ -1,0 +1,9 @@
+_target_: autocast.data.datamodule.SpatioTemporalDataModule
+data_path: /bask/projects/v/vjgo8416-ai-phy-sys/qqaa9560/data/seaice/processed_osisaf/osisaf_nh_sic_all
+batch_size: 1
+n_steps_input: 5
+n_steps_output: 1
+stride: 1
+verbose: false
+use_normalization: false
+num_workers: 4

@@ -9,6 +9,10 @@ exploratory/data
 outputs
 lightning_logs
 datasets
+slurm-*.out
+slurm-*.stats
+logs/
+wandb/
 slurm_scripts
 logs
 local_hydra/local_experiment/*.yaml

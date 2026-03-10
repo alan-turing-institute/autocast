@@ -146,8 +146,8 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
         rows_to_plot.append((pred_uq_batch, pred_uq_label, "inferno"))
     total_rows = len(rows_to_plot)
 
-    fig = plt.figure(figsize=(C * 4, total_rows * 4))
-    gs = GridSpec(total_rows, C, figure=fig, hspace=0.3, wspace=0.3)
+    fig = plt.figure(figsize=(C * 6, total_rows * 4))
+    gs = GridSpec(total_rows, C, figure=fig, hspace=0.3, wspace=0.4)
 
     axes = []
     images = []

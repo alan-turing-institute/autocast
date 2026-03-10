@@ -1,0 +1,118 @@
+datamodule:
+  _target_: autocast.data.datamodule.SpatioTemporalDataModule
+  batch_size: 1
+  data_path: /bask/projects/v/vjgo8416-ai-phy-sys/qqaa9560/data/seaice/processed_osisaf_selectedyears
+  n_steps_input: 5
+  n_steps_output: 1
+  num_workers: 4
+  stride: 1
+  use_normalization: false
+  verbose: false
+eval:
+  batch_indices:
+  - 0
+  checkpoint: /bask/projects/v/vjgo8416-ai-phy-sys/qqaa9560/code/autocast/outputs/seaice/epd_flow_pixels_in2_out1_masked__selectedyears/2026-02-13_15-12-29/encoder_processor_decoder.ckpt
+  csv_path: null
+  device: cuda
+  fps: 5
+  free_running_only: true
+  max_rollout_steps: 25
+  metrics:
+  - mse
+  - rmse
+  - vrmse
+  video_dir: outputs/seaice/epd_flow_pixels_in2_out1_masked__selectedyears/2026-02-13_15-12-29/eval_videos
+  video_format: mp4
+  video_sample_index: 0
+experiment_name: seaice/epd_flow_pixels_in2_out1_masked__selectedyears
+logging:
+  wandb:
+    config: {}
+    enabled: true
+    entity: null
+    group: null
+    id: null
+    job_type: seaice/epd_flow_pixels_in2_out1_masked__selectedyears
+    log_model: false
+    mode: online
+    name: null
+    notes: null
+    project: autocast
+    resume: null
+    save_dir: null
+    settings: {}
+    tags: []
+    watch:
+      log: null
+      log_freq: 100
+model:
+  decoder:
+    _target_: autocast.decoders.identity.IdentityDecoder
+  encoder:
+    _target_: autocast.encoders.identity.IdentityEncoder
+    in_channels: 1
+  loss_func:
+    _target_: torch.nn.MSELoss
+  processor:
+    _target_: autocast.processors.masked_flow_matching.MaskedFlowMatchingProcessor
+    backbone:
+      _target_: autocast.nn.unet.TemporalUNetBackbone
+      cond_channels: 1
+      global_cond_channels: null
+      hid_blocks:
+      - 2
+      - 2
+      - 2
+      hid_channels:
+      - 32
+      - 64
+      - 128
+      in_channels: 1
+      include_global_cond: false
+      mod_features: 256
+      n_steps_input: 5
+      n_steps_output: 1
+      out_channels: 1
+      periodic: false
+      spatial: 2
+      temporal_method: none
+    flow_ode_steps: 4
+    mask_path: /bask/projects/v/vjgo8416-ai-phy-sys/qqaa9560/data/seaice/raw_osisaf/land_mask.pt
+    n_channels_out: 1
+    n_steps_output: 1
+  train_in_latent_space: true
+optimizer:
+  betas:
+  - 0.9
+  - 0.99
+  grad_clip: 1
+  learning_rate: 0.0001
+  name: adamw_0.0001_cosine
+  optimizer: adamw
+  scheduler: cosine
+  warmup: 0
+  weight_decay: 0.0
+output:
+  checkpoint_name: encoder_processor_decoder.ckpt
+  checkpoint_path: null
+  save_config: true
+  skip_test: false
+seed: 42
+trainer:
+  _target_: lightning.pytorch.trainer.trainer.Trainer
+  accelerator: gpu
+  callbacks:
+  - _target_: lightning.pytorch.callbacks.ModelCheckpoint
+    every_n_train_steps: 5000
+    filename: step-{step}
+    mode: min
+    monitor: train_loss
+    save_on_train_epoch_end: false
+    save_top_k: 1
+  default_root_dir: null
+  detect_anomaly: false
+  devices: 1
+  enable_checkpointing: true
+  gradient_clip_val: null
+  log_every_n_steps: 10
+  max_epochs: 40
