@@ -1,5 +1,5 @@
 _target_: autocast.data.datamodule.SpatioTemporalDataModule
-data_path: "${oc.env:AUTOCAST_DATASETS,./datasets}/reaction_diffusion"
+data_path: "${oc.env:AUTOCAST_DATASETS,./datasets}/reaction_diffusion_e3e8515"
 batch_size: 16
 n_steps_input: 1
 n_steps_output: 4

@@ -1,5 +1,5 @@
 _target_: autocast.data.datamodule.SpatioTemporalDataModule
-data_path: "${oc.env:AUTOCAST_DATASETS,./datasets}/conditioned_navier_stokes"
+data_path: "${oc.env:AUTOCAST_DATASETS,./datasets}/conditioned_navier_stokes_2d_5e1f575"
 batch_size: 16
 n_steps_input: 1
 n_steps_output: 4
@@ -15,16 +15,16 @@ normalization_stats:
       velocity_y: 0.0
     std:
       u: 1.0
-      velocity_x: 0.0
-      velocity_y: 0.0
+      velocity_x: 1.0
+      velocity_y: 1.0
     mean_delta:
       u: 0.0
       velocity_x: 0.0
       velocity_y: 0.0
     std_delta:
       u: 1.0
-      velocity_x: 0.0
-      velocity_y: 0.0
+      velocity_x: 1.0
+      velocity_y: 1.0
   core_field_names: ["u", "velocity_x", "velocity_y"]
   constant_field_names: []
 num_workers: 0
