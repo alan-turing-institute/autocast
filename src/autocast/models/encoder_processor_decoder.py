@@ -85,6 +85,14 @@ class EncoderProcessorDecoder(
             )
         return batch
 
+    def on_load_checkpoint(self, checkpoint: dict[str, Any]) -> None:
+        # PyTorch can serialise _metadata as a real key in the state_dict rather
+        # than as an OrderedDict private attribute.  Strict load_state_dict then
+        # rejects it as an unexpected key.  Remove it before Lightning loads.
+        state_dict = checkpoint.get("state_dict", checkpoint)
+        if isinstance(state_dict, dict):
+            state_dict.pop("_metadata", None)
+
     def forward(self, batch: Batch) -> TensorBTSC | TensorBTSCM:
         batch = self._apply_input_noise(batch)
         encoded, global_cond = self.encoder_decoder.encoder.encode_with_cond(batch)

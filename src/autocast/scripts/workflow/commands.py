@@ -59,11 +59,10 @@ def build_common_launch_overrides(mode: str, work_dir: Path) -> list[str]:
     return [f"hydra.run.dir={work_dir}"]
 
 
-def dataset_overrides(dataset: str, datasets_root: Path) -> list[str]:
+def dataset_overrides(dataset: str) -> list[str]:
     """Return Hydra overrides selecting *dataset*."""
     return [
         f"datamodule={dataset}",
-        f"datamodule.data_path={datasets_root / dataset}",
     ]
 
 
@@ -231,6 +230,62 @@ def _append_inferred_eval_checkpoint(
     checkpoint_value = _hydra_quote_string(str(inferred_eval_checkpoint))
     effective_overrides.append(f"eval.checkpoint={checkpoint_value}")
     return effective_overrides
+
+
+def _rewrite_resume_override_for_resolved_config(
+    overrides: list[str],
+    resolved_cfg: dict[str, object] | None,
+) -> list[str]:
+    """Adjust resume_from_checkpoint override for resolved-config struct rules."""
+    if not isinstance(resolved_cfg, dict):
+        return overrides
+
+    cfg_resume = resolved_cfg.get("resume_from_checkpoint")
+    if not isinstance(cfg_resume, os.PathLike | str):
+        # Key absent in resolved struct: keep +resume_from_checkpoint= so Hydra can add
+        return overrides
+
+    resolved_cfg_resume = str(Path(cfg_resume).expanduser().resolve())
+    normalized: list[str] = []
+    for override in overrides:
+        candidate = (
+            f"resume_from_checkpoint={override.split('=', 1)[1]}"
+            if override.startswith("+resume_from_checkpoint=")
+            else override
+        )
+        if candidate.startswith("resume_from_checkpoint=") and (
+            candidate.split("=", 1)[1] == resolved_cfg_resume
+        ):
+            continue
+        normalized.append(candidate)
+    return normalized
+
+
+def _apply_dataset_override_for_resolved_config(
+    overrides: list[str],
+    dataset: str | None,
+) -> list[str]:
+    """Map dataset selection to dot-path override for resolved configs."""
+    if dataset is None:
+        return overrides
+
+    stripped = [
+        override for override in overrides if not override.startswith("datamodule=")
+    ]
+    if not contains_override(stripped, "datamodule.data_path="):
+        stripped.append(f"datamodule.data_path={datasets_root() / dataset}")
+    return stripped
+
+
+def _normalize_train_eval_overrides_for_resolved_config(
+    work_dir: str | Path,
+    overrides: list[str],
+    dataset: str | None,
+) -> list[str]:
+    """Apply resolved-config compatibility fixes for train-eval overrides."""
+    resolved_cfg = _load_resolved_config_from_workdir(work_dir)
+    normalized = _rewrite_resume_override_for_resolved_config(overrides, resolved_cfg)
+    return _apply_dataset_override_for_resolved_config(normalized, dataset)
 
 
 def infer_dataset_from_workdir(work_dir: str | Path) -> str | None:
@@ -402,10 +457,11 @@ def build_train_overrides(
     command_overrides = [
         *build_common_launch_overrides(mode=mode, work_dir=final_work_dir),
     ]
-    if dataset is not None:
-        command_overrides.extend(
-            dataset_overrides(dataset=dataset, datasets_root=datasets_root())
-        )
+    if dataset is not None and not (
+        contains_override(overrides, "datamodule=")
+        or contains_override(overrides, "datamodule.data_path=")
+    ):
+        command_overrides.extend(dataset_overrides(dataset=dataset))
 
     if resume_from is not None and not contains_override(
         overrides, "resume_from_checkpoint="
@@ -443,9 +499,7 @@ def build_eval_overrides(
     if not using_resolved_config:
         command_overrides.append("eval=encoder_processor_decoder")
         if dataset is not None:
-            command_overrides.extend(
-                dataset_overrides(dataset=dataset, datasets_root=datasets_root())
-            )
+            command_overrides.extend(dataset_overrides(dataset=dataset))
     else:
         # The resolved config may be stale (saved before current eval defaults
         # were added). Re-inject key EPD eval defaults from the source eval config.
@@ -721,6 +775,20 @@ def train_eval_single_job_command(
         resume_from=resume_from,
         overrides=train_overrides,
     )
+
+    # Keep train-eval consistent with eval/benchmark: when a prior workdir is
+    # provided and contains a resolved config, reuse it so checkpoint resumes
+    # load against the original architecture.
+    if work_dir is not None:
+        command_overrides, using_resolved_config = _with_inferred_resolved_config(
+            work_dir, command_overrides
+        )
+        if using_resolved_config:
+            command_overrides = _normalize_train_eval_overrides_for_resolved_config(
+                work_dir=work_dir,
+                overrides=command_overrides,
+                dataset=dataset,
+            )
 
     if eval_overrides:
         command_overrides.append(

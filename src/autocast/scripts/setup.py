@@ -82,6 +82,31 @@ def _set_if_auto(cfg: DictConfig, key: str, value: Any) -> None:
         cfg[key] = value
 
 
+def _get_module_device(module: nn.Module) -> torch.device | None:
+    """Return a module's device from its first parameter or buffer.
+
+    Returns None if the module has neither parameters nor buffers.
+    """
+    first_param = next(module.parameters(), None)
+    if first_param is not None:
+        return first_param.device
+
+    first_buffer = next(module.buffers(), None)
+    if first_buffer is not None:
+        return first_buffer.device
+
+    return None
+
+
+def _resolve_module_device(*modules: nn.Module) -> torch.device:
+    """Resolve a device from modules, defaulting to CPU when all are parameterless."""
+    for module in modules:
+        module_device = _get_module_device(module)
+        if module_device is not None:
+            return module_device
+    return torch.device("cpu")
+
+
 def _apply_processor_channel_defaults(
     processor_config: DictConfig | None,
     *,
@@ -430,8 +455,8 @@ def setup_epd_model(
 
     example_batch = stats["example_batch"]
     if isinstance(example_batch, Batch):
-        encoder_device = next(encoder.parameters()).device
-        example_batch = batch_to_device(example_batch, encoder_device)
+        module_device = _resolve_module_device(encoder, decoder)
+        example_batch = batch_to_device(example_batch, module_device)
 
     global_cond_channels = None
     if hasattr(encoder, "encode_cond"):

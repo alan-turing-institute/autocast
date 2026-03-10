@@ -1,11 +1,11 @@
 """Train autoencoder defined by Hydra config."""
 
 import logging
-from pathlib import Path
 
 import hydra
 from omegaconf import DictConfig
 
+from autocast.scripts.execution import resolve_hydra_work_dir
 from autocast.scripts.training import train_autoencoder
 from autocast.scripts.utils import get_default_config_path
 
@@ -22,7 +22,7 @@ def main(cfg: DictConfig) -> None:
     logging.basicConfig(level=logging.INFO)
 
     # Work directory is managed by Hydra
-    work_dir = Path.cwd()
+    work_dir = resolve_hydra_work_dir(None)
 
     train_autoencoder(cfg, work_dir)
 
