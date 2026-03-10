@@ -443,6 +443,7 @@ def _extract_training_timer_callback_state(
             key in callback_state
             for key in (
                 "training_runtime_total_s",
+                "training_runtime_elapsed_s",
                 "mean_epoch_s",
                 "min_epoch_s",
                 "max_epoch_s",
@@ -462,13 +463,30 @@ def _training_runtime_rows(
     if callback_state is None:
         return rows
 
-    metric_map = {
-        "training_runtime_total_s": "total_s",
-        "mean_epoch_s": "mean_epoch_s",
-        "min_epoch_s": "min_epoch_s",
-        "max_epoch_s": "max_epoch_s",
-    }
-    for callback_key, metric_name in metric_map.items():
+    # Prefer the final runtime if available. Fall back to an "elapsed so far"
+    # snapshot saved in epoch-end checkpoints (see TrainingTimerCallback docs).
+    total_value = callback_state.get("training_runtime_total_s")
+    elapsed_value = callback_state.get("training_runtime_elapsed_s")
+    runtime_total_s: float | None = None
+    if isinstance(total_value, int | float) and float(total_value) > 0:
+        runtime_total_s = float(total_value)
+    elif isinstance(elapsed_value, int | float) and float(elapsed_value) > 0:
+        runtime_total_s = float(elapsed_value)
+
+    if runtime_total_s is not None:
+        rows.append(
+            _make_metadata_row(
+                category="runtime_train",
+                metric="total_s",
+                value=runtime_total_s,
+            )
+        )
+
+    for callback_key, metric_name in (
+        ("mean_epoch_s", "mean_epoch_s"),
+        ("min_epoch_s", "min_epoch_s"),
+        ("max_epoch_s", "max_epoch_s"),
+    ):
         value = callback_state.get(callback_key)
         if isinstance(value, int | float) and float(value) > 0:
             rows.append(

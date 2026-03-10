@@ -598,17 +598,16 @@ def benchmark_command(
     if not contains_override(effective_overrides, "eval.benchmark.enabled="):
         effective_overrides.append("eval.benchmark.enabled=true")
 
-    benchmark_dir = (Path(work_dir).expanduser().resolve() / "benchmark").resolve()
-    command_overrides = [
-        *build_common_launch_overrides(mode=mode, work_dir=benchmark_dir),
-    ]
-    if not using_resolved_config:
-        command_overrides.append("eval=encoder_processor_decoder")
-        if dataset is not None:
-            command_overrides.extend(dataset_overrides(dataset=dataset))
-    elif dataset is not None:
-        command_overrides.append(f"datamodule.data_path={datasets_root() / dataset}")
-    command_overrides.extend(effective_overrides)
+    # Mirror eval_command behaviour: when running from an inferred resolved config,
+    # re-inject current eval defaults (including benchmark sections) so older runs
+    # created before these defaults existed can still be benchmarked reliably.
+    _eval_dir, command_overrides = build_eval_overrides(
+        mode=mode,
+        dataset=dataset,
+        work_dir=work_dir,
+        overrides=effective_overrides,
+        using_resolved_config=using_resolved_config,
+    )
 
     run_module(BENCHMARK_MODULE, command_overrides, dry_run=dry_run, mode=mode)
 
@@ -650,11 +649,11 @@ def _write_combined_csv(
 
 
 def _write_combined_benchmark_csv(work_dirs: list[str], manifest: Path) -> Path | None:
-    """Concatenate per-run ``benchmark_metrics.csv`` files into one combined CSV."""
+    """Concatenate per-run ``eval/benchmark_metrics.csv`` files into one CSV."""
     return _write_combined_csv(
         work_dirs,
         manifest,
-        input_name="benchmark_metrics.csv",
+        input_name="eval/benchmark_metrics.csv",
         output_name=f"{manifest.stem}_combined.csv",
     )
 

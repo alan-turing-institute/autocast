@@ -366,7 +366,7 @@ def submit_manifest_via_sbatch(
     r"""Submit all *lines* from *manifest* as a **single** SLURM job.
 
     Runs are executed sequentially inside one SLURM allocation.  A combine
-    step is appended that concatenates per-run ``benchmark_metrics.csv``
+    step is appended that concatenates per-run ``eval/benchmark_metrics.csv``
     files into ``<manifest_stem>_combined.csv`` next to the manifest.
 
     SLURM allocation is configured via ``hydra.launcher.*`` overrides, e.g.::
@@ -412,8 +412,10 @@ def submit_manifest_via_sbatch(
         # Each manifest line is a full `benchmark --workdir X ...` invocation.
         # Run it locally (no --mode slurm) inside the allocated node.
         script_lines.append(f"uv run autocast {line}")
-    # Combine step: concatenate per-run benchmark_metrics.csv files next to manifest.
-    csv_paths_repr = repr([str(Path(wd) / "benchmark_metrics.csv") for wd in work_dirs])
+    # Combine step: concatenate per-run eval/benchmark_metrics.csv files.
+    csv_paths_repr = repr(
+        [str(Path(wd) / "eval" / "benchmark_metrics.csv") for wd in work_dirs]
+    )
     combined_path_repr = repr(
         str(manifest.parent.resolve() / f"{manifest.stem}_combined.csv")
     )

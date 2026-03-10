@@ -1217,7 +1217,8 @@ def test_benchmark_manifest_command_local_writes_combined_csv(monkeypatch, tmp_p
     def _fake_benchmark_command(**kwargs):
         wd = kwargs["work_dir"]
         value = 1.0 if wd == str(work_a) else 2.0
-        csv_path = Path(wd) / "benchmark_metrics.csv"
+        csv_path = Path(wd) / "eval" / "benchmark_metrics.csv"
+        csv_path.parent.mkdir(parents=True, exist_ok=True)
         pd.DataFrame([{"work_dir": wd, "metric": value}]).to_csv(csv_path, index=False)
 
     monkeypatch.setattr(
