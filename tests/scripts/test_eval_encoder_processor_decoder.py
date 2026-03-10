@@ -2,12 +2,14 @@
 
 from types import SimpleNamespace
 
+import pytest
 from omegaconf import OmegaConf
 
 from autocast.scripts.eval.encoder_processor_decoder import (
     _resolve_rollout_batch_limit,
     _resolve_rollout_channel_names,
     _split_metric_and_metadata_rows,
+    _training_runtime_rows,
 )
 
 
@@ -89,3 +91,62 @@ def test_resolve_rollout_channel_names_returns_none_on_invalid_output_indices():
     )
 
     assert _resolve_rollout_channel_names(dataset) is None
+
+
+# --- _training_runtime_rows with actual epoch times ---
+
+
+def _make_timed_payload(
+    epoch: int,
+    global_step: int,
+    total_s: float,
+    epoch_times: list[float],
+) -> dict:
+    return {
+        "epoch": epoch,
+        "global_step": global_step,
+        "callbacks": {
+            "TrainingTimerCallback": {
+                "training_runtime_total_s": total_s,
+                "training_runtime_elapsed_s": total_s,
+                "mean_epoch_s": sum(epoch_times) / len(epoch_times),
+                "min_epoch_s": min(epoch_times),
+                "max_epoch_s": max(epoch_times),
+                "epoch_times_s": epoch_times,
+            }
+        },
+    }
+
+
+def test_training_runtime_rows_emit_min_mean_max_when_epoch_times_available():
+    payload = _make_timed_payload(
+        epoch=2, global_step=300, total_s=30.0, epoch_times=[8.0, 10.0, 12.0]
+    )
+    rows = _training_runtime_rows(payload)
+    by_metric = {r["metric"]: r["value"] for r in rows}
+
+    assert by_metric["total_s"] == pytest.approx(30.0)
+    assert by_metric["mean_epoch_s"] == pytest.approx(10.0)
+    assert by_metric["min_epoch_s"] == pytest.approx(8.0)
+    assert by_metric["max_epoch_s"] == pytest.approx(12.0)
+
+
+def test_training_runtime_rows_fall_back_to_elapsed_runtime_when_total_missing():
+    payload = {
+        "callbacks": {
+            "TrainingTimerCallback": {
+                "training_runtime_total_s": None,
+                "training_runtime_elapsed_s": 12.5,
+            }
+        }
+    }
+    rows = _training_runtime_rows(payload)
+    by_metric = {r["metric"]: r["value"] for r in rows}
+    assert by_metric["total_s"] == pytest.approx(12.5)
+
+
+def test_training_runtime_rows_fall_back_to_average_without_epoch_times():
+    payload = {"epoch": 3, "global_step": 400, "training_runtime_total_s": 40.0}
+    rows = _training_runtime_rows(payload)
+
+    assert rows == []

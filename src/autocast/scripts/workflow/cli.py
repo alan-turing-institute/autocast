@@ -6,6 +6,8 @@ import argparse
 from pathlib import Path
 
 from autocast.scripts.workflow.commands import (
+    benchmark_command,
+    benchmark_manifest_command,
     eval_command,
     infer_dataset_from_workdir,
     infer_resume_checkpoint,
@@ -85,6 +87,32 @@ def build_parser() -> argparse.ArgumentParser:
     eval_parser = subparsers.add_parser("eval")
     eval_parser.add_argument("--workdir", required=True)
     _add_common_args(eval_parser)
+
+    # -- benchmark ---------------------------------------------------------
+    benchmark_parser = subparsers.add_parser(
+        "benchmark",
+        description=(
+            "Benchmark a checkpoint (single run) or all entries in a manifest "
+            "(batch). Use --workdir for a single run, --manifest for multiple runs."
+        ),
+    )
+    _bench_target = benchmark_parser.add_mutually_exclusive_group(required=True)
+    _bench_target.add_argument(
+        "--workdir",
+        help="Work directory of a single run to benchmark.",
+    )
+    _bench_target.add_argument(
+        "--manifest",
+        metavar="FILE",
+        help=(
+            "Path to a manifest file with one `benchmark --workdir ...` line per run. "
+            "With --mode local, runs are executed sequentially in this process. "
+            "With --mode slurm, all runs are submitted as a SINGLE SLURM job "
+            "(sequential on one node). Pass hydra.launcher.* overrides to configure "
+            "the SLURM allocation."
+        ),
+    )
+    _add_common_args(benchmark_parser)
 
     # -- train-eval --------------------------------------------------------
     te_parser = subparsers.add_parser("train-eval")
@@ -203,6 +231,28 @@ def main() -> None:
             overrides=combined_overrides,
             dry_run=args.dry_run,
         )
+        return
+
+    if args.command == "benchmark":
+        if args.manifest is not None:
+            benchmark_manifest_command(
+                mode=args.mode,
+                manifest=Path(args.manifest),
+                overrides=combined_overrides,
+                dry_run=args.dry_run,
+            )
+        else:
+            dataset = _resolve_dataset(
+                work_dir=args.workdir,
+                overrides=combined_overrides,
+            )
+            benchmark_command(
+                mode=args.mode,
+                dataset=dataset,
+                work_dir=args.workdir,
+                overrides=combined_overrides,
+                dry_run=args.dry_run,
+            )
         return
 
     if args.command == "train-eval":

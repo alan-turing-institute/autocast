@@ -19,6 +19,18 @@ batch_size: 1
 max_test_batches: null
 max_rollout_batches: null
 
+benchmark:
+  enabled: true
+  batch_size: 1
+  n_warmup: 5
+  n_benchmark: 50
+
+benchmark_rollout:
+  enabled: true
+  batch_size: 1
+  n_warmup: 5
+  n_benchmark: 50
+
 # Coverage requires model.n_members > 1 (ensemble mode)
 n_members: 10
 compute_rollout_coverage: true
