@@ -2,6 +2,13 @@ import pytest
 import torch
 
 from autocast.metrics import ALL_DETERMINISTIC_METRICS
+from autocast.metrics.deterministic import (
+    PowerSpectrumRMSE,
+    PowerSpectrumRMSEHigh,
+    PowerSpectrumRMSELow,
+    PowerSpectrumRMSEMid,
+    PowerSpectrumRMSETail,
+)
 from autocast.types import TensorBTSC
 
 
@@ -31,3 +38,22 @@ def test_spatiotemporal_metrics_stateful(MetricCls):
     value = metric.compute()
 
     assert torch.allclose(value, torch.tensor(0.0))
+
+
+@pytest.mark.parametrize(
+    "MetricCls",
+    [
+        PowerSpectrumRMSE,
+        PowerSpectrumRMSELow,
+        PowerSpectrumRMSEMid,
+        PowerSpectrumRMSEHigh,
+        PowerSpectrumRMSETail,
+    ],
+)
+def test_power_spectrum_rmse_increases_with_spectral_scale(MetricCls):
+    torch.manual_seed(0)
+    y_true: TensorBTSC = torch.randn((1, 1, 8, 8, 1))
+    y_pred: TensorBTSC = 2.0 * y_true
+
+    value = MetricCls()(y_pred, y_true)
+    assert torch.all(value > 0)
