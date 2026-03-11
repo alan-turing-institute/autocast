@@ -6,20 +6,5 @@ n_steps_output: 4
 stride: 1
 verbose: false
 use_normalization: false
-normalization_stats:
-  stats:
-    mean:
-      U: -0.0005
-      V: -0.0001
-    std:
-      U: 0.6308
-      V: 0.6308
-    mean_delta:
-      U: 0.0
-      V: 0.0
-    std_delta:
-      U: 0.6308
-      V: 0.6308
-  core_field_names: [U, V]
-  constant_field_names: []
+normalization_path: ${.data_path}/stats.yml
 num_workers: 0

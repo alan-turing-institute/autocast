@@ -6,29 +6,5 @@ n_steps_output: 4
 stride: 1
 verbose: false
 use_normalization: false
-normalization_stats:
-  # TODO
-  stats:
-    mean:
-      vorticity: 0.0
-      velocity_x: 0.0
-      velocity_y: 0.0
-      rho: 0.0
-    std:
-      vorticity: 1.0
-      velocity_x: 1.0
-      velocity_y: 1.0
-      rho: 1.0
-    mean_delta:
-      vorticity: 0.0
-      velocity_x: 0.0
-      velocity_y: 0.0
-      rho: 0.0
-    std_delta:
-      vorticity: 1.0
-      velocity_x: 1.0
-      velocity_y: 1.0
-      rho: 1.0
-  core_field_names: ["vorticity", "velocity_x", "velocity_y", "rho"]
-  constant_field_names: []
+normalization_path: ${.data_path}/stats.yml
 num_workers: 0

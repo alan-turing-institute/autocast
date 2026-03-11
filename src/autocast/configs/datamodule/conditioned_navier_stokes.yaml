@@ -6,25 +6,5 @@ n_steps_output: 4
 stride: 1
 verbose: false
 use_normalization: false
-normalization_stats:
-  # TODO
-  stats:
-    mean:
-      u: 0.0
-      velocity_x: 0.0
-      velocity_y: 0.0
-    std:
-      u: 1.0
-      velocity_x: 1.0
-      velocity_y: 1.0
-    mean_delta:
-      u: 0.0
-      velocity_x: 0.0
-      velocity_y: 0.0
-    std_delta:
-      u: 1.0
-      velocity_x: 1.0
-      velocity_y: 1.0
-  core_field_names: ["u", "velocity_x", "velocity_y"]
-  constant_field_names: []
+normalization_path: ${.data_path}/stats.yml
 num_workers: 0
