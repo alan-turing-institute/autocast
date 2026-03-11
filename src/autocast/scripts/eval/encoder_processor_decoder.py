@@ -34,7 +34,10 @@ from autocast.scripts.setup import setup_datamodule, setup_epd_model
 from autocast.scripts.utils import get_default_config_path
 from autocast.types.batch import Batch
 from autocast.utils import plot_spatiotemporal_video
-from autocast.utils.plots import compute_metrics_from_dataloader
+from autocast.utils.plots import (
+    compute_metrics_from_dataloader,
+    compute_metrics_per_timestep_from_dataloader,
+)
 
 # Set matmul precision for A100/H100
 torch.set_float32_matmul_precision("high")
@@ -876,6 +879,73 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
             if rollout_metadata_rows:
                 _write_csv(rollout_metadata_rows, rollout_metadata_csv_path)
                 log.info("Wrote rollout metadata to %s", rollout_metadata_csv_path)
+
+            # Per-timestep, per-channel rollout metrics (rows=metrics, cols=timestep)
+            per_timestep_metric_fns: dict[str, Callable[[], Metric]] = {}
+            for name, metric_factory in rollout_metric_fns.items():
+                if name == "coverage":
+                    per_timestep_metric_fns[name] = metric_factory
+                else:
+                    metric_cls = AVAILABLE_METRICS.get(name)
+                    if metric_cls is not None:
+
+                        def _factory(cls: type = metric_cls) -> Metric:
+                            return cls(reduce_all=False)
+
+                        per_timestep_metric_fns[name] = _factory
+
+            if per_timestep_metric_fns:
+                rollout_loader_per_timestep = _limit_batches(
+                    fabric.setup_dataloaders(
+                        datamodule.rollout_test_dataloader(batch_size=eval_batch_size)
+                    ),
+                    max_rollout_batches,
+                )
+                per_timestep_results = compute_metrics_per_timestep_from_dataloader(
+                    dataloader=rollout_loader_per_timestep,
+                    metric_fns=per_timestep_metric_fns,
+                    predict_fn=rollout_predict,
+                    max_timesteps=max_rollout_steps,
+                )
+                if per_timestep_results:
+                    T, C = next(iter(per_timestep_results.values())).shape
+                    timestep_cols = [str(t) for t in range(T)]
+                    timestep_index = pd.Index(timestep_cols)
+                    for c in range(C):
+                        df = pd.DataFrame.from_dict(
+                            {
+                                metric: per_timestep_results[metric][:, c].tolist()
+                                for metric in per_timestep_results
+                            },
+                            orient="index",
+                            columns=timestep_index,
+                        )
+                        out_path = (
+                            csv_path.parent
+                            / f"rollout_metrics_per_timestep_channel_{c}.csv"
+                        )
+                        df.to_csv(out_path)
+                        log.info(
+                            "Wrote rollout metrics per timestep (channel %s) to %s",
+                            c,
+                            out_path,
+                        )
+                    df_all = pd.DataFrame.from_dict(
+                        {
+                            metric: per_timestep_results[metric].mean(axis=1).tolist()
+                            for metric in per_timestep_results
+                        },
+                        orient="index",
+                        columns=timestep_index,
+                    )
+                    out_path_all = (
+                        csv_path.parent / "rollout_metrics_per_timestep_channel_all.csv"
+                    )
+                    df_all.to_csv(out_path_all)
+                    log.info(
+                        "Wrote rollout metrics per timestep (channel all) to %s",
+                        out_path_all,
+                    )
 
     metric_rows, metadata_rows = _split_metric_and_metadata_rows(evaluation_rows)
 
