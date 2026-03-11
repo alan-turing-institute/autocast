@@ -2,14 +2,16 @@
 defaults:
   - override /datamodule: advection_diffusion
   - override /model: autoencoder_dc_large
-  - override /optimizer: adamw
+  - override /optimizer: psgd
   - _self_
 
 experiment_name: ae_dc_large
 
 datamodule:
-  use_normalization: false
-  batch_size: 64
+  # use_normalization: false
+  # batch_size: 64
+  use_normalization: true
+  batch_size: 256
 
 logging:
   wandb:
