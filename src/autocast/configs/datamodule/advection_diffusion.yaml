@@ -6,16 +6,5 @@ n_steps_output: 4
 stride: 1
 verbose: false
 use_normalization: false
-normalization_stats:
-  stats:
-    mean:
-      vorticity: 0.0
-    std:
-      vorticity: 1.0
-    mean_delta:
-      vorticity: 0.0
-    std_delta:
-      vorticity: 1.0
-  core_field_names: [vorticity]
-  constant_field_names: []
+normalization_stats: ${oc.load:"${.data_path}/stats.yml"}
 num_workers: 0

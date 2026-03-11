@@ -6,21 +6,5 @@ n_steps_output: 4
 stride: 1
 verbose: false
 use_normalization: false
-normalization_stats:
-  # TODO
-  stats:
-    mean:
-      density: 0.0
-      phase: 0.0
-    std:
-      density: 1.0
-      phase: 1.0
-    mean_delta:
-      density: 0.0
-      phase: 0.0
-    std_delta:
-      density: 1.0
-      phase: 1.0
-  core_field_names: ["density", "phase"]
-  constant_field_names: []
+normalization_stats: ${oc.load:"${.data_path}/stats.yml"}
 num_workers: 0
