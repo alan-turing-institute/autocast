@@ -6,5 +6,5 @@ n_steps_output: 4
 stride: 1
 verbose: false
 use_normalization: false
-normalization_stats: ${oc.load:"${.data_path}/stats.yml"}
+normalization_path: ${.data_path}/stats.yml
 num_workers: 0
