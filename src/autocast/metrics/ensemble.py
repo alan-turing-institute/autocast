@@ -20,27 +20,29 @@ class BTSCMMetric(BaseMetric[TensorBTSCM, TensorBTSC]):
     Checks input types and shapes and converts to Tensor.
 
     Args:
-        reduce_over: Which dimension to reduce after computing the score.
+        score_dims: Which dimension to compute the score.
             'spatial': average over spatial dims → (B, T, C)
             'temporal': average over temporal dim → (B, S, C)
             None: no reduction → (B, T, S, C)
+            These are the respective dimensions after calling .score()
+            This works in conjunction with the reduce_all parameter that is
+            applied in the compute() method to determine the final output shape
         reduce_all: If True, return scalar by averaging over all non-batch dims
         dist_sync_on_step: Synchronize metric state across processes at each forward()
     """
 
-    def __init__(self, reduce_over: str | None = "spatial", **kwargs):
+    def __init__(self, score_dims: str | None = "spatial", **kwargs):
         super().__init__(**kwargs)
-        if reduce_over not in ("spatial", "temporal", None):
+        if score_dims not in ("spatial", "temporal", None):
             raise ValueError(
-                f"reduce_over must be 'spatial', 'temporal', or None, "
-                f"got {reduce_over!r}"
+                f"score_dims must be 'spatial', 'temporal', or None, got {score_dims!r}"
             )
-        self.reduce_over = reduce_over
+        self.score_dims = score_dims
 
     def score(
         self, y_pred: ArrayLike, y_true: ArrayLike
     ) -> TensorBTC | TensorBSC | TensorBTSC:
-        """Compute metric score, then reduce according to self.reduce_over.
+        """Compute metric score, then reduce according to self.score_dims.
 
         Args:
             y_pred: Predictions of shape (B, T, S, C, M)
@@ -54,11 +56,11 @@ class BTSCMMetric(BaseMetric[TensorBTSCM, TensorBTSC]):
         y_pred_tensor, y_true_tensor = self._check_input(y_pred, y_true)
         result = self._score(y_pred_tensor, y_true_tensor)  # (B, T, S, C)
 
-        if self.reduce_over == "spatial":
+        if self.score_dims == "spatial":
             n_spatial_dims = self._infer_n_spatial_dims(result)
             spatial_dims = tuple(range(2, 2 + n_spatial_dims))
             return result.mean(dim=spatial_dims)  # (B, T, C)
-        if self.reduce_over == "temporal":
+        if self.score_dims == "temporal":
             return result.mean(dim=1)  # (B, S, C)
         return result  # (B, T, S, C)
 

@@ -45,17 +45,14 @@ class BaseMetric(Metric, Generic[TPred, TTrue], ABC):
 
     def update(self, y_pred: ArrayLike, y_true: ArrayLike) -> None:
         """Update metric state with a batch of predictions and targets."""
-        score_spatial = self.score(y_pred, y_true)  # (B, T, S, C) -> (B, T, C)
+        # Compute score for the batch. Shape of score depends on
+        # reduction strategy
+        score = self.score(y_pred, y_true)
 
-        if score_spatial.ndim != 3:
-            raise ValueError(
-                f"score must return shape (B, T, C), got {score_spatial.shape}"
-            )
-
-        batch_size = score_spatial.shape[0]
+        batch_size = score.shape[0]
 
         # Sum over batch dimension: (B, T, C) -> (T, C)
-        score_summed = torch.sum(score_spatial, dim=0)
+        score_summed = torch.sum(score, dim=0)
 
         # Lazily set correct shape for sum_score on first batch
         if not self._initialized:
