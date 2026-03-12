@@ -98,6 +98,26 @@ def _resolve_rollout_batch_limit(eval_cfg: DictConfig) -> int | None:
     return max_rollout_batches
 
 
+def _resolve_rollout_timestep_limit(
+    *,
+    max_rollout_steps: int | None,
+    rollout_stride: int,
+) -> int | None:
+    """Resolve the cap for flattened rollout timesteps.
+
+    Rollout metrics are computed on flattened predictions where each rollout window
+    contributes ``rollout_stride`` timesteps. To cap by simulated lead time,
+    convert max rollout windows to max flattened timesteps.
+    """
+    if max_rollout_steps is None:
+        return None
+    if max_rollout_steps <= 0:
+        return None
+    if rollout_stride <= 0:
+        return None
+    return int(max_rollout_steps) * int(rollout_stride)
+
+
 def _resolve_rollout_channel_names(dataset: Any) -> list[str] | None:
     if dataset is None:
         return None
@@ -895,6 +915,10 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                         per_timestep_metric_fns[name] = _factory
 
             if per_timestep_metric_fns:
+                max_rollout_timesteps = _resolve_rollout_timestep_limit(
+                    max_rollout_steps=max_rollout_steps,
+                    rollout_stride=int(rollout_stride),
+                )
                 rollout_loader_per_timestep = _limit_batches(
                     fabric.setup_dataloaders(
                         datamodule.rollout_test_dataloader(batch_size=eval_batch_size)
@@ -905,7 +929,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                     dataloader=rollout_loader_per_timestep,
                     metric_fns=per_timestep_metric_fns,
                     predict_fn=rollout_predict,
-                    max_timesteps=max_rollout_steps,
+                    max_timesteps=max_rollout_timesteps,
                 )
                 if per_timestep_results:
                     T, C = next(iter(per_timestep_results.values())).shape
