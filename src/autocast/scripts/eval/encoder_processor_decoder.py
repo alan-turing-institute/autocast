@@ -1,28 +1,22 @@
 """Evaluation CLI for encoder-processor-decoder checkpoints."""
 
 import logging
+import os
 from collections import OrderedDict
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
+from time import perf_counter
+from typing import Any
 
 import hydra
 import lightning as L
 import pandas as pd
 import torch
-from omegaconf import DictConfig
+from hydra.core.hydra_config import HydraConfig
+from omegaconf import DictConfig, open_dict
 from torchmetrics import Metric
 
-from autocast.metrics import (
-    MAE,
-    MSE,
-    NMAE,
-    NMSE,
-    NRMSE,
-    RMSE,
-    VMSE,
-    VRMSE,
-    LInfinity,
-)
+from autocast.metrics import MAE, MSE, NMAE, NMSE, NRMSE, RMSE, VMSE, VRMSE, LInfinity
 from autocast.metrics.base import BaseMetric
 from autocast.metrics.coverage import MultiCoverage
 from autocast.metrics.ensemble import CRPS, AlphaFairCRPS, FairCRPS
@@ -72,6 +66,27 @@ def _resolve_video_dir(eval_cfg: DictConfig, work_dir: Path) -> Path:
     if video_dir is not None:
         return Path(video_dir).expanduser().resolve()
     return (work_dir / "videos").resolve()
+
+
+def _limit_batches(dataloader, max_batches: int | None):
+    if max_batches is None or max_batches <= 0:
+        return dataloader
+
+    def _generator():
+        for index, batch in enumerate(dataloader):
+            if index >= max_batches:
+                break
+            yield batch
+
+    return _generator()
+
+
+def _resolve_rollout_batch_limit(eval_cfg: DictConfig) -> int | None:
+    max_test_batches = eval_cfg.get("max_test_batches")
+    max_rollout_batches = eval_cfg.get("max_rollout_batches")
+    if max_rollout_batches is None:
+        return max_test_batches
+    return max_rollout_batches
 
 
 def _build_metrics(metric_names: Sequence[str]) -> dict[str, BaseMetric]:
@@ -289,19 +304,47 @@ def _write_csv(rows: list[dict[str, float | str]], csv_path: Path):
     pd.DataFrame(rows).to_csv(csv_path, index=False)
 
 
-def _load_state_dict(checkpoint_path: Path) -> OrderedDict[str, torch.Tensor]:
+def _is_metadata_row(row: Mapping[str, float | str]) -> bool:
+    return row.get("window") == "meta" or "category" in row
+
+
+def _split_metric_and_metadata_rows(
+    rows: list[dict[str, float | str]],
+) -> tuple[list[dict[str, float | str]], list[dict[str, float | str]]]:
+    metric_rows: list[dict[str, float | str]] = []
+    metadata_rows: list[dict[str, float | str]] = []
+
+    for row in rows:
+        if _is_metadata_row(row):
+            metadata_rows.append(row)
+        else:
+            metric_rows.append(row)
+
+    return metric_rows, metadata_rows
+
+
+def _load_checkpoint_payload(checkpoint_path: Path) -> Mapping[str, Any]:
     checkpoint_real = checkpoint_path.expanduser().resolve()
     checkpoint = torch.load(
         checkpoint_real,
         map_location="cpu",
         weights_only=False,
     )
+    if not isinstance(checkpoint, Mapping):
+        msg = f"Checkpoint {checkpoint_real} does not contain a valid payload."
+        raise TypeError(msg)
+    return checkpoint
+
+
+def _extract_state_dict(
+    checkpoint: Mapping[str, Any],
+) -> OrderedDict[str, torch.Tensor]:
     if isinstance(checkpoint, Mapping):
         state_dict = checkpoint.get("state_dict", checkpoint)
     else:
         state_dict = checkpoint
     if not isinstance(state_dict, Mapping):
-        msg = f"Checkpoint {checkpoint_real} does not contain a valid state_dict."
+        msg = "Checkpoint payload does not contain a valid state_dict."
         raise TypeError(msg)
     if isinstance(state_dict, OrderedDict):
         state_dict = state_dict.copy()
@@ -311,21 +354,293 @@ def _load_state_dict(checkpoint_path: Path) -> OrderedDict[str, torch.Tensor]:
     return state_dict
 
 
+def _make_metadata_row(
+    *,
+    category: str,
+    metric: str,
+    value: float | int,
+    loader: str | None = None,
+    batch_idx: int | str = "all",
+) -> dict[str, float | str]:
+    row: dict[str, float | str] = {
+        "window": "meta",
+        "batch_idx": batch_idx,
+        "category": category,
+        "metric": metric,
+        "value": float(value),
+    }
+    if loader is not None:
+        row["loader"] = loader
+    return row
+
+
+def _parameter_count_rows(
+    model: EncoderProcessorDecoderEnsemble | EncoderProcessorDecoder,
+) -> list[dict[str, float | str]]:
+    def _count(module: torch.nn.Module | None, *, trainable: bool = False) -> int:
+        if module is None:
+            return 0
+        params = module.parameters()
+        if trainable:
+            params = (param for param in params if param.requires_grad)
+        return sum(param.numel() for param in params)
+
+    encoder_module = getattr(getattr(model, "encoder_decoder", None), "encoder", None)
+    decoder_module = getattr(getattr(model, "encoder_decoder", None), "decoder", None)
+    processor_module = getattr(model, "processor", None)
+
+    return [
+        _make_metadata_row(
+            category="params",
+            metric="encoder_total",
+            value=_count(encoder_module),
+        ),
+        _make_metadata_row(
+            category="params",
+            metric="decoder_total",
+            value=_count(decoder_module),
+        ),
+        _make_metadata_row(
+            category="params",
+            metric="processor_total",
+            value=_count(processor_module),
+        ),
+        _make_metadata_row(
+            category="params",
+            metric="model_total",
+            value=_count(model),
+        ),
+        _make_metadata_row(
+            category="params",
+            metric="model_trainable",
+            value=_count(model, trainable=True),
+        ),
+    ]
+
+
+def _extract_training_runtime_total_s(
+    checkpoint_payload: Mapping[str, Any],
+) -> float | None:
+    for key in ("training_runtime_total_s", "train_runtime_total_s", "runtime_total_s"):
+        value = checkpoint_payload.get(key)
+        if isinstance(value, int | float):
+            return float(value)
+
+    callbacks = checkpoint_payload.get("callbacks")
+    if isinstance(callbacks, Mapping):
+        for callback_state in callbacks.values():
+            if not isinstance(callback_state, Mapping):
+                continue
+            for key in ("time_elapsed", "time_elapsed_s", "total_time", "total_time_s"):
+                value = callback_state.get(key)
+                if isinstance(value, int | float):
+                    return float(value)
+
+    return None
+
+
+def _training_runtime_rows(
+    checkpoint_payload: Mapping[str, Any],
+) -> list[dict[str, float | str]]:
+    rows: list[dict[str, float | str]] = []
+
+    epoch_value = checkpoint_payload.get("epoch")
+    global_step_value = checkpoint_payload.get("global_step")
+
+    epochs_completed = (
+        int(epoch_value) + 1
+        if isinstance(epoch_value, int) and epoch_value >= 0
+        else None
+    )
+    global_steps = (
+        int(global_step_value) if isinstance(global_step_value, int) else None
+    )
+
+    if epochs_completed is not None:
+        rows.append(
+            _make_metadata_row(
+                category="runtime_train",
+                metric="epochs_completed",
+                value=epochs_completed,
+            )
+        )
+    if global_steps is not None:
+        rows.append(
+            _make_metadata_row(
+                category="runtime_train",
+                metric="steps_completed",
+                value=global_steps,
+            )
+        )
+
+    total_runtime_s = _extract_training_runtime_total_s(checkpoint_payload)
+    if total_runtime_s is None or total_runtime_s <= 0:
+        return rows
+
+    rows.append(
+        _make_metadata_row(
+            category="runtime_train",
+            metric="total_s",
+            value=total_runtime_s,
+        )
+    )
+
+    if epochs_completed is not None and epochs_completed > 0:
+        rows.append(
+            _make_metadata_row(
+                category="runtime_train",
+                metric="per_epoch_s",
+                value=total_runtime_s / epochs_completed,
+            )
+        )
+
+    if global_steps is not None and global_steps > 0:
+        rows.append(
+            _make_metadata_row(
+                category="runtime_train",
+                metric="per_step_s",
+                value=total_runtime_s / global_steps,
+            )
+        )
+
+    return rows
+
+
+def _eval_runtime_rows(
+    loader_name: str,
+    total_runtime_s: float,
+    per_batch_runtimes_s: Sequence[float],
+) -> list[dict[str, float | str]]:
+    rows: list[dict[str, float | str]] = []
+
+    rows.append(
+        _make_metadata_row(
+            category="runtime_eval",
+            metric="total_s",
+            value=total_runtime_s,
+            loader=loader_name,
+        )
+    )
+
+    batch_count = len(per_batch_runtimes_s)
+    rows.append(
+        _make_metadata_row(
+            category="runtime_eval",
+            metric="batch_count",
+            value=batch_count,
+            loader=loader_name,
+        )
+    )
+
+    if batch_count > 0:
+        rows.append(
+            _make_metadata_row(
+                category="runtime_eval",
+                metric="per_batch_mean_s",
+                value=total_runtime_s / batch_count,
+                loader=loader_name,
+            )
+        )
+        for batch_idx, batch_runtime_s in enumerate(per_batch_runtimes_s):
+            rows.append(
+                _make_metadata_row(
+                    category="runtime_eval",
+                    metric="per_batch_s",
+                    value=batch_runtime_s,
+                    loader=loader_name,
+                    batch_idx=batch_idx,
+                )
+            )
+
+    return rows
+
+
+def _with_batch_timing(
+    predict_fn: Callable,
+    per_batch_runtimes_s: list[float],
+) -> Callable:
+    def wrapped(batch):
+        start_s = perf_counter()
+        result = predict_fn(batch)
+        per_batch_runtimes_s.append(perf_counter() - start_s)
+        return result
+
+    return wrapped
+
+
+def _evaluation_metadata_rows(
+    checkpoint_payload: Mapping[str, Any],
+    model: EncoderProcessorDecoderEnsemble | EncoderProcessorDecoder,
+    test_eval_total_s: float,
+    test_batch_runtimes_s: Sequence[float],
+) -> list[dict[str, float | str]]:
+    rows: list[dict[str, float | str]] = []
+    rows.extend(_training_runtime_rows(checkpoint_payload))
+    rows.extend(
+        _eval_runtime_rows(
+            "test_dataloader",
+            test_eval_total_s,
+            test_batch_runtimes_s,
+        )
+    )
+    rows.extend(_parameter_count_rows(model))
+    return rows
+
+
+def _rollout_metadata_rows(
+    rollout_eval_total_s: float,
+    rollout_batch_runtimes_s: Sequence[float],
+) -> list[dict[str, float | str]]:
+    return _eval_runtime_rows(
+        "rollout_dataloader",
+        rollout_eval_total_s,
+        rollout_batch_runtimes_s,
+    )
+
+
+def _resolve_work_dir(work_dir: Path | None) -> Path:
+    if work_dir is not None:
+        return work_dir
+
+    if HydraConfig.initialized():
+        output_dir = HydraConfig.get().runtime.output_dir
+        if output_dir:
+            return Path(output_dir).resolve()
+
+    return Path.cwd()
+
+
 @hydra.main(
     version_base=None,
     config_path=get_default_config_path(),
     config_name="encoder_processor_decoder",
 )
-def main(cfg: DictConfig) -> None:  # noqa: PLR0912, PLR0915
+def main(cfg: DictConfig) -> None:
     """Entry point for CLI-based evaluation."""
+    run_evaluation(cfg)
+
+
+def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # noqa: PLR0912, PLR0915
+    """Run evaluation using an already-composed config."""
     logging.basicConfig(level=logging.INFO)
 
-    # Work directory is managed by Hydra
-    work_dir = Path.cwd()
+    umask_value = cfg.get("umask")
+    if umask_value is not None:
+        os.umask(int(str(umask_value), 8))
+        log.info("Applied process umask %s", umask_value)
+
+    work_dir = _resolve_work_dir(work_dir)
 
     # Get eval config
     eval_cfg = cfg.get("eval", {})
     eval_batch_size: int = eval_cfg.get("batch_size", 1)
+    max_test_batches = eval_cfg.get("max_test_batches")
+    max_rollout_batches = _resolve_rollout_batch_limit(eval_cfg)
+    log.info(
+        "Batch limits: max_test_batches=%s, max_rollout_batches=%s",
+        max_test_batches,
+        max_rollout_batches,
+    )
 
     # Validate that checkpoint is provided
     checkpoint_path = eval_cfg.get("checkpoint")
@@ -337,6 +652,17 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0912, PLR0915
         )
         raise ValueError(msg)
     checkpoint_path = Path(checkpoint_path)
+    if not checkpoint_path.is_absolute():
+        # i.e. training workdir/eval/checkpoint
+        workdir_candidate = (work_dir / checkpoint_path).resolve()
+        # i.e. training workdir/checkpoint
+        parent_candidate = (work_dir.parent / checkpoint_path).resolve()
+        if workdir_candidate.exists():
+            checkpoint_path = workdir_candidate
+        elif parent_candidate.exists():
+            checkpoint_path = parent_candidate
+        else:
+            checkpoint_path = workdir_candidate
 
     if cfg.get("output", {}).get("save_config"):
         save_resolved_config(cfg, work_dir, filename="resolved_eval_config.yaml")
@@ -347,12 +673,21 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0912, PLR0915
     # Setup datamodule and resolve config
     datamodule, cfg, stats = setup_datamodule(cfg)
 
+    # Override model n_members from eval config if specified
+    if "n_members" in eval_cfg:
+        with open_dict(cfg.model):
+            cfg.model.n_members = eval_cfg.n_members
+        log.info(
+            "Overriding model.n_members with %s from eval config", eval_cfg.n_members
+        )
+
     # Setup Model
-    model = setup_epd_model(cfg, stats)
+    model = setup_epd_model(cfg, stats, datamodule=datamodule)
 
     # Load checkpoint
     log.info("Loading checkpoint from %s", checkpoint_path)
-    state_dict = _load_state_dict(checkpoint_path)
+    checkpoint_payload = _load_checkpoint_payload(checkpoint_path)
+    state_dict = _extract_state_dict(checkpoint_payload)
     load_result = model.load_state_dict(state_dict, strict=True)
     if load_result.missing_keys or load_result.unexpected_keys:
         msg = (
@@ -383,7 +718,10 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0912, PLR0915
 
     model.to(fabric.device)
     model.eval()
-    test_loader = fabric.setup_dataloaders(datamodule.test_dataloader())
+    test_loader = _limit_batches(
+        fabric.setup_dataloaders(datamodule.test_dataloader()),
+        max_test_batches,
+    )
 
     # Evaluation
 
@@ -412,13 +750,19 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0912, PLR0915
     # Use metric_windows from config (apply to all metrics)
     test_windows = _map_windows(eval_cfg.get("metric_windows", None))
 
+    test_batch_runtimes_s: list[float] = []
+    timed_test_predict = _with_batch_timing(model, test_batch_runtimes_s)
+
+    test_eval_start_s = perf_counter()
+
     test_metrics_results, _, test_per_batch_rows = compute_metrics_from_dataloader(
         dataloader=test_loader,
         metric_fns=test_metric_fns,
-        predict_fn=model,
+        predict_fn=timed_test_predict,
         windows=test_windows,
         return_per_batch=True,
     )
+    test_eval_total_s = perf_counter() - test_eval_start_s
 
     # Process and save test metrics
     test_rows = _process_metrics_results(
@@ -427,8 +771,17 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0912, PLR0915
         log_prefix="Test",
         plot_dir=work_dir,
     )
-    _write_csv(test_rows, csv_path)
-    log.info("Wrote metrics CSV to %s", csv_path)
+
+    evaluation_rows: list[dict[str, float | str]] = []
+    evaluation_rows.extend(test_rows)
+    evaluation_rows.extend(
+        _evaluation_metadata_rows(
+            checkpoint_payload=checkpoint_payload,
+            model=model,
+            test_eval_total_s=test_eval_total_s,
+            test_batch_runtimes_s=test_batch_runtimes_s,
+        )
+    )
 
     # Rollouts
     compute_rollout_coverage = eval_cfg.get("compute_rollout_coverage", False)
@@ -442,11 +795,15 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0912, PLR0915
         rollout_stride = data_config.get("rollout_stride") or stats["n_steps_output"]
 
         if batch_indices:
-            _render_rollouts(
-                model,
+            rollout_loader = _limit_batches(
                 fabric.setup_dataloaders(
                     datamodule.rollout_test_dataloader(batch_size=eval_batch_size)
                 ),
+                max_rollout_batches,
+            )
+            _render_rollouts(
+                model,
+                rollout_loader,
                 batch_indices,
                 video_dir,
                 eval_cfg.get("video_sample_index", 0),
@@ -486,21 +843,52 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0912, PLR0915
                 eval_cfg.get("metric_windows_rollout", [(0, 1), (6, 12), (13, 30)])
             )
 
-            # Run the generic rollout metrics evaluation
-            rollout_metrics_per_window, rollout_per_batch_rows = (
-                _evaluate_rollout_metrics(
-                    model,
-                    fabric.setup_dataloaders(
-                        datamodule.rollout_test_dataloader(batch_size=eval_batch_size)
-                    ),
+            rollout_batch_runtimes_s: list[float] = []
+
+            def rollout_predict(batch):
+                preds, trues = model.rollout(
+                    batch,
                     stride=rollout_stride,
                     max_rollout_steps=max_rollout_steps,
                     free_running_only=eval_cfg.get("free_running_only", True),
-                    n_members=n_members,
+                    n_members=n_members if n_members and n_members > 1 else None,
+                )
+                if trues is None:
+                    return None, None
+
+                min_len = min(preds.shape[1], trues.shape[1])
+                return preds[:, :min_len], trues[:, :min_len]
+
+            timed_rollout_predict = _with_batch_timing(
+                rollout_predict,
+                rollout_batch_runtimes_s,
+            )
+
+            rollout_eval_start_s = perf_counter()
+
+            rollout_metrics_loader = _limit_batches(
+                fabric.setup_dataloaders(
+                    datamodule.rollout_test_dataloader(batch_size=eval_batch_size)
+                ),
+                max_rollout_batches,
+            )
+
+            rollout_metrics_per_window, _, rollout_per_batch_rows = (
+                compute_metrics_from_dataloader(
+                    dataloader=rollout_metrics_loader,
                     metric_fns=rollout_metric_fns,
+                    predict_fn=timed_rollout_predict,
                     windows=windows,
+                    return_per_batch=True,
                 )
             )
+            rollout_eval_total_s = perf_counter() - rollout_eval_start_s
+
+            rollout_runtime_rows = _rollout_metadata_rows(
+                rollout_eval_total_s,
+                rollout_batch_runtimes_s,
+            )
+            evaluation_rows.extend(rollout_runtime_rows)
 
             # Process and log results
             rollout_csv_rows = _process_metrics_results(
@@ -512,9 +900,30 @@ def main(cfg: DictConfig) -> None:  # noqa: PLR0912, PLR0915
 
             # Save rollout metrics to CSV
             rollout_csv_path = csv_path.parent / "rollout_metrics.csv"
-            if rollout_csv_rows:
-                _write_csv(rollout_csv_rows, rollout_csv_path)
+            rollout_combined_rows = [*rollout_csv_rows, *rollout_runtime_rows]
+            rollout_metric_rows, rollout_metadata_rows = (
+                _split_metric_and_metadata_rows(rollout_combined_rows)
+            )
+
+            if rollout_metric_rows:
+                _write_csv(rollout_metric_rows, rollout_csv_path)
                 log.info("Wrote rollout metrics to %s", rollout_csv_path)
+
+            rollout_metadata_csv_path = csv_path.parent / "rollout_metadata.csv"
+            if rollout_metadata_rows:
+                _write_csv(rollout_metadata_rows, rollout_metadata_csv_path)
+                log.info("Wrote rollout metadata to %s", rollout_metadata_csv_path)
+
+    metric_rows, metadata_rows = _split_metric_and_metadata_rows(evaluation_rows)
+
+    if metric_rows:
+        _write_csv(metric_rows, csv_path)
+        log.info("Wrote metrics CSV to %s", csv_path)
+
+    metadata_csv_path = csv_path.parent / "evaluation_metadata.csv"
+    if metadata_rows:
+        _write_csv(metadata_rows, metadata_csv_path)
+        log.info("Wrote evaluation metadata to %s", metadata_csv_path)
 
 
 if __name__ == "__main__":

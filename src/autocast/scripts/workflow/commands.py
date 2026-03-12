@@ -1,0 +1,447 @@
+"""Train, eval, and train-eval command implementations."""
+
+from __future__ import annotations
+
+import os
+import subprocess
+from pathlib import Path
+
+from omegaconf import OmegaConf
+
+from autocast.scripts.utils import resolve_work_dir
+from autocast.scripts.workflow.constants import (
+    EVAL_MODULE,
+    TRAIN_EVAL_MODULE,
+    TRAIN_MODULES,
+)
+from autocast.scripts.workflow.helpers import format_command, run_module_command
+from autocast.scripts.workflow.naming import auto_run_name
+from autocast.scripts.workflow.overrides import (
+    contains_override,
+    hydra_string_list_literal,
+)
+from autocast.scripts.workflow.slurm import submit_via_sbatch
+
+# ---------------------------------------------------------------------------
+# Shared building blocks
+# ---------------------------------------------------------------------------
+
+_RESOLVED_CONFIG_STEMS = (
+    "resolved_config",
+    "resolved_autoencoder_config",
+    "resolved_eval_config",
+)
+
+
+def build_common_launch_overrides(mode: str, work_dir: Path) -> list[str]:
+    """Return Hydra overrides for directory routing in *mode*."""
+    if mode == "slurm":
+        return [
+            "hydra.mode=MULTIRUN",
+            "hydra/launcher=slurm",
+            f"hydra.sweep.dir={work_dir}",
+            "hydra.sweep.subdir=.",
+        ]
+    return [f"hydra.run.dir={work_dir}"]
+
+
+def dataset_overrides(dataset: str, datasets_root: Path) -> list[str]:
+    """Return Hydra overrides selecting *dataset*."""
+    return [
+        f"datamodule={dataset}",
+        f"datamodule.data_path={datasets_root / dataset}",
+    ]
+
+
+def datasets_root() -> Path:
+    """Return the root datasets directory (honouring ``AUTOCAST_DATASETS``)."""
+    return Path(os.environ.get("AUTOCAST_DATASETS", Path.cwd() / "datasets"))
+
+
+def _resolved_config_candidates(base: Path) -> list[Path]:
+    return [
+        *(base / f"{stem}.yaml" for stem in _RESOLVED_CONFIG_STEMS),
+        *(base / "run" / f"{stem}.yaml" for stem in _RESOLVED_CONFIG_STEMS),
+    ]
+
+
+def _load_resolved_config_from_workdir(work_dir: str | Path) -> dict | None:
+    base = Path(work_dir).expanduser().resolve()
+    candidates = _resolved_config_candidates(base)
+
+    for candidate in candidates:
+        if not candidate.exists():
+            continue
+        loaded = OmegaConf.to_container(OmegaConf.load(candidate), resolve=True)
+        if isinstance(loaded, dict):
+            return loaded
+
+    return None
+
+
+def infer_hydra_config_from_workdir(work_dir: str | Path) -> tuple[str, str] | None:
+    """Infer ``(--config-path, --config-name)`` from a work directory.
+
+    Prefers ``resolved_config.yaml`` and falls back to other resolved config
+    variants, including those under ``run/``.
+    """
+    base = Path(work_dir).expanduser().resolve()
+    candidates = _resolved_config_candidates(base)
+
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate.parent), candidate.stem
+
+    return None
+
+
+def _has_cli_flag(overrides: list[str], flag: str) -> bool:
+    """Return whether a passthrough CLI flag is already present."""
+    return any(item == flag or item.startswith(f"{flag}=") for item in overrides)
+
+
+def _extract_cli_flag_value(overrides: list[str], flag: str) -> str | None:
+    for index, item in enumerate(overrides):
+        if item == flag and index + 1 < len(overrides):
+            return overrides[index + 1]
+        if item.startswith(f"{flag}="):
+            return item.split("=", 1)[1]
+    return None
+
+
+def _uses_resolved_config(overrides: list[str]) -> bool:
+    config_name = _extract_cli_flag_value(overrides, "--config-name")
+    return config_name in _RESOLVED_CONFIG_STEMS
+
+
+def infer_dataset_from_workdir(work_dir: str | Path) -> str | None:
+    """Infer dataset name from a run work directory.
+
+    Reads resolved config YAML if available and infers dataset from:
+    - ``datamodule`` when it is a string
+    - ``datamodule.data_path`` basename
+    - ``dataset`` top-level key as a fallback
+    """
+    cfg = _load_resolved_config_from_workdir(work_dir)
+    if not isinstance(cfg, dict):
+        return None
+
+    datamodule_cfg = cfg.get("datamodule")
+    if isinstance(datamodule_cfg, str):
+        return datamodule_cfg
+
+    if isinstance(datamodule_cfg, dict):
+        dataset_name = datamodule_cfg.get("dataset")
+        if isinstance(dataset_name, str) and dataset_name:
+            return dataset_name
+
+        data_path = datamodule_cfg.get("data_path")
+        if isinstance(data_path, os.PathLike | str):
+            return Path(data_path).name
+
+    top_level_dataset = cfg.get("dataset")
+    if isinstance(top_level_dataset, str) and top_level_dataset:
+        return top_level_dataset
+
+    return None
+
+
+def infer_resume_checkpoint(kind: str, work_dir: str | Path) -> Path | None:
+    """Infer a restart checkpoint path from *work_dir* for a training kind."""
+    base = Path(work_dir).expanduser().resolve()
+
+    candidates_by_kind = {
+        "ae": ["autoencoder.ckpt", "model.ckpt"],
+        "epd": ["encoder_processor_decoder.ckpt", "model.ckpt"],
+        "processor": ["processor.ckpt", "model.ckpt"],
+    }
+    names = candidates_by_kind.get(kind, ["model.ckpt"])
+
+    candidates = [
+        *(base / name for name in names),
+        *(base / "run" / name for name in names),
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate.resolve()
+
+    return None
+
+
+def infer_eval_checkpoint(work_dir: str | Path) -> Path | None:
+    """Infer an evaluation checkpoint path from *work_dir*."""
+    base = Path(work_dir).expanduser().resolve()
+
+    resolved_cfg = _load_resolved_config_from_workdir(base)
+    candidate_names: list[str] = []
+
+    if isinstance(resolved_cfg, dict):
+        output_cfg = resolved_cfg.get("output")
+        if isinstance(output_cfg, dict):
+            checkpoint_name = output_cfg.get("checkpoint_name")
+            if isinstance(checkpoint_name, str) and checkpoint_name:
+                candidate_names.append(checkpoint_name)
+
+        eval_cfg = resolved_cfg.get("eval")
+        if isinstance(eval_cfg, dict):
+            configured_checkpoint = eval_cfg.get("checkpoint")
+            if isinstance(configured_checkpoint, str) and configured_checkpoint:
+                candidate_names.append(configured_checkpoint)
+
+    candidate_names.extend(["encoder_processor_decoder.ckpt", "model.ckpt"])
+
+    for name in dict.fromkeys(candidate_names):
+        as_path = Path(name).expanduser()
+        if as_path.is_absolute() and as_path.exists():
+            return as_path.resolve()
+
+        for candidate in (base / as_path, base / "run" / as_path):
+            if candidate.exists():
+                return candidate.resolve()
+
+    return None
+
+
+def run_module(
+    module: str,
+    overrides: list[str],
+    dry_run: bool = False,
+    mode: str = "local",
+) -> None:
+    """Execute *module* locally or via SLURM depending on *mode*."""
+    if mode == "slurm":
+        submit_via_sbatch(module, overrides, dry_run=dry_run)
+        return
+
+    cmd = run_module_command(module, overrides)
+    if dry_run:
+        print(f"DRY-RUN: {format_command(cmd)}")
+        return
+    subprocess.run(cmd, check=True)
+
+
+def build_effective_eval_overrides(
+    train_overrides: list[str], eval_overrides: list[str]
+) -> list[str]:
+    """Forward model/datamodule overrides from training to eval.
+
+    Training-only prefixes (``trainer.``, ``optimizer.``, etc.) are excluded so
+    that evaluation model construction stays aligned with training architecture
+    while eval-specific overrides take precedence.
+    """
+    train_only_prefixes = (
+        "trainer.",
+        "+trainer.",
+        "optimizer.",
+        "+optimizer.",
+        "logging.",
+        "+logging.",
+        "hydra.",
+        "+hydra.",
+        "resume_from_checkpoint=",
+        "+resume_from_checkpoint=",
+        "eval.",
+        "+eval.",
+    )
+    forwarded = [o for o in train_overrides if not o.startswith(train_only_prefixes)]
+    return [*forwarded, *eval_overrides]
+
+
+# ---------------------------------------------------------------------------
+# Build override lists
+# ---------------------------------------------------------------------------
+
+
+def build_train_overrides(
+    *,
+    kind: str,
+    mode: str,
+    dataset: str | None,
+    output_base: str,
+    work_dir: str | None,
+    resume_from: str | None,
+    overrides: list[str],
+    run_group: str | None = None,
+    run_id: str | None = None,
+) -> tuple[Path, str, list[str]]:
+    """Resolve workdir/name and build final overrides for a training command."""
+    effective_run_id = run_id
+    if effective_run_id is None and work_dir is None:
+        dataset_for_name = dataset or "default"
+        effective_run_id = auto_run_name(
+            kind=kind, dataset=dataset_for_name, overrides=overrides
+        )
+
+    final_work_dir, resolved_run_id = resolve_work_dir(
+        output_base=output_base,
+        run_group=run_group,
+        run_id=effective_run_id,
+        work_dir=work_dir,
+        prefix=kind,
+    )
+
+    command_overrides = [
+        *build_common_launch_overrides(mode=mode, work_dir=final_work_dir),
+    ]
+    if dataset is not None:
+        command_overrides.extend(
+            dataset_overrides(dataset=dataset, datasets_root=datasets_root())
+        )
+
+    if resume_from is not None and not contains_override(
+        overrides, "resume_from_checkpoint="
+    ):
+        resolved_resume_from = Path(resume_from).expanduser().resolve()
+        command_overrides.append(f"+resume_from_checkpoint={resolved_resume_from}")
+
+    if not contains_override(overrides, "logging.wandb.name="):
+        command_overrides.append(f"logging.wandb.name={resolved_run_id}")
+
+    command_overrides.extend(overrides)
+    return final_work_dir, resolved_run_id, command_overrides
+
+
+def build_eval_overrides(
+    *,
+    mode: str,
+    dataset: str | None,
+    work_dir: str,
+    overrides: list[str],
+    using_resolved_config: bool = False,
+) -> tuple[Path, list[str]]:
+    """Build evaluation overrides from CLI arguments."""
+    base_work_dir = Path(work_dir).expanduser().resolve()
+    eval_dir = (base_work_dir / "eval").resolve()
+
+    command_overrides = [
+        *build_common_launch_overrides(mode=mode, work_dir=eval_dir),
+    ]
+
+    # Defaults-group overrides (eval=..., datamodule=...) are only valid when
+    # using the default Hydra config which contains a ``defaults`` list. A
+    # resolved config already has these sections fully inlined, so we must
+    # skip group selectors and only emit dot-path value overrides.
+    if not using_resolved_config:
+        command_overrides.append("eval=encoder_processor_decoder")
+        if dataset is not None:
+            command_overrides.extend(
+                dataset_overrides(dataset=dataset, datasets_root=datasets_root())
+            )
+    elif dataset is not None:
+        command_overrides.append(f"datamodule.data_path={datasets_root() / dataset}")
+
+    command_overrides.extend(overrides)
+    return eval_dir, command_overrides
+
+
+# ---------------------------------------------------------------------------
+# Top-level commands
+# ---------------------------------------------------------------------------
+
+
+def train_command(
+    *,
+    kind: str,
+    mode: str,
+    dataset: str | None,
+    output_base: str,
+    work_dir: str | None,
+    resume_from: str | None,
+    overrides: list[str],
+    run_group: str | None = None,
+    run_id: str | None = None,
+    dry_run: bool = False,
+) -> tuple[Path, str]:
+    """Run a training command."""
+    final_work_dir, resolved_run_id, command_overrides = build_train_overrides(
+        kind=kind,
+        mode=mode,
+        dataset=dataset,
+        output_base=output_base,
+        run_group=run_group,
+        run_id=run_id,
+        work_dir=work_dir,
+        resume_from=resume_from,
+        overrides=overrides,
+    )
+
+    run_module(TRAIN_MODULES[kind], command_overrides, dry_run=dry_run, mode=mode)
+    return final_work_dir, resolved_run_id
+
+
+def eval_command(
+    *,
+    mode: str,
+    dataset: str | None,
+    work_dir: str,
+    overrides: list[str],
+    dry_run: bool = False,
+) -> None:
+    """Run an evaluation command."""
+    effective_overrides = list(overrides)
+    has_config_name = _has_cli_flag(effective_overrides, "--config-name")
+    has_config_path = _has_cli_flag(effective_overrides, "--config-path")
+
+    using_resolved_config = _uses_resolved_config(effective_overrides)
+    if not (has_config_name or has_config_path):
+        inferred_config = infer_hydra_config_from_workdir(work_dir)
+        if inferred_config is not None:
+            config_path, config_name = inferred_config
+            effective_overrides = [
+                "--config-name",
+                config_name,
+                "--config-path",
+                config_path,
+                *effective_overrides,
+            ]
+            using_resolved_config = True
+
+    if not contains_override(effective_overrides, "eval.checkpoint="):
+        inferred_eval_checkpoint = infer_eval_checkpoint(work_dir)
+        if inferred_eval_checkpoint is not None:
+            effective_overrides.append(f"eval.checkpoint={inferred_eval_checkpoint}")
+
+    _eval_dir, command_overrides = build_eval_overrides(
+        mode=mode,
+        dataset=dataset,
+        work_dir=work_dir,
+        overrides=effective_overrides,
+        using_resolved_config=using_resolved_config,
+    )
+
+    run_module(EVAL_MODULE, command_overrides, dry_run=dry_run, mode=mode)
+
+
+def train_eval_single_job_command(
+    *,
+    mode: str,
+    dataset: str | None,
+    output_base: str,
+    work_dir: str | None,
+    resume_from: str | None,
+    train_overrides: list[str],
+    eval_overrides: list[str],
+    run_group: str | None = None,
+    run_id: str | None = None,
+    dry_run: bool = False,
+) -> tuple[Path, str]:
+    """Run train→eval in a single Hydra job."""
+    final_work_dir, resolved_run_id, command_overrides = build_train_overrides(
+        kind="epd",
+        mode=mode,
+        dataset=dataset,
+        output_base=output_base,
+        run_group=run_group,
+        run_id=run_id,
+        work_dir=work_dir,
+        resume_from=resume_from,
+        overrides=train_overrides,
+    )
+
+    if eval_overrides:
+        command_overrides.append(
+            f"train_eval.eval_overrides={hydra_string_list_literal(eval_overrides)}"
+        )
+
+    run_module(TRAIN_EVAL_MODULE, command_overrides, dry_run=dry_run, mode=mode)
+    return final_work_dir, resolved_run_id

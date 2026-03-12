@@ -20,11 +20,13 @@ class ChannelsLast(Decoder):
         output_channels: int
             Number of output channels (C).
         time_steps: int
-            Number of time steps (T) that were merged with channels in encoding.
+            Number of time steps (T) to be unmerged from the channel dimension to
+            reconstruct the time dimension. Default is 1.
         """
         super().__init__()
         self.output_channels = output_channels
         self.time_steps = time_steps
+        self.latent_channels = output_channels * time_steps
 
     def decode(self, z: TensorBCTS) -> TensorBTSC:
         """Decode the latent tensor by rearranging channels and time.

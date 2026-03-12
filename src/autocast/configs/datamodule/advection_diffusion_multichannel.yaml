@@ -1,0 +1,36 @@
+_target_: autocast.data.datamodule.SpatioTemporalDataModule
+data_path: "${oc.env:AUTOCAST_DATASETS,./datasets}/advection_diffusion_multichannel"
+batch_size: 16
+n_steps_input: 1
+n_steps_output: 4
+stride: 1
+verbose: false
+use_normalization: false
+normalization_stats:
+  stats:
+    # From train dataset: [1.2446e-01,  1.1308e-11,  3.0174e-12, -3.7369e-11]
+    mean:
+      vorticity: 1.2446e-01
+      velocity_x: 1.1308e-11
+      velocity_y: 3.0174e-12
+      streamfunction: -3.7369e-11
+    std:
+      # From train dataset: [0.1931, 0.1767, 0.1904, 0.3918]
+      vorticity: 0.1931
+      velocity_x: 0.1767
+      velocity_y: 0.1904
+      streamfunction: 0.3918
+    # Placeholders for delta
+    mean_delta:
+      vorticity: 0.0
+      velocity_x: 0.0
+      velocity_y: 0.0
+      streamfunction: 0.0
+    std_delta:
+      vorticity: 1.0
+      velocity_x: 1.0
+      velocity_y: 1.0
+      streamfunction: 1.0
+  core_field_names: ["vorticity", "velocity_x", "velocity_y", "streamfunction"]
+  constant_field_names: []
+num_workers: 0

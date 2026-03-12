@@ -1,0 +1,32 @@
+# @package _global_
+defaults:
+  - override /datamodule: advection_diffusion_multichannel_64_64
+  - override /encoder@model.encoder: permute_concat
+  - override /decoder@model.decoder: channels_last
+  - override /processor@model.processor: vit_large
+  - _self_
+
+experiment_name: epd_crps_vit_large_ps4_64
+
+datamodule:
+  use_normalization: false
+  batch_size: 64
+
+optimizer:
+  learning_rate: 0.0002
+
+model:
+  train_in_latent_space: false
+  n_members: 10
+  loss_func:
+    _target_: autocast.losses.ensemble.CRPSLoss
+  encoder:
+    with_constants: true
+  processor:
+    hidden_dim: 256
+    n_noise_channels: 4096
+    spatial_resolution: [64, 64]
+    patch_size: 4
+
+trainer:
+  max_epochs: 300

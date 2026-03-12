@@ -7,13 +7,15 @@ import torch
 from hydra.utils import get_class, instantiate
 from omegaconf import DictConfig, OmegaConf
 
-from autocast.data.datamodule import SpatioTemporalDataModule
+from autocast.data.datamodule import SpatioTemporalDataModule, TheWellDataModule
 from autocast.types import Batch
 
 log = logging.getLogger(__name__)
 
 
-def build_datamodule(config: DictConfig) -> SpatioTemporalDataModule:
+def build_datamodule(
+    config: DictConfig,
+) -> SpatioTemporalDataModule | TheWellDataModule:
     """Build the DataModule from the Hydra configuration."""
     # Configure datamodule
     dm_cfg = config.get("datamodule")
@@ -67,6 +69,7 @@ def build_datamodule(config: DictConfig) -> SpatioTemporalDataModule:
         )
     if "dtype" in dm_container:
         dm_container["dtype"] = _as_dtype(dm_container["dtype"])
+
     return instantiate(dm_container)
 
 

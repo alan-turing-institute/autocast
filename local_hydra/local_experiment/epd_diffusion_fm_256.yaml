@@ -1,0 +1,29 @@
+# @package _global_
+defaults:
+  - override /datamodule: advection_diffusion_multichannel_64_64
+  - override /encoder@model.encoder: dc_deep_256_v2
+  - override /decoder@model.decoder: dc_deep_256_v2
+  - override /processor@model.processor: flow_matching_vit
+  - _self_
+
+experiment_name: epd_diffusion_fm_256
+
+datamodule:
+  use_normalization: false
+  batch_size: 128
+
+logging:
+  wandb:
+    enabled: true
+
+optimizer:
+  learning_rate: 0.0002
+
+model:
+  train_in_latent_space: true
+  processor:
+    backbone:
+      hid_channels: 256
+
+trainer:
+  max_epochs: 720
