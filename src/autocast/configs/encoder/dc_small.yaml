@@ -1,0 +1,15 @@
+_target_: autocast.encoders.dc.DCEncoder
+in_channels: ${oc.select:datamodule.n_channels, null}
+out_channels: 8
+hid_channels: [64, 128, 256]
+hid_blocks: [2, 2, 2]
+kernel_size: 3
+stride: 2
+spatial: 2
+norm: layer
+pixel_shuffle: false
+periodic: false
+dropout: 0.05
+ffn_out_scale: 1.0e-2
+saturation: softclip2
+saturation_scale: 5.0

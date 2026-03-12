@@ -40,6 +40,22 @@ class AELoss(nn.Module):
         return total_loss
 
 
+class VMSELoss(nn.Module):
+    """Variance-scaled MSE loss reduced over batch/time/channels."""
+
+    def __init__(self, eps: float = 1e-2) -> None:
+        super().__init__()
+        self.eps = eps
+
+    def forward(self, y_pred: TensorBTSC, y_true: TensorBTSC) -> Tensor:
+        n_spatial_dims = y_pred.ndim - 3
+        spatial_dims = tuple(range(-n_spatial_dims - 1, -1))
+        mse = (y_pred - y_true).pow(2).mean(dim=spatial_dims)
+        variance = y_true.std(dim=spatial_dims).pow(2)
+        vmse = mse / (variance + self.eps)
+        return vmse.mean()
+
+
 class AE(EncoderDecoder):
     """Autoencoder Model."""
 

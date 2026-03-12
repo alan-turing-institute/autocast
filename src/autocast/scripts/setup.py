@@ -21,7 +21,7 @@ from autocast.models.encoder_processor_decoder_ensemble import (
 )
 from autocast.models.processor import ProcessorModel
 from autocast.models.processor_ensemble import ProcessorModelEnsemble
-from autocast.scripts.data import build_datamodule
+from autocast.scripts.data import batch_to_device, build_datamodule
 from autocast.types.batch import Batch, EncodedBatch
 
 log = logging.getLogger(__name__)
@@ -80,6 +80,31 @@ def _set_if_auto(cfg: DictConfig, key: str, value: Any) -> None:
     """Set config key to value if current value is None or 'auto'."""
     if key in cfg and cfg.get(key) in (None, "auto"):
         cfg[key] = value
+
+
+def _get_module_device(module: nn.Module) -> torch.device | None:
+    """Return a module's device from its first parameter or buffer.
+
+    Returns None if the module has neither parameters nor buffers.
+    """
+    first_param = next(module.parameters(), None)
+    if first_param is not None:
+        return first_param.device
+
+    first_buffer = next(module.buffers(), None)
+    if first_buffer is not None:
+        return first_buffer.device
+
+    return None
+
+
+def _resolve_module_device(*modules: nn.Module) -> torch.device:
+    """Resolve a device from modules, defaulting to CPU when all are parameterless."""
+    for module in modules:
+        module_device = _get_module_device(module)
+        if module_device is not None:
+            return module_device
+    return torch.device("cpu")
 
 
 def _apply_processor_channel_defaults(
@@ -231,6 +256,23 @@ def setup_autoencoder_components(
         decoder_config,
     )
     encoder = instantiate(encoder_config)
+
+    if (
+        decoder_config
+        and "in_channels" in decoder_config
+        and decoder_config.get("in_channels") in (None, "auto")
+    ):
+        if hasattr(encoder, "latent_channels") and isinstance(
+            encoder.latent_channels, int
+        ):
+            decoder_config["in_channels"] = encoder.latent_channels
+        else:
+            msg = (
+                "decoder.in_channels is auto, but encoder latent_channels is not "
+                "available."
+            )
+            raise ValueError(msg)
+
     decoder = instantiate(decoder_config)
     checkpoint = config.get("autoencoder_checkpoint")
 
@@ -411,9 +453,14 @@ def setup_epd_model(
     log.info("Latent channel in count: %s", latent_channels)
     log.info("Latent channel out count: %s", latent_channels_out)
 
+    example_batch = stats["example_batch"]
+    if isinstance(example_batch, Batch):
+        module_device = _resolve_module_device(encoder, decoder)
+        example_batch = batch_to_device(example_batch, module_device)
+
     global_cond_channels = None
     if hasattr(encoder, "encode_cond"):
-        cond = encoder.encode_cond(stats["example_batch"])
+        cond = encoder.encode_cond(example_batch)
         if cond is not None:
             global_cond_channels = cond.shape[-1]
     log.info(
@@ -438,7 +485,7 @@ def setup_epd_model(
     steps_in = stats["n_steps_input"]
     steps_out = stats["n_steps_output"]
     with torch.no_grad():
-        encoded_example, _ = encoder.encode_with_cond(stats["example_batch"])
+        encoded_example, _ = encoder.encode_with_cond(example_batch)
     latent_spatial_resolution = tuple(encoded_example.shape[2:-1])
 
     # TODO: currently "out_channels" and "in_channels" are only used in the config for

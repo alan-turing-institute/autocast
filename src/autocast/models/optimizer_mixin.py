@@ -2,6 +2,7 @@
 
 from typing import Any
 
+import heavyball
 import torch
 from lightning.pytorch.utilities.types import OptimizerLRScheduler
 from omegaconf import DictConfig, OmegaConf
@@ -53,8 +54,79 @@ class OptimizerMixin(nn.Module):
             return torch.optim.SGD(
                 self.parameters(), lr=lr, momentum=momentum, weight_decay=weight_decay
             )
+        if optimizer_name == "psgd":
+            return self._create_psgd(cfg, lr=lr, weight_decay=float(weight_decay))
+
         msg = f"Unsupported optimizer: {optimizer_name}"
         raise ValueError(msg)
+
+    def _create_psgd(
+        self, cfg: DictConfig | dict[str, Any], *, lr: float, weight_decay: float
+    ) -> torch.optim.Optimizer:
+        betas = cfg.get("betas", None)
+        if betas is not None:
+            beta = float(next(iter(betas)))
+        else:
+            beta = float(cfg.get("beta", 0.9))
+
+        precondition_frequency = cfg.get("precondition_frequency", None)
+        if precondition_frequency is not None:
+            precondition_frequency = float(precondition_frequency)
+            preconditioner_update_probability = 1.0 / max(precondition_frequency, 1.0)
+        else:
+            preconditioner_update_probability = cfg.get(
+                "preconditioner_update_probability", None
+            )
+
+        precondition_frequency_decay = cfg.get("precondition_frequency_decay", None)
+        if precondition_frequency_decay is not None:
+            # HeavyBall uses a stochastic update schedule when enabled; we keep this
+            # value in config for parity with LOLA but do not currently map it.
+            pass
+
+        precondition_size = cfg.get("precondition_size", None)
+        if precondition_size is not None:
+            max_size_triangular = int(precondition_size)
+        else:
+            max_size_triangular = int(cfg.get("max_size_triangular", 2048))
+
+        min_ndim_triangular = int(cfg.get("min_ndim_triangular", 2))
+        memory_save_mode = cfg.get("memory_save_mode", None)
+        momentum_into_precond_update = bool(
+            cfg.get("momentum_into_precond_update", True)
+        )
+        warmup_steps = int(cfg.get("warmup", 1))
+        merge_dims = bool(cfg.get("merge_dims", False))
+        split = bool(cfg.get("split", False))
+        store_triu_as_line = bool(cfg.get("store_triu_as_line", True))
+        foreach = bool(cfg.get("foreach", True))
+        q_dtype = str(cfg.get("q_dtype", "float32"))
+        stochastic_schedule = bool(cfg.get("stochastic_schedule", True))
+        storage_dtype = str(cfg.get("storage_dtype", "float32"))
+        precond_init_scale = float(cfg.get("precond_init_scale", 1.0))
+        precond_lr = float(cfg.get("precond_lr", 0.1))
+
+        return heavyball.ForeachPSGDKron(
+            self.parameters(),
+            lr=lr,
+            beta=beta,
+            weight_decay=weight_decay,
+            preconditioner_update_probability=preconditioner_update_probability,
+            max_size_triangular=max_size_triangular,
+            min_ndim_triangular=min_ndim_triangular,
+            memory_save_mode=memory_save_mode,
+            momentum_into_precond_update=momentum_into_precond_update,
+            warmup_steps=warmup_steps,
+            merge_dims=merge_dims,
+            split=split,
+            store_triu_as_line=store_triu_as_line,
+            foreach=foreach,
+            q_dtype=q_dtype,
+            stochastic_schedule=stochastic_schedule,
+            storage_dtype=storage_dtype,
+            precond_init_scale=precond_init_scale,
+            precond_lr=precond_lr,
+        )
 
     def _create_scheduler(
         self, optimizer: torch.optim.Optimizer, cfg: dict[str, Any]

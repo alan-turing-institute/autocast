@@ -31,6 +31,7 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     colorbar_mode: Literal["none", "row", "column", "all"] = "none",
     colorbar_mode_uq: Literal["none", "row"] = "none",
     channel_names: list[str] | None = None,
+    preserve_aspect: bool = False,
 ):
     """Create a video comparing ground truth and predicted spatiotemporal time series.
 
@@ -63,6 +64,10 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
         - "all": one colorbar shared across the first two rows.
     channel_names: list[str] | None
         Optional list of channel names for titles.
+    preserve_aspect: bool
+        If True, resize each subplot panel to match the spatial WxH ratio of the
+        data so the image fills the panel without distortion. If False (default),
+        panels are square and the image is stretched to fill via ``aspect='auto'``.
 
     Returns
     -------
@@ -83,7 +88,7 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     coverage_batch = coverage[batch_idx] if coverage is not None else None
 
     # Extract dims and move to CPU
-    T, *_, C = true_batch.shape
+    T, *spatial, C = true_batch.shape
     true_batch = true_batch.detach().cpu().numpy()
     if pred_batch is not None:
         pred_batch = pred_batch.detach().cpu().numpy()
@@ -154,11 +159,40 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
 
     total_rows = len(rows_to_plot)
 
-    fig = plt.figure(figsize=(C * 4, total_rows * 4))
+    _base = 4.0
+    if preserve_aspect and len(spatial) == 2:
+        W, H = spatial
+        # _to_imshow_frame does NOT transpose by default, so imshow receives (W, H):
+        # rows = W (figure height), cols = H (figure width).
+        # Scale the smaller base dimension and cap to avoid excessively large figures.
+        if H > 0 and W > 0:
+            ratio = W / H  # rows / cols
+            if ratio >= 1:  # taller than wide
+                panel_width = _base
+                panel_height = min(_base * ratio, 3 * _base)
+            else:  # wider than tall
+                panel_height = _base
+                panel_width = min(_base / ratio, 3 * _base)
+        else:
+            panel_width = _base
+            panel_height = _base
+    else:
+        panel_width = _base
+        panel_height = _base
+
+    fig = plt.figure(figsize=(C * panel_width, total_rows * panel_height))
     gs = GridSpec(total_rows, C, figure=fig, hspace=0.3, wspace=0.3)
 
     axes = []
     images = []
+
+    def _to_imshow_frame(
+        frame: np.ndarray | Tensor, transpose: bool = False
+    ) -> np.ndarray:
+        frame = np.asarray(frame)
+        if transpose:
+            frame = np.asarray(rearrange(frame, "s1 s2 -> s2 s1"))
+        return frame
 
     for row_idx, (data, row_label, row_cmap) in enumerate(rows_to_plot):
         row_axes = []
@@ -170,7 +204,7 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
             if data is None:
                 msg = "Data for plotting cannot be None."
                 raise ValueError(msg)
-            frame0 = rearrange(data[0, :, :, ch], "w h -> h w")
+            frame0 = _to_imshow_frame(data[0, :, :, ch])
 
             # Row indices: 0=true, 1=pred, 2=diff, 3=pred_uq (if present),
             # 4=coverage (if both present) or 3=coverage (if only coverage)
@@ -232,13 +266,15 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
 
     def update(frame):
         for ch in range(C):
-            images[0][ch].set_array(true_batch[frame, :, :, ch])
+            images[0][ch].set_array(_to_imshow_frame(true_batch[frame, :, :, ch]))
             if pred_batch is not None:
-                images[1][ch].set_array(pred_batch[frame, :, :, ch])
+                images[1][ch].set_array(_to_imshow_frame(pred_batch[frame, :, :, ch]))
             if diff_batch is not None:
-                images[2][ch].set_array(diff_batch[frame, :, :, ch])
+                images[2][ch].set_array(_to_imshow_frame(diff_batch[frame, :, :, ch]))
             if pred_uq_batch is not None:
-                images[3][ch].set_array(pred_uq_batch[frame, :, :, ch])
+                images[3][ch].set_array(
+                    _to_imshow_frame(pred_uq_batch[frame, :, :, ch])
+                )
             if coverage_batch is not None:
                 coverage_row = 4 if pred_uq_batch is not None else 3
                 images[coverage_row][ch].set_array(coverage_batch[frame, :, :, ch])

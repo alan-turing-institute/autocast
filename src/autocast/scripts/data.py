@@ -119,4 +119,9 @@ def batch_to_device(batch: Batch, device: torch.device) -> Batch:
             if batch.constant_fields is not None
             else None
         ),
+        boundary_conditions=(
+            batch.boundary_conditions.to(device)
+            if batch.boundary_conditions is not None
+            else None
+        ),
     )

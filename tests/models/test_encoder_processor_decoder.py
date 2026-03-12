@@ -1,3 +1,5 @@
+import typing
+
 import lightning as L
 import pytest
 import torch
@@ -32,6 +34,24 @@ class TinyProcessor(Processor[EncodedBatch]):
     def loss(self, batch: EncodedBatch) -> Tensor:
         outputs = self(batch.encoded_inputs)
         return self.loss_func(outputs, batch.encoded_output_fields)
+
+
+def test_on_load_checkpoint_removes_metadata_from_state_dict():
+    checkpoint = {
+        "state_dict": {"_metadata": {"x": 1}, "layer.weight": torch.tensor(1)}
+    }
+    EncoderProcessorDecoder.on_load_checkpoint(
+        typing.cast(EncoderProcessorDecoder, object()), checkpoint
+    )
+    assert "_metadata" not in checkpoint["state_dict"]
+
+
+def test_on_load_checkpoint_handles_missing_state_dict_key():
+    checkpoint = {"_metadata": {"x": 1}, "layer.weight": torch.tensor(1)}
+    EncoderProcessorDecoder.on_load_checkpoint(
+        typing.cast(EncoderProcessorDecoder, object()), checkpoint
+    )
+    assert "_metadata" not in checkpoint
 
 
 def test_encoder_processor_decoder_training_step_runs(make_toy_batch, dummy_loader):
