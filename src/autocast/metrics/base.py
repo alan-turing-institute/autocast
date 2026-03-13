@@ -5,7 +5,7 @@ from typing import Generic, TypeVar
 import torch
 from torchmetrics import Metric
 
-from autocast.types import TensorBTC
+from autocast.types import TensorBSC, TensorBTC, TensorBTSC
 from autocast.types.types import ArrayLike, Tensor
 
 TPred = TypeVar("TPred", bound=Tensor)
@@ -37,9 +37,13 @@ class BaseMetric(Metric, Generic[TPred, TTrue], ABC):
     ) -> tuple[TPred, TTrue]: ...
 
     @abc.abstractmethod
-    def _score(self, y_pred: TPred, y_true: TTrue) -> TensorBTC: ...
+    def _score(
+        self, y_pred: TPred, y_true: TTrue
+    ) -> TensorBTC | TensorBSC | TensorBTSC: ...
 
-    def score(self, y_pred: ArrayLike, y_true: ArrayLike) -> TensorBTC:
+    def score(
+        self, y_pred: ArrayLike, y_true: ArrayLike
+    ) -> TensorBTC | TensorBSC | TensorBTSC:
         y_pred_tensor, y_true_tensor = self._check_input(y_pred, y_true)
         return self._score(y_pred_tensor, y_true_tensor)
 
