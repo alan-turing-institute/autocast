@@ -1,3 +1,5 @@
+from typing import Literal
+
 import numpy as np
 import torch
 from einops import rearrange, repeat
@@ -31,7 +33,12 @@ class BTSCMMetric(BaseMetric[TensorBTSCM, TensorBTSC]):
         dist_sync_on_step: Synchronize metric state across processes at each forward()
     """
 
-    def __init__(self, score_dims: Literal["spatial", "temporal"] | None = "spatial", reduce_all: bool=True, dist_sync_on_step: bool=False) :
+    def __init__(
+        self,
+        score_dims: Literal["spatial", "temporal"] | None = "spatial",
+        reduce_all: bool = True,
+        dist_sync_on_step: bool = False,
+    ):
         super().__init__(reduce_all=reduce_all, dist_sync_on_step=dist_sync_on_step)
         if score_dims not in ("spatial", "temporal", None):
             raise ValueError(
