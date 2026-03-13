@@ -30,7 +30,6 @@ dev = [
     "pytest>=9.0.1",
     "pytest-cov>=7.0.0",
     "ruff==0.14.4",
-    "pyright==1.1.407",
     "pre-commit>=4.4.0",
 ]
 
@@ -43,10 +42,6 @@ evaluate_encoder_processor_decoder = "autocast.scripts.eval.encoder_processor_de
 [build-system]
 requires = ["uv_build>=0.8.15,<0.9.0"]
 build-backend = "uv_build"
-
-[tool.pyright]
-venvPath = "."
-venv = ".venv"
 
 [tool.ruff]
 line-length = 88
@@ -128,3 +123,10 @@ filterwarnings = [
     "ignore:GPU available but not used:UserWarning",
     "ignore:The '.*_dataloader' does not have many workers:UserWarning",
 ]
+
+[dependency-groups]
+dev = [
+    "ty>=0.0.21",
+]
+
+[tool.ty.rules]
