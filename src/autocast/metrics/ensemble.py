@@ -31,8 +31,8 @@ class BTSCMMetric(BaseMetric[TensorBTSCM, TensorBTSC]):
         dist_sync_on_step: Synchronize metric state across processes at each forward()
     """
 
-    def __init__(self, score_dims: str | None = "spatial", **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, score_dims: Literal["spatial", "temporal"] | None = "spatial", reduce_all: bool=True, dist_sync_on_step: bool=False) :
+        super().__init__(reduce_all=reduce_all, dist_sync_on_step=dist_sync_on_step)
         if score_dims not in ("spatial", "temporal", None):
             raise ValueError(
                 f"score_dims must be 'spatial', 'temporal', or None, got {score_dims!r}"
