@@ -1,5 +1,5 @@
 from collections.abc import Callable, Iterable
-from typing import Literal
+from typing import Literal, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -10,7 +10,7 @@ from matplotlib.colors import Normalize, TwoSlopeNorm
 from matplotlib.gridspec import GridSpec
 from torchmetrics import Metric
 
-from autocast.metrics.coverage import MultiCoverage
+from autocast.metrics.coverage import Coverage, MultiCoverage
 from autocast.types import Tensor, TensorBTSC, TensorBTSCM
 
 
@@ -404,6 +404,136 @@ def compute_metrics_from_dataloader(
         tensors = (torch.cat(all_preds, dim=0), torch.cat(all_trues, dim=0))
 
     return metrics_per_window, tensors, per_batch_rows
+
+
+def compute_metrics_per_timestep_from_dataloader(  # noqa: PLR0912, PLR0915
+    dataloader: Iterable,
+    metric_fns: dict[str, Callable[[], Metric]],
+    predict_fn: Callable,
+    max_timesteps: int | None = None,
+) -> dict[str, np.ndarray]:
+    """
+    Compute metrics at each rollout timestep, batch-averaged, with per-channel values.
+
+    For each timestep t, metrics are computed on the slice (B, t:t+1, ...) and
+    averaged over batches. Returns one (T, C) array per metric (T = timesteps,
+    C = channels). MultiCoverage is expanded to one (T, C) per coverage level
+    (e.g. coverage_0.05, coverage_0.10, ...) so reliability curves can be built
+    per timestep.
+
+    Parameters
+    ----------
+    dataloader: Iterable
+        DataLoader that yields batches (e.g. rollout test dataloader).
+    metric_fns: dict[str, Callable[[], Metric]]
+        Metric factory functions. Metrics should return (1, C) when updated with
+        (B, 1, S, C) and reduce_all=False (deterministic metrics) or be
+        MultiCoverage (expanded to one key per alpha).
+    predict_fn: Callable
+        (batch) -> (preds, trues) returning tensors of shape (B, T, S, C) or
+        (B, T, S, C, M). Returns None, None to skip a batch.
+    max_timesteps: int | None, optional
+        Cap the number of timesteps (uses min over batches otherwise).
+
+    Returns
+    -------
+    dict[str, np.ndarray]
+        Keys are metric names (and coverage_0.05, coverage_0.10, ... for
+        MultiCoverage). Values are arrays of shape (T, C), batch-averaged.
+    """
+    with torch.no_grad():
+        # First pass: get min rollout length T and n_channels
+        T_min: int | None = None
+        n_channels: int | None = None
+        for batch in dataloader:
+            result = predict_fn(batch)
+            if result is None:
+                continue
+            preds, trues = (
+                result
+                if isinstance(result, tuple) and len(result) == 2
+                else (result, getattr(batch, "output_fields", None))
+            )
+            if not (
+                isinstance(preds, torch.Tensor) and isinstance(trues, torch.Tensor)
+            ):
+                continue
+            preds, trues = preds.cpu(), trues.cpu()
+            T_batch = min(preds.shape[1], trues.shape[1])
+            if max_timesteps is not None:
+                T_batch = min(T_batch, max_timesteps)
+            if T_min is None:
+                T_min = T_batch
+                n_channels = int(trues.shape[-1])
+            else:
+                T_min = min(T_min, T_batch)
+        if T_min is None or n_channels is None or T_min == 0:
+            return {}
+
+        # One metric instance per (timestep, metric_name)
+        metrics_per_t: list[dict[str, Metric]] = [
+            {name: fn() for name, fn in metric_fns.items()} for _ in range(T_min)
+        ]
+
+        for batch in dataloader:
+            result = predict_fn(batch)
+            if result is None:
+                continue
+            preds, trues = (
+                result
+                if isinstance(result, tuple) and len(result) == 2
+                else (result, getattr(batch, "output_fields", None))
+            )
+            if not (
+                isinstance(preds, torch.Tensor) and isinstance(trues, torch.Tensor)
+            ):
+                continue
+            preds, trues = preds.cpu(), trues.cpu()
+            T_batch = min(preds.shape[1], trues.shape[1], T_min)
+            if max_timesteps is not None:
+                T_batch = min(T_batch, max_timesteps)
+            for t in range(T_batch):
+                p = preds[:, t : t + 1]
+                t_slice = trues[:, t : t + 1]
+                if p.numel() == 0 or t_slice.numel() == 0:
+                    continue
+                for metric in metrics_per_t[t].values():
+                    metric.update(p, t_slice)
+
+    # Build result: dict[str, (T, C)]
+    out: dict[str, np.ndarray] = {}
+    for name in metric_fns:
+        first_metric = metrics_per_t[0][name]
+        if isinstance(first_metric, MultiCoverage):
+            levels = first_metric.coverage_levels
+            for i, level in enumerate(levels):
+                key = f"coverage_{level}"
+                rows = []
+                for t in range(T_min):
+                    metric_t = cast(MultiCoverage, metrics_per_t[t][name])
+                    coverage_metric = cast(Coverage, metric_t.metrics[i])
+                    val = coverage_metric.compute()
+                    if val.dim() == 0:
+                        val = val.unsqueeze(0).unsqueeze(0).expand(1, n_channels)
+                    elif val.dim() == 1:
+                        val = val.unsqueeze(0)
+                    rows.append(val.cpu().numpy())
+                out[key] = np.concatenate(rows, axis=0)
+        else:
+            rows = []
+            for t in range(T_min):
+                val = metrics_per_t[t][name].compute()
+                if isinstance(val, torch.Tensor):
+                    if val.dim() == 0:
+                        val = val.unsqueeze(0).unsqueeze(0).expand(1, n_channels)
+                    elif val.dim() == 1:
+                        val = val.unsqueeze(0)
+                    val = val.cpu().numpy()
+                else:
+                    val = np.full((1, n_channels), float(val))
+                rows.append(val)
+            out[name] = np.concatenate(rows, axis=0)
+    return out
 
 
 def compute_coverage_scores_from_dataloader(

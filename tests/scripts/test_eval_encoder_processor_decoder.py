@@ -8,6 +8,7 @@ from omegaconf import OmegaConf
 from autocast.scripts.eval.encoder_processor_decoder import (
     _resolve_rollout_batch_limit,
     _resolve_rollout_channel_names,
+    _resolve_rollout_timestep_limit,
     _split_metric_and_metadata_rows,
     _training_runtime_rows,
 )
@@ -33,6 +34,25 @@ def test_resolve_rollout_batch_limit_prefers_explicit_rollout_limit():
     )
 
     assert _resolve_rollout_batch_limit(eval_cfg) == 5
+
+
+def test_resolve_rollout_timestep_limit_multiplies_by_stride():
+    assert (
+        _resolve_rollout_timestep_limit(max_rollout_steps=50, rollout_stride=4) == 200
+    )
+
+
+def test_resolve_rollout_timestep_limit_returns_none_for_invalid_inputs():
+    assert (
+        _resolve_rollout_timestep_limit(max_rollout_steps=None, rollout_stride=4)
+        is None
+    )
+    assert (
+        _resolve_rollout_timestep_limit(max_rollout_steps=0, rollout_stride=4) is None
+    )
+    assert (
+        _resolve_rollout_timestep_limit(max_rollout_steps=10, rollout_stride=0) is None
+    )
 
 
 def test_split_metric_and_metadata_rows_separates_meta_rows():
