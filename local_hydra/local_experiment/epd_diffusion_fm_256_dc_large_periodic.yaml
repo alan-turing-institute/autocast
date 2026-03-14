@@ -4,6 +4,7 @@ defaults:
   - override /encoder@model.encoder: dc_large
   - override /decoder@model.decoder: dc_large
   - override /processor@model.processor: flow_matching_vit
+  - override /backbone@model.processor.backbone: vit
   - _self_
 
 experiment_name: epd_diffusion_fm_256
@@ -19,8 +20,7 @@ model:
     periodic: true
   train_in_latent_space: true
   processor:
-    backbone:
-      hid_channels: 256
+    flow_ode_steps: 50
 
 logging:
   wandb:
