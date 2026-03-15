@@ -160,7 +160,9 @@ class MultiCoverage(Metric):
         for metric in self.metrics:
             assert isinstance(metric, Coverage)
             val = metric.compute()
-            val_c = val.mean(dim=0).cpu().numpy()  # (C,)
+            # Ensure channel coverage is always represented as 1D, even if a
+            # degenerate shape collapses to a scalar.
+            val_c = np.atleast_1d(val.mean(dim=0).cpu().numpy())  # (C,)
             observed_channels.append(val_c)
             observed_means.append(val_c.mean().item())
 
@@ -183,7 +185,7 @@ class MultiCoverage(Metric):
             )
 
         cmap = plt.get_cmap(cmap_str)  # cmap for each channel
-        n_channels = observed_channels[0].shape[0]
+        n_channels = observed_arr.shape[1]
         for c in range(n_channels):
             color = cmap(c / n_channels) if n_channels > 1 else "blue"
             label = f"Ch {c}" if n_channels <= 10 else None
@@ -252,6 +254,9 @@ class MultiCoverage(Metric):
             "coverage_level": levels,
             "observed_mean": observed_means,
         }
+
+        if observed_channels.ndim == 1:
+            observed_channels = observed_channels[:, None]
 
         # Add per-channel columns
         n_channels = observed_channels.shape[1]
