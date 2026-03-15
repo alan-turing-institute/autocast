@@ -1,5 +1,6 @@
 import torch
 from einops import repeat
+import numpy as np
 
 from autocast.metrics.coverage import Coverage, MultiCoverage
 from autocast.types import TensorBTSC
@@ -95,3 +96,17 @@ def test_coverage_multichannel_multitime():
     value = Coverage(coverage_level=0.8, reduce_all=True)(y_pred, y_true)
     # expected: average of 1.0, 0.0, 0.0, 0.0 -> 0.25
     assert torch.allclose(value, torch.tensor(0.25))
+
+
+def test_multicoverage_save_csv_handles_1d_observed_channels(tmp_path):
+    metric = MultiCoverage(coverage_levels=[0.5, 0.9])
+
+    metric._save_csv_data(
+        save_path=tmp_path / "coverage.png",
+        levels=[0.5, 0.9],
+        observed_means=[0.6, 0.8],
+        observed_channels=np.array([0.6, 0.8]),
+    )
+
+    csv_path = tmp_path / "coverage.csv"
+    assert csv_path.exists()
