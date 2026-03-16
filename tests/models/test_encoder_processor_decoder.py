@@ -28,9 +28,7 @@ class TinyProcessor(Processor[EncodedBatch]):
     def forward(self, x: Tensor) -> Tensor:
         return self.conv(x)
 
-    def map(
-        self, x: Tensor, global_cond: Tensor | None = None
-    ) -> Tensor:  # noqa: ARG002
+    def map(self, x: Tensor, global_cond: Tensor | None = None) -> Tensor:
         return self(x)
 
     def loss(self, batch: EncodedBatch) -> Tensor:
