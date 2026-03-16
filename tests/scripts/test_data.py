@@ -32,13 +32,29 @@ def test_batch_to_device_moves_optional_fields():
     assert result.constant_fields.device.type == "cpu"
 
 
+def test_batch_to_device_moves_boundary_conditions():
+    """Ensure boundary_conditions are moved to the target device."""
+    batch = Batch(
+        input_fields=torch.randn(2, 2, 8, 8, 3),
+        output_fields=torch.randn(2, 2, 8, 8, 3),
+        constant_scalars=None,
+        constant_fields=None,
+        boundary_conditions=torch.randn(2, 4),
+    )
+    result = batch_to_device(batch, torch.device("cpu"))
+    assert result.boundary_conditions is not None
+    assert result.boundary_conditions.device.type == "cpu"
+
+
 def test_batch_to_device_preserves_none_fields():
     batch = Batch(
         input_fields=torch.randn(2, 2, 8, 8, 3),
         output_fields=torch.randn(2, 2, 8, 8, 3),
         constant_scalars=None,
         constant_fields=None,
+        boundary_conditions=None,
     )
     result = batch_to_device(batch, torch.device("cpu"))
     assert result.constant_scalars is None
     assert result.constant_fields is None
+    assert result.boundary_conditions is None

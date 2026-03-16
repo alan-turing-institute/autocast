@@ -1,9 +1,18 @@
+from typing import Literal
+
 import numpy as np
 import torch
 from einops import rearrange, repeat
 
 from autocast.metrics.base import BaseMetric
-from autocast.types import ArrayLike, Tensor, TensorBTC, TensorBTSC, TensorBTSCM
+from autocast.types import (
+    ArrayLike,
+    Tensor,
+    TensorBSC,
+    TensorBTC,
+    TensorBTSC,
+    TensorBTSCM,
+)
 
 
 class BTSCMMetric(BaseMetric[TensorBTSCM, TensorBTSC]):
@@ -13,9 +22,54 @@ class BTSCMMetric(BaseMetric[TensorBTSCM, TensorBTSC]):
     Checks input types and shapes and converts to Tensor.
 
     Args:
+        score_dims: Which dimension to compute the score.
+            'spatial': average over spatial dims → (B, T, C)
+            'temporal': average over temporal dim → (B, S, C)
+            None: no reduction → (B, T, S, C)
+            These are the respective dimensions after calling .score()
+            This works in conjunction with the reduce_all parameter that is
+            applied in the compute() method to determine the final output shape
         reduce_all: If True, return scalar by averaging over all non-batch dims
         dist_sync_on_step: Synchronize metric state across processes at each forward()
     """
+
+    def __init__(
+        self,
+        score_dims: Literal["spatial", "temporal"] | None = "spatial",
+        reduce_all: bool = True,
+        dist_sync_on_step: bool = False,
+    ):
+        super().__init__(reduce_all=reduce_all, dist_sync_on_step=dist_sync_on_step)
+        if score_dims not in ("spatial", "temporal", None):
+            raise ValueError(
+                f"score_dims must be 'spatial', 'temporal', or None, got {score_dims!r}"
+            )
+        self.score_dims = score_dims
+
+    def score(
+        self, y_pred: ArrayLike, y_true: ArrayLike
+    ) -> TensorBTC | TensorBSC | TensorBTSC:
+        """Compute metric score, then reduce according to self.score_dims.
+
+        Args:
+            y_pred: Predictions of shape (B, T, S, C, M)
+            y_true: Ground truth of shape (B, T, S, C)
+
+        Returns
+        -------
+            Tensor of shape (B, T, C) if reduce_over='spatial',
+            (B, S, C) if reduce_over='temporal', or (B, T, S, C) if None.
+        """
+        y_pred_tensor, y_true_tensor = self._check_input(y_pred, y_true)
+        result = self._score(y_pred_tensor, y_true_tensor)  # (B, T, S, C)
+
+        if self.score_dims == "spatial":
+            n_spatial_dims = self._infer_n_spatial_dims(result)
+            spatial_dims = tuple(range(2, 2 + n_spatial_dims))
+            return result.mean(dim=spatial_dims)  # (B, T, C)
+        if self.score_dims == "temporal":
+            return result.mean(dim=1)  # (B, S, C)
+        return result  # (B, T, S, C)
 
     def _check_input(
         self, y_pred: ArrayLike, y_true: ArrayLike
@@ -114,12 +168,12 @@ class CRPS(BTSCMMetric):
 
     name: str = "crps"
 
-    def _score(self, y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTC:
+    def _score(self, y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTSC:
         """
-        Compute CRPS reduced over spatial dims only.
+        Compute CRPS score.
 
         Expected input shape: (B, T, S, C, M)
-        Expected output shape: (B, T, C)
+        Expected output shape: (B, T, S, C)
 
         Args:
             y_pred: Predictions of shape (B, T, S, C, M)
@@ -127,14 +181,9 @@ class CRPS(BTSCMMetric):
 
         Returns
         -------
-            Tensor of shape (B, T, C) with CRPS scores
+            Tensor of shape (B, T, S, C) with CRPS scores
         """
-        crps = _common_crps_score(y_pred, y_true, adjustment_factor=1.0)
-        # Reduce over spatial dimensions: (B, T, S, C) -> (B, T, C)
-        n_spatial_dims = self._infer_n_spatial_dims(crps)
-        crps_reduced = crps.mean(dim=tuple(range(2, 2 + n_spatial_dims)))
-
-        return crps_reduced
+        return _common_crps_score(y_pred, y_true, adjustment_factor=1.0)
 
 
 class FairCRPS(BTSCMMetric):
@@ -149,12 +198,12 @@ class FairCRPS(BTSCMMetric):
 
     name: str = "fcrps"
 
-    def _score(self, y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTC:
+    def _score(self, y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTSC:
         """
-        Compute CRPS reduced over spatial dims only.
+        Compute fCRPS score.
 
         Expected input shape: (B, T, S, C, M)
-        Expected output shape: (B, T, C)
+        Expected output shape: (B, T, S, C)
 
         Args:
             y_pred: Predictions of shape (B, T, S, C, M)
@@ -162,19 +211,12 @@ class FairCRPS(BTSCMMetric):
 
         Returns
         -------
-            Tensor of shape (B, T, C) with CRPS scores
+            Tensor of shape (B, T, S, C) with fCRPS scores
         """
-        # Expand y_true to match ensemble dimension
         n_ensemble = y_pred.shape[-1]
-        crps = _common_crps_score(
+        return _common_crps_score(
             y_pred, y_true, adjustment_factor=n_ensemble / (n_ensemble - 1)
         )
-
-        # Reduce over spatial dimensions: (B, T, S, C) -> (B, T, C)
-        n_spatial_dims = self._infer_n_spatial_dims(crps)
-        crps_reduced = crps.mean(dim=tuple(range(2, 2 + n_spatial_dims)))
-
-        return crps_reduced
 
 
 def _alpha_fair_crps_score(
@@ -260,9 +302,9 @@ class AlphaFairCRPS(BTSCMMetric):
         assert 0 < alpha <= 1, "alpha must be in (0,1]"
         self.alpha = alpha
 
-    def _score(self, y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTC:
+    def _score(self, y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTSC:
         """
-        Compute afCRPS reduced over spatial dims only.
+        Compute afCRPS score.
 
         Args:
             y_pred: (B, T, S, C, M)
@@ -270,12 +312,6 @@ class AlphaFairCRPS(BTSCMMetric):
 
         Returns
         -------
-            afCRPS: (B, T, C)
+            afCRPS: (B, T, S, C)
         """
-        afcrps = _alpha_fair_crps_score(y_pred, y_true, self.alpha)
-
-        # Reduce over spatial dimensions: (B, T, S, C) -> (B, T, C)
-        n_spatial_dims = self._infer_n_spatial_dims(afcrps)
-        afcrps_reduced = afcrps.mean(dim=tuple(range(2, 2 + n_spatial_dims)))
-
-        return afcrps_reduced
+        return _alpha_fair_crps_score(y_pred, y_true, self.alpha)

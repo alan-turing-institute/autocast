@@ -1,5 +1,6 @@
 import pytest
 import torch
+from the_well.data.normalization import ZScoreNormalization
 from torch import nn
 
 from autocast.decoders.channels_last import ChannelsLast
@@ -147,3 +148,46 @@ def test_epd_ensemble_loss_fallback():
 
     loss, _ = model.loss(batch)
     assert loss.ndim == 0
+
+
+def test_epd_ensemble_denormalize_tensor_handles_member_axis():
+    """Denormalization should preserve ensemble member axis and denorm channels."""
+    n_members = 3
+    batch_size = 2
+    t_steps = 2
+    w, h = 8, 8
+    channels = 2
+
+    encoder = PermuteConcat(
+        in_channels=channels, n_steps_input=t_steps, with_constants=False
+    )
+    encoder_output_channels = channels * t_steps
+    decoder = ChannelsLast(output_channels=channels, time_steps=t_steps)
+    encoder_decoder = EncoderDecoder(encoder=encoder, decoder=decoder)
+    processor = SimpleLatentProcessor(
+        in_channels=encoder_output_channels, out_channels=encoder_output_channels
+    )
+
+    model = EncoderProcessorDecoderEnsemble(
+        encoder_decoder=encoder_decoder,
+        processor=processor,
+        n_members=n_members,
+    )
+
+    model.norm = ZScoreNormalization(
+        stats={
+            "mean": {"U": 2.0, "V": 4.0},
+            "std": {"U": 1.0, "V": 2.0},
+            "mean_delta": {"U": 0.0, "V": 0.0},
+            "std_delta": {"U": 0.1, "V": 0.2},
+        },
+        core_field_names=["U", "V"],
+        core_constant_field_names=[],
+    )
+
+    preds = torch.zeros(batch_size, t_steps, w, h, channels, n_members)
+    denorm = model.denormalize_tensor(preds)
+
+    assert denorm.shape == preds.shape
+    assert torch.allclose(denorm[..., 0, :], torch.full_like(denorm[..., 0, :], 2.0))
+    assert torch.allclose(denorm[..., 1, :], torch.full_like(denorm[..., 1, :], 4.0))

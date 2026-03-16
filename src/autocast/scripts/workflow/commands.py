@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import json
 import os
+import shlex
 import subprocess
 from pathlib import Path
 
+import pandas as pd
 from omegaconf import OmegaConf
 
-from autocast.scripts.utils import resolve_work_dir
+from autocast.scripts.utils import get_default_config_path, resolve_work_dir
 from autocast.scripts.workflow.constants import (
+    BENCHMARK_MODULE,
     EVAL_MODULE,
     TRAIN_EVAL_MODULE,
     TRAIN_MODULES,
@@ -20,7 +24,10 @@ from autocast.scripts.workflow.overrides import (
     contains_override,
     hydra_string_list_literal,
 )
-from autocast.scripts.workflow.slurm import submit_via_sbatch
+from autocast.scripts.workflow.slurm import (
+    submit_manifest_via_sbatch,
+    submit_via_sbatch,
+)
 
 # ---------------------------------------------------------------------------
 # Shared building blocks
@@ -31,6 +38,13 @@ _RESOLVED_CONFIG_STEMS = (
     "resolved_autoencoder_config",
     "resolved_eval_config",
 )
+
+
+def _hydra_quote_string(value: str) -> str:
+    # CLI overrides are passed as argv items (not through a shell), so we only
+    # escape embedded double quotes and keep native path separators untouched.
+    escaped = value.replace('"', '\\"')
+    return f'"{escaped}"'
 
 
 def build_common_launch_overrides(mode: str, work_dir: Path) -> list[str]:
@@ -45,11 +59,10 @@ def build_common_launch_overrides(mode: str, work_dir: Path) -> list[str]:
     return [f"hydra.run.dir={work_dir}"]
 
 
-def dataset_overrides(dataset: str, datasets_root: Path) -> list[str]:
+def dataset_overrides(dataset: str) -> list[str]:
     """Return Hydra overrides selecting *dataset*."""
     return [
         f"datamodule={dataset}",
-        f"datamodule.data_path={datasets_root / dataset}",
     ]
 
 
@@ -63,6 +76,67 @@ def _resolved_config_candidates(base: Path) -> list[Path]:
         *(base / f"{stem}.yaml" for stem in _RESOLVED_CONFIG_STEMS),
         *(base / "run" / f"{stem}.yaml" for stem in _RESOLVED_CONFIG_STEMS),
     ]
+
+
+def _flatten_overrides(prefix: str, value: object) -> list[str]:
+    """Flatten nested mappings/lists into Hydra dot-path overrides."""
+    if isinstance(value, dict):
+        overrides: list[str] = []
+        for key, nested in value.items():
+            if not isinstance(key, str):
+                continue
+            if key == "defaults":
+                continue
+            overrides.extend(_flatten_overrides(f"{prefix}.{key}", nested))
+        return overrides
+    return [f"{prefix}={json.dumps(value)}"]
+
+
+def _path_exists_in_mapping(mapping: object, path: str) -> bool:
+    """Return whether dot-path exists in a nested dict-like mapping."""
+    current = mapping
+    for key in path.split("."):
+        if not isinstance(current, dict) or key not in current:
+            return False
+        current = current[key]
+    return True
+
+
+def _struct_safe_overrides(
+    overrides: list[str], resolved_cfg: dict[str, object] | None
+) -> list[str]:
+    """Prefix with '+' when override key is missing under Hydra struct configs."""
+    if not isinstance(resolved_cfg, dict):
+        return overrides
+
+    adjusted: list[str] = []
+    for override in overrides:
+        if override.startswith("+") or "=" not in override:
+            adjusted.append(override)
+            continue
+
+        key, value = override.split("=", 1)
+        if _path_exists_in_mapping(resolved_cfg, key):
+            adjusted.append(override)
+        else:
+            adjusted.append(f"+{key}={value}")
+
+    return adjusted
+
+
+def _resolved_eval_default_overrides() -> list[str]:
+    """Return eval.* overrides from the live eval config for stale resolved configs."""
+    cfg_path = (
+        Path(get_default_config_path()) / "eval" / "encoder_processor_decoder.yaml"
+    )
+    if not cfg_path.exists():
+        return []
+
+    loaded = OmegaConf.to_container(OmegaConf.load(cfg_path), resolve=True)
+    if not isinstance(loaded, dict):
+        return []
+
+    return _flatten_overrides("eval", loaded)
 
 
 def _load_resolved_config_from_workdir(work_dir: str | Path) -> dict | None:
@@ -112,6 +186,106 @@ def _extract_cli_flag_value(overrides: list[str], flag: str) -> str | None:
 def _uses_resolved_config(overrides: list[str]) -> bool:
     config_name = _extract_cli_flag_value(overrides, "--config-name")
     return config_name in _RESOLVED_CONFIG_STEMS
+
+
+def _with_inferred_resolved_config(
+    work_dir: str | Path,
+    overrides: list[str],
+) -> tuple[list[str], bool]:
+    """Add inferred resolved-config flags when no explicit config flags are set."""
+    effective_overrides = list(overrides)
+    has_config_name = _has_cli_flag(effective_overrides, "--config-name")
+    has_config_path = _has_cli_flag(effective_overrides, "--config-path")
+
+    using_resolved_config = _uses_resolved_config(effective_overrides)
+    if not (has_config_name or has_config_path):
+        inferred_config = infer_hydra_config_from_workdir(work_dir)
+        if inferred_config is not None:
+            config_path, config_name = inferred_config
+            effective_overrides = [
+                "--config-name",
+                config_name,
+                "--config-path",
+                config_path,
+                *effective_overrides,
+            ]
+            using_resolved_config = True
+
+    return effective_overrides, using_resolved_config
+
+
+def _append_inferred_eval_checkpoint(
+    work_dir: str | Path,
+    overrides: list[str],
+) -> list[str]:
+    """Append inferred eval.checkpoint override if one is not already provided."""
+    effective_overrides = list(overrides)
+    if contains_override(effective_overrides, "eval.checkpoint="):
+        return effective_overrides
+
+    inferred_eval_checkpoint = infer_eval_checkpoint(work_dir)
+    if inferred_eval_checkpoint is None:
+        return effective_overrides
+
+    checkpoint_value = _hydra_quote_string(str(inferred_eval_checkpoint))
+    effective_overrides.append(f"eval.checkpoint={checkpoint_value}")
+    return effective_overrides
+
+
+def _rewrite_resume_override_for_resolved_config(
+    overrides: list[str],
+    resolved_cfg: dict[str, object] | None,
+) -> list[str]:
+    """Adjust resume_from_checkpoint override for resolved-config struct rules."""
+    if not isinstance(resolved_cfg, dict):
+        return overrides
+
+    cfg_resume = resolved_cfg.get("resume_from_checkpoint")
+    if not isinstance(cfg_resume, os.PathLike | str):
+        # Key absent in resolved struct: keep +resume_from_checkpoint= so Hydra can add
+        return overrides
+
+    resolved_cfg_resume = str(Path(cfg_resume).expanduser().resolve())
+    normalized: list[str] = []
+    for override in overrides:
+        candidate = (
+            f"resume_from_checkpoint={override.split('=', 1)[1]}"
+            if override.startswith("+resume_from_checkpoint=")
+            else override
+        )
+        if candidate.startswith("resume_from_checkpoint=") and (
+            candidate.split("=", 1)[1] == resolved_cfg_resume
+        ):
+            continue
+        normalized.append(candidate)
+    return normalized
+
+
+def _apply_dataset_override_for_resolved_config(
+    overrides: list[str],
+    dataset: str | None,
+) -> list[str]:
+    """Map dataset selection to dot-path override for resolved configs."""
+    if dataset is None:
+        return overrides
+
+    stripped = [
+        override for override in overrides if not override.startswith("datamodule=")
+    ]
+    if not contains_override(stripped, "datamodule.data_path="):
+        stripped.append(f"datamodule.data_path={datasets_root() / dataset}")
+    return stripped
+
+
+def _normalize_train_eval_overrides_for_resolved_config(
+    work_dir: str | Path,
+    overrides: list[str],
+    dataset: str | None,
+) -> list[str]:
+    """Apply resolved-config compatibility fixes for train-eval overrides."""
+    resolved_cfg = _load_resolved_config_from_workdir(work_dir)
+    normalized = _rewrite_resume_override_for_resolved_config(overrides, resolved_cfg)
+    return _apply_dataset_override_for_resolved_config(normalized, dataset)
 
 
 def infer_dataset_from_workdir(work_dir: str | Path) -> str | None:
@@ -164,6 +338,40 @@ def infer_resume_checkpoint(kind: str, work_dir: str | Path) -> Path | None:
     for candidate in candidates:
         if candidate.exists():
             return candidate.resolve()
+
+    return None
+
+
+def infer_eval_checkpoint(work_dir: str | Path) -> Path | None:
+    """Infer an evaluation checkpoint path from *work_dir*."""
+    base = Path(work_dir).expanduser().resolve()
+
+    resolved_cfg = _load_resolved_config_from_workdir(base)
+    candidate_names: list[str] = []
+
+    if isinstance(resolved_cfg, dict):
+        output_cfg = resolved_cfg.get("output")
+        if isinstance(output_cfg, dict):
+            checkpoint_name = output_cfg.get("checkpoint_name")
+            if isinstance(checkpoint_name, str) and checkpoint_name:
+                candidate_names.append(checkpoint_name)
+
+        eval_cfg = resolved_cfg.get("eval")
+        if isinstance(eval_cfg, dict):
+            configured_checkpoint = eval_cfg.get("checkpoint")
+            if isinstance(configured_checkpoint, str) and configured_checkpoint:
+                candidate_names.append(configured_checkpoint)
+
+    candidate_names.extend(["encoder_processor_decoder.ckpt", "model.ckpt"])
+
+    for name in dict.fromkeys(candidate_names):
+        as_path = Path(name).expanduser()
+        if as_path.is_absolute() and as_path.exists():
+            return as_path.resolve()
+
+        for candidate in (base / as_path, base / "run" / as_path):
+            if candidate.exists():
+                return candidate.resolve()
 
     return None
 
@@ -249,10 +457,11 @@ def build_train_overrides(
     command_overrides = [
         *build_common_launch_overrides(mode=mode, work_dir=final_work_dir),
     ]
-    if dataset is not None:
-        command_overrides.extend(
-            dataset_overrides(dataset=dataset, datasets_root=datasets_root())
-        )
+    if dataset is not None and not (
+        contains_override(overrides, "datamodule=")
+        or contains_override(overrides, "datamodule.data_path=")
+    ):
+        command_overrides.extend(dataset_overrides(dataset=dataset))
 
     if resume_from is not None and not contains_override(
         overrides, "resume_from_checkpoint="
@@ -290,11 +499,19 @@ def build_eval_overrides(
     if not using_resolved_config:
         command_overrides.append("eval=encoder_processor_decoder")
         if dataset is not None:
-            command_overrides.extend(
-                dataset_overrides(dataset=dataset, datasets_root=datasets_root())
+            command_overrides.extend(dataset_overrides(dataset=dataset))
+    else:
+        # The resolved config may be stale (saved before current eval defaults
+        # were added). Re-inject key EPD eval defaults from the source eval config.
+        # These are placed before `overrides` so callers can still override them.
+        resolved_cfg = _load_resolved_config_from_workdir(base_work_dir)
+        command_overrides.extend(
+            _struct_safe_overrides(_resolved_eval_default_overrides(), resolved_cfg)
+        )
+        if dataset is not None:
+            command_overrides.append(
+                f"datamodule.data_path={datasets_root() / dataset}"
             )
-    elif dataset is not None:
-        command_overrides.append(f"datamodule.data_path={datasets_root() / dataset}")
 
     command_overrides.extend(overrides)
     return eval_dir, command_overrides
@@ -344,23 +561,12 @@ def eval_command(
     dry_run: bool = False,
 ) -> None:
     """Run an evaluation command."""
-    effective_overrides = list(overrides)
-    has_config_name = _has_cli_flag(effective_overrides, "--config-name")
-    has_config_path = _has_cli_flag(effective_overrides, "--config-path")
-
-    using_resolved_config = _uses_resolved_config(effective_overrides)
-    if not (has_config_name or has_config_path):
-        inferred_config = infer_hydra_config_from_workdir(work_dir)
-        if inferred_config is not None:
-            config_path, config_name = inferred_config
-            effective_overrides = [
-                "--config-name",
-                config_name,
-                "--config-path",
-                config_path,
-                *effective_overrides,
-            ]
-            using_resolved_config = True
+    effective_overrides, using_resolved_config = _with_inferred_resolved_config(
+        work_dir, overrides
+    )
+    effective_overrides = _append_inferred_eval_checkpoint(
+        work_dir, effective_overrides
+    )
 
     _eval_dir, command_overrides = build_eval_overrides(
         mode=mode,
@@ -371,6 +577,177 @@ def eval_command(
     )
 
     run_module(EVAL_MODULE, command_overrides, dry_run=dry_run, mode=mode)
+
+
+def benchmark_command(
+    *,
+    mode: str,
+    dataset: str | None,
+    work_dir: str,
+    overrides: list[str],
+    dry_run: bool = False,
+) -> None:
+    """Run a benchmark command."""
+    effective_overrides, using_resolved_config = _with_inferred_resolved_config(
+        work_dir, overrides
+    )
+    effective_overrides = _append_inferred_eval_checkpoint(
+        work_dir, effective_overrides
+    )
+
+    if not contains_override(effective_overrides, "eval.benchmark.enabled="):
+        effective_overrides.append("eval.benchmark.enabled=true")
+
+    # Mirror eval_command behaviour: when running from an inferred resolved config,
+    # re-inject current eval defaults (including benchmark sections) so older runs
+    # created before these defaults existed can still be benchmarked reliably.
+    _eval_dir, command_overrides = build_eval_overrides(
+        mode=mode,
+        dataset=dataset,
+        work_dir=work_dir,
+        overrides=effective_overrides,
+        using_resolved_config=using_resolved_config,
+    )
+
+    run_module(BENCHMARK_MODULE, command_overrides, dry_run=dry_run, mode=mode)
+
+
+def _read_manifest_lines(manifest: Path) -> list[str]:
+    """Return non-blank, non-comment lines from *manifest*."""
+    lines: list[str] = []
+    for raw in manifest.read_text(encoding="utf-8").splitlines():
+        stripped = raw.strip()
+        if stripped and not stripped.startswith("#"):
+            lines.append(stripped)
+    return lines
+
+
+def _write_combined_csv(
+    work_dirs: list[str],
+    manifest: Path,
+    *,
+    input_name: str,
+    output_name: str,
+) -> Path | None:
+    """Concatenate per-run CSVs into a single combined CSV next to manifest."""
+    frames: list[pd.DataFrame] = []
+    for wd in work_dirs:
+        csv_path = Path(wd) / input_name
+        if csv_path.exists():
+            frames.append(pd.read_csv(csv_path))
+        else:
+            print(f"WARNING: no {input_name} at {csv_path} — skipping")
+
+    if not frames:
+        print(f"WARNING: no {input_name} files found; combined CSV not written.")
+        return None
+
+    combined_path = manifest.parent / output_name
+    combined_path.parent.mkdir(parents=True, exist_ok=True)
+    pd.concat(frames, ignore_index=True).to_csv(combined_path, index=False)
+    return combined_path
+
+
+def _write_combined_benchmark_csv(work_dirs: list[str], manifest: Path) -> Path | None:
+    """Concatenate per-run ``eval/benchmark_metrics.csv`` files into one CSV."""
+    return _write_combined_csv(
+        work_dirs,
+        manifest,
+        input_name="eval/benchmark_metrics.csv",
+        output_name=f"{manifest.stem}_combined.csv",
+    )
+
+
+def _parse_benchmark_manifest_line(line: str) -> tuple[str, list[str]]:
+    """Parse a manifest line into ``(work_dir, extra_overrides)``.
+
+    Accepts lines with or without the leading ``benchmark`` token, e.g.::
+
+        benchmark --workdir outputs/run_a eval.benchmark_rollout.enabled=true
+        --workdir outputs/run_a eval.benchmark_rollout.enabled=true
+    """
+    # On Windows, POSIX tokenization treats backslashes as escapes and can
+    # corrupt paths like C:\Users\... -> C:Users....
+    tokens = shlex.split(line, posix=(os.name != "nt"))
+    if tokens and tokens[0] == "benchmark":
+        tokens = tokens[1:]
+
+    work_dir: str | None = None
+    remaining: list[str] = []
+    i = 0
+    while i < len(tokens):
+        if tokens[i] == "--workdir" and i + 1 < len(tokens):
+            work_dir = tokens[i + 1]
+            i += 2
+        elif tokens[i].startswith("--workdir="):
+            work_dir = tokens[i].split("=", 1)[1]
+            i += 1
+        else:
+            remaining.append(tokens[i])
+            i += 1
+
+    if work_dir is None:
+        msg = f"No --workdir found in manifest line: {line!r}"
+        raise ValueError(msg)
+
+    return work_dir, remaining
+
+
+def benchmark_manifest_command(
+    *,
+    mode: str,
+    manifest: Path,
+    overrides: list[str],
+    dry_run: bool = False,
+) -> None:
+    """Run benchmarks for every entry in *manifest*.
+
+    With ``mode='local'``, runs are executed sequentially in this process and
+    a combined ``<manifest_stem>_combined.csv`` is written once all runs
+    finish.
+    With ``mode='slurm'``, all runs are submitted as a **single** SLURM job
+    (sequential on one allocated node) and the same combine step is appended
+    to the batch script. Pass ``hydra.launcher.*`` overrides to configure the
+    allocation (partition, timeout, GPUs, etc.).
+    """
+    if not manifest.exists():
+        msg = f"Manifest file not found: {manifest}"
+        raise FileNotFoundError(msg)
+
+    lines = _read_manifest_lines(manifest)
+    if not lines:
+        msg = f"No runnable lines found in manifest: {manifest}"
+        raise ValueError(msg)
+
+    # Parse upfront so we have work_dirs for both modes.
+    parsed = [_parse_benchmark_manifest_line(line) for line in lines]
+    work_dirs = [wd for wd, _ in parsed]
+
+    if mode == "slurm":
+        submit_manifest_via_sbatch(
+            manifest=manifest,
+            lines=lines,
+            work_dirs=work_dirs,
+            overrides=overrides,
+            dry_run=dry_run,
+        )
+        return
+
+    # Local: run each line sequentially, then write a combined CSV.
+    for work_dir, extra_overrides in parsed:
+        dataset = infer_dataset_from_workdir(work_dir)
+        benchmark_command(
+            mode="local",
+            dataset=dataset,
+            work_dir=work_dir,
+            overrides=[*overrides, *extra_overrides],
+            dry_run=dry_run,
+        )
+
+    if not dry_run:
+        combined_path = _write_combined_benchmark_csv(work_dirs, manifest)
+        if combined_path is not None:
+            print(f"Combined benchmark CSV: {combined_path}")
 
 
 def train_eval_single_job_command(
@@ -398,6 +775,20 @@ def train_eval_single_job_command(
         resume_from=resume_from,
         overrides=train_overrides,
     )
+
+    # Keep train-eval consistent with eval/benchmark: when a prior workdir is
+    # provided and contains a resolved config, reuse it so checkpoint resumes
+    # load against the original architecture.
+    if work_dir is not None:
+        command_overrides, using_resolved_config = _with_inferred_resolved_config(
+            work_dir, command_overrides
+        )
+        if using_resolved_config:
+            command_overrides = _normalize_train_eval_overrides_for_resolved_config(
+                work_dir=work_dir,
+                overrides=command_overrides,
+                dataset=dataset,
+            )
 
     if eval_overrides:
         command_overrides.append(

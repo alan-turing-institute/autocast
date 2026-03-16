@@ -4,11 +4,13 @@ import logging
 import os
 import shutil
 from pathlib import Path
+from time import perf_counter
+from typing import cast
 
 import lightning as L
 import torch
 from hydra.utils import instantiate
-from lightning.pytorch.callbacks import Callback, ModelCheckpoint
+from lightning.pytorch.callbacks import Callback, ModelCheckpoint, Timer
 from matplotlib import pyplot as plt
 from omegaconf import DictConfig, OmegaConf
 
@@ -89,6 +91,56 @@ def _save_or_link_checkpoint_target(trainer: L.Trainer, target_path: Path) -> No
         log.info("Saved checkpoint to %s", target_path.resolve())
 
 
+def _resume_weights_only(
+    model: L.LightningModule,
+    checkpoint_path: Path,
+) -> None:
+    """Load only model weights from a Lightning checkpoint.
+
+    This intentionally does *not* restore trainer/optimizer/scheduler state.
+    It is useful when extending runs that previously stopped due to limits like
+    ``trainer.max_time``: full-state resume may immediately re-trigger the stop
+    condition based on restored loop progress.
+    """
+    checkpoint = torch.load(checkpoint_path, map_location="cpu")
+    state_dict = checkpoint.get("state_dict") if isinstance(checkpoint, dict) else None
+    if not isinstance(state_dict, dict):
+        msg = f"Checkpoint missing state_dict: {checkpoint_path}"
+        raise ValueError(msg)
+    missing, unexpected = model.load_state_dict(state_dict, strict=False)
+    if missing:
+        log.warning("Weights-only resume: missing keys (%d)", len(missing))
+    if unexpected:
+        log.warning("Weights-only resume: unexpected keys (%d)", len(unexpected))
+
+
+def _validate_resume_settings(
+    *,
+    resume_checkpoint: str | os.PathLike | None,
+    resume_weights_only: bool,
+    reset_resume_time_budget: bool = False,
+) -> None:
+    """Validate resume-related config combinations."""
+    if resume_weights_only and resume_checkpoint is None:
+        msg = (
+            "resume_weights_only=true requires a resume checkpoint via "
+            "`resume_from_checkpoint` or `output.resume_from_checkpoint`."
+        )
+        raise ValueError(msg)
+    if reset_resume_time_budget and resume_checkpoint is None:
+        msg = (
+            "reset_resume_time_budget=true requires a resume checkpoint via "
+            "`resume_from_checkpoint` or `output.resume_from_checkpoint`."
+        )
+        raise ValueError(msg)
+    if reset_resume_time_budget and resume_weights_only:
+        msg = (
+            "reset_resume_time_budget=true is only meaningful for full-state "
+            "resume; disable resume_weights_only."
+        )
+        raise ValueError(msg)
+
+
 class CheckpointAliasSymlinkCallback(Callback):
     """Refreshes a stable checkpoint alias in the work directory during training."""
 
@@ -109,6 +161,133 @@ class CheckpointAliasSymlinkCallback(Callback):
     def on_fit_end(self, trainer: L.Trainer, pl_module: L.LightningModule):
         del pl_module
         self._refresh_alias(trainer)
+
+
+class ResetResumeTimerCallback(Callback):
+    """Reset Lightning Timer offset after restoring a full-state checkpoint."""
+
+    def __init__(self, enabled: bool):
+        self.enabled = enabled
+        self._applied = False
+
+    def on_fit_start(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
+        del pl_module
+        if not self.enabled or self._applied:
+            return
+
+        reset_count = 0
+        for callback in getattr(trainer, "callbacks", []):
+            if isinstance(callback, Timer):
+                callback._offset = 0
+                reset_count += 1
+
+        if reset_count:
+            log.info(
+                "Reset training timer budget on resume "
+                "(cleared %d Timer callback offset%s).",
+                reset_count,
+                "" if reset_count == 1 else "s",
+            )
+        else:
+            log.warning(
+                "reset_resume_time_budget=true set, but no Timer callback found."
+            )
+        self._applied = True
+
+
+def _attach_reset_timer_callback(
+    trainer: L.Trainer, *, enabled: bool
+) -> ResetResumeTimerCallback:
+    """Insert timer-reset callback before Lightning's Timer callback.
+
+    Timer enforces `max_time` in its `on_fit_start` hook. To ensure the restored
+    elapsed-time offset is cleared first, this callback must run earlier.
+    """
+    reset_cb = ResetResumeTimerCallback(enabled=enabled)
+    callbacks = cast(list[Callback], getattr(trainer, "callbacks", []))
+    timer_index = next(
+        (idx for idx, callback in enumerate(callbacks) if isinstance(callback, Timer)),
+        None,
+    )
+    if timer_index is None:
+        callbacks.append(reset_cb)
+    else:
+        callbacks.insert(timer_index, reset_cb)
+    return reset_cb
+
+
+class TrainingTimerCallback(Callback):
+    """Measures wall-clock training time and persists it to the checkpoint.
+
+    Records total training time and per-epoch durations.  The values are
+    stored via ``state_dict()`` so the eval script can read them directly
+    from the checkpoint's ``callbacks`` block.
+
+    Note
+    ----
+    Lightning often saves checkpoints during ``on_train_epoch_end`` (e.g. when
+    ``ModelCheckpoint(save_on_train_epoch_end=True)`` is configured). That is
+    *before* ``on_train_end`` runs. To avoid mixing two meanings in one field:
+    - ``training_runtime_total_s`` is only set once training has ended.
+    - ``training_runtime_elapsed_s`` is a snapshot of wall-clock time *so far*.
+    Consumers (e.g. eval scripts) can prefer ``*_total_s`` and fall back to
+    ``*_elapsed_s`` if needed.
+    """
+
+    def __init__(self) -> None:
+        self._train_start: float | None = None
+        self._epoch_start: float | None = None
+        self._epoch_times_s: list[float] = []
+        self.training_runtime_total_s: float | None = None
+
+    def _current_elapsed_runtime_s(self) -> float | None:
+        """Return elapsed runtime since train start (wall-clock seconds)."""
+        if self._train_start is None:
+            return None
+        return perf_counter() - self._train_start
+
+    def on_train_start(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
+        del trainer, pl_module
+        self._train_start = perf_counter()
+        self._epoch_times_s = []
+
+    def on_train_epoch_start(
+        self, trainer: L.Trainer, pl_module: L.LightningModule
+    ) -> None:
+        del trainer, pl_module
+        self._epoch_start = perf_counter()
+
+    def on_train_epoch_end(
+        self, trainer: L.Trainer, pl_module: L.LightningModule
+    ) -> None:
+        del trainer, pl_module
+        if self._epoch_start is not None:
+            self._epoch_times_s.append(perf_counter() - self._epoch_start)
+
+    def on_train_end(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
+        del trainer, pl_module
+        if self._train_start is not None:
+            self.training_runtime_total_s = perf_counter() - self._train_start
+
+    def state_dict(self) -> dict:  # type: ignore[override]
+        runtime_elapsed_s = self._current_elapsed_runtime_s()
+        d: dict = {
+            "training_runtime_total_s": self.training_runtime_total_s,
+            "training_runtime_elapsed_s": runtime_elapsed_s,
+            "epoch_times_s": list(self._epoch_times_s),
+        }
+        if self._epoch_times_s:
+            n = len(self._epoch_times_s)
+            d["mean_epoch_s"] = sum(self._epoch_times_s) / n
+            d["min_epoch_s"] = min(self._epoch_times_s)
+            d["max_epoch_s"] = max(self._epoch_times_s)
+        return d
+
+    def load_state_dict(  # type: ignore[override]
+        self, state_dict: dict
+    ) -> None:
+        self.training_runtime_total_s = state_dict.get("training_runtime_total_s")
+        self._epoch_times_s = list(state_dict.get("epoch_times_s", []))
 
 
 def run_training(
@@ -168,6 +347,7 @@ def run_training(
             callback.setdefault("save_last", "link")
 
     callbacks.append(CheckpointAliasSymlinkCallback(checkpoint_path))
+    callbacks.append(TrainingTimerCallback())
     trainer_cfg["callbacks"] = callbacks
 
     trainer = instantiate(
@@ -182,16 +362,50 @@ def run_training(
     resume_checkpoint = config.get("resume_from_checkpoint") or output_cfg.get(
         "resume_from_checkpoint"
     )
+    resume_weights_only = bool(
+        config.get("resume_weights_only")
+        or output_cfg.get("resume_weights_only")
+        or config.get("train_eval", {}).get("resume_weights_only")
+    )
+    reset_resume_time_budget = bool(
+        config.get("reset_resume_time_budget")
+        or output_cfg.get("reset_resume_time_budget")
+        or config.get("train_eval", {}).get("reset_resume_time_budget")
+    )
+    _validate_resume_settings(
+        resume_checkpoint=resume_checkpoint,
+        resume_weights_only=resume_weights_only,
+        reset_resume_time_budget=reset_resume_time_budget,
+    )
+    _attach_reset_timer_callback(
+        trainer,
+        enabled=(
+            reset_resume_time_budget
+            and resume_checkpoint is not None
+            and not resume_weights_only
+        ),
+    )
 
     log.info("Starting training...")
     if resume_checkpoint is not None:
         resolved_resume_checkpoint = Path(resume_checkpoint).expanduser().resolve()
-        log.info("Resuming training from checkpoint: %s", resolved_resume_checkpoint)
-        trainer.fit(
-            model=model,
-            datamodule=datamodule,
-            ckpt_path=str(resolved_resume_checkpoint),
-        )
+        if resume_weights_only:
+            log.info(
+                "Resuming training from checkpoint weights only: %s",
+                resolved_resume_checkpoint,
+            )
+            _resume_weights_only(model, resolved_resume_checkpoint)
+            trainer.fit(model=model, datamodule=datamodule)
+        else:
+            log.info(
+                "Resuming training from checkpoint (full state): %s",
+                resolved_resume_checkpoint,
+            )
+            trainer.fit(
+                model=model,
+                datamodule=datamodule,
+                ckpt_path=str(resolved_resume_checkpoint),
+            )
     else:
         log.info("Starting training from scratch (no resume checkpoint).")
         trainer.fit(model=model, datamodule=datamodule)
@@ -312,14 +526,45 @@ def train_autoencoder(
     resume_checkpoint = config.get("resume_from_checkpoint") or output_cfg.get(
         "resume_from_checkpoint"
     )
+    resume_weights_only = bool(
+        config.get("resume_weights_only") or output_cfg.get("resume_weights_only")
+    )
+    reset_resume_time_budget = bool(
+        config.get("reset_resume_time_budget")
+        or output_cfg.get("reset_resume_time_budget")
+    )
+    _validate_resume_settings(
+        resume_checkpoint=resume_checkpoint,
+        resume_weights_only=resume_weights_only,
+        reset_resume_time_budget=reset_resume_time_budget,
+    )
+    _attach_reset_timer_callback(
+        trainer,
+        enabled=(
+            reset_resume_time_budget
+            and resume_checkpoint is not None
+            and not resume_weights_only
+        ),
+    )
     if resume_checkpoint is not None:
         resolved_resume_checkpoint = Path(resume_checkpoint).expanduser().resolve()
-        log.info("Resuming training from checkpoint: %s", resolved_resume_checkpoint)
-        trainer.fit(
-            model=model,
-            datamodule=datamodule,
-            ckpt_path=str(resolved_resume_checkpoint),
-        )
+        if resume_weights_only:
+            log.info(
+                "Resuming training from checkpoint weights only: %s",
+                resolved_resume_checkpoint,
+            )
+            _resume_weights_only(model, resolved_resume_checkpoint)
+            trainer.fit(model=model, datamodule=datamodule)
+        else:
+            log.info(
+                "Resuming training from checkpoint (full state): %s",
+                resolved_resume_checkpoint,
+            )
+            trainer.fit(
+                model=model,
+                datamodule=datamodule,
+                ckpt_path=str(resolved_resume_checkpoint),
+            )
     else:
         log.info("Starting training from scratch (no resume checkpoint).")
         trainer.fit(model=model, datamodule=datamodule)

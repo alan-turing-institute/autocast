@@ -1,0 +1,10 @@
+defaults:
+  - /encoder: dc_large
+  - /decoder: dc_large
+  - _self_
+
+loss:
+  _target_: autocast.models.autoencoder.AELoss
+  losses:
+    - _target_: autocast.models.autoencoder.VMSELoss
+  weights: [1.0]

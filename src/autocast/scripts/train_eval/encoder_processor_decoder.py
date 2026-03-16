@@ -8,6 +8,7 @@ import hydra
 from omegaconf import DictConfig, OmegaConf, open_dict
 
 from autocast.scripts.eval.encoder_processor_decoder import run_evaluation
+from autocast.scripts.execution import resolve_hydra_work_dir
 from autocast.scripts.train.encoder_processor_decoder import run_epd_training
 from autocast.scripts.utils import get_default_config_path
 
@@ -70,7 +71,7 @@ def main(cfg: DictConfig) -> None:
     """Hydra entrypoint for single-job train→eval flow."""
     logging.basicConfig(level=logging.INFO)
 
-    work_dir = Path.cwd()
+    work_dir = resolve_hydra_work_dir(None)
     resume_checkpoint = cfg.get("resume_from_checkpoint")
     if resume_checkpoint is not None:
         resolved_resume_checkpoint = Path(resume_checkpoint).expanduser().resolve()

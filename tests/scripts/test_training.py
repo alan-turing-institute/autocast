@@ -1,18 +1,26 @@
 """Tests that exercise real configs end-to-end."""
 
 from pathlib import Path
+from time import perf_counter
 
 import lightning as L
 import pytest
 import torch
 from conftest import get_optimizer_config
 from hydra import compose, initialize_config_dir
+from lightning.pytorch.callbacks import Timer
 from omegaconf import DictConfig, OmegaConf, open_dict
 
 from autocast.scripts.setup import (
     setup_autoencoder_model,
     setup_epd_model,
     setup_processor_model,
+)
+from autocast.scripts.training import (
+    ResetResumeTimerCallback,
+    TrainingTimerCallback,
+    _attach_reset_timer_callback,
+    _validate_resume_settings,
 )
 from autocast.types import Batch, EncodedBatch
 
@@ -119,6 +127,117 @@ def test_processor_config_training_step_smoke(config_dir: str, dummy_datamodule)
     loss = model.training_step(batch, batch_idx=0)
     assert torch.is_tensor(loss)
     assert loss.ndim == 0
+
+
+# --- TrainingTimerCallback ---
+
+
+def test_training_timer_callback_state_dict_empty_before_training():
+    cb = TrainingTimerCallback()
+    sd = cb.state_dict()
+    assert sd["training_runtime_total_s"] is None
+    assert sd["training_runtime_elapsed_s"] is None
+    assert sd["epoch_times_s"] == []
+
+
+def test_training_timer_callback_state_dict_and_round_trip():
+    cb = TrainingTimerCallback()
+    cb._train_start = 0.0
+    cb._epoch_times_s = [1.0, 2.0, 3.0]
+    cb.training_runtime_total_s = 10.0
+
+    sd = cb.state_dict()
+    assert sd["training_runtime_total_s"] == 10.0
+    assert isinstance(sd["training_runtime_elapsed_s"], float)
+    assert sd["training_runtime_elapsed_s"] >= 0.0
+    assert sd["epoch_times_s"] == [1.0, 2.0, 3.0]
+    assert sd["mean_epoch_s"] == pytest.approx(2.0)
+    assert sd["min_epoch_s"] == pytest.approx(1.0)
+    assert sd["max_epoch_s"] == pytest.approx(3.0)
+
+    cb2 = TrainingTimerCallback()
+    cb2.load_state_dict(sd)
+    assert cb2.training_runtime_total_s == 10.0
+    assert cb2._epoch_times_s == [1.0, 2.0, 3.0]
+
+
+def test_training_timer_callback_state_dict_reports_elapsed_before_train_end():
+    cb = TrainingTimerCallback()
+    cb._train_start = perf_counter() - 0.05
+    cb.training_runtime_total_s = None
+
+    sd = cb.state_dict()
+    assert sd["training_runtime_total_s"] is None
+    assert isinstance(sd["training_runtime_elapsed_s"], float)
+    assert sd["training_runtime_elapsed_s"] > 0.0
+
+
+def test_validate_resume_settings_raises_for_weights_only_without_checkpoint():
+    with pytest.raises(ValueError, match="resume_weights_only=true requires"):
+        _validate_resume_settings(
+            resume_checkpoint=None,
+            resume_weights_only=True,
+        )
+
+
+def test_validate_resume_settings_allows_weights_only_with_checkpoint(tmp_path: Path):
+    ckpt = tmp_path / "model.ckpt"
+    _validate_resume_settings(
+        resume_checkpoint=ckpt,
+        resume_weights_only=True,
+    )
+
+
+def test_validate_resume_settings_raises_for_reset_timer_without_checkpoint():
+    with pytest.raises(ValueError, match="reset_resume_time_budget=true requires"):
+        _validate_resume_settings(
+            resume_checkpoint=None,
+            resume_weights_only=False,
+            reset_resume_time_budget=True,
+        )
+
+
+def test_validate_resume_settings_raises_for_reset_timer_with_weights_only(
+    tmp_path: Path,
+):
+    ckpt = tmp_path / "model.ckpt"
+    with pytest.raises(
+        ValueError,
+        match="reset_resume_time_budget=true is only meaningful for full-state resume",
+    ):
+        _validate_resume_settings(
+            resume_checkpoint=ckpt,
+            resume_weights_only=True,
+            reset_resume_time_budget=True,
+        )
+
+
+def test_validate_resume_settings_allows_reset_timer_with_checkpoint(tmp_path: Path):
+    ckpt = tmp_path / "model.ckpt"
+    _validate_resume_settings(
+        resume_checkpoint=ckpt,
+        resume_weights_only=False,
+        reset_resume_time_budget=True,
+    )
+
+
+def test_attach_reset_timer_callback_inserts_before_timer():
+    trainer = L.Trainer(
+        max_time="00:00:00:10",
+        logger=False,
+        enable_checkpointing=False,
+        enable_progress_bar=False,
+        enable_model_summary=False,
+    )
+    _attach_reset_timer_callback(trainer, enabled=True)
+    callbacks = list(getattr(trainer, "callbacks", []))
+    reset_idx = next(
+        idx
+        for idx, cb in enumerate(callbacks)
+        if isinstance(cb, ResetResumeTimerCallback)
+    )
+    timer_idx = next(idx for idx, cb in enumerate(callbacks) if isinstance(cb, Timer))
+    assert reset_idx < timer_idx
 
 
 def test_epd_config_forward_smoke(config_dir: str, toy_batch: Batch, dummy_datamodule):

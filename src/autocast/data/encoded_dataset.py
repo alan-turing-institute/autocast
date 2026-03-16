@@ -7,7 +7,8 @@ from einops import rearrange
 from lightning.pytorch import LightningDataModule
 from torch.utils.data import ConcatDataset, DataLoader, Dataset
 
-from autocast.types.batch import EncodedSample, collate_encoded_samples
+from autocast.types.batch import EncodedSample
+from autocast.types.collation import collate_encoded_samples
 from autocast.types.types import Tensor, TensorNC
 
 
