@@ -29,6 +29,7 @@ class TinyProcessor(Processor[EncodedBatch]):
         return self.conv(x)
 
     def map(self, x: Tensor, global_cond: Tensor | None = None) -> Tensor:  # noqa: ARG002
+        return self(x)
 
     def loss(self, batch: EncodedBatch) -> Tensor:
         outputs = self(batch.encoded_inputs)
