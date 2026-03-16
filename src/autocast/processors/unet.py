@@ -14,7 +14,8 @@ If you use this implementation, please cite the original work above.
 """
 
 from collections import OrderedDict
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from typing import Any, cast
 
 import torch
 from torch import nn
@@ -106,12 +107,19 @@ class UNetClassic(nn.Module):
             in_channels=features, out_channels=dim_out, kernel_size=1
         )
 
-    def optional_checkpointing(self, layer, *inputs, **kwargs):
+    def optional_checkpointing(
+        self,
+        layer: Callable[..., Tensor],
+        *inputs: Any,
+        **kwargs: Any,
+    ) -> Tensor:
         """Apply gradient checkpointing if enabled."""
         if self.gradient_checkpointing:
-            return checkpoint(layer, *inputs, use_reentrant=False, **kwargs)
-        else:
-            return layer(*inputs, **kwargs)
+            return cast(
+                Tensor,
+                checkpoint(layer, *inputs, use_reentrant=False, **kwargs),
+            )
+        return layer(*inputs, **kwargs)
 
     def forward(self, x: Tensor) -> Tensor:
         """Forward pass through the U-Net.
