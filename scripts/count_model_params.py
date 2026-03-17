@@ -204,7 +204,7 @@ def compare_vit_configs(detailed: bool = False):
             "n_layers": 8,
             "patch_size": 8,
             "n_noise_channels": 1024,
-            "name": "Medium (384 dim, 8 layers, noise=1024)",
+            "name": "Medium-Noise (384 dim, 8 layers, noise=1024)",
         },
         {
             "hidden_dim": 384,
@@ -212,7 +212,7 @@ def compare_vit_configs(detailed: bool = False):
             "n_layers": 8,
             "patch_size": 8,
             "n_noise_channels": 2048,
-            "name": "Medium (384 dim, 8 layers, noise=2048)",
+            "name": "Medium-Noise (384 dim, 8 layers, noise=2048)",
         },
         {
             "hidden_dim": 384,
@@ -220,7 +220,7 @@ def compare_vit_configs(detailed: bool = False):
             "n_layers": 8,
             "patch_size": 8,
             "n_noise_channels": 4096,
-            "name": "Medium (384 dim, 8 layers, noise=4096)",
+            "name": "Medium-Noise (384 dim, 8 layers, noise=4096)",
         },
         {
             "hidden_dim": 768,
@@ -236,7 +236,7 @@ def compare_vit_configs(detailed: bool = False):
             "n_layers": 8,
             "patch_size": 8,
             "n_noise_channels": 4096,
-            "name": "Large (768 dim, 8 layers, noise=4096)",
+            "name": "Large-Noise (768 dim, 8 layers, noise=4096)",
         },
         {
             "hidden_dim": 768,
