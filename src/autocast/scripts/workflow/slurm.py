@@ -64,14 +64,67 @@ def load_launcher_defaults(launcher_name: str) -> dict:
         Path.cwd() / "local_hydra" / "hydra" / "launcher" / f"{launcher_name}.yaml",
     ]
     for path in candidate_paths:
-        if path.exists():
-            cfg = OmegaConf.load(path)
-            loaded = OmegaConf.to_container(cfg, resolve=True)
-            if isinstance(loaded, dict):
-                loaded.pop("defaults", None)
-                return loaded
+        if not path.exists():
+            continue
+        cfg = OmegaConf.load(path)
+        loaded = OmegaConf.to_container(cfg, resolve=True)
+        if isinstance(loaded, dict):
+            loaded.pop("defaults", None)
+            return loaded
     if launcher_name != "slurm":
         raise ValueError(f"Unable to resolve hydra launcher preset '{launcher_name}'.")
+    return {}
+
+
+def _extract_local_experiment_name(overrides: list[str]) -> str | None:
+    """Return selected local_experiment name from CLI overrides, if any."""
+    for override in overrides:
+        norm = normalized_override(override)
+        if norm.startswith("local_experiment="):
+            return norm.split("=", 1)[1]
+    return None
+
+
+def _load_preset_launcher_cfg(overrides: list[str]) -> dict:
+    """Load ``hydra.launcher`` mapping from selected experiment preset.
+
+    Supports both ``local_experiment=<name>`` and ``experiment=<name>``.
+    ``local_experiment`` has precedence if both are provided.
+    """
+
+    def _load_launcher_from_file(path: Path) -> dict:
+        if not path.exists():
+            return {}
+        cfg = OmegaConf.to_container(OmegaConf.load(path), resolve=True)
+        if not isinstance(cfg, dict):
+            return {}
+        hydra_cfg = cfg.get("hydra")
+        if not isinstance(hydra_cfg, dict):
+            return {}
+        launcher_cfg = hydra_cfg.get("launcher")
+        return launcher_cfg if isinstance(launcher_cfg, dict) else {}
+
+    local_experiment = _extract_local_experiment_name(overrides)
+    if local_experiment:
+        local_cfg_path = (
+            Path.cwd() / "local_hydra" / "local_experiment" / f"{local_experiment}.yaml"
+        )
+        local_launcher_cfg = _load_launcher_from_file(local_cfg_path)
+        if local_launcher_cfg:
+            return local_launcher_cfg
+
+    experiment_name = extract_override_value(overrides, "experiment")
+    if isinstance(experiment_name, str) and experiment_name:
+        experiment_cfg_path = (
+            Path(__file__).resolve().parents[2]
+            / "configs"
+            / "experiment"
+            / f"{experiment_name}.yaml"
+        )
+        experiment_launcher_cfg = _load_launcher_from_file(experiment_cfg_path)
+        if experiment_launcher_cfg:
+            return experiment_launcher_cfg
+
     return {}
 
 
@@ -285,9 +338,15 @@ def submit_via_sbatch(
     launcher_name, launcher_override_cfg, module_overrides = extract_launcher_overrides(
         overrides
     )
+    preset_launcher_cfg = _load_preset_launcher_cfg(overrides)
     launcher_cfg = load_launcher_defaults(launcher_name)
     merged_launcher_cfg = OmegaConf.to_container(
-        OmegaConf.merge(launcher_cfg, launcher_override_cfg), resolve=True
+        OmegaConf.merge(
+            launcher_cfg,
+            preset_launcher_cfg,
+            launcher_override_cfg,
+        ),
+        resolve=True,
     )
     if not isinstance(merged_launcher_cfg, dict):
         merged_launcher_cfg = {}

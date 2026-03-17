@@ -5,6 +5,7 @@ defaults:
   - override /decoder@model.decoder: channels_last
   - override /processor@model.processor: fno
   - override /input_noise_injector@model.input_noise_injector: concat
+  - override /hydra/launcher: slurm
   - _self_
 
 experiment_name: epd_crps_fno_256_layers4
@@ -36,3 +37,12 @@ model:
 
 trainer:
   max_time: "00:12:00:00"
+  accelerator: gpu
+  devices: 4
+  strategy: ddp
+  num_nodes: 1
+
+hydra:
+  launcher:
+    gpus_per_node: 4
+    tasks_per_node: 4

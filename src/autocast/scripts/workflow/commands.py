@@ -52,7 +52,6 @@ def build_common_launch_overrides(mode: str, work_dir: Path) -> list[str]:
     if mode == "slurm":
         return [
             "hydra.mode=MULTIRUN",
-            "hydra/launcher=slurm",
             f"hydra.sweep.dir={work_dir}",
             "hydra.sweep.subdir=.",
         ]
