@@ -2,7 +2,11 @@ import lightning as L
 from conftest import get_optimizer_config
 
 from autocast.models.processor import ProcessorModel
-from autocast.processors.unet import UNetProcessor
+from autocast.processors.unet import AzulaUNetProcessor, UNetProcessor
+
+# ---------------------------------------------------------------------------
+# Classic UNet Processor Tests
+# ---------------------------------------------------------------------------
 
 
 def test_unet_processor(encoded_batch, encoded_dummy_loader):
@@ -72,3 +76,46 @@ def test_unet_gradient_checkpointing(encoded_batch):
     train_loss = model.training_step(encoded_batch, 0)
     assert train_loss.shape == ()
     train_loss.backward()
+
+
+# ---------------------------------------------------------------------------
+# Azula UNet Processor Tests
+# ---------------------------------------------------------------------------
+
+
+def test_azula_unet_processor(encoded_batch, encoded_dummy_loader):
+    """Test Azula UNet processor with encoded batch data."""
+    in_ch = encoded_batch.encoded_inputs.shape[1]
+    out_ch = encoded_batch.encoded_output_fields.shape[1]
+
+    processor = AzulaUNetProcessor(
+        in_channels=in_ch,
+        out_channels=out_ch,
+        hid_channels=[32, 64],
+        hid_blocks=[1, 1],
+    )
+    model = ProcessorModel(
+        processor=processor,
+        optimizer_config=get_optimizer_config(),
+    )
+
+    output = model.map(encoded_batch.encoded_inputs, None)
+    assert output.shape == encoded_batch.encoded_output_fields.shape
+
+    train_loss = model.training_step(encoded_batch, 0)
+    assert train_loss.shape == ()
+    train_loss.backward()
+
+    # Run a full training loop
+    L.Trainer(
+        max_epochs=1,
+        logger=False,
+        enable_checkpointing=False,
+        limit_train_batches=1,
+        enable_model_summary=False,
+        accelerator="cpu",
+    ).fit(
+        model,
+        train_dataloaders=encoded_dummy_loader,
+        val_dataloaders=encoded_dummy_loader,
+    )

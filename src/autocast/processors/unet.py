@@ -320,8 +320,7 @@ class AzulaUNetProcessor(Processor[EncodedBatch]):
     """UNet Processor using Azula's modern UNet architecture.
 
     This processor wraps the Azula UNet implementation which includes
-    additional features like residual connections, flexible normalization,
-    and optional modulation support.
+    additional features like residual connections and flexible normalization.
 
     Parameters
     ----------
