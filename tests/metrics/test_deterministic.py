@@ -8,6 +8,7 @@ from autocast.metrics.deterministic import (
     PowerSpectrumRMSELow,
     PowerSpectrumRMSEMid,
     PowerSpectrumRMSETail,
+    _isotropic_binning,
 )
 from autocast.types import TensorBTSC
 
@@ -57,3 +58,28 @@ def test_power_spectrum_rmse_increases_with_spectral_scale(MetricCls):
 
     value = MetricCls()(y_pred, y_true)
     assert torch.all(value > 0)
+
+
+def test_isotropic_binning_respects_requested_device():
+    shape = (8, 8)
+    edges_cpu, counts_cpu, indices_cpu = _isotropic_binning(
+        shape, device=torch.device("cpu")
+    )
+    assert edges_cpu.device.type == "cpu"
+    assert counts_cpu.device.type == "cpu"
+    assert indices_cpu.device.type == "cpu"
+
+    target_device: torch.device | None = None
+    if torch.cuda.is_available():
+        target_device = torch.device("cuda:0")
+    elif torch.backends.mps.is_available():
+        target_device = torch.device("mps")
+
+    if target_device is None:
+        return
+
+    # Cross-device call after CPU call should still honor requested device.
+    edges_dev, counts_dev, indices_dev = _isotropic_binning(shape, device=target_device)
+    assert edges_dev.device == target_device
+    assert counts_dev.device == target_device
+    assert indices_dev.device == target_device

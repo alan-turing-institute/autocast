@@ -290,15 +290,19 @@ class LInfinity(BTSCMetric):
 
 
 @cache
-def _isotropic_binning(
+def _isotropic_binning_cpu(
     shape: tuple[int, ...],
     bins: int | None = None,
-    device: torch.device | None = None,
 ) -> tuple[Tensor, Tensor, Tensor]:
-    """Isotropic frequency binning over FFT domain (Lola-style)."""
+    """Isotropic frequency binning over FFT domain on CPU (cached).
+
+    References
+    ----------
+    - https://github.com/PolymathicAI/lola/blob/bd4bdf2a9fc024e6b2aa95eb4e24a800fec98dae/lola/fourier.py
+    """
     k = []
     for s in shape:
-        k_i = torch.fft.fftfreq(s, device=device)
+        k_i = torch.fft.fftfreq(s)
         k.append(k_i)
 
     k2 = map(torch.square, k)
@@ -311,11 +315,29 @@ def _isotropic_binning(
     if bins is None:
         bins = math.floor(math.sqrt(k_iso.ndim) * min(k_iso.shape) / 2)
 
-    edges = torch.linspace(0, k_iso.max(), bins + 1, device=device)
+    edges = torch.linspace(0, k_iso.max(), bins + 1)
     indices = torch.bucketize(k_iso.flatten(), edges)
     counts = torch.bincount(indices, minlength=bins + 1)
 
     return edges, counts, indices
+
+
+def _isotropic_binning(
+    shape: tuple[int, ...],
+    bins: int | None = None,
+    device: torch.device | None = None,
+) -> tuple[Tensor, Tensor, Tensor]:
+    """Isotropic frequency binning over FFT domain.
+
+    The cached representation is always on CPU to avoid storing device-specific
+    tensors in the global cache. Returned tensors are moved to `device`.
+    """
+    edges, counts, indices = _isotropic_binning_cpu(shape, bins)
+    if device is None:
+        return edges, counts, indices
+
+    dev = torch.device(device)
+    return edges.to(dev), counts.to(dev), indices.to(dev)
 
 
 def _isotropic_power_spectrum(
