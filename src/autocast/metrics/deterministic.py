@@ -377,6 +377,13 @@ def _power_spectrum_rmse_bands(
     m0, m1, m2, m3 = _lola_eval_power_band_masks(freq_bins)
 
     def _band_rmse(mask: Tensor) -> TensorBTC:
+        # Small spatial grids can produce empty spectral bands.
+        # Define RMSE over an empty band as zero to avoid NaNs in downstream
+        # deterministic/stateful reductions.
+        if not torch.any(mask):
+            return torch.zeros(
+                pred_spec.shape[:-1], dtype=pred_spec.dtype, device=pred_spec.device
+            )
         # se_p = (1 - (p_v + eps) / (p_u + eps))^2
         se_p = torch.square(
             1.0 - (pred_spec[..., mask] + eps) / (true_spec[..., mask] + eps)
