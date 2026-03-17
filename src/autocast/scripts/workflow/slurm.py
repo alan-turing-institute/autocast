@@ -19,12 +19,11 @@ from autocast.scripts.workflow.helpers import (
 )
 from autocast.scripts.workflow.naming import sanitize_name_part
 from autocast.scripts.workflow.overrides import (
-    expand_sweep_overrides,
     extract_override_value,
     normalized_override,
     set_override,
-    strip_hydra_sweep_controls,
 )
+from autocast.scripts.workflow.validation import validate_alignment_for_submission
 
 # ---------------------------------------------------------------------------
 # Launcher config helpers
@@ -137,6 +136,27 @@ def _load_preset_launcher_cfg(overrides: list[str]) -> dict:
                 return external_experiment_launcher_cfg
 
     return {}
+
+
+def _resolve_launcher_submission_context(
+    overrides: list[str],
+) -> tuple[dict, list[str]]:
+    launcher_name, launcher_override_cfg, module_overrides = extract_launcher_overrides(
+        overrides
+    )
+    preset_launcher_cfg = _load_preset_launcher_cfg(overrides)
+    launcher_cfg = load_launcher_defaults(launcher_name)
+    merged_launcher_cfg = OmegaConf.to_container(
+        OmegaConf.merge(
+            launcher_cfg,
+            preset_launcher_cfg,
+            launcher_override_cfg,
+        ),
+        resolve=True,
+    )
+    if not isinstance(merged_launcher_cfg, dict):
+        merged_launcher_cfg = {}
+    return merged_launcher_cfg, module_overrides
 
 
 def extract_launcher_overrides(
@@ -328,7 +348,17 @@ def submit_via_sbatch(
     dry_run: bool = False,
 ) -> None:
     """Submit *module* as one or more SLURM jobs via ``sbatch``."""
+    merged_launcher_cfg, module_overrides = _resolve_launcher_submission_context(
+        overrides
+    )
+
     if dry_run:
+        validate_alignment_for_submission(
+            module_overrides=module_overrides,
+            original_overrides=overrides,
+            merged_launcher_cfg=merged_launcher_cfg,
+        )
+
         print(f"DRY-RUN: {format_command(run_module_command(module, overrides))}")
         return
 
@@ -346,33 +376,15 @@ def submit_via_sbatch(
         output_dir.mkdir(parents=True, exist_ok=True)
     ensure_group_writable_parents(output_dir)
 
-    launcher_name, launcher_override_cfg, module_overrides = extract_launcher_overrides(
-        overrides
-    )
-    preset_launcher_cfg = _load_preset_launcher_cfg(overrides)
-    launcher_cfg = load_launcher_defaults(launcher_name)
-    merged_launcher_cfg = OmegaConf.to_container(
-        OmegaConf.merge(
-            launcher_cfg,
-            preset_launcher_cfg,
-            launcher_override_cfg,
-        ),
-        resolve=True,
-    )
-    if not isinstance(merged_launcher_cfg, dict):
-        merged_launcher_cfg = {}
-
-    module_run_overrides = [
-        *(o for o in module_overrides if not o.startswith("hydra.run.dir=")),
-        f"hydra.run.dir={output_dir}",
-    ]
-    module_run_overrides = strip_hydra_sweep_controls(module_run_overrides)
-
     setup_commands = merged_launcher_cfg.get("setup", [])
     if not isinstance(setup_commands, list):
         setup_commands = []
 
-    expanded_jobs = expand_sweep_overrides(module_run_overrides)
+    expanded_jobs = validate_alignment_for_submission(
+        module_overrides=module_overrides,
+        original_overrides=[*overrides, f"hydra.run.dir={output_dir}"],
+        merged_launcher_cfg=merged_launcher_cfg,
+    )
     submission_ts = _submission_timestamp()
 
     if len(expanded_jobs) == 1:
