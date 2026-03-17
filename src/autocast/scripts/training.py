@@ -435,7 +435,7 @@ def run_training(
     if trainer.is_global_zero:
         _save_or_link_checkpoint_target(trainer, checkpoint_path)
 
-        # If the stable target is a symlink, replace it with a final concrete checkpoint.
+        # If the stable target is a symlink, replace with a final concrete checkpoint.
         if checkpoint_path.is_symlink():
             checkpoint_path.unlink()
             trainer.save_checkpoint(checkpoint_path)
