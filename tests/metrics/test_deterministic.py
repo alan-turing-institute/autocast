@@ -80,6 +80,12 @@ def test_isotropic_binning_respects_requested_device():
 
     # Cross-device call after CPU call should still honor requested device.
     edges_dev, counts_dev, indices_dev = _isotropic_binning(shape, device=target_device)
-    assert edges_dev.device == target_device
-    assert counts_dev.device == target_device
-    assert indices_dev.device == target_device
+    assert edges_dev.device.type == target_device.type
+    assert counts_dev.device.type == target_device.type
+    assert indices_dev.device.type == target_device.type
+
+    # CUDA indices are stable/meaningful; MPS may report mps:0 while target is mps.
+    if target_device.type == "cuda":
+        assert edges_dev.device.index == target_device.index
+        assert counts_dev.device.index == target_device.index
+        assert indices_dev.device.index == target_device.index
