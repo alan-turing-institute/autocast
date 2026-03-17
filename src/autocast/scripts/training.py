@@ -373,7 +373,7 @@ def run_training(
         logger=wandb_logger,
     )
 
-    if output_cfg.get("save_config"):
+    if output_cfg.get("save_config") and trainer.is_global_zero:
         save_resolved_config(config, work_dir)
 
     resume_checkpoint = config.get("resume_from_checkpoint") or output_cfg.get(

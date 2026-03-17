@@ -125,6 +125,17 @@ def _load_preset_launcher_cfg(overrides: list[str]) -> dict:
         if experiment_launcher_cfg:
             return experiment_launcher_cfg
 
+        external_config_root = os.environ.get("AUTOCAST_CONFIG_PATH")
+        if external_config_root:
+            external_experiment_cfg_path = (
+                Path(external_config_root) / "experiment" / f"{experiment_name}.yaml"
+            )
+            external_experiment_launcher_cfg = _load_launcher_from_file(
+                external_experiment_cfg_path
+            )
+            if external_experiment_launcher_cfg:
+                return external_experiment_launcher_cfg
+
     return {}
 
 
@@ -444,9 +455,11 @@ def submit_manifest_via_sbatch(
     umask_value = resolve_umask_from_overrides(overrides)
 
     launcher_name, launcher_override_cfg, _ = extract_launcher_overrides(overrides)
+    preset_launcher_cfg = _load_preset_launcher_cfg(overrides)
     launcher_cfg = load_launcher_defaults(launcher_name)
     merged_launcher_cfg = OmegaConf.to_container(
-        OmegaConf.merge(launcher_cfg, launcher_override_cfg), resolve=True
+        OmegaConf.merge(launcher_cfg, preset_launcher_cfg, launcher_override_cfg),
+        resolve=True,
     )
     if not isinstance(merged_launcher_cfg, dict):
         merged_launcher_cfg = {}
