@@ -5,6 +5,7 @@ defaults:
   - override /decoder@model.decoder: dc_large
   - override /processor@model.processor: flow_matching_vit
   - override /backbone@model.processor.backbone: vit
+  - override /hydra/launcher: slurm
   - _self_
 
 experiment_name: epd_diffusion_fm_256
@@ -37,3 +38,12 @@ optimizer:
 
 trainer:
   max_time: "00:12:00:00"
+  accelerator: gpu
+  devices: 4
+  strategy: ddp
+  num_nodes: 1
+
+hydra:
+  launcher:
+    gpus_per_node: 4
+    tasks_per_node: 4
