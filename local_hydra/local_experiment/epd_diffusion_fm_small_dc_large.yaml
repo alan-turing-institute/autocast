@@ -1,11 +1,11 @@
 # @package _global_
 defaults:
+  - /distributed: ddp_4gpu_slurm
   - override /datamodule: advection_diffusion_multichannel_64_64
   - override /encoder@model.encoder: dc_large
   - override /decoder@model.decoder: dc_large
   - override /processor@model.processor: flow_matching_vit
   - override /backbone@model.processor.backbone: vit
-  - override /hydra/launcher: slurm
   - _self_
 
 experiment_name: epd_diffusion_fm_small_non_periodic
@@ -39,15 +39,3 @@ model:
 
 optimizer:
   learning_rate: 0.0002
-
-trainer:
-  max_time: "00:12:00:00"
-  accelerator: gpu
-  devices: 4
-  strategy: ddp
-  num_nodes: 1
-
-hydra:
-  launcher:
-    gpus_per_node: 4
-    tasks_per_node: 4

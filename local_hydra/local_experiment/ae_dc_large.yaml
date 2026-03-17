@@ -1,9 +1,9 @@
 # @package _global_
 defaults:
+  - /distributed: ddp_4gpu_slurm
   - override /datamodule: advection_diffusion
   - override /model: autoencoder_dc_large
   - override /optimizer: psgd
-  - override /hydra/launcher: slurm
   - _self_
 
 experiment_name: ae_dc_large
@@ -24,18 +24,4 @@ optimizer:
   scheduler: cosine
 
 trainer:
-  accelerator: gpu
-  # devices: 8
-  # max_epochs: 1024
-  # limit_train_batches: 256
-  devices: 1
-  max_time: "00:12:00:00"
   gradient_clip_val: 1.0
-  devices: 4
-  strategy: ddp
-  num_nodes: 1
-
-hydra:
-  launcher:
-    gpus_per_node: 4
-    tasks_per_node: 4
