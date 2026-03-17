@@ -1,6 +1,6 @@
+import numpy as np
 import torch
 from einops import repeat
-import numpy as np
 
 from autocast.metrics.coverage import Coverage, MultiCoverage
 from autocast.types import TensorBTSC
