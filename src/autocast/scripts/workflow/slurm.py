@@ -213,6 +213,7 @@ def _submit_one_sbatch_job(
     batch_script_path: Path,
     job_name_suffix: str | None = None,
     umask_value: int,
+    runtime_typechecking: bool,
 ) -> tuple[str, str]:
     job_name = derive_sbatch_job_name(module, output_dir, job_overrides)
     if job_name_suffix:
@@ -230,6 +231,7 @@ def _submit_one_sbatch_job(
         "#!/bin/bash",
         "set -euo pipefail",
         f"cd {shlex.quote(str(Path.cwd().resolve()))}",
+        f"export RUNTIME_TYPECHECKING={str(runtime_typechecking).lower()}",
     ]
     script_lines.extend(str(line) for line in setup_commands)
     script_lines.append(launch_command)
@@ -258,6 +260,7 @@ def _submit_one_sbatch_job(
 def submit_via_sbatch(
     module: str,
     overrides: list[str],
+    runtime_typechecking: bool = False,
     dry_run: bool = False,
 ) -> None:
     """Submit *module* as one or more SLURM jobs via ``sbatch``."""
@@ -312,6 +315,7 @@ def submit_via_sbatch(
             merged_launcher_cfg=merged_launcher_cfg,
             batch_script_path=batch_script_path,
             umask_value=umask_value,
+            runtime_typechecking=runtime_typechecking,
         )
         print(f"Submitted SLURM job {job_id} via {batch_script_path}")
         print(f"SLURM job name: {job_name}")
@@ -345,6 +349,7 @@ def submit_via_sbatch(
             merged_launcher_cfg=merged_launcher_cfg,
             batch_script_path=batch_script_path,
             umask_value=umask_value,
+            runtime_typechecking=runtime_typechecking,
         )
         submitted.append((job_id, batch_script_path, job_name))
 
@@ -361,6 +366,7 @@ def submit_manifest_via_sbatch(
     lines: list[str],
     work_dirs: list[str],
     overrides: list[str],
+    runtime_typechecking: bool = False,
     dry_run: bool = False,
 ) -> None:
     r"""Submit all *lines* from *manifest* as a **single** SLURM job.
@@ -400,6 +406,7 @@ def submit_manifest_via_sbatch(
         "#!/bin/bash",
         "set -euo pipefail",
         f"cd {shlex.quote(str(cwd))}",
+        f"export RUNTIME_TYPECHECKING={str(runtime_typechecking).lower()}",
         f"echo '=== autocast benchmark manifest: {manifest.name} ==='",
         f"echo 'Runs     : {len(lines)}'",
         "echo 'Node     : '$(hostname)",

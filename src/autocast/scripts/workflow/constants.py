@@ -28,4 +28,5 @@ DATASET_NAME_TOKENS: dict[str, str] = {
     "gpe_low_complexity": "gpelc64",
     "gpe_high_complexity": "gpehc64",
     "shallow_water2d": "sw2d64",
+    "shallow_water2d_4": "sw2d464",
 }

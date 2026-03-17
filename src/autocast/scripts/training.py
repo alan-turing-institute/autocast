@@ -102,7 +102,15 @@ def _resume_weights_only(
     ``trainer.max_time``: full-state resume may immediately re-trigger the stop
     condition based on restored loop progress.
     """
-    checkpoint = torch.load(checkpoint_path, map_location="cpu")
+    # PyTorch >=2.6 defaults torch.load(weights_only=True), which can reject
+    # regular Lightning checkpoints that include non-tensor Python objects in
+    # optimizer/callback state. For this trusted local resume path we need to
+    # deserialize the full checkpoint payload to extract `state_dict`.
+    checkpoint = torch.load(
+        checkpoint_path,
+        map_location="cpu",
+        weights_only=False,
+    )
     state_dict = checkpoint.get("state_dict") if isinstance(checkpoint, dict) else None
     if not isinstance(state_dict, dict):
         msg = f"Checkpoint missing state_dict: {checkpoint_path}"

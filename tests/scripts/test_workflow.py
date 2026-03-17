@@ -22,6 +22,7 @@ from autocast.scripts.workflow.commands import (
     infer_eval_checkpoint,
     infer_hydra_config_from_workdir,
     infer_resume_checkpoint,
+    run_module,
     train_eval_single_job_command,
 )
 from autocast.scripts.workflow.helpers import run_module_command
@@ -300,6 +301,60 @@ def test_build_effective_eval_overrides_order_preserved():
     train = ["model.a=1", "model.b=2"]
     result = build_effective_eval_overrides(train, [])
     assert result == ["model.a=1", "model.b=2"]
+
+
+def test_run_module_local_sets_runtime_typechecking_env(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def _fake_subprocess_run(cmd, check, env):
+        captured["cmd"] = cmd
+        captured["check"] = check
+        captured["env"] = env
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.commands.subprocess.run", _fake_subprocess_run
+    )
+
+    run_module(
+        "autocast.scripts.train.autoencoder",
+        ["trainer.max_epochs=1"],
+        mode="local",
+        runtime_typechecking=True,
+    )
+
+    assert captured["check"] is True
+    assert isinstance(captured["env"], dict)
+    assert captured["env"]["RUNTIME_TYPECHECKING"] == "true"
+
+
+def test_run_module_slurm_forwards_runtime_typechecking(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def _fake_submit_via_sbatch(
+        module,
+        overrides,
+        dry_run=False,
+        runtime_typechecking=False,
+    ):
+        captured["module"] = module
+        captured["overrides"] = overrides
+        captured["dry_run"] = dry_run
+        captured["runtime_typechecking"] = runtime_typechecking
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.commands.submit_via_sbatch",
+        _fake_submit_via_sbatch,
+    )
+
+    run_module(
+        "autocast.scripts.train.autoencoder",
+        ["trainer.max_epochs=1"],
+        mode="slurm",
+        runtime_typechecking=True,
+    )
+
+    assert captured["module"] == "autocast.scripts.train.autoencoder"
+    assert captured["runtime_typechecking"] is True
 
 
 def test_infer_dataset_from_workdir_from_datamodule_data_path(tmp_path):
@@ -979,6 +1034,20 @@ def test_build_parser_dry_run(parser: argparse.ArgumentParser):
     assert args.dry_run is True
 
 
+def test_build_parser_runtime_typechecking_default_off(
+    parser: argparse.ArgumentParser,
+):
+    args = parser.parse_args(["ae"])
+    assert args.runtime_typechecking is False
+
+
+def test_build_parser_runtime_typechecking_flag(
+    parser: argparse.ArgumentParser,
+):
+    args = parser.parse_args(["ae", "--runtime-typechecking"])
+    assert args.runtime_typechecking is True
+
+
 def test_build_parser_resume_from(parser: argparse.ArgumentParser):
     args = parser.parse_args(["epd", "--resume-from", "/ckpt"])
     assert args.resume_from == "/ckpt"
@@ -1044,6 +1113,34 @@ def test_main_train_eval_dispatches_combined_overrides(monkeypatch):
         "eval.batch_indices=[0,1]",
         "eval.n_members=10",
     ]
+    assert captured["runtime_typechecking"] is False
+
+
+def test_main_train_dispatches_runtime_typechecking_flag(monkeypatch):
+    captured = {}
+
+    def _fake_train_command(**kwargs):
+        captured.update(kwargs)
+        return None, "dummy"
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.cli.train_command",
+        _fake_train_command,
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "autocast",
+            "ae",
+            "--runtime-typechecking",
+            "--dry-run",
+        ],
+    )
+
+    workflow_cli.main()
+
+    assert captured["runtime_typechecking"] is True
 
 
 def test_main_ae_dispatches_hydra_config_passthrough(monkeypatch):
@@ -1271,7 +1368,38 @@ def test_benchmark_manifest_command_slurm_passes_work_dirs(monkeypatch, tmp_path
     assert captured["manifest"] == manifest
     assert captured["work_dirs"] == [str(work_a), str(work_b)]
     assert captured["overrides"] == ["hydra.launcher.partition=gpu"]
+    assert captured["runtime_typechecking"] is False
     assert captured["dry_run"] is True
+
+
+def test_benchmark_manifest_command_slurm_passes_runtime_typechecking(
+    monkeypatch, tmp_path
+):
+    manifest = tmp_path / "benchmarks.txt"
+    manifest.write_text(
+        "benchmark --workdir outputs/run_a\n",
+        encoding="utf-8",
+    )
+
+    captured = {}
+
+    def _fake_submit_manifest_via_sbatch(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.commands.submit_manifest_via_sbatch",
+        _fake_submit_manifest_via_sbatch,
+    )
+
+    benchmark_manifest_command(
+        mode="slurm",
+        manifest=manifest,
+        overrides=[],
+        runtime_typechecking=True,
+        dry_run=True,
+    )
+
+    assert captured["runtime_typechecking"] is True
 
 
 def test_submit_manifest_via_sbatch_dry_run_includes_combine_step(capsys, tmp_path):

@@ -26,6 +26,14 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--mode", choices=["local", "slurm"], default="local")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument(
+        "--runtime-typechecking",
+        action="store_true",
+        help=(
+            "Enable runtime beartype type checking for launched jobs "
+            "(disabled by default)."
+        ),
+    )
+    parser.add_argument(
         "--config-name",
         help="Hydra top-level config name passthrough.",
     )
@@ -214,6 +222,7 @@ def main() -> None:
             work_dir=args.workdir,
             resume_from=resume_from,
             overrides=combined_overrides,
+            runtime_typechecking=args.runtime_typechecking,
             dry_run=args.dry_run,
         )
         return
@@ -229,6 +238,7 @@ def main() -> None:
             dataset=dataset,
             work_dir=args.workdir,
             overrides=combined_overrides,
+            runtime_typechecking=args.runtime_typechecking,
             dry_run=args.dry_run,
         )
         return
@@ -239,6 +249,7 @@ def main() -> None:
                 mode=args.mode,
                 manifest=Path(args.manifest),
                 overrides=combined_overrides,
+                runtime_typechecking=args.runtime_typechecking,
                 dry_run=args.dry_run,
             )
         else:
@@ -251,6 +262,7 @@ def main() -> None:
                 dataset=dataset,
                 work_dir=args.workdir,
                 overrides=combined_overrides,
+                runtime_typechecking=args.runtime_typechecking,
                 dry_run=args.dry_run,
             )
         return
@@ -276,6 +288,7 @@ def main() -> None:
             resume_from=resume_from,
             train_overrides=combined_overrides,
             eval_overrides=[*args.eval_overrides],
+            runtime_typechecking=args.runtime_typechecking,
             dry_run=args.dry_run,
         )
         return
