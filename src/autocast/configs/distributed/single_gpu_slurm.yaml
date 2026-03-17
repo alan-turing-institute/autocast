@@ -1,0 +1,16 @@
+# @package _global_
+defaults:
+  - override /hydra/launcher: slurm
+  - _self_
+
+trainer:
+  max_time: "00:12:00:00"
+  accelerator: gpu
+  devices: 1
+  strategy: auto
+  num_nodes: 1
+
+hydra:
+  launcher:
+    gpus_per_node: 1
+    tasks_per_node: 1
