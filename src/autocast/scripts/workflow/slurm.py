@@ -341,7 +341,7 @@ def _submit_one_sbatch_job(
     return job_id, job_name
 
 
-def submit_via_sbatch(
+def submit_via_sbatch(  # noqa: PLR0915
     module: str,
     overrides: list[str],
     runtime_typechecking: bool = False,
@@ -353,13 +353,47 @@ def submit_via_sbatch(
     )
 
     if dry_run:
-        validate_alignment_for_submission(
+        sweep_dir = extract_override_value(overrides, "hydra.sweep.dir")
+        run_dir_override = extract_override_value(overrides, "hydra.run.dir")
+        output_dir_raw = sweep_dir or run_dir_override
+        output_dir = (
+            Path(output_dir_raw).expanduser().resolve()
+            if output_dir_raw is not None
+            else Path.cwd().resolve()
+        )
+
+        expanded_jobs = validate_alignment_for_submission(
             module_overrides=module_overrides,
-            original_overrides=overrides,
+            original_overrides=[*overrides, f"hydra.run.dir={output_dir}"],
             merged_launcher_cfg=merged_launcher_cfg,
         )
 
-        print(f"DRY-RUN: {format_command(run_module_command(module, overrides))}")
+        if len(expanded_jobs) == 1:
+            print(
+                "DRY-RUN: "
+                f"{format_command(run_module_command(module, expanded_jobs[0]))}"
+            )
+            return
+
+        print(f"DRY-RUN: would submit {len(expanded_jobs)} SLURM jobs for sweep")
+        for index, base_job_overrides in enumerate(expanded_jobs):
+            case_dir = (output_dir / f"sweep_{index:04d}").resolve()
+            case_overrides = set_override(
+                base_job_overrides, "hydra.run.dir", str(case_dir)
+            )
+
+            wandb_name = extract_override_value(case_overrides, "logging.wandb.name")
+            if wandb_name:
+                case_overrides = set_override(
+                    case_overrides,
+                    "logging.wandb.name",
+                    f"{wandb_name}_s{index:04d}",
+                )
+
+            print(
+                f"  - [{index:04d}] "
+                f"{format_command(run_module_command(module, case_overrides))}"
+            )
         return
 
     umask_value = resolve_umask_from_overrides(overrides)
