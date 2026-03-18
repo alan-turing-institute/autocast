@@ -737,14 +737,15 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
 
     # Setup Fabric for device management
     accelerator = eval_cfg.get("device", "auto")
-    fabric = L.Fabric(accelerator=accelerator, devices=1)
+    devices = eval_cfg.get("devices", "auto")
+    fabric = L.Fabric(accelerator=accelerator, devices=devices)
     fabric.launch()
 
     # Setup model and loader with Fabric
     log.info("Model configuration n_members: %s", n_members)
     log.info("Model class: %s", type(model))
 
-    model.to(fabric.device)
+    model = fabric.setup_module(model)
     model.eval()
     test_loader = _limit_batches(
         fabric.setup_dataloaders(datamodule.test_dataloader()),
@@ -784,12 +785,17 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
         predict_fn=model,
         windows=test_windows,
         return_per_batch=True,
+        device=fabric.device,
     )
+
+    if test_per_batch_rows:
+        gathered = fabric.all_gather(test_per_batch_rows)
+        test_per_batch_rows = [r for sublist in gathered for r in sublist]
 
     # Process and save test metrics
     test_rows = _process_metrics_results(
         test_metrics_results,
-        per_batch_rows=test_per_batch_rows,
+        per_batch_rows=test_per_batch_rows,  # pyright: ignore[reportArgumentType]
         log_prefix="Test",
         plot_dir=work_dir,
     )
@@ -799,14 +805,14 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     evaluation_rows.extend(
         _evaluation_metadata_rows(
             checkpoint_payload=checkpoint_payload,
-            model=model,
+            model=model,  # pyright: ignore[reportArgumentType]
         )
     )
     benchmark_rows = _collect_benchmark_rows(
         eval_cfg=eval_cfg,
         cfg=cfg,
         stats=stats,
-        model=model,
+        model=model,  # pyright: ignore[reportArgumentType]
         checkpoint_path=checkpoint_path,
         device=str(fabric.device),
         eval_batch_size=eval_batch_size,
@@ -846,7 +852,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 max_rollout_batches,
             )
             _render_rollouts(
-                model,
+                model,  # pyright: ignore[reportArgumentType]
                 rollout_loader,
                 batch_indices,
                 video_dir,
@@ -917,13 +923,17 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                     predict_fn=rollout_predict,
                     windows=windows,
                     return_per_batch=True,
+                    device=fabric.device,
                 )
             )
+            if rollout_per_batch_rows:
+                gathered = fabric.all_gather(rollout_per_batch_rows)
+                rollout_per_batch_rows = [r for sublist in gathered for r in sublist]
 
             # Process and log results
             rollout_csv_rows = _process_metrics_results(
                 rollout_metrics_per_window,
-                per_batch_rows=rollout_per_batch_rows,
+                per_batch_rows=rollout_per_batch_rows,  # pyright: ignore[reportArgumentType]
                 log_prefix="Rollout",
                 plot_dir=csv_path.parent,
             )
@@ -935,12 +945,12 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 _split_metric_and_metadata_rows(rollout_combined_rows)
             )
 
-            if rollout_metric_rows:
+            if fabric.global_rank == 0 and rollout_metric_rows:
                 _write_csv(rollout_metric_rows, rollout_csv_path)
                 log.info("Wrote rollout metrics to %s", rollout_csv_path)
 
             rollout_metadata_csv_path = csv_path.parent / "rollout_metadata.csv"
-            if rollout_metadata_rows:
+            if fabric.global_rank == 0 and rollout_metadata_rows:
                 _write_csv(rollout_metadata_rows, rollout_metadata_csv_path)
                 log.info("Wrote rollout metadata to %s", rollout_metadata_csv_path)
 
@@ -974,8 +984,9 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                     metric_fns=per_timestep_metric_fns,
                     predict_fn=rollout_predict,
                     max_timesteps=max_rollout_timesteps,
+                    device=fabric.device,
                 )
-                if per_timestep_results:
+                if per_timestep_results and fabric.global_rank == 0:
                     T, C = next(iter(per_timestep_results.values())).shape
                     timestep_cols = [str(t) for t in range(T)]
                     timestep_index = pd.Index(timestep_cols)
@@ -1017,16 +1028,16 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
 
     metric_rows, metadata_rows = _split_metric_and_metadata_rows(evaluation_rows)
 
-    if metric_rows:
+    if fabric.global_rank == 0 and metric_rows:
         _write_csv(metric_rows, csv_path)
         log.info("Wrote metrics CSV to %s", csv_path)
 
     metadata_csv_path = csv_path.parent / "evaluation_metadata.csv"
-    if metadata_rows:
+    if fabric.global_rank == 0 and metadata_rows:
         _write_csv(metadata_rows, metadata_csv_path)
         log.info("Wrote evaluation metadata to %s", metadata_csv_path)
 
-    if benchmark_rows:
+    if benchmark_rows and fabric.global_rank == 0:
         benchmark_csv_path = resolve_benchmark_csv_path(eval_cfg, work_dir)
         benchmark_csv_path.parent.mkdir(parents=True, exist_ok=True)
         pd.DataFrame(benchmark_rows).to_csv(benchmark_csv_path, index=False)
