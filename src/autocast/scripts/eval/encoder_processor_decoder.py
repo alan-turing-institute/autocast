@@ -16,7 +16,13 @@ from torchmetrics import Metric
 from autocast.benchmarking import benchmark_model, benchmark_rollout
 from autocast.metrics import MAE, MSE, NMAE, NMSE, NRMSE, RMSE, VMSE, VRMSE, LInfinity
 from autocast.metrics.coverage import MultiCoverage
-from autocast.metrics.ensemble import CRPS, AlphaFairCRPS, FairCRPS
+from autocast.metrics.ensemble import (
+    CRPS,
+    AlphaFairCRPS,
+    EnergyScore,
+    FairCRPS,
+    VariogramScore,
+)
 from autocast.models.encoder_processor_decoder import EncoderProcessorDecoder
 from autocast.models.encoder_processor_decoder_ensemble import (
     EncoderProcessorDecoderEnsemble,
@@ -60,6 +66,8 @@ AVAILABLE_METRICS_ENSEMBLE = {
     "crps": CRPS,
     "fcrps": FairCRPS,
     "afcrps": AlphaFairCRPS,
+    "energy": EnergyScore,
+    "variogram": VariogramScore,
 }
 
 

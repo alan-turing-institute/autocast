@@ -4,6 +4,7 @@ import torch
 from autocast.metrics import ALL_ENSEMBLE_METRICS
 from autocast.metrics.base import BaseMetric
 from autocast.metrics.coverage import Coverage
+from autocast.metrics.ensemble import EnergyScore, VariogramScore
 from autocast.types import TensorBTSC
 from autocast.types.types import TensorBTC
 
@@ -13,7 +14,9 @@ ENSEMBLE_BASE_METRICS = tuple(
     if issubclass(metric_cls, BaseMetric)
 )
 
-ENSEMBLE_ERROR_METRICS = tuple(m for m in ENSEMBLE_BASE_METRICS if m not in [Coverage])
+ENSEMBLE_ERROR_METRICS = tuple(
+    m for m in ENSEMBLE_BASE_METRICS if m not in [Coverage, VariogramScore]
+)
 
 
 @pytest.mark.parametrize("MetricCls", ENSEMBLE_ERROR_METRICS)
@@ -74,3 +77,54 @@ def test_ensemble_metrics_stateful(MetricCls):
     value = metric.compute()
 
     assert torch.allclose(value, torch.tensor(0.0))
+
+
+def test_energy_score_manual_value():
+    # One sample, one timestep, one spatial point, two channels, two members.
+    y_pred = torch.tensor([[[[[0.0, 2.0], [0.0, 0.0]]]]])  # (1, 1, 1, 2, 2)
+    y_true = torch.tensor([[[[1.0, 0.0]]]])  # (1, 1, 1, 2)
+
+    metric = EnergyScore(alpha=1.0, reduce_all=False)
+    score = metric.score(y_pred, y_true)
+
+    # term1 = mean(||x_m - y||) = (1 + 1) / 2 = 1
+    # term2 = 0.5 * mean(||x_m - x_j||) = 0.5 * (0 + 2 + 2 + 0)/4 = 0.5
+    # ES = 1 - 0.5 = 0.5
+    expected = torch.tensor([[[0.5]]])
+    assert torch.allclose(score, expected)
+
+
+def test_variogram_score_manual_value():
+    # One sample, one timestep, one spatial point, two channels, two members.
+    y_pred = torch.tensor([[[[[0.0, 2.0], [0.0, 0.0]]]]])  # (1, 1, 1, 2, 2)
+    y_true = torch.tensor([[[[0.0, 0.0]]]])  # (1, 1, 1, 2)
+
+    metric = VariogramScore(p=1.0, reduce_all=False)
+    score = metric.score(y_pred, y_true)
+
+    # E|X1-X2| = (0 + 2) / 2 = 1, |y1-y2| = 0
+    # Off-diagonal terms are 1^2 each, diagonal terms are zero -> total = 2
+    expected = torch.tensor([[[2.0]]])
+    assert torch.allclose(score, expected)
+
+
+def test_energy_score_invalid_alpha():
+    with pytest.raises(ValueError):  # noqa: PT011
+        EnergyScore(alpha=0.0)
+
+    with pytest.raises(ValueError):  # noqa: PT011
+        EnergyScore(alpha=2.0)
+
+
+def test_variogram_score_invalid_parameters():
+    with pytest.raises(ValueError):  # noqa: PT011
+        VariogramScore(p=0.0)
+
+    bad_weights = torch.ones((3, 3))
+    metric = VariogramScore(weights=bad_weights)
+
+    y_pred = torch.ones((1, 1, 1, 2, 2))
+    y_true = torch.ones((1, 1, 1, 2))
+
+    with pytest.raises(ValueError):  # noqa: PT011
+        metric.score(y_pred, y_true)

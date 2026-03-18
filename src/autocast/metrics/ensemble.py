@@ -315,3 +315,126 @@ class AlphaFairCRPS(BTSCMMetric):
             afCRPS: (B, T, S, C)
         """
         return _alpha_fair_crps_score(y_pred, y_true, self.alpha)
+
+
+class EnergyScore(BTSCMMetric):
+    r"""
+    Energy score (multivariate CRPS) for ensemble forecasts.
+
+    For a vector-valued forecast with ensemble members :math:`x_m \in \mathbb{R}^d`
+    and observation :math:`y \in \mathbb{R}^d`, this computes
+
+    .. math::
+        ES_\alpha(F, y) = \frac{1}{M} \sum_{m=1}^M \lVert x_m - y \rVert_2^\alpha
+        - \frac{1}{2M^2} \sum_{m=1}^M \sum_{j=1}^M \lVert x_m - x_j \rVert_2^\alpha,
+
+    with :math:`\alpha \in (0, 2)`.
+
+    Notes
+    -----
+    This implementation applies the multivariate score over the channel dimension.
+    The output keeps a singleton channel axis so it remains compatible with the
+    existing BTSCMMetric reduction pipeline.
+    """
+
+    name: str = "energy"
+
+    def __init__(self, alpha: float = 1.0, **kwargs):
+        super().__init__(**kwargs)
+        if not (0 < alpha < 2):
+            raise ValueError(f"alpha must be in (0, 2), got {alpha}")
+        self.alpha = alpha
+
+    def _score(self, y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTSC:
+        # y_pred: (..., C, M), y_true: (..., C)
+        y_true_expanded = rearrange(y_true, "... c -> ... c 1")
+
+        # (B, T, S, M): ||x_m - y||_2^alpha
+        dist_truth = torch.linalg.vector_norm(y_pred - y_true_expanded, ord=2, dim=-2)
+        term1 = dist_truth.pow(self.alpha).mean(dim=-1)
+
+        # (B, T, S, M, M): ||x_m - x_j||_2^alpha
+        pairwise = (
+            rearrange(y_pred, "... c m -> ... c m 1")
+            - rearrange(y_pred, "... c m -> ... c 1 m")
+        )
+        dist_pairwise = torch.linalg.vector_norm(pairwise, ord=2, dim=-3)
+        term2 = 0.5 * dist_pairwise.pow(self.alpha).mean(dim=(-2, -1))
+
+        # Keep singleton channel axis for compatibility with BTSCMMetric.
+        return rearrange(term1 - term2, "... -> ... 1")
+
+
+class VariogramScore(BTSCMMetric):
+    r"""
+    Variogram score for multivariate ensemble forecasts.
+
+    For vector-valued forecast members :math:`x_m \in \mathbb{R}^d` and
+    observation :math:`y \in \mathbb{R}^d`, this computes
+
+    .. math::
+        VS_p(F, y) = \sum_{i,j=1}^d w_{ij}
+        \left(\frac{1}{M}\sum_{m=1}^M |x_{m,i} - x_{m,j}|^p - |y_i - y_j|^p\right)^2,
+
+    with :math:`p > 0` and non-negative weights :math:`w_{ij}`.
+
+    Notes
+    -----
+    This implementation applies the variogram transformation over the channel
+    dimension and keeps a singleton channel axis for compatibility with BTSCMMetric.
+    """
+
+    name: str = "variogram"
+
+    def __init__(
+        self,
+        p: float = 0.5,
+        weights: Tensor | np.ndarray | None = None,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        if p <= 0:
+            raise ValueError(f"p must be > 0, got {p}")
+        self.p = p
+
+        if weights is not None:
+            if isinstance(weights, np.ndarray):
+                weights = torch.from_numpy(weights)
+            if not isinstance(weights, Tensor):
+                raise TypeError(
+                    f"weights must be a Tensor, np.ndarray, or None, got {type(weights)}"
+                )
+        self.weights = weights
+
+    def _score(self, y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTSC:
+        n_channels = y_true.shape[-1]
+
+        if self.weights is None:
+            weights = torch.ones(
+                (n_channels, n_channels), device=y_pred.device, dtype=y_pred.dtype
+            )
+        else:
+            if self.weights.ndim != 2 or self.weights.shape != (n_channels, n_channels):
+                raise ValueError(
+                    "weights must have shape (C, C) matching the channel dimension; "
+                    f"got {tuple(self.weights.shape)} with C={n_channels}"
+                )
+            weights = self.weights.to(device=y_pred.device, dtype=y_pred.dtype)
+
+        # Observation variogram term: (..., C, C)
+        obs_pairwise = torch.abs(
+            rearrange(y_true, "... c -> ... c 1") - rearrange(y_true, "... c -> ... 1 c")
+        ).pow(self.p)
+
+        # Ensemble variogram expectation: (..., C, C)
+        ens_pairwise = torch.abs(
+            rearrange(y_pred, "... c m -> ... c 1 m")
+            - rearrange(y_pred, "... c m -> ... 1 c m")
+        ).pow(self.p)
+        ens_expected = ens_pairwise.mean(dim=-1)
+
+        diff_sq = (ens_expected - obs_pairwise).pow(2)
+        score = (diff_sq * weights).sum(dim=(-2, -1))
+
+        # Keep singleton channel axis for compatibility with BTSCMMetric.
+        return rearrange(score, "... -> ... 1")
