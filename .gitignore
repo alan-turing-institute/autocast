@@ -14,3 +14,6 @@ logs
 local_hydra/local_experiment/*.yaml
 !local_hydra/local_experiment/README.md
 core
+# AI rules currently ignored
+.clinerules
+.cursorrules
