@@ -9,3 +9,7 @@ trainer:
   devices: 1
   strategy: auto
   num_nodes: 1
+
+eval:
+  device: auto
+  devices: 1

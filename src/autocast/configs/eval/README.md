@@ -52,5 +52,23 @@ All eval configs support these parameters:
 - `video_sample_index`: Sample index within batch to visualize
 - `fps`: Frames per second for videos
 - `device`: Device for evaluation (auto, cpu, cuda, mps)
+- `devices`: Number of GPUs for DDP evaluation (auto, or int e.g. 1, 4)
+
+## Multi-GPU Evaluation
+
+Multi-GPU evaluation uses PyTorch Lightning Fabric and automatically
+scales when the `distributed` config is composed. The distributed
+configs already set `eval.devices` to match `gpus_per_node`:
+
+```bash
+# 4-GPU evaluation via the distributed config
+autocast eval +distributed=ddp_4gpu_slurm eval.checkpoint=path/to/model.ckpt
+
+# Explicit GPU count override
+autocast eval eval.devices=4 eval.checkpoint=path/to/model.ckpt
+```
+
+On SLURM, `srun` propagates `LOCAL_RANK` / `WORLD_SIZE` into the
+process so Fabric DDP initialises automatically — no extra flags needed.
 - `max_rollout_steps`: Maximum number of rollout steps
 - `free_running_only`: Whether to disable teacher forcing
