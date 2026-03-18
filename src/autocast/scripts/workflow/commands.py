@@ -381,17 +381,30 @@ def run_module(
     overrides: list[str],
     dry_run: bool = False,
     mode: str = "local",
+    runtime_typechecking: bool = False,
 ) -> None:
     """Execute *module* locally or via SLURM depending on *mode*."""
     if mode == "slurm":
-        submit_via_sbatch(module, overrides, dry_run=dry_run)
+        submit_via_sbatch(
+            module,
+            overrides,
+            dry_run=dry_run,
+            runtime_typechecking=runtime_typechecking,
+        )
         return
 
     cmd = run_module_command(module, overrides)
     if dry_run:
         print(f"DRY-RUN: {format_command(cmd)}")
         return
-    subprocess.run(cmd, check=True)
+    subprocess.run(
+        cmd,
+        check=True,
+        env={
+            **os.environ,
+            "RUNTIME_TYPECHECKING": str(runtime_typechecking).lower(),
+        },
+    )
 
 
 def build_effective_eval_overrides(
@@ -533,6 +546,7 @@ def train_command(
     overrides: list[str],
     run_group: str | None = None,
     run_id: str | None = None,
+    runtime_typechecking: bool = False,
     dry_run: bool = False,
 ) -> tuple[Path, str]:
     """Run a training command."""
@@ -548,7 +562,13 @@ def train_command(
         overrides=overrides,
     )
 
-    run_module(TRAIN_MODULES[kind], command_overrides, dry_run=dry_run, mode=mode)
+    run_module(
+        TRAIN_MODULES[kind],
+        command_overrides,
+        dry_run=dry_run,
+        mode=mode,
+        runtime_typechecking=runtime_typechecking,
+    )
     return final_work_dir, resolved_run_id
 
 
@@ -558,6 +578,7 @@ def eval_command(
     dataset: str | None,
     work_dir: str,
     overrides: list[str],
+    runtime_typechecking: bool = False,
     dry_run: bool = False,
 ) -> None:
     """Run an evaluation command."""
@@ -576,7 +597,13 @@ def eval_command(
         using_resolved_config=using_resolved_config,
     )
 
-    run_module(EVAL_MODULE, command_overrides, dry_run=dry_run, mode=mode)
+    run_module(
+        EVAL_MODULE,
+        command_overrides,
+        dry_run=dry_run,
+        mode=mode,
+        runtime_typechecking=runtime_typechecking,
+    )
 
 
 def benchmark_command(
@@ -585,6 +612,7 @@ def benchmark_command(
     dataset: str | None,
     work_dir: str,
     overrides: list[str],
+    runtime_typechecking: bool = False,
     dry_run: bool = False,
 ) -> None:
     """Run a benchmark command."""
@@ -609,7 +637,13 @@ def benchmark_command(
         using_resolved_config=using_resolved_config,
     )
 
-    run_module(BENCHMARK_MODULE, command_overrides, dry_run=dry_run, mode=mode)
+    run_module(
+        BENCHMARK_MODULE,
+        command_overrides,
+        dry_run=dry_run,
+        mode=mode,
+        runtime_typechecking=runtime_typechecking,
+    )
 
 
 def _read_manifest_lines(manifest: Path) -> list[str]:
@@ -698,6 +732,7 @@ def benchmark_manifest_command(
     mode: str,
     manifest: Path,
     overrides: list[str],
+    runtime_typechecking: bool = False,
     dry_run: bool = False,
 ) -> None:
     """Run benchmarks for every entry in *manifest*.
@@ -729,6 +764,7 @@ def benchmark_manifest_command(
             lines=lines,
             work_dirs=work_dirs,
             overrides=overrides,
+            runtime_typechecking=runtime_typechecking,
             dry_run=dry_run,
         )
         return
@@ -741,6 +777,7 @@ def benchmark_manifest_command(
             dataset=dataset,
             work_dir=work_dir,
             overrides=[*overrides, *extra_overrides],
+            runtime_typechecking=runtime_typechecking,
             dry_run=dry_run,
         )
 
@@ -761,6 +798,7 @@ def train_eval_single_job_command(
     eval_overrides: list[str],
     run_group: str | None = None,
     run_id: str | None = None,
+    runtime_typechecking: bool = False,
     dry_run: bool = False,
 ) -> tuple[Path, str]:
     """Run train→eval in a single Hydra job."""
@@ -795,5 +833,11 @@ def train_eval_single_job_command(
             f"train_eval.eval_overrides={hydra_string_list_literal(eval_overrides)}"
         )
 
-    run_module(TRAIN_EVAL_MODULE, command_overrides, dry_run=dry_run, mode=mode)
+    run_module(
+        TRAIN_EVAL_MODULE,
+        command_overrides,
+        dry_run=dry_run,
+        mode=mode,
+        runtime_typechecking=runtime_typechecking,
+    )
     return final_work_dir, resolved_run_id
