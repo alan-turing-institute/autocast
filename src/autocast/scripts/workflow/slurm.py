@@ -19,11 +19,12 @@ from autocast.scripts.workflow.helpers import (
 )
 from autocast.scripts.workflow.naming import sanitize_name_part
 from autocast.scripts.workflow.overrides import (
+    expand_sweep_overrides,
     extract_override_value,
     normalized_override,
     set_override,
+    strip_hydra_sweep_controls,
 )
-from autocast.scripts.workflow.validation import validate_alignment_for_submission
 
 # ---------------------------------------------------------------------------
 # Launcher config helpers
@@ -391,11 +392,12 @@ def submit_via_sbatch(  # noqa: PLR0915
             else Path.cwd().resolve()
         )
 
-        expanded_jobs = validate_alignment_for_submission(
-            module_overrides=module_overrides,
-            original_overrides=[*overrides, f"hydra.run.dir={output_dir}"],
-            merged_launcher_cfg=merged_launcher_cfg,
-        )
+        module_run_overrides = [
+            *(o for o in module_overrides if not o.startswith("hydra.run.dir=")),
+            f"hydra.run.dir={output_dir}",
+        ]
+        module_run_overrides = strip_hydra_sweep_controls(module_run_overrides)
+        expanded_jobs = expand_sweep_overrides(module_run_overrides)
 
         if len(expanded_jobs) == 1:
             print(
@@ -443,11 +445,12 @@ def submit_via_sbatch(  # noqa: PLR0915
     if not isinstance(setup_commands, list):
         setup_commands = []
 
-    expanded_jobs = validate_alignment_for_submission(
-        module_overrides=module_overrides,
-        original_overrides=[*overrides, f"hydra.run.dir={output_dir}"],
-        merged_launcher_cfg=merged_launcher_cfg,
-    )
+    module_run_overrides = [
+        *(o for o in module_overrides if not o.startswith("hydra.run.dir=")),
+        f"hydra.run.dir={output_dir}",
+    ]
+    module_run_overrides = strip_hydra_sweep_controls(module_run_overrides)
+    expanded_jobs = expand_sweep_overrides(module_run_overrides)
     submission_ts = _submission_timestamp()
 
     if len(expanded_jobs) == 1:
