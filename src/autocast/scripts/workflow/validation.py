@@ -14,6 +14,8 @@ from autocast.scripts.workflow.overrides import (
     strip_hydra_sweep_controls,
 )
 
+_DISTRIBUTED_DEFAULT_KEYS = {"/distributed", "distributed"}
+
 
 def _parse_override_scalar(value: str) -> int | str | bool:
     stripped = value.strip().strip('"').strip("'")
@@ -45,17 +47,52 @@ def _extract_local_experiment_name(overrides: list[str]) -> str | None:
     return None
 
 
+def _extract_distributed_preset_name(cfg: dict) -> str | None:
+    """Return the distributed preset referenced in a config defaults list, if any."""
+    defaults = cfg.get("defaults")
+    if not isinstance(defaults, list):
+        return None
+    for item in defaults:
+        if not isinstance(item, dict):
+            continue
+        for key in _DISTRIBUTED_DEFAULT_KEYS:
+            value = item.get(key)
+            if isinstance(value, str) and value:
+                return value
+    return None
+
+
+def _load_distributed_cfg(name: str, *, config_root: Path) -> dict:
+    path = config_root / "distributed" / f"{name}.yaml"
+    if not path.exists():
+        return {}
+    loaded = OmegaConf.to_container(OmegaConf.load(path), resolve=True)
+    return loaded if isinstance(loaded, dict) else {}
+
+
 def _load_preset_trainer_cfg(overrides: list[str]) -> dict:
     """Load ``trainer`` mapping from selected experiment preset.
 
     Supports both ``local_experiment=<name>`` and ``experiment=<name>``.
     ``local_experiment`` has precedence if both are provided.
     """
+    config_root = Path(__file__).resolve().parents[2] / "configs"
 
     def _load_trainer_from_file(path: Path) -> dict:
         if not path.exists():
             return {}
-        cfg = OmegaConf.to_container(OmegaConf.load(path), resolve=True)
+        raw = OmegaConf.to_container(OmegaConf.load(path), resolve=True)
+        if not isinstance(raw, dict):
+            return {}
+        distributed = _extract_distributed_preset_name(raw)
+        merged = (
+            OmegaConf.merge(
+                _load_distributed_cfg(distributed, config_root=config_root), raw
+            )
+            if distributed
+            else raw
+        )
+        cfg = OmegaConf.to_container(merged, resolve=True)
         if not isinstance(cfg, dict):
             return {}
         trainer_cfg = cfg.get("trainer")
@@ -72,12 +109,7 @@ def _load_preset_trainer_cfg(overrides: list[str]) -> dict:
 
     experiment_name = extract_override_value(overrides, "experiment")
     if isinstance(experiment_name, str) and experiment_name:
-        experiment_cfg_path = (
-            Path(__file__).resolve().parents[2]
-            / "configs"
-            / "experiment"
-            / f"{experiment_name}.yaml"
-        )
+        experiment_cfg_path = config_root / "experiment" / f"{experiment_name}.yaml"
         experiment_trainer_cfg = _load_trainer_from_file(experiment_cfg_path)
         if experiment_trainer_cfg:
             return experiment_trainer_cfg

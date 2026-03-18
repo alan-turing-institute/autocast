@@ -91,10 +91,39 @@ def _load_preset_launcher_cfg(overrides: list[str]) -> dict:
     ``local_experiment`` has precedence if both are provided.
     """
 
+    def _extract_distributed_preset_name(cfg: dict) -> str | None:
+        defaults = cfg.get("defaults")
+        if not isinstance(defaults, list):
+            return None
+        for item in defaults:
+            if not isinstance(item, dict):
+                continue
+            val = item.get("/distributed") or item.get("distributed")
+            if isinstance(val, str) and val:
+                return val
+        return None
+
+    def _load_distributed_cfg(name: str) -> dict:
+        cfg_root = Path(__file__).resolve().parents[2] / "configs"
+        path = cfg_root / "distributed" / f"{name}.yaml"
+        if not path.exists():
+            return {}
+        loaded = OmegaConf.to_container(OmegaConf.load(path), resolve=True)
+        return loaded if isinstance(loaded, dict) else {}
+
     def _load_launcher_from_file(path: Path) -> dict:
         if not path.exists():
             return {}
-        cfg = OmegaConf.to_container(OmegaConf.load(path), resolve=True)
+        raw = OmegaConf.to_container(OmegaConf.load(path), resolve=True)
+        if not isinstance(raw, dict):
+            return {}
+        distributed = _extract_distributed_preset_name(raw)
+        merged = (
+            OmegaConf.merge(_load_distributed_cfg(distributed), raw)
+            if distributed
+            else raw
+        )
+        cfg = OmegaConf.to_container(merged, resolve=True)
         if not isinstance(cfg, dict):
             return {}
         hydra_cfg = cfg.get("hydra")
