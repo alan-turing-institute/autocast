@@ -1,5 +1,6 @@
 # @package _global_
 defaults:
+  - /distributed: ddp_4gpu_slurm
   - override /datamodule: advection_diffusion_multichannel_64_64
   - override /encoder@model.encoder: permute_concat
   - override /decoder@model.decoder: channels_last
@@ -34,5 +35,3 @@ model:
     crps:
       _target_: autocast.metrics.ensemble.CRPS
 
-trainer:
-  max_time: "00:12:00:00"

@@ -67,19 +67,26 @@ def _link_checkpoint_target_to_latest(trainer: L.Trainer, target_path: Path) -> 
     if source_path is None:
         return False
 
+    source_resolved = source_path.resolve()
     target_path.parent.mkdir(parents=True, exist_ok=True)
     if target_path.exists() or target_path.is_symlink():
+        try:
+            # If target already points to the latest checkpoint, nothing to do.
+            if target_path.resolve() == source_resolved:
+                return True
+        except OSError:
+            # Broken symlink or transient filesystem state; replace below.
+            pass
         target_path.unlink()
 
     try:
-        source_resolved = source_path.resolve()
         target_parent = target_path.parent.resolve()
         relative_source = Path(os.path.relpath(source_resolved, start=target_parent))
         target_path.symlink_to(relative_source)
-        log.info("Linked checkpoint %s -> %s", target_path, relative_source)
     except OSError:
-        shutil.copy2(source_path, target_path)
-        log.info("Copied checkpoint %s -> %s", source_path, target_path)
+        if target_path.exists() and target_path.resolve() == source_resolved:
+            return True
+        shutil.copy2(source_resolved, target_path)
 
     return True
 
@@ -156,6 +163,8 @@ class CheckpointAliasSymlinkCallback(Callback):
         self.target_path = Path(target_path)
 
     def _refresh_alias(self, trainer: L.Trainer):
+        if not trainer.is_global_zero:
+            return
         _link_checkpoint_target_to_latest(trainer, self.target_path)
 
     def on_train_epoch_end(self, trainer: L.Trainer, pl_module: L.LightningModule):
@@ -364,7 +373,7 @@ def run_training(
         logger=wandb_logger,
     )
 
-    if output_cfg.get("save_config"):
+    if output_cfg.get("save_config") and trainer.is_global_zero:
         save_resolved_config(config, work_dir)
 
     resume_checkpoint = config.get("resume_from_checkpoint") or output_cfg.get(
@@ -423,16 +432,16 @@ def run_training(
         trainer.test(model=model, datamodule=datamodule)
 
     # Save stable checkpoint target (prefer callback checkpoint)
-    _save_or_link_checkpoint_target(trainer, checkpoint_path)
+    if trainer.is_global_zero:
+        _save_or_link_checkpoint_target(trainer, checkpoint_path)
 
-    # If the stable target is a symlink, replace it with a final concrete checkpoint.
-    if checkpoint_path.is_symlink():
-        checkpoint_path.unlink()
-        trainer.save_checkpoint(checkpoint_path)
-        log.info(
-            "Overwrote checkpoint symlink with final checkpoint at %s",
-            checkpoint_path.resolve(),
-        )
+        # If the stable target is a symlink, replace with a final concrete checkpoint.
+        if checkpoint_path.is_symlink():
+            checkpoint_path.unlink()
+            trainer.save_checkpoint(checkpoint_path)
+
+    # Ensure non-zero ranks do not proceed with stale filesystem view.
+    trainer.strategy.barrier("checkpoint-alias-finalize")
 
 
 @torch.no_grad()
@@ -526,7 +535,7 @@ def train_autoencoder(
         trainer_cfg, logger=wandb_logger, default_root_dir=str(work_dir)
     )
     output_cfg = config.get("output", {})
-    if output_cfg.get("save_config", False):
+    if output_cfg.get("save_config", False) and trainer.is_global_zero:
         save_resolved_config(
             config, work_dir, filename="resolved_autoencoder_config.yaml"
         )
@@ -584,9 +593,12 @@ def train_autoencoder(
         if checkpoint_target.is_absolute()
         else (work_dir / checkpoint_target)
     )
-    trainer.save_checkpoint(checkpoint_path)
-    log.info("Saved checkpoint to %s", checkpoint_path.resolve())
+    if trainer.is_global_zero:
+        trainer.save_checkpoint(checkpoint_path)
+        log.info("Saved checkpoint to %s", checkpoint_path.resolve())
 
-    _save_reconstructions(model, datamodule, work_dir)
+        _save_reconstructions(model, datamodule, work_dir)
+
+    trainer.strategy.barrier("autoencoder-post-training-finalize")
 
     return checkpoint_path

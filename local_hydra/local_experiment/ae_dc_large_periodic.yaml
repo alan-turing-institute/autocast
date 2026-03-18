@@ -1,5 +1,6 @@
 # @package _global_
 defaults:
+  - /distributed: ddp_4gpu_slurm
   - override /datamodule: advection_diffusion
   - override /model: autoencoder_dc_large
   - override /optimizer: psgd
@@ -29,10 +30,4 @@ optimizer:
   scheduler: cosine
 
 trainer:
-  accelerator: gpu
-  # devices: 8
-  # max_epochs: 1024
-  # limit_train_batches: 256
-  devices: 1
-  max_time: "00:12:00:00"
   gradient_clip_val: 1.0
