@@ -21,6 +21,7 @@ fps: 5
 
 # Device for evaluation
 device: auto  # auto, cpu, cuda, or mps
+devices: auto # auto, or int (e.g. 1, 4 for multi-GPU DDP evaluation)
 
 # Rollout settings
 max_rollout_steps: 10
