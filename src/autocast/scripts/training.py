@@ -535,7 +535,7 @@ def train_autoencoder(
         trainer_cfg, logger=wandb_logger, default_root_dir=str(work_dir)
     )
     output_cfg = config.get("output", {})
-    if output_cfg.get("save_config", False):
+    if output_cfg.get("save_config", False) and trainer.is_global_zero:
         save_resolved_config(
             config, work_dir, filename="resolved_autoencoder_config.yaml"
         )
@@ -593,9 +593,12 @@ def train_autoencoder(
         if checkpoint_target.is_absolute()
         else (work_dir / checkpoint_target)
     )
-    trainer.save_checkpoint(checkpoint_path)
-    log.info("Saved checkpoint to %s", checkpoint_path.resolve())
+    if trainer.is_global_zero:
+        trainer.save_checkpoint(checkpoint_path)
+        log.info("Saved checkpoint to %s", checkpoint_path.resolve())
 
-    _save_reconstructions(model, datamodule, work_dir)
+        _save_reconstructions(model, datamodule, work_dir)
+
+    trainer.strategy.barrier("autoencoder-post-training-finalize")
 
     return checkpoint_path
