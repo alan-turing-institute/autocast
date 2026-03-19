@@ -9,8 +9,3 @@ trainer:
   devices: 1
   strategy: auto
   num_nodes: 1
-
-hydra:
-  launcher:
-    gpus_per_node: 1
-    tasks_per_node: 1
