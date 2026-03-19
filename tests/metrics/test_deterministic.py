@@ -3,6 +3,11 @@ import torch
 
 from autocast.metrics import ALL_DETERMINISTIC_METRICS
 from autocast.metrics.deterministic import (
+    PowerSpectrumCCRMSE,
+    PowerSpectrumCCRMSEHigh,
+    PowerSpectrumCCRMSELow,
+    PowerSpectrumCCRMSEMid,
+    PowerSpectrumCCRMSETail,
     PowerSpectrumRMSE,
     PowerSpectrumRMSEHigh,
     PowerSpectrumRMSELow,
@@ -58,6 +63,33 @@ def test_power_spectrum_rmse_increases_with_spectral_scale(MetricCls):
 
     value = MetricCls()(y_pred, y_true)
     assert torch.all(value > 0)
+
+
+@pytest.mark.parametrize(
+    "MetricCls",
+    [
+        PowerSpectrumCCRMSE,
+        PowerSpectrumCCRMSELow,
+        PowerSpectrumCCRMSEMid,
+        PowerSpectrumCCRMSEHigh,
+        PowerSpectrumCCRMSETail,
+    ],
+)
+def test_cross_correlation_rmse_nonzero_for_uncorrelated(MetricCls):
+    torch.manual_seed(0)
+    y_true: TensorBTSC = torch.randn((1, 1, 8, 8, 1))
+    y_pred: TensorBTSC = torch.randn((1, 1, 8, 8, 1))
+
+    value = MetricCls()(y_pred, y_true)
+    assert torch.all(value > 0)
+
+
+def test_cross_correlation_rmse_near_zero_for_identical():
+    torch.manual_seed(0)
+    y: TensorBTSC = torch.randn((1, 1, 8, 8, 1))
+    value = PowerSpectrumCCRMSE()(y, y)
+    # eps regularisation means result is near-zero, not exactly zero.
+    assert torch.all(value < 1e-5)
 
 
 def test_isotropic_binning_respects_requested_device():

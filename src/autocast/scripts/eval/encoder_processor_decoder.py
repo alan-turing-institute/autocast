@@ -24,6 +24,11 @@ from autocast.metrics import (
     VMSE,
     VRMSE,
     LInfinity,
+    PowerSpectrumCCRMSE,
+    PowerSpectrumCCRMSEHigh,
+    PowerSpectrumCCRMSELow,
+    PowerSpectrumCCRMSEMid,
+    PowerSpectrumCCRMSETail,
     PowerSpectrumRMSE,
     PowerSpectrumRMSEHigh,
     PowerSpectrumRMSELow,
@@ -74,6 +79,11 @@ AVAILABLE_METRICS = {
     "psrmse_mid": PowerSpectrumRMSEMid,
     "psrmse_high": PowerSpectrumRMSEHigh,
     "psrmse_tail": PowerSpectrumRMSETail,
+    "pscc": PowerSpectrumCCRMSE,
+    "pscc_low": PowerSpectrumCCRMSELow,
+    "pscc_mid": PowerSpectrumCCRMSEMid,
+    "pscc_high": PowerSpectrumCCRMSEHigh,
+    "pscc_tail": PowerSpectrumCCRMSETail,
 }
 
 AVAILABLE_METRICS_ENSEMBLE = {
