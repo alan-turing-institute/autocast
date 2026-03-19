@@ -6,12 +6,14 @@ from einops import rearrange
 from timm.layers.drop import DropPath
 from torch import nn
 
+from autocast.nn.vit import TemporalViTBackbone
 from autocast.processors.base import Processor
 from autocast.processors.vit import PatchEmbedding, PatchUnembedding
 from autocast.types import EncodedBatch, Tensor
 
 
 def modulate(x: Tensor, shift: Tensor | None, scale: Tensor | None) -> Tensor:
+    """Modulate the input tensor with shift and scale parameters."""
     if shift is None or scale is None:
         return x
     shape = [-1] + [1] * (x.ndim - 2) + [x.shape[-1]]
@@ -19,6 +21,7 @@ def modulate(x: Tensor, shift: Tensor | None, scale: Tensor | None) -> Tensor:
 
 
 def apply_gate(x: Tensor, gate: Tensor | None) -> Tensor:
+    """Apply a gating mechanism to the input tensor."""
     if gate is None:
         return x
     shape = [-1] + [1] * (x.ndim - 2) + [x.shape[-1]]
@@ -26,6 +29,8 @@ def apply_gate(x: Tensor, gate: Tensor | None) -> Tensor:
 
 
 class AdaLNGenerator(nn.Module):
+    """Generate Adaptive Layer Norm parameters from noise embeddings."""
+
     def __init__(
         self,
         hidden_dim: int,
@@ -43,8 +48,8 @@ class AdaLNGenerator(nn.Module):
                 nn.SiLU(), nn.Linear(n_noise_channels, num_chunks * hidden_dim)
             )
             if zero_init:
-                nn.init.zeros_(self.net[1].weight)
-                nn.init.zeros_(self.net[1].bias)
+                nn.init.zeros_(self.net[1].weight)  # type: ignore[arg-type]
+                nn.init.zeros_(self.net[1].bias)  # type: ignore[arg-type]
         else:
             self.net = None
 
@@ -57,8 +62,8 @@ class AdaLNGenerator(nn.Module):
 
 
 class DiffusionBackboneViTProcessor(Processor[EncodedBatch]):
-    """
-    Wrapper for the internal TemporalViTBackbone used in Diffusion Models.
+    """Wrapper for the internal TemporalViTBackbone used in Diffusion Models.
+
     Provides building blocks for modern generative architectures (e.g. DiT).
     """
 
@@ -78,10 +83,8 @@ class DiffusionBackboneViTProcessor(Processor[EncodedBatch]):
         super().__init__()
         self.n_spatial_dims = len(spatial_resolution)
         if self.n_spatial_dims != 2:
-            raise ValueError(
-                "Diffusion backbone wrapper expects 2D spatial resolution inputs (W,H)"
-            )
-        from autocast.nn.vit import TemporalViTBackbone
+            msg = "Diffusion wrapper expects 2D spatial resolution inputs (W,H)"
+            raise ValueError(msg)
 
         self.n_noise_channels = n_noise_channels
         self.loss_func = loss_func or nn.MSELoss()
@@ -105,11 +108,11 @@ class DiffusionBackboneViTProcessor(Processor[EncodedBatch]):
         )
 
     def forward(self, x: Tensor, x_noise: Tensor | None = None) -> Tensor:
-        x_in = x.unsqueeze(1).permute(0, 1, 3, 4, 2).contiguous()
+        x_in = rearrange(x, "b c h w -> b 1 h w c").contiguous()
         y = self.model(x_in, t=x_noise, cond=None, global_cond=None)
-        return y.squeeze(1).permute(0, 3, 1, 2).contiguous()
+        return rearrange(y, "b 1 h w c -> b c h w").contiguous()
 
-    def map(self, x: Tensor, global_cond: Tensor | None = None) -> Tensor:
+    def map(self, x: Tensor, global_cond: Tensor | None = None) -> Tensor:  # noqa: ARG002  # noqa: ARG002
         noise = (
             torch.randn(
                 x.shape[0], self.n_noise_channels, dtype=x.dtype, device=x.device
@@ -125,6 +128,8 @@ class DiffusionBackboneViTProcessor(Processor[EncodedBatch]):
 
 
 class FactorizedViTBlock(nn.Module):
+    """Block for Factorized ViT Processor."""
+
     def __init__(
         self,
         hidden_dim: int,
@@ -192,8 +197,12 @@ class FactorizedViTBlock(nn.Module):
 class FactorizedViTProcessor(Processor[EncodedBatch]):
     """
     ViT Processor using Factorized Spatiotemporal Attention and Ada-LN.
-    References:
-      - Factorized SFA (VivIT), MetNet-3, AViT for efficient scalable attention.
+
+    References
+    ----------
+    - VivIT: A Video Vision Transformer (https://arxiv.org/abs/2103.15691)
+    - MetNet-3: Deep Learning for Day Ahead Global Weather Forecasting (https://arxiv.org/abs/2306.06079)
+    - AViT: An Efficient and Scalable Attention (Internal or Relevant Paper)
     """
 
     def __init__(
@@ -253,7 +262,7 @@ class FactorizedViTProcessor(Processor[EncodedBatch]):
             self.debed(rearrange(x, self.embed_reshapes[0])), self.embed_reshapes[1]
         )
 
-    def map(self, x: Tensor, global_cond: Tensor | None = None) -> Tensor:
+    def map(self, x: Tensor, global_cond: Tensor | None = None) -> Tensor:  # noqa: ARG002
         noise = (
             torch.randn(
                 x.shape[0], self.n_noise_channels, dtype=x.dtype, device=x.device
@@ -262,16 +271,10 @@ class FactorizedViTProcessor(Processor[EncodedBatch]):
             else None
         )
         if self.n_spatial_dims == 2:
-            return (
-                self(x.permute(0, 2, 3, 1).contiguous(), noise)
-                .permute(0, 3, 1, 2)
-                .contiguous()
-            )
-        return (
-            self(x.permute(0, 2, 3, 4, 1).contiguous(), noise)
-            .permute(0, 4, 1, 2, 3)
-            .contiguous()
-        )
+            out = self(rearrange(x, "b c h w -> b h w c").contiguous(), noise)
+            return rearrange(out, "b h w c -> b c h w").contiguous()
+        out = self(rearrange(x, "b c d h w -> b d h w c").contiguous(), noise)
+        return rearrange(out, "b d h w c -> b c d h w").contiguous()
 
     def loss(self, batch: EncodedBatch) -> Tensor:
         return self.loss_func(
@@ -281,6 +284,8 @@ class FactorizedViTProcessor(Processor[EncodedBatch]):
 
 
 class FullAttentionViTBlock(nn.Module):
+    """Block for Full Attention ViT Processor."""
+
     def __init__(
         self,
         hidden_dim: int,
@@ -347,8 +352,12 @@ class FullAttentionViTBlock(nn.Module):
 class FullAttentionViTProcessor(Processor[EncodedBatch]):
     """
     ViT Processor using Full Spatiotemporal Attention and Ada-LN.
-    References:
-      - EarthPT, ClimaX, Aardvark (full global spatiotemporal context).
+
+    References
+    ----------
+    - EarthPT: A Foundation Model for Earth Observation (https://arxiv.org/abs/2309.07207)
+    - ClimaX: A foundation model for weather and climate (https://arxiv.org/abs/2301.10343)
+    - Aardvark Weather (https://www.nature.com/articles/s41586-025-08897-0)
     """
 
     def __init__(
@@ -408,7 +417,7 @@ class FullAttentionViTProcessor(Processor[EncodedBatch]):
             self.debed(rearrange(x, self.embed_reshapes[0])), self.embed_reshapes[1]
         )
 
-    def map(self, x: Tensor, global_cond: Tensor | None = None) -> Tensor:
+    def map(self, x: Tensor, global_cond: Tensor | None = None) -> Tensor:  # noqa: ARG002
         noise = (
             torch.randn(
                 x.shape[0], self.n_noise_channels, dtype=x.dtype, device=x.device
@@ -417,16 +426,10 @@ class FullAttentionViTProcessor(Processor[EncodedBatch]):
             else None
         )
         if self.n_spatial_dims == 2:
-            return (
-                self(x.permute(0, 2, 3, 1).contiguous(), noise)
-                .permute(0, 3, 1, 2)
-                .contiguous()
-            )
-        return (
-            self(x.permute(0, 2, 3, 4, 1).contiguous(), noise)
-            .permute(0, 4, 1, 2, 3)
-            .contiguous()
-        )
+            out = self(rearrange(x, "b c h w -> b h w c").contiguous(), noise)
+            return rearrange(out, "b h w c -> b c h w").contiguous()
+        out = self(rearrange(x, "b c d h w -> b d h w c").contiguous(), noise)
+        return rearrange(out, "b d h w c -> b c d h w").contiguous()
 
     def loss(self, batch: EncodedBatch) -> Tensor:
         return self.loss_func(
@@ -436,6 +439,8 @@ class FullAttentionViTProcessor(Processor[EncodedBatch]):
 
 
 class SwinViTBlock(nn.Module):
+    """Block for Swin ViT Processor."""
+
     def __init__(
         self,
         hidden_dim: int,
@@ -471,7 +476,7 @@ class SwinViTBlock(nn.Module):
         shift1, scale1, gate1, shift2, scale2, gate2 = self.ada_generator(x_noise)
         qkv = self.qkv_proj(modulate(self.norm1(x), shift1, scale1))
         q, k, v = qkv.split(self.fused_heads, dim=-1)
-        B, H, W = (*q.shape[:3],) if self.n_spatial_dims == 2 else (*q.shape[:3],)
+        B, H, W = (*q.shape[:3],)
         D = q.shape[3] if self.n_spatial_dims == 3 else 1
         wh, ww = self.window_size[0], self.window_size[1]
         wd = self.window_size[2] if len(self.window_size) > 2 else 1
@@ -558,8 +563,11 @@ class SwinViTBlock(nn.Module):
 class SwinViTProcessor(Processor[EncodedBatch]):
     """
     ViT Processor using 2D/3D Shifted-Window Attention (Swin) and Ada-LN.
-    References:
-      - Microsoft Aurora, Video Swin Transformer (linear complexity scaling).
+
+    References
+    ----------
+    - Aurora: A Foundation Model of the Atmosphere (https://arxiv.org/abs/2405.13063)
+    - Video Swin Transformer (https://arxiv.org/abs/2106.13230)
     """
 
     def __init__(
@@ -621,7 +629,7 @@ class SwinViTProcessor(Processor[EncodedBatch]):
             self.debed(rearrange(x, self.embed_reshapes[0])), self.embed_reshapes[1]
         )
 
-    def map(self, x: Tensor, global_cond: Tensor | None = None) -> Tensor:
+    def map(self, x: Tensor, global_cond: Tensor | None = None) -> Tensor:  # noqa: ARG002
         noise = (
             torch.randn(
                 x.shape[0], self.n_noise_channels, dtype=x.dtype, device=x.device
@@ -630,16 +638,10 @@ class SwinViTProcessor(Processor[EncodedBatch]):
             else None
         )
         if self.n_spatial_dims == 2:
-            return (
-                self(x.permute(0, 2, 3, 1).contiguous(), noise)
-                .permute(0, 3, 1, 2)
-                .contiguous()
-            )
-        return (
-            self(x.permute(0, 2, 3, 4, 1).contiguous(), noise)
-            .permute(0, 4, 1, 2, 3)
-            .contiguous()
-        )
+            out = self(rearrange(x, "b c h w -> b h w c").contiguous(), noise)
+            return rearrange(out, "b h w c -> b c h w").contiguous()
+        out = self(rearrange(x, "b c d h w -> b d h w c").contiguous(), noise)
+        return rearrange(out, "b d h w c -> b c d h w").contiguous()
 
     def loss(self, batch: EncodedBatch) -> Tensor:
         return self.loss_func(
