@@ -349,6 +349,9 @@ class AzulaUNetProcessor(Processor[EncodedBatch]):
         Whether to use gradient checkpointing. Default is False.
     loss_func : nn.Module, optional
         Loss function. Defaults to MSELoss.
+    n_noise_channels: int | None = None
+        Number of noise channels for conditional normalization. If None, no
+        noise conditioning is used. Default is None.
     """
 
     def __init__(
@@ -364,8 +367,12 @@ class AzulaUNetProcessor(Processor[EncodedBatch]):
         periodic: bool = False,
         gradient_checkpointing: bool = False,
         loss_func: nn.Module | None = None,
+        n_noise_channels: int | None = None,
     ):
         super().__init__()
+
+        # the default is 0 for no noise conditioning
+        self.n_noise_channels = n_noise_channels or 0
 
         # instantiate Azula UNet
         self.model = UNet(
@@ -378,8 +385,8 @@ class AzulaUNetProcessor(Processor[EncodedBatch]):
             ffn_factor=ffn_factor,
             dropout=dropout,
             periodic=periodic,
-            # mod_features are used when this is a diffusion backbone
-            mod_features=0,
+            #
+            mod_features=self.n_noise_channels,
             cond_channels=0,  # the default
             checkpointing=gradient_checkpointing,
         )
@@ -388,20 +395,22 @@ class AzulaUNetProcessor(Processor[EncodedBatch]):
         self.gradient_checkpointing = gradient_checkpointing
         self.loss_func = loss_func or nn.MSELoss()
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor, x_noise: Tensor | None = None) -> Tensor:
         """Forward pass through the Azula UNet.
 
         Parameters
         ----------
         x : Tensor
             Input tensor of shape (B, C_in, *spatial_dims).
+        x_noise : Tensor | None
+            Optional noise conditioning tensor of shape (B, n_noise_channels).
 
         Returns
         -------
         Tensor
             Output tensor of shape (B, C_out, *spatial_dims).
         """
-        return self.model(x)
+        return self.model(x, mod=x_noise)
 
     def map(self, x: Tensor, global_cond: Tensor | None) -> Tensor:
         """Map input states to output states.
@@ -419,7 +428,13 @@ class AzulaUNetProcessor(Processor[EncodedBatch]):
             Output tensor of shape (B, C_out, *spatial_dims).
         """
         _ = global_cond
-        return self(x)
+        if self.n_noise_channels > 0:
+            noise = torch.randn(
+                x.shape[0], self.n_noise_channels, dtype=x.dtype, device=x.device
+            )
+        else:
+            noise = None
+        return self(x, x_noise=noise)
 
     def loss(self, batch: EncodedBatch) -> Tensor:
         """Compute loss between output and target.
