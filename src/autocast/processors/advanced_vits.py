@@ -6,7 +6,6 @@ from einops import rearrange
 from timm.layers.drop import DropPath
 from torch import nn
 
-from autocast.nn.noise.conditional_layer_norm import ConditionalLayerNorm
 from autocast.processors.base import Processor
 from autocast.processors.vit import PatchEmbedding, PatchUnembedding
 from autocast.types import EncodedBatch, Tensor
@@ -26,23 +25,26 @@ def apply_gate(x: Tensor, gate: Tensor | None) -> Tensor:
     return x * gate.view(*shape)
 
 
-class AdaLNZeroGenerator(nn.Module):
+class AdaLNGenerator(nn.Module):
     def __init__(
         self,
         hidden_dim: int,
         n_noise_channels: int | None,
         num_chunks: int,
-        use_ada_ln_zero: bool = True,
+        use_ada_ln: bool = True,
+        zero_init: bool = True,
     ):
         super().__init__()
         self.num_chunks = num_chunks
-        self.use_ada_ln_zero = use_ada_ln_zero
-        if n_noise_channels is not None and n_noise_channels > 0 and use_ada_ln_zero:
+        self.use_ada_ln = use_ada_ln
+        self.zero_init = zero_init
+        if n_noise_channels is not None and n_noise_channels > 0 and use_ada_ln:
             self.net = nn.Sequential(
                 nn.SiLU(), nn.Linear(n_noise_channels, num_chunks * hidden_dim)
             )
-            nn.init.zeros_(self.net[1].weight)
-            nn.init.zeros_(self.net[1].bias)
+            if zero_init:
+                nn.init.zeros_(self.net[1].weight)
+                nn.init.zeros_(self.net[1].bias)
         else:
             self.net = None
 
@@ -55,6 +57,11 @@ class AdaLNZeroGenerator(nn.Module):
 
 
 class DiffusionBackboneViTProcessor(Processor[EncodedBatch]):
+    """
+    Wrapper for the internal TemporalViTBackbone used in Diffusion Models.
+    Provides building blocks for modern generative architectures (e.g. DiT).
+    """
+
     def __init__(
         self,
         in_channels: int,
@@ -125,21 +132,22 @@ class FactorizedViTBlock(nn.Module):
         n_spatial_dims: int,
         n_noise_channels: int | None,
         drop_path: float = 0.0,
-        use_ada_ln_zero: bool = True,
+        use_ada_ln: bool = True,
+        zero_init: bool = True,
     ):
         super().__init__()
         self.num_heads = num_heads
         self.hidden_dim = hidden_dim
         self.n_spatial_dims = n_spatial_dims
         self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
-        self.ada_generator = AdaLNZeroGenerator(
-            hidden_dim, n_noise_channels, 6, use_ada_ln_zero
+        self.ada_generator = AdaLNGenerator(
+            hidden_dim, n_noise_channels, 6, use_ada_ln=use_ada_ln, zero_init=zero_init
         )
-        self.norm1 = nn.LayerNorm(hidden_dim, elementwise_affine=not use_ada_ln_zero)
+        self.norm1 = nn.LayerNorm(hidden_dim, elementwise_affine=not use_ada_ln)
         self.fused_heads = [hidden_dim, hidden_dim, hidden_dim]
         self.qkv_proj = nn.Linear(hidden_dim, sum(self.fused_heads))
         self.output_proj = nn.Linear(hidden_dim, hidden_dim)
-        self.norm2 = nn.LayerNorm(hidden_dim, elementwise_affine=not use_ada_ln_zero)
+        self.norm2 = nn.LayerNorm(hidden_dim, elementwise_affine=not use_ada_ln)
         self.mlp = nn.Sequential(
             nn.Linear(hidden_dim, 4 * hidden_dim),
             nn.GELU(),
@@ -182,6 +190,12 @@ class FactorizedViTBlock(nn.Module):
 
 
 class FactorizedViTProcessor(Processor[EncodedBatch]):
+    """
+    ViT Processor using Factorized Spatiotemporal Attention and Ada-LN.
+    References:
+      - Factorized SFA (VivIT), MetNet-3, AViT for efficient scalable attention.
+    """
+
     def __init__(
         self,
         in_channels: int,
@@ -195,7 +209,8 @@ class FactorizedViTProcessor(Processor[EncodedBatch]):
         loss_func: nn.Module | None = None,
         n_noise_channels: int | None = None,
         patch_size: int | None = None,
-        use_ada_ln_zero: bool = True,
+        use_ada_ln: bool = True,
+        zero_init: bool = True,
     ):
         super().__init__()
         self.n_spatial_dims = len(spatial_resolution)
@@ -213,7 +228,8 @@ class FactorizedViTProcessor(Processor[EncodedBatch]):
                     self.n_spatial_dims,
                     n_noise_channels,
                     drop_path=dp_rates[i],
-                    use_ada_ln_zero=use_ada_ln_zero,
+                    use_ada_ln=use_ada_ln,
+                    zero_init=zero_init,
                 )
                 for i in range(n_layers)
             ]
@@ -272,21 +288,22 @@ class FullAttentionViTBlock(nn.Module):
         n_spatial_dims: int,
         n_noise_channels: int | None,
         drop_path: float = 0.0,
-        use_ada_ln_zero: bool = True,
+        use_ada_ln: bool = True,
+        zero_init: bool = True,
     ):
         super().__init__()
         self.num_heads = num_heads
         self.hidden_dim = hidden_dim
         self.n_spatial_dims = n_spatial_dims
         self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
-        self.ada_generator = AdaLNZeroGenerator(
-            hidden_dim, n_noise_channels, 6, use_ada_ln_zero
+        self.ada_generator = AdaLNGenerator(
+            hidden_dim, n_noise_channels, 6, use_ada_ln=use_ada_ln, zero_init=zero_init
         )
-        self.norm1 = nn.LayerNorm(hidden_dim, elementwise_affine=not use_ada_ln_zero)
+        self.norm1 = nn.LayerNorm(hidden_dim, elementwise_affine=not use_ada_ln)
         self.fused_heads = [hidden_dim, hidden_dim, hidden_dim]
         self.qkv_proj = nn.Linear(hidden_dim, sum(self.fused_heads))
         self.output_proj = nn.Linear(hidden_dim, hidden_dim)
-        self.norm2 = nn.LayerNorm(hidden_dim, elementwise_affine=not use_ada_ln_zero)
+        self.norm2 = nn.LayerNorm(hidden_dim, elementwise_affine=not use_ada_ln)
         self.mlp = nn.Sequential(
             nn.Linear(hidden_dim, 4 * hidden_dim),
             nn.GELU(),
@@ -328,6 +345,12 @@ class FullAttentionViTBlock(nn.Module):
 
 
 class FullAttentionViTProcessor(Processor[EncodedBatch]):
+    """
+    ViT Processor using Full Spatiotemporal Attention and Ada-LN.
+    References:
+      - EarthPT, ClimaX, Aardvark (full global spatiotemporal context).
+    """
+
     def __init__(
         self,
         in_channels: int,
@@ -341,7 +364,8 @@ class FullAttentionViTProcessor(Processor[EncodedBatch]):
         loss_func: nn.Module | None = None,
         n_noise_channels: int | None = None,
         patch_size: int | None = None,
-        use_ada_ln_zero: bool = True,
+        use_ada_ln: bool = True,
+        zero_init: bool = True,
     ):
         super().__init__()
         self.n_spatial_dims = len(spatial_resolution)
@@ -359,7 +383,8 @@ class FullAttentionViTProcessor(Processor[EncodedBatch]):
                     self.n_spatial_dims,
                     n_noise_channels,
                     drop_path=dp_rates[i],
-                    use_ada_ln_zero=use_ada_ln_zero,
+                    use_ada_ln=use_ada_ln,
+                    zero_init=zero_init,
                 )
                 for i in range(n_layers)
             ]
@@ -410,7 +435,7 @@ class FullAttentionViTProcessor(Processor[EncodedBatch]):
         )
 
 
-class Swin3DViTBlock(nn.Module):
+class SwinViTBlock(nn.Module):
     def __init__(
         self,
         hidden_dim: int,
@@ -419,7 +444,8 @@ class Swin3DViTBlock(nn.Module):
         n_noise_channels: int | None,
         window_size: Sequence[int],
         drop_path: float = 0.0,
-        use_ada_ln_zero: bool = True,
+        use_ada_ln: bool = True,
+        zero_init: bool = True,
     ):
         super().__init__()
         self.num_heads = num_heads
@@ -427,14 +453,14 @@ class Swin3DViTBlock(nn.Module):
         self.n_spatial_dims = n_spatial_dims
         self.window_size = window_size
         self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
-        self.ada_generator = AdaLNZeroGenerator(
-            hidden_dim, n_noise_channels, 6, use_ada_ln_zero
+        self.ada_generator = AdaLNGenerator(
+            hidden_dim, n_noise_channels, 6, use_ada_ln=use_ada_ln, zero_init=zero_init
         )
-        self.norm1 = nn.LayerNorm(hidden_dim, elementwise_affine=not use_ada_ln_zero)
+        self.norm1 = nn.LayerNorm(hidden_dim, elementwise_affine=not use_ada_ln)
         self.fused_heads = [hidden_dim, hidden_dim, hidden_dim]
         self.qkv_proj = nn.Linear(hidden_dim, sum(self.fused_heads))
         self.output_proj = nn.Linear(hidden_dim, hidden_dim)
-        self.norm2 = nn.LayerNorm(hidden_dim, elementwise_affine=not use_ada_ln_zero)
+        self.norm2 = nn.LayerNorm(hidden_dim, elementwise_affine=not use_ada_ln)
         self.mlp = nn.Sequential(
             nn.Linear(hidden_dim, 4 * hidden_dim),
             nn.GELU(),
@@ -529,7 +555,13 @@ class Swin3DViTBlock(nn.Module):
         )
 
 
-class Swin3DViTProcessor(Processor[EncodedBatch]):
+class SwinViTProcessor(Processor[EncodedBatch]):
+    """
+    ViT Processor using 2D/3D Shifted-Window Attention (Swin) and Ada-LN.
+    References:
+      - Microsoft Aurora, Video Swin Transformer (linear complexity scaling).
+    """
+
     def __init__(
         self,
         in_channels: int,
@@ -544,7 +576,8 @@ class Swin3DViTProcessor(Processor[EncodedBatch]):
         loss_func: nn.Module | None = None,
         n_noise_channels: int | None = None,
         patch_size: int | None = None,
-        use_ada_ln_zero: bool = True,
+        use_ada_ln: bool = True,
+        zero_init: bool = True,
     ):
         super().__init__()
         self.n_spatial_dims = len(spatial_resolution)
@@ -556,14 +589,15 @@ class Swin3DViTProcessor(Processor[EncodedBatch]):
         dp_rates = torch.linspace(0, drop_path, n_layers).tolist()
         self.blocks = nn.ModuleList(
             [
-                Swin3DViTBlock(
+                SwinViTBlock(
                     hidden_dim,
                     num_heads,
                     self.n_spatial_dims,
                     n_noise_channels,
                     window_size,
                     drop_path=dp_rates[i],
-                    use_ada_ln_zero=use_ada_ln_zero,
+                    use_ada_ln=use_ada_ln,
+                    zero_init=zero_init,
                 )
                 for i in range(n_layers)
             ]
