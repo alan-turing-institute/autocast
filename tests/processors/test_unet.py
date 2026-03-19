@@ -1,4 +1,5 @@
 import lightning as L
+import torch
 from conftest import get_optimizer_config
 
 from autocast.models.processor import ProcessorModel
@@ -119,3 +120,63 @@ def test_azula_unet_processor(encoded_batch, encoded_dummy_loader):
         train_dataloaders=encoded_dummy_loader,
         val_dataloaders=encoded_dummy_loader,
     )
+
+
+def test_azula_unet_no_noise_is_deterministic(encoded_batch):
+    """Test that without noise injection, model is deterministic."""
+    in_ch = encoded_batch.encoded_inputs.shape[1]
+    out_ch = encoded_batch.encoded_output_fields.shape[1]
+
+    # Test with n_noise_channels=0
+    processor_no_noise = AzulaUNetProcessor(
+        in_channels=in_ch,
+        out_channels=out_ch,
+        hid_channels=[32, 64],
+        hid_blocks=[1, 1],
+        n_noise_channels=0,
+    )
+
+    x = encoded_batch.encoded_inputs
+    pred1 = processor_no_noise(x, x_noise=None)
+    pred2 = processor_no_noise(x, x_noise=None)
+    assert torch.allclose(pred1, pred2, atol=1e-6)
+
+    # Test with n_noise_channels=None
+    processor_none = AzulaUNetProcessor(
+        in_channels=in_ch,
+        out_channels=out_ch,
+        hid_channels=[32, 64],
+        hid_blocks=[1, 1],
+        n_noise_channels=None,
+    )
+
+    pred3 = processor_none(x, x_noise=None)
+    pred4 = processor_none(x, x_noise=None)
+    assert torch.allclose(pred3, pred4, atol=1e-6)
+
+
+def test_azula_unet_noise_with_different_normalization(encoded_batch):
+    """Test noise injection works with different normalization types."""
+    in_ch = encoded_batch.encoded_inputs.shape[1]
+    out_ch = encoded_batch.encoded_output_fields.shape[1]
+    x = encoded_batch.encoded_inputs
+
+    for norm_type in ["group", "layer"]:
+        processor = AzulaUNetProcessor(
+            in_channels=in_ch,
+            out_channels=out_ch,
+            hid_channels=[32, 64],
+            hid_blocks=[1, 1],
+            n_noise_channels=128,
+            norm=norm_type,
+        )
+
+        # Multiple calls to map should produce different outputs (different noise)
+        output1 = processor.map(x, None)
+        output2 = processor.map(x, None)
+
+        assert output1.shape == encoded_batch.encoded_output_fields.shape
+        assert output2.shape == encoded_batch.encoded_output_fields.shape
+
+        # Should be different due to different random noise
+        assert not torch.allclose(output1, output2, atol=1e-6)

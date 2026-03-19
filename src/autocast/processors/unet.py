@@ -385,7 +385,7 @@ class AzulaUNetProcessor(Processor[EncodedBatch]):
             ffn_factor=ffn_factor,
             dropout=dropout,
             periodic=periodic,
-            #
+            # adaptive layer norm modulation based on noise channels
             mod_features=self.n_noise_channels,
             cond_channels=0,  # the default
             checkpointing=gradient_checkpointing,
