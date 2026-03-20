@@ -161,20 +161,20 @@ class TemporalBackboneBase(nn.Module, ABC):
         )
 
     def apply_temporal_processing(
-        self, x_t: TensorBTSC, cond: TensorBTSC
-    ) -> tuple[TensorBTSC, TensorBTSC]:
+        self, x_t: TensorBTSC, cond: TensorBTSC | None
+    ) -> tuple[TensorBTSC, TensorBTSC | None]:
         """Apply temporal processing to input and conditioning.
 
         Args:
             x_t: Input tensor (B, T, W, H, C)
-            cond: Conditioning tensor (B, T_cond, W, H, C)
+            cond: Conditioning tensor (B, T_cond, W, H, C), or None
 
         Returns
         -------
             Tuple of (processed_input, processed_cond)
         """
         x_t_temporal = self.temporal_proc_input(x_t)
-        cond_temporal = self.temporal_proc_cond(cond)
+        cond_temporal = self.temporal_proc_cond(cond) if cond is not None else None
         return x_t_temporal, cond_temporal
 
     @abstractmethod
@@ -234,7 +234,11 @@ class TemporalBackboneBase(nn.Module, ABC):
 
         # Convert to channels-first format: (B, T, W, H, C) -> (B, T*C, W, H)
         x_t_cf = rearrange(x_t_temporal, "b t w h c -> b (t c) w h")
-        x_cond_cf = rearrange(cond_temporal, "b t w h c -> b (t c) w h")
+        x_cond_cf = (
+            rearrange(cond_temporal, "b t w h c -> b (t c) w h")
+            if cond_temporal is not None
+            else None
+        )
 
         # Backbone forward: (B, T*C, W, H) -> (B, T*out_channels, W, H)
         output = self.backbone(x=x_t_cf, mod=t_emb, cond=x_cond_cf)
