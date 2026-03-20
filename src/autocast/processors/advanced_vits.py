@@ -1,4 +1,6 @@
+import itertools
 from collections.abc import Sequence
+from functools import lru_cache
 
 import torch
 import torch.nn.functional as F
@@ -26,6 +28,189 @@ def apply_gate(x: Tensor, gate: Tensor | None) -> Tensor:
         return x
     shape = [-1] + [1] * (x.ndim - 2) + [x.shape[-1]]
     return x * gate.view(*shape)
+
+
+def _adjust_window_and_shift(
+    window_size: tuple[int, ...],
+    shift_size: tuple[int, ...],
+    spatial_shape: tuple[int, ...],
+) -> tuple[tuple[int, ...], tuple[int, ...]]:
+    """Clamp windows to the input shape and disable shifts on clamped axes."""
+    ws = tuple(min(w, s) for w, s in zip(window_size, spatial_shape, strict=False))
+    ss = tuple(
+        0 if w >= s else sh
+        for w, sh, s in zip(window_size, shift_size, spatial_shape, strict=False)
+    )
+    return ws, ss
+
+
+def _get_two_sided_padding(h_pad: int, w_pad: int) -> tuple[int, int, int, int]:
+    """Return left, right, top, and bottom padding."""
+    if h_pad:
+        pad_top = h_pad // 2
+        pad_bottom = h_pad - pad_top
+    else:
+        pad_top = pad_bottom = 0
+
+    if w_pad:
+        pad_left = w_pad // 2
+        pad_right = w_pad - pad_left
+    else:
+        pad_left = pad_right = 0
+
+    return pad_left, pad_right, pad_top, pad_bottom
+
+
+def _get_three_sided_padding(
+    d_pad: int, h_pad: int, w_pad: int
+) -> tuple[int, int, int, int, int, int]:
+    """Return left, right, top, bottom, front, and back padding."""
+    if d_pad:
+        pad_front = d_pad // 2
+        pad_back = d_pad - pad_front
+    else:
+        pad_front = pad_back = 0
+    return (*_get_two_sided_padding(h_pad, w_pad), pad_front, pad_back)
+
+
+def _pad_2d(x: Tensor, pad_size: tuple[int, int], value: float = 0.0) -> Tensor:
+    """Pad 2D spatial dimensions for tensors shaped (B, H, W, C)."""
+    return F.pad(x, (0, 0, *_get_two_sided_padding(*pad_size)), value=value)
+
+
+def _crop_2d(x: Tensor, pad_size: tuple[int, int]) -> Tensor:
+    """Undo _pad_2d by symmetric cropping."""
+    _, h, w, _ = x.shape
+    hp, wp = pad_size
+    pleft, pright, ptop, pbottom = _get_two_sided_padding(hp, wp)
+    return x[:, ptop : h - pbottom, pleft : w - pright, :]
+
+
+def _pad_3d(x: Tensor, pad_size: tuple[int, int, int], value: float = 0.0) -> Tensor:
+    """Pad 3D spatial dimensions for tensors shaped (B, H, W, D, C)."""
+    return F.pad(x, (0, 0, *_get_three_sided_padding(*pad_size)), value=value)
+
+
+def _crop_3d(x: Tensor, pad_size: tuple[int, int, int]) -> Tensor:
+    """Undo _pad_3d by symmetric cropping."""
+    _, h, w, d, _ = x.shape
+    hp, wp, dp = pad_size
+    pleft, pright, ptop, pbottom, pfront, pback = _get_three_sided_padding(hp, wp, dp)
+    return x[:, ptop : h - pbottom, pleft : w - pright, pfront : d - pback, :]
+
+
+def _window_partition_2d(x: Tensor, ws: tuple[int, int]) -> Tensor:
+    """Partition (B, H, W, C) into local 2D windows."""
+    b, h, w, c = x.shape
+    wh, ww = ws
+    x = x.view(b, h // wh, wh, w // ww, ww, c)
+    return rearrange(x, "b h1 wh w1 ww c -> (b h1 w1) wh ww c")
+
+
+def _window_reverse_2d(windows: Tensor, ws: tuple[int, int], h: int, w: int) -> Tensor:
+    """Undo _window_partition_2d."""
+    wh, ww = ws
+    h1, w1 = h // wh, w // ww
+    b = int(windows.shape[0] / (h1 * w1))
+    return rearrange(
+        windows,
+        "(b h1 w1) wh ww c -> b (h1 wh) (w1 ww) c",
+        b=b,
+        h1=h1,
+        w1=w1,
+        wh=wh,
+        ww=ww,
+    )
+
+
+def _window_partition_3d(x: Tensor, ws: tuple[int, int, int]) -> Tensor:
+    """Partition (B, H, W, D, C) into local 3D windows."""
+    b, h, w, d, c = x.shape
+    wh, ww, wd = ws
+    x = x.view(b, h // wh, wh, w // ww, ww, d // wd, wd, c)
+    return rearrange(x, "b h1 wh w1 ww d1 wd c -> (b h1 w1 d1) wh ww wd c")
+
+
+def _window_reverse_3d(
+    windows: Tensor, ws: tuple[int, int, int], h: int, w: int, d: int
+) -> Tensor:
+    """Undo _window_partition_3d."""
+    wh, ww, wd = ws
+    h1, w1, d1 = h // wh, w // ww, d // wd
+    b = int(windows.shape[0] / (h1 * w1 * d1))
+    return rearrange(
+        windows,
+        "(b h1 w1 d1) wh ww wd c -> b (h1 wh) (w1 ww) (d1 wd) c",
+        b=b,
+        h1=h1,
+        w1=w1,
+        d1=d1,
+        wh=wh,
+        ww=ww,
+        wd=wd,
+    )
+
+
+@lru_cache
+def _compute_shifted_window_mask_2d(
+    h: int,
+    w: int,
+    ws: tuple[int, int],
+    ss: tuple[int, int],
+    device: torch.device,
+    dtype: torch.dtype,
+) -> Tensor:
+    """Compute Aurora-style shifted-window attention mask for 2D."""
+    img_mask = torch.zeros((1, h, w, 1), device=device, dtype=dtype)
+    h_slices = (slice(0, -ws[0]), slice(-ws[0], -ss[0]), slice(-ss[0], None))
+    w_slices = (slice(0, -ws[1]), slice(-ws[1], -ss[1]), slice(-ss[1], None))
+
+    cnt = 0
+    for hs, wslice in itertools.product(h_slices, w_slices):
+        img_mask[:, hs, wslice, :] = cnt
+        cnt += 1
+
+    pad_size = ((-h) % ws[0], (-w) % ws[1])
+    img_mask = _pad_2d(img_mask, pad_size, value=cnt)
+
+    mask_windows = _window_partition_2d(img_mask, ws)
+    mask_windows = mask_windows.view(-1, ws[0] * ws[1])
+    attn_mask = mask_windows.unsqueeze(1) - mask_windows.unsqueeze(2)
+    return attn_mask.masked_fill(attn_mask != 0, -100.0).masked_fill(
+        attn_mask == 0, 0.0
+    )
+
+
+@lru_cache
+def _compute_shifted_window_mask_3d(
+    h: int,
+    w: int,
+    d: int,
+    ws: tuple[int, int, int],
+    ss: tuple[int, int, int],
+    device: torch.device,
+    dtype: torch.dtype,
+) -> Tensor:
+    """Compute Aurora-style shifted-window attention mask for 3D."""
+    img_mask = torch.zeros((1, h, w, d, 1), device=device, dtype=dtype)
+    h_slices = (slice(0, -ws[0]), slice(-ws[0], -ss[0]), slice(-ss[0], None))
+    w_slices = (slice(0, -ws[1]), slice(-ws[1], -ss[1]), slice(-ss[1], None))
+    d_slices = (slice(0, -ws[2]), slice(-ws[2], -ss[2]), slice(-ss[2], None))
+
+    cnt = 0
+    for hs, wslice, ds in itertools.product(h_slices, w_slices, d_slices):
+        img_mask[:, hs, wslice, ds, :] = cnt
+        cnt += 1
+
+    pad_size = ((-h) % ws[0], (-w) % ws[1], (-d) % ws[2])
+    img_mask = _pad_3d(img_mask, pad_size, value=cnt)
+
+    mask_windows = _window_partition_3d(img_mask, ws)
+    mask_windows = mask_windows.view(-1, ws[0] * ws[1] * ws[2])
+    attn_mask = mask_windows.unsqueeze(1) - mask_windows.unsqueeze(2)
+    return attn_mask.masked_fill(attn_mask != 0, -100.0).masked_fill(
+        attn_mask == 0, 0.0
+    )
 
 
 class AdaLNGenerator(nn.Module):
@@ -472,8 +657,17 @@ class SwinViTBlock(nn.Module):
         self.num_heads = num_heads
         self.hidden_dim = hidden_dim
         self.n_spatial_dims = n_spatial_dims
-        self.window_size = window_size
-        self.shift = shift
+        if len(window_size) < n_spatial_dims:
+            raise ValueError(
+                "window_size has "
+                f"{len(window_size)} dims but n_spatial_dims={n_spatial_dims}"
+            )
+        self.window_size = tuple(window_size[:n_spatial_dims])
+        self.shift_size = (
+            tuple(ws // 2 for ws in self.window_size)
+            if shift
+            else tuple(0 for _ in range(n_spatial_dims))
+        )
         self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
         self.ada_generator = AdaLNGenerator(
             hidden_dim, n_noise_channels, 6, use_ada_ln=use_ada_ln, zero_init=zero_init
@@ -489,128 +683,95 @@ class SwinViTBlock(nn.Module):
             nn.Linear(4 * hidden_dim, hidden_dim),
         )
 
-    def _compute_attn_mask(self, H: int, W: int, device: torch.device) -> Tensor | None:
-        """Attention mask for cyclic-shifted 2D windows."""
-        if not self.shift:
-            return None
-        wh, ww = self.window_size[0], self.window_size[1]
-        shift_h, shift_w = wh // 2, ww // 2
-        img_mask = torch.zeros(1, H, W, 1, device=device)
-        cnt = 0
-        for h_s in (slice(0, -wh), slice(-wh, -shift_h), slice(-shift_h, None)):
-            for w_s in (slice(0, -ww), slice(-ww, -shift_w), slice(-shift_w, None)):
-                img_mask[:, h_s, w_s, :] = cnt
-                cnt += 1
-        mask_w = rearrange(
-            img_mask, "1 (nh wh) (nw ww) 1 -> (nh nw) (wh ww)", wh=wh, ww=ww
-        )
-        diff = mask_w.unsqueeze(2) - mask_w.unsqueeze(1)
-        # (num_windows, 1, wh*ww, wh*ww)
-        return (
-            torch.zeros_like(diff).masked_fill_(diff != 0, float("-inf")).unsqueeze(1)
-        )
-
-    def _compute_attn_mask_3d(
-        self, H: int, W: int, D: int, device: torch.device
-    ) -> Tensor | None:
-        """Attention mask for cyclic-shifted 3D windows."""
-        if not self.shift:
-            return None
-        wh, ww = self.window_size[0], self.window_size[1]
-        wd = self.window_size[2] if len(self.window_size) > 2 else 1
-        shift_h, shift_w, shift_d = wh // 2, ww // 2, wd // 2
-        img_mask = torch.zeros(1, H, W, D, 1, device=device)
-        cnt = 0
-        for h_s in (slice(0, -wh), slice(-wh, -shift_h), slice(-shift_h, None)):
-            for w_s in (slice(0, -ww), slice(-ww, -shift_w), slice(-shift_w, None)):
-                for d_s in (slice(0, -wd), slice(-wd, -shift_d), slice(-shift_d, None)):
-                    img_mask[:, h_s, w_s, d_s, :] = cnt
-                    cnt += 1
-        mask_w = rearrange(
-            img_mask,
-            "1 (nh wh) (nw ww) (nd wd) 1 -> (nh nw nd) (wh ww wd)",
-            wh=wh,
-            ww=ww,
-            wd=wd,
-        )
-        diff = mask_w.unsqueeze(2) - mask_w.unsqueeze(1)
-        # (num_windows, 1, wh*ww*wd, wh*ww*wd)
-        return (
-            torch.zeros_like(diff).masked_fill_(diff != 0, float("-inf")).unsqueeze(1)
-        )
-
-    def forward(self, x: Tensor, x_noise: Tensor | None = None) -> Tensor:
+    def forward(self, x: Tensor, x_noise: Tensor | None = None) -> Tensor:  # noqa: PLR0915
         shift1, scale1, gate1, shift2, scale2, gate2 = self.ada_generator(x_noise)
-        B, H, W = x.shape[0], x.shape[1], x.shape[2]
-        wh, ww = self.window_size[0], self.window_size[1]
-        shift_h, shift_w = wh // 2, ww // 2
+        spatial_shape = tuple(x.shape[1 : 1 + self.n_spatial_dims])
+        ws, ss = _adjust_window_and_shift(
+            self.window_size, self.shift_size, spatial_shape
+        )
+        do_shift = any(s > 0 for s in ss)
+        hp = wp = dp = 0
 
-        # Cyclic shift before window partitioning
-        if self.shift:
-            xs = torch.roll(x, shifts=(-shift_h, -shift_w), dims=(1, 2))
+        xs = modulate(self.norm1(x), shift1, scale1)
+        if do_shift:
+            xs = torch.roll(
+                xs,
+                shifts=tuple(-s for s in ss),
+                dims=tuple(range(1, 1 + self.n_spatial_dims)),
+            )
+
+        if self.n_spatial_dims == 2:
+            h, w = spatial_shape
+            ws2 = (ws[0], ws[1])
+            ss2 = (ss[0], ss[1])
+            pad_size_2d = ((-h) % ws2[0], (-w) % ws2[1])
+            xs = _pad_2d(xs, pad_size_2d)
+            _, hp, wp, _ = xs.shape
+
+            windows = _window_partition_2d(xs, ws2).view(
+                -1, ws2[0] * ws2[1], self.hidden_dim
+            )
+            attn_mask = (
+                _compute_shifted_window_mask_2d(h, w, ws2, ss2, x.device, x.dtype)
+                if do_shift
+                else None
+            )
         else:
-            xs = x
+            h, w, d = spatial_shape
+            ws3 = (ws[0], ws[1], ws[2])
+            ss3 = (ss[0], ss[1], ss[2])
+            pad_size_3d = ((-h) % ws3[0], (-w) % ws3[1], (-d) % ws3[2])
+            xs = _pad_3d(xs, pad_size_3d)
+            _, hp, wp, dp, _ = xs.shape
 
-        qkv = self.qkv_proj(modulate(self.norm1(xs), shift1, scale1))
+            windows = _window_partition_3d(xs, ws3).view(
+                -1, ws3[0] * ws3[1] * ws3[2], self.hidden_dim
+            )
+            attn_mask = (
+                _compute_shifted_window_mask_3d(h, w, d, ws3, ss3, x.device, x.dtype)
+                if do_shift
+                else None
+            )
+
+        qkv = self.qkv_proj(windows)
         q, k, v = qkv.split(self.fused_heads, dim=-1)
+        q, k, v = (
+            rearrange(t, "b n (he c) -> b he n c", he=self.num_heads) for t in (q, k, v)
+        )
 
-        if self.n_spatial_dims == 3:
-            D = xs.shape[3]
-            wd = self.window_size[2] if len(self.window_size) > 2 else 1
-            attn_mask = self._compute_attn_mask_3d(H, W, D, x.device)
-            q, k, v = (
-                rearrange(
-                    t,
-                    "b (h wh) (w ww) (d wd) (he c) -> (b h w d) he (wh ww wd) c",
-                    wh=wh,
-                    ww=ww,
-                    wd=wd,
-                    he=self.num_heads,
-                )
-                for t in (q, k, v)
-            )
-            if attn_mask is not None:
-                attn_mask = attn_mask.repeat(B, 1, 1, 1)
-            out = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask)
-            out = rearrange(
-                out,
-                "(b h w d) he (wh ww wd) c -> b (h wh) (w ww) (d wd) (he c)",
-                b=B,
-                h=H // wh,
-                w=W // ww,
-                d=D // wd,
-                wh=wh,
-                ww=ww,
-                wd=wd,
-            )
+        if attn_mask is not None:
+            mask = attn_mask.unsqueeze(1).unsqueeze(0)
+            batch_size = q.shape[0] // mask.shape[1]
+            mask = mask.repeat(batch_size, 1, 1, 1, 1).reshape(-1, *mask.shape[2:])
+            attn_out = F.scaled_dot_product_attention(q, k, v, attn_mask=mask)
         else:
-            attn_mask = self._compute_attn_mask(H, W, x.device)
-            q, k, v = (
-                rearrange(
-                    t,
-                    "b (h wh) (w ww) (he c) -> (b h w) he (wh ww) c",
-                    wh=wh,
-                    ww=ww,
-                    he=self.num_heads,
-                )
-                for t in (q, k, v)
-            )
-            if attn_mask is not None:
-                attn_mask = attn_mask.repeat(B, 1, 1, 1)
-            out = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask)
-            out = rearrange(
-                out,
-                "(b h w) he (wh ww) c -> b (h wh) (w ww) (he c)",
-                b=B,
-                h=H // wh,
-                w=W // ww,
-                wh=wh,
-                ww=ww,
-            )
+            attn_out = F.scaled_dot_product_attention(q, k, v)
 
-        # Reverse cyclic shift
-        if self.shift:
-            out = torch.roll(out, shifts=(shift_h, shift_w), dims=(1, 2))
+        attn_out = rearrange(attn_out, "b he n c -> b n (he c)")
+
+        if self.n_spatial_dims == 2:
+            ws2 = (ws[0], ws[1])
+            pad_size_2d = ((-spatial_shape[0]) % ws2[0], (-spatial_shape[1]) % ws2[1])
+            out_windows = attn_out.view(-1, ws2[0], ws2[1], self.hidden_dim)
+            out = _window_reverse_2d(out_windows, ws2, hp, wp)
+            out = _crop_2d(out, pad_size_2d)
+        else:
+            ws3 = (ws[0], ws[1], ws[2])
+            pad_size_3d = (
+                (-spatial_shape[0]) % ws3[0],
+                (-spatial_shape[1]) % ws3[1],
+                (-spatial_shape[2]) % ws3[2],
+            )
+            out_windows = attn_out.view(-1, ws3[0], ws3[1], ws3[2], self.hidden_dim)
+            out = _window_reverse_3d(out_windows, ws3, hp, wp, dp)
+            out = _crop_3d(out, pad_size_3d)
+
+        if do_shift:
+            out = torch.roll(
+                out,
+                shifts=ss,
+                dims=tuple(range(1, 1 + self.n_spatial_dims)),
+            )
 
         x = x + self.drop_path(apply_gate(self.output_proj(out), gate1))
         return x + self.drop_path(
@@ -647,18 +808,16 @@ class SwinViTProcessor(Processor[EncodedBatch]):
     ):
         super().__init__()
         self.n_spatial_dims = len(spatial_resolution)
-        # Token resolution after patch embedding; default PatchEmbedding has stride 16.
-        patch_stride = patch_size if patch_size is not None else 16
-        for i, (res, ws) in enumerate(
-            zip(spatial_resolution, window_size, strict=False)
-        ):
-            token_res = res // patch_stride
-            if token_res % ws != 0:
-                raise ValueError(
-                    f"Token resolution[{i}]={token_res} (spatial_resolution={res} / "
-                    f"patch_stride={patch_stride}) must be divisible by "
-                    f"window_size[{i}]={ws}"
-                )
+        if len(window_size) < self.n_spatial_dims:
+            raise ValueError(
+                "window_size has "
+                f"{len(window_size)} dims but n_spatial_dims={self.n_spatial_dims}"
+            )
+        self.window_size = tuple(window_size[: self.n_spatial_dims])
+        if any(ws <= 0 for ws in self.window_size):
+            raise ValueError(
+                f"window_size values must be positive, got {self.window_size}"
+            )
         self.n_noise_channels = n_noise_channels
         self.loss_func = loss_func or nn.MSELoss()
         self.embed = PatchEmbedding(
@@ -672,7 +831,7 @@ class SwinViTProcessor(Processor[EncodedBatch]):
                     num_heads,
                     self.n_spatial_dims,
                     n_noise_channels,
-                    window_size,
+                    self.window_size,
                     shift=(i % 2 == 1),
                     drop_path=dp_rates[i],
                     use_ada_ln=use_ada_ln,
