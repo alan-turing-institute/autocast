@@ -1,3 +1,4 @@
+import abc
 from typing import Literal
 
 import numpy as np
@@ -45,6 +46,9 @@ class BTSCMMetric(BaseMetric[TensorBTSCM, TensorBTSC]):
                 f"score_dims must be 'spatial', 'temporal', or None, got {score_dims!r}"
             )
         self.score_dims = score_dims
+
+    @abc.abstractmethod
+    def _score(self, y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTSC: ...
 
     def score(
         self, y_pred: ArrayLike, y_true: ArrayLike
@@ -327,8 +331,9 @@ class SpreadSkillRatio(BTSCMMetric):
     .. math::
         \text{SSR}_{\text{corrected}} = \frac{\text{Spread}}{\text{Skill}}
         \sqrt{\frac{M + 1}{M}},
-    where skill is RMSE of ensemble mean and spread is ensemble standard deviation,
-    both aggregated over spatial dimensions.
+    where skill is the pointwise RMSE of the ensemble mean and spread is the
+    pointwise ensemble standard deviation. Spatial/temporal reductions are then
+    handled by the base class according to score_dims.
 
     """
 
@@ -341,9 +346,9 @@ class SpreadSkillRatio(BTSCMMetric):
             raise ValueError(msg)
         self.eps = eps
 
-    def _score(self, y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTC:
+    def _score(self, y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTSC:
         """
-        Compute corrected spread-to-skill ratio reduced over spatial dims.
+        Compute corrected spread-to-skill ratio per spatiotemporal location.
 
         Args:
             y_pred: (B, T, S, C, M)
@@ -351,7 +356,7 @@ class SpreadSkillRatio(BTSCMMetric):
 
         Returns
         -------
-            SSR: (B, T, C)
+            SSR: (B, T, S, C)
         """
         n_ensemble = y_pred.shape[-1]
         if n_ensemble < 2:
@@ -362,15 +367,13 @@ class SpreadSkillRatio(BTSCMMetric):
 
         # Ensemble mean forecast: (B, T, S, C)
         ensemble_mean = y_pred.mean(dim=-1)
-        n_spatial_dims = self._infer_n_spatial_dims(ensemble_mean)
-        spatial_dims = tuple(range(2, 2 + n_spatial_dims))
 
-        # Skill = RMSE of ensemble mean over spatial dims: (B, T, C)
-        skill = torch.sqrt(((ensemble_mean - y_true) ** 2).mean(dim=spatial_dims))
+        # Skill = pointwise RMSE of ensemble mean: (B, T, S, C)
+        skill = torch.sqrt((ensemble_mean - y_true) ** 2)
 
-        # Spread = sqrt(mean spatial ensemble variance): (B, T, C)
+        # Spread = pointwise ensemble standard deviation: (B, T, S, C)
         spread_variance = y_pred.var(dim=-1, unbiased=True)
-        spread = torch.sqrt(spread_variance.mean(dim=spatial_dims))
+        spread = torch.sqrt(spread_variance)
 
         correction = float(np.sqrt((n_ensemble + 1) / n_ensemble))
         ssr = (spread / torch.clamp(skill, min=self.eps)) * correction
