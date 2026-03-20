@@ -5,5 +5,6 @@ spatial_resolution: [16, 16]
 hidden_dim: 128
 num_heads: 4
 n_layers: 4
+patch_size: 4
 drop_path: 0.1
 n_noise_channels: null

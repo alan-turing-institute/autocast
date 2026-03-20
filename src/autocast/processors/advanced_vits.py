@@ -647,13 +647,17 @@ class SwinViTProcessor(Processor[EncodedBatch]):
     ):
         super().__init__()
         self.n_spatial_dims = len(spatial_resolution)
+        # Token resolution after patch embedding; default PatchEmbedding has stride 16.
+        patch_stride = patch_size if patch_size is not None else 16
         for i, (res, ws) in enumerate(
             zip(spatial_resolution, window_size, strict=False)
         ):
-            if res % ws != 0:
+            token_res = res // patch_stride
+            if token_res % ws != 0:
                 raise ValueError(
-                    f"spatial_resolution[{i}]={res} must be divisible "
-                    f"by window_size[{i}]={ws}"
+                    f"Token resolution[{i}]={token_res} (spatial_resolution={res} / "
+                    f"patch_stride={patch_stride}) must be divisible by "
+                    f"window_size[{i}]={ws}"
                 )
         self.n_noise_channels = n_noise_channels
         self.loss_func = loss_func or nn.MSELoss()
