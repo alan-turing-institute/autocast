@@ -61,18 +61,6 @@ def _get_two_sided_padding(h_pad: int, w_pad: int) -> tuple[int, int, int, int]:
     return pad_left, pad_right, pad_top, pad_bottom
 
 
-def _get_three_sided_padding(
-    d_pad: int, h_pad: int, w_pad: int
-) -> tuple[int, int, int, int, int, int]:
-    """Return left, right, top, bottom, front, and back padding."""
-    if d_pad:
-        pad_front = d_pad // 2
-        pad_back = d_pad - pad_front
-    else:
-        pad_front = pad_back = 0
-    return (*_get_two_sided_padding(h_pad, w_pad), pad_front, pad_back)
-
-
 def _pad_2d(x: Tensor, pad_size: tuple[int, int], value: float = 0.0) -> Tensor:
     """Pad 2D spatial dimensions for tensors shaped (B, H, W, C)."""
     return F.pad(x, (0, 0, *_get_two_sided_padding(*pad_size)), value=value)
@@ -88,15 +76,57 @@ def _crop_2d(x: Tensor, pad_size: tuple[int, int]) -> Tensor:
 
 def _pad_3d(x: Tensor, pad_size: tuple[int, int, int], value: float = 0.0) -> Tensor:
     """Pad 3D spatial dimensions for tensors shaped (B, H, W, D, C)."""
-    return F.pad(x, (0, 0, *_get_three_sided_padding(*pad_size)), value=value)
+    hp, wp, dp = pad_size
+    if hp:
+        h_front = hp // 2
+        h_back = hp - h_front
+    else:
+        h_front = h_back = 0
+    if wp:
+        w_left = wp // 2
+        w_right = wp - w_left
+    else:
+        w_left = w_right = 0
+    if dp:
+        d_left = dp // 2
+        d_right = dp - d_left
+    else:
+        d_left = d_right = 0
+
+    # For (B, H, W, D, C), F.pad expects (C_l, C_r, D_l, D_r, W_l, W_r, H_l, H_r).
+    return F.pad(
+        x,
+        (0, 0, d_left, d_right, w_left, w_right, h_front, h_back),
+        value=value,
+    )
 
 
 def _crop_3d(x: Tensor, pad_size: tuple[int, int, int]) -> Tensor:
     """Undo _pad_3d by symmetric cropping."""
     _, h, w, d, _ = x.shape
     hp, wp, dp = pad_size
-    pleft, pright, ptop, pbottom, pfront, pback = _get_three_sided_padding(hp, wp, dp)
-    return x[:, ptop : h - pbottom, pleft : w - pright, pfront : d - pback, :]
+    if hp:
+        h_front = hp // 2
+        h_back = hp - h_front
+    else:
+        h_front = h_back = 0
+    if wp:
+        w_left = wp // 2
+        w_right = wp - w_left
+    else:
+        w_left = w_right = 0
+    if dp:
+        d_left = dp // 2
+        d_right = dp - d_left
+    else:
+        d_left = d_right = 0
+    return x[
+        :,
+        h_front : h - h_back,
+        w_left : w - w_right,
+        d_left : d - d_right,
+        :,
+    ]
 
 
 def _window_partition_2d(x: Tensor, ws: tuple[int, int]) -> Tensor:
