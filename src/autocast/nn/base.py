@@ -217,8 +217,6 @@ class TemporalBackboneBase(nn.Module, ABC):
         -------
             Denoised output (B, T, W, H, C)
         """
-        _, T_out, _, _, C = x_t.shape
-
         # Embed diffusion timestep
         t_emb = self.time_embedding(t)
 
@@ -243,5 +241,11 @@ class TemporalBackboneBase(nn.Module, ABC):
         # Backbone forward: (B, T*C, W, H) -> (B, T*out_channels, W, H)
         output = self.backbone(x=x_t_cf, mod=t_emb, cond=x_cond_cf)
 
-        # Convert back to channels-last format: (B, T*C, W, H) -> (B, T, W, H, C)
-        return rearrange(output, "b (t c) w h -> b t w h c", t=T_out, c=C)
+        # Convert back to channels-last format:
+        # (B, T*self.out_channels, W, H) -> (B, T, W, H, self.out_channels)
+        return rearrange(
+            output,
+            "b (t c) w h -> b t w h c",
+            t=self.n_steps_output,
+            c=self.out_channels,
+        )
