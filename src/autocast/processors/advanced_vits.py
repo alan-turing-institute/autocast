@@ -118,7 +118,7 @@ class DiffusionBackboneViTProcessor(Processor[EncodedBatch]):
                 x.shape[0], self.n_noise_channels, dtype=x.dtype, device=x.device
             )
             if self.n_noise_channels
-            else torch.zeros(x.shape[0], device=x.device)
+            else torch.zeros(x.shape[0], dtype=x.dtype, device=x.device)
         )
         return self(x, noise)
 
@@ -141,6 +141,11 @@ class FactorizedViTBlock(nn.Module):
         zero_init: bool = True,
     ):
         super().__init__()
+        if hidden_dim % num_heads != 0:
+            raise ValueError(
+                f"hidden_dim ({hidden_dim}) must be divisible by "
+                f"num_heads ({num_heads})"
+            )
         self.num_heads = num_heads
         self.hidden_dim = hidden_dim
         self.n_spatial_dims = n_spatial_dims
@@ -297,6 +302,11 @@ class FullAttentionViTBlock(nn.Module):
         zero_init: bool = True,
     ):
         super().__init__()
+        if hidden_dim % num_heads != 0:
+            raise ValueError(
+                f"hidden_dim ({hidden_dim}) must be divisible by "
+                f"num_heads ({num_heads})"
+            )
         self.num_heads = num_heads
         self.hidden_dim = hidden_dim
         self.n_spatial_dims = n_spatial_dims
@@ -448,15 +458,22 @@ class SwinViTBlock(nn.Module):
         n_spatial_dims: int,
         n_noise_channels: int | None,
         window_size: Sequence[int],
+        shift: bool = False,
         drop_path: float = 0.0,
         use_ada_ln: bool = True,
         zero_init: bool = True,
     ):
         super().__init__()
+        if hidden_dim % num_heads != 0:
+            raise ValueError(
+                f"hidden_dim ({hidden_dim}) must be divisible by "
+                f"num_heads ({num_heads})"
+            )
         self.num_heads = num_heads
         self.hidden_dim = hidden_dim
         self.n_spatial_dims = n_spatial_dims
         self.window_size = window_size
+        self.shift = shift
         self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
         self.ada_generator = AdaLNGenerator(
             hidden_dim, n_noise_channels, 6, use_ada_ln=use_ada_ln, zero_init=zero_init
@@ -472,66 +489,89 @@ class SwinViTBlock(nn.Module):
             nn.Linear(4 * hidden_dim, hidden_dim),
         )
 
-    def forward(self, x: Tensor, x_noise: Tensor | None = None) -> Tensor:
-        shift1, scale1, gate1, shift2, scale2, gate2 = self.ada_generator(x_noise)
-        qkv = self.qkv_proj(modulate(self.norm1(x), shift1, scale1))
-        q, k, v = qkv.split(self.fused_heads, dim=-1)
-        B, H, W = (*q.shape[:3],)
-        D = q.shape[3] if self.n_spatial_dims == 3 else 1
+    def _compute_attn_mask(self, H: int, W: int, device: torch.device) -> Tensor | None:
+        """Attention mask for cyclic-shifted 2D windows."""
+        if not self.shift:
+            return None
+        wh, ww = self.window_size[0], self.window_size[1]
+        shift_h, shift_w = wh // 2, ww // 2
+        img_mask = torch.zeros(1, H, W, 1, device=device)
+        cnt = 0
+        for h_s in (slice(0, -wh), slice(-wh, -shift_h), slice(-shift_h, None)):
+            for w_s in (slice(0, -ww), slice(-ww, -shift_w), slice(-shift_w, None)):
+                img_mask[:, h_s, w_s, :] = cnt
+                cnt += 1
+        mask_w = rearrange(
+            img_mask, "1 (nh wh) (nw ww) 1 -> (nh nw) (wh ww)", wh=wh, ww=ww
+        )
+        diff = mask_w.unsqueeze(2) - mask_w.unsqueeze(1)
+        # (num_windows, 1, wh*ww, wh*ww)
+        return (
+            torch.zeros_like(diff).masked_fill_(diff != 0, float("-inf")).unsqueeze(1)
+        )
+
+    def _compute_attn_mask_3d(
+        self, H: int, W: int, D: int, device: torch.device
+    ) -> Tensor | None:
+        """Attention mask for cyclic-shifted 3D windows."""
+        if not self.shift:
+            return None
         wh, ww = self.window_size[0], self.window_size[1]
         wd = self.window_size[2] if len(self.window_size) > 2 else 1
+        shift_h, shift_w, shift_d = wh // 2, ww // 2, wd // 2
+        img_mask = torch.zeros(1, H, W, D, 1, device=device)
+        cnt = 0
+        for h_s in (slice(0, -wh), slice(-wh, -shift_h), slice(-shift_h, None)):
+            for w_s in (slice(0, -ww), slice(-ww, -shift_w), slice(-shift_w, None)):
+                for d_s in (slice(0, -wd), slice(-wd, -shift_d), slice(-shift_d, None)):
+                    img_mask[:, h_s, w_s, d_s, :] = cnt
+                    cnt += 1
+        mask_w = rearrange(
+            img_mask,
+            "1 (nh wh) (nw ww) (nd wd) 1 -> (nh nw nd) (wh ww wd)",
+            wh=wh,
+            ww=ww,
+            wd=wd,
+        )
+        diff = mask_w.unsqueeze(2) - mask_w.unsqueeze(1)
+        # (num_windows, 1, wh*ww*wd, wh*ww*wd)
+        return (
+            torch.zeros_like(diff).masked_fill_(diff != 0, float("-inf")).unsqueeze(1)
+        )
 
-        if self.n_spatial_dims == 3:
-            q = rearrange(
-                q,
-                "b (h wh) (w ww) (d wd) (he c) -> (b h w d) he (wh ww wd) c",
-                wh=wh,
-                ww=ww,
-                wd=wd,
-                he=self.num_heads,
-            )
-            k = rearrange(
-                k,
-                "b (h wh) (w ww) (d wd) (he c) -> (b h w d) he (wh ww wd) c",
-                wh=wh,
-                ww=ww,
-                wd=wd,
-                he=self.num_heads,
-            )
-            v = rearrange(
-                v,
-                "b (h wh) (w ww) (d wd) (he c) -> (b h w d) he (wh ww wd) c",
-                wh=wh,
-                ww=ww,
-                wd=wd,
-                he=self.num_heads,
-            )
+    def forward(self, x: Tensor, x_noise: Tensor | None = None) -> Tensor:
+        shift1, scale1, gate1, shift2, scale2, gate2 = self.ada_generator(x_noise)
+        B, H, W = x.shape[0], x.shape[1], x.shape[2]
+        wh, ww = self.window_size[0], self.window_size[1]
+        shift_h, shift_w = wh // 2, ww // 2
+
+        # Cyclic shift before window partitioning
+        if self.shift:
+            xs = torch.roll(x, shifts=(-shift_h, -shift_w), dims=(1, 2))
         else:
-            q = rearrange(
-                q,
-                "b (h wh) (w ww) (he c) -> (b h w) he (wh ww) c",
-                wh=wh,
-                ww=ww,
-                he=self.num_heads,
-            )
-            k = rearrange(
-                k,
-                "b (h wh) (w ww) (he c) -> (b h w) he (wh ww) c",
-                wh=wh,
-                ww=ww,
-                he=self.num_heads,
-            )
-            v = rearrange(
-                v,
-                "b (h wh) (w ww) (he c) -> (b h w) he (wh ww) c",
-                wh=wh,
-                ww=ww,
-                he=self.num_heads,
-            )
+            xs = x
 
-        out = F.scaled_dot_product_attention(q, k, v)
+        qkv = self.qkv_proj(modulate(self.norm1(xs), shift1, scale1))
+        q, k, v = qkv.split(self.fused_heads, dim=-1)
 
         if self.n_spatial_dims == 3:
+            D = xs.shape[3]
+            wd = self.window_size[2] if len(self.window_size) > 2 else 1
+            attn_mask = self._compute_attn_mask_3d(H, W, D, x.device)
+            q, k, v = (
+                rearrange(
+                    t,
+                    "b (h wh) (w ww) (d wd) (he c) -> (b h w d) he (wh ww wd) c",
+                    wh=wh,
+                    ww=ww,
+                    wd=wd,
+                    he=self.num_heads,
+                )
+                for t in (q, k, v)
+            )
+            if attn_mask is not None:
+                attn_mask = attn_mask.repeat(B, 1, 1, 1)
+            out = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask)
             out = rearrange(
                 out,
                 "(b h w d) he (wh ww wd) c -> b (h wh) (w ww) (d wd) (he c)",
@@ -544,6 +584,20 @@ class SwinViTBlock(nn.Module):
                 wd=wd,
             )
         else:
+            attn_mask = self._compute_attn_mask(H, W, x.device)
+            q, k, v = (
+                rearrange(
+                    t,
+                    "b (h wh) (w ww) (he c) -> (b h w) he (wh ww) c",
+                    wh=wh,
+                    ww=ww,
+                    he=self.num_heads,
+                )
+                for t in (q, k, v)
+            )
+            if attn_mask is not None:
+                attn_mask = attn_mask.repeat(B, 1, 1, 1)
+            out = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask)
             out = rearrange(
                 out,
                 "(b h w) he (wh ww) c -> b (h wh) (w ww) (he c)",
@@ -553,6 +607,10 @@ class SwinViTBlock(nn.Module):
                 wh=wh,
                 ww=ww,
             )
+
+        # Reverse cyclic shift
+        if self.shift:
+            out = torch.roll(out, shifts=(shift_h, shift_w), dims=(1, 2))
 
         x = x + self.drop_path(apply_gate(self.output_proj(out), gate1))
         return x + self.drop_path(
@@ -589,6 +647,14 @@ class SwinViTProcessor(Processor[EncodedBatch]):
     ):
         super().__init__()
         self.n_spatial_dims = len(spatial_resolution)
+        for i, (res, ws) in enumerate(
+            zip(spatial_resolution, window_size, strict=False)
+        ):
+            if res % ws != 0:
+                raise ValueError(
+                    f"spatial_resolution[{i}]={res} must be divisible "
+                    f"by window_size[{i}]={ws}"
+                )
         self.n_noise_channels = n_noise_channels
         self.loss_func = loss_func or nn.MSELoss()
         self.embed = PatchEmbedding(
@@ -603,6 +669,7 @@ class SwinViTProcessor(Processor[EncodedBatch]):
                     self.n_spatial_dims,
                     n_noise_channels,
                     window_size,
+                    shift=(i % 2 == 1),
                     drop_path=dp_rates[i],
                     use_ada_ln=use_ada_ln,
                     zero_init=zero_init,
