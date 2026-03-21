@@ -567,16 +567,35 @@ class BasicSwinLayer(nn.Module):
         crop: tuple[int, ...] | None = None,
     ) -> tuple[Tensor, Tensor | None, tuple[int, ...], tuple[int, ...] | None]:
         if len(spatial_shape) == 2:
-            x = rearrange(
-                x, "b (h w) c -> b h w c", h=spatial_shape[0], w=spatial_shape[1]
-            )
+            if x.ndim == 3:
+                x = rearrange(
+                    x,
+                    "b (h w) c -> b h w c",
+                    h=spatial_shape[0],
+                    w=spatial_shape[1],
+                )
+            elif x.ndim != 4:
+                raise ValueError(
+                    "Expected 3D or 4D tensor for 2D Swin layer, "
+                    f"got shape {tuple(x.shape)}"
+                )
+        elif len(spatial_shape) == 3:
+            if x.ndim == 3:
+                x = rearrange(
+                    x,
+                    "b (h w d) c -> b h w d c",
+                    h=spatial_shape[0],
+                    w=spatial_shape[1],
+                    d=spatial_shape[2],
+                )
+            elif x.ndim != 5:
+                raise ValueError(
+                    "Expected 3D or 5D tensor for 3D Swin layer, "
+                    f"got shape {tuple(x.shape)}"
+                )
         else:
-            x = rearrange(
-                x,
-                "b (h w d) c -> b h w d c",
-                h=spatial_shape[0],
-                w=spatial_shape[1],
-                d=spatial_shape[2],
+            raise ValueError(
+                f"Unsupported spatial_shape with {len(spatial_shape)} dims"
             )
 
         for blk in self.blocks:
@@ -778,6 +797,24 @@ class SwinViTProcessor(Processor[EncodedBatch]):
 
             if index > 0:
                 x = x + skips[index - 1]
+
+        # Decoder layers may return flattened tokens; restore spatial layout
+        # expected by PatchUnembedding.
+        if self.n_spatial_dims == 2 and x.ndim == 3:
+            x = rearrange(
+                x,
+                "b (h w) c -> b h w c",
+                h=spatial_shape[0],
+                w=spatial_shape[1],
+            )
+        elif self.n_spatial_dims == 3 and x.ndim == 3:
+            x = rearrange(
+                x,
+                "b (h w d) c -> b h w d c",
+                h=spatial_shape[0],
+                w=spatial_shape[1],
+                d=spatial_shape[2],
+            )
 
         return rearrange(
             self.debed(rearrange(x, self.embed_reshapes[0])), self.embed_reshapes[1]

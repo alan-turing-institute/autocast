@@ -3,9 +3,9 @@ in_channels: null
 out_channels: null
 hidden_dim: 64
 encoder_depths: [2, 2, 2]
-encoder_num_heads: [3, 6, 12]
+encoder_num_heads: [4, 8, 16]
 decoder_depths: [2, 2, 2]
-decoder_num_heads: [12, 6, 3]
+decoder_num_heads: [16, 8, 4]
 patch_size: 4
 window_size: [4, 4, 4]
 n_noise_channels: 256
