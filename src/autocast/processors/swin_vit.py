@@ -130,10 +130,8 @@ def _crop_3d(x: Tensor, pad_size: tuple[int, int, int]) -> Tensor:
 
 def _window_partition_2d(x: Tensor, ws: tuple[int, int]) -> Tensor:
     """Partition (B, H, W, C) into local 2D windows."""
-    b, h, w, c = x.shape
     wh, ww = ws
-    x = x.view(b, h // wh, wh, w // ww, ww, c)
-    return rearrange(x, "b h1 wh w1 ww c -> (b h1 w1) wh ww c")
+    return rearrange(x, "b (h1 wh) (w1 ww) c -> (b h1 w1) wh ww c", wh=wh, ww=ww)
 
 
 def _window_reverse_2d(windows: Tensor, ws: tuple[int, int], h: int, w: int) -> Tensor:
@@ -154,10 +152,10 @@ def _window_reverse_2d(windows: Tensor, ws: tuple[int, int], h: int, w: int) -> 
 
 def _window_partition_3d(x: Tensor, ws: tuple[int, int, int]) -> Tensor:
     """Partition (B, H, W, D, C) into local 3D windows."""
-    b, h, w, d, c = x.shape
     wh, ww, wd = ws
-    x = x.view(b, h // wh, wh, w // ww, ww, d // wd, wd, c)
-    return rearrange(x, "b h1 wh w1 ww d1 wd c -> (b h1 w1 d1) wh ww wd c")
+    return rearrange(
+        x, "b (h1 wh) (w1 ww) (d1 wd) c -> (b h1 w1 d1) wh ww wd c", wh=wh, ww=ww, wd=wd
+    )
 
 
 def _window_reverse_3d(
@@ -485,7 +483,7 @@ class PatchSplitting(nn.Module):
             x = rearrange(
                 x, "b (h w) (w2 h2 d) -> b (h h2) (w w2) d", h=H, w=W, h2=2, w2=2
             )
-            if crop is not None and (crop[0] > 0 or crop[1] > 0):
+            if crop is not None and any(c > 0 for c in crop):
                 x = x[:, : x.shape[1] - crop[0], : x.shape[2] - crop[1], :]
             x = rearrange(x, "b h w d -> b (h w) d")
         elif self.n_spatial_dims == 3:
@@ -499,8 +497,14 @@ class PatchSplitting(nn.Module):
                 h2=2,
                 w2=2,
             )
-            if crop is not None and (crop[0] > 0 or crop[1] > 0):
-                x = x[:, : x.shape[1] - crop[0], : x.shape[2] - crop[1], :, :]
+            if crop is not None and any(c > 0 for c in crop):
+                x = x[
+                    :,
+                    : x.shape[1] - crop[0],
+                    : x.shape[2] - crop[1],
+                    : x.shape[3] - crop[2],
+                    :,
+                ]
             x = rearrange(x, "b h w dp d -> b (h w dp) d")
         else:
             raise ValueError(f"Unsupported n_spatial_dims {self.n_spatial_dims}")
@@ -769,13 +773,11 @@ class SwinViTProcessor(Processor[EncodedBatch]):
                 x,
                 x_noise,
                 all_enc_res[index],
-                crop=padded_outs[index - 1] if i > 0 else None,
+                crop=padded_outs[index - 1] if index > 0 else None,
             )
 
-            if 0 < i < self.num_decoder_layers - 1:
+            if index > 0:
                 x = x + skips[index - 1]
-            elif i == self.num_decoder_layers - 1:
-                x = x + skips[0]
 
         return rearrange(
             self.debed(rearrange(x, self.embed_reshapes[0])), self.embed_reshapes[1]
