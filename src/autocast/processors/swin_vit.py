@@ -559,7 +559,7 @@ class BasicSwinLayer(nn.Module):
         else:
             self.upsample = None
 
-    def forward(
+    def forward(  # noqa: PLR0912
         self,
         x: Tensor,
         x_noise: Tensor | None,
