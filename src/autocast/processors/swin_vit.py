@@ -660,6 +660,14 @@ class SwinViTProcessor(Processor[EncodedBatch]):
     - Liu, Z. et al. "Video Swin Transformer." CVPR 2022.
     - Microsoft Aurora Swin3D implementation:
       https://github.com/microsoft/aurora/blob/main/aurora/model/swin3d.py
+
+        Shape convention:
+        - Public processor boundary: channel-first
+            - 2D: (B, C, H, W)
+            - 3D: (B, C, H, W, D)
+        - Internal Swin blocks: channels-last
+            - 2D: (B, H, W, C)
+            - 3D: (B, H, W, D, C)
     """
 
     def __init__(
@@ -821,6 +829,7 @@ class SwinViTProcessor(Processor[EncodedBatch]):
         )
 
     def map(self, x: Tensor, global_cond: Tensor | None = None) -> Tensor:  # noqa: ARG002
+        """Map encoded inputs through Swin while preserving channel-first I/O."""
         noise = (
             torch.randn(
                 x.shape[0], self.n_noise_channels, dtype=x.dtype, device=x.device
@@ -831,8 +840,10 @@ class SwinViTProcessor(Processor[EncodedBatch]):
         if self.n_spatial_dims == 2:
             out = self(rearrange(x, "b c h w -> b h w c").contiguous(), noise)
             return rearrange(out, "b h w c -> b c h w").contiguous()
-        out = self(rearrange(x, "b c d h w -> b d h w c").contiguous(), noise)
-        return rearrange(out, "b d h w c -> b c d h w").contiguous()
+        if self.n_spatial_dims == 3:
+            out = self(rearrange(x, "b c h w d -> b h w d c").contiguous(), noise)
+            return rearrange(out, "b h w d c -> b c h w d").contiguous()
+        raise ValueError(f"Unsupported n_spatial_dims={self.n_spatial_dims}")
 
     def loss(self, batch: EncodedBatch) -> Tensor:
         return self.loss_func(

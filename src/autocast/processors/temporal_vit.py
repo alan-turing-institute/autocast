@@ -13,6 +13,10 @@ class TemporalViTProcessor(Processor[EncodedBatch]):
     """Wrapper for the internal TemporalViTBackbone used in Diffusion Models.
 
     Provides building blocks for modern generative architectures (e.g. DiT).
+
+    Shape convention:
+    - Public processor boundary: channel-first, (B, C, H, W)
+    - Internal backbone input/output: channels-last with time, (B, T, H, W, C)
     """
 
     def __init__(
@@ -31,7 +35,7 @@ class TemporalViTProcessor(Processor[EncodedBatch]):
         super().__init__()
         self.n_spatial_dims = len(spatial_resolution)
         if self.n_spatial_dims != 2:
-            msg = "Diffusion wrapper expects 2D spatial resolution inputs (W,H)"
+            msg = "Diffusion wrapper expects 2D spatial resolution inputs (H, W)"
             raise ValueError(msg)
 
         self.n_noise_channels = n_noise_channels
@@ -56,11 +60,21 @@ class TemporalViTProcessor(Processor[EncodedBatch]):
         )
 
     def forward(self, x: Tensor, x_noise: Tensor | None = None) -> Tensor:
+        """Run TemporalViT with channel-first inputs and outputs.
+
+        Args:
+            x: Input tensor with shape (B, C, H, W).
+            x_noise: Optional noise/modulation tensor.
+
+        Returns
+        -------
+            Output tensor with shape (B, C, H, W).
+        """
         x_in = rearrange(x, "b c h w -> b 1 h w c").contiguous()
         y = self.model(x_in, t=x_noise, cond=None, global_cond=None)
         return rearrange(y, "b 1 h w c -> b c h w").contiguous()
 
-    def map(self, x: Tensor, global_cond: Tensor | None = None) -> Tensor:  # noqa: ARG002  # noqa: ARG002
+    def map(self, x: Tensor, global_cond: Tensor | None = None) -> Tensor:  # noqa: ARG002
         noise = (
             torch.randn(
                 x.shape[0], self.n_noise_channels, dtype=x.dtype, device=x.device
