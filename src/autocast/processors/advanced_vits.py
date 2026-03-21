@@ -342,327 +342,6 @@ class DiffusionBackboneViTProcessor(Processor[EncodedBatch]):
         return self.loss_func(pred, batch.encoded_output_fields)
 
 
-class FactorizedViTBlock(nn.Module):
-    """Block for Factorized ViT Processor."""
-
-    def __init__(
-        self,
-        hidden_dim: int,
-        num_heads: int,
-        n_spatial_dims: int,
-        n_noise_channels: int | None,
-        drop_path: float = 0.0,
-        use_ada_ln: bool = True,
-        zero_init: bool = True,
-    ):
-        super().__init__()
-        if hidden_dim % num_heads != 0:
-            raise ValueError(
-                f"hidden_dim ({hidden_dim}) must be divisible by "
-                f"num_heads ({num_heads})"
-            )
-        self.num_heads = num_heads
-        self.hidden_dim = hidden_dim
-        self.n_spatial_dims = n_spatial_dims
-        self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
-        self.ada_generator = AdaLNGenerator(
-            hidden_dim, n_noise_channels, 6, use_ada_ln=use_ada_ln, zero_init=zero_init
-        )
-        self.norm1 = nn.LayerNorm(hidden_dim, elementwise_affine=not use_ada_ln)
-        self.fused_heads = [hidden_dim, hidden_dim, hidden_dim]
-        self.qkv_proj = nn.Linear(hidden_dim, sum(self.fused_heads))
-        self.output_proj = nn.Linear(hidden_dim, hidden_dim)
-        self.norm2 = nn.LayerNorm(hidden_dim, elementwise_affine=not use_ada_ln)
-        self.mlp = nn.Sequential(
-            nn.Linear(hidden_dim, 4 * hidden_dim),
-            nn.GELU(),
-            nn.Linear(4 * hidden_dim, hidden_dim),
-        )
-
-        if n_spatial_dims == 2:
-            self.head_split = "b h w (he c) -> b h w he c"
-            self.spatial_permutations = [
-                ("b h w he c -> b h he w c", "b h he w c -> b h w (he c)"),
-                ("b h w he c -> b w he h c", "b w he h c -> b h w (he c)"),
-            ]
-        elif n_spatial_dims == 3:
-            self.head_split = "b h w d (he c) -> b h w d he c"
-            self.spatial_permutations = [
-                ("b h w d he c -> b h w he d c", "b h w he d c -> b h w d (he c)"),
-                ("b h w d he c -> b h d he w c", "b h d he w c -> b h w d (he c)"),
-                ("b h w d he c -> b w d he h c", "b w d he h c -> b h w d (he c)"),
-            ]
-
-    def forward(self, x: Tensor, x_noise: Tensor | None = None) -> Tensor:
-        shift1, scale1, gate1, shift2, scale2, gate2 = self.ada_generator(x_noise)
-        norm_x = modulate(self.norm1(x), shift1, scale1)
-        qkv = self.qkv_proj(norm_x)
-        q, k, v = qkv.split(self.fused_heads, dim=-1)
-        q, k, v = (
-            rearrange(t, self.head_split, he=self.num_heads).contiguous()
-            for t in (q, k, v)
-        )
-        out = torch.zeros_like(norm_x)
-        for in_perm, out_perm in self.spatial_permutations:
-            q1, k1, v1 = (rearrange(t, in_perm).contiguous() for t in (q, k, v))
-            ax_out = F.scaled_dot_product_attention(q1, k1, v1)
-            ax_out = rearrange(ax_out, out_perm).contiguous()
-            out = out + ax_out
-        out = apply_gate(self.output_proj(out), gate1)
-        x = x + self.drop_path(out)
-        mlp_out = apply_gate(self.mlp(modulate(self.norm2(x), shift2, scale2)), gate2)
-        return x + self.drop_path(mlp_out)
-
-
-class FactorizedViTProcessor(Processor[EncodedBatch]):
-    """
-    ViT Processor using Factorized Spatiotemporal Attention and Ada-LN.
-
-    References
-    ----------
-    - VivIT: A Video Vision Transformer (https://arxiv.org/abs/2103.15691)
-    - MetNet-3: Deep Learning for Day Ahead Global Weather Forecasting (https://arxiv.org/abs/2306.06079)
-    - AViT: An Efficient and Scalable Attention (Internal or Relevant Paper)
-    """
-
-    def __init__(
-        self,
-        in_channels: int,
-        out_channels: int,
-        spatial_resolution: Sequence[int],
-        hidden_dim: int = 768,
-        num_heads: int = 12,
-        n_layers: int = 8,
-        drop_path: float = 0.0,
-        groups: int = 12,
-        loss_func: nn.Module | None = None,
-        n_noise_channels: int | None = None,
-        patch_size: int | None = None,
-        use_ada_ln: bool = True,
-        zero_init: bool = True,
-    ):
-        super().__init__()
-        self.n_spatial_dims = len(spatial_resolution)
-        self.n_noise_channels = n_noise_channels
-        self.loss_func = loss_func or nn.MSELoss()
-        self.embed = PatchEmbedding(
-            in_channels, hidden_dim, groups, self.n_spatial_dims, patch_size
-        )
-        dp_rates = torch.linspace(0, drop_path, n_layers).tolist()
-        self.blocks = nn.ModuleList(
-            [
-                FactorizedViTBlock(
-                    hidden_dim,
-                    num_heads,
-                    self.n_spatial_dims,
-                    n_noise_channels,
-                    drop_path=dp_rates[i],
-                    use_ada_ln=use_ada_ln,
-                    zero_init=zero_init,
-                )
-                for i in range(n_layers)
-            ]
-        )
-        self.debed = PatchUnembedding(
-            out_channels, hidden_dim, groups, self.n_spatial_dims, patch_size
-        )
-        self.embed_reshapes = (
-            ["b h w c -> b c h w", "b c h w -> b h w c"]
-            if self.n_spatial_dims == 2
-            else ["b h w d c -> b c h w d", "b c h w d -> b h w d c"]
-        )
-
-    def forward(self, x: Tensor, x_noise: Tensor | None = None) -> Tensor:
-        x = rearrange(
-            self.embed(rearrange(x, self.embed_reshapes[0])), self.embed_reshapes[1]
-        )
-        for blk in self.blocks:
-            x = blk(x, x_noise=x_noise)
-        return rearrange(
-            self.debed(rearrange(x, self.embed_reshapes[0])), self.embed_reshapes[1]
-        )
-
-    def map(self, x: Tensor, global_cond: Tensor | None = None) -> Tensor:  # noqa: ARG002
-        noise = (
-            torch.randn(
-                x.shape[0], self.n_noise_channels, dtype=x.dtype, device=x.device
-            )
-            if self.n_noise_channels
-            else None
-        )
-        if self.n_spatial_dims == 2:
-            out = self(rearrange(x, "b c h w -> b h w c").contiguous(), noise)
-            return rearrange(out, "b h w c -> b c h w").contiguous()
-        out = self(rearrange(x, "b c d h w -> b d h w c").contiguous(), noise)
-        return rearrange(out, "b d h w c -> b c d h w").contiguous()
-
-    def loss(self, batch: EncodedBatch) -> Tensor:
-        return self.loss_func(
-            self.map(batch.encoded_inputs, batch.global_cond),
-            batch.encoded_output_fields,
-        )
-
-
-class FullAttentionViTBlock(nn.Module):
-    """Block for Full Attention ViT Processor."""
-
-    def __init__(
-        self,
-        hidden_dim: int,
-        num_heads: int,
-        n_spatial_dims: int,
-        n_noise_channels: int | None,
-        drop_path: float = 0.0,
-        use_ada_ln: bool = True,
-        zero_init: bool = True,
-    ):
-        super().__init__()
-        if hidden_dim % num_heads != 0:
-            raise ValueError(
-                f"hidden_dim ({hidden_dim}) must be divisible by "
-                f"num_heads ({num_heads})"
-            )
-        self.num_heads = num_heads
-        self.hidden_dim = hidden_dim
-        self.n_spatial_dims = n_spatial_dims
-        self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
-        self.ada_generator = AdaLNGenerator(
-            hidden_dim, n_noise_channels, 6, use_ada_ln=use_ada_ln, zero_init=zero_init
-        )
-        self.norm1 = nn.LayerNorm(hidden_dim, elementwise_affine=not use_ada_ln)
-        self.fused_heads = [hidden_dim, hidden_dim, hidden_dim]
-        self.qkv_proj = nn.Linear(hidden_dim, sum(self.fused_heads))
-        self.output_proj = nn.Linear(hidden_dim, hidden_dim)
-        self.norm2 = nn.LayerNorm(hidden_dim, elementwise_affine=not use_ada_ln)
-        self.mlp = nn.Sequential(
-            nn.Linear(hidden_dim, 4 * hidden_dim),
-            nn.GELU(),
-            nn.Linear(4 * hidden_dim, hidden_dim),
-        )
-        if n_spatial_dims == 2:
-            self.head_split, self.head_out = (
-                "b h w (he c) -> b (h w) he c",
-                "b (h w) he c -> b h w (he c)",
-            )
-        elif n_spatial_dims == 3:
-            self.head_split, self.head_out = (
-                "b h w d (he c) -> b (h w d) he c",
-                "b (h w d) he c -> b h w d (he c)",
-            )
-        else:
-            raise ValueError(f"Unsupported n_spatial_dims={n_spatial_dims}")
-
-    def forward(self, x: Tensor, x_noise: Tensor | None = None) -> Tensor:
-        shape_info = {"h": x.shape[1], "w": x.shape[2]}
-        if self.n_spatial_dims == 3:
-            shape_info["d"] = x.shape[3]
-        shift1, scale1, gate1, shift2, scale2, gate2 = self.ada_generator(x_noise)
-        qkv = self.qkv_proj(modulate(self.norm1(x), shift1, scale1))
-        q, k, v = qkv.split(self.fused_heads, dim=-1)
-        q, k, v = (
-            rearrange(t, self.head_split, he=self.num_heads).transpose(1, 2)
-            for t in (q, k, v)
-        )
-        out = rearrange(
-            F.scaled_dot_product_attention(q, k, v).transpose(1, 2),
-            self.head_out,
-            **shape_info,
-        )
-        x = x + self.drop_path(apply_gate(self.output_proj(out), gate1))
-        return x + self.drop_path(
-            apply_gate(self.mlp(modulate(self.norm2(x), shift2, scale2)), gate2)
-        )
-
-
-class FullAttentionViTProcessor(Processor[EncodedBatch]):
-    """
-    ViT Processor using Full Spatiotemporal Attention and Ada-LN.
-
-    References
-    ----------
-    - EarthPT: A Foundation Model for Earth Observation (https://arxiv.org/abs/2309.07207)
-    - ClimaX: A foundation model for weather and climate (https://arxiv.org/abs/2301.10343)
-    - Aardvark Weather (https://www.nature.com/articles/s41586-025-08897-0)
-    """
-
-    def __init__(
-        self,
-        in_channels: int,
-        out_channels: int,
-        spatial_resolution: Sequence[int],
-        hidden_dim: int = 768,
-        num_heads: int = 12,
-        n_layers: int = 8,
-        drop_path: float = 0.0,
-        groups: int = 12,
-        loss_func: nn.Module | None = None,
-        n_noise_channels: int | None = None,
-        patch_size: int | None = None,
-        use_ada_ln: bool = True,
-        zero_init: bool = True,
-    ):
-        super().__init__()
-        self.n_spatial_dims = len(spatial_resolution)
-        self.n_noise_channels = n_noise_channels
-        self.loss_func = loss_func or nn.MSELoss()
-        self.embed = PatchEmbedding(
-            in_channels, hidden_dim, groups, self.n_spatial_dims, patch_size
-        )
-        dp_rates = torch.linspace(0, drop_path, n_layers).tolist()
-        self.blocks = nn.ModuleList(
-            [
-                FullAttentionViTBlock(
-                    hidden_dim,
-                    num_heads,
-                    self.n_spatial_dims,
-                    n_noise_channels,
-                    drop_path=dp_rates[i],
-                    use_ada_ln=use_ada_ln,
-                    zero_init=zero_init,
-                )
-                for i in range(n_layers)
-            ]
-        )
-        self.debed = PatchUnembedding(
-            out_channels, hidden_dim, groups, self.n_spatial_dims, patch_size
-        )
-        self.embed_reshapes = (
-            ["b h w c -> b c h w", "b c h w -> b h w c"]
-            if self.n_spatial_dims == 2
-            else ["b h w d c -> b c h w d", "b c h w d -> b h w d c"]
-        )
-
-    def forward(self, x: Tensor, x_noise: Tensor | None = None) -> Tensor:
-        x = rearrange(
-            self.embed(rearrange(x, self.embed_reshapes[0])), self.embed_reshapes[1]
-        )
-        for blk in self.blocks:
-            x = blk(x, x_noise=x_noise)
-        return rearrange(
-            self.debed(rearrange(x, self.embed_reshapes[0])), self.embed_reshapes[1]
-        )
-
-    def map(self, x: Tensor, global_cond: Tensor | None = None) -> Tensor:  # noqa: ARG002
-        noise = (
-            torch.randn(
-                x.shape[0], self.n_noise_channels, dtype=x.dtype, device=x.device
-            )
-            if self.n_noise_channels
-            else None
-        )
-        if self.n_spatial_dims == 2:
-            out = self(rearrange(x, "b c h w -> b h w c").contiguous(), noise)
-            return rearrange(out, "b h w c -> b c h w").contiguous()
-        out = self(rearrange(x, "b c d h w -> b d h w c").contiguous(), noise)
-        return rearrange(out, "b d h w c -> b c d h w").contiguous()
-
-    def loss(self, batch: EncodedBatch) -> Tensor:
-        return self.loss_func(
-            self.map(batch.encoded_inputs, batch.global_cond),
-            batch.encoded_output_fields,
-        )
-
-
 class SwinViTBlock(nn.Module):
     """Block for Swin ViT Processor."""
 
@@ -809,14 +488,209 @@ class SwinViTBlock(nn.Module):
         )
 
 
+class PatchMerging(nn.Module):
+    """Patch merging layer."""
+
+    def __init__(self, dim: int, n_spatial_dims: int = 2):
+        super().__init__()
+        self.dim = dim
+        self.n_spatial_dims = n_spatial_dims
+        self.reduction = nn.Linear(4 * dim, 2 * dim, bias=False)
+        self.norm = nn.LayerNorm(4 * dim)
+
+    def forward(self, x: Tensor, spatial_shape: tuple[int, ...]) -> Tensor:
+        B, _L, D = x.shape
+        if self.n_spatial_dims == 2:
+            H, W = spatial_shape
+            x = x.view(B, H, W, D)
+            pad_H, pad_W = H % 2, W % 2
+            if pad_H > 0 or pad_W > 0:
+                x = F.pad(x, (0, 0, 0, pad_W, 0, pad_H))
+            x0 = x[:, 0::2, 0::2, :]
+            x1 = x[:, 1::2, 0::2, :]
+            x2 = x[:, 0::2, 1::2, :]
+            x3 = x[:, 1::2, 1::2, :]
+            x = torch.cat([x0, x1, x2, x3], -1)
+            x = x.view(B, -1, 4 * D)
+        elif self.n_spatial_dims == 3:
+            H, W, depth = spatial_shape
+            x = x.view(B, H, W, depth, D)
+            pad_H, pad_W = H % 2, W % 2
+            if pad_H > 0 or pad_W > 0:
+                x = F.pad(x, (0, 0, 0, 0, 0, pad_W, 0, pad_H))
+            x0 = x[:, 0::2, 0::2, :, :]
+            x1 = x[:, 1::2, 0::2, :, :]
+            x2 = x[:, 0::2, 1::2, :, :]
+            x3 = x[:, 1::2, 1::2, :, :]
+            x = torch.cat([x0, x1, x2, x3], -1)
+            x = x.view(B, -1, 4 * D)
+        else:
+            raise ValueError(f"Unsupported n_spatial_dims {self.n_spatial_dims}")
+
+        x = self.norm(x)
+        return self.reduction(x)
+
+
+class PatchSplitting(nn.Module):
+    """Patch splitting layer."""
+
+    def __init__(self, dim: int, n_spatial_dims: int = 2):
+        super().__init__()
+        self.dim = dim
+        self.n_spatial_dims = n_spatial_dims
+        self.lin1 = nn.Linear(dim, dim * 2, bias=False)
+        self.norm = nn.LayerNorm(dim // 2)
+        self.lin2 = nn.Linear(dim // 2, dim // 2, bias=False)
+
+    def forward(
+        self,
+        x: Tensor,
+        spatial_shape: tuple[int, ...],
+        crop: tuple[int, ...] | None = None,
+    ) -> Tensor:
+        B, L, D = x.shape
+        x = self.lin1(x)
+        x = x.view(B, L, 4, D // 2)
+        if self.n_spatial_dims == 2:
+            H, W = spatial_shape
+            x = x.view(B, H, W, 2, 2, D // 2)
+            x = rearrange(x, "b h w h1 w1 d -> b (h h1) (w w1) d")
+            if crop is not None and (crop[0] > 0 or crop[1] > 0):
+                x = x[:, : x.shape[1] - crop[0], : x.shape[2] - crop[1], :]
+            x = x.reshape(B, -1, D // 2)
+        elif self.n_spatial_dims == 3:
+            H, W, depth = spatial_shape
+            x = x.view(B, H, W, depth, 2, 2, D // 2)
+            x = rearrange(x, "b h w dp h1 w1 d -> b (h h1) (w w1) dp d")
+            if crop is not None and (crop[0] > 0 or crop[1] > 0):
+                x = x[:, : x.shape[1] - crop[0], : x.shape[2] - crop[1], :, :]
+            x = x.reshape(B, -1, D // 2)
+        else:
+            raise ValueError(f"Unsupported n_spatial_dims {self.n_spatial_dims}")
+
+        x = self.norm(x)
+        return self.lin2(x)
+
+
+class BasicSwinLayer(nn.Module):
+    """A basic Swin layer comprising multiple blocks and an optional down/upsample."""
+
+    def __init__(
+        self,
+        dim: int,
+        depth: int,
+        num_heads: int,
+        n_spatial_dims: int,
+        n_noise_channels: int | None,
+        window_size: tuple[int, ...],
+        drop_path: list[float],
+        downsample: type[nn.Module] | None = None,
+        upsample: type[nn.Module] | None = None,
+        use_ada_ln: bool = True,
+        zero_init: bool = True,
+    ):
+        super().__init__()
+        self.dim = dim
+        self.depth = depth
+        self.blocks = nn.ModuleList(
+            [
+                SwinViTBlock(
+                    dim,
+                    num_heads,
+                    n_spatial_dims,
+                    n_noise_channels,
+                    window_size,
+                    shift=(i % 2 == 1),
+                    drop_path=drop_path[i],
+                    use_ada_ln=use_ada_ln,
+                    zero_init=zero_init,
+                )
+                for i in range(depth)
+            ]
+        )
+        if downsample is not None:
+            self.downsample = downsample(dim=dim, n_spatial_dims=n_spatial_dims)
+        else:
+            self.downsample = None
+
+        if upsample is not None:
+            self.upsample = upsample(dim=dim, n_spatial_dims=n_spatial_dims)
+        else:
+            self.upsample = None
+
+    def forward(
+        self,
+        x: Tensor,
+        x_noise: Tensor | None,
+        spatial_shape: tuple[int, ...],
+        crop: tuple[int, ...] | None = None,
+    ) -> tuple[Tensor, Tensor | None, tuple[int, ...], tuple[int, ...] | None]:
+        if len(spatial_shape) == 2:
+            x = x.view(x.shape[0], spatial_shape[0], spatial_shape[1], -1)
+        else:
+            x = x.view(
+                x.shape[0], spatial_shape[0], spatial_shape[1], spatial_shape[2], -1
+            )
+
+        for blk in self.blocks:
+            x = blk(x, x_noise)
+
+        x = x.view(x.shape[0], -1, x.shape[-1])
+        out_shape = spatial_shape
+
+        if self.downsample is not None:
+            x_down = self.downsample(x, spatial_shape)
+            padding = (spatial_shape[0] % 2, spatial_shape[1] % 2)
+            if len(spatial_shape) == 3:
+                out_shape = (
+                    (spatial_shape[0] + padding[0]) // 2,
+                    (spatial_shape[1] + padding[1]) // 2,
+                    spatial_shape[2],
+                )
+                padding_out = (*padding, 0)
+            else:
+                out_shape = (
+                    (spatial_shape[0] + padding[0]) // 2,
+                    (spatial_shape[1] + padding[1]) // 2,
+                )
+                padding_out = padding
+            return x_down, x, out_shape, padding_out
+
+        if self.upsample is not None:
+            x_up = self.upsample(x, spatial_shape, crop=crop)
+            if len(spatial_shape) == 3:
+                out_shape = (
+                    spatial_shape[0] * 2,
+                    spatial_shape[1] * 2,
+                    spatial_shape[2],
+                )
+            else:
+                out_shape = (spatial_shape[0] * 2, spatial_shape[1] * 2)
+            if crop:
+                out_shape = tuple(o - c for o, c in zip(out_shape, crop, strict=False))
+            return x_up, x, out_shape, None
+
+        return x, x, out_shape, None
+
+
 class SwinViTProcessor(Processor[EncodedBatch]):
-    """
-    ViT Processor using 2D/3D Shifted-Window Attention (Swin) and Ada-LN.
+    """ViT Processor using 2D/3D Shifted-Window Attention (Swin) and Ada-LN.
+
+    Constructs a U-Net style encoder-decoder architecture.
+
+    Features:
+    - Shifted-Window Multi-Head Self Attention (SW-MSA).
+    - Patch Merging for hierarchical staging (encoder downsampling).
+    - Patch Splitting for hierarchical expansion (decoder upsampling).
+    - Ada-LN conditioning from noise embeddings (post-norm or per-block scaled).
 
     References
     ----------
-    - Aurora: A Foundation Model of the Atmosphere (https://arxiv.org/abs/2405.13063)
-    - Video Swin Transformer (https://arxiv.org/abs/2106.13230)
+    - Liu, Z. et al. "Swin Transformer: Hierarchical Vision Transformer using Shifted
+      Windows." ICCV 2021.
+    - Liu, Z. et al. "Video Swin Transformer." CVPR 2022.
+    - Microsoft Aurora Swin3D implementation:
+      https://github.com/microsoft/aurora/blob/main/aurora/model/swin3d.py
     """
 
     def __init__(
@@ -825,9 +699,11 @@ class SwinViTProcessor(Processor[EncodedBatch]):
         out_channels: int,
         spatial_resolution: Sequence[int],
         window_size: Sequence[int] = (4, 4, 4),
-        hidden_dim: int = 768,
-        num_heads: int = 12,
-        n_layers: int = 8,
+        hidden_dim: int = 64,
+        encoder_depths: Sequence[int] = (2, 2, 2),
+        encoder_num_heads: Sequence[int] = (3, 6, 12),
+        decoder_depths: Sequence[int] = (2, 2, 2),
+        decoder_num_heads: Sequence[int] = (12, 6, 3),
         drop_path: float = 0.0,
         groups: int = 12,
         loss_func: nn.Module | None = None,
@@ -848,28 +724,60 @@ class SwinViTProcessor(Processor[EncodedBatch]):
             raise ValueError(
                 f"window_size values must be positive, got {self.window_size}"
             )
+
         self.n_noise_channels = n_noise_channels
         self.loss_func = loss_func or nn.MSELoss()
         self.embed = PatchEmbedding(
             in_channels, hidden_dim, groups, self.n_spatial_dims, patch_size
         )
-        dp_rates = torch.linspace(0, drop_path, n_layers).tolist()
-        self.blocks = nn.ModuleList(
-            [
-                SwinViTBlock(
-                    hidden_dim,
-                    num_heads,
-                    self.n_spatial_dims,
-                    n_noise_channels,
-                    self.window_size,
-                    shift=(i % 2 == 1),
-                    drop_path=dp_rates[i],
-                    use_ada_ln=use_ada_ln,
-                    zero_init=zero_init,
-                )
-                for i in range(n_layers)
-            ]
-        )
+
+        self.num_encoder_layers = len(encoder_depths)
+        self.num_decoder_layers = len(decoder_depths)
+        assert self.num_encoder_layers == self.num_decoder_layers
+
+        dpr = torch.linspace(0, drop_path, sum(encoder_depths)).tolist()
+
+        self.encoder_layers = nn.ModuleList()
+        for i_layer in range(self.num_encoder_layers):
+            layer = BasicSwinLayer(
+                dim=int(hidden_dim * 2**i_layer),
+                depth=encoder_depths[i_layer],
+                num_heads=encoder_num_heads[i_layer],
+                n_spatial_dims=self.n_spatial_dims,
+                n_noise_channels=n_noise_channels,
+                window_size=self.window_size,
+                drop_path=dpr[
+                    sum(encoder_depths[:i_layer]) : sum(encoder_depths[: i_layer + 1])
+                ],
+                downsample=PatchMerging
+                if (i_layer < self.num_encoder_layers - 1)
+                else None,
+                use_ada_ln=use_ada_ln,
+                zero_init=zero_init,
+            )
+            self.encoder_layers.append(layer)
+
+        self.decoder_layers = nn.ModuleList()
+        for i_layer in range(self.num_decoder_layers):
+            exponent = self.num_decoder_layers - i_layer - 1
+            layer = BasicSwinLayer(
+                dim=int(hidden_dim * 2**exponent),
+                depth=decoder_depths[i_layer],
+                num_heads=decoder_num_heads[i_layer],
+                n_spatial_dims=self.n_spatial_dims,
+                n_noise_channels=n_noise_channels,
+                window_size=self.window_size,
+                drop_path=dpr[
+                    sum(decoder_depths[:i_layer]) : sum(decoder_depths[: i_layer + 1])
+                ],
+                upsample=PatchSplitting
+                if (i_layer < self.num_decoder_layers - 1)
+                else None,
+                use_ada_ln=use_ada_ln,
+                zero_init=zero_init,
+            )
+            self.decoder_layers.append(layer)
+
         self.debed = PatchUnembedding(
             out_channels, hidden_dim, groups, self.n_spatial_dims, patch_size
         )
@@ -879,12 +787,50 @@ class SwinViTProcessor(Processor[EncodedBatch]):
             else ["b h w d c -> b c h w d", "b c h w d -> b h w d c"]
         )
 
+    def get_encoder_specs(
+        self, patch_res: tuple[int, ...]
+    ) -> tuple[list[tuple[int, ...]], list[tuple[int, ...] | None]]:
+        all_res = [patch_res]
+        padded_outs = []
+        for _ in range(1, self.num_encoder_layers):
+            res = all_res[-1]
+            pad_H, pad_W = res[0] % 2, res[1] % 2
+            if len(res) == 2:
+                padded_outs.append((pad_H, pad_W))
+                all_res.append(((res[0] + pad_H) // 2, (res[1] + pad_W) // 2))
+            else:
+                padded_outs.append((pad_H, pad_W, 0))
+                all_res.append(((res[0] + pad_H) // 2, (res[1] + pad_W) // 2, res[2]))
+        padded_outs.append(None)
+        return all_res, padded_outs
+
     def forward(self, x: Tensor, x_noise: Tensor | None = None) -> Tensor:
         x = rearrange(
             self.embed(rearrange(x, self.embed_reshapes[0])), self.embed_reshapes[1]
         )
-        for blk in self.blocks:
-            x = blk(x, x_noise=x_noise)
+
+        spatial_shape = tuple(x.shape[1 : 1 + self.n_spatial_dims])
+        all_enc_res, padded_outs = self.get_encoder_specs(spatial_shape)
+
+        skips = []
+        for i, layer in enumerate(self.encoder_layers):
+            x, x_unscaled, _, _ = layer(x, x_noise, all_enc_res[i])
+            skips.append(x_unscaled)
+
+        for i, layer in enumerate(self.decoder_layers):
+            index = self.num_decoder_layers - i - 1
+            x, _, _, _ = layer(
+                x,
+                x_noise,
+                all_enc_res[index],
+                crop=padded_outs[index - 1] if i > 0 else None,
+            )
+
+            if 0 < i < self.num_decoder_layers - 1:
+                x = x + skips[index - 1]
+            elif i == self.num_decoder_layers - 1:
+                x = x + skips[0]
+
         return rearrange(
             self.debed(rearrange(x, self.embed_reshapes[0])), self.embed_reshapes[1]
         )
