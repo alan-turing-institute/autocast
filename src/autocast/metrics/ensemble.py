@@ -347,8 +347,19 @@ class SpreadSkillRatio(BTSCMMetric):
         self.eps = eps
 
     def _score(self, y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTSC:
+        """Not used directly, as we override score() to change the reduction order."""
+        msg = "SpreadSkillRatio overrides score() directly."
+        raise NotImplementedError(msg)
+
+    def score(
+        self, y_pred: ArrayLike, y_true: ArrayLike
+    ) -> TensorBTC | TensorBSC | TensorBTSC:
         """
-        Compute corrected spread-to-skill ratio per spatiotemporal location.
+        Compute corrected spread-to-skill ratio.
+
+        Reductions (spatial/temporal) are applied to the variance and MSE before
+        taking the square root and computing the ratio, matching macroscopic
+        approaches like Lola's.
 
         Args:
             y_pred: (B, T, S, C, M)
@@ -356,25 +367,38 @@ class SpreadSkillRatio(BTSCMMetric):
 
         Returns
         -------
-            SSR: (B, T, S, C)
+            SSR: (B, T, C) if score_dims='spatial', (B, S, C) if temporal,
+                 or (B, T, S, C) if None.
         """
-        n_ensemble = y_pred.shape[-1]
+        y_pred_tensor, y_true_tensor = self._check_input(y_pred, y_true)
+
+        n_ensemble = y_pred_tensor.shape[-1]
         if n_ensemble < 2:
             raise ValueError(
                 "SpreadSkillRatio requires at least 2 ensemble members "
                 f"(got {n_ensemble})."
             )
 
-        # Ensemble mean forecast: (B, T, S, C)
-        ensemble_mean = y_pred.mean(dim=-1)
+        # Pointwise squared errors and variances
+        ensemble_mean = y_pred_tensor.mean(dim=-1)
+        skill_sq = (ensemble_mean - y_true_tensor) ** 2
+        spread_var = y_pred_tensor.var(dim=-1, unbiased=True)
 
-        # Skill = pointwise RMSE of ensemble mean: (B, T, S, C)
-        skill = torch.sqrt((ensemble_mean - y_true) ** 2)
+        # Reduce the variances/SSE before sqrt and division
+        if self.score_dims == "spatial":
+            n_spatial_dims = self._infer_n_spatial_dims(y_true_tensor)
+            spatial_dims = tuple(range(2, 2 + n_spatial_dims))
+            skill_sq = skill_sq.mean(dim=spatial_dims)
+            spread_var = spread_var.mean(dim=spatial_dims)
+        elif self.score_dims == "temporal":
+            skill_sq = skill_sq.mean(dim=1)
+            spread_var = spread_var.mean(dim=1)
 
-        # Spread = pointwise ensemble standard deviation: (B, T, S, C)
-        spread_variance = y_pred.var(dim=-1, unbiased=True)
-        spread = torch.sqrt(spread_variance)
+        # Compute macroscopic spread, skill, and ratio
+        skill = torch.sqrt(skill_sq)
+        spread = torch.sqrt(spread_var)
 
         correction = float(np.sqrt((n_ensemble + 1) / n_ensemble))
         ssr = (spread / torch.clamp(skill, min=self.eps)) * correction
+
         return ssr

@@ -100,3 +100,31 @@ def test_spread_skill_ratio_requires_multiple_ensemble_members():
 
     with pytest.raises(ValueError, match="at least 2 ensemble members"):
         SpreadSkillRatio()(y_pred, y_true)
+
+
+@pytest.mark.parametrize("MetricCls", ALL_ENSEMBLE_METRICS)
+def test_ensemble_metrics_device_consistency(MetricCls):
+    target_device: torch.device | None = None
+    if torch.cuda.is_available():
+        target_device = torch.device("cuda:0")
+    elif torch.backends.mps.is_available():
+        target_device = torch.device("mps")
+
+    if target_device is None:
+        pytest.skip("No GPU/MPS available for device test")
+
+    torch.manual_seed(0)
+    # Give coverage a realistic level (some default, it's fine)
+    # Ensure SpreadSkillRatio gets > 1 ensemble members and avoids exactly 0 skill
+    # by making sure predictions and true differ slightly.
+    y_pred = torch.randn((1, 1, 8, 8, 1, 3), device=target_device)
+    y_true = torch.zeros((1, 1, 8, 8, 1), device=target_device)
+
+    # Some metrics (like AlphaFairCRPS) might need an explicit kwarg if tested later,
+    # but the defaults work for all ALL_ENSEMBLE_METRICS right now.
+    metric = MetricCls()
+
+    # Evaluation should succeed without device mismatch errors
+    value = metric(y_pred, y_true)
+
+    assert value.device.type == target_device.type
