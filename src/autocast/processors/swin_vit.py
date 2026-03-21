@@ -4,7 +4,7 @@ from functools import lru_cache
 
 import torch
 import torch.nn.functional as F
-from einops import rearrange
+from einops import rearrange, repeat
 from timm.layers.drop import DropPath
 from torch import nn
 
@@ -203,8 +203,10 @@ def _compute_shifted_window_mask_2d(
     img_mask = _pad_2d(img_mask, pad_size, value=cnt)
 
     mask_windows = _window_partition_2d(img_mask, ws)
-    mask_windows = mask_windows.view(-1, ws[0] * ws[1])
-    attn_mask = mask_windows.unsqueeze(1) - mask_windows.unsqueeze(2)
+    mask_windows = rearrange(mask_windows, "nw wh ww 1 -> nw (wh ww)")
+    attn_mask = rearrange(mask_windows, "nw w -> nw 1 w") - rearrange(
+        mask_windows, "nw w -> nw w 1"
+    )
     return attn_mask.masked_fill(attn_mask != 0, -100.0).masked_fill(
         attn_mask == 0, 0.0
     )
@@ -235,8 +237,10 @@ def _compute_shifted_window_mask_3d(
     img_mask = _pad_3d(img_mask, pad_size, value=cnt)
 
     mask_windows = _window_partition_3d(img_mask, ws)
-    mask_windows = mask_windows.view(-1, ws[0] * ws[1] * ws[2])
-    attn_mask = mask_windows.unsqueeze(1) - mask_windows.unsqueeze(2)
+    mask_windows = rearrange(mask_windows, "nw wh ww wd 1 -> nw (wh ww wd)")
+    attn_mask = rearrange(mask_windows, "nw w -> nw 1 w") - rearrange(
+        mask_windows, "nw w -> nw w 1"
+    )
     return attn_mask.masked_fill(attn_mask != 0, -100.0).masked_fill(
         attn_mask == 0, 0.0
     )
@@ -350,9 +354,8 @@ class SwinViTBlock(nn.Module):
             xs = _pad_2d(xs, pad_size_2d)
             _, hp, wp, _ = xs.shape
 
-            windows = _window_partition_2d(xs, ws2).view(
-                -1, ws2[0] * ws2[1], self.hidden_dim
-            )
+            windows = _window_partition_2d(xs, ws2)
+            windows = rearrange(windows, "nw wh ww c -> nw (wh ww) c")
             attn_mask = (
                 _compute_shifted_window_mask_2d(h, w, ws2, ss2, x.device, x.dtype)
                 if do_shift
@@ -366,9 +369,8 @@ class SwinViTBlock(nn.Module):
             xs = _pad_3d(xs, pad_size_3d)
             _, hp, wp, dp, _ = xs.shape
 
-            windows = _window_partition_3d(xs, ws3).view(
-                -1, ws3[0] * ws3[1] * ws3[2], self.hidden_dim
-            )
+            windows = _window_partition_3d(xs, ws3)
+            windows = rearrange(windows, "nw wh ww wd c -> nw (wh ww wd) c")
             attn_mask = (
                 _compute_shifted_window_mask_3d(h, w, d, ws3, ss3, x.device, x.dtype)
                 if do_shift
@@ -382,9 +384,8 @@ class SwinViTBlock(nn.Module):
         )
 
         if attn_mask is not None:
-            mask = attn_mask.unsqueeze(1).unsqueeze(0)
-            batch_size = q.shape[0] // mask.shape[1]
-            mask = mask.repeat(batch_size, 1, 1, 1, 1).reshape(-1, *mask.shape[2:])
+            b_q = q.shape[0] // attn_mask.shape[0]
+            mask = repeat(attn_mask, "nw n1 n2 -> (b nw) 1 n1 n2", b=b_q)
             attn_out = F.scaled_dot_product_attention(q, k, v, attn_mask=mask)
         else:
             attn_out = F.scaled_dot_product_attention(q, k, v)
@@ -394,7 +395,9 @@ class SwinViTBlock(nn.Module):
         if self.n_spatial_dims == 2:
             ws2 = (ws[0], ws[1])
             pad_size_2d = ((-spatial_shape[0]) % ws2[0], (-spatial_shape[1]) % ws2[1])
-            out_windows = attn_out.view(-1, ws2[0], ws2[1], self.hidden_dim)
+            out_windows = rearrange(
+                attn_out, "nw (wh ww) c -> nw wh ww c", wh=ws2[0], ww=ws2[1]
+            )
             out = _window_reverse_2d(out_windows, ws2, hp, wp)
             out = _crop_2d(out, pad_size_2d)
         else:
@@ -404,7 +407,13 @@ class SwinViTBlock(nn.Module):
                 (-spatial_shape[1]) % ws3[1],
                 (-spatial_shape[2]) % ws3[2],
             )
-            out_windows = attn_out.view(-1, ws3[0], ws3[1], ws3[2], self.hidden_dim)
+            out_windows = rearrange(
+                attn_out,
+                "nw (wh ww wd) c -> nw wh ww wd c",
+                wh=ws3[0],
+                ww=ws3[1],
+                wd=ws3[2],
+            )
             out = _window_reverse_3d(out_windows, ws3, hp, wp, dp)
             out = _crop_3d(out, pad_size_3d)
 
@@ -432,31 +441,20 @@ class PatchMerging(nn.Module):
         self.norm = nn.LayerNorm(4 * dim)
 
     def forward(self, x: Tensor, spatial_shape: tuple[int, ...]) -> Tensor:
-        B, _L, D = x.shape
         if self.n_spatial_dims == 2:
             H, W = spatial_shape
-            x = x.view(B, H, W, D)
+            x = rearrange(x, "b (h w) d -> b h w d", h=H, w=W)
             pad_H, pad_W = H % 2, W % 2
             if pad_H > 0 or pad_W > 0:
                 x = F.pad(x, (0, 0, 0, pad_W, 0, pad_H))
-            x0 = x[:, 0::2, 0::2, :]
-            x1 = x[:, 1::2, 0::2, :]
-            x2 = x[:, 0::2, 1::2, :]
-            x3 = x[:, 1::2, 1::2, :]
-            x = torch.cat([x0, x1, x2, x3], -1)
-            x = x.view(B, -1, 4 * D)
+            x = rearrange(x, "b (h h2) (w w2) d -> b (h w) (w2 h2 d)", h2=2, w2=2)
         elif self.n_spatial_dims == 3:
             H, W, depth = spatial_shape
-            x = x.view(B, H, W, depth, D)
+            x = rearrange(x, "b (h w dp) d -> b h w dp d", h=H, w=W, dp=depth)
             pad_H, pad_W = H % 2, W % 2
             if pad_H > 0 or pad_W > 0:
                 x = F.pad(x, (0, 0, 0, 0, 0, pad_W, 0, pad_H))
-            x0 = x[:, 0::2, 0::2, :, :]
-            x1 = x[:, 1::2, 0::2, :, :]
-            x2 = x[:, 0::2, 1::2, :, :]
-            x3 = x[:, 1::2, 1::2, :, :]
-            x = torch.cat([x0, x1, x2, x3], -1)
-            x = x.view(B, -1, 4 * D)
+            x = rearrange(x, "b (h h2) (w w2) dp d -> b (h w dp) (w2 h2 d)", h2=2, w2=2)
         else:
             raise ValueError(f"Unsupported n_spatial_dims {self.n_spatial_dims}")
 
@@ -481,23 +479,29 @@ class PatchSplitting(nn.Module):
         spatial_shape: tuple[int, ...],
         crop: tuple[int, ...] | None = None,
     ) -> Tensor:
-        B, L, D = x.shape
         x = self.lin1(x)
-        x = x.view(B, L, 4, D // 2)
         if self.n_spatial_dims == 2:
             H, W = spatial_shape
-            x = x.view(B, H, W, 2, 2, D // 2)
-            x = rearrange(x, "b h w h1 w1 d -> b (h h1) (w w1) d")
+            x = rearrange(
+                x, "b (h w) (w2 h2 d) -> b (h h2) (w w2) d", h=H, w=W, h2=2, w2=2
+            )
             if crop is not None and (crop[0] > 0 or crop[1] > 0):
                 x = x[:, : x.shape[1] - crop[0], : x.shape[2] - crop[1], :]
-            x = x.reshape(B, -1, D // 2)
+            x = rearrange(x, "b h w d -> b (h w) d")
         elif self.n_spatial_dims == 3:
             H, W, depth = spatial_shape
-            x = x.view(B, H, W, depth, 2, 2, D // 2)
-            x = rearrange(x, "b h w dp h1 w1 d -> b (h h1) (w w1) dp d")
+            x = rearrange(
+                x,
+                "b (h w dp) (w2 h2 d) -> b (h h2) (w w2) dp d",
+                h=H,
+                w=W,
+                dp=depth,
+                h2=2,
+                w2=2,
+            )
             if crop is not None and (crop[0] > 0 or crop[1] > 0):
                 x = x[:, : x.shape[1] - crop[0], : x.shape[2] - crop[1], :, :]
-            x = x.reshape(B, -1, D // 2)
+            x = rearrange(x, "b h w dp d -> b (h w dp) d")
         else:
             raise ValueError(f"Unsupported n_spatial_dims {self.n_spatial_dims}")
 
@@ -559,16 +563,25 @@ class BasicSwinLayer(nn.Module):
         crop: tuple[int, ...] | None = None,
     ) -> tuple[Tensor, Tensor | None, tuple[int, ...], tuple[int, ...] | None]:
         if len(spatial_shape) == 2:
-            x = x.view(x.shape[0], spatial_shape[0], spatial_shape[1], -1)
+            x = rearrange(
+                x, "b (h w) c -> b h w c", h=spatial_shape[0], w=spatial_shape[1]
+            )
         else:
-            x = x.view(
-                x.shape[0], spatial_shape[0], spatial_shape[1], spatial_shape[2], -1
+            x = rearrange(
+                x,
+                "b (h w d) c -> b h w d c",
+                h=spatial_shape[0],
+                w=spatial_shape[1],
+                d=spatial_shape[2],
             )
 
         for blk in self.blocks:
             x = blk(x, x_noise)
 
-        x = x.view(x.shape[0], -1, x.shape[-1])
+        if len(spatial_shape) == 2:
+            x = rearrange(x, "b h w c -> b (h w) c")
+        else:
+            x = rearrange(x, "b h w d c -> b (h w d) c")
         out_shape = spatial_shape
 
         if self.downsample is not None:
