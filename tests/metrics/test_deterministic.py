@@ -121,3 +121,38 @@ def test_isotropic_binning_respects_requested_device():
         assert edges_dev.device.index == target_device.index
         assert counts_dev.device.index == target_device.index
         assert indices_dev.device.index == target_device.index
+
+
+@pytest.mark.parametrize(
+    "MetricCls",
+    [
+        PowerSpectrumRMSE,
+        PowerSpectrumRMSELow,
+        PowerSpectrumRMSEMid,
+        PowerSpectrumRMSEHigh,
+        PowerSpectrumRMSETail,
+        PowerSpectrumCCRMSE,
+        PowerSpectrumCCRMSELow,
+        PowerSpectrumCCRMSEMid,
+        PowerSpectrumCCRMSEHigh,
+        PowerSpectrumCCRMSETail,
+    ],
+)
+def test_power_spectrum_metrics_device_consistency(MetricCls):
+    target_device: torch.device | None = None
+    if torch.cuda.is_available():
+        target_device = torch.device("cuda:0")
+    elif torch.backends.mps.is_available():
+        target_device = torch.device("mps")
+
+    if target_device is None:
+        pytest.skip("No GPU/MPS available for device test")
+
+    torch.manual_seed(0)
+    y_true: TensorBTSC = torch.randn((1, 1, 8, 8, 1), device=target_device)
+    y_pred: TensorBTSC = torch.randn((1, 1, 8, 8, 1), device=target_device)
+
+    # Evaluation should succeed without device mismatch errors
+    value = MetricCls()(y_pred, y_true)
+
+    assert value.device.type == target_device.type
