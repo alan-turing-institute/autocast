@@ -1,10 +1,11 @@
+# ~5M params
 _target_: autocast.processors.TemporalViTProcessor
 in_channels: auto
 out_channels: auto
-spatial_resolution: [16, 16]
-hidden_dim: 128
+spatial_resolution: auto
+hidden_dim: 160
 num_heads: 4
-n_layers: 6
+n_layers: 10
 patch_size: 4
-temporal_method: attention
-n_noise_channels: null
+temporal_method: none
+n_noise_channels: 256

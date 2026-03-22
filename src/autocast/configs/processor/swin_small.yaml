@@ -1,3 +1,4 @@
+# ~5M params
 _target_: autocast.processors.SwinViTProcessor
 in_channels: null
 out_channels: null
