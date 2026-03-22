@@ -1,5 +1,5 @@
 _target_: autocast.data.datamodule.SpatioTemporalDataModule
-data_path: "${oc.env:AUTOCAST_DATASETS,./datasets}/gpe/rotating_box_lattice_e96e9f3
+data_path: "${oc.env:AUTOCAST_DATASETS,./datasets}/gpe/rotating_box_lattice_e96e9f3"
 batch_size: 16
 n_steps_input: 1
 n_steps_output: 4
