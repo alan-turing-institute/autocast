@@ -1,11 +1,12 @@
 _target_: autocast.processors.SwinViTProcessor
 in_channels: null
 out_channels: null
-hidden_dim: 64
-encoder_depths: [2, 2, 2]
-encoder_num_heads: [4, 8, 16]
-decoder_depths: [2, 2, 2]
-decoder_num_heads: [16, 8, 4]
+spatial_resolution: auto
+hidden_dim: 18
+encoder_depths: [2, 2, 6, 2]
+encoder_num_heads: [3, 6, 12, 24]
+decoder_depths: [2, 6, 2, 2]
+decoder_num_heads: [24, 12, 6, 3]
 patch_size: 4
 window_size: [4, 4, 4]
 n_noise_channels: 256
