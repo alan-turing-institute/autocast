@@ -107,6 +107,47 @@ def _resolve_module_device(*modules: nn.Module) -> torch.device:
     return torch.device("cpu")
 
 
+def _infer_latent_spatial_resolution(
+    encoded_example: torch.Tensor,
+    encoder: EncoderWithCond,
+) -> tuple[int, ...]:
+    """Infer latent spatial resolution from encoder output layout.
+
+    Encoders can output either channels-last latents (e.g. DC: B,T,...,C)
+    or channels-first/time-concatenated latents (e.g. PermuteConcat: B,C,...).
+    """
+    channel_axis = int(getattr(encoder, "channel_axis", -1))
+    n_dims = encoded_example.ndim
+    if channel_axis < 0:
+        channel_axis += n_dims
+    if channel_axis < 0 or channel_axis >= n_dims:
+        msg = (
+            f"Invalid channel_axis={channel_axis} for encoded tensor "
+            f"shape={tuple(encoded_example.shape)}"
+        )
+        raise ValueError(msg)
+
+    has_time_concat = bool(getattr(encoder, "outputs_time_channel_concat", False))
+    excluded_axes = {0, channel_axis}  # batch and channels
+    if not has_time_concat:
+        time_axis = 2 if channel_axis == 1 else 1
+        if time_axis < n_dims and time_axis != channel_axis:
+            excluded_axes.add(time_axis)
+
+    spatial = tuple(
+        int(size)
+        for axis, size in enumerate(encoded_example.shape)
+        if axis not in excluded_axes
+    )
+    if not spatial:
+        msg = (
+            "Could not infer spatial resolution from encoded tensor "
+            f"shape={tuple(encoded_example.shape)} and channel_axis={channel_axis}."
+        )
+        raise ValueError(msg)
+    return spatial
+
+
 def _apply_processor_channel_defaults(
     processor_config: DictConfig | None,
     *,
@@ -486,7 +527,9 @@ def setup_epd_model(
     steps_out = stats["n_steps_output"]
     with torch.no_grad():
         encoded_example, _ = encoder.encode_with_cond(example_batch)
-    latent_spatial_resolution = tuple(encoded_example.shape[2:-1])
+    latent_spatial_resolution = _infer_latent_spatial_resolution(
+        encoded_example, encoder
+    )
 
     # TODO: currently "out_channels" and "in_channels" are only used in the config for
     # ViT and FNO, while "n_channels_out" is used in flow_matching and diffusions
