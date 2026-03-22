@@ -209,7 +209,9 @@ class TemporalBackboneBase(nn.Module, ABC):
 
         Args:
             x_t: Noisy data (B, T, W, H, C) - spatial dims before channels
-            t: Diffusion time steps (B,)
+            t: Diffusion modulation input. Either:
+                - scalar timesteps with shape (B,), which are embedded via SineEncoding
+                - precomputed modulation vectors with shape (B, D), where D=mod_features
             cond: Conditioning input (B, T_cond, W, H, C)
             global_cond: Optional global conditioning/modulation vector (B, D)
 
@@ -217,8 +219,11 @@ class TemporalBackboneBase(nn.Module, ABC):
         -------
             Denoised output (B, T, W, H, C)
         """
-        # Embed diffusion timestep
-        t_emb = self.time_embedding(t)
+        # Accept either scalar timesteps (B,) or precomputed modulation vectors (B, D).
+        if t.ndim == 2 and t.shape[-1] == self.mod_features:
+            t_emb = t
+        else:
+            t_emb = self.time_embedding(t)
 
         # Combine with global conditioning embedding if provided
         if self.global_cond_embedding is not None:
