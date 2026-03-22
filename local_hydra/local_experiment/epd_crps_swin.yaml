@@ -8,7 +8,7 @@ defaults:
   - override /input_noise_injector@model.input_noise_injector: concat
   - _self_
 
-experiment_name: epd_crps_swin_small
+experiment_name: epd_crps_swin
 
 datamodule:
   use_normalization: true
