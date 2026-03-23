@@ -1,0 +1,38 @@
+# @package _global_
+defaults:
+  - /distributed: ddp_4gpu_slurm
+  - override /datamodule: advection_diffusion_multichannel_64_64
+  - override /encoder@model.encoder: dc_large
+  - override /decoder@model.decoder: dc_large
+  - override /processor@model.processor: flow_matching_vit
+  - override /backbone@model.processor.backbone: vit
+  - _self_
+
+experiment_name: epd_diffusion_fm_256
+
+datamodule:
+  use_normalization: true
+  batch_size: 256
+
+logging:
+  wandb:
+    enabled: true
+
+model:
+  encoder:
+    periodic: false
+  decoder:
+    periodic: false
+  train_in_latent_space: true
+  processor:
+    backbone:
+      # hid_channels: 256 ~ 19 M
+      # hid_channels: 512 ~ 58.5 M
+      #  ~ 90 M
+      hid_channels: 640
+      # hid_channels: 1024 ~  217 M
+    flow_ode_steps: 50
+
+optimizer:
+  learning_rate: 0.0002
+
