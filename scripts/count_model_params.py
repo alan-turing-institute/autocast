@@ -7,17 +7,20 @@ and reports the total number of parameters for comparison.
 Usage:
     python scripts/count_model_params.py
     python scripts/count_model_params.py --processor fno
+    python scripts/count_model_params.py --processor unet
+    python scripts/count_model_params.py --processor azulaunet
     python scripts/count_model_params.py --detailed
 """
 
 import argparse
 from typing import Any
 
-import torch.nn as nn
 from azula.noise import VPSchedule
+from torch import nn
 
 from autocast.processors.diffusion import DiffusionProcessor
 from autocast.processors.fno import FNOProcessor
+from autocast.processors.unet import AzulaUNetProcessor, UNetProcessor
 from autocast.processors.vit import AViT
 
 
@@ -60,17 +63,15 @@ def format_number(num: int) -> str:
     """
     if num >= 1e9:
         return f"{num / 1e9:.2f}B"
-    elif num >= 1e6:
+    if num >= 1e6:
         return f"{num / 1e6:.2f}M"
-    elif num >= 1e3:
+    if num >= 1e3:
         return f"{num / 1e3:.2f}K"
-    else:
-        return str(num)
+    return str(num)
 
 
 def compare_fno_configs(detailed: bool = False):
     """Compare parameter counts for different FNO configurations."""
-
     print("\n" + "=" * 80)
     print("FNO PROCESSOR - Parameter Comparison")
     print("=" * 80)
@@ -418,6 +419,179 @@ def compare_diffusion_configs(detailed: bool = False):
             print(f"  Non-trainable:    {params['non_trainable']:,}")
 
 
+def compare_unet_configs(detailed: bool = False):
+    """Compare parameter counts for different Classic UNet configurations."""
+    print("\n" + "=" * 80)
+    print("CLASSIC UNET PROCESSOR - Parameter Comparison")
+    print("=" * 80)
+
+    # Common parameters
+    in_channels = 2
+    out_channels = 2
+    spatial_resolution = (64, 64)
+    n_spatial_dims = 2
+
+    configs = [
+        {
+            "init_features": 16,
+            "name": "Tiny (16 init features)",
+        },
+        {
+            "init_features": 32,
+            "name": "Small (32 init features)",
+        },
+        {
+            "init_features": 48,
+            "name": "Medium (48 init features)",
+        },
+        {
+            "init_features": 64,
+            "name": "Large (64 init features)",
+        },
+        {
+            "init_features": 96,
+            "name": "XLarge (96 init features)",
+        },
+        {
+            "init_features": 128,
+            "name": "XXLarge (128 init features)",
+        },
+    ]
+
+    results = []
+    for config in configs:
+        try:
+            processor = UNetProcessor(
+                in_channels=in_channels,
+                out_channels=out_channels,
+                spatial_resolution=spatial_resolution,
+                n_spatial_dims=n_spatial_dims,
+                init_features=config["init_features"],
+                gradient_checkpointing=False,
+            )
+            params = count_parameters(processor)
+            results.append((config["name"], params, config))
+        except Exception as e:
+            print(f"Error with {config['name']}: {e}")
+            continue
+
+    # Print table
+    print(f"\n{'Configuration':<40} {'Total Params':<15}")
+    print("-" * 55)
+    for name, params, config in results:
+        print(f"{name:<40} {format_number(params['total']):<15}")
+
+    if detailed:
+        print("\nDetailed breakdown:")
+        for name, params, config in results:
+            print(f"\n{name}:")
+            print(f"  Init features:    {config['init_features']}")
+            print(f"  Total:            {params['total']:,}")
+            print(f"  Trainable:        {params['trainable']:,}")
+            print(f"  Non-trainable:    {params['non_trainable']:,}")
+
+
+def compare_azulaunet_configs(detailed: bool = False):
+    """Compare parameter counts for different Azula UNet configurations."""
+    print("\n" + "=" * 80)
+    print("AZULA UNET PROCESSOR - Parameter Comparison")
+    print("=" * 80)
+
+    # Common parameters
+    in_channels = 2
+    out_channels = 2
+
+    configs = [
+        {
+            "hid_channels": (32, 64, 128, 256),
+            "hid_blocks": (2, 2, 2, 2),
+            "n_noise_channels": None,
+            "name": "Tiny (32-256 ch, 2 blocks)",
+        },
+        {
+            "hid_channels": (64, 128, 256, 512),
+            "hid_blocks": (2, 2, 2, 2),
+            "n_noise_channels": None,
+            "name": "Small (64-512 ch, 2 blocks)",
+        },
+        {
+            "hid_channels": (64, 128, 256, 512),
+            "hid_blocks": (2, 2, 2, 2),
+            "n_noise_channels": 256,
+            "name": "Small-Noise (64-512 ch, noise=256)",
+        },
+        {
+            "hid_channels": (64, 128, 256, 512),
+            "hid_blocks": (3, 3, 3, 3),
+            "n_noise_channels": None,
+            "name": "Small-Deep (64-512 ch, 3 blocks)",
+        },
+        {
+            "hid_channels": (96, 192, 384, 768),
+            "hid_blocks": (2, 2, 2, 2),
+            "n_noise_channels": None,
+            "name": "Medium (96-768 ch, 2 blocks)",
+        },
+        {
+            "hid_channels": (96, 192, 384, 768),
+            "hid_blocks": (2, 2, 2, 2),
+            "n_noise_channels": 256,
+            "name": "Medium-Noise (96-768 ch, noise=256)",
+        },
+        {
+            "hid_channels": (128, 256, 512, 1024),
+            "hid_blocks": (2, 2, 2, 2),
+            "n_noise_channels": None,
+            "name": "Large (128-1024 ch, 2 blocks)",
+        },
+        {
+            "hid_channels": (128, 256, 512, 1024),
+            "hid_blocks": (2, 2, 2, 2),
+            "n_noise_channels": 256,
+            "name": "Large-Noise (128-1024 ch, noise=256)",
+        },
+    ]
+
+    results = []
+    for config in configs:
+        try:
+            processor = AzulaUNetProcessor(
+                in_channels=in_channels,
+                out_channels=out_channels,
+                hid_channels=config["hid_channels"],
+                hid_blocks=config["hid_blocks"],
+                norm="group",
+                groups=8,
+                ffn_factor=2,
+                dropout=0.0,
+                periodic=False,
+                gradient_checkpointing=False,
+                n_noise_channels=config["n_noise_channels"],
+            )
+            params = count_parameters(processor)
+            results.append((config["name"], params, config))
+        except Exception as e:
+            print(f"Error with {config['name']}: {e}")
+            continue
+
+    # Print table
+    print(f"\n{'Configuration':<50} {'Total Params':<15}")
+    print("-" * 65)
+    for name, params, config in results:
+        print(f"{name:<50} {format_number(params['total']):<15}")
+
+    if detailed:
+        print("\nDetailed breakdown:")
+        for name, params, config in results:
+            print(f"\n{name}:")
+            print(f"  Hid channels:     {config['hid_channels']}")
+            print(f"  Hid blocks:       {config['hid_blocks']}")
+            print(f"  N noise channels: {config['n_noise_channels']}")
+            print(f"  Total:            {params['total']:,}")
+            print(f"  Trainable:        {params['trainable']:,}")
+            print(f"  Non-trainable:    {params['non_trainable']:,}")
+
+
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
@@ -430,6 +604,8 @@ def main():
             "fno",
             "vit",
             "diffusion",
+            "unet",
+            "azulaunet",
             "all",
         ],
         default="all",
@@ -451,6 +627,12 @@ def main():
 
     if args.processor in ["diffusion", "all"]:
         compare_diffusion_configs(detailed=args.detailed)
+
+    if args.processor in ["unet", "all"]:
+        compare_unet_configs(detailed=args.detailed)
+
+    if args.processor in ["azulaunet", "all"]:
+        compare_azulaunet_configs(detailed=args.detailed)
 
     print("\n" + "=" * 80 + "\n")
 
