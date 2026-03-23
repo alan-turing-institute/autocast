@@ -304,11 +304,9 @@ def _isotropic_binning_cpu(
         k.append(k_i)
 
     k2 = map(torch.square, k)
-    k2_grid = torch.meshgrid(*k2, indexing="ij")
-    k2_iso = torch.zeros_like(k2_grid[0])
-    for component in k2_grid:
-        k2_iso = k2_iso + component
-    k_iso = torch.sqrt(k2_iso)
+    k_ = torch.meshgrid(*k2, indexing="ij")
+    k2_iso = sum(k_)
+    k_iso = torch.sqrt(k2_iso)  # type: ignore since sum above is valid for tensors
 
     if bins is None:
         bins = math.floor(math.sqrt(k_iso.ndim) * min(k_iso.shape) / 2)
