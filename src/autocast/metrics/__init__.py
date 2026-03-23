@@ -20,7 +20,7 @@ from .deterministic import (
     PowerSpectrumRMSEMid,
     PowerSpectrumRMSETail,
 )
-from .ensemble import CRPS, AlphaFairCRPS, FairCRPS
+from .ensemble import CRPS, AlphaFairCRPS, EnergyScore, FairCRPS, VariogramScore
 
 __all__ = [
     "CRPS",
@@ -34,6 +34,7 @@ __all__ = [
     "VRMSE",
     "AlphaFairCRPS",
     "Coverage",
+    "EnergyScore",
     "FairCRPS",
     "LInfinity",
     "MultiCoverage",
@@ -47,6 +48,7 @@ __all__ = [
     "PowerSpectrumRMSELow",
     "PowerSpectrumRMSEMid",
     "PowerSpectrumRMSETail",
+    "VariogramScore",
 ]
 
 ALL_DETERMINISTIC_METRICS = (
@@ -74,6 +76,8 @@ ALL_ENSEMBLE_METRICS = (
     CRPS,
     AlphaFairCRPS,
     FairCRPS,
+    EnergyScore,
+    VariogramScore,
     Coverage,
     MultiCoverage,
 )

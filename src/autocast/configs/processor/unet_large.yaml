@@ -1,0 +1,7 @@
+_target_: autocast.processors.unet.UNetProcessor
+in_channels: null
+out_channels: null
+spatial_resolution: null
+n_spatial_dims: 2
+init_features: 104
+gradient_checkpointing: false
