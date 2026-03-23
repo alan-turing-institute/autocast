@@ -7,8 +7,7 @@ hid_channels: [16, 32, 64, 128]  # Hidden channels at each level
 hid_blocks: [2, 2, 2, 2]  # Number of blocks at each level
 
 # Normalization and regularization
-norm: group  # Options: 'batch', 'group', 'layer', 'rms'
-groups: 8  # Number of groups for GroupNorm
+norm: layer  # Options: 'batch', 'group', 'layer', 'rms'
 ffn_factor: 2  # Feed-forward network expansion factor
 dropout: 0.0  # Dropout probability
 
