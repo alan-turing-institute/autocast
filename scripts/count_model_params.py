@@ -437,6 +437,10 @@ def compare_unet_configs(detailed: bool = False):
             "name": "Tiny (16 init features)",
         },
         {
+            "init_features": 26,
+            "name": "Tiny (26 init features)",
+        },
+        {
             "init_features": 32,
             "name": "Small (32 init features)",
         },
@@ -451,6 +455,10 @@ def compare_unet_configs(detailed: bool = False):
         {
             "init_features": 96,
             "name": "XLarge (96 init features)",
+        },
+        {
+            "init_features": 104,
+            "name": "XLarge (104 init features)",
         },
         {
             "init_features": 128,
@@ -502,6 +510,12 @@ def compare_azulaunet_configs(detailed: bool = False):
     out_channels = 2
 
     configs = [
+        {
+            "hid_channels": (16, 32, 64, 128),
+            "hid_blocks": (2, 2, 2, 2),
+            "n_noise_channels": 256,
+            "name": "Mini-Noise (16-128 ch, 2 blocks), noise=256",
+        },
         {
             "hid_channels": (32, 64, 128, 256),
             "hid_blocks": (2, 2, 2, 2),
