@@ -404,6 +404,8 @@ class VariogramScore(BTSCMMetric):
                 raise TypeError(
                     f"weights must be a Tensor, np.ndarray, or None, got {type(weights)}"
                 )
+            if (weights < 0).any().item():
+                raise ValueError("weights must be non-negative (w_ij >= 0)")
         self.weights = weights
 
     def _score(self, y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTSC:
