@@ -14,7 +14,27 @@ from omegaconf import DictConfig, open_dict
 from torchmetrics import Metric
 
 from autocast.benchmarking import benchmark_model, benchmark_rollout
-from autocast.metrics import MAE, MSE, NMAE, NMSE, NRMSE, RMSE, VMSE, VRMSE, LInfinity
+from autocast.metrics import (
+    MAE,
+    MSE,
+    NMAE,
+    NMSE,
+    NRMSE,
+    RMSE,
+    VMSE,
+    VRMSE,
+    LInfinity,
+    PowerSpectrumCCRMSE,
+    PowerSpectrumCCRMSEHigh,
+    PowerSpectrumCCRMSELow,
+    PowerSpectrumCCRMSEMid,
+    PowerSpectrumCCRMSETail,
+    PowerSpectrumRMSE,
+    PowerSpectrumRMSEHigh,
+    PowerSpectrumRMSELow,
+    PowerSpectrumRMSEMid,
+    PowerSpectrumRMSETail,
+)
 from autocast.metrics.coverage import MultiCoverage
 from autocast.metrics.ensemble import (
     CRPS,
@@ -60,6 +80,16 @@ AVAILABLE_METRICS = {
     "vmse": VMSE,
     "vrmse": VRMSE,
     "linf": LInfinity,
+    "psrmse": PowerSpectrumRMSE,
+    "psrmse_low": PowerSpectrumRMSELow,
+    "psrmse_mid": PowerSpectrumRMSEMid,
+    "psrmse_high": PowerSpectrumRMSEHigh,
+    "psrmse_tail": PowerSpectrumRMSETail,
+    "pscc": PowerSpectrumCCRMSE,
+    "pscc_low": PowerSpectrumCCRMSELow,
+    "pscc_mid": PowerSpectrumCCRMSEMid,
+    "pscc_high": PowerSpectrumCCRMSEHigh,
+    "pscc_tail": PowerSpectrumCCRMSETail,
 }
 
 AVAILABLE_METRICS_ENSEMBLE = {
@@ -724,11 +754,15 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     compute_coverage = eval_cfg.get("compute_coverage", False)
     test_metric_fns: dict[str, Callable[[], Metric]] = {}
 
+    metric_registry = dict(AVAILABLE_METRICS)
+    if n_members and n_members > 1:
+        metric_registry.update(AVAILABLE_METRICS_ENSEMBLE)
+
     for name in metrics_list:
-        if name in AVAILABLE_METRICS:
-            test_metric_fns[name] = AVAILABLE_METRICS[name]
+        if name in metric_registry:
+            test_metric_fns[name] = metric_registry[name]
         else:
-            log.warning("Metric %s not found in AVAILABLE_METRICS", name)
+            log.warning("Metric %s not found in available metrics", name)
 
     if (n_members > 1) or compute_coverage:
 
@@ -830,10 +864,10 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
 
         if compute_rollout_metrics:
             for name in metrics_list:
-                if name in AVAILABLE_METRICS:
-                    rollout_metric_fns[name] = AVAILABLE_METRICS[name]
+                if name in metric_registry:
+                    rollout_metric_fns[name] = metric_registry[name]
                 else:
-                    msg = f"Metric {name} not found in AVAILABLE_METRICS"
+                    msg = f"Metric {name} not found in available metrics"
                     log.warning(msg)
 
         if compute_rollout_coverage and n_members and n_members > 1:
