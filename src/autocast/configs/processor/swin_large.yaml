@@ -1,0 +1,17 @@
+# ~80M params
+_target_: autocast.processors.SwinViTProcessor
+in_channels: auto
+out_channels: auto
+spatial_resolution: auto
+window_size: [7, 7]
+hidden_dim: 105
+encoder_depths: [2, 2, 6, 2]
+encoder_num_heads: [3, 6, 12, 24]
+decoder_depths: [2, 6, 2, 2]
+decoder_num_heads: [24, 12, 6, 3]
+patch_size: 4
+drop_path: 0.1
+n_noise_channels: 256
+groups: 12
+use_ada_ln: true
+zero_init: true

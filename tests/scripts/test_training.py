@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from time import perf_counter
+from typing import cast
 
 import lightning as L
 import pytest
@@ -11,7 +12,9 @@ from hydra import compose, initialize_config_dir
 from lightning.pytorch.callbacks import Timer
 from omegaconf import DictConfig, OmegaConf, open_dict
 
+from autocast.encoders.base import EncoderWithCond
 from autocast.scripts.setup import (
+    _infer_latent_spatial_resolution,
     setup_autoencoder_model,
     setup_epd_model,
     setup_processor_model,
@@ -265,3 +268,27 @@ def test_epd_config_forward_smoke(config_dir: str, toy_batch: Batch, dummy_datam
 
     output = model(toy_batch)
     assert output.shape == toy_batch.output_fields.shape
+
+
+def test_infer_latent_spatial_resolution_channels_last_with_time():
+    class DummyEncoder:
+        channel_axis = -1
+        outputs_time_channel_concat = False
+
+    encoded = torch.randn(2, 3, 16, 16, 8)  # B,T,W,H,C
+    spatial = _infer_latent_spatial_resolution(
+        encoded, cast(EncoderWithCond, DummyEncoder())
+    )
+    assert spatial == (16, 16)
+
+
+def test_infer_latent_spatial_resolution_channels_first_time_concat():
+    class DummyEncoder:
+        channel_axis = 1
+        outputs_time_channel_concat = True
+
+    encoded = torch.randn(2, 24, 16, 16)  # B,C*T,W,H
+    spatial = _infer_latent_spatial_resolution(
+        encoded, cast(EncoderWithCond, DummyEncoder())
+    )
+    assert spatial == (16, 16)
