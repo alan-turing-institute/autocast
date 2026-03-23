@@ -41,6 +41,7 @@ from autocast.metrics.ensemble import (
     AlphaFairCRPS,
     EnergyScore,
     FairCRPS,
+    SpreadSkillRatio,
     VariogramScore,
 )
 from autocast.models.encoder_processor_decoder import EncoderProcessorDecoder
@@ -98,6 +99,7 @@ AVAILABLE_METRICS_ENSEMBLE = {
     "afcrps": AlphaFairCRPS,
     "energy": EnergyScore,
     "variogram": VariogramScore,
+    "ssr": SpreadSkillRatio,
 }
 
 

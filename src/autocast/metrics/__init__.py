@@ -20,7 +20,14 @@ from .deterministic import (
     PowerSpectrumRMSEMid,
     PowerSpectrumRMSETail,
 )
-from .ensemble import CRPS, AlphaFairCRPS, EnergyScore, FairCRPS, VariogramScore
+from .ensemble import (
+    CRPS,
+    AlphaFairCRPS,
+    EnergyScore,
+    FairCRPS,
+    SpreadSkillRatio,
+    VariogramScore,
+)
 
 __all__ = [
     "CRPS",
@@ -48,6 +55,7 @@ __all__ = [
     "PowerSpectrumRMSELow",
     "PowerSpectrumRMSEMid",
     "PowerSpectrumRMSETail",
+    "SpreadSkillRatio",
     "VariogramScore",
 ]
 
@@ -78,6 +86,7 @@ ALL_ENSEMBLE_METRICS = (
     FairCRPS,
     EnergyScore,
     VariogramScore,
+    SpreadSkillRatio,
     Coverage,
     MultiCoverage,
 )
