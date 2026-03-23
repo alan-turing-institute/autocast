@@ -1,4 +1,4 @@
-# AutoCast
+# AutoCast <img src="https://raw.githubusercontent.com/alan-turing-institute/autocast/refs/heads/main/AC.png" align="right" height="138" />
 <!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
 [![All Contributors](https://img.shields.io/badge/all_contributors-8-orange.svg?style=flat-square)](#contributors-)
 <!-- ALL-CONTRIBUTORS-BADGE:END -->
