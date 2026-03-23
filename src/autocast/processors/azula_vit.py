@@ -9,7 +9,7 @@ from autocast.processors.base import Processor
 from autocast.types import EncodedBatch
 
 
-class TemporalViTProcessor(Processor[EncodedBatch]):
+class AzulaViTProcessor(Processor[EncodedBatch]):
     """Wrapper for the internal TemporalViTBackbone used in Diffusion Models.
 
     Provides building blocks for modern generative architectures (e.g. DiT).

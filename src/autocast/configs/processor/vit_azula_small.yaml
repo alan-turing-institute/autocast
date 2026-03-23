@@ -1,5 +1,5 @@
 # ~5M params
-_target_: autocast.processors.TemporalViTProcessor
+_target_: autocast.processors.AzulaViTProcessor
 in_channels: auto
 out_channels: auto
 spatial_resolution: auto
