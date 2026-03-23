@@ -4,11 +4,11 @@ defaults:
   - override /datamodule: advection_diffusion_multichannel_64_64
   - override /encoder@model.encoder: permute_concat
   - override /decoder@model.decoder: channels_last
-  - override /processor@model.processor: temporal_vit_small
+  - override /processor@model.processor: vit_azula_small
   - override /input_noise_injector@model.input_noise_injector: concat
   - _self_
 
-experiment_name: epd_crps_temporal_vit
+experiment_name: epd_crps_vit_azula
 
 datamodule:
   use_normalization: true
