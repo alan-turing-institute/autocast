@@ -527,6 +527,12 @@ def compare_azulaunet_configs(detailed: bool = False):
             "name": "Small-Deep (64-512 ch, 3 blocks)",
         },
         {
+            "hid_channels": (64, 128, 256, 512),
+            "hid_blocks": (3, 3, 3, 3),
+            "n_noise_channels": 256,
+            "name": "Small-Deep-Noise (64-512 ch, 3 blocks, noise=256)",
+        },
+        {
             "hid_channels": (96, 192, 384, 768),
             "hid_blocks": (2, 2, 2, 2),
             "n_noise_channels": None,
