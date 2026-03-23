@@ -18,6 +18,71 @@ from autocast.metrics.deterministic import (
 from autocast.types import TensorBTSC
 
 
+def _lola_isotropic_power_spectrum(
+    x: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    edges, counts, indices = _isotropic_binning(tuple(x.shape[-2:]), device=x.device)
+    s = torch.fft.fftn(x, dim=(-2, -1), norm="ortho")
+    p = torch.abs(s).square().flatten(start_dim=-2)
+
+    p_iso = torch.zeros((*p.shape[:-1], edges.numel()), dtype=x.dtype, device=x.device)
+    p_iso = p_iso.scatter_add(dim=-1, index=indices.expand_as(p), src=p)
+    p_iso = p_iso / torch.clamp(counts.to(dtype=x.dtype), min=1)
+    return p_iso[..., 1:], edges[1:]
+
+
+def _lola_isotropic_cross_correlation(
+    x: torch.Tensor, y: torch.Tensor
+) -> tuple[torch.Tensor, torch.Tensor]:
+    x, y = torch.broadcast_tensors(x, y)
+    edges, counts, indices = _isotropic_binning(tuple(x.shape[-2:]), device=x.device)
+
+    sx = torch.fft.fftn(x, dim=(-2, -1), norm="ortho")
+    sy = torch.fft.fftn(y, dim=(-2, -1), norm="ortho")
+    c = torch.abs(sx * torch.conj(sy)).flatten(start_dim=-2)
+
+    c_iso = torch.zeros((*c.shape[:-1], edges.numel()), dtype=x.dtype, device=x.device)
+    c_iso = c_iso.scatter_add(dim=-1, index=indices.expand_as(c), src=c)
+    c_iso = c_iso / torch.clamp(counts.to(dtype=x.dtype), min=1)
+    return c_iso[..., 1:], edges[1:]
+
+
+def _lola_eval_reference_bands(
+    y_pred: TensorBTSC, y_true: TensorBTSC, eps: float
+) -> tuple[torch.Tensor, torch.Tensor]:
+    # Mirror Lola eval.py: treat prediction as a sample axis and average over samples.
+    u = y_true[0, 0, ..., 0]
+    v = y_pred[0, 0, ..., 0].unsqueeze(0)
+
+    p_u, k = _lola_isotropic_power_spectrum(u)
+    p_v, _ = _lola_isotropic_power_spectrum(v)
+    p_v = p_v.mean(dim=0)
+
+    c_uv, _ = _lola_isotropic_cross_correlation(u, v)
+    c_uv = c_uv.mean(dim=0)
+
+    se_p = torch.square(1.0 - (p_v + eps) / (p_u + eps))
+    se_c = torch.square(1.0 - (c_uv + eps) / torch.sqrt(p_u * p_v + eps**2))
+
+    bins = torch.logspace(k[0].log2(), -1.0, steps=4, base=2, device=k.device)
+
+    power_bands = []
+    cross_bands = []
+    for i in range(4):
+        mask = (
+            torch.logical_and(bins[i] <= k, k <= bins[i + 1]) if i < 3 else bins[i] <= k
+        )
+        if torch.any(mask):
+            power_bands.append(torch.sqrt(torch.mean(se_p[mask])))
+            cross_bands.append(torch.sqrt(torch.mean(se_c[mask])))
+        else:
+            zero = torch.zeros((), dtype=u.dtype, device=u.device)
+            power_bands.append(zero)
+            cross_bands.append(zero)
+
+    return torch.stack(power_bands), torch.stack(cross_bands)
+
+
 @pytest.mark.parametrize("MetricCls", ALL_DETERMINISTIC_METRICS)
 def test_spatiotemporal_metrics(MetricCls):
     # shape. (B, T, S1, S2, C) with n_spatial_dims = 2
@@ -156,3 +221,32 @@ def test_power_spectrum_metrics_device_consistency(MetricCls):
     value = MetricCls()(y_pred, y_true)
 
     assert value.device.type == target_device.type
+
+
+def test_power_spectrum_metrics_match_lola_eval_reference():
+    torch.manual_seed(0)
+    y_true: TensorBTSC = torch.randn((1, 1, 32, 32, 1))
+    y_pred: TensorBTSC = y_true + 0.15 * torch.randn_like(y_true)
+    eps = 1e-6
+
+    power_ref, cross_ref = _lola_eval_reference_bands(y_pred, y_true, eps=eps)
+
+    assert torch.allclose(PowerSpectrumRMSELow(eps=eps)(y_pred, y_true), power_ref[0])
+    assert torch.allclose(PowerSpectrumRMSEMid(eps=eps)(y_pred, y_true), power_ref[1])
+    assert torch.allclose(PowerSpectrumRMSEHigh(eps=eps)(y_pred, y_true), power_ref[2])
+    assert torch.allclose(PowerSpectrumRMSETail(eps=eps)(y_pred, y_true), power_ref[3])
+    assert torch.allclose(
+        PowerSpectrumRMSE(eps=eps)(y_pred, y_true), power_ref[:3].mean()
+    )
+
+    assert torch.allclose(PowerSpectrumCCRMSELow(eps=eps)(y_pred, y_true), cross_ref[0])
+    assert torch.allclose(PowerSpectrumCCRMSEMid(eps=eps)(y_pred, y_true), cross_ref[1])
+    assert torch.allclose(
+        PowerSpectrumCCRMSEHigh(eps=eps)(y_pred, y_true), cross_ref[2]
+    )
+    assert torch.allclose(
+        PowerSpectrumCCRMSETail(eps=eps)(y_pred, y_true), cross_ref[3]
+    )
+    assert torch.allclose(
+        PowerSpectrumCCRMSE(eps=eps)(y_pred, y_true), cross_ref[:3].mean()
+    )
