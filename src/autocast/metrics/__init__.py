@@ -1,6 +1,26 @@
 from .coverage import Coverage, MultiCoverage
-from .deterministic import MAE, MSE, NMAE, NMSE, NRMSE, RMSE, VMSE, VRMSE, LInfinity
-from .ensemble import CRPS, AlphaFairCRPS, FairCRPS
+from .deterministic import (
+    MAE,
+    MSE,
+    NMAE,
+    NMSE,
+    NRMSE,
+    RMSE,
+    VMSE,
+    VRMSE,
+    LInfinity,
+    PowerSpectrumCCRMSE,
+    PowerSpectrumCCRMSEHigh,
+    PowerSpectrumCCRMSELow,
+    PowerSpectrumCCRMSEMid,
+    PowerSpectrumCCRMSETail,
+    PowerSpectrumRMSE,
+    PowerSpectrumRMSEHigh,
+    PowerSpectrumRMSELow,
+    PowerSpectrumRMSEMid,
+    PowerSpectrumRMSETail,
+)
+from .ensemble import CRPS, AlphaFairCRPS, EnergyScore, FairCRPS, VariogramScore
 
 __all__ = [
     "CRPS",
@@ -14,10 +34,50 @@ __all__ = [
     "VRMSE",
     "AlphaFairCRPS",
     "Coverage",
+    "EnergyScore",
     "FairCRPS",
     "LInfinity",
     "MultiCoverage",
+    "PowerSpectrumCCRMSE",
+    "PowerSpectrumCCRMSEHigh",
+    "PowerSpectrumCCRMSELow",
+    "PowerSpectrumCCRMSEMid",
+    "PowerSpectrumCCRMSETail",
+    "PowerSpectrumRMSE",
+    "PowerSpectrumRMSEHigh",
+    "PowerSpectrumRMSELow",
+    "PowerSpectrumRMSEMid",
+    "PowerSpectrumRMSETail",
+    "VariogramScore",
 ]
 
-ALL_DETERMINISTIC_METRICS = (MSE, MAE, NMAE, NMSE, RMSE, NRMSE, VMSE, VRMSE, LInfinity)
-ALL_ENSEMBLE_METRICS = (CRPS, AlphaFairCRPS, FairCRPS, Coverage, MultiCoverage)
+ALL_DETERMINISTIC_METRICS = (
+    MSE,
+    MAE,
+    NMAE,
+    NMSE,
+    RMSE,
+    NRMSE,
+    VMSE,
+    VRMSE,
+    LInfinity,
+    PowerSpectrumRMSE,
+    PowerSpectrumRMSELow,
+    PowerSpectrumRMSEMid,
+    PowerSpectrumRMSEHigh,
+    PowerSpectrumRMSETail,
+    PowerSpectrumCCRMSE,
+    PowerSpectrumCCRMSELow,
+    PowerSpectrumCCRMSEMid,
+    PowerSpectrumCCRMSEHigh,
+    PowerSpectrumCCRMSETail,
+)
+ALL_ENSEMBLE_METRICS = (
+    CRPS,
+    AlphaFairCRPS,
+    FairCRPS,
+    EnergyScore,
+    VariogramScore,
+    Coverage,
+    MultiCoverage,
+)
