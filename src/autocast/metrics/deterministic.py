@@ -14,6 +14,7 @@ from functools import cache
 
 import numpy as np
 import torch
+from einops import rearrange
 
 from autocast.metrics.base import BaseMetric
 from autocast.types import Tensor, TensorBTC, TensorBTSC
@@ -281,12 +282,9 @@ class LInfinity(BTSCMetric):
     name: str = "l_infinity"
 
     def _score(self, y_pred: TensorBTSC, y_true: TensorBTSC) -> TensorBTC:
-        self.n_spatial_dims = self._infer_n_spatial_dims(y_pred)
-        spatial_dims = tuple(range(-self.n_spatial_dims - 1, -1))
-        return torch.max(
-            torch.abs(y_pred - y_true).flatten(start_dim=spatial_dims[0], end_dim=-2),
-            dim=-2,
-        ).values
+        abs_error = torch.abs(y_pred - y_true)
+        flat_spatial = rearrange(abs_error, "b t ... c -> b t (...) c")
+        return torch.max(flat_spatial, dim=-2).values
 
 
 @cache
@@ -368,8 +366,8 @@ def _isotropic_spectral_components(
     Returns (pred_spec, true_spec, cross_spec, freq_bins), each with shape
     (B, T, C, bins) except freq_bins which has shape (bins,).
     """
-    y_pred_btc = y_pred.movedim(-1, 2)  # (B, T, C, S...)
-    y_true_btc = y_true.movedim(-1, 2)
+    y_pred_btc = rearrange(y_pred, "b t ... c -> b t c ...")
+    y_true_btc = rearrange(y_true, "b t ... c -> b t c ...")
     spatial_shape = tuple(y_pred_btc.shape[-n_spatial_dims:])
 
     edges, counts, indices = _isotropic_binning(spatial_shape, device=y_pred.device)
@@ -378,14 +376,14 @@ def _isotropic_spectral_components(
     spec_pred = torch.fft.fftn(y_pred_btc, dim=fft_dims, norm="ortho")
     spec_true = torch.fft.fftn(y_true_btc, dim=fft_dims, norm="ortho")
 
-    power_pred = torch.abs(spec_pred).square().flatten(start_dim=-n_spatial_dims)
-    power_true = torch.abs(spec_true).square().flatten(start_dim=-n_spatial_dims)
-    cross = torch.abs(spec_pred * torch.conj(spec_true)).flatten(
-        start_dim=-n_spatial_dims
+    power_pred = rearrange(torch.abs(spec_pred).square(), "b t c ... -> b t c (...)")
+    power_true = rearrange(torch.abs(spec_true).square(), "b t c ... -> b t c (...)")
+    cross = rearrange(
+        torch.abs(spec_pred * torch.conj(spec_true)), "b t c ... -> b t c (...)"
     )
 
     counts_clamped = torch.clamp(counts, min=1).to(dtype=y_pred.dtype)
-    counts_view = counts_clamped.view(*([1] * (power_pred.ndim - 1)), -1)
+    counts_view = rearrange(counts_clamped, "bins -> 1 1 1 bins")
 
     def _bin(p: Tensor) -> Tensor:
         iso = torch.zeros(
