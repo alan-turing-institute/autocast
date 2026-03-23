@@ -346,12 +346,12 @@ def _lola_eval_power_band_masks(
     """Build the four power-spectrum masks used in Lola eval.py."""
     # bins = torch.logspace(k[0].log2(), -1.0, steps=4, base=2)
     bins = torch.logspace(
-        freq_bins[0].log2(),
+        freq_bins[0].log2().item(),
         -1.0,
         steps=4,
         base=2,
-        device=freq_bins.device,
-    )
+        device="cpu",
+    ).to(freq_bins.device)
 
     m0 = torch.logical_and(bins[0] <= freq_bins, freq_bins <= bins[1])
     m1 = torch.logical_and(bins[1] <= freq_bins, freq_bins <= bins[2])
