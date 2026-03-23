@@ -303,10 +303,8 @@ def _isotropic_binning_cpu(
         k_i = torch.fft.fftfreq(s)
         k.append(k_i)
 
-    k2 = map(torch.square, k)
-    k_ = torch.meshgrid(*k2, indexing="ij")
-    k2_iso = sum(k_)
-    k_iso = torch.sqrt(k2_iso)  # type: ignore since sum above is valid for tensors
+    k2_grid = torch.meshgrid(*(torch.square(k_i) for k_i in k), indexing="ij")
+    k_iso = torch.sqrt(torch.stack(k2_grid, dim=0).sum(dim=0))
 
     if bins is None:
         bins = math.floor(math.sqrt(k_iso.ndim) * min(k_iso.shape) / 2)

@@ -1,3 +1,5 @@
+import math
+
 import pytest
 import torch
 
@@ -18,10 +20,34 @@ from autocast.metrics.deterministic import (
 from autocast.types import TensorBTSC
 
 
+def _lola_isotropic_binning(
+    shape: tuple[int, ...],
+    bins: int | None = None,
+    device: torch.device | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    k = [torch.fft.fftfreq(s, device=device) for s in shape]
+    k2_grid = torch.meshgrid(*(torch.square(k_i) for k_i in k), indexing="ij")
+
+    k2_iso = torch.zeros_like(k2_grid[0])
+    for component in k2_grid:
+        k2_iso = k2_iso + component
+    k_iso = torch.sqrt(k2_iso)
+
+    if bins is None:
+        bins = math.floor(math.sqrt(k_iso.ndim) * min(k_iso.shape) / 2)
+
+    edges = torch.linspace(0, k_iso.max(), bins + 1, device=k_iso.device)
+    indices = torch.bucketize(k_iso.flatten(), edges)
+    counts = torch.bincount(indices, minlength=bins + 1)
+    return edges, counts, indices
+
+
 def _lola_isotropic_power_spectrum(
     x: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    edges, counts, indices = _isotropic_binning(tuple(x.shape[-2:]), device=x.device)
+    edges, counts, indices = _lola_isotropic_binning(
+        tuple(x.shape[-2:]), device=x.device
+    )
     s = torch.fft.fftn(x, dim=(-2, -1), norm="ortho")
     p = torch.abs(s).square().flatten(start_dim=-2)
 
@@ -35,7 +61,9 @@ def _lola_isotropic_cross_correlation(
     x: torch.Tensor, y: torch.Tensor
 ) -> tuple[torch.Tensor, torch.Tensor]:
     x, y = torch.broadcast_tensors(x, y)
-    edges, counts, indices = _isotropic_binning(tuple(x.shape[-2:]), device=x.device)
+    edges, counts, indices = _lola_isotropic_binning(
+        tuple(x.shape[-2:]), device=x.device
+    )
 
     sx = torch.fft.fftn(x, dim=(-2, -1), norm="ortho")
     sy = torch.fft.fftn(y, dim=(-2, -1), norm="ortho")
