@@ -565,6 +565,12 @@ def compare_azulaunet_configs(detailed: bool = False):
             "name": "Small-Deep-Noise (64-512 ch, 3 blocks, noise=256)",
         },
         {
+            "hid_channels": (76, 152, 304, 608),
+            "hid_blocks": (2, 2, 2, 2),
+            "n_noise_channels": 256,
+            "name": "Medium-Noise (76-608 ch, noise=256)",
+        },
+        {
             "hid_channels": (96, 192, 384, 768),
             "hid_blocks": (2, 2, 2, 2),
             "n_noise_channels": None,
@@ -576,18 +582,6 @@ def compare_azulaunet_configs(detailed: bool = False):
             "n_noise_channels": 256,
             "name": "Medium-Noise (96-768 ch, noise=256)",
         },
-        {
-            "hid_channels": (128, 256, 512, 1024),
-            "hid_blocks": (2, 2, 2, 2),
-            "n_noise_channels": None,
-            "name": "Large (128-1024 ch, 2 blocks)",
-        },
-        {
-            "hid_channels": (128, 256, 512, 1024),
-            "hid_blocks": (2, 2, 2, 2),
-            "n_noise_channels": 256,
-            "name": "Large-Noise (128-1024 ch, noise=256)",
-        },
     ]
 
     results = []
@@ -598,8 +592,8 @@ def compare_azulaunet_configs(detailed: bool = False):
                 out_channels=out_channels,
                 hid_channels=config["hid_channels"],
                 hid_blocks=config["hid_blocks"],
-                norm="group",
-                groups=8,
+                norm="layer",
+                # groups=2,
                 ffn_factor=2,
                 dropout=0.0,
                 periodic=False,
