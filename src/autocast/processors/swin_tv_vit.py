@@ -105,7 +105,7 @@ _SWIN_CONFIGS: dict[_SwinVariant, dict] = {
 }
 
 
-class SwinProcessor(Processor[EncodedBatch]):
+class SwinTVProcessor(Processor[EncodedBatch]):
     """Dense Swin Transformer Processor.
 
     Wraps the torchvision ``SwinTransformer`` backbone as a pixel-to-pixel

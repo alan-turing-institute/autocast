@@ -1,10 +1,10 @@
 import torch
 
-from autocast.processors.swin_vit import SwinProcessor
+from autocast.processors.swin_tv_vit import SwinTVProcessor
 
 
 def test_swin_processor_forward_and_map_shape():
-    processor = SwinProcessor(
+    processor = SwinTVProcessor(
         in_channels=3,
         out_channels=5,
         spatial_resolution=(64, 64),
@@ -20,7 +20,7 @@ def test_swin_processor_forward_and_map_shape():
 
 
 def test_swin_processor_noise_conditioning_changes_outputs():
-    processor = SwinProcessor(
+    processor = SwinTVProcessor(
         in_channels=3,
         out_channels=3,
         spatial_resolution=(64, 64),

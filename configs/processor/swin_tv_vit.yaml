@@ -1,4 +1,4 @@
-_target_: autocast.processors.swin_vit.SwinProcessor
+_target_: autocast.processors.swin_tv_vit.SwinTVProcessor
 in_channels: auto
 out_channels: auto
 spatial_resolution: [64, 64]
