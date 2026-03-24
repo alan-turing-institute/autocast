@@ -44,7 +44,9 @@ python -m autocast.scripts.eval.encoder_processor_decoder \
 All eval configs support these parameters:
 
 - `checkpoint`: Path to model checkpoint (required for evaluation)
-- `metrics`: List of metrics to compute (mse, rmse, nmse, mae, etc.)
+- `metrics`: List of metrics to compute (default includes mse/mae/rmse/vrmse,
+  power spectrum scores `psrmse*`, cross-correlation spectrum scores `pscc*`,
+  and ensemble scores `crps`, `fcrps`, `afcrps`, `energy`, `variogram`, `ssr`)
 - `csv_path`: Custom path for metrics CSV (default: work_dir/evaluation_metrics.csv)
 - `video_dir`: Custom directory for rollout videos (default: work_dir/videos)
 - `batch_indices`: List of batch indices to visualize
@@ -53,6 +55,8 @@ All eval configs support these parameters:
 - `fps`: Frames per second for videos
 - `device`: Device for evaluation (auto, cpu, cuda, mps)
 - `devices`: Number of GPUs for DDP evaluation (auto, or int e.g. 1, 4)
+- Ensemble-only metrics (`crps`, `fcrps`, `afcrps`, `energy`, `variogram`,
+  `ssr`) are skipped automatically when `model.n_members <= 1`
 
 ## Multi-GPU Evaluation
 

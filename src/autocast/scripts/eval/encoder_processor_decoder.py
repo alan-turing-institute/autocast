@@ -102,6 +102,29 @@ AVAILABLE_METRICS_ENSEMBLE = {
     "ssr": SpreadSkillRatio,
 }
 
+DEFAULT_EVAL_METRICS = [
+    "mse",
+    "mae",
+    "rmse",
+    "vrmse",
+    "psrmse",
+    "psrmse_low",
+    "psrmse_mid",
+    "psrmse_high",
+    "psrmse_tail",
+    "pscc",
+    "pscc_low",
+    "pscc_mid",
+    "pscc_high",
+    "pscc_tail",
+    "crps",
+    "fcrps",
+    "afcrps",
+    "energy",
+    "variogram",
+    "ssr",
+]
+
 
 def _resolve_csv_path(eval_cfg: DictConfig, work_dir: Path) -> Path:
     csv_path = eval_cfg.get("csv_path")
@@ -729,7 +752,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
         raise RuntimeError(msg)
 
     # Get eval parameters from config
-    metrics_list = eval_cfg.get("metrics", ["mse", "rmse"])
+    metrics_list = eval_cfg.get("metrics", DEFAULT_EVAL_METRICS)
     batch_indices = eval_cfg.get("batch_indices", [])
 
     # Get number of ensemble members from config if available
@@ -758,12 +781,21 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     test_metric_fns: dict[str, Callable[[], Metric]] = {}
 
     metric_registry = dict(AVAILABLE_METRICS)
-    if n_members and n_members > 1:
+    has_ensemble = bool(n_members and n_members > 1)
+    if has_ensemble:
         metric_registry.update(AVAILABLE_METRICS_ENSEMBLE)
 
     for name in metrics_list:
-        if name in metric_registry:
-            test_metric_fns[name] = metric_registry[name]
+        if name in AVAILABLE_METRICS:
+            test_metric_fns[name] = AVAILABLE_METRICS[name]
+        elif name in AVAILABLE_METRICS_ENSEMBLE:
+            if has_ensemble:
+                test_metric_fns[name] = AVAILABLE_METRICS_ENSEMBLE[name]
+            else:
+                log.info(
+                    "Skipping ensemble metric '%s' because n_members <= 1.",
+                    name,
+                )
         else:
             log.warning("Metric %s not found in available metrics", name)
 
@@ -872,8 +904,17 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
 
         if compute_rollout_metrics:
             for name in metrics_list:
-                if name in metric_registry:
-                    rollout_metric_fns[name] = metric_registry[name]
+                if name in AVAILABLE_METRICS:
+                    rollout_metric_fns[name] = AVAILABLE_METRICS[name]
+                elif name in AVAILABLE_METRICS_ENSEMBLE:
+                    if has_ensemble:
+                        rollout_metric_fns[name] = AVAILABLE_METRICS_ENSEMBLE[name]
+                    else:
+                        log.info(
+                            "Skipping ensemble rollout metric '%s' because "
+                            "n_members <= 1.",
+                            name,
+                        )
                 else:
                     msg = f"Metric {name} not found in available metrics"
                     log.warning(msg)
