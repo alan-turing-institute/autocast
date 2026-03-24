@@ -10,7 +10,3 @@ decoder_num_heads: [24, 12, 6, 3]
 patch_size: 4
 window_size: [7, 7]
 n_noise_channels: 256
-drop_path: 0.1
-groups: 12
-use_ada_ln: true
-zero_init: true
