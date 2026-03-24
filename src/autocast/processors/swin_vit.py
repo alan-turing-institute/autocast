@@ -1,19 +1,20 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Literal
+from typing import Literal, cast
 
 import torch
-import torch.nn as nn
+from torch import nn
 from torchvision.models.swin_transformer import SwinTransformer
 
+from autocast.nn.noise.conditional_layer_norm import ConditionalLayerNorm
 from autocast.processors.base import Processor
 from autocast.types import EncodedBatch, Tensor
-
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_decoder(
     in_channels: int,
@@ -23,14 +24,14 @@ def _make_decoder(
 ) -> nn.Module:
     """Build a transposed-convolution decoder that upsamples by ``total_stride``.
 
-    The decoder uses a sequence of 2× upsample steps followed by a final
-    1×1 projection to ``out_channels``.
+    The decoder uses a sequence of 2x upsample steps followed by a final
+    1x1 projection to ``out_channels``.
     """
     layers: list[nn.Module] = []
     c = in_channels
     stride = total_stride
     while stride > 1:
-        step = min(stride, 2)          # upsample 2× at a time
+        step = min(stride, 2)  # upsample 2x at a time
         c_next = max(hidden_channels, out_channels)
         layers += [
             nn.ConvTranspose2d(c, c_next, kernel_size=step, stride=step, bias=False),
@@ -43,44 +44,66 @@ def _make_decoder(
     return nn.Sequential(*layers)
 
 
+class _NoiseConditionedLayerNorm(nn.Module):
+    """Adapter to use ConditionalLayerNorm in modules expecting LayerNorm(x)."""
+
+    def __init__(self, base_norm: nn.LayerNorm, n_noise_channels: int) -> None:
+        super().__init__()
+        self.norm = ConditionalLayerNorm(
+            normalized_shape=torch.Size(base_norm.normalized_shape),
+            n_noise_channels=n_noise_channels,
+            eps=base_norm.eps,
+            elementwise_affine=False,
+            bias=base_norm.bias is not None,
+        )
+        self._x_noise: Tensor | None = None
+
+    def set_noise(self, x_noise: Tensor | None) -> None:
+        self._x_noise = x_noise
+
+    def forward(self, x: Tensor) -> Tensor:
+        return self.norm(x, x_noise=self._x_noise)
+
+
 # ---------------------------------------------------------------------------
 # Main class
 # ---------------------------------------------------------------------------
 
-_SwinVariant = Literal["tiny", "small", "base", "nano"]  
+_SwinVariant = Literal["tiny", "small", "base", "nano"]
 
 # Configs taken from torchvision source.
 # embed_dim, depths, num_heads, window_size
 _SWIN_CONFIGS: dict[_SwinVariant, dict] = {
-    "tiny": dict(
-        embed_dim=96,
-        depths=[2, 2, 6, 2],
-        num_heads=[3, 6, 12, 24],
-        window_size=[7, 7],
-        stochastic_depth_prob=0.2,
-    ),
-    "small": dict(
-        embed_dim=96,
-        depths=[2, 2, 18, 2],
-        num_heads=[3, 6, 12, 24],
-        window_size=[7, 7],
-        stochastic_depth_prob=0.3,
-    ),
-    "base": dict(
-        embed_dim=128,
-        depths=[2, 2, 18, 2],
-        num_heads=[4, 8, 16, 32],
-        window_size=[7, 7],
-        stochastic_depth_prob=0.5,
-    ),
-    "nano": dict(
-        embed_dim=128,           # Hidden dim = 128
-        depths=[6],              # 6 layers in ONE stage (stays at 128 dim)
-        num_heads=[4],           # Single stage needs only one head count
-        window_size=[7, 7],
-        stochastic_depth_prob=0.1,
-    ),
+    "tiny": {
+        "embed_dim": 96,
+        "depths": [2, 2, 6, 2],
+        "num_heads": [3, 6, 12, 24],
+        "window_size": [7, 7],
+        "stochastic_depth_prob": 0.2,
+    },
+    "small": {
+        "embed_dim": 96,
+        "depths": [2, 2, 18, 2],
+        "num_heads": [3, 6, 12, 24],
+        "window_size": [7, 7],
+        "stochastic_depth_prob": 0.3,
+    },
+    "base": {
+        "embed_dim": 128,
+        "depths": [2, 2, 18, 2],
+        "num_heads": [4, 8, 16, 32],
+        "window_size": [7, 7],
+        "stochastic_depth_prob": 0.5,
+    },
+    "nano": {
+        "embed_dim": 128,  # Hidden dim = 128
+        "depths": [6],  # 6 layers in ONE stage (stays at 128 dim)
+        "num_heads": [4],  # Single stage needs only one head count
+        "window_size": [7, 7],
+        "stochastic_depth_prob": 0.1,
+    },
 }
+
 
 class SwinProcessor(Processor[EncodedBatch]):
     """Dense Swin Transformer Processor.
@@ -123,6 +146,7 @@ class SwinProcessor(Processor[EncodedBatch]):
         patch_size: int = 4,
         decoder_hidden_channels: int | None = None,
         loss_func: nn.Module | None = None,
+        n_noise_channels: int | None = None,
     ) -> None:
         super().__init__()
 
@@ -157,7 +181,7 @@ class SwinProcessor(Processor[EncodedBatch]):
             dropout=0.0,
             attention_dropout=0.0,
             stochastic_depth_prob=cfg["stochastic_depth_prob"],
-            num_classes=0,   # removes the head → forward returns (B, C) pooled
+            num_classes=0,  # removes the head → forward returns (B, C) pooled
         )
 
         # ------------------------------------------------------------------
@@ -171,15 +195,41 @@ class SwinProcessor(Processor[EncodedBatch]):
         #   )
         # We only need to swap the Conv2d.
         # ------------------------------------------------------------------
-        stem_block = self.backbone.features[0]
-        old_conv: nn.Conv2d = stem_block[0]
+        stem_block = cast(nn.Sequential, self.backbone.features[0])
+        old_conv = cast(nn.Conv2d, stem_block[0])
+        kernel_size = cast(tuple[int, int], old_conv.kernel_size)
+        stride = cast(tuple[int, int], old_conv.stride)
         stem_block[0] = nn.Conv2d(
             in_channels,
             old_conv.out_channels,
-            kernel_size=old_conv.kernel_size,
-            stride=old_conv.stride,
+            kernel_size=kernel_size,
+            stride=stride,
             bias=old_conv.bias is not None,
         )
+
+        self._conditioned_norms: list[_NoiseConditionedLayerNorm] = []
+        if n_noise_channels is not None:
+            for layer in self.backbone.features:
+                if not isinstance(layer, nn.Sequential):
+                    continue
+                for block in layer:
+                    if not hasattr(block, "norm1") or not hasattr(block, "norm2"):
+                        continue
+
+                    norm1 = block.norm1
+                    norm2 = block.norm2
+                    if isinstance(norm1, nn.LayerNorm):
+                        conditioned_norm1 = _NoiseConditionedLayerNorm(
+                            norm1, n_noise_channels
+                        )
+                        block.norm1 = conditioned_norm1
+                        self._conditioned_norms.append(conditioned_norm1)
+                    if isinstance(norm2, nn.LayerNorm):
+                        conditioned_norm2 = _NoiseConditionedLayerNorm(
+                            norm2, n_noise_channels
+                        )
+                        block.norm2 = conditioned_norm2
+                        self._conditioned_norms.append(conditioned_norm2)
 
         # ------------------------------------------------------------------
         # Determine the output channel count of the backbone.
@@ -191,7 +241,7 @@ class SwinProcessor(Processor[EncodedBatch]):
         # ------------------------------------------------------------------
         # Build decoder.
         # The backbone reduces spatial resolution by patch_size (via the stem)
-        # and by 2× for each merging step between stages (n_stages - 1 times).
+        # and by 2x for each merging step between stages (n_stages - 1 times).
         # Total spatial downsampling = patch_size * 2^(n_stages-1).
         # ------------------------------------------------------------------
         total_stride = patch_size * (2 ** (n_stages - 1))
@@ -205,6 +255,7 @@ class SwinProcessor(Processor[EncodedBatch]):
         )
 
         self.loss_func = loss_func or nn.MSELoss()
+        self.n_noise_channels = n_noise_channels
         self._backbone_out_channels = backbone_out_channels
         self._total_stride = total_stride
 
@@ -212,13 +263,16 @@ class SwinProcessor(Processor[EncodedBatch]):
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _encode(self, x: Tensor) -> Tensor:
+    def _encode(self, x: Tensor, x_noise: Tensor | None = None) -> Tensor:
         """Run the Swin backbone and return spatial feature maps.
 
         torchvision's SwinTransformer.features produces a sequence of feature
         tensors in (B, H', W', C) layout; the final element is the last-stage
         output. We permute to (B, C, H', W') for the decoder.
         """
+        for conditioned_norm in self._conditioned_norms:
+            conditioned_norm.set_noise(x_noise)
+
         # features is an nn.Sequential; iterate to get final output.
         feat = x
         for layer in self.backbone.features:
@@ -226,19 +280,28 @@ class SwinProcessor(Processor[EncodedBatch]):
         # feat: (B, H', W', C)  — SwinTransformer keeps spatial-last internally
         return feat.permute(0, 3, 1, 2).contiguous()  # (B, C, H', W')
 
+    def _decode(self, feat: Tensor) -> Tensor:
+        return self.decoder(feat)
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor, x_noise: Tensor | None = None) -> Tensor:
         """Forward pass: ``(B, C_in, H, W) -> (B, C_out, H, W)``."""
-        feat = self._encode(x)          # (B, C_backbone, H/s, W/s)
-        return self.decoder(feat)       # (B, C_out, H, W)
+        feat = self._encode(x, x_noise=x_noise)  # (B, C_backbone, H/s, W/s)
+        return self._decode(feat)  # (B, C_out, H, W)
 
     def map(self, x: Tensor, global_cond: Tensor | None) -> Tensor:
         """Processor interface: map encoded inputs to predictions."""
         _ = global_cond  # unused — Swin does not currently consume global cond
-        return self(x)
+        if self.n_noise_channels is None:
+            noise = None
+        else:
+            noise = torch.randn(
+                x.shape[0], self.n_noise_channels, dtype=x.dtype, device=x.device
+            )
+        return self(x, noise)
 
     def loss(self, batch: EncodedBatch) -> Tensor:
         """Compute the loss for a training batch."""
