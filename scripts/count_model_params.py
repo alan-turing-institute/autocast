@@ -514,13 +514,19 @@ def compare_azulaunet_configs(detailed: bool = False):
             "hid_channels": (16, 32, 64, 128),
             "hid_blocks": (2, 2, 2, 2),
             "n_noise_channels": 256,
-            "name": "Mini-Noise (16-128 ch, 2 blocks), noise=256",
+            "name": "Mini-Noise (16-128 ch, 2 blocks, noise=256)",
         },
         {
             "hid_channels": (32, 64, 128, 256),
             "hid_blocks": (2, 2, 2, 2),
             "n_noise_channels": None,
             "name": "Tiny (32-256 ch, 2 blocks)",
+        },
+        {
+            "hid_channels": (32, 64, 128, 256),
+            "hid_blocks": (3, 3, 3, 3),
+            "n_noise_channels": 256,
+            "name": "Tiny-Deep-Noise (32-256 ch, 3 blocks, noise=256)",
         },
         {
             "hid_channels": (64, 128, 256, 512),
@@ -533,6 +539,18 @@ def compare_azulaunet_configs(detailed: bool = False):
             "hid_blocks": (2, 2, 2, 2),
             "n_noise_channels": 256,
             "name": "Small-Noise (64-512 ch, noise=256)",
+        },
+        {
+            "hid_channels": (64, 128, 256, 512),
+            "hid_blocks": (2, 2, 2, 2),
+            "n_noise_channels": 512,
+            "name": "Small-Noise (64-512 ch, noise=512)",
+        },
+        {
+            "hid_channels": (64, 128, 256, 512),
+            "hid_blocks": (2, 2, 2, 2),
+            "n_noise_channels": 1024,
+            "name": "Small-Noise (64-512 ch, noise=1024)",
         },
         {
             "hid_channels": (64, 128, 256, 512),
