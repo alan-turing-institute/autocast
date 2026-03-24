@@ -2,7 +2,7 @@ _target_: autocast.processors.swin_tv_vit.SwinTVProcessor
 in_channels: auto
 out_channels: auto
 spatial_resolution: auto
-hidden_dim: 18
+hidden_dim: 120
 encoder_depths: [2, 2, 6, 2]
 encoder_num_heads: [3, 6, 12, 24]
 decoder_depths: [2, 6, 2, 2]
