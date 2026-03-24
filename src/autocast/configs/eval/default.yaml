@@ -5,13 +5,30 @@ checkpoint: null
 # Evaluation metrics to compute
 metrics:
   - mse
+  - mae
   - rmse
+  - vrmse
+  - psrmse
+  - psrmse_low
+  - psrmse_mid
+  - psrmse_high
+  - psrmse_tail
+  - pscc
+  - pscc_low
+  - pscc_mid
+  - pscc_high
+  - pscc_tail
+  - crps
+  - fcrps
+  - afcrps
+  - energy
+  - ssr
 
 # Output paths (default to work_dir if not specified)
 csv_path: null
 video_dir: null
 
-# Batch indices to visualize
+# Rollout sample indices to visualize
 batch_indices: []
 
 # Video generation settings
@@ -19,8 +36,9 @@ video_format: mp4  # gif or mp4
 video_sample_index: 0
 fps: 5
 
-# Device for evaluation
-device: auto  # auto, cpu, cuda, or mps
+# Accelerator for evaluation (mirrors Lightning Fabric API)
+accelerator: auto  # auto, cpu, cuda, or mps
+devices: auto # auto, or int (e.g. 1, 4 for multi-GPU DDP evaluation)
 
 # Rollout settings
 max_rollout_steps: 10

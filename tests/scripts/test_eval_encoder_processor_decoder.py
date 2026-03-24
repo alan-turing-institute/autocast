@@ -1,11 +1,14 @@
 """Unit tests for evaluation batch-limit resolution."""
 
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
+import torch
 from omegaconf import OmegaConf
 
 from autocast.scripts.eval.encoder_processor_decoder import (
+    _render_rollouts,
     _resolve_rollout_batch_limit,
     _resolve_rollout_channel_names,
     _resolve_rollout_timestep_limit,
@@ -170,3 +173,40 @@ def test_training_runtime_rows_fall_back_to_average_without_epoch_times():
     rows = _training_runtime_rows(payload)
 
     assert rows == []
+
+
+def test_render_rollouts_resolves_indices_within_batched_samples(tmp_path, monkeypatch):
+    class DummyModel:
+        def rollout(self, *_args, **_kwargs):
+            preds = torch.randn(4, 3, 2, 2, 1)
+            trues = torch.randn(4, 3, 2, 2, 1)
+            return preds, trues
+
+    captured_paths: list[str] = []
+
+    def _fake_plot_spatiotemporal_video(**kwargs):
+        captured_paths.append(kwargs["save_path"])
+
+    monkeypatch.setattr(
+        "autocast.scripts.eval.encoder_processor_decoder.plot_spatiotemporal_video",
+        _fake_plot_spatiotemporal_video,
+    )
+
+    out_paths = _render_rollouts(
+        model=cast(Any, DummyModel()),
+        dataloader=[object()],
+        batch_indices=[0, 1, 2, 3],
+        video_dir=tmp_path,
+        sample_index=0,
+        fmt="mp4",
+        fps=5,
+        stride=1,
+        max_rollout_steps=2,
+        free_running_only=True,
+        n_members=None,
+    )
+
+    assert len(out_paths) == 4
+    assert len(captured_paths) == 4
+    for idx in range(4):
+        assert any(f"batch_{idx}_sample_{idx}.mp4" in p for p in captured_paths)

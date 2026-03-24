@@ -288,12 +288,13 @@ def _normalize_train_eval_overrides_for_resolved_config(
     return _apply_dataset_override_for_resolved_config(normalized, dataset)
 
 
-def infer_dataset_from_workdir(work_dir: str | Path) -> str | None:
+def infer_dataset_from_workdir(work_dir: str | Path) -> str | None:  # noqa: PLR0911
     """Infer dataset name from a run work directory.
 
-    Reads resolved config YAML if available and infers dataset from:
+        Reads resolved config YAML if available and infers dataset from:
     - ``datamodule`` when it is a string
-    - ``datamodule.data_path`` basename
+        - ``datamodule.data_path`` relative path under ``datasets_root()`` when
+            possible (fallback: basename)
     - ``dataset`` top-level key as a fallback
     """
     cfg = _load_resolved_config_from_workdir(work_dir)
@@ -311,7 +312,13 @@ def infer_dataset_from_workdir(work_dir: str | Path) -> str | None:
 
         data_path = datamodule_cfg.get("data_path")
         if isinstance(data_path, os.PathLike | str):
-            return Path(data_path).name
+            data_path_obj = Path(data_path).expanduser()
+            datasets_root_obj = datasets_root().expanduser()
+            try:
+                rel = data_path_obj.resolve().relative_to(datasets_root_obj.resolve())
+                return rel.as_posix()
+            except (RuntimeError, ValueError):
+                return data_path_obj.name
 
     top_level_dataset = cfg.get("dataset")
     if isinstance(top_level_dataset, str) and top_level_dataset:
