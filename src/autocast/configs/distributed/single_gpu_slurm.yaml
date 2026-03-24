@@ -11,5 +11,5 @@ trainer:
   num_nodes: 1
 
 eval:
-  device: auto
+  accelerator: auto
   devices: 1

@@ -758,8 +758,18 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     # Get number of ensemble members from config if available
     n_members = cfg.get("model", {}).get("n_members", 1)
 
-    # Setup Fabric for device management
-    accelerator = eval_cfg.get("device", "auto")
+    # Setup Fabric accelerator/device management.
+    # Prefer eval.accelerator to mirror Lightning API, while keeping
+    # eval.device as a backwards-compatible fallback.
+    accelerator = eval_cfg.get("accelerator", None)
+    if accelerator is None:
+        accelerator = eval_cfg.get("device", "auto")
+    elif "device" in eval_cfg:
+        log.warning(
+            "Both eval.accelerator and deprecated eval.device were provided; "
+            "using eval.accelerator=%s.",
+            accelerator,
+        )
     devices = eval_cfg.get("devices", "auto")
     fabric = L.Fabric(accelerator=accelerator, devices=devices)
     fabric.launch()

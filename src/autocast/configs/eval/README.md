@@ -53,7 +53,7 @@ All eval configs support these parameters:
 - `video_format`: Video format (mp4 or gif)
 - `video_sample_index`: Sample index within batch to visualize
 - `fps`: Frames per second for videos
-- `device`: Device for evaluation (auto, cpu, cuda, mps)
+- `accelerator`: Accelerator for evaluation (auto, cpu, cuda, mps)
 - `devices`: Number of GPUs for DDP evaluation (auto, or int e.g. 1, 4)
 - Ensemble-only metrics (`crps`, `fcrps`, `afcrps`, `energy`, `variogram`,
   `ssr`) are skipped automatically when `model.n_members <= 1`

@@ -11,7 +11,7 @@ trainer:
   num_nodes: 1
 
 eval:
-  device: auto
+  accelerator: auto
   devices: 4  # Match gpus_per_node for DDP evaluation
 
 hydra:
