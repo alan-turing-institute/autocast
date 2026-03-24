@@ -281,6 +281,39 @@ def _map_windows(
     return tuple_windows
 
 
+def _collect_rollout_sample_targets_for_batch(
+    *,
+    targets: set[int],
+    rendered_targets: set[int],
+    batch_idx: int,
+    batch_size: int,
+    sample_index: int,
+    global_sample_offset: int,
+) -> dict[int, int]:
+    sample_targets: dict[int, int] = {}
+
+    # Legacy support: target refers to dataloader batch index.
+    if batch_idx in targets and batch_idx not in rendered_targets:
+        if sample_index < batch_size:
+            sample_targets[batch_idx] = int(sample_index)
+        else:
+            log.warning(
+                "Requested sample %s for dataloader batch %s, "
+                "but batch has only %s samples.",
+                sample_index,
+                batch_idx,
+                batch_size,
+            )
+
+    # Preferred behavior: target refers to global sample index.
+    for local_idx in range(batch_size):
+        global_idx = global_sample_offset + local_idx
+        if global_idx in targets and global_idx not in rendered_targets:
+            sample_targets[global_idx] = local_idx
+
+    return sample_targets
+
+
 def _render_rollouts(
     model: EncoderProcessorDecoder | EncoderProcessorDecoderEnsemble,
     dataloader,
@@ -296,21 +329,25 @@ def _render_rollouts(
     channel_names: list[str] | None = None,
     preserve_aspect: bool = False,
 ) -> list[Path]:
-    # Return early if no batches are requested
+    # Return early if no rollout indices are requested
     if not batch_indices:
         return []
 
-    # Create sets to enable logging warnings for any missing batches
-    targets = set(batch_indices)
+    # Targets are interpreted as rollout sample indices across the full dataloader
+    # stream. We also preserve legacy behavior where an index can refer to a
+    # dataloader batch index together with `sample_index`.
+    targets = {int(idx) for idx in batch_indices}
     saved_paths: list[Path] = []
-    rendered_batches: set[int] = set()
+    rendered_targets: set[int] = set()
+    global_sample_offset = 0
     video_dir.mkdir(parents=True, exist_ok=True)
 
-    # Perform rollouts and save videos for requested batches
+    # Perform rollouts and save videos for requested target indices.
     with torch.no_grad():
         for batch_idx, batch in enumerate(dataloader):
-            if batch_idx not in targets:
-                continue
+            if rendered_targets == targets:
+                break
+
             preds, trues = model.rollout(
                 batch,
                 stride=stride,
@@ -323,16 +360,8 @@ def _render_rollouts(
                     "Rollout for batch %s did not return ground truth; skipping video.",
                     batch_idx,
                 )
+                global_sample_offset += int(preds.shape[0])
                 continue
-            if sample_index >= preds.shape[0]:
-                log.warning(
-                    "Requested sample %s but batch %s has only %s samples.",
-                    sample_index,
-                    batch_idx,
-                    preds.shape[0],
-                )
-                continue
-            filename = video_dir / f"batch_{batch_idx}_sample_{sample_index}.{fmt}"
 
             # Limit the rollout to the available ground truth rollout length
             if trues.shape[1] < preds.shape[1]:
@@ -360,27 +389,52 @@ def _render_rollouts(
                 )
                 names_for_plot = None
 
-            # Plot video
-            plot_spatiotemporal_video(
-                true=trues_mean.cpu(),
-                pred=preds_mean.cpu(),
-                pred_uq=preds_uq.cpu() if preds_uq is not None else None,
-                batch_idx=sample_index,
-                fps=fps,
-                save_path=str(filename),
-                colorbar_mode="column",
-                pred_uq_label="Ensemble Std Dev",
-                channel_names=names_for_plot,
-                preserve_aspect=preserve_aspect,
+            batch_size = int(preds.shape[0])
+            sample_targets = _collect_rollout_sample_targets_for_batch(
+                targets=targets,
+                rendered_targets=rendered_targets,
+                batch_idx=batch_idx,
+                batch_size=batch_size,
+                sample_index=sample_index,
+                global_sample_offset=global_sample_offset,
             )
-            saved_paths.append(filename)
-            rendered_batches.add(batch_idx)
-            log.info("Saved rollout visualization to %s", filename)
 
-    # Check for any missing batches that were requested but not rendered
-    missing = targets - rendered_batches
-    for batch_idx in sorted(missing):
-        log.warning("Requested batch %s was not found in the dataloader.", batch_idx)
+            for target_idx, local_idx in sample_targets.items():
+                if target_idx in rendered_targets:
+                    continue
+
+                filename = video_dir / f"batch_{target_idx}_sample_{local_idx}.{fmt}"
+
+                # Plot one sample at a time for deterministic target-to-file mapping.
+                plot_spatiotemporal_video(
+                    true=trues_mean[local_idx : local_idx + 1].cpu(),
+                    pred=preds_mean[local_idx : local_idx + 1].cpu(),
+                    pred_uq=(
+                        preds_uq[local_idx : local_idx + 1].cpu()
+                        if preds_uq is not None
+                        else None
+                    ),
+                    batch_idx=0,
+                    fps=fps,
+                    save_path=str(filename),
+                    colorbar_mode="column",
+                    pred_uq_label="Ensemble Std Dev",
+                    channel_names=names_for_plot,
+                    preserve_aspect=preserve_aspect,
+                )
+                saved_paths.append(filename)
+                rendered_targets.add(target_idx)
+                log.info("Saved rollout visualization to %s", filename)
+
+            global_sample_offset += batch_size
+
+    # Check for any missing rollout sample indices that were requested
+    missing = targets - rendered_targets
+    for target_idx in sorted(missing):
+        log.warning(
+            "Requested rollout index %s was not found in rendered samples.",
+            target_idx,
+        )
 
     return saved_paths
 

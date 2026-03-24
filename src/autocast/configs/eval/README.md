@@ -49,7 +49,8 @@ All eval configs support these parameters:
   and ensemble scores `crps`, `fcrps`, `afcrps`, `energy`, `variogram`, `ssr`)
 - `csv_path`: Custom path for metrics CSV (default: work_dir/evaluation_metrics.csv)
 - `video_dir`: Custom directory for rollout videos (default: work_dir/videos)
-- `batch_indices`: List of batch indices to visualize
+- `batch_indices`: List of rollout sample indices to visualize (resolved across
+  batched rollout dataloader samples)
 - `video_format`: Video format (mp4 or gif)
 - `video_sample_index`: Sample index within batch to visualize
 - `fps`: Frames per second for videos

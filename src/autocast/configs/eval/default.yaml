@@ -29,7 +29,7 @@ metrics:
 csv_path: null
 video_dir: null
 
-# Batch indices to visualize
+# Rollout sample indices to visualize
 batch_indices: []
 
 # Video generation settings
