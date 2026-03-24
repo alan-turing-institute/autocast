@@ -4,7 +4,7 @@ defaults:
   - override /datamodule: advection_diffusion_multichannel_64_64
   - override /encoder@model.encoder: permute_concat
   - override /decoder@model.decoder: channels_last
-  - override /processor@model.processor: unet_azula_large
+  # - override /processor@model.processor: unet_azula_large
   # - override /input_noise_injector@model.input_noise_injector: concat
   - _self_
 
