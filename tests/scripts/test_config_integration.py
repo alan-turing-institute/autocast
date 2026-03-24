@@ -1,4 +1,4 @@
-"""Integration tests for scripts using actual configs from configs/."""
+"""Integration tests for scripts using actual configs from src/autocast/configs/."""
 
 from pathlib import Path
 
@@ -19,7 +19,7 @@ from autocast.scripts.setup import (
 @pytest.fixture
 def config_dir(REPO_ROOT: Path) -> str:
     """Path to the configs directory."""
-    return str(REPO_ROOT / "configs")
+    return str(REPO_ROOT / "src" / "autocast" / "configs")
 
 
 def _load_config(config_dir: str, config_name: str) -> DictConfig:

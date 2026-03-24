@@ -85,6 +85,7 @@ class MetricsMixin:
                 prog_bar=False,
                 on_step=False,
                 on_epoch=True,
+                sync_dist=True,
                 batch_size=batch_size,
             )
 

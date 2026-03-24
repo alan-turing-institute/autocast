@@ -1,3 +1,5 @@
+import typing
+
 import lightning as L
 import pytest
 import torch
@@ -32,6 +34,24 @@ class TinyProcessor(Processor[EncodedBatch]):
     def loss(self, batch: EncodedBatch) -> Tensor:
         outputs = self(batch.encoded_inputs)
         return self.loss_func(outputs, batch.encoded_output_fields)
+
+
+def test_on_load_checkpoint_removes_metadata_from_state_dict():
+    checkpoint = {
+        "state_dict": {"_metadata": {"x": 1}, "layer.weight": torch.tensor(1)}
+    }
+    EncoderProcessorDecoder.on_load_checkpoint(
+        typing.cast(EncoderProcessorDecoder, object()), checkpoint
+    )
+    assert "_metadata" not in checkpoint["state_dict"]
+
+
+def test_on_load_checkpoint_handles_missing_state_dict_key():
+    checkpoint = {"_metadata": {"x": 1}, "layer.weight": torch.tensor(1)}
+    EncoderProcessorDecoder.on_load_checkpoint(
+        typing.cast(EncoderProcessorDecoder, object()), checkpoint
+    )
+    assert "_metadata" not in checkpoint
 
 
 def test_encoder_processor_decoder_training_step_runs(make_toy_batch, dummy_loader):
@@ -160,7 +180,7 @@ def test_encoder_processor_decoder_rollout_handles_batches(
         batch, stride=stride, max_rollout_steps=max_rollout_steps, return_windows=True
     )
 
-    assert preds.shape == (batch_size, max_rollout_steps, n_steps_output, 16, 16, 1)
+    assert preds.shape == (batch_size, max_rollout_steps, n_steps_output, 32, 32, 1)
     assert gts is not None
     assert gts.shape == preds.shape
 
@@ -171,7 +191,7 @@ def test_encoder_processor_decoder_rollout_handles_batches(
         return_windows=False,
     )
 
-    assert preds.shape == (batch_size, max_rollout_steps * n_steps_output, 16, 16, 1)
+    assert preds.shape == (batch_size, max_rollout_steps * n_steps_output, 32, 32, 1)
     assert gts is not None
     assert gts.shape == preds.shape
 
@@ -232,16 +252,16 @@ def test_encoder_processor_decoder_rollout_handles_short_trajectory(
     preds, gts = model.rollout(batch, stride=stride, return_windows=True)
 
     # In free-running mode, predictions continue for all max_rollout_steps
-    assert preds.shape == (batch_size, max_rollout_steps, n_steps_output, 16, 16, 1)
+    assert preds.shape == (batch_size, max_rollout_steps, n_steps_output, 32, 32, 1)
 
     # Ground truth only available for windows where data exists
     assert gts is not None
-    assert gts.shape == (batch_size, expected_gt_windows, n_steps_output, 16, 16, 1)
+    assert gts.shape == (batch_size, expected_gt_windows, n_steps_output, 32, 32, 1)
 
     preds, gts = model.rollout(batch, stride=n_steps_output, return_windows=False)
 
     # Predictions for all rollout windows concatenated
-    assert preds.shape == (batch_size, max_rollout_steps * n_steps_output, 16, 16, 1)
+    assert preds.shape == (batch_size, max_rollout_steps * n_steps_output, 32, 32, 1)
     # Ground truth only for windows where data was available
     assert gts is not None
-    assert gts.shape == (batch_size, expected_gt_windows * n_steps_output, 16, 16, 1)
+    assert gts.shape == (batch_size, expected_gt_windows * n_steps_output, 32, 32, 1)

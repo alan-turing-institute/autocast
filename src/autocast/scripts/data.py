@@ -7,13 +7,15 @@ import torch
 from hydra.utils import get_class, instantiate
 from omegaconf import DictConfig, OmegaConf
 
-from autocast.data.datamodule import SpatioTemporalDataModule
+from autocast.data.datamodule import SpatioTemporalDataModule, TheWellDataModule
 from autocast.types import Batch
 
 log = logging.getLogger(__name__)
 
 
-def build_datamodule(config: DictConfig) -> SpatioTemporalDataModule:
+def build_datamodule(
+    config: DictConfig,
+) -> SpatioTemporalDataModule | TheWellDataModule:
     """Build the DataModule from the Hydra configuration."""
     # Configure datamodule
     dm_cfg = config.get("datamodule")
@@ -115,6 +117,11 @@ def batch_to_device(batch: Batch, device: torch.device) -> Batch:
         constant_fields=(
             batch.constant_fields.to(device)
             if batch.constant_fields is not None
+            else None
+        ),
+        boundary_conditions=(
+            batch.boundary_conditions.to(device)
+            if batch.boundary_conditions is not None
             else None
         ),
     )

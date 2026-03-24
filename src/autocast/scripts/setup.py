@@ -5,11 +5,12 @@ import logging
 from pathlib import Path
 from typing import Any
 
+import torch
 from hydra.utils import get_class, instantiate
 from omegaconf import DictConfig
 from torch import nn
 
-from autocast.data.datamodule import SpatioTemporalDataModule
+from autocast.data.datamodule import SpatioTemporalDataModule, TheWellDataModule
 from autocast.decoders.base import Decoder
 from autocast.encoders.base import Encoder, EncoderWithCond
 from autocast.models.autoencoder import AE, AELoss
@@ -20,7 +21,7 @@ from autocast.models.encoder_processor_decoder_ensemble import (
 )
 from autocast.models.processor import ProcessorModel
 from autocast.models.processor_ensemble import ProcessorModelEnsemble
-from autocast.scripts.data import build_datamodule
+from autocast.scripts.data import batch_to_device, build_datamodule
 from autocast.types.batch import Batch, EncodedBatch
 
 log = logging.getLogger(__name__)
@@ -75,10 +76,76 @@ def _filter_kwargs_for_target(
     return {k: v for k, v in kwargs.items() if k in allowed}
 
 
-def _set_if_auto(cfg: DictConfig, key: str, value: int | None) -> None:
+def _set_if_auto(cfg: DictConfig, key: str, value: Any) -> None:
     """Set config key to value if current value is None or 'auto'."""
     if key in cfg and cfg.get(key) in (None, "auto"):
         cfg[key] = value
+
+
+def _get_module_device(module: nn.Module) -> torch.device | None:
+    """Return a module's device from its first parameter or buffer.
+
+    Returns None if the module has neither parameters nor buffers.
+    """
+    first_param = next(module.parameters(), None)
+    if first_param is not None:
+        return first_param.device
+
+    first_buffer = next(module.buffers(), None)
+    if first_buffer is not None:
+        return first_buffer.device
+
+    return None
+
+
+def _resolve_module_device(*modules: nn.Module) -> torch.device:
+    """Resolve a device from modules, defaulting to CPU when all are parameterless."""
+    for module in modules:
+        module_device = _get_module_device(module)
+        if module_device is not None:
+            return module_device
+    return torch.device("cpu")
+
+
+def _infer_latent_spatial_resolution(
+    encoded_example: torch.Tensor,
+    encoder: EncoderWithCond,
+) -> tuple[int, ...]:
+    """Infer latent spatial resolution from encoder output layout.
+
+    Encoders can output either channels-last latents (e.g. DC: B,T,...,C)
+    or channels-first/time-concatenated latents (e.g. PermuteConcat: B,C,...).
+    """
+    channel_axis = int(getattr(encoder, "channel_axis", -1))
+    n_dims = encoded_example.ndim
+    if channel_axis < 0:
+        channel_axis += n_dims
+    if channel_axis < 0 or channel_axis >= n_dims:
+        msg = (
+            f"Invalid channel_axis={channel_axis} for encoded tensor "
+            f"shape={tuple(encoded_example.shape)}"
+        )
+        raise ValueError(msg)
+
+    has_time_concat = bool(getattr(encoder, "outputs_time_channel_concat", False))
+    excluded_axes = {0, channel_axis}  # batch and channels
+    if not has_time_concat:
+        time_axis = 2 if channel_axis == 1 else 1
+        if time_axis < n_dims and time_axis != channel_axis:
+            excluded_axes.add(time_axis)
+
+    spatial = tuple(
+        int(size)
+        for axis, size in enumerate(encoded_example.shape)
+        if axis not in excluded_axes
+    )
+    if not spatial:
+        msg = (
+            "Could not infer spatial resolution from encoded tensor "
+            f"shape={tuple(encoded_example.shape)} and channel_axis={channel_axis}."
+        )
+        raise ValueError(msg)
+    return spatial
 
 
 def _apply_processor_channel_defaults(
@@ -90,6 +157,7 @@ def _apply_processor_channel_defaults(
     n_steps_output: int,
     n_channels_out: int,
     global_cond_channels: int | None = None,
+    spatial_resolution: tuple[int, ...] | None = None,
 ) -> None:
     """Apply inferred channel/step defaults to processor and backbone configs."""
     if processor_config is None:
@@ -100,6 +168,12 @@ def _apply_processor_channel_defaults(
     _set_if_auto(processor_config, "n_steps_input", n_steps_input)
     _set_if_auto(processor_config, "n_steps_output", n_steps_output)
     _set_if_auto(processor_config, "n_channels_out", n_channels_out)
+    _set_if_auto(processor_config, "global_cond_channels", global_cond_channels)
+    _set_if_auto(
+        processor_config,
+        "spatial_resolution",
+        list(spatial_resolution) if spatial_resolution is not None else None,
+    )
 
     backbone_config = processor_config.get("backbone")
     if backbone_config is None:
@@ -117,7 +191,7 @@ def _apply_processor_channel_defaults(
 
 def setup_datamodule(
     config: DictConfig,
-) -> tuple[SpatioTemporalDataModule, DictConfig, dict]:
+) -> tuple[SpatioTemporalDataModule | TheWellDataModule, DictConfig, dict]:
     """Create the datamodule and infer data shapes."""
     datamodule = build_datamodule(config)
 
@@ -147,11 +221,10 @@ def setup_datamodule(
     output_shape = train_outputs.shape
 
     config = resolve_auto_params(config, input_shape, output_shape)
-    data_config = config.get("datamodule", {})
     logic_stats = {
         "channel_count": input_shape[-1],
-        "n_steps_input": data_config.get("n_steps_input", input_shape[1]),
-        "n_steps_output": data_config.get("n_steps_output", output_shape[1]),
+        "n_steps_input": input_shape[1],
+        "n_steps_output": output_shape[1],
         "n_constant_scalars": n_constant_scalars,
         "n_constant_field_channels": n_constant_field_channels,
         "input_shape": input_shape,
@@ -224,6 +297,23 @@ def setup_autoencoder_components(
         decoder_config,
     )
     encoder = instantiate(encoder_config)
+
+    if (
+        decoder_config
+        and "in_channels" in decoder_config
+        and decoder_config.get("in_channels") in (None, "auto")
+    ):
+        if hasattr(encoder, "latent_channels") and isinstance(
+            encoder.latent_channels, int
+        ):
+            decoder_config["in_channels"] = encoder.latent_channels
+        else:
+            msg = (
+                "decoder.in_channels is auto, but encoder latent_channels is not "
+                "available."
+            )
+            raise ValueError(msg)
+
     decoder = instantiate(decoder_config)
     checkpoint = config.get("autoencoder_checkpoint")
 
@@ -247,7 +337,9 @@ def setup_autoencoder_components(
 
 
 def setup_autoencoder_model(
-    config: DictConfig, stats: dict, datamodule: SpatioTemporalDataModule
+    config: DictConfig,
+    stats: dict,
+    datamodule: SpatioTemporalDataModule | TheWellDataModule,
 ) -> AE:
     """Build the full autoencoder model (encoder, decoder, loss)."""
     encoder, decoder = setup_autoencoder_components(config, stats)
@@ -316,6 +408,7 @@ def _build_processor(
         n_steps_output=proc_kwargs["n_steps_output"],
         n_channels_out=proc_kwargs["n_channels_out"],
         global_cond_channels=global_cond_channels,
+        spatial_resolution=proc_kwargs.get("spatial_resolution"),
     )
     target = processor_config.get("_target_") if processor_config else None
     filtered_kwargs = _filter_kwargs_for_target(target, proc_kwargs)
@@ -331,7 +424,9 @@ def _build_loss_func(model_config: DictConfig) -> nn.Module:
 
 
 def setup_processor_model(
-    config: DictConfig, stats: dict, datamodule: SpatioTemporalDataModule
+    config: DictConfig,
+    stats: dict,
+    datamodule: SpatioTemporalDataModule | TheWellDataModule,
 ) -> ProcessorModel:
     """Set up just the processor model for training on latents."""
     model_config = config.get("model", {})
@@ -343,6 +438,7 @@ def setup_processor_model(
         "n_steps_input": stats["n_steps_input"],
         "n_steps_output": stats["n_steps_output"],
         "n_channels_out": stats["channel_count"],
+        "spatial_resolution": tuple(stats["input_shape"][2:-1]),
     }
     processor = _build_processor(model_config, proc_kwargs)
     loss_func = _build_loss_func(model_config)
@@ -368,7 +464,9 @@ def setup_processor_model(
 
 
 def setup_epd_model(
-    config: DictConfig, stats: dict, datamodule: SpatioTemporalDataModule
+    config: DictConfig,
+    stats: dict,
+    datamodule: SpatioTemporalDataModule | TheWellDataModule,
 ) -> EncoderProcessorDecoder | EncoderProcessorDecoderEnsemble:
     """Orchestrate the creation of the full Encoder-Processor-Decoder model."""
     model_config = config.get("model", {})
@@ -379,7 +477,11 @@ def setup_epd_model(
     )
 
     data_config = config.get("datamodule", {})
-    if data_config.get("freeze_autoencoder"):
+    freeze_encoder_decoder = bool(
+        model_config.get("freeze_encoder_decoder", False)
+        or data_config.get("freeze_autoencoder", False)
+    )
+    if freeze_encoder_decoder:
         for p in encoder.parameters():
             p.requires_grad = False
         for p in decoder.parameters():
@@ -392,9 +494,14 @@ def setup_epd_model(
     log.info("Latent channel in count: %s", latent_channels)
     log.info("Latent channel out count: %s", latent_channels_out)
 
+    example_batch = stats["example_batch"]
+    if isinstance(example_batch, Batch):
+        module_device = _resolve_module_device(encoder, decoder)
+        example_batch = batch_to_device(example_batch, module_device)
+
     global_cond_channels = None
     if hasattr(encoder, "encode_cond"):
-        cond = encoder.encode_cond(stats["example_batch"])
+        cond = encoder.encode_cond(example_batch)
         if cond is not None:
             global_cond_channels = cond.shape[-1]
     log.info(
@@ -418,6 +525,11 @@ def setup_epd_model(
 
     steps_in = stats["n_steps_input"]
     steps_out = stats["n_steps_output"]
+    with torch.no_grad():
+        encoded_example, _ = encoder.encode_with_cond(example_batch)
+    latent_spatial_resolution = _infer_latent_spatial_resolution(
+        encoded_example, encoder
+    )
 
     # TODO: currently "out_channels" and "in_channels" are only used in the config for
     # ViT and FNO, while "n_channels_out" is used in flow_matching and diffusions
@@ -427,6 +539,7 @@ def setup_epd_model(
         "n_channels_out": latent_channels_out,
         "n_steps_input": steps_in,
         "n_steps_output": steps_out,
+        "spatial_resolution": latent_spatial_resolution,
     }
     processor = _build_processor(model_config, proc_kwargs, global_cond_channels)
     loss_func = _build_loss_func(model_config)
@@ -444,6 +557,7 @@ def setup_epd_model(
         ),
         "processor": processor,
         "train_in_latent_space": model_config.get("train_in_latent_space", False),
+        "freeze_encoder_decoder": freeze_encoder_decoder,
         "stride": data_config.get("stride", stats["n_steps_output"]),
         "optimizer_config": optimizer_config,
         "loss_func": loss_func,

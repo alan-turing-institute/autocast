@@ -1,0 +1,10 @@
+_target_: autocast.data.datamodule.SpatioTemporalDataModule
+data_path: "${oc.env:AUTOCAST_DATASETS,./datasets}/gpe_high_complexity_9bd3865"
+batch_size: 16
+n_steps_input: 1
+n_steps_output: 4
+stride: 1
+verbose: false
+use_normalization: false
+normalization_path: ${.data_path}/stats.yml
+num_workers: 0

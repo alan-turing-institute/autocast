@@ -1,0 +1,19 @@
+# @package _global_
+defaults:
+  - override /hydra/launcher: slurm
+  - _self_
+
+trainer:
+  max_time: "00:12:00:00"
+  accelerator: gpu
+  devices: 4
+  strategy: ddp
+  num_nodes: 1
+
+hydra:
+  launcher:
+    gpus_per_node: 4
+    tasks_per_node: 4
+    additional_parameters:
+      # Since 4 GPUs are on the same node, we don't need to allocate memory.
+      mem: 0

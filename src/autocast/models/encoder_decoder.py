@@ -65,7 +65,11 @@ class EncoderDecoder(DenormMixin, OptimizerMixin, L.LightningModule, MetricsMixi
         # y_true = self.denormalize_tensor(y_true)
         loss = self.loss_func(y_pred, y_true)
         self.log(
-            "train_loss", loss, prog_bar=True, batch_size=batch.input_fields.shape[0]
+            "train_loss",
+            loss,
+            prog_bar=True,
+            sync_dist=True,
+            batch_size=batch.input_fields.shape[0],
         )
         self._update_and_log_metrics(
             self, self.train_metrics, y_pred, y_true, batch.input_fields.shape[0]
@@ -80,7 +84,11 @@ class EncoderDecoder(DenormMixin, OptimizerMixin, L.LightningModule, MetricsMixi
             raise ValueError(msg)
         loss = self.loss_func(y_pred, y_true)
         self.log(
-            "val_loss", loss, prog_bar=True, batch_size=batch.input_fields.shape[0]
+            "val_loss",
+            loss,
+            prog_bar=True,
+            sync_dist=True,
+            batch_size=batch.input_fields.shape[0],
         )
         # Denormalize for metrics computation
         y_pred_denorm = self.denormalize_tensor(y_pred)
@@ -102,7 +110,11 @@ class EncoderDecoder(DenormMixin, OptimizerMixin, L.LightningModule, MetricsMixi
             raise ValueError(msg)
         loss = self.loss_func(y_pred, y_true)
         self.log(
-            "test_loss", loss, prog_bar=True, batch_size=batch.input_fields.shape[0]
+            "test_loss",
+            loss,
+            prog_bar=True,
+            sync_dist=True,
+            batch_size=batch.input_fields.shape[0],
         )
         # Denormalize for metrics computation
         y_pred_denorm = self.denormalize_tensor(y_pred)

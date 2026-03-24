@@ -1,11 +1,11 @@
+from autocast.types.collation import collate_batches, collate_encoded_samples
+
 from .batch import (
     Batch,
     BatchT,
     EncodedBatch,
     EncodedSample,
     Sample,
-    collate_batches,
-    collate_encoded_samples,
 )
 from .types import (
     ArrayLike,
