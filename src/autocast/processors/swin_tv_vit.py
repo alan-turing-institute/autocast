@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Literal, cast
+from typing import cast
 
 import torch
 from torch import nn
@@ -69,41 +69,6 @@ class _NoiseConditionedLayerNorm(nn.Module):
 # Main class
 # ---------------------------------------------------------------------------
 
-_SwinVariant = Literal["tiny", "small", "base", "nano"]
-
-# Configs taken from torchvision source.
-# embed_dim, depths, num_heads, window_size
-_SWIN_CONFIGS: dict[_SwinVariant, dict] = {
-    "tiny": {
-        "embed_dim": 96,
-        "depths": [2, 2, 6, 2],
-        "num_heads": [3, 6, 12, 24],
-        "window_size": [7, 7],
-        "stochastic_depth_prob": 0.2,
-    },
-    "small": {
-        "embed_dim": 96,
-        "depths": [2, 2, 18, 2],
-        "num_heads": [3, 6, 12, 24],
-        "window_size": [7, 7],
-        "stochastic_depth_prob": 0.3,
-    },
-    "base": {
-        "embed_dim": 128,
-        "depths": [2, 2, 18, 2],
-        "num_heads": [4, 8, 16, 32],
-        "window_size": [7, 7],
-        "stochastic_depth_prob": 0.5,
-    },
-    "nano": {
-        "embed_dim": 128,  # Hidden dim = 128
-        "depths": [6],  # 6 layers in ONE stage (stays at 128 dim)
-        "num_heads": [4],  # Single stage needs only one head count
-        "window_size": [7, 7],
-        "stochastic_depth_prob": 0.1,
-    },
-}
-
 
 class SwinTVProcessor(Processor[EncodedBatch]):
     """Dense Swin Transformer Processor.
@@ -124,9 +89,17 @@ class SwinTVProcessor(Processor[EncodedBatch]):
         Number of output channels.
     spatial_resolution:
         ``(H, W)`` of the input field. Both dimensions must be divisible by
-        the patch stride (default 4 for all Swin variants).
-    variant:
-        Swin model size: ``"tiny"``, ``"small"``, or ``"base"``.
+        the patch stride (default 4).
+    embed_dim:
+        Patch embedding channel dimension used by the Swin backbone.
+    depths:
+        Number of transformer blocks in each Swin stage.
+    num_heads:
+        Attention heads per stage. Must match ``depths`` length.
+    window_size:
+        Swin local attention window size.
+    stochastic_depth_prob:
+        Stochastic depth probability for the Swin backbone.
     patch_size:
         Patch size for the stem convolution. Default is ``4``, matching the
         original Swin paper.
@@ -142,7 +115,11 @@ class SwinTVProcessor(Processor[EncodedBatch]):
         in_channels: int,
         out_channels: int,
         spatial_resolution: Sequence[int],
-        variant: _SwinVariant = "tiny",
+        embed_dim: int = 96,
+        depths: Sequence[int] = (2, 2, 6, 2),
+        num_heads: Sequence[int] = (3, 6, 12, 24),
+        window_size: Sequence[int] = (7, 7),
+        stochastic_depth_prob: float = 0.2,
         patch_size: int = 4,
         decoder_hidden_channels: int | None = None,
         loss_func: nn.Module | None = None,
@@ -162,9 +139,14 @@ class SwinTVProcessor(Processor[EncodedBatch]):
                 f"patch_size={patch_size}."
             )
 
-        cfg = _SWIN_CONFIGS[variant]
-        embed_dim: int = cfg["embed_dim"]
-        depths: list[int] = cfg["depths"]
+        depths = list(depths)
+        num_heads = list(num_heads)
+        window_size = list(window_size)
+        if len(depths) != len(num_heads):
+            raise ValueError(
+                "`depths` and `num_heads` must have the same length "
+                f"(got {len(depths)} and {len(num_heads)})."
+            )
 
         # ------------------------------------------------------------------
         # Build the torchvision SwinTransformer backbone.
@@ -175,12 +157,12 @@ class SwinTVProcessor(Processor[EncodedBatch]):
             patch_size=[patch_size, patch_size],
             embed_dim=embed_dim,
             depths=depths,
-            num_heads=cfg["num_heads"],
-            window_size=cfg["window_size"],
+            num_heads=num_heads,
+            window_size=window_size,
             mlp_ratio=4.0,
             dropout=0.0,
             attention_dropout=0.0,
-            stochastic_depth_prob=cfg["stochastic_depth_prob"],
+            stochastic_depth_prob=stochastic_depth_prob,
             num_classes=0,  # removes the head → forward returns (B, C) pooled
         )
 
