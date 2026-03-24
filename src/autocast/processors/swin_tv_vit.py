@@ -19,27 +19,66 @@ from autocast.types import EncodedBatch, Tensor
 def _make_decoder(
     in_channels: int,
     out_channels: int,
-    total_stride: int,
-    hidden_channels: int,
+    hidden_dim: int,
+    decoder_depths: Sequence[int],
+    decoder_num_heads: Sequence[int],
+    patch_size: int,
+    groups: int,
 ) -> nn.Module:
-    """Build a transposed-convolution decoder that upsamples by ``total_stride``.
+    """Build a hierarchical decoder compatible with Swin encoder stage layout.
 
-    The decoder uses a sequence of 2x upsample steps followed by a final
-    1x1 projection to ``out_channels``.
+    Decoder stages are parameterized by ``decoder_depths`` and perform
+    stage-wise feature refinement plus 2x upsampling between stages.
+    A final transposed projection with ``patch_size`` restores full resolution.
     """
+    if len(decoder_depths) != len(decoder_num_heads):
+        raise ValueError(
+            "`decoder_depths` and `decoder_num_heads` must have the same length "
+            f"(got {len(decoder_depths)} and {len(decoder_num_heads)})."
+        )
+
+    n_stages = len(decoder_depths)
+    stage_channels = [hidden_dim * (2 ** (n_stages - i - 1)) for i in range(n_stages)]
+
+    def _group_count(channels: int) -> int:
+        grp = min(groups, channels)
+        while grp > 1 and channels % grp != 0:
+            grp -= 1
+        return max(grp, 1)
+
     layers: list[nn.Module] = []
     c = in_channels
-    stride = total_stride
-    while stride > 1:
-        step = min(stride, 2)  # upsample 2x at a time
-        c_next = max(hidden_channels, out_channels)
+    for i, depth in enumerate(decoder_depths):
+        c_stage = stage_channels[i]
+        for _ in range(depth):
+            layers += [
+                nn.Conv2d(c, c_stage, kernel_size=3, padding=1, bias=False),
+                nn.GroupNorm(_group_count(c_stage), c_stage),
+                nn.GELU(),
+            ]
+            c = c_stage
+
+        if i < n_stages - 1:
+            c_next = stage_channels[i + 1]
+            layers += [
+                nn.ConvTranspose2d(c, c_next, kernel_size=2, stride=2, bias=False),
+                nn.GroupNorm(_group_count(c_next), c_next),
+                nn.GELU(),
+            ]
+            c = c_next
+
+    if patch_size > 1:
         layers += [
-            nn.ConvTranspose2d(c, c_next, kernel_size=step, stride=step, bias=False),
-            nn.GroupNorm(max(1, c_next // 16), c_next),
+            nn.ConvTranspose2d(
+                c,
+                c,
+                kernel_size=patch_size,
+                stride=patch_size,
+                bias=False,
+            ),
+            nn.GroupNorm(_group_count(c), c),
             nn.GELU(),
         ]
-        c = c_next
-        stride //= step
     layers.append(nn.Conv2d(c, out_channels, kernel_size=1, bias=True))
     return nn.Sequential(*layers)
 
@@ -47,7 +86,12 @@ def _make_decoder(
 class _NoiseConditionedLayerNorm(nn.Module):
     """Adapter to use ConditionalLayerNorm in modules expecting LayerNorm(x)."""
 
-    def __init__(self, base_norm: nn.LayerNorm, n_noise_channels: int) -> None:
+    def __init__(
+        self,
+        base_norm: nn.LayerNorm,
+        n_noise_channels: int,
+        zero_init: bool = True,
+    ) -> None:
         super().__init__()
         self.norm = ConditionalLayerNorm(
             normalized_shape=torch.Size(base_norm.normalized_shape),
@@ -56,6 +100,10 @@ class _NoiseConditionedLayerNorm(nn.Module):
             elementwise_affine=False,
             bias=base_norm.bias is not None,
         )
+        if zero_init and self.norm.gamma is not None and self.norm.beta is not None:
+            nn.init.zeros_(self.norm.gamma.weight)
+            nn.init.ones_(self.norm.gamma.bias)
+            nn.init.zeros_(self.norm.beta.weight)
         self._x_noise: Tensor | None = None
 
     def set_noise(self, x_noise: Tensor | None) -> None:
@@ -90,22 +138,29 @@ class SwinTVProcessor(Processor[EncodedBatch]):
     spatial_resolution:
         ``(H, W)`` of the input field. Both dimensions must be divisible by
         the patch stride (default 4).
-    embed_dim:
+    hidden_dim:
         Patch embedding channel dimension used by the Swin backbone.
-    depths:
+    encoder_depths:
         Number of transformer blocks in each Swin stage.
-    num_heads:
+    encoder_num_heads:
         Attention heads per stage. Must match ``depths`` length.
+    decoder_depths:
+        Number of conv refinement blocks in each decoder stage.
+    decoder_num_heads:
+        Decoder attention-head placeholder for config compatibility.
     window_size:
         Swin local attention window size.
-    stochastic_depth_prob:
+    drop_path:
         Stochastic depth probability for the Swin backbone.
     patch_size:
         Patch size for the stem convolution. Default is ``4``, matching the
         original Swin paper.
-    decoder_hidden_channels:
-        Number of intermediate channels in the decoder. Defaults to the
-        backbone's final-stage channel count.
+    groups:
+        Group count used in decoder GroupNorm layers.
+    use_ada_ln:
+        Enables noise-conditioned LayerNorm replacement in Swin blocks.
+    zero_init:
+        Initializes conditional affine projections to identity transform.
     loss_func:
         Loss function. Defaults to ``nn.MSELoss()``.
     """
@@ -115,15 +170,19 @@ class SwinTVProcessor(Processor[EncodedBatch]):
         in_channels: int,
         out_channels: int,
         spatial_resolution: Sequence[int],
-        embed_dim: int = 96,
-        depths: Sequence[int] = (2, 2, 6, 2),
-        num_heads: Sequence[int] = (3, 6, 12, 24),
-        window_size: Sequence[int] = (7, 7),
-        stochastic_depth_prob: float = 0.2,
+        hidden_dim: int = 64,
+        encoder_depths: Sequence[int] = (2, 2, 2),
+        encoder_num_heads: Sequence[int] = (3, 6, 12),
+        decoder_depths: Sequence[int] = (2, 2, 2),
+        decoder_num_heads: Sequence[int] = (12, 6, 3),
         patch_size: int = 4,
-        decoder_hidden_channels: int | None = None,
+        window_size: Sequence[int] = (4, 4, 4),
+        drop_path: float = 0.0,
+        groups: int = 12,
         loss_func: nn.Module | None = None,
         n_noise_channels: int | None = None,
+        use_ada_ln: bool = True,
+        zero_init: bool = True,
     ) -> None:
         super().__init__()
 
@@ -139,13 +198,25 @@ class SwinTVProcessor(Processor[EncodedBatch]):
                 f"patch_size={patch_size}."
             )
 
-        depths = list(depths)
-        num_heads = list(num_heads)
+        encoder_depths = list(encoder_depths)
+        encoder_num_heads = list(encoder_num_heads)
+        decoder_depths = list(decoder_depths)
+        decoder_num_heads = list(decoder_num_heads)
         window_size = list(window_size)
-        if len(depths) != len(num_heads):
+        if len(encoder_depths) != len(encoder_num_heads):
             raise ValueError(
-                "`depths` and `num_heads` must have the same length "
-                f"(got {len(depths)} and {len(num_heads)})."
+                "`encoder_depths` and `encoder_num_heads` must have the same "
+                f"length (got {len(encoder_depths)} and {len(encoder_num_heads)})."
+            )
+        if len(decoder_depths) != len(decoder_num_heads):
+            raise ValueError(
+                "`decoder_depths` and `decoder_num_heads` must have the same "
+                f"length (got {len(decoder_depths)} and {len(decoder_num_heads)})."
+            )
+        if len(encoder_depths) != len(decoder_depths):
+            raise ValueError(
+                "`encoder_depths` and `decoder_depths` must have the same "
+                f"length (got {len(encoder_depths)} and {len(decoder_depths)})."
             )
 
         # ------------------------------------------------------------------
@@ -155,14 +226,14 @@ class SwinTVProcessor(Processor[EncodedBatch]):
         # ------------------------------------------------------------------
         self.backbone = SwinTransformer(
             patch_size=[patch_size, patch_size],
-            embed_dim=embed_dim,
-            depths=depths,
-            num_heads=num_heads,
-            window_size=window_size,
+            embed_dim=hidden_dim,
+            depths=encoder_depths,
+            num_heads=encoder_num_heads,
+            window_size=window_size[:2],
             mlp_ratio=4.0,
             dropout=0.0,
             attention_dropout=0.0,
-            stochastic_depth_prob=stochastic_depth_prob,
+            stochastic_depth_prob=drop_path,
             num_classes=0,  # removes the head → forward returns (B, C) pooled
         )
 
@@ -190,7 +261,7 @@ class SwinTVProcessor(Processor[EncodedBatch]):
         )
 
         self._conditioned_norms: list[_NoiseConditionedLayerNorm] = []
-        if n_noise_channels is not None:
+        if n_noise_channels is not None and use_ada_ln:
             for layer in self.backbone.features:
                 if not isinstance(layer, nn.Sequential):
                     continue
@@ -202,13 +273,13 @@ class SwinTVProcessor(Processor[EncodedBatch]):
                     norm2 = block.norm2
                     if isinstance(norm1, nn.LayerNorm):
                         conditioned_norm1 = _NoiseConditionedLayerNorm(
-                            norm1, n_noise_channels
+                            norm1, n_noise_channels, zero_init=zero_init
                         )
                         block.norm1 = conditioned_norm1
                         self._conditioned_norms.append(conditioned_norm1)
                     if isinstance(norm2, nn.LayerNorm):
                         conditioned_norm2 = _NoiseConditionedLayerNorm(
-                            norm2, n_noise_channels
+                            norm2, n_noise_channels, zero_init=zero_init
                         )
                         block.norm2 = conditioned_norm2
                         self._conditioned_norms.append(conditioned_norm2)
@@ -217,29 +288,23 @@ class SwinTVProcessor(Processor[EncodedBatch]):
         # Determine the output channel count of the backbone.
         # After 4 stages the channel count is embed_dim * 2^(n_stages-1).
         # ------------------------------------------------------------------
-        n_stages = len(depths)
-        backbone_out_channels = embed_dim * (2 ** (n_stages - 1))
-
-        # ------------------------------------------------------------------
-        # Build decoder.
-        # The backbone reduces spatial resolution by patch_size (via the stem)
-        # and by 2x for each merging step between stages (n_stages - 1 times).
-        # Total spatial downsampling = patch_size * 2^(n_stages-1).
-        # ------------------------------------------------------------------
-        total_stride = patch_size * (2 ** (n_stages - 1))
-        dec_hidden = decoder_hidden_channels or backbone_out_channels
+        n_stages = len(encoder_depths)
+        backbone_out_channels = hidden_dim * (2 ** (n_stages - 1))
 
         self.decoder = _make_decoder(
             in_channels=backbone_out_channels,
             out_channels=out_channels,
-            total_stride=total_stride,
-            hidden_channels=dec_hidden,
+            hidden_dim=hidden_dim,
+            decoder_depths=decoder_depths,
+            decoder_num_heads=decoder_num_heads,
+            patch_size=patch_size,
+            groups=groups,
         )
 
         self.loss_func = loss_func or nn.MSELoss()
         self.n_noise_channels = n_noise_channels
         self._backbone_out_channels = backbone_out_channels
-        self._total_stride = total_stride
+        self._total_stride = patch_size * (2 ** (n_stages - 1))
 
     # ------------------------------------------------------------------
     # Internal helpers
