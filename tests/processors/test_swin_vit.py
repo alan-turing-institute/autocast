@@ -24,6 +24,7 @@ def test_swin_processor_noise_conditioning_changes_outputs():
         out_channels=3,
         spatial_resolution=(64, 64),
         n_noise_channels=16,
+        zero_init=False,
     )
 
     x = torch.randn(2, 3, 64, 64)

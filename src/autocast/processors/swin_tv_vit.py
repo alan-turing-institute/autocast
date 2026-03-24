@@ -165,18 +165,18 @@ class SwinTVProcessor(Processor[EncodedBatch]):
         Loss function. Defaults to ``nn.MSELoss()``.
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0912, PLR0915
         self,
         in_channels: int,
         out_channels: int,
         spatial_resolution: Sequence[int],
-        hidden_dim: int = 64,
-        encoder_depths: Sequence[int] = (2, 2, 2),
-        encoder_num_heads: Sequence[int] = (3, 6, 12),
-        decoder_depths: Sequence[int] = (2, 2, 2),
-        decoder_num_heads: Sequence[int] = (12, 6, 3),
+        hidden_dim: int = 96,
+        encoder_depths: Sequence[int] = (2, 2, 6, 2),
+        encoder_num_heads: Sequence[int] = (3, 6, 12, 24),
+        decoder_depths: Sequence[int] = (2, 6, 2, 2),
+        decoder_num_heads: Sequence[int] = (24, 12, 6, 3),
         patch_size: int = 4,
-        window_size: Sequence[int] = (4, 4, 4),
+        window_size: Sequence[int] = (7, 7),
         drop_path: float = 0.0,
         groups: int = 12,
         loss_func: nn.Module | None = None,
@@ -203,6 +203,17 @@ class SwinTVProcessor(Processor[EncodedBatch]):
         decoder_depths = list(decoder_depths)
         decoder_num_heads = list(decoder_num_heads)
         window_size = list(window_size)
+
+        if len(window_size) != 2:
+            raise ValueError(
+                "`window_size` must have exactly 2 values for 2-D Swin "
+                f"(got {window_size})."
+            )
+        if any(ws <= 0 for ws in window_size):
+            raise ValueError(
+                f"`window_size` values must be positive (got {window_size})."
+            )
+
         if len(encoder_depths) != len(encoder_num_heads):
             raise ValueError(
                 "`encoder_depths` and `encoder_num_heads` must have the same "
@@ -218,6 +229,13 @@ class SwinTVProcessor(Processor[EncodedBatch]):
                 "`encoder_depths` and `decoder_depths` must have the same "
                 f"length (got {len(encoder_depths)} and {len(decoder_depths)})."
             )
+        for i, heads in enumerate(encoder_num_heads):
+            stage_dim = hidden_dim * (2**i)
+            if stage_dim % heads != 0:
+                raise ValueError(
+                    "Each encoder stage dim must be divisible by its head count "
+                    f"(stage={i}, dim={stage_dim}, heads={heads})."
+                )
 
         # ------------------------------------------------------------------
         # Build the torchvision SwinTransformer backbone.
@@ -229,7 +247,7 @@ class SwinTVProcessor(Processor[EncodedBatch]):
             embed_dim=hidden_dim,
             depths=encoder_depths,
             num_heads=encoder_num_heads,
-            window_size=window_size[:2],
+            window_size=window_size,
             mlp_ratio=4.0,
             dropout=0.0,
             attention_dropout=0.0,
