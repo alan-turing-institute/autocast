@@ -161,20 +161,20 @@ class TemporalBackboneBase(nn.Module, ABC):
         )
 
     def apply_temporal_processing(
-        self, x_t: TensorBTSC, cond: TensorBTSC
-    ) -> tuple[TensorBTSC, TensorBTSC]:
+        self, x_t: TensorBTSC, cond: TensorBTSC | None
+    ) -> tuple[TensorBTSC, TensorBTSC | None]:
         """Apply temporal processing to input and conditioning.
 
         Args:
             x_t: Input tensor (B, T, W, H, C)
-            cond: Conditioning tensor (B, T_cond, W, H, C)
+            cond: Conditioning tensor (B, T_cond, W, H, C), or None
 
         Returns
         -------
             Tuple of (processed_input, processed_cond)
         """
         x_t_temporal = self.temporal_proc_input(x_t)
-        cond_temporal = self.temporal_proc_cond(cond)
+        cond_temporal = self.temporal_proc_cond(cond) if cond is not None else None
         return x_t_temporal, cond_temporal
 
     @abstractmethod
@@ -209,7 +209,9 @@ class TemporalBackboneBase(nn.Module, ABC):
 
         Args:
             x_t: Noisy data (B, T, W, H, C) - spatial dims before channels
-            t: Diffusion time steps (B,)
+            t: Diffusion modulation input. Either:
+                - scalar timesteps with shape (B,), which are embedded via SineEncoding
+                - precomputed modulation vectors with shape (B, D), where D=mod_features
             cond: Conditioning input (B, T_cond, W, H, C)
             global_cond: Optional global conditioning/modulation vector (B, D)
 
@@ -217,10 +219,11 @@ class TemporalBackboneBase(nn.Module, ABC):
         -------
             Denoised output (B, T, W, H, C)
         """
-        _, T_out, _, _, C = x_t.shape
-
-        # Embed diffusion timestep
-        t_emb = self.time_embedding(t)
+        # Accept either scalar timesteps (B,) or precomputed modulation vectors (B, D).
+        if t.ndim == 2 and t.shape[-1] == self.mod_features:
+            t_emb = t
+        else:
+            t_emb = self.time_embedding(t)
 
         # Combine with global conditioning embedding if provided
         if self.global_cond_embedding is not None:
@@ -234,10 +237,20 @@ class TemporalBackboneBase(nn.Module, ABC):
 
         # Convert to channels-first format: (B, T, W, H, C) -> (B, T*C, W, H)
         x_t_cf = rearrange(x_t_temporal, "b t w h c -> b (t c) w h")
-        x_cond_cf = rearrange(cond_temporal, "b t w h c -> b (t c) w h")
+        x_cond_cf = (
+            rearrange(cond_temporal, "b t w h c -> b (t c) w h")
+            if cond_temporal is not None
+            else None
+        )
 
         # Backbone forward: (B, T*C, W, H) -> (B, T*out_channels, W, H)
         output = self.backbone(x=x_t_cf, mod=t_emb, cond=x_cond_cf)
 
-        # Convert back to channels-last format: (B, T*C, W, H) -> (B, T, W, H, C)
-        return rearrange(output, "b (t c) w h -> b t w h c", t=T_out, c=C)
+        # Convert back to channels-last format:
+        # (B, T*self.out_channels, W, H) -> (B, T, W, H, self.out_channels)
+        return rearrange(
+            output,
+            "b (t c) w h -> b t w h c",
+            t=self.n_steps_output,
+            c=self.out_channels,
+        )

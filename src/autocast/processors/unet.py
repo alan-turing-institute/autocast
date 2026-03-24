@@ -336,7 +336,7 @@ class AzulaUNetProcessor(Processor[EncodedBatch]):
         Default is [2, 2, 2, 2].
     norm : str, optional
         Normalization type: 'batch', 'group', 'layer', or 'rms'.
-        Default is 'group'.
+        Default is 'layer'.
     groups : int, optional
         Number of groups for GroupNorm. Default is 8.
     ffn_factor : int, optional
@@ -360,7 +360,7 @@ class AzulaUNetProcessor(Processor[EncodedBatch]):
         out_channels: int,
         hid_channels: Sequence[int] = (64, 128, 256, 512),
         hid_blocks: Sequence[int] = (2, 2, 2, 2),
-        norm: str = "group",
+        norm: str = "layer",
         groups: int = 8,
         ffn_factor: int = 2,
         dropout: float = 0.0,
