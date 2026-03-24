@@ -8,7 +8,6 @@ def test_swin_processor_forward_and_map_shape():
         in_channels=3,
         out_channels=5,
         spatial_resolution=(64, 64),
-        variant="tiny",
     )
 
     x = torch.randn(2, 3, 64, 64)
@@ -24,7 +23,6 @@ def test_swin_processor_noise_conditioning_changes_outputs():
         in_channels=3,
         out_channels=3,
         spatial_resolution=(64, 64),
-        variant="tiny",
         n_noise_channels=16,
     )
 
