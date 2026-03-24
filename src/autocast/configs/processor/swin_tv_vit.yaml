@@ -9,4 +9,5 @@ decoder_depths: [2, 6, 2, 2]
 decoder_num_heads: [24, 12, 6, 3]
 patch_size: 4
 window_size: [7, 7]
-n_noise_channels: 256
+# n_noise_channels: 256
+n_noise_channels: null
