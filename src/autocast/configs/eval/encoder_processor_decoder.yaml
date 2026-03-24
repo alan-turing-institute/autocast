@@ -27,7 +27,6 @@ metrics:
   - fcrps
   - afcrps
   - energy
-  - variogram
   - ssr
 
 max_rollout_steps: 25

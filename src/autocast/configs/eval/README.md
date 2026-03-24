@@ -46,7 +46,8 @@ All eval configs support these parameters:
 - `checkpoint`: Path to model checkpoint (required for evaluation)
 - `metrics`: List of metrics to compute (default includes mse/mae/rmse/vrmse,
   power spectrum scores `psrmse*`, cross-correlation spectrum scores `pscc*`,
-  and ensemble scores `crps`, `fcrps`, `afcrps`, `energy`, `variogram`, `ssr`)
+  and ensemble scores `crps`, `fcrps`, `afcrps`, `energy`, `ssr`; `variogram`
+  remains available via explicit opt-in)
 - `csv_path`: Custom path for metrics CSV (default: work_dir/evaluation_metrics.csv)
 - `video_dir`: Custom directory for rollout videos (default: work_dir/videos)
 - `batch_indices`: List of rollout sample indices to visualize (resolved across

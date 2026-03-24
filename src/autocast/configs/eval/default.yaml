@@ -22,7 +22,6 @@ metrics:
   - fcrps
   - afcrps
   - energy
-  - variogram
   - ssr
 
 # Output paths (default to work_dir if not specified)

@@ -121,7 +121,6 @@ DEFAULT_EVAL_METRICS = [
     "fcrps",
     "afcrps",
     "energy",
-    "variogram",
     "ssr",
 ]
 
