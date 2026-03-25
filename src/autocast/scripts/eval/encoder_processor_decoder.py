@@ -454,7 +454,30 @@ def _write_csv(rows: list[dict[str, float | str]], csv_path: Path):
         log.warning("No evaluation rows to write; skipping CSV generation.")
         return
     csv_path.parent.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame(rows).to_csv(csv_path, index=False)
+    serializable_rows = [_normalize_row_values_for_csv(row) for row in rows]
+    pd.DataFrame(serializable_rows).to_csv(csv_path, index=False)
+
+
+def _to_csv_scalar(value: Any) -> Any:
+    """Convert common tensor/numpy-like scalar values to plain Python scalars."""
+    if isinstance(value, torch.Tensor):
+        if value.numel() == 1:
+            return value.detach().cpu().item()
+        return value.detach().cpu().tolist()
+
+    item_method = getattr(value, "item", None)
+    if callable(item_method):
+        try:
+            return item_method()
+        except Exception:
+            pass
+
+    return value
+
+
+def _normalize_row_values_for_csv(row: Mapping[str, Any]) -> dict[str, Any]:
+    """Normalize all row values so pandas writes clean scalar values to CSV."""
+    return {str(key): _to_csv_scalar(value) for key, value in row.items()}
 
 
 def _normalize_per_batch_rows(rows: Any) -> list[dict[str, float | str]]:
@@ -465,7 +488,7 @@ def _normalize_per_batch_rows(rows: Any) -> list[dict[str, float | str]]:
         if item is None:
             return
         if isinstance(item, Mapping):
-            normalized.append(dict(item))
+            normalized.append(_normalize_row_values_for_csv(item))
             return
         if isinstance(item, (list, tuple)):
             for sub_item in item:
