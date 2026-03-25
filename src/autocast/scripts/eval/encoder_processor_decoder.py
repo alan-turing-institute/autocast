@@ -457,6 +457,30 @@ def _write_csv(rows: list[dict[str, float | str]], csv_path: Path):
     pd.DataFrame(rows).to_csv(csv_path, index=False)
 
 
+def _normalize_per_batch_rows(rows: Any) -> list[dict[str, float | str]]:
+    """Flatten gathered per-batch rows and keep only mapping-like row records."""
+    normalized: list[dict[str, float | str]] = []
+
+    def _visit(item: Any) -> None:
+        if item is None:
+            return
+        if isinstance(item, Mapping):
+            normalized.append(dict(item))
+            return
+        if isinstance(item, (list, tuple)):
+            for sub_item in item:
+                _visit(sub_item)
+            return
+
+        log.warning(
+            "Skipping unexpected per-batch row type %s while normalizing rows.",
+            type(item),
+        )
+
+    _visit(rows)
+    return normalized
+
+
 def _is_metadata_row(row: Mapping[str, float | str]) -> bool:
     return row.get("window") == "meta" or "category" in row
 
@@ -468,10 +492,13 @@ def _split_metric_and_metadata_rows(
     metadata_rows: list[dict[str, float | str]] = []
 
     for row in rows:
+        if not isinstance(row, Mapping):
+            log.warning("Skipping malformed evaluation row with type %s", type(row))
+            continue
         if _is_metadata_row(row):
-            metadata_rows.append(row)
+            metadata_rows.append(dict(row))
         else:
-            metric_rows.append(row)
+            metric_rows.append(dict(row))
 
     return metric_rows, metadata_rows
 
@@ -896,7 +923,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
 
     if test_per_batch_rows:
         gathered = fabric.all_gather(test_per_batch_rows)
-        test_per_batch_rows = [r for sublist in gathered for r in sublist]
+        test_per_batch_rows = _normalize_per_batch_rows(gathered)
 
     # Process and save test metrics
     test_rows = _process_metrics_results(
@@ -1049,7 +1076,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
             )
             if rollout_per_batch_rows:
                 gathered = fabric.all_gather(rollout_per_batch_rows)
-                rollout_per_batch_rows = [r for sublist in gathered for r in sublist]
+                rollout_per_batch_rows = _normalize_per_batch_rows(gathered)
 
             # Process and log results
             rollout_csv_rows = _process_metrics_results(
