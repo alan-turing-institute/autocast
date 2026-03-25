@@ -139,6 +139,17 @@ def _resolve_video_dir(eval_cfg: DictConfig, work_dir: Path) -> Path:
     return (work_dir / "videos").resolve()
 
 
+def _unwrap_module(module: Any) -> Any:
+    """Return the underlying model when wrapped by Fabric/DDP-style wrappers."""
+    unwrapped = module
+    while hasattr(unwrapped, "module"):
+        next_module = unwrapped.module
+        if next_module is None or next_module is unwrapped:
+            break
+        unwrapped = next_module
+    return unwrapped
+
+
 def _limit_batches(dataloader, max_batches: int | None):
     if max_batches is None or max_batches <= 0:
         return dataloader
@@ -984,7 +995,13 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
 
         if compute_rollout_coverage and n_members and n_members > 1:
             log.info("Adding rollout coverage to metrics...")
-            assert isinstance(model, EncoderProcessorDecoderEnsemble)
+            unwrapped_model = _unwrap_module(model)
+            if not isinstance(unwrapped_model, EncoderProcessorDecoderEnsemble):
+                msg = (
+                    "Rollout coverage requires an ensemble model, but got "
+                    f"{type(unwrapped_model)!r}."
+                )
+                raise TypeError(msg)
 
             def coverage_factory() -> Metric:
                 return MultiCoverage(
