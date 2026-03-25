@@ -118,7 +118,13 @@ def test_split_metric_and_metadata_rows_skips_malformed_rows():
 
 def test_normalize_per_batch_rows_flattens_nested_mappings_only():
     gathered = [
-        [{"window": "all", "batch_idx": 0, "mse": 0.1}],
+        [
+            {
+                "window": "all",
+                "batch_idx": torch.tensor(0, dtype=torch.int32),
+                "mse": torch.tensor(0.1),
+            }
+        ],
         (
             [{"window": "0-1", "batch_idx": 1, "rmse": 0.2}],
             "ignore-me",
@@ -129,7 +135,7 @@ def test_normalize_per_batch_rows_flattens_nested_mappings_only():
     normalized = _normalize_per_batch_rows(gathered)
 
     assert normalized == [
-        {"window": "all", "batch_idx": 0, "mse": 0.1},
+        {"window": "all", "batch_idx": 0, "mse": pytest.approx(0.1)},
         {"window": "0-1", "batch_idx": 1, "rmse": 0.2},
     ]
 
