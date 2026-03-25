@@ -8,14 +8,17 @@ import torch
 from omegaconf import OmegaConf
 
 from autocast.scripts.eval.encoder_processor_decoder import (
+    _build_per_timestep_metric_factory,
     _normalize_per_batch_rows,
     _render_rollouts,
     _resolve_rollout_batch_limit,
     _resolve_rollout_channel_names,
     _resolve_rollout_timestep_limit,
+    _should_skip_metric,
     _split_metric_and_metadata_rows,
     _training_runtime_rows,
 )
+from autocast.metrics.ensemble import AlphaFairCRPS, CRPS, SpreadSkillRatio
 
 
 def test_resolve_rollout_batch_limit_falls_back_to_test_limit_when_null():
@@ -138,6 +141,27 @@ def test_normalize_per_batch_rows_flattens_nested_mappings_only():
         {"window": "all", "batch_idx": 0, "mse": pytest.approx(0.1)},
         {"window": "0-1", "batch_idx": 1, "rmse": 0.2},
     ]
+
+
+def test_build_per_timestep_metric_factory_sets_reduce_all_false_for_crps():
+    metric = _build_per_timestep_metric_factory(CRPS)()
+    assert getattr(metric, "reduce_all", None) is False
+
+
+def test_build_per_timestep_metric_factory_sets_reduce_all_false_for_afcrps():
+    metric = _build_per_timestep_metric_factory(AlphaFairCRPS)()
+    assert getattr(metric, "reduce_all", None) is False
+
+
+def test_build_per_timestep_metric_factory_sets_reduce_all_false_for_ssr():
+    metric = _build_per_timestep_metric_factory(SpreadSkillRatio)()
+    assert getattr(metric, "reduce_all", None) is False
+
+
+def test_should_skip_metric_variogram_only():
+    assert _should_skip_metric("variogram") is True
+    assert _should_skip_metric("crps") is False
+    assert _should_skip_metric("ssr") is False
 
 
 def test_resolve_rollout_channel_names_from_norm_with_output_selection():
