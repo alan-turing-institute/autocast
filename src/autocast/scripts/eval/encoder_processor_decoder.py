@@ -124,6 +124,8 @@ DEFAULT_EVAL_METRICS = [
     "ssr",
 ]
 
+MEMORY_INTENSIVE_METRICS = {"variogram"}
+
 
 def _resolve_csv_path(eval_cfg: DictConfig, work_dir: Path) -> Path:
     csv_path = eval_cfg.get("csv_path")
@@ -478,6 +480,33 @@ def _to_csv_scalar(value: Any) -> Any:
 def _normalize_row_values_for_csv(row: Mapping[str, Any]) -> dict[str, Any]:
     """Normalize all row values so pandas writes clean scalar values to CSV."""
     return {str(key): _to_csv_scalar(value) for key, value in row.items()}
+
+
+def _build_per_timestep_metric_factory(
+    metric_cls: type[Metric],
+) -> Callable[[], Metric]:
+    """Build a metric factory configured for per-timestep outputs.
+
+    Some metrics expose ``reduce_all`` in ``__init__``, while others hardcode
+    constructor args. We first try ``reduce_all=False`` and then fall back to
+    setting ``metric.reduce_all`` directly when available.
+    """
+
+    def _factory(cls: type[Metric] = metric_cls) -> Metric:
+        try:
+            return cls(reduce_all=False)
+        except TypeError:
+            metric = cls()
+            if hasattr(metric, "reduce_all"):
+                metric.reduce_all = False
+            return metric
+
+    return _factory
+
+
+def _should_skip_metric(name: str) -> bool:
+    """Return True when a metric should be excluded due to memory cost."""
+    return name in MEMORY_INTENSIVE_METRICS
 
 
 def _normalize_per_batch_rows(rows: Any) -> list[dict[str, float | str]]:
@@ -910,6 +939,9 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
         metric_registry.update(AVAILABLE_METRICS_ENSEMBLE)
 
     for name in metrics_list:
+        if _should_skip_metric(name):
+            log.info("Skipping metric '%s' due to memory cost.", name)
+            continue
         if name in AVAILABLE_METRICS:
             test_metric_fns[name] = AVAILABLE_METRICS[name]
         elif name in AVAILABLE_METRICS_ENSEMBLE:
@@ -1028,6 +1060,9 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
 
         if compute_rollout_metrics:
             for name in metrics_list:
+                if _should_skip_metric(name):
+                    log.info("Skipping rollout metric '%s' due to memory cost.", name)
+                    continue
                 if name in AVAILABLE_METRICS:
                     rollout_metric_fns[name] = AVAILABLE_METRICS[name]
                 elif name in AVAILABLE_METRICS_ENSEMBLE:
@@ -1128,16 +1163,22 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
             # Per-timestep, per-channel rollout metrics (rows=metrics, cols=timestep)
             per_timestep_metric_fns: dict[str, Callable[[], Metric]] = {}
             for name, metric_factory in rollout_metric_fns.items():
+                if _should_skip_metric(name):
+                    log.info(
+                        "Skipping rollout per-timestep metric '%s' due to memory cost.",
+                        name,
+                    )
+                    continue
                 if name == "coverage":
                     per_timestep_metric_fns[name] = metric_factory
                 else:
                     metric_cls = AVAILABLE_METRICS.get(name)
+                    if metric_cls is None:
+                        metric_cls = AVAILABLE_METRICS_ENSEMBLE.get(name)
                     if metric_cls is not None:
-
-                        def _factory(cls: type = metric_cls) -> Metric:
-                            return cls(reduce_all=False)
-
-                        per_timestep_metric_fns[name] = _factory
+                        per_timestep_metric_fns[name] = (
+                            _build_per_timestep_metric_factory(metric_cls)
+                        )
 
             if per_timestep_metric_fns:
                 max_rollout_timesteps = _resolve_rollout_timestep_limit(
