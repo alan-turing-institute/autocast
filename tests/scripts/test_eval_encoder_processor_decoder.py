@@ -8,6 +8,7 @@ import torch
 from omegaconf import OmegaConf
 
 from autocast.scripts.eval.encoder_processor_decoder import (
+    _normalize_per_batch_rows,
     _render_rollouts,
     _resolve_rollout_batch_limit,
     _resolve_rollout_channel_names,
@@ -85,6 +86,51 @@ def test_split_metric_and_metadata_rows_separates_meta_rows():
             "metric": "total_s",
             "value": 1.2,
         }
+    ]
+
+
+def test_split_metric_and_metadata_rows_skips_malformed_rows():
+    rows = [
+        {"window": "all", "batch_idx": "all", "mse": 0.1},
+        "bad-row",
+        {
+            "window": "meta",
+            "batch_idx": "all",
+            "category": "runtime_eval",
+            "metric": "total_s",
+            "value": 1.2,
+        },
+    ]
+
+    metric_rows, metadata_rows = _split_metric_and_metadata_rows(cast(Any, rows))
+
+    assert metric_rows == [{"window": "all", "batch_idx": "all", "mse": 0.1}]
+    assert metadata_rows == [
+        {
+            "window": "meta",
+            "batch_idx": "all",
+            "category": "runtime_eval",
+            "metric": "total_s",
+            "value": 1.2,
+        }
+    ]
+
+
+def test_normalize_per_batch_rows_flattens_nested_mappings_only():
+    gathered = [
+        [{"window": "all", "batch_idx": 0, "mse": 0.1}],
+        (
+            [{"window": "0-1", "batch_idx": 1, "rmse": 0.2}],
+            "ignore-me",
+            None,
+        ),
+    ]
+
+    normalized = _normalize_per_batch_rows(gathered)
+
+    assert normalized == [
+        {"window": "all", "batch_idx": 0, "mse": 0.1},
+        {"window": "0-1", "batch_idx": 1, "rmse": 0.2},
     ]
 
 
