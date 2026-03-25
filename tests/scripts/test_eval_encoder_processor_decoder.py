@@ -7,6 +7,7 @@ import pytest
 import torch
 from omegaconf import OmegaConf
 
+from autocast.metrics.ensemble import CRPS, AlphaFairCRPS, SpreadSkillRatio
 from autocast.scripts.eval.encoder_processor_decoder import (
     _build_per_timestep_metric_factory,
     _normalize_per_batch_rows,
@@ -18,7 +19,6 @@ from autocast.scripts.eval.encoder_processor_decoder import (
     _split_metric_and_metadata_rows,
     _training_runtime_rows,
 )
-from autocast.metrics.ensemble import AlphaFairCRPS, CRPS, SpreadSkillRatio
 
 
 def test_resolve_rollout_batch_limit_falls_back_to_test_limit_when_null():
