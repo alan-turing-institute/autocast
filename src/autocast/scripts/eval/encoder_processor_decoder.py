@@ -152,6 +152,15 @@ def _unwrap_module(module: Any) -> Any:
     return unwrapped
 
 
+def _mark_forward_methods_if_available(model: Any, methods: Sequence[str]) -> None:
+    """Mark custom methods as valid forwards when using Fabric wrappers."""
+    mark_forward_method = getattr(model, "mark_forward_method", None)
+    if not callable(mark_forward_method):
+        return
+    for method in methods:
+        mark_forward_method(method)
+
+
 def _limit_batches(dataloader, max_batches: int | None):
     if max_batches is None or max_batches <= 0:
         return dataloader
@@ -922,6 +931,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     log.info("Model class: %s", type(model))
 
     model = fabric.setup_module(model)
+    _mark_forward_methods_if_available(model, methods=("rollout",))
     model.eval()
     test_loader = _limit_batches(
         fabric.setup_dataloaders(datamodule.test_dataloader()),
