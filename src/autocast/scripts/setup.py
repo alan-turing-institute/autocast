@@ -531,10 +531,14 @@ def setup_epd_model(
         encoded_example, encoder
     )
 
+    latent_noise_injector, latent_extra_channels = _resolve_noise_injector(
+        model_config, "latent_noise_injector"
+    )
+
     # TODO: currently "out_channels" and "in_channels" are only used in the config for
     # ViT and FNO, while "n_channels_out" is used in flow_matching and diffusions
     proc_kwargs = {
-        "in_channels": latent_channels,
+        "in_channels": latent_channels + latent_extra_channels,
         "out_channels": latent_channels_out,
         "n_channels_out": latent_channels_out,
         "n_steps_input": steps_in,
@@ -564,6 +568,7 @@ def setup_epd_model(
         "optimizer_config": optimizer_config,
         "loss_func": loss_func,
         "input_noise_injector": noise_injector,
+        "latent_noise_injector": latent_noise_injector,
         "norm": norm,
     }
     if is_ensemble:
@@ -572,8 +577,14 @@ def setup_epd_model(
     return cls(**kwargs)
 
 
-def _resolve_input_noise_injector(model_config: DictConfig) -> tuple[Any | None, int]:
-    noise_config = model_config.get("input_noise_injector", None)
+def _resolve_noise_injector(
+    model_config: DictConfig, config_key: str
+) -> tuple[Any | None, int]:
+    """Resolve a noise injector from a model config key.
+
+    Returns the instantiated injector and the number of extra channels it adds.
+    """
+    noise_config = model_config.get(config_key, None)
     if not noise_config or "_target_" not in noise_config:
         return None, 0
 
@@ -582,10 +593,14 @@ def _resolve_input_noise_injector(model_config: DictConfig) -> tuple[Any | None,
         n_channels = noise_config.get("n_channels")
         if n_channels in (None, "auto"):
             msg = (
-                "ConcatenatedNoiseInjector requires explicit n_channels in config. "
-                "Set input_noise_injector.n_channels to an integer value."
+                f"ConcatenatedNoiseInjector requires explicit n_channels in config. "
+                f"Set {config_key}.n_channels to an integer value."
             )
             raise ValueError(msg)
         extra_channels = int(n_channels)
 
     return instantiate(noise_config), extra_channels
+
+
+def _resolve_input_noise_injector(model_config: DictConfig) -> tuple[Any | None, int]:
+    return _resolve_noise_injector(model_config, "input_noise_injector")

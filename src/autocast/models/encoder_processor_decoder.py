@@ -16,7 +16,7 @@ from autocast.models.optimizer_mixin import OptimizerMixin
 from autocast.nn.noise.noise_injector import NoiseInjector
 from autocast.processors.base import Processor
 from autocast.processors.rollout import RolloutMixin
-from autocast.types import Batch, Tensor, TensorBTSC
+from autocast.types import Batch, EncodedBatch, Tensor, TensorBTSC
 from autocast.types.types import TensorBTSCM
 
 
@@ -49,6 +49,7 @@ class EncoderProcessorDecoder(
         val_metrics: Sequence[Metric] | None = None,
         test_metrics: Sequence[Metric] | None = None,
         input_noise_injector: NoiseInjector | None = None,
+        latent_noise_injector: NoiseInjector | None = None,
         norm: ZScoreNormalization | None = None,
         **kwargs: Any,
     ) -> None:
@@ -62,6 +63,7 @@ class EncoderProcessorDecoder(
         self.max_rollout_steps = max_rollout_steps
         self.freeze_encoder_decoder = freeze_encoder_decoder
         self.input_noise_injector = input_noise_injector
+        self.latent_noise_injector = latent_noise_injector
         self.norm = norm
 
         # Resolve loss weights from train_in_latent_space or explicit weights.
@@ -141,6 +143,18 @@ class EncoderProcessorDecoder(
             )
         return batch
 
+    def _apply_latent_noise(self, encoded_batch: EncodedBatch) -> EncodedBatch:
+        """Apply noise in latent space after encoding."""
+        if self.latent_noise_injector is not None:
+            noisy_encoded = self.latent_noise_injector(encoded_batch.encoded_inputs)
+            encoded_batch = EncodedBatch(
+                encoded_inputs=noisy_encoded,
+                encoded_output_fields=encoded_batch.encoded_output_fields,
+                global_cond=encoded_batch.global_cond,
+                encoded_info=encoded_batch.encoded_info,
+            )
+        return encoded_batch
+
     def on_load_checkpoint(self, checkpoint: dict[str, Any]) -> None:
         # PyTorch can serialise _metadata as a real key in the state_dict rather
         # than as an OrderedDict private attribute.  Strict load_state_dict then
@@ -152,6 +166,8 @@ class EncoderProcessorDecoder(
     def forward(self, batch: Batch) -> TensorBTSC | TensorBTSCM:
         batch = self._apply_input_noise(batch)
         encoded, global_cond = self.encoder_decoder.encoder.encode_with_cond(batch)
+        if self.latent_noise_injector is not None:
+            encoded = self.latent_noise_injector(encoded)
         mapped = self.processor.map(encoded, global_cond)
         decoded = self.encoder_decoder.decoder.decode(mapped)
         return decoded
@@ -160,6 +176,7 @@ class EncoderProcessorDecoder(
         """Compute loss in latent (encoded) space via the processor."""
         batch = self._apply_input_noise(batch)
         encoded_batch = self.encoder_decoder.encoder.encode_batch(batch)
+        encoded_batch = self._apply_latent_noise(encoded_batch)
         return self.processor.loss(encoded_batch)
 
     def _ambient_loss(self, batch: Batch) -> tuple[Tensor, Tensor]:

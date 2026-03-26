@@ -74,6 +74,7 @@ class EncoderProcessorDecoderEnsemble(EncoderProcessorDecoder):
         ensemble_batch = batch.repeat(self.n_members)
         ensemble_batch = self._apply_input_noise(ensemble_batch)
         encoded_batch = self.encoder_decoder.encoder.encode_batch(ensemble_batch)
+        encoded_batch = self._apply_latent_noise(encoded_batch)
 
         # Predictions (stochastic latent maps)
         preds_flat = self.processor.map(
