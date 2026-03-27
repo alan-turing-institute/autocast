@@ -349,6 +349,23 @@ class EncodedDataModule(LightningDataModule):
             collate_fn=collate_encoded_samples,
         )
 
+    def rollout_test_dataloader(self, batch_size: int | None = None) -> DataLoader:
+        """DataLoader for rollout evaluation on test data.
+
+        Returns the standard test dataloader; rollout length is bounded by
+        ``n_steps_output`` per window, which is sufficient for the iterative
+        ``RolloutMixin`` loop.
+        """
+        if self.test_dataset is None:
+            self.setup(stage="test")
+        return DataLoader(
+            self.test_dataset,  # type: ignore[arg-type]
+            batch_size=batch_size or self.batch_size,
+            shuffle=False,
+            num_workers=self.num_workers,
+            collate_fn=collate_encoded_samples,
+        )
+
 
 class MiniWellDataModule(LightningDataModule):
     """DataModule for MiniWell datasets.

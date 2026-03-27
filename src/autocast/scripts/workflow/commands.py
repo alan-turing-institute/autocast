@@ -370,7 +370,9 @@ def infer_eval_checkpoint(work_dir: str | Path) -> Path | None:
             if isinstance(configured_checkpoint, str) and configured_checkpoint:
                 candidate_names.append(configured_checkpoint)
 
-    candidate_names.extend(["encoder_processor_decoder.ckpt", "model.ckpt"])
+    candidate_names.extend(
+        ["encoder_processor_decoder.ckpt", "processor.ckpt", "model.ckpt"]
+    )
 
     for name in dict.fromkeys(candidate_names):
         as_path = Path(name).expanduser()

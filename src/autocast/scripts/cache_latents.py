@@ -206,6 +206,12 @@ def cache_latents(
         json.dump(metadata, f, indent=2)
     log.info("Metadata saved to %s", metadata_path)
 
+    # Save the full autoencoder config so the decoder can be reconstructed at
+    # eval time (e.g. for data-space evaluation of a processor-only checkpoint).
+    ae_config_path = output_dir / "autoencoder_config.yaml"
+    OmegaConf.save(cfg, ae_config_path)
+    log.info("Autoencoder config saved to %s", ae_config_path)
+
     log.info("Caching complete. Output directory: %s", output_dir)
     return output_dir
 
