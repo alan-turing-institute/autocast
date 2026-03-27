@@ -1006,7 +1006,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
             "using eval.accelerator=%s.",
             accelerator,
         )
-    devices = eval_cfg.get("devices", "auto")
+    devices = eval_cfg.get("devices", 1)
     fabric = L.Fabric(accelerator=accelerator, devices=devices)
     fabric.launch()
 

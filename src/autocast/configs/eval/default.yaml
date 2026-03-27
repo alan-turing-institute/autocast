@@ -38,7 +38,7 @@ fps: 5
 
 # Accelerator for evaluation (mirrors Lightning Fabric API)
 accelerator: auto  # auto, cpu, cuda, or mps
-devices: auto # auto, or int (e.g. 1, 4 for multi-GPU DDP evaluation)
+devices: 1 # default single-GPU eval; override with int (e.g. 4) for multi-GPU DDP
 
 # Rollout settings
 max_rollout_steps: 10
