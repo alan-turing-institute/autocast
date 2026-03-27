@@ -365,6 +365,18 @@ def test_infer_dataset_from_workdir_from_datamodule_data_path(tmp_path):
     assert infer_dataset_from_workdir(tmp_path) == "reaction_diffusion"
 
 
+def test_infer_dataset_from_workdir_preserves_nested_dataset_subpath(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("AUTOCAST_DATASETS", "/autocast/datasets")
+    (tmp_path / "resolved_config.yaml").write_text(
+        "datamodule:\n  data_path: /autocast/datasets/gpe/laser_only_wake_e40d7eb\n",
+        encoding="utf-8",
+    )
+
+    assert infer_dataset_from_workdir(tmp_path) == "gpe/laser_only_wake_e40d7eb"
+
+
 def test_infer_dataset_from_workdir_from_datamodule_string(tmp_path):
     (tmp_path / "resolved_config.yaml").write_text(
         'datamodule: "advection_diffusion_multichannel_64_64"\n',

@@ -38,7 +38,7 @@ def main(cfg: DictConfig) -> None:
     run_benchmark(cfg)
 
 
-def run_benchmark(cfg: DictConfig, work_dir: Path | None = None) -> Path:
+def run_benchmark(cfg: DictConfig, work_dir: Path | None = None) -> Path:  # noqa: PLR0915
     """Run benchmark using an already-composed config and write a CSV."""
     logging.basicConfig(level=logging.INFO)
 
@@ -76,7 +76,19 @@ def run_benchmark(cfg: DictConfig, work_dir: Path | None = None) -> Path:
         )
         raise RuntimeError(msg)
 
-    device = resolve_device(str(eval_cfg.get("device", "auto")))
+    # Prefer eval.accelerator to mirror Lightning API while keeping
+    # eval.device as a backwards-compatible fallback.
+    accelerator = eval_cfg.get("accelerator", None)
+    if accelerator is None:
+        accelerator = eval_cfg.get("device", "auto")
+    elif "device" in eval_cfg:
+        log.warning(
+            "Both eval.accelerator and deprecated eval.device were provided; "
+            "using eval.accelerator=%s.",
+            accelerator,
+        )
+
+    device = resolve_device(str(accelerator))
     model.to(device)
     model.eval()
 
