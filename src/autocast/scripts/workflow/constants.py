@@ -11,6 +11,7 @@ TRAIN_MODULES: dict[str, str] = {
 EVAL_MODULE = "autocast.scripts.eval.encoder_processor_decoder"
 BENCHMARK_MODULE = "autocast.scripts.benchmark.encoder_processor_decoder"
 TRAIN_EVAL_MODULE = "autocast.scripts.train_eval.encoder_processor_decoder"
+CACHE_LATENTS_MODULE = "autocast.scripts.cache_latents"
 
 NAMING_DEFAULT_KEYS: set[str] = {
     "processor@model.processor",

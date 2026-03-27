@@ -8,6 +8,7 @@ from pathlib import Path
 from autocast.scripts.workflow.commands import (
     benchmark_command,
     benchmark_manifest_command,
+    cache_latents_command,
     eval_command,
     infer_dataset_from_workdir,
     infer_resume_checkpoint,
@@ -137,6 +138,21 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     _add_common_args(te_parser)
+
+    # -- cache-latents -----------------------------------------------------
+    cache_parser = subparsers.add_parser(
+        "cache-latents",
+        description=(
+            "Encode all data splits with a trained autoencoder and cache the "
+            "latent representations to disk for fast processor-only training."
+        ),
+    )
+    cache_parser.add_argument("--workdir", required=True)
+    cache_parser.add_argument(
+        "--output-dir",
+        help=("Output directory for cached latents. Defaults to <workdir>/cached."),
+    )
+    _add_common_args(cache_parser)
 
     return parser
 
@@ -288,6 +304,17 @@ def main() -> None:
             resume_from=resume_from,
             train_overrides=combined_overrides,
             eval_overrides=[*args.eval_overrides],
+            runtime_typechecking=args.runtime_typechecking,
+            dry_run=args.dry_run,
+        )
+        return
+
+    if args.command == "cache-latents":
+        cache_latents_command(
+            mode=args.mode,
+            work_dir=args.workdir,
+            output_dir=getattr(args, "output_dir", None),
+            overrides=combined_overrides,
             runtime_typechecking=args.runtime_typechecking,
             dry_run=args.dry_run,
         )
