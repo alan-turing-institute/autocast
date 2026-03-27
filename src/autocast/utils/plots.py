@@ -417,7 +417,7 @@ def compute_metrics_from_dataloader(
                         "batch_idx": batch_idx,
                     }
                     for name, fn in metric_fns.items():
-                        m = fn()
+                        m = fn().to(device) if device is not None else fn()
                         m.update(p, t)
                         if (val := _get_val(m)) is not None:
                             row[name] = val

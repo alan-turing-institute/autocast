@@ -1,4 +1,3 @@
-# ~80M params
 _target_: autocast.processors.unet.AzulaUNetProcessor
 in_channels: null
 out_channels: null

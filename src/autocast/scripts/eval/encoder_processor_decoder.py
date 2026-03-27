@@ -152,6 +152,15 @@ def _unwrap_module(module: Any) -> Any:
     return unwrapped
 
 
+def _mark_forward_methods_if_available(model: Any, methods: Sequence[str]) -> None:
+    """Mark custom methods as valid forwards when using Fabric wrappers."""
+    mark_forward_method = getattr(model, "mark_forward_method", None)
+    if not callable(mark_forward_method):
+        return
+    for method in methods:
+        mark_forward_method(method)
+
+
 def _limit_batches(dataloader, max_batches: int | None):
     if max_batches is None or max_batches <= 0:
         return dataloader
@@ -531,6 +540,90 @@ def _normalize_per_batch_rows(rows: Any) -> list[dict[str, float | str]]:
 
     _visit(rows)
     return normalized
+
+
+def _extract_int_batch_idx(value: Any) -> int | None:
+    scalar = _to_csv_scalar(value)
+    if isinstance(scalar, bool):
+        return int(scalar)
+    if isinstance(scalar, int):
+        return scalar
+    if isinstance(scalar, float) and scalar.is_integer():
+        return int(scalar)
+    return None
+
+
+def _reindex_per_batch_rows_by_rank(
+    rows_by_rank: Sequence[Sequence[Mapping[str, Any]]],
+) -> list[dict[str, float | str]]:
+    """Convert per-rank local batch_idx values to a global, deterministic index.
+
+    The mapping uses ``global_batch_idx = local_batch_idx * world_size + rank``,
+    which matches the common distributed-eval ordering where dataloader shards are
+    rank-interleaved and ``shuffle=False``.
+    """
+    if not rows_by_rank:
+        return []
+
+    world_size = len(rows_by_rank)
+    grouped_rows: list[dict[int, list[dict[str, Any]]]] = []
+    passthrough_rows: list[list[dict[str, Any]]] = []
+    max_local_batch_idx = -1
+
+    for rank_rows in rows_by_rank:
+        grouped: dict[int, list[dict[str, Any]]] = {}
+        passthrough: list[dict[str, Any]] = []
+        for row in rank_rows:
+            row_dict = dict(row)
+            local_batch_idx = _extract_int_batch_idx(row_dict.get("batch_idx"))
+            if local_batch_idx is None:
+                passthrough.append(row_dict)
+                continue
+            max_local_batch_idx = max(max_local_batch_idx, local_batch_idx)
+            grouped.setdefault(local_batch_idx, []).append(row_dict)
+        grouped_rows.append(grouped)
+        passthrough_rows.append(passthrough)
+
+    reindexed_rows: list[dict[str, float | str]] = []
+    for local_batch_idx in range(max_local_batch_idx + 1):
+        for rank in range(world_size):
+            rank_group = grouped_rows[rank]
+            for row in rank_group.get(local_batch_idx, []):
+                updated = dict(row)
+                updated["batch_idx"] = local_batch_idx * world_size + rank
+                reindexed_rows.append(_normalize_row_values_for_csv(updated))
+
+    for passthrough in passthrough_rows:
+        for row in passthrough:
+            reindexed_rows.append(_normalize_row_values_for_csv(row))
+
+    return reindexed_rows
+
+
+def _gather_per_batch_rows(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    fabric: L.Fabric,
+) -> list[dict[str, float | str]]:
+    """Gather per-rank row objects and normalize global batch indices."""
+    local_rows = _normalize_per_batch_rows(rows)
+    world_size = int(getattr(fabric, "world_size", 1))
+    if world_size <= 1:
+        return local_rows
+
+    if not torch.distributed.is_available() or not torch.distributed.is_initialized():
+        log.warning(
+            "Distributed row gather requested but torch.distributed is unavailable; "
+            "falling back to local per-batch rows."
+        )
+        return local_rows
+
+    gathered_rows: list[Any] = [None for _ in range(world_size)]
+    torch.distributed.all_gather_object(gathered_rows, local_rows)
+    normalized_rows_by_rank = [
+        _normalize_per_batch_rows(item) for item in gathered_rows
+    ]
+    return _reindex_per_batch_rows_by_rank(normalized_rows_by_rank)
 
 
 def _is_metadata_row(row: Mapping[str, float | str]) -> bool:
@@ -913,7 +1006,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
             "using eval.accelerator=%s.",
             accelerator,
         )
-    devices = eval_cfg.get("devices", "auto")
+    devices = eval_cfg.get("devices", 1)
     fabric = L.Fabric(accelerator=accelerator, devices=devices)
     fabric.launch()
 
@@ -922,6 +1015,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     log.info("Model class: %s", type(model))
 
     model = fabric.setup_module(model)
+    _mark_forward_methods_if_available(model, methods=("rollout",))
     model.eval()
     test_loader = _limit_batches(
         fabric.setup_dataloaders(datamodule.test_dataloader()),
@@ -977,8 +1071,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     )
 
     if test_per_batch_rows:
-        gathered = fabric.all_gather(test_per_batch_rows)
-        test_per_batch_rows = _normalize_per_batch_rows(gathered)
+        test_per_batch_rows = _gather_per_batch_rows(test_per_batch_rows, fabric=fabric)
 
     # Process and save test metrics
     test_rows = _process_metrics_results(
@@ -1133,8 +1226,10 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 )
             )
             if rollout_per_batch_rows:
-                gathered = fabric.all_gather(rollout_per_batch_rows)
-                rollout_per_batch_rows = _normalize_per_batch_rows(gathered)
+                rollout_per_batch_rows = _gather_per_batch_rows(
+                    rollout_per_batch_rows,
+                    fabric=fabric,
+                )
 
             # Process and log results
             rollout_csv_rows = _process_metrics_results(

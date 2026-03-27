@@ -7,9 +7,11 @@ import pytest
 import torch
 from omegaconf import OmegaConf
 
+from autocast.metrics.ensemble import CRPS, AlphaFairCRPS, SpreadSkillRatio
 from autocast.scripts.eval.encoder_processor_decoder import (
     _build_per_timestep_metric_factory,
     _normalize_per_batch_rows,
+    _reindex_per_batch_rows_by_rank,
     _render_rollouts,
     _resolve_rollout_batch_limit,
     _resolve_rollout_channel_names,
@@ -18,7 +20,6 @@ from autocast.scripts.eval.encoder_processor_decoder import (
     _split_metric_and_metadata_rows,
     _training_runtime_rows,
 )
-from autocast.metrics.ensemble import AlphaFairCRPS, CRPS, SpreadSkillRatio
 
 
 def test_resolve_rollout_batch_limit_falls_back_to_test_limit_when_null():
@@ -141,6 +142,49 @@ def test_normalize_per_batch_rows_flattens_nested_mappings_only():
         {"window": "all", "batch_idx": 0, "mse": pytest.approx(0.1)},
         {"window": "0-1", "batch_idx": 1, "rmse": 0.2},
     ]
+
+
+def test_reindex_per_batch_rows_by_rank_interleaves_global_batch_index():
+    rows_by_rank = [
+        [
+            {"window": "all", "batch_idx": 0, "mse": 0.1},
+            {"window": "0-1", "batch_idx": 0, "mse": 0.11},
+            {"window": "all", "batch_idx": 1, "mse": 0.2},
+            {"window": "0-1", "batch_idx": 1, "mse": 0.21},
+        ],
+        [
+            {"window": "all", "batch_idx": 0, "mse": 0.3},
+            {"window": "0-1", "batch_idx": 0, "mse": 0.31},
+            {"window": "all", "batch_idx": 1, "mse": 0.4},
+            {"window": "0-1", "batch_idx": 1, "mse": 0.41},
+        ],
+    ]
+
+    reindexed = _reindex_per_batch_rows_by_rank(rows_by_rank)
+
+    assert [row["batch_idx"] for row in reindexed] == [0, 0, 1, 1, 2, 2, 3, 3]
+    assert [row["window"] for row in reindexed] == [
+        "all",
+        "0-1",
+        "all",
+        "0-1",
+        "all",
+        "0-1",
+        "all",
+        "0-1",
+    ]
+
+
+def test_reindex_per_batch_rows_by_rank_preserves_non_numeric_batch_idx_rows():
+    rows_by_rank = [
+        [{"window": "all", "batch_idx": 0, "mse": 0.1}],
+        [{"window": "meta", "batch_idx": "all", "value": 123.0}],
+    ]
+
+    reindexed = _reindex_per_batch_rows_by_rank(rows_by_rank)
+
+    assert reindexed[0] == {"window": "all", "batch_idx": 0, "mse": 0.1}
+    assert reindexed[1] == {"window": "meta", "batch_idx": "all", "value": 123.0}
 
 
 def test_build_per_timestep_metric_factory_sets_reduce_all_false_for_crps():

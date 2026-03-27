@@ -56,15 +56,16 @@ All eval configs support these parameters:
 - `video_sample_index`: Sample index within batch to visualize
 - `fps`: Frames per second for videos
 - `accelerator`: Accelerator for evaluation (auto, cpu, cuda, mps)
-- `devices`: Number of GPUs for DDP evaluation (auto, or int e.g. 1, 4)
+- `devices`: Number of GPUs for DDP evaluation (default: 1; set explicitly,
+  e.g. 4, for multi-GPU runs)
 - Ensemble-only metrics (`crps`, `fcrps`, `afcrps`, `energy`, `variogram`,
   `ssr`) are skipped automatically when `model.n_members <= 1`
 
 ## Multi-GPU Evaluation
 
-Multi-GPU evaluation uses PyTorch Lightning Fabric and automatically
-scales when the `distributed` config is composed. The distributed
-configs already set `eval.devices` to match `gpus_per_node`:
+Multi-GPU evaluation uses PyTorch Lightning Fabric. By default, eval uses
+`eval.devices=1` for reproducibility and easier comparisons. Override to
+multi-GPU explicitly (or via a distributed preset):
 
 ```bash
 # 4-GPU evaluation via the distributed config
