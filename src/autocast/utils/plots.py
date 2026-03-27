@@ -308,6 +308,7 @@ def compute_metrics_from_dataloader(
     windows: list[tuple[int, int] | None] | None = None,
     return_tensors: bool = False,
     return_per_batch: bool = False,
+    device: str | torch.device | None = None,
 ) -> tuple[
     dict[None | tuple[int, int], dict[str, Metric]],
     tuple[TensorBTSCM, TensorBTSC] | None,
@@ -345,7 +346,10 @@ def compute_metrics_from_dataloader(
         The populated metrics, optionally the tensors, and optionally per-batch metrics.
     """
     metrics_per_window = {
-        window: {name: fn() for name, fn in metric_fns.items()}
+        window: {
+            name: fn().to(device) if device is not None else fn()
+            for name, fn in metric_fns.items()
+        }
         for window in (windows or [None])
     }
     all_preds = [] if return_tensors else None
@@ -380,8 +384,8 @@ def compute_metrics_from_dataloader(
             if not (isinstance(preds, Tensor) and isinstance(trues, Tensor)):
                 continue
 
-            # Move to CPU for metric computation
-            preds, trues = preds.cpu(), trues.cpu()
+            # Do not move to CPU for metric computation so DDP can sync
+            # preds, trues = preds.cpu(), trues.cpu()
 
             # Get metrics for each window
             for window, metrics_dict in metrics_per_window.items():
@@ -413,7 +417,7 @@ def compute_metrics_from_dataloader(
                         "batch_idx": batch_idx,
                     }
                     for name, fn in metric_fns.items():
-                        m = fn()
+                        m = fn().to(device) if device is not None else fn()
                         m.update(p, t)
                         if (val := _get_val(m)) is not None:
                             row[name] = val
@@ -432,6 +436,7 @@ def compute_metrics_per_timestep_from_dataloader(  # noqa: PLR0912, PLR0915
     metric_fns: dict[str, Callable[[], Metric]],
     predict_fn: Callable,
     max_timesteps: int | None = None,
+    device: str | torch.device | None = None,
 ) -> dict[str, np.ndarray]:
     """
     Compute metrics at each rollout timestep, batch-averaged, with per-channel values.
@@ -479,7 +484,8 @@ def compute_metrics_per_timestep_from_dataloader(  # noqa: PLR0912, PLR0915
                 isinstance(preds, torch.Tensor) and isinstance(trues, torch.Tensor)
             ):
                 continue
-            preds, trues = preds.cpu(), trues.cpu()
+            if device is None:
+                preds, trues = preds.cpu(), trues.cpu()
             T_batch = min(preds.shape[1], trues.shape[1])
             if max_timesteps is not None:
                 T_batch = min(T_batch, max_timesteps)
@@ -491,9 +497,12 @@ def compute_metrics_per_timestep_from_dataloader(  # noqa: PLR0912, PLR0915
         if T_min is None or n_channels is None or T_min == 0:
             return {}
 
-        # One metric instance per (timestep, metric_name)
         metrics_per_t: list[dict[str, Metric]] = [
-            {name: fn() for name, fn in metric_fns.items()} for _ in range(T_min)
+            {
+                name: fn().to(device) if device is not None else fn()
+                for name, fn in metric_fns.items()
+            }
+            for _ in range(T_min)
         ]
 
         for batch in dataloader:
@@ -509,7 +518,8 @@ def compute_metrics_per_timestep_from_dataloader(  # noqa: PLR0912, PLR0915
                 isinstance(preds, torch.Tensor) and isinstance(trues, torch.Tensor)
             ):
                 continue
-            preds, trues = preds.cpu(), trues.cpu()
+            if device is None:
+                preds, trues = preds.cpu(), trues.cpu()
             T_batch = min(preds.shape[1], trues.shape[1], T_min)
             if max_timesteps is not None:
                 T_batch = min(T_batch, max_timesteps)
