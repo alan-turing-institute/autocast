@@ -141,11 +141,11 @@ def _resolve_video_dir(eval_cfg: DictConfig, work_dir: Path) -> Path:
     return (work_dir / "videos").resolve()
 
 
-def _unwrap_module(module: Any) -> Any:
+def _unwrap_module(module: Any, max_depth: int = 10) -> Any:
     """Return the underlying model when wrapped by Fabric/DDP-style wrappers."""
     unwrapped = module
-    while hasattr(unwrapped, "module"):
-        next_module = unwrapped.module
+    for _ in range(max_depth):
+        next_module = getattr(unwrapped, "module", None)
         if next_module is None or next_module is unwrapped:
             break
         unwrapped = next_module
@@ -516,6 +516,32 @@ def _build_per_timestep_metric_factory(
 def _should_skip_metric(name: str) -> bool:
     """Return True when a metric should be excluded due to memory cost."""
     return name in MEMORY_INTENSIVE_METRICS
+
+
+def _resolve_metric_fns(
+    metrics_list: Sequence[str],
+    *,
+    has_ensemble: bool,
+) -> dict[str, Callable[[], Metric]]:
+    """Resolve a list of metric names into a dict of metric factory callables."""
+    resolved: dict[str, Callable[[], Metric]] = {}
+    for name in metrics_list:
+        if _should_skip_metric(name):
+            log.info("Skipping metric '%s' due to memory cost.", name)
+            continue
+        if name in AVAILABLE_METRICS:
+            resolved[name] = AVAILABLE_METRICS[name]
+        elif name in AVAILABLE_METRICS_ENSEMBLE:
+            if has_ensemble:
+                resolved[name] = AVAILABLE_METRICS_ENSEMBLE[name]
+            else:
+                log.info(
+                    "Skipping ensemble metric '%s' because n_members <= 1.",
+                    name,
+                )
+        else:
+            log.warning("Metric '%s' not found in available metrics.", name)
+    return resolved
 
 
 def _normalize_per_batch_rows(rows: Any) -> list[dict[str, float | str]]:
@@ -922,133 +948,21 @@ def main(cfg: DictConfig) -> None:
     run_evaluation(cfg)
 
 
-def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # noqa: PLR0912, PLR0915
-    """Run evaluation using an already-composed config."""
-    logging.basicConfig(level=logging.INFO)
-
-    umask_value = cfg.get("umask")
-    if umask_value is not None:
-        os.umask(int(str(umask_value), 8))
-        log.info("Applied process umask %s", umask_value)
-
-    work_dir = resolve_hydra_work_dir(work_dir)
-
-    # Get eval config
-    eval_cfg = cfg.get("eval", {})
-    eval_batch_size: int = eval_cfg.get("batch_size", 1)
-    max_test_batches = eval_cfg.get("max_test_batches")
-    max_rollout_batches = _resolve_rollout_batch_limit(eval_cfg)
-    log.info(
-        "Batch limits: max_test_batches=%s, max_rollout_batches=%s",
-        max_test_batches,
-        max_rollout_batches,
-    )
-
-    checkpoint_path = resolve_checkpoint_path(
-        eval_cfg,
-        work_dir,
-        missing_message=(
-            "No checkpoint specified. Please provide a checkpoint path via:\n"
-            "  eval.checkpoint=/path/to/checkpoint.ckpt\n"
-            "Or add it to your config file."
-        ),
-    )
-
-    if cfg.get("output", {}).get("save_config"):
-        save_resolved_config(cfg, work_dir, filename="resolved_eval_config.yaml")
-
-    csv_path = _resolve_csv_path(eval_cfg, work_dir)
-    video_dir = _resolve_video_dir(eval_cfg, work_dir)
-
-    # Setup datamodule and resolve config
-    datamodule, cfg, stats = setup_datamodule(cfg)
-
-    # Override model n_members from eval config if specified
-    if "n_members" in eval_cfg:
-        with open_dict(cfg.model):
-            cfg.model.n_members = eval_cfg.n_members
-        log.info(
-            "Overriding model.n_members with %s from eval config", eval_cfg.n_members
-        )
-
-    # Setup Model
-    model = setup_epd_model(cfg, stats, datamodule=datamodule)
-
-    # Load checkpoint
-    log.info("Loading checkpoint from %s", checkpoint_path)
-    checkpoint_payload = load_checkpoint_payload(checkpoint_path)
-    state_dict = extract_state_dict(checkpoint_payload)
-    load_result = model.load_state_dict(state_dict, strict=True)
-    if load_result.missing_keys or load_result.unexpected_keys:
-        msg = (
-            "Checkpoint parameters do not match the instantiated model. "
-            f"Missing keys: {load_result.missing_keys}. "
-            f"Unexpected keys: {load_result.unexpected_keys}."
-        )
-        raise RuntimeError(msg)
-
-    # Get eval parameters from config
-    metrics_list = eval_cfg.get("metrics", DEFAULT_EVAL_METRICS)
-    batch_indices = eval_cfg.get("batch_indices", [])
-
-    # Get number of ensemble members from config if available
-    n_members = cfg.get("model", {}).get("n_members", 1)
-
-    # Setup Fabric accelerator/device management.
-    # Prefer eval.accelerator to mirror Lightning API, while keeping
-    # eval.device as a backwards-compatible fallback.
-    accelerator = eval_cfg.get("accelerator", None)
-    if accelerator is None:
-        accelerator = eval_cfg.get("device", "auto")
-    elif "device" in eval_cfg:
-        log.warning(
-            "Both eval.accelerator and deprecated eval.device were provided; "
-            "using eval.accelerator=%s.",
-            accelerator,
-        )
-    devices = eval_cfg.get("devices", 1)
-    fabric = L.Fabric(accelerator=accelerator, devices=devices)
-    fabric.launch()
-
-    # Setup model and loader with Fabric
-    log.info("Model configuration n_members: %s", n_members)
-    log.info("Model class: %s", type(model))
-
-    model = fabric.setup_module(model)
-    _mark_forward_methods_if_available(model, methods=("rollout",))
-    model.eval()
-    test_loader = _limit_batches(
-        fabric.setup_dataloaders(datamodule.test_dataloader()),
-        max_test_batches,
-    )
-
-    # Evaluation
+def _run_test_metrics(
+    *,
+    model: Any,
+    test_loader: Any,
+    eval_cfg: DictConfig,
+    metrics_list: Sequence[str],
+    has_ensemble: bool,
+    n_members: int,
+    fabric: L.Fabric,
+    work_dir: Path,
+) -> list[dict[str, float | str]]:
+    """Run the test-set metric evaluation phase."""
+    test_metric_fns = _resolve_metric_fns(metrics_list, has_ensemble=has_ensemble)
 
     compute_coverage = eval_cfg.get("compute_coverage", False)
-    test_metric_fns: dict[str, Callable[[], Metric]] = {}
-
-    metric_registry = dict(AVAILABLE_METRICS)
-    has_ensemble = bool(n_members and n_members > 1)
-    if has_ensemble:
-        metric_registry.update(AVAILABLE_METRICS_ENSEMBLE)
-
-    for name in metrics_list:
-        if _should_skip_metric(name):
-            log.info("Skipping metric '%s' due to memory cost.", name)
-            continue
-        if name in AVAILABLE_METRICS:
-            test_metric_fns[name] = AVAILABLE_METRICS[name]
-        elif name in AVAILABLE_METRICS_ENSEMBLE:
-            if has_ensemble:
-                test_metric_fns[name] = AVAILABLE_METRICS_ENSEMBLE[name]
-            else:
-                log.info(
-                    "Skipping ensemble metric '%s' because n_members <= 1.",
-                    name,
-                )
-        else:
-            log.warning("Metric %s not found in available metrics", name)
-
     if (n_members > 1) or compute_coverage:
 
         def coverage_factory() -> Metric:
@@ -1058,7 +972,6 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
 
     log.info("Computing test metrics: %s", list(test_metric_fns.keys()))
 
-    # Use metric_windows from config (apply to all metrics)
     test_windows = _map_windows(eval_cfg.get("metric_windows", None))
 
     test_metrics_results, _, test_per_batch_rows = compute_metrics_from_dataloader(
@@ -1073,266 +986,278 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     if test_per_batch_rows:
         test_per_batch_rows = _gather_per_batch_rows(test_per_batch_rows, fabric=fabric)
 
-    # Process and save test metrics
-    test_rows = _process_metrics_results(
+    return _process_metrics_results(
         test_metrics_results,
         per_batch_rows=test_per_batch_rows,  # pyright: ignore[reportArgumentType]
         log_prefix="Test",
         plot_dir=work_dir,
     )
 
-    evaluation_rows: list[dict[str, float | str]] = []
-    evaluation_rows.extend(test_rows)
-    evaluation_rows.extend(
-        _evaluation_metadata_rows(
-            checkpoint_payload=checkpoint_payload,
-            model=model,  # pyright: ignore[reportArgumentType]
+
+def _run_rollout_videos(
+    *,
+    model: Any,
+    datamodule: Any,
+    eval_cfg: DictConfig,
+    fabric: L.Fabric,
+    eval_batch_size: int,
+    max_rollout_batches: int | None,
+    batch_indices: Sequence[int],
+    video_dir: Path,
+    rollout_stride: int,
+    max_rollout_steps: int,
+    n_members: int,
+) -> None:
+    """Render rollout videos for requested sample indices."""
+    rollout_test_loader = fabric.setup_dataloaders(
+        datamodule.rollout_test_dataloader(batch_size=eval_batch_size)
+    )
+    rollout_channel_names = _resolve_rollout_channel_names(
+        getattr(rollout_test_loader, "dataset", None)
+    )
+    if rollout_channel_names is not None:
+        log.info(
+            "Using rollout video channel labels from core_field_names: %s",
+            rollout_channel_names,
+        )
+    else:
+        log.info(
+            "No rollout video channel labels found in core_field_names; "
+            "falling back to generic channel indices."
+        )
+
+    rollout_loader = _limit_batches(rollout_test_loader, max_rollout_batches)
+    _render_rollouts(
+        model,
+        rollout_loader,
+        batch_indices,
+        video_dir,
+        eval_cfg.get("video_sample_index", 0),
+        eval_cfg.get("video_format", "mp4"),
+        eval_cfg.get("fps", 5),
+        stride=rollout_stride,
+        max_rollout_steps=max_rollout_steps,
+        free_running_only=eval_cfg.get("free_running_only", True),
+        n_members=n_members,
+        channel_names=rollout_channel_names,
+        preserve_aspect=eval_cfg.get("preserve_aspect", False),
+    )
+
+
+def _run_rollout_metrics(
+    *,
+    model: Any,
+    datamodule: Any,
+    eval_cfg: DictConfig,
+    fabric: L.Fabric,
+    metrics_list: Sequence[str],
+    has_ensemble: bool,
+    n_members: int,
+    eval_batch_size: int,
+    max_rollout_batches: int | None,
+    rollout_stride: int,
+    max_rollout_steps: int,
+    csv_path: Path,
+) -> None:
+    """Compute rollout metrics (windowed, per-batch, and per-timestep)."""
+    rollout_metric_fns = _resolve_metric_fns(metrics_list, has_ensemble=has_ensemble)
+
+    compute_rollout_coverage = eval_cfg.get("compute_rollout_coverage", False)
+    if compute_rollout_coverage and n_members and n_members > 1:
+        log.info("Adding rollout coverage to metrics...")
+        unwrapped_model = _unwrap_module(model)
+        if not isinstance(unwrapped_model, EncoderProcessorDecoderEnsemble):
+            msg = (
+                "Rollout coverage requires an ensemble model, but got "
+                f"{type(unwrapped_model)!r}."
+            )
+            raise TypeError(msg)
+
+        def coverage_factory() -> Metric:
+            return MultiCoverage(coverage_levels=eval_cfg.get("coverage_levels", None))
+
+        rollout_metric_fns["coverage"] = coverage_factory
+
+    if not rollout_metric_fns:
+        return
+
+    log.info("Computing rollout metrics: %s", list(rollout_metric_fns.keys()))
+    windows = _map_windows(
+        eval_cfg.get("metric_windows_rollout", [(0, 1), (6, 12), (13, 30)])
+    )
+
+    def rollout_predict(batch):
+        preds, trues = model.rollout(
+            batch,
+            stride=rollout_stride,
+            max_rollout_steps=max_rollout_steps,
+            free_running_only=eval_cfg.get("free_running_only", True),
+            n_members=n_members if n_members and n_members > 1 else None,
+        )
+        if trues is None:
+            return None, None
+
+        min_len = min(preds.shape[1], trues.shape[1])
+        return preds[:, :min_len], trues[:, :min_len]
+
+    rollout_metrics_loader = _limit_batches(
+        fabric.setup_dataloaders(
+            datamodule.rollout_test_dataloader(batch_size=eval_batch_size)
+        ),
+        max_rollout_batches,
+    )
+
+    rollout_metrics_per_window, _, rollout_per_batch_rows = (
+        compute_metrics_from_dataloader(
+            dataloader=rollout_metrics_loader,
+            metric_fns=rollout_metric_fns,
+            predict_fn=rollout_predict,
+            windows=windows,
+            return_per_batch=True,
+            device=fabric.device,
         )
     )
-    benchmark_rows = _collect_benchmark_rows(
-        eval_cfg=eval_cfg,
-        cfg=cfg,
-        stats=stats,
-        model=model,  # pyright: ignore[reportArgumentType]
-        checkpoint_path=checkpoint_path,
-        device=str(fabric.device),
-        eval_batch_size=eval_batch_size,
+    if rollout_per_batch_rows:
+        rollout_per_batch_rows = _gather_per_batch_rows(
+            rollout_per_batch_rows,
+            fabric=fabric,
+        )
+
+    rollout_csv_rows = _process_metrics_results(
+        rollout_metrics_per_window,
+        per_batch_rows=rollout_per_batch_rows,  # pyright: ignore[reportArgumentType]
+        log_prefix="Rollout",
+        plot_dir=csv_path.parent,
     )
 
-    # Rollouts
-    compute_rollout_coverage = eval_cfg.get("compute_rollout_coverage", False)
-    compute_rollout_metrics = eval_cfg.get("compute_rollout_metrics", False)
+    rollout_metric_rows, rollout_metadata_rows = _split_metric_and_metadata_rows(
+        rollout_csv_rows
+    )
 
-    if batch_indices or compute_rollout_coverage or compute_rollout_metrics:
-        max_rollout_steps = eval_cfg.get("max_rollout_steps", 10)
+    if fabric.global_rank == 0 and rollout_metric_rows:
+        rollout_csv_path = csv_path.parent / "rollout_metrics.csv"
+        _write_csv(rollout_metric_rows, rollout_csv_path)
+        log.info("Wrote rollout metrics to %s", rollout_csv_path)
 
-        # Use rollout_stride config or fallback to n_steps_output (from stats)
-        data_config = cfg.get("datamodule", {})
-        rollout_stride = data_config.get("rollout_stride") or stats["n_steps_output"]
+    if fabric.global_rank == 0 and rollout_metadata_rows:
+        rollout_metadata_csv_path = csv_path.parent / "rollout_metadata.csv"
+        _write_csv(rollout_metadata_rows, rollout_metadata_csv_path)
+        log.info("Wrote rollout metadata to %s", rollout_metadata_csv_path)
 
-        if batch_indices:
-            rollout_test_loader = fabric.setup_dataloaders(
-                datamodule.rollout_test_dataloader(batch_size=eval_batch_size)
+    # Per-timestep, per-channel rollout metrics
+    _run_rollout_per_timestep_metrics(
+        rollout_metric_fns=rollout_metric_fns,
+        rollout_predict=rollout_predict,
+        datamodule=datamodule,
+        fabric=fabric,
+        eval_batch_size=eval_batch_size,
+        max_rollout_batches=max_rollout_batches,
+        max_rollout_steps=max_rollout_steps,
+        rollout_stride=rollout_stride,
+        csv_path=csv_path,
+    )
+
+
+def _run_rollout_per_timestep_metrics(
+    *,
+    rollout_metric_fns: dict[str, Callable[[], Metric]],
+    rollout_predict: Callable,
+    datamodule: Any,
+    fabric: L.Fabric,
+    eval_batch_size: int,
+    max_rollout_batches: int | None,
+    max_rollout_steps: int,
+    rollout_stride: int,
+    csv_path: Path,
+) -> None:
+    """Compute per-timestep, per-channel rollout metrics."""
+    per_timestep_metric_fns: dict[str, Callable[[], Metric]] = {}
+    for name, metric_factory in rollout_metric_fns.items():
+        if _should_skip_metric(name):
+            log.info(
+                "Skipping rollout per-timestep metric '%s' due to memory cost.",
+                name,
             )
-            rollout_channel_names = _resolve_rollout_channel_names(
-                getattr(rollout_test_loader, "dataset", None)
-            )
-            if rollout_channel_names is not None:
-                log.info(
-                    "Using rollout video channel labels from core_field_names: %s",
-                    rollout_channel_names,
-                )
-            else:
-                log.info(
-                    "No rollout video channel labels found in core_field_names; "
-                    "falling back to generic channel indices."
+            continue
+        if name == "coverage":
+            per_timestep_metric_fns[name] = metric_factory
+        else:
+            metric_cls = AVAILABLE_METRICS.get(name)
+            if metric_cls is None:
+                metric_cls = AVAILABLE_METRICS_ENSEMBLE.get(name)
+            if metric_cls is not None:
+                per_timestep_metric_fns[name] = _build_per_timestep_metric_factory(
+                    metric_cls
                 )
 
-            rollout_loader = _limit_batches(
-                rollout_test_loader,
-                max_rollout_batches,
-            )
-            _render_rollouts(
-                model,  # pyright: ignore[reportArgumentType]
-                rollout_loader,
-                batch_indices,
-                video_dir,
-                eval_cfg.get("video_sample_index", 0),
-                eval_cfg.get("video_format", "mp4"),
-                eval_cfg.get("fps", 5),
-                stride=rollout_stride,
-                max_rollout_steps=max_rollout_steps,
-                free_running_only=eval_cfg.get("free_running_only", True),
-                n_members=n_members,
-                channel_names=rollout_channel_names,
-                preserve_aspect=eval_cfg.get("preserve_aspect", False),
-            )
+    if not per_timestep_metric_fns:
+        return
 
-        # Prepare metric functions for rollouts
-        rollout_metric_fns: dict[str, Callable[[], Metric]] = {}
+    max_rollout_timesteps = _resolve_rollout_timestep_limit(
+        max_rollout_steps=max_rollout_steps,
+        rollout_stride=int(rollout_stride),
+    )
+    rollout_loader_per_timestep = _limit_batches(
+        fabric.setup_dataloaders(
+            datamodule.rollout_test_dataloader(batch_size=eval_batch_size)
+        ),
+        max_rollout_batches,
+    )
+    per_timestep_results = compute_metrics_per_timestep_from_dataloader(
+        dataloader=rollout_loader_per_timestep,
+        metric_fns=per_timestep_metric_fns,
+        predict_fn=rollout_predict,
+        max_timesteps=max_rollout_timesteps,
+        device=fabric.device,
+    )
+    if not per_timestep_results or fabric.global_rank != 0:
+        return
 
-        if compute_rollout_metrics:
-            for name in metrics_list:
-                if _should_skip_metric(name):
-                    log.info("Skipping rollout metric '%s' due to memory cost.", name)
-                    continue
-                if name in AVAILABLE_METRICS:
-                    rollout_metric_fns[name] = AVAILABLE_METRICS[name]
-                elif name in AVAILABLE_METRICS_ENSEMBLE:
-                    if has_ensemble:
-                        rollout_metric_fns[name] = AVAILABLE_METRICS_ENSEMBLE[name]
-                    else:
-                        log.info(
-                            "Skipping ensemble rollout metric '%s' because "
-                            "n_members <= 1.",
-                            name,
-                        )
-                else:
-                    msg = f"Metric {name} not found in available metrics"
-                    log.warning(msg)
+    T, C = next(iter(per_timestep_results.values())).shape
+    timestep_cols = [str(t) for t in range(T)]
+    timestep_index = pd.Index(timestep_cols)
+    for c in range(C):
+        df = pd.DataFrame.from_dict(
+            {
+                metric: per_timestep_results[metric][:, c].tolist()
+                for metric in per_timestep_results
+            },
+            orient="index",
+            columns=timestep_index,
+        )
+        out_path = csv_path.parent / f"rollout_metrics_per_timestep_channel_{c}.csv"
+        df.to_csv(out_path)
+        log.info(
+            "Wrote rollout metrics per timestep (channel %s) to %s",
+            c,
+            out_path,
+        )
+    df_all = pd.DataFrame.from_dict(
+        {
+            metric: per_timestep_results[metric].mean(axis=1).tolist()
+            for metric in per_timestep_results
+        },
+        orient="index",
+        columns=timestep_index,
+    )
+    out_path_all = csv_path.parent / "rollout_metrics_per_timestep_channel_all.csv"
+    df_all.to_csv(out_path_all)
+    log.info(
+        "Wrote rollout metrics per timestep (channel all) to %s",
+        out_path_all,
+    )
 
-        if compute_rollout_coverage and n_members and n_members > 1:
-            log.info("Adding rollout coverage to metrics...")
-            unwrapped_model = _unwrap_module(model)
-            if not isinstance(unwrapped_model, EncoderProcessorDecoderEnsemble):
-                msg = (
-                    "Rollout coverage requires an ensemble model, but got "
-                    f"{type(unwrapped_model)!r}."
-                )
-                raise TypeError(msg)
 
-            def coverage_factory() -> Metric:
-                return MultiCoverage(
-                    coverage_levels=eval_cfg.get("coverage_levels", None)
-                )
-
-            rollout_metric_fns["coverage"] = coverage_factory
-
-        if rollout_metric_fns:
-            log.info("Computing rollout metrics: %s", list(rollout_metric_fns.keys()))
-            windows = _map_windows(
-                eval_cfg.get("metric_windows_rollout", [(0, 1), (6, 12), (13, 30)])
-            )
-
-            def rollout_predict(batch):
-                preds, trues = model.rollout(
-                    batch,
-                    stride=rollout_stride,
-                    max_rollout_steps=max_rollout_steps,
-                    free_running_only=eval_cfg.get("free_running_only", True),
-                    n_members=n_members if n_members and n_members > 1 else None,
-                )
-                if trues is None:
-                    return None, None
-
-                min_len = min(preds.shape[1], trues.shape[1])
-                return preds[:, :min_len], trues[:, :min_len]
-
-            rollout_metrics_loader = _limit_batches(
-                fabric.setup_dataloaders(
-                    datamodule.rollout_test_dataloader(batch_size=eval_batch_size)
-                ),
-                max_rollout_batches,
-            )
-
-            rollout_metrics_per_window, _, rollout_per_batch_rows = (
-                compute_metrics_from_dataloader(
-                    dataloader=rollout_metrics_loader,
-                    metric_fns=rollout_metric_fns,
-                    predict_fn=rollout_predict,
-                    windows=windows,
-                    return_per_batch=True,
-                    device=fabric.device,
-                )
-            )
-            if rollout_per_batch_rows:
-                rollout_per_batch_rows = _gather_per_batch_rows(
-                    rollout_per_batch_rows,
-                    fabric=fabric,
-                )
-
-            # Process and log results
-            rollout_csv_rows = _process_metrics_results(
-                rollout_metrics_per_window,
-                per_batch_rows=rollout_per_batch_rows,  # pyright: ignore[reportArgumentType]
-                log_prefix="Rollout",
-                plot_dir=csv_path.parent,
-            )
-
-            # Save rollout metrics to CSV
-            rollout_csv_path = csv_path.parent / "rollout_metrics.csv"
-            rollout_combined_rows = [*rollout_csv_rows]
-            rollout_metric_rows, rollout_metadata_rows = (
-                _split_metric_and_metadata_rows(rollout_combined_rows)
-            )
-
-            if fabric.global_rank == 0 and rollout_metric_rows:
-                _write_csv(rollout_metric_rows, rollout_csv_path)
-                log.info("Wrote rollout metrics to %s", rollout_csv_path)
-
-            rollout_metadata_csv_path = csv_path.parent / "rollout_metadata.csv"
-            if fabric.global_rank == 0 and rollout_metadata_rows:
-                _write_csv(rollout_metadata_rows, rollout_metadata_csv_path)
-                log.info("Wrote rollout metadata to %s", rollout_metadata_csv_path)
-
-            # Per-timestep, per-channel rollout metrics (rows=metrics, cols=timestep)
-            per_timestep_metric_fns: dict[str, Callable[[], Metric]] = {}
-            for name, metric_factory in rollout_metric_fns.items():
-                if _should_skip_metric(name):
-                    log.info(
-                        "Skipping rollout per-timestep metric '%s' due to memory cost.",
-                        name,
-                    )
-                    continue
-                if name == "coverage":
-                    per_timestep_metric_fns[name] = metric_factory
-                else:
-                    metric_cls = AVAILABLE_METRICS.get(name)
-                    if metric_cls is None:
-                        metric_cls = AVAILABLE_METRICS_ENSEMBLE.get(name)
-                    if metric_cls is not None:
-                        per_timestep_metric_fns[name] = (
-                            _build_per_timestep_metric_factory(metric_cls)
-                        )
-
-            if per_timestep_metric_fns:
-                max_rollout_timesteps = _resolve_rollout_timestep_limit(
-                    max_rollout_steps=max_rollout_steps,
-                    rollout_stride=int(rollout_stride),
-                )
-                rollout_loader_per_timestep = _limit_batches(
-                    fabric.setup_dataloaders(
-                        datamodule.rollout_test_dataloader(batch_size=eval_batch_size)
-                    ),
-                    max_rollout_batches,
-                )
-                per_timestep_results = compute_metrics_per_timestep_from_dataloader(
-                    dataloader=rollout_loader_per_timestep,
-                    metric_fns=per_timestep_metric_fns,
-                    predict_fn=rollout_predict,
-                    max_timesteps=max_rollout_timesteps,
-                    device=fabric.device,
-                )
-                if per_timestep_results and fabric.global_rank == 0:
-                    T, C = next(iter(per_timestep_results.values())).shape
-                    timestep_cols = [str(t) for t in range(T)]
-                    timestep_index = pd.Index(timestep_cols)
-                    for c in range(C):
-                        df = pd.DataFrame.from_dict(
-                            {
-                                metric: per_timestep_results[metric][:, c].tolist()
-                                for metric in per_timestep_results
-                            },
-                            orient="index",
-                            columns=timestep_index,
-                        )
-                        out_path = (
-                            csv_path.parent
-                            / f"rollout_metrics_per_timestep_channel_{c}.csv"
-                        )
-                        df.to_csv(out_path)
-                        log.info(
-                            "Wrote rollout metrics per timestep (channel %s) to %s",
-                            c,
-                            out_path,
-                        )
-                    df_all = pd.DataFrame.from_dict(
-                        {
-                            metric: per_timestep_results[metric].mean(axis=1).tolist()
-                            for metric in per_timestep_results
-                        },
-                        orient="index",
-                        columns=timestep_index,
-                    )
-                    out_path_all = (
-                        csv_path.parent / "rollout_metrics_per_timestep_channel_all.csv"
-                    )
-                    df_all.to_csv(out_path_all)
-                    log.info(
-                        "Wrote rollout metrics per timestep (channel all) to %s",
-                        out_path_all,
-                    )
-
+def _write_final_csvs(
+    *,
+    evaluation_rows: list[dict[str, float | str]],
+    benchmark_rows: list[dict[str, float | str | int | None]],
+    fabric: L.Fabric,
+    csv_path: Path,
+    eval_cfg: DictConfig,
+    work_dir: Path,
+) -> None:
+    """Write final evaluation, metadata, and benchmark CSVs (rank 0 only)."""
     metric_rows, metadata_rows = _split_metric_and_metadata_rows(evaluation_rows)
 
     if fabric.global_rank == 0 and metric_rows:
@@ -1349,6 +1274,209 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
         benchmark_csv_path.parent.mkdir(parents=True, exist_ok=True)
         pd.DataFrame(benchmark_rows).to_csv(benchmark_csv_path, index=False)
         log.info("Wrote benchmark CSV to %s", benchmark_csv_path)
+
+
+def _setup_fabric(eval_cfg: DictConfig) -> L.Fabric:
+    """Create and launch a Fabric instance from eval config."""
+    # Prefer eval.accelerator to mirror Lightning API, while keeping
+    # eval.device as a backwards-compatible fallback.
+    accelerator = eval_cfg.get("accelerator", None)
+    if accelerator is None:
+        accelerator = eval_cfg.get("device", "auto")
+    elif "device" in eval_cfg:
+        log.warning(
+            "Both eval.accelerator and deprecated eval.device were provided; "
+            "using eval.accelerator=%s.",
+            accelerator,
+        )
+    devices = eval_cfg.get("devices", 1)
+    fabric = L.Fabric(accelerator=accelerator, devices=devices)
+    fabric.launch()
+    return fabric
+
+
+def _load_model_checkpoint(
+    model: EncoderProcessorDecoder | EncoderProcessorDecoderEnsemble,
+    checkpoint_path: Path,
+) -> Mapping[str, Any]:
+    """Load checkpoint into model, returning the full checkpoint payload."""
+    log.info("Loading checkpoint from %s", checkpoint_path)
+    checkpoint_payload = load_checkpoint_payload(checkpoint_path)
+    state_dict = extract_state_dict(checkpoint_payload)
+    load_result = model.load_state_dict(state_dict, strict=True)
+    if load_result.missing_keys or load_result.unexpected_keys:
+        msg = (
+            "Checkpoint parameters do not match the instantiated model. "
+            f"Missing keys: {load_result.missing_keys}. "
+            f"Unexpected keys: {load_result.unexpected_keys}."
+        )
+        raise RuntimeError(msg)
+    return checkpoint_payload
+
+
+def _resolve_eval_paths(
+    cfg: DictConfig,
+    eval_cfg: DictConfig,
+    work_dir: Path,
+) -> tuple[Path, Path, Path]:
+    """Resolve checkpoint, CSV, and video directory paths."""
+    checkpoint_path = resolve_checkpoint_path(
+        eval_cfg,
+        work_dir,
+        missing_message=(
+            "No checkpoint specified. Please provide a checkpoint path via:\n"
+            "  eval.checkpoint=/path/to/checkpoint.ckpt\n"
+            "Or add it to your config file."
+        ),
+    )
+    if cfg.get("output", {}).get("save_config"):
+        save_resolved_config(cfg, work_dir, filename="resolved_eval_config.yaml")
+
+    csv_path = _resolve_csv_path(eval_cfg, work_dir)
+    video_dir = _resolve_video_dir(eval_cfg, work_dir)
+    return checkpoint_path, csv_path, video_dir
+
+
+def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:
+    """Run evaluation using an already-composed config."""
+    logging.basicConfig(level=logging.INFO)
+
+    umask_value = cfg.get("umask")
+    if umask_value is not None:
+        os.umask(int(str(umask_value), 8))
+        log.info("Applied process umask %s", umask_value)
+
+    work_dir = resolve_hydra_work_dir(work_dir)
+
+    eval_cfg = cfg.get("eval", {})
+    eval_batch_size: int = eval_cfg.get("batch_size", 1)
+    max_test_batches = eval_cfg.get("max_test_batches")
+    max_rollout_batches = _resolve_rollout_batch_limit(eval_cfg)
+    log.info(
+        "Batch limits: max_test_batches=%s, max_rollout_batches=%s",
+        max_test_batches,
+        max_rollout_batches,
+    )
+
+    checkpoint_path, csv_path, video_dir = _resolve_eval_paths(cfg, eval_cfg, work_dir)
+
+    # Setup datamodule, model, and checkpoint
+    datamodule, cfg, stats = setup_datamodule(cfg)
+
+    if "n_members" in eval_cfg:
+        with open_dict(cfg.model):
+            cfg.model.n_members = eval_cfg.n_members
+        log.info(
+            "Overriding model.n_members with %s from eval config", eval_cfg.n_members
+        )
+
+    model = setup_epd_model(cfg, stats, datamodule=datamodule)
+    checkpoint_payload = _load_model_checkpoint(model, checkpoint_path)
+
+    metrics_list = eval_cfg.get("metrics", DEFAULT_EVAL_METRICS)
+    batch_indices = eval_cfg.get("batch_indices", [])
+    n_members = cfg.get("model", {}).get("n_members", 1)
+    has_ensemble = bool(n_members and n_members > 1)
+
+    # Setup Fabric and wrap model
+    fabric = _setup_fabric(eval_cfg)
+    log.info("Model configuration n_members: %s", n_members)
+    log.info("Model class: %s", type(model))
+
+    model = fabric.setup_module(model)
+    _mark_forward_methods_if_available(model, methods=("rollout",))
+    model.eval()
+
+    # Unwrap once for functions that need direct access to model internals
+    # (parameter counting, benchmark shaping, etc.). The Fabric-wrapped `model`
+    # is still used for all forward/rollout calls.
+    unwrapped_model = _unwrap_module(model)
+
+    test_loader = _limit_batches(
+        fabric.setup_dataloaders(datamodule.test_dataloader()),
+        max_test_batches,
+    )
+
+    # Phase 1: Test metrics
+    test_rows = _run_test_metrics(
+        model=model,
+        test_loader=test_loader,
+        eval_cfg=eval_cfg,
+        metrics_list=metrics_list,
+        has_ensemble=has_ensemble,
+        n_members=n_members,
+        fabric=fabric,
+        work_dir=work_dir,
+    )
+
+    evaluation_rows: list[dict[str, float | str]] = []
+    evaluation_rows.extend(test_rows)
+    evaluation_rows.extend(
+        _evaluation_metadata_rows(
+            checkpoint_payload=checkpoint_payload,
+            model=unwrapped_model,
+        )
+    )
+    benchmark_rows = _collect_benchmark_rows(
+        eval_cfg=eval_cfg,
+        cfg=cfg,
+        stats=stats,
+        model=unwrapped_model,
+        checkpoint_path=checkpoint_path,
+        device=str(fabric.device),
+        eval_batch_size=eval_batch_size,
+    )
+
+    # Phase 2: Rollout videos and metrics
+    compute_rollout_coverage = eval_cfg.get("compute_rollout_coverage", False)
+    compute_rollout_metrics = eval_cfg.get("compute_rollout_metrics", False)
+
+    if batch_indices or compute_rollout_coverage or compute_rollout_metrics:
+        max_rollout_steps = eval_cfg.get("max_rollout_steps", 10)
+
+        data_config = cfg.get("datamodule", {})
+        rollout_stride = data_config.get("rollout_stride") or stats["n_steps_output"]
+
+        if batch_indices:
+            _run_rollout_videos(
+                model=unwrapped_model,
+                datamodule=datamodule,
+                eval_cfg=eval_cfg,
+                fabric=fabric,
+                eval_batch_size=eval_batch_size,
+                max_rollout_batches=max_rollout_batches,
+                batch_indices=batch_indices,
+                video_dir=video_dir,
+                rollout_stride=rollout_stride,
+                max_rollout_steps=max_rollout_steps,
+                n_members=n_members,
+            )
+
+        if compute_rollout_metrics or compute_rollout_coverage:
+            _run_rollout_metrics(
+                model=model,
+                datamodule=datamodule,
+                eval_cfg=eval_cfg,
+                fabric=fabric,
+                metrics_list=metrics_list,
+                has_ensemble=has_ensemble,
+                n_members=n_members,
+                eval_batch_size=eval_batch_size,
+                max_rollout_batches=max_rollout_batches,
+                rollout_stride=rollout_stride,
+                max_rollout_steps=max_rollout_steps,
+                csv_path=csv_path,
+            )
+
+    # Phase 3: Write final CSVs
+    _write_final_csvs(
+        evaluation_rows=evaluation_rows,
+        benchmark_rows=benchmark_rows,
+        fabric=fabric,
+        csv_path=csv_path,
+        eval_cfg=eval_cfg,
+        work_dir=work_dir,
+    )
 
 
 if __name__ == "__main__":
