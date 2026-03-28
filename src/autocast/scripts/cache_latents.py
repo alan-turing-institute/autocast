@@ -13,7 +13,7 @@ from pathlib import Path
 
 import hydra
 import torch
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig, OmegaConf, open_dict
 
 from autocast.scripts.data import batch_to_device
 from autocast.scripts.execution import resolve_hydra_work_dir
@@ -147,7 +147,7 @@ def cache_latents(
     log.info("Using device: %s", resolved_device)
 
     # Force full_trajectory_mode so we cache complete trajectories
-    with OmegaConf.read_write(cfg):  # type: ignore[attr-defined]
+    with open_dict(cfg):
         if "datamodule" in cfg:
             OmegaConf.update(cfg, "datamodule.full_trajectory_mode", True, merge=True)
             # Ensure n_steps_input is set to 1 for full_trajectory_mode
