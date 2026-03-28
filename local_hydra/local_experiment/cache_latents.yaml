@@ -1,6 +1,8 @@
 # @package _global_
 defaults:
   - /distributed: single_gpu_slurm
+  - override /encoder@model.encoder: dc_large
+  - override /decoder@model.decoder: dc_large
   - _self_
 
 experiment_name: cache_latents
