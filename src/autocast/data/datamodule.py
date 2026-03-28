@@ -306,6 +306,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             shuffle=True,
             num_workers=self.num_workers,
             collate_fn=collate_batches,
+            pin_memory=True,
         )
 
     def val_dataloader(self) -> DataLoader:
@@ -316,6 +317,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             shuffle=False,
             num_workers=self.num_workers,
             collate_fn=collate_batches,
+            pin_memory=True,
         )
 
     def rollout_val_dataloader(self, batch_size: int | None = None) -> DataLoader:
@@ -332,6 +334,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             shuffle=False,
             num_workers=self.num_workers,
             collate_fn=collate_batches,
+            pin_memory=True,
         )
 
     def test_dataloader(self) -> DataLoader:
@@ -342,6 +345,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             shuffle=False,
             num_workers=self.num_workers,
             collate_fn=collate_batches,
+            pin_memory=True,
         )
 
     def rollout_test_dataloader(self, batch_size: int | None = None) -> DataLoader:
@@ -358,4 +362,5 @@ class SpatioTemporalDataModule(LightningDataModule):
             shuffle=False,
             num_workers=self.num_workers,
             collate_fn=collate_batches,
+            pin_memory=True,
         )
