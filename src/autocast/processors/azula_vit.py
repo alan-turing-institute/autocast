@@ -57,6 +57,7 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
             temporal_method=temporal_method,
             temporal_attention_heads=num_heads,
             temporal_attention_hidden_dim=hidden_dim // num_heads,
+            use_precomputed_modulation=True,
         )
 
     def forward(self, x: Tensor, x_noise: Tensor | None = None) -> Tensor:

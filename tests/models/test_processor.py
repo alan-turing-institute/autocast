@@ -9,6 +9,7 @@ from torch.utils.data import DataLoader, Dataset
 
 from autocast.models.processor import ProcessorModel
 from autocast.nn.unet import TemporalUNetBackbone
+from autocast.nn.vit import TemporalViTBackbone
 from autocast.processors.diffusion import DiffusionProcessor
 from autocast.processors.flow_matching import FlowMatchingProcessor
 from autocast.types import EncodedBatch
@@ -489,3 +490,35 @@ def test_processor_ignores_global_cond_when_disabled():
     assert torch.allclose(output_no_cond, output_with_cond), (
         "Output changed despite global_cond being disabled"
     )
+
+
+def test_temporal_vit_uses_precomputed_modulation_without_embedding_params():
+    backbone = TemporalViTBackbone(
+        in_channels=4,
+        out_channels=4,
+        cond_channels=0,
+        n_steps_output=1,
+        n_steps_input=1,
+        global_cond_channels=None,
+        include_global_cond=False,
+        mod_features=32,
+        hid_channels=32,
+        hid_blocks=1,
+        attention_heads=4,
+        patch_size=4,
+        spatial=2,
+        temporal_method="none",
+        use_precomputed_modulation=True,
+    )
+
+    # In precomputed modulation mode, no trainable time embedding parameters
+    # should be registered, which avoids strict-DDP unused-parameter failures.
+    assert all(
+        not name.startswith("time_embedding") for name, _ in backbone.named_parameters()
+    )
+
+    x = torch.randn(2, 1, 8, 8, 4)
+    t = torch.randn(2, 32)
+    y = backbone(x_t=x, t=t, cond=None, global_cond=None)
+
+    assert y.shape == (2, 1, 8, 8, 4)

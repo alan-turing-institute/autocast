@@ -38,6 +38,7 @@ class TemporalBackboneBase(nn.Module, ABC):
         # TCN parameters
         tcn_kernel_size: int = 3,
         tcn_num_layers: int = 2,
+        use_precomputed_modulation: bool = False,
     ):
         """Initialize Temporal Backbone Base.
 
@@ -68,6 +69,7 @@ class TemporalBackboneBase(nn.Module, ABC):
         self.n_steps_output = n_steps_output
         self.n_steps_input = n_steps_input
         self.mod_features = mod_features
+        self.use_precomputed_modulation = use_precomputed_modulation
 
         # Validate global conditioning configuration
         if include_global_cond and (
@@ -78,12 +80,18 @@ class TemporalBackboneBase(nn.Module, ABC):
         self.global_cond_channels = global_cond_channels
         self.include_global_cond = include_global_cond
 
-        # Time embedding for diffusion timestep
-        self.time_embedding = nn.Sequential(
-            SineEncoding(mod_features),
-            nn.Linear(mod_features, mod_features),
-            nn.SiLU(),
-            nn.Linear(mod_features, mod_features),
+        # Time embedding for scalar diffusion timesteps. Some models pass
+        # precomputed modulation vectors directly and should not register
+        # unused embedding parameters under strict DDP.
+        self.time_embedding = (
+            None
+            if self.use_precomputed_modulation
+            else nn.Sequential(
+                SineEncoding(mod_features),
+                nn.Linear(mod_features, mod_features),
+                nn.SiLU(),
+                nn.Linear(mod_features, mod_features),
+            )
         )
 
         self.global_cond_embedding = (
@@ -223,6 +231,12 @@ class TemporalBackboneBase(nn.Module, ABC):
         if t.ndim == 2 and t.shape[-1] == self.mod_features:
             t_emb = t
         else:
+            if self.time_embedding is None:
+                msg = (
+                    "Expected precomputed modulation vectors with shape "
+                    "(B, mod_features), but received scalar timesteps."
+                )
+                raise ValueError(msg)
             t_emb = self.time_embedding(t)
 
         # Combine with global conditioning embedding if provided
