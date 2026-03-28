@@ -1,0 +1,6 @@
+# @package _global_
+defaults:
+  - /distributed: single_gpu_slurm
+  - _self_
+
+experiment_name: cache_latents
