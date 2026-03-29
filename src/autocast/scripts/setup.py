@@ -187,6 +187,10 @@ def _apply_processor_channel_defaults(
     _set_if_auto(backbone_config, "n_steps_output", n_steps_output)
     if global_cond_channels is not None:
         _set_if_auto(backbone_config, "global_cond_channels", global_cond_channels)
+    else:
+        _set_if_auto(backbone_config, "global_cond_channels", 0)
+        if "include_global_cond" in backbone_config:
+            backbone_config.include_global_cond = False
 
 
 def setup_datamodule(
@@ -432,6 +436,11 @@ def setup_processor_model(
     model_config = config.get("model", {})
     noise_injector, extra_input_channels = _resolve_input_noise_injector(model_config)
 
+    example_batch = stats["example_batch"]
+    global_cond_channels = None
+    if hasattr(example_batch, "global_cond") and example_batch.global_cond is not None:
+        global_cond_channels = example_batch.global_cond.shape[-1]
+
     proc_kwargs = {
         "in_channels": stats["channel_count"] + extra_input_channels,
         "out_channels": stats["channel_count"],
@@ -440,7 +449,7 @@ def setup_processor_model(
         "n_channels_out": stats["channel_count"],
         "spatial_resolution": tuple(stats["input_shape"][2:-1]),
     }
-    processor = _build_processor(model_config, proc_kwargs)
+    processor = _build_processor(model_config, proc_kwargs, global_cond_channels)
     loss_func = _build_loss_func(model_config)
 
     is_ensemble = model_config.get("n_members", 1) > 1
