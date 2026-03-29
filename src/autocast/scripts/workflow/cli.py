@@ -245,7 +245,7 @@ def main() -> None:
 
     if args.command == "eval":
         dataset = _resolve_dataset(
-            work_dir=args.workdir,
+            work_dir=None,
             overrides=combined_overrides,
         )
 
@@ -270,7 +270,7 @@ def main() -> None:
             )
         else:
             dataset = _resolve_dataset(
-                work_dir=args.workdir,
+                work_dir=None,
                 overrides=combined_overrides,
             )
             benchmark_command(

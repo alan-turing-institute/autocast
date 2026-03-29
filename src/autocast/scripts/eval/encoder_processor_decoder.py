@@ -134,6 +134,47 @@ DEFAULT_EVAL_METRICS = [
 MEMORY_INTENSIVE_METRICS = {"variogram"}
 
 
+def _decode_tensor(
+    x: torch.Tensor,
+    decode_fn: Callable[[torch.Tensor], torch.Tensor],
+    *,
+    n_members: int | None = None,
+) -> torch.Tensor:
+    """Decode a tensor while preserving an optional trailing ensemble axis."""
+    if n_members is not None and n_members > 1 and x.shape[-1] == n_members:
+        batch_size = x.shape[0]
+        flattened = x.movedim(-1, 1).flatten(0, 1)
+        decoded = decode_fn(flattened)
+        return decoded.unflatten(0, (batch_size, n_members)).movedim(1, -1)
+    return decode_fn(x)
+
+
+def _build_eval_predict_fn(
+    model: Any,
+    *,
+    is_processor_model: bool,
+    decode_fn: Callable[[torch.Tensor], torch.Tensor] | None = None,
+    n_members: int | None = None,
+) -> Callable[[Any], Any]:
+    """Build the prediction callable used by evaluation metrics."""
+    if is_processor_model:
+
+        def predict_fn(batch):
+            latent_pred = model._predict(batch)
+            if decode_fn is not None:
+                return (
+                    _decode_tensor(latent_pred, decode_fn, n_members=n_members),
+                    _decode_tensor(
+                        batch.encoded_output_fields, decode_fn, n_members=None
+                    ),
+                )
+            return latent_pred, batch.encoded_output_fields
+
+        return predict_fn
+
+    return model
+
+
 def _resolve_csv_path(eval_cfg: DictConfig, work_dir: Path) -> Path:
     csv_path = eval_cfg.get("csv_path")
     if csv_path is not None:
@@ -391,9 +432,13 @@ def _render_rollouts(
             )
             if decode_fn is not None:
                 with torch.no_grad():
-                    preds = decode_fn(preds)
+                    preds = _decode_tensor(
+                        preds,
+                        decode_fn,
+                        n_members=n_members if n_members and n_members > 1 else None,
+                    )
                     if trues is not None:
-                        trues = decode_fn(trues)
+                        trues = _decode_tensor(trues, decode_fn, n_members=None)
             if trues is None:
                 log.warning(
                     "Rollout for batch %s did not return ground truth; skipping video.",
@@ -1183,6 +1228,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     log.info("Model configuration n_members: %s", n_members)
     log.info("Model class: %s", type(model))
 
+    is_processor_model = isinstance(model, ProcessorModel)
     model = fabric.setup_module(model)
     _mark_forward_methods_if_available(model, methods=("rollout",))
     model.eval()
@@ -1238,16 +1284,12 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     # - Mode 2: decode both latent predictions and latent ground truth so
     #   metrics are computed in data space.
     # - Latent fallback: return (latent_pred, latent_true) directly.
-    if isinstance(model, ProcessorModel):
-
-        def predict_fn(batch):
-            latent_pred = model._predict(batch)
-            if decode_fn is not None:
-                return decode_fn(latent_pred), decode_fn(batch.encoded_output_fields)
-            return latent_pred, batch.encoded_output_fields
-
-    else:
-        predict_fn = model
+    predict_fn = _build_eval_predict_fn(
+        model,
+        is_processor_model=is_processor_model,
+        decode_fn=decode_fn,
+        n_members=n_members if n_members and n_members > 1 else None,
+    )
 
     test_metrics_results, _, test_per_batch_rows = compute_metrics_from_dataloader(
         dataloader=test_loader,
@@ -1389,9 +1431,15 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 )
                 if decode_fn is not None:
                     with torch.no_grad():
-                        preds = decode_fn(preds)
+                        preds = _decode_tensor(
+                            preds,
+                            decode_fn,
+                            n_members=n_members
+                            if n_members and n_members > 1
+                            else None,
+                        )
                         if trues is not None:
-                            trues = decode_fn(trues)
+                            trues = _decode_tensor(trues, decode_fn, n_members=None)
                 if trues is None:
                     return None, None
 

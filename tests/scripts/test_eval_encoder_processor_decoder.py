@@ -9,6 +9,8 @@ from omegaconf import OmegaConf
 
 from autocast.metrics.ensemble import CRPS, AlphaFairCRPS, SpreadSkillRatio
 from autocast.scripts.eval.encoder_processor_decoder import (
+    _decode_tensor,
+    _build_eval_predict_fn,
     _build_per_timestep_metric_factory,
     _normalize_per_batch_rows,
     _reindex_per_batch_rows_by_rank,
@@ -42,6 +44,43 @@ def test_resolve_rollout_batch_limit_prefers_explicit_rollout_limit():
     )
 
     assert _resolve_rollout_batch_limit(eval_cfg) == 5
+
+
+def test_build_eval_predict_fn_uses_predict_for_wrapped_processor_model():
+    batch = SimpleNamespace(
+        encoded_output_fields=torch.randn(2, 4, 8, 8, 3),
+    )
+    expected = torch.randn(2, 4, 8, 8, 3, 10)
+
+    class WrappedProcessorModel:
+        def _predict(self, arg):
+            assert arg is batch
+            return expected
+
+        def __call__(self, _arg):
+            raise AssertionError("predict_fn should not call wrapped model directly")
+
+    predict_fn = _build_eval_predict_fn(
+        WrappedProcessorModel(),
+        is_processor_model=True,
+        decode_fn=None,
+    )
+
+    preds, trues = predict_fn(batch)
+
+    assert preds is expected
+    assert trues is batch.encoded_output_fields
+
+
+def test_decode_tensor_preserves_ensemble_axis():
+    x = torch.randn(2, 4, 8, 8, 3, 5)
+
+    def decode_fn(tensor):
+        return tensor[..., :2]
+
+    decoded = _decode_tensor(x, decode_fn, n_members=5)
+
+    assert decoded.shape == (2, 4, 8, 8, 2, 5)
 
 
 def test_resolve_rollout_timestep_limit_multiplies_by_stride():

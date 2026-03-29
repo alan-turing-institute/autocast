@@ -199,8 +199,42 @@ def setup_datamodule(
     """Create the datamodule and infer data shapes."""
     datamodule = build_datamodule(config)
 
-    datamodule.setup(stage="fit")
-    batch = next(iter(datamodule.train_dataloader()))
+    # Prefer inferring shapes from train split, but gracefully fall back to
+    # val/test when train is unavailable (e.g. eval-only datasets).
+    batch = None
+    split_name = None
+    split_attempts: list[tuple[str, str]] = []
+
+    for candidate_split, setup_stage, loader_name in [
+        ("train", "fit", "train_dataloader"),
+        ("val", "fit", "val_dataloader"),
+        ("test", "test", "test_dataloader"),
+    ]:
+        try:
+            datamodule.setup(stage=setup_stage)
+            loader_fn = getattr(datamodule, loader_name)
+            batch = next(iter(loader_fn()))
+            split_name = candidate_split
+            break
+        except Exception as exc:
+            split_attempts.append((candidate_split, str(exc)))
+
+    if batch is None:
+        data_path = None
+        datamodule_cfg = config.get("datamodule")
+        if datamodule_cfg is not None:
+            data_path = datamodule_cfg.get("data_path")
+
+        attempts_text = "; ".join(f"{name}={error}" for name, error in split_attempts)
+        msg = (
+            "Unable to infer data shapes: no readable train/val/test split was "
+            f"found for datamodule.data_path={data_path}. "
+            "Check that the path exists and contains data for at least one split. "
+            f"Attempts: {attempts_text}"
+        )
+        raise RuntimeError(msg)
+
+    log.info("Inferred data shapes from %s split", split_name)
 
     if isinstance(batch, Batch):
         train_inputs = batch.input_fields
