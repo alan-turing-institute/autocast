@@ -39,8 +39,11 @@ class ProcessorModelEnsemble(ProcessorModel):
         return rearrange(out, "(b m) ... -> b ... m", b=x.shape[0], m=self.n_members)
 
     def _predict(self, batch: EncodedBatch) -> Tensor:
-        """Prediction for rollout (retains flattened batch dim)."""
-        return super()._predict(batch)
+        """Prediction with ensemble expansion (retains ensemble dim)."""
+        b = batch.encoded_inputs.shape[0]
+        expanded_batch = batch.repeat(self.n_members)
+        preds = super()._predict(expanded_batch)
+        return rearrange(preds, "(b m) ... -> b ... m", b=b, m=self.n_members)
 
     def loss(self, batch: EncodedBatch) -> Tensor:
         """Compute ensemble-aware loss.
