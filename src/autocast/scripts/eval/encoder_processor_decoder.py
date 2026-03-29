@@ -1439,7 +1439,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:
 
         if batch_indices:
             _run_rollout_videos(
-                model=unwrapped_model,
+                model=model,
                 datamodule=datamodule,
                 eval_cfg=eval_cfg,
                 fabric=fabric,
