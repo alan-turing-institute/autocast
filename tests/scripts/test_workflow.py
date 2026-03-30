@@ -1240,7 +1240,7 @@ def test_main_unknown_dashed_flag_still_errors(monkeypatch):
         workflow_cli.main()
 
 
-def test_main_eval_dispatches_inferred_dataset_from_workdir(monkeypatch, tmp_path):
+def test_main_eval_does_not_infer_dataset_from_workdir(monkeypatch, tmp_path):
     (tmp_path / "resolved_config.yaml").write_text(
         "datamodule:\n  data_path: /tmp/datasets/reaction_diffusion\n",
         encoding="utf-8",
@@ -1263,11 +1263,11 @@ def test_main_eval_dispatches_inferred_dataset_from_workdir(monkeypatch, tmp_pat
 
     workflow_cli.main()
 
-    assert captured["dataset"] == "reaction_diffusion"
+    assert captured["dataset"] is None
     assert captured["work_dir"] == str(tmp_path)
 
 
-def test_main_benchmark_dispatches_inferred_dataset_from_workdir(monkeypatch, tmp_path):
+def test_main_benchmark_does_not_infer_dataset_from_workdir(monkeypatch, tmp_path):
     (tmp_path / "resolved_config.yaml").write_text(
         "datamodule:\n  data_path: /tmp/datasets/reaction_diffusion\n",
         encoding="utf-8",
@@ -1290,7 +1290,7 @@ def test_main_benchmark_dispatches_inferred_dataset_from_workdir(monkeypatch, tm
 
     workflow_cli.main()
 
-    assert captured["dataset"] == "reaction_diffusion"
+    assert captured["dataset"] is None
     assert captured["work_dir"] == str(tmp_path)
 
 

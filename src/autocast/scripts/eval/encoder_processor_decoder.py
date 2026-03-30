@@ -10,7 +10,10 @@ import hydra
 import lightning as L
 import pandas as pd
 import torch
-from omegaconf import DictConfig, open_dict
+import yaml
+from einops import rearrange
+from omegaconf import DictConfig, OmegaConf, open_dict
+from the_well.data.normalization import ZScoreNormalization
 from torchmetrics import Metric
 
 from autocast.benchmarking import benchmark_model, benchmark_rollout
@@ -48,6 +51,8 @@ from autocast.models.encoder_processor_decoder import EncoderProcessorDecoder
 from autocast.models.encoder_processor_decoder_ensemble import (
     EncoderProcessorDecoderEnsemble,
 )
+from autocast.models.processor import ProcessorModel
+from autocast.models.processor_ensemble import ProcessorModelEnsemble
 from autocast.scripts.config import save_resolved_config
 from autocast.scripts.execution import (
     benchmark_metric_rows,
@@ -57,9 +62,14 @@ from autocast.scripts.execution import (
     resolve_checkpoint_path,
     resolve_hydra_work_dir,
 )
-from autocast.scripts.setup import setup_datamodule, setup_epd_model
+from autocast.scripts.setup import (
+    setup_autoencoder_components,
+    setup_datamodule,
+    setup_epd_model,
+    setup_processor_model,
+)
 from autocast.scripts.utils import get_default_config_path
-from autocast.types.batch import Batch
+from autocast.types.batch import Batch, EncodedBatch
 from autocast.utils import plot_spatiotemporal_video
 from autocast.utils.plots import (
     compute_metrics_from_dataloader,
@@ -125,6 +135,67 @@ DEFAULT_EVAL_METRICS = [
 ]
 
 MEMORY_INTENSIVE_METRICS = {"variogram"}
+
+
+def _decode_tensor(
+    x: torch.Tensor,
+    decode_fn: Callable[[torch.Tensor], torch.Tensor],
+    *,
+    n_members: int | None = None,
+    decode_chunk_size: int = 4,
+) -> torch.Tensor:
+    """Decode a tensor while preserving an optional trailing ensemble axis.
+
+    When ``n_members`` is set, the ensemble dimension is flattened into the
+    batch dimension before decoding.  To avoid OOM when the resulting batch is
+    large (e.g. rollout with many members), decoding is done in chunks of
+    ``decode_chunk_size`` along the batch dimension.
+    """
+    if n_members is not None and n_members > 1 and x.shape[-1] == n_members:
+        batch_size = x.shape[0]
+        flattened = x.movedim(-1, 1).flatten(0, 1)
+        # Chunk along batch dim to avoid OOM for large rollouts
+        chunks = []
+        for i in range(0, flattened.shape[0], decode_chunk_size):
+            chunks.append(decode_fn(flattened[i : i + decode_chunk_size]))
+        decoded = torch.cat(chunks, dim=0)
+        return decoded.unflatten(0, (batch_size, n_members)).movedim(1, -1)
+    return decode_fn(x)
+
+
+def _build_eval_predict_fn(
+    model: Any,
+    *,
+    is_processor_model: bool,
+    decode_fn: Callable[[torch.Tensor], torch.Tensor] | None = None,
+    n_members: int | None = None,
+) -> Callable[[Any], Any]:
+    """Build the prediction callable used by evaluation metrics."""
+    if is_processor_model:
+
+        def predict_fn(batch):
+            # For ensemble models, expand batch and rearrange to add member dim
+            if n_members is not None and n_members > 1:
+                b = batch.encoded_inputs.shape[0]
+                expanded_batch = batch.repeat(n_members)
+                latent_pred = model._predict(expanded_batch)
+                latent_pred = rearrange(
+                    latent_pred, "(b m) ... -> b ... m", b=b, m=n_members
+                )
+            else:
+                latent_pred = model._predict(batch)
+            if decode_fn is not None:
+                return (
+                    _decode_tensor(latent_pred, decode_fn, n_members=n_members),
+                    _decode_tensor(
+                        batch.encoded_output_fields, decode_fn, n_members=None
+                    ),
+                )
+            return latent_pred, batch.encoded_output_fields
+
+        return predict_fn
+
+    return model
 
 
 def _resolve_csv_path(eval_cfg: DictConfig, work_dir: Path) -> Path:
@@ -251,12 +322,23 @@ def _process_metrics_results(
         row: dict[str, float | str] = {"window": window_str, "batch_idx": "all"}
 
         for name, metric in window_metrics.items():
+            try:
+                val = metric.compute()
+            except RuntimeError:
+                log.warning(
+                    "%s metric '%s' for window %s: skipped (no samples)",
+                    log_prefix,
+                    name,
+                    window,
+                )
+                continue
+
             log.info(
                 "%s metric '%s' for window %s: %s",
                 log_prefix,
                 name,
                 window,
-                metric.compute(),
+                val,
             )
 
             # If this is coverage, also plot it
@@ -268,15 +350,10 @@ def _process_metrics_results(
                 )
 
             # Try to get a scalar value for csv
-            try:
-                val = metric.compute()
-                if val.numel() == 1:
-                    row[name] = float(val.item())
-                elif hasattr(val, "mean"):
-                    row[name] = float(val.mean().item())
-            except Exception as e:
-                msg = f"Could not extract scalar for metric {name}: {e}"
-                log.warning(msg)
+            if val.numel() == 1:
+                row[name] = float(val.item())
+            elif hasattr(val, "mean"):
+                row[name] = float(val.mean().item())
 
         rows.append(row)
 
@@ -335,8 +412,13 @@ def _collect_rollout_sample_targets_for_batch(
     return sample_targets
 
 
-def _render_rollouts(
-    model: EncoderProcessorDecoder | EncoderProcessorDecoderEnsemble,
+def _render_rollouts(  # noqa: PLR0912
+    model: (
+        EncoderProcessorDecoder
+        | EncoderProcessorDecoderEnsemble
+        | ProcessorModel
+        | ProcessorModelEnsemble
+    ),
     dataloader,
     batch_indices: Sequence[int],
     video_dir: Path,
@@ -349,6 +431,7 @@ def _render_rollouts(
     n_members: int | None = None,
     channel_names: list[str] | None = None,
     preserve_aspect: bool = False,
+    decode_fn: Callable | None = None,
 ) -> list[Path]:
     # Return early if no rollout indices are requested
     if not batch_indices:
@@ -376,6 +459,15 @@ def _render_rollouts(
                 free_running_only=free_running_only,
                 n_members=n_members if n_members and n_members > 1 else None,
             )
+            if decode_fn is not None:
+                with torch.no_grad():
+                    preds = _decode_tensor(
+                        preds,
+                        decode_fn,
+                        n_members=n_members if n_members and n_members > 1 else None,
+                    )
+                    if trues is not None:
+                        trues = _decode_tensor(trues, decode_fn, n_members=None)
             if trues is None:
                 log.warning(
                     "Rollout for batch %s did not return ground truth; skipping video.",
@@ -669,7 +761,12 @@ def _make_metadata_row(
 
 
 def _parameter_count_rows(
-    model: EncoderProcessorDecoderEnsemble | EncoderProcessorDecoder,
+    model: (
+        EncoderProcessorDecoderEnsemble
+        | EncoderProcessorDecoder
+        | ProcessorModel
+        | ProcessorModelEnsemble
+    ),
 ) -> list[dict[str, float | str]]:
     def _count(module: torch.nn.Module | None, *, trainable: bool = False) -> int:
         if module is None:
@@ -785,7 +882,12 @@ def _training_runtime_rows(
 
 def _evaluation_metadata_rows(
     checkpoint_payload: Mapping[str, Any],
-    model: EncoderProcessorDecoderEnsemble | EncoderProcessorDecoder,
+    model: (
+        EncoderProcessorDecoderEnsemble
+        | EncoderProcessorDecoder
+        | ProcessorModel
+        | ProcessorModelEnsemble
+    ),
 ) -> list[dict[str, float | str]]:
     rows: list[dict[str, float | str]] = []
     rows.extend(_training_runtime_rows(checkpoint_payload))
@@ -798,7 +900,12 @@ def _collect_benchmark_rows(
     eval_cfg: DictConfig,
     cfg: DictConfig,
     stats: Mapping[str, Any],
-    model: EncoderProcessorDecoderEnsemble | EncoderProcessorDecoder,
+    model: (
+        EncoderProcessorDecoderEnsemble
+        | EncoderProcessorDecoder
+        | ProcessorModel
+        | ProcessorModelEnsemble
+    ),
     checkpoint_path: Path,
     device: str,
     eval_batch_size: int,
@@ -922,6 +1029,123 @@ def main(cfg: DictConfig) -> None:
     run_evaluation(cfg)
 
 
+def _extract_processor_state_dict(
+    checkpoint_payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Return only the processor sub-module weights with the prefix stripped."""
+    state_dict = checkpoint_payload.get("state_dict", checkpoint_payload)
+    return {
+        k[len("processor.") :]: v
+        for k, v in state_dict.items()
+        if k.startswith("processor.")
+    }
+
+
+def _load_autoencoder_config_from_cache(cache_dir: Path) -> DictConfig | None:
+    """Load the autoencoder config saved alongside cached latents, if present."""
+    config_path = cache_dir / "autoencoder_config.yaml"
+    if not config_path.exists():
+        log.debug("No autoencoder_config.yaml found in %s", cache_dir)
+        return None
+    try:
+        loaded = OmegaConf.load(config_path)
+        if not isinstance(loaded, DictConfig):
+            return None
+        return loaded
+    except Exception as exc:
+        log.warning("Could not load autoencoder config from %s: %s", config_path, exc)
+        return None
+
+
+def _try_build_decode_fn(
+    cfg: DictConfig,
+) -> "tuple[Any, Any] | tuple[None, None]":
+    """Try to load a decoder from the cached-latents autoencoder config.
+
+    Returns ``(decoder_module, decode_fn)`` on success, or ``(None, None)``
+    if the autoencoder config / checkpoint cannot be found or loaded.
+
+    If the autoencoder was trained with ``use_normalization: true``, the
+    returned ``decode_fn`` also applies denormalization so that all metrics
+    are computed on unnormalized (raw) data — matching the ambient eval path.
+    """
+    data_path = cfg.get("datamodule", {}).get("data_path")
+    if not data_path:
+        return None, None
+
+    ae_cfg = _load_autoencoder_config_from_cache(Path(data_path))
+    if ae_cfg is None:
+        return None, None
+
+    try:
+        _, decoder = setup_autoencoder_components(ae_cfg, {})
+        decoder.eval()
+        log.info(
+            "Loaded decoder (%s) from autoencoder config for data-space evaluation.",
+            type(decoder).__name__,
+        )
+
+        # If the autoencoder was trained on normalized data, wrap decode_fn to
+        # also denormalize so metrics are in raw (unnormalized) space.
+        ae_dm_cfg = ae_cfg.get("datamodule", {})
+        norm = None
+        if ae_dm_cfg.get("use_normalization", False):
+            norm_path = ae_dm_cfg.get("normalization_path")
+            if norm_path:
+                # Resolve env-var interpolations that OmegaConf may leave in the string
+                resolved_norm_path = OmegaConf.to_container(
+                    OmegaConf.create({"p": norm_path}), resolve=True
+                )
+                if isinstance(resolved_norm_path, Mapping):
+                    norm_path = resolved_norm_path.get("p", norm_path)
+                with open(norm_path) as f:
+                    norm_stats = yaml.safe_load(f)
+                norm = ZScoreNormalization(
+                    norm_stats.get("stats", {}),
+                    norm_stats.get("core_field_names", []),
+                    norm_stats.get("constant_field_names", []),
+                )
+                log.info(
+                    "Autoencoder was trained with normalization — "
+                    "decode_fn will also denormalize to raw data space."
+                )
+            else:
+                log.warning(
+                    "use_normalization=true in autoencoder config but no "
+                    "normalization_path found — metrics may be on normalized scale."
+                )
+
+        if norm is not None:
+
+            def decode_fn(x):
+                return norm.denormalize_flattened(decoder.decode(x), "variable")
+        else:
+
+            def decode_fn(x):
+                return decoder.decode(x)
+
+        return decoder, decode_fn
+    except Exception as exc:
+        log.warning(
+            "Could not build decoder from autoencoder config — "
+            "falling back to latent-space evaluation: %s",
+            exc,
+        )
+        return None, None
+
+
+def _is_processor_only_checkpoint(checkpoint_payload: Mapping[str, Any]) -> bool:
+    """Return True if the checkpoint contains only processor weights.
+
+    Processor-only checkpoints (from ``autocast train processor``) have no
+    ``encoder_decoder.*`` keys, in contrast to full EPD checkpoints.
+    """
+    state_dict = checkpoint_payload.get("state_dict", checkpoint_payload)
+    if not isinstance(state_dict, Mapping):
+        return False
+    return not any(k.startswith("encoder_decoder.") for k in state_dict)
+
+
 def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # noqa: PLR0912, PLR0915
     """Run evaluation using an already-composed config."""
     logging.basicConfig(level=logging.INFO)
@@ -960,6 +1184,15 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     csv_path = _resolve_csv_path(eval_cfg, work_dir)
     video_dir = _resolve_video_dir(eval_cfg, work_dir)
 
+    # Load checkpoint payload early to detect model type
+    log.info("Loading checkpoint from %s", checkpoint_path)
+    checkpoint_payload = load_checkpoint_payload(checkpoint_path)
+    processor_only = _is_processor_only_checkpoint(checkpoint_payload)
+    log.info(
+        "Checkpoint type: %s",
+        "processor-only" if processor_only else "encoder-processor-decoder",
+    )
+
     # Setup datamodule and resolve config
     datamodule, cfg, stats = setup_datamodule(cfg)
 
@@ -971,14 +1204,64 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
             "Overriding model.n_members with %s from eval config", eval_cfg.n_members
         )
 
-    # Setup Model
-    model = setup_epd_model(cfg, stats, datamodule=datamodule)
+    # Setup model and weights based on checkpoint type and datamodule.
+    #
+    # Mode 1 - ambient/data-space EPD from two checkpoints:
+    #   Triggered when the processor ckpt is processor-only AND the config
+    #   contains `autoencoder_checkpoint` AND the datamodule yields raw Batch
+    #   objects (i.e. not cached latents).  The encoder+decoder are loaded from
+    #   `autoencoder_checkpoint`; only the processor weights come from the
+    #   processor checkpoint.  Typical invocation:
+    #     autocast eval --workdir <ae_workdir> eval.checkpoint=<processor.ckpt>
+    #
+    # Mode 2 - data-space eval via processor + decoder (cached latents):
+    #   Triggered when the processor ckpt is processor-only AND the datamodule
+    #   yields EncodedBatch objects (cached latents).  The processor is loaded
+    #   from the processor ckpt; the decoder is loaded from `autoencoder_config.yaml`
+    #   saved in the cache directory by `autocast cache-latents`.
+    #   Predictions and ground-truth latents are both decoded before metrics.
+    #
+    # Fallback - latent-space processor eval:
+    #   No `autoencoder_checkpoint` / no `autoencoder_config.yaml` available.
+    #   Metrics are computed in latent space.
 
-    # Load checkpoint
-    log.info("Loading checkpoint from %s", checkpoint_path)
-    checkpoint_payload = load_checkpoint_payload(checkpoint_path)
-    state_dict = extract_state_dict(checkpoint_payload)
-    load_result = model.load_state_dict(state_dict, strict=True)
+    example_batch = stats.get("example_batch")
+    decode_fn = None  # optional callable: latent tensor → data-space tensor
+    decoder_module = None  # keep reference for device placement
+
+    if processor_only:
+        if isinstance(example_batch, Batch) and cfg.get("autoencoder_checkpoint"):
+            # Mode 1: reconstruct full EPD; encoder+decoder from autoencoder_checkpoint
+            log.info(
+                "Mode 1 eval: reconstructing full EPD from autoencoder checkpoint "
+                "+ processor checkpoint."
+            )
+            model = setup_epd_model(cfg, stats, datamodule=datamodule)
+            processor_sd = _extract_processor_state_dict(checkpoint_payload)
+            load_result = model.processor.load_state_dict(processor_sd, strict=True)
+        else:
+            model = setup_processor_model(cfg, stats, datamodule=datamodule)
+            load_result = model.load_state_dict(
+                extract_state_dict(checkpoint_payload), strict=True
+            )
+            if isinstance(example_batch, EncodedBatch):
+                # Mode 2: try to load decoder for data-space evaluation
+                decoder_module, decode_fn = _try_build_decode_fn(cfg)
+                if decode_fn is not None:
+                    log.info(
+                        "Mode 2 eval: processor (cached latents) + decoder → "
+                        "data-space metrics."
+                    )
+                else:
+                    log.info(
+                        "Mode fallback: no decoder found — evaluating in latent space."
+                    )
+    else:
+        model = setup_epd_model(cfg, stats, datamodule=datamodule)
+        load_result = model.load_state_dict(
+            extract_state_dict(checkpoint_payload), strict=True
+        )
+
     if load_result.missing_keys or load_result.unexpected_keys:
         msg = (
             "Checkpoint parameters do not match the instantiated model. "
@@ -1014,9 +1297,12 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     log.info("Model configuration n_members: %s", n_members)
     log.info("Model class: %s", type(model))
 
+    is_processor_model = isinstance(model, ProcessorModel)
     model = fabric.setup_module(model)
     _mark_forward_methods_if_available(model, methods=("rollout",))
     model.eval()
+    if decoder_module is not None:
+        decoder_module.to(fabric.device)
     test_loader = _limit_batches(
         fabric.setup_dataloaders(datamodule.test_dataloader()),
         max_test_batches,
@@ -1061,10 +1347,23 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     # Use metric_windows from config (apply to all metrics)
     test_windows = _map_windows(eval_cfg.get("metric_windows", None))
 
+    # Build predict_fn.
+    # - Mode 1 / plain EPD: model(batch) already returns decoded tensor; trues
+    #   are taken from batch.output_fields by compute_metrics_from_dataloader.
+    # - Mode 2: decode both latent predictions and latent ground truth so
+    #   metrics are computed in data space.
+    # - Latent fallback: return (latent_pred, latent_true) directly.
+    predict_fn = _build_eval_predict_fn(
+        model,
+        is_processor_model=is_processor_model,
+        decode_fn=decode_fn,
+        n_members=n_members if n_members and n_members > 1 else None,
+    )
+
     test_metrics_results, _, test_per_batch_rows = compute_metrics_from_dataloader(
         dataloader=test_loader,
         metric_fns=test_metric_fns,
-        predict_fn=model,
+        predict_fn=predict_fn,
         windows=test_windows,
         return_per_batch=True,
         device=fabric.device,
@@ -1146,6 +1445,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 n_members=n_members,
                 channel_names=rollout_channel_names,
                 preserve_aspect=eval_cfg.get("preserve_aspect", False),
+                decode_fn=decode_fn,
             )
 
         # Prepare metric functions for rollouts
@@ -1173,13 +1473,6 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
 
         if compute_rollout_coverage and n_members and n_members > 1:
             log.info("Adding rollout coverage to metrics...")
-            unwrapped_model = _unwrap_module(model)
-            if not isinstance(unwrapped_model, EncoderProcessorDecoderEnsemble):
-                msg = (
-                    "Rollout coverage requires an ensemble model, but got "
-                    f"{type(unwrapped_model)!r}."
-                )
-                raise TypeError(msg)
 
             def coverage_factory() -> Metric:
                 return MultiCoverage(
@@ -1202,6 +1495,17 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                     free_running_only=eval_cfg.get("free_running_only", True),
                     n_members=n_members if n_members and n_members > 1 else None,
                 )
+                if decode_fn is not None:
+                    with torch.no_grad():
+                        preds = _decode_tensor(
+                            preds,
+                            decode_fn,
+                            n_members=n_members
+                            if n_members and n_members > 1
+                            else None,
+                        )
+                        if trues is not None:
+                            trues = _decode_tensor(trues, decode_fn, n_members=None)
                 if trues is None:
                     return None, None
 
