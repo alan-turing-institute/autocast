@@ -569,6 +569,20 @@ def train_command(
         overrides=overrides,
     )
 
+    # Keep training consistent with train-eval/eval when resuming from an
+    # existing workdir that uses a resolved config. This avoids re-appending
+    # struct-unsafe resume overrides that are already present in the config.
+    if work_dir is not None:
+        command_overrides, using_resolved_config = _with_inferred_resolved_config(
+            work_dir, command_overrides
+        )
+        if using_resolved_config:
+            command_overrides = _normalize_train_eval_overrides_for_resolved_config(
+                work_dir=work_dir,
+                overrides=command_overrides,
+                dataset=dataset,
+            )
+
     run_module(
         TRAIN_MODULES[kind],
         command_overrides,
