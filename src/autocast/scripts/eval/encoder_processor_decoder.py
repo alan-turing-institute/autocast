@@ -10,8 +10,10 @@ import hydra
 import lightning as L
 import pandas as pd
 import torch
+import yaml
 from einops import rearrange
 from omegaconf import DictConfig, OmegaConf, open_dict
+from the_well.data.normalization import ZScoreNormalization
 from torchmetrics import Metric
 
 from autocast.benchmarking import benchmark_model, benchmark_rollout
@@ -1062,6 +1064,10 @@ def _try_build_decode_fn(
 
     Returns ``(decoder_module, decode_fn)`` on success, or ``(None, None)``
     if the autoencoder config / checkpoint cannot be found or loaded.
+
+    If the autoencoder was trained with ``use_normalization: true``, the
+    returned ``decode_fn`` also applies denormalization so that all metrics
+    are computed on unnormalized (raw) data — matching the ambient eval path.
     """
     data_path = cfg.get("datamodule", {}).get("data_path")
     if not data_path:
@@ -1079,8 +1085,44 @@ def _try_build_decode_fn(
             type(decoder).__name__,
         )
 
-        def decode_fn(x):
-            return decoder.decode(x)
+        # If the autoencoder was trained on normalized data, wrap decode_fn to
+        # also denormalize so metrics are in raw (unnormalized) space.
+        ae_dm_cfg = ae_cfg.get("datamodule", {})
+        norm = None
+        if ae_dm_cfg.get("use_normalization", False):
+            norm_path = ae_dm_cfg.get("normalization_path")
+            if norm_path:
+                # Resolve env-var interpolations that OmegaConf may leave in the string
+                resolved_norm_path = OmegaConf.to_container(
+                    OmegaConf.create({"p": norm_path}), resolve=True
+                )
+                if isinstance(resolved_norm_path, Mapping):
+                    norm_path = resolved_norm_path.get("p", norm_path)
+                with open(norm_path) as f:
+                    norm_stats = yaml.safe_load(f)
+                norm = ZScoreNormalization(
+                    norm_stats.get("stats", {}),
+                    norm_stats.get("core_field_names", []),
+                    norm_stats.get("constant_field_names", []),
+                )
+                log.info(
+                    "Autoencoder was trained with normalization — "
+                    "decode_fn will also denormalize to raw data space."
+                )
+            else:
+                log.warning(
+                    "use_normalization=true in autoencoder config but no "
+                    "normalization_path found — metrics may be on normalized scale."
+                )
+
+        if norm is not None:
+
+            def decode_fn(x):
+                return norm.denormalize_flattened(decoder.decode(x), "variable")
+        else:
+
+            def decode_fn(x):
+                return decoder.decode(x)
 
         return decoder, decode_fn
     except Exception as exc:
