@@ -1425,9 +1425,6 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
 
         if compute_rollout_coverage and n_members and n_members > 1:
             log.info("Adding rollout coverage to metrics...")
-            assert isinstance(
-                model, EncoderProcessorDecoderEnsemble | ProcessorModelEnsemble
-            )
 
             def coverage_factory() -> Metric:
                 return MultiCoverage(
