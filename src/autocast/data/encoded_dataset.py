@@ -352,14 +352,32 @@ class EncodedDataModule(LightningDataModule):
     def rollout_test_dataloader(self, batch_size: int | None = None) -> DataLoader:
         """DataLoader for rollout evaluation on test data.
 
-        Returns the standard test dataloader; rollout length is bounded by
-        ``n_steps_output`` per window, which is sufficient for the iterative
-        ``RolloutMixin`` loop.
+        For cached latent datasets, creates a full-trajectory dataset so that
+        ground truth is available for the entire rollout horizon (analogous to
+        ``full_trajectory_mode=True`` in the non-cached datamodules).
         """
         if self.test_dataset is None:
             self.setup(stage="test")
+
+        rollout_dataset: EncodedDataset = self.test_dataset  # type: ignore[assignment]
+
+        if isinstance(self.test_dataset, CachedLatentDataset):
+            test_dir = self.data_path / "test"  # type: ignore[operator]
+            # Infer full trajectory length from the first cached file.
+            first_file = self.test_dataset._traj_files[0]
+            traj = torch.load(first_file, weights_only=False)
+            traj_len = traj["encoded_fields"].shape[0]
+            full_n_output = traj_len - self.n_steps_input
+            if full_n_output > self.n_steps_output:
+                rollout_dataset = CachedLatentDataset(
+                    cache_dir=test_dir,
+                    n_steps_input=self.n_steps_input,
+                    n_steps_output=full_n_output,
+                    stride=full_n_output,  # one window per trajectory
+                )
+
         return DataLoader(
-            self.test_dataset,  # type: ignore[arg-type]
+            rollout_dataset,
             batch_size=batch_size or self.batch_size,
             shuffle=False,
             num_workers=self.num_workers,
