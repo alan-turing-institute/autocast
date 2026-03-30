@@ -29,6 +29,8 @@ class Sample:
     constant_scalars: TensorC | None
     constant_fields: TensorSC | None
     boundary_conditions: TensorS | None
+    input_mask: TensorTSC | None = None
+    output_mask: TensorTSC | None = None
 
 
 @dataclass

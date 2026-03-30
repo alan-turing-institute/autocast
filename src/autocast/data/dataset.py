@@ -141,6 +141,8 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         self.all_output_fields = []
         self.all_constant_scalars = []
         self.all_constant_fields = []
+        self.all_input_masks = []
+        self.all_output_masks = []
 
         # Create input-output pairs
         for traj_idx in range(self.n_trajectories):
@@ -154,6 +156,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
 
             # Split into input and output
             input_fields = fields[:, : self.n_steps_input, ...]
+
             output_fields = (
                 fields[:, self.n_steps_input :, ...]
                 if not self.autoencoder_mode
@@ -180,6 +183,10 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
                     self.all_constant_fields.append(
                         self.constant_fields[traj_idx].to(self.dtype)
                     )
+
+                # Handle masks
+                if self.masks is not None:
+                    self.all_masks.append(self.masks[traj_idx].to(self.dtype))
 
         if self.verbose:
             print(f"Created {len(self.all_input_fields)} subtrajectory samples")
@@ -212,6 +219,22 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             else None
         )
 
+        # Masks
+        self.masks = (
+            torch.Tensor(f["masks"][:]).to(  # type: ignore # noqa: PGH003
+                self.dtype
+            )
+            # 1: [N, T, S, C]
+            # TODO:
+            # - bonus would be to support multiple masking strategies as ensembles with
+            # [N, T, S, C, M]
+            # ->
+            # [N*M, T, S, C]
+            # where M is the num_masks
+            if "masks" in f and f["masks"] is not None and f["masks"] != {}
+            else None
+        )
+
     def read_data(self, data_path: str):
         """Read data.
 
@@ -234,6 +257,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             )
             self.constant_scalars = data.get("constant_scalars", None)
             self.constant_fields = data.get("constant_fields", None)
+            self.masks = data.get("masks", None)
             return
         msg = "No data provided to parse."
         raise ValueError(msg)
@@ -243,6 +267,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
 
     def __getitem__(self, idx):
         """Get item at index."""
+        # TODO: handle masking
         input_fields = self.all_input_fields[idx]
         output_fields = (
             input_fields if self.autoencoder_mode else self.all_output_fields[idx]
@@ -285,6 +310,8 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             item["constant_scalars"] = self.all_constant_scalars[idx]
         if len(self.all_constant_fields) > 0:
             item["constant_fields"] = self.all_constant_fields[idx]
+        if len(self.all_masks) > 0:
+            item["masks"] = self.all_masks[idx]
 
         return self.to_sample(item)
 
