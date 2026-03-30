@@ -140,12 +140,23 @@ def _decode_tensor(
     decode_fn: Callable[[torch.Tensor], torch.Tensor],
     *,
     n_members: int | None = None,
+    decode_chunk_size: int = 4,
 ) -> torch.Tensor:
-    """Decode a tensor while preserving an optional trailing ensemble axis."""
+    """Decode a tensor while preserving an optional trailing ensemble axis.
+
+    When ``n_members`` is set, the ensemble dimension is flattened into the
+    batch dimension before decoding.  To avoid OOM when the resulting batch is
+    large (e.g. rollout with many members), decoding is done in chunks of
+    ``decode_chunk_size`` along the batch dimension.
+    """
     if n_members is not None and n_members > 1 and x.shape[-1] == n_members:
         batch_size = x.shape[0]
         flattened = x.movedim(-1, 1).flatten(0, 1)
-        decoded = decode_fn(flattened)
+        # Chunk along batch dim to avoid OOM for large rollouts
+        chunks = []
+        for i in range(0, flattened.shape[0], decode_chunk_size):
+            chunks.append(decode_fn(flattened[i : i + decode_chunk_size]))
+        decoded = torch.cat(chunks, dim=0)
         return decoded.unflatten(0, (batch_size, n_members)).movedim(1, -1)
     return decode_fn(x)
 
