@@ -6,7 +6,7 @@ from the_well.data.normalization import ZScoreNormalization
 from torch.utils.data import Dataset
 
 from autocast.data.dataset import BatchMixin, SpatioTemporalDataset
-from autocast.types.batch import Sample
+from autocast.types.batch import Batch, Sample
 from autocast.types.types import TensorDBM, TensorDM, TensorM
 
 
@@ -17,6 +17,12 @@ class ListSample:  # noqa: D101
 
     # def __getitem__(self, idx) -> Sample:
     #     return self.inner[idx]
+
+
+@dataclass
+class ListBatch:  # noqa: D101
+    inner: list[Batch]
+    mask: TensorDBM
 
 
 class MultiSpatioTemporalDataset(Dataset, BatchMixin):  # noqa: D101
@@ -48,7 +54,6 @@ class MultiSpatioTemporalDataset(Dataset, BatchMixin):  # noqa: D101
         normalization_path: str | None = None,
         normalization_stats: dict | DictConfig | None = None,
     ):
-
         # TODO: handle either mutiple data_paths or multiple data dicts (e.g. with a
         # list of paths or a list of dicts with paths and other info like normalization
         # stats)
