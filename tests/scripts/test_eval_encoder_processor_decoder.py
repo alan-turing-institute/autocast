@@ -9,7 +9,9 @@ from omegaconf import OmegaConf
 
 from autocast.metrics.ensemble import CRPS, AlphaFairCRPS, SpreadSkillRatio
 from autocast.scripts.eval.encoder_processor_decoder import (
+    _build_eval_predict_fn,
     _build_per_timestep_metric_factory,
+    _decode_tensor,
     _normalize_per_batch_rows,
     _reindex_per_batch_rows_by_rank,
     _render_rollouts,
@@ -20,6 +22,7 @@ from autocast.scripts.eval.encoder_processor_decoder import (
     _split_metric_and_metadata_rows,
     _training_runtime_rows,
 )
+from autocast.types import EncodedBatch
 
 
 def test_resolve_rollout_batch_limit_falls_back_to_test_limit_when_null():
@@ -42,6 +45,76 @@ def test_resolve_rollout_batch_limit_prefers_explicit_rollout_limit():
     )
 
     assert _resolve_rollout_batch_limit(eval_cfg) == 5
+
+
+def test_build_eval_predict_fn_uses_predict_for_wrapped_processor_model():
+    batch = SimpleNamespace(
+        encoded_output_fields=torch.randn(2, 4, 8, 8, 3),
+    )
+    expected = torch.randn(2, 4, 8, 8, 3, 10)
+
+    class WrappedProcessorModel:
+        def _predict(self, arg):
+            assert arg is batch
+            return expected
+
+        def __call__(self, _arg):
+            msg = "predict_fn should not call wrapped model directly"
+            raise AssertionError(msg)
+
+    predict_fn = _build_eval_predict_fn(
+        WrappedProcessorModel(),
+        is_processor_model=True,
+        decode_fn=None,
+    )
+
+    preds, trues = predict_fn(batch)
+
+    assert preds is expected
+    assert trues is batch.encoded_output_fields
+
+
+def test_build_eval_predict_fn_ensemble_expansion():
+    """When n_members > 1, predict_fn expands the batch and adds ensemble dim."""
+
+    inputs = torch.randn(2, 1, 8, 8, 3)
+    targets = torch.randn(2, 4, 8, 8, 3)
+    batch = EncodedBatch(
+        encoded_inputs=inputs,
+        encoded_output_fields=targets,
+        global_cond=None,
+        encoded_info={},
+    )
+
+    class FakeProcessorModel:
+        def _predict(self, b):
+            # Just return a tensor of the right batch shape
+            return torch.randn(b.encoded_inputs.shape[0], 4, 8, 8, 3)
+
+    predict_fn = _build_eval_predict_fn(
+        FakeProcessorModel(),
+        is_processor_model=True,
+        decode_fn=None,
+        n_members=5,
+    )
+
+    preds, trues = predict_fn(batch)
+
+    # preds should have ensemble dim: (B, T, H, W, C, M)
+    assert preds.shape == (2, 4, 8, 8, 3, 5)
+    # trues should remain unchanged
+    assert trues.shape == (2, 4, 8, 8, 3)
+
+
+def test_decode_tensor_preserves_ensemble_axis():
+    x = torch.randn(2, 4, 8, 8, 3, 5)
+
+    def decode_fn(tensor):
+        return tensor[..., :2]
+
+    decoded = _decode_tensor(x, decode_fn, n_members=5)
+
+    assert decoded.shape == (2, 4, 8, 8, 2, 5)
 
 
 def test_resolve_rollout_timestep_limit_multiplies_by_stride():

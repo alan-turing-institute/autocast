@@ -187,6 +187,10 @@ def _apply_processor_channel_defaults(
     _set_if_auto(backbone_config, "n_steps_output", n_steps_output)
     if global_cond_channels is not None:
         _set_if_auto(backbone_config, "global_cond_channels", global_cond_channels)
+    else:
+        _set_if_auto(backbone_config, "global_cond_channels", 0)
+        if "include_global_cond" in backbone_config:
+            backbone_config.include_global_cond = False
 
 
 def setup_datamodule(
@@ -195,8 +199,42 @@ def setup_datamodule(
     """Create the datamodule and infer data shapes."""
     datamodule = build_datamodule(config)
 
-    datamodule.setup(stage="fit")
-    batch = next(iter(datamodule.train_dataloader()))
+    # Prefer inferring shapes from train split, but gracefully fall back to
+    # val/test when train is unavailable (e.g. eval-only datasets).
+    batch = None
+    split_name = None
+    split_attempts: list[tuple[str, str]] = []
+
+    for candidate_split, setup_stage, loader_name in [
+        ("train", "fit", "train_dataloader"),
+        ("val", "fit", "val_dataloader"),
+        ("test", "test", "test_dataloader"),
+    ]:
+        try:
+            datamodule.setup(stage=setup_stage)
+            loader_fn = getattr(datamodule, loader_name)
+            batch = next(iter(loader_fn()))
+            split_name = candidate_split
+            break
+        except Exception as exc:
+            split_attempts.append((candidate_split, str(exc)))
+
+    if batch is None:
+        data_path = None
+        datamodule_cfg = config.get("datamodule")
+        if datamodule_cfg is not None:
+            data_path = datamodule_cfg.get("data_path")
+
+        attempts_text = "; ".join(f"{name}={error}" for name, error in split_attempts)
+        msg = (
+            "Unable to infer data shapes: no readable train/val/test split was "
+            f"found for datamodule.data_path={data_path}. "
+            "Check that the path exists and contains data for at least one split. "
+            f"Attempts: {attempts_text}"
+        )
+        raise RuntimeError(msg)
+
+    log.info("Inferred data shapes from %s split", split_name)
 
     if isinstance(batch, Batch):
         train_inputs = batch.input_fields
@@ -432,6 +470,11 @@ def setup_processor_model(
     model_config = config.get("model", {})
     noise_injector, extra_input_channels = _resolve_input_noise_injector(model_config)
 
+    example_batch = stats["example_batch"]
+    global_cond_channels = None
+    if hasattr(example_batch, "global_cond") and example_batch.global_cond is not None:
+        global_cond_channels = example_batch.global_cond.shape[-1]
+
     proc_kwargs = {
         "in_channels": stats["channel_count"] + extra_input_channels,
         "out_channels": stats["channel_count"],
@@ -440,7 +483,7 @@ def setup_processor_model(
         "n_channels_out": stats["channel_count"],
         "spatial_resolution": tuple(stats["input_shape"][2:-1]),
     }
-    processor = _build_processor(model_config, proc_kwargs)
+    processor = _build_processor(model_config, proc_kwargs, global_cond_channels)
     loss_func = _build_loss_func(model_config)
 
     is_ensemble = model_config.get("n_members", 1) > 1

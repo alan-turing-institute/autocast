@@ -468,9 +468,9 @@ def compute_metrics_per_timestep_from_dataloader(  # noqa: PLR0912, PLR0915
         MultiCoverage). Values are arrays of shape (T, C), batch-averaged.
     """
     with torch.no_grad():
-        # First pass: get min rollout length T and n_channels
         T_min: int | None = None
         n_channels: int | None = None
+        metrics_per_t: list[dict[str, Metric]] = []
         for batch in dataloader:
             result = predict_fn(batch)
             if result is None:
@@ -489,47 +489,32 @@ def compute_metrics_per_timestep_from_dataloader(  # noqa: PLR0912, PLR0915
             T_batch = min(preds.shape[1], trues.shape[1])
             if max_timesteps is not None:
                 T_batch = min(T_batch, max_timesteps)
+
             if T_min is None:
                 T_min = T_batch
                 n_channels = int(trues.shape[-1])
+                metrics_per_t = [
+                    {
+                        name: fn().to(device) if device is not None else fn()
+                        for name, fn in metric_fns.items()
+                    }
+                    for _ in range(T_min)
+                ]
             else:
                 T_min = min(T_min, T_batch)
-        if T_min is None or n_channels is None or T_min == 0:
-            return {}
 
-        metrics_per_t: list[dict[str, Metric]] = [
-            {
-                name: fn().to(device) if device is not None else fn()
-                for name, fn in metric_fns.items()
-            }
-            for _ in range(T_min)
-        ]
-
-        for batch in dataloader:
-            result = predict_fn(batch)
-            if result is None:
-                continue
-            preds, trues = (
-                result
-                if isinstance(result, tuple) and len(result) == 2
-                else (result, getattr(batch, "output_fields", None))
-            )
-            if not (
-                isinstance(preds, torch.Tensor) and isinstance(trues, torch.Tensor)
-            ):
-                continue
-            if device is None:
-                preds, trues = preds.cpu(), trues.cpu()
-            T_batch = min(preds.shape[1], trues.shape[1], T_min)
-            if max_timesteps is not None:
-                T_batch = min(T_batch, max_timesteps)
-            for t in range(T_batch):
+            for t in range(T_min):
                 p = preds[:, t : t + 1]
                 t_slice = trues[:, t : t + 1]
                 if p.numel() == 0 or t_slice.numel() == 0:
                     continue
                 for metric in metrics_per_t[t].values():
                     metric.update(p, t_slice)
+
+        if T_min is None or n_channels is None or T_min == 0:
+            return {}
+
+        metrics_per_t = metrics_per_t[:T_min]
 
     # Build result: dict[str, (T, C)]
     out: dict[str, np.ndarray] = {}

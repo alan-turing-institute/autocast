@@ -112,3 +112,31 @@ def test_processor_ensemble_loss_fallback():
     expected_loss = processor.loss(batch)
 
     assert loss.item() == pytest.approx(expected_loss.item())
+
+
+def test_processor_ensemble_predict_returns_flat_batch():
+    """Test that _predict returns no ensemble dim for rollout compatibility."""
+    n_members = 3
+    batch_size = 2
+    input_shape = (batch_size, 1, 8, 8, 4)
+    output_field_shape = (2, 8, 8, 4)
+    output_batch_shape = (batch_size, *output_field_shape)
+
+    inputs = torch.randn(*input_shape)
+    targets = torch.randn(*output_batch_shape)
+
+    batch = EncodedBatch(
+        encoded_inputs=inputs,
+        encoded_output_fields=targets,
+        global_cond=None,
+        encoded_info={},
+    )
+
+    processor = SimpleLinearProcessor(input_dim=4, output_dim=4, output_time_steps=2)
+    ensemble = ProcessorModelEnsemble(processor=processor, n_members=n_members)
+
+    preds = ensemble._predict(batch)
+
+    # _predict returns flat (B, T, H, W, C) — ensemble expansion is handled by callers
+    expected_shape = (batch_size, *output_field_shape)
+    assert preds.shape == expected_shape

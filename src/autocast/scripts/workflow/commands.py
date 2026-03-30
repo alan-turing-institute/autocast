@@ -14,6 +14,7 @@ from omegaconf import OmegaConf
 from autocast.scripts.utils import get_default_config_path, resolve_work_dir
 from autocast.scripts.workflow.constants import (
     BENCHMARK_MODULE,
+    CACHE_LATENTS_MODULE,
     EVAL_MODULE,
     TRAIN_EVAL_MODULE,
     TRAIN_MODULES,
@@ -369,7 +370,9 @@ def infer_eval_checkpoint(work_dir: str | Path) -> Path | None:
             if isinstance(configured_checkpoint, str) and configured_checkpoint:
                 candidate_names.append(configured_checkpoint)
 
-    candidate_names.extend(["encoder_processor_decoder.ckpt", "model.ckpt"])
+    candidate_names.extend(
+        ["encoder_processor_decoder.ckpt", "processor.ckpt", "model.ckpt"]
+    )
 
     for name in dict.fromkeys(candidate_names):
         as_path = Path(name).expanduser()
@@ -848,3 +851,39 @@ def train_eval_single_job_command(
         runtime_typechecking=runtime_typechecking,
     )
     return final_work_dir, resolved_run_id
+
+
+def cache_latents_command(
+    *,
+    mode: str,
+    work_dir: str,
+    output_dir: str | None,
+    overrides: list[str],
+    runtime_typechecking: bool = False,
+    dry_run: bool = False,
+) -> None:
+    """Run the cache-latents command to encode data with a trained autoencoder."""
+    effective_overrides, _using_resolved_config = _with_inferred_resolved_config(
+        work_dir, overrides
+    )
+
+    base_work_dir = Path(work_dir).expanduser().resolve()
+    cache_dir = (
+        Path(output_dir).expanduser().resolve()
+        if output_dir is not None
+        else base_work_dir / "cached"
+    )
+
+    command_overrides = [
+        *build_common_launch_overrides(mode=mode, work_dir=base_work_dir),
+        f"+cache_latents.output_dir={cache_dir}",
+        *effective_overrides,
+    ]
+
+    run_module(
+        CACHE_LATENTS_MODULE,
+        command_overrides,
+        dry_run=dry_run,
+        mode=mode,
+        runtime_typechecking=runtime_typechecking,
+    )
