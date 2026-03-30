@@ -114,8 +114,8 @@ def test_processor_ensemble_loss_fallback():
     assert loss.item() == pytest.approx(expected_loss.item())
 
 
-def test_processor_ensemble_predict_has_ensemble_dim():
-    """Test that _predict returns predictions with ensemble dimension."""
+def test_processor_ensemble_predict_returns_flat_batch():
+    """Test that _predict returns no ensemble dim for rollout compatibility."""
     n_members = 3
     batch_size = 2
     input_shape = (batch_size, 1, 8, 8, 4)
@@ -137,6 +137,6 @@ def test_processor_ensemble_predict_has_ensemble_dim():
 
     preds = ensemble._predict(batch)
 
-    # Expected: (B, T, H, W, C, M)
-    expected_shape = (batch_size, *output_field_shape, n_members)
+    # _predict returns flat (B, T, H, W, C) — ensemble expansion is handled by callers
+    expected_shape = (batch_size, *output_field_shape)
     assert preds.shape == expected_shape

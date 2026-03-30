@@ -10,6 +10,7 @@ import hydra
 import lightning as L
 import pandas as pd
 import torch
+from einops import rearrange
 from omegaconf import DictConfig, OmegaConf, open_dict
 from torchmetrics import Metric
 
@@ -160,7 +161,16 @@ def _build_eval_predict_fn(
     if is_processor_model:
 
         def predict_fn(batch):
-            latent_pred = model._predict(batch)
+            # For ensemble models, expand batch and rearrange to add member dim
+            if n_members is not None and n_members > 1:
+                b = batch.encoded_inputs.shape[0]
+                expanded_batch = batch.repeat(n_members)
+                latent_pred = model._predict(expanded_batch)
+                latent_pred = rearrange(
+                    latent_pred, "(b m) ... -> b ... m", b=b, m=n_members
+                )
+            else:
+                latent_pred = model._predict(batch)
             if decode_fn is not None:
                 return (
                     _decode_tensor(latent_pred, decode_fn, n_members=n_members),
@@ -383,7 +393,7 @@ def _collect_rollout_sample_targets_for_batch(
     return sample_targets
 
 
-def _render_rollouts(
+def _render_rollouts(  # noqa: PLR0912
     model: (
         EncoderProcessorDecoder
         | EncoderProcessorDecoderEnsemble
