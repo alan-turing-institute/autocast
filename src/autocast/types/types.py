@@ -43,6 +43,9 @@ TensorBTCHW = Float[Tensor, "batch time channel height width"]  # Specific spati
 
 TensorBTC = Float[Tensor, "batch time channel"]
 
+TensorBM = Float[Tensor, "batch ensemble"]  # For ensemble masks
+TensorM = Float[Tensor, "ensemble"]  # For ensemble masks
+
 ArrayLike = Tensor | np.ndarray
 
 
