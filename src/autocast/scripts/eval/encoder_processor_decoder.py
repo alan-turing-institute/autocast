@@ -320,12 +320,23 @@ def _process_metrics_results(
         row: dict[str, float | str] = {"window": window_str, "batch_idx": "all"}
 
         for name, metric in window_metrics.items():
+            try:
+                val = metric.compute()
+            except RuntimeError:
+                log.warning(
+                    "%s metric '%s' for window %s: skipped (no samples)",
+                    log_prefix,
+                    name,
+                    window,
+                )
+                continue
+
             log.info(
                 "%s metric '%s' for window %s: %s",
                 log_prefix,
                 name,
                 window,
-                metric.compute(),
+                val,
             )
 
             # If this is coverage, also plot it
@@ -337,15 +348,10 @@ def _process_metrics_results(
                 )
 
             # Try to get a scalar value for csv
-            try:
-                val = metric.compute()
-                if val.numel() == 1:
-                    row[name] = float(val.item())
-                elif hasattr(val, "mean"):
-                    row[name] = float(val.mean().item())
-            except Exception as e:
-                msg = f"Could not extract scalar for metric {name}: {e}"
-                log.warning(msg)
+            if val.numel() == 1:
+                row[name] = float(val.item())
+            elif hasattr(val, "mean"):
+                row[name] = float(val.mean().item())
 
         rows.append(row)
 
