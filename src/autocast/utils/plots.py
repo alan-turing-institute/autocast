@@ -468,7 +468,10 @@ def compute_metrics_per_timestep_from_dataloader(  # noqa: PLR0912, PLR0915
         MultiCoverage). Values are arrays of shape (T, C), batch-averaged.
     """
     with torch.no_grad():
-        # First pass: get min rollout length T and n_channels
+        # Single pass: collect (preds, trues) pairs and determine T_min.
+        # The dataloader may be a one-shot generator (e.g. from _limit_batches),
+        # so we must not iterate it twice.
+        cached_results: list[tuple[torch.Tensor, torch.Tensor]] = []
         T_min: int | None = None
         n_channels: int | None = None
         for batch in dataloader:
@@ -494,6 +497,7 @@ def compute_metrics_per_timestep_from_dataloader(  # noqa: PLR0912, PLR0915
                 n_channels = int(trues.shape[-1])
             else:
                 T_min = min(T_min, T_batch)
+            cached_results.append((preds, trues))
         if T_min is None or n_channels is None or T_min == 0:
             return {}
 
@@ -505,21 +509,7 @@ def compute_metrics_per_timestep_from_dataloader(  # noqa: PLR0912, PLR0915
             for _ in range(T_min)
         ]
 
-        for batch in dataloader:
-            result = predict_fn(batch)
-            if result is None:
-                continue
-            preds, trues = (
-                result
-                if isinstance(result, tuple) and len(result) == 2
-                else (result, getattr(batch, "output_fields", None))
-            )
-            if not (
-                isinstance(preds, torch.Tensor) and isinstance(trues, torch.Tensor)
-            ):
-                continue
-            if device is None:
-                preds, trues = preds.cpu(), trues.cpu()
+        for preds, trues in cached_results:
             T_batch = min(preds.shape[1], trues.shape[1], T_min)
             if max_timesteps is not None:
                 T_batch = min(T_batch, max_timesteps)
