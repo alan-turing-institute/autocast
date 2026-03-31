@@ -1188,10 +1188,6 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     log.info("Loading checkpoint from %s", checkpoint_path)
     checkpoint_payload = load_checkpoint_payload(checkpoint_path)
     processor_only = _is_processor_only_checkpoint(checkpoint_payload)
-    log.info(
-        "Checkpoint type: %s",
-        "processor-only" if processor_only else "encoder-processor-decoder",
-    )
 
     # Setup datamodule and resolve config
     datamodule, cfg, stats = setup_datamodule(cfg)
@@ -1226,6 +1222,28 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     #   Metrics are computed in latent space.
 
     example_batch = stats.get("example_batch")
+
+    # Stateless encoders/decoders (e.g. PermuteConcat/ChannelsLast) contribute no
+    # `encoder_decoder.*` params, so a full EPD checkpoint can look processor-only.
+    if (
+        processor_only
+        and isinstance(example_batch, Batch)
+        and not cfg.get("autoencoder_checkpoint")
+        and cfg.get("model", {}).get("encoder") is not None
+        and cfg.get("model", {}).get("decoder") is not None
+    ):
+        log.info(
+            "Checkpoint contains no encoder_decoder.* params, but datamodule "
+            "returns raw Batch and model has encoder+decoder config. "
+            "Assuming full EPD checkpoint with stateless encoder/decoder."
+        )
+        processor_only = False
+
+    log.info(
+        "Checkpoint type: %s",
+        "processor-only" if processor_only else "encoder-processor-decoder",
+    )
+
     decode_fn = None  # optional callable: latent tensor → data-space tensor
     decoder_module = None  # keep reference for device placement
 
