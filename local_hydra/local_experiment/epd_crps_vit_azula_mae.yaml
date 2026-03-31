@@ -27,7 +27,7 @@ model:
   encoder:
     with_constants: true
   loss_func:
-    _target_: torch.nn.L1Loss
+    _target_: autocast.losses.ensemble.EnsembleMAELoss
   train_metrics:
     crps:
       _target_: autocast.metrics.ensemble.CRPS
