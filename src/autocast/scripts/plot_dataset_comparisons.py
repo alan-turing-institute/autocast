@@ -271,7 +271,7 @@ def arch_key_from_processor_segment(segment: str) -> str:
     seg = str(segment)
     if not seg:
         return "unknown"
-    for pref in ARCHITECTURE_PREFIXES:
+    for pref in sorted(ARCHITECTURE_PREFIXES, key=len, reverse=True):
         if seg == pref or seg.startswith(pref + "_"):
             return pref
     return seg.split("_")[0]
@@ -297,7 +297,7 @@ def parse_loss_dataset_arch(
             return loss, ds, mid[len(pfx) :]
 
     # Fallback using known architectures
-    for arch in ARCHITECTURE_PREFIXES:
+    for arch in sorted(ARCHITECTURE_PREFIXES, key=len, reverse=True):
         sfx = "_" + arch
         if sfx in mid:
             idx = mid.index(sfx)
