@@ -585,17 +585,13 @@ def load_config_metadata(run_dir: Path) -> dict[str, object]:
         except Exception:
             pass
 
-    # Run date: resolve symlinks first (the real path has the original
-    # date directory), then try the given path as fallback.
+    # Run date: inspect only local directory names to avoid following symlinks.
     _date_found = False
-    for _rd in (run_dir.resolve(), run_dir):
-        for _anc in (_rd, *_rd.parents):
-            dm = re.match(r"(\d{4}-\d{2}-\d{2})$", _anc.name)
-            if dm:
-                row["run_date"] = dm.group(1)
-                _date_found = True
-                break
-        if _date_found:
+    for _anc in (run_dir, *run_dir.parents):
+        dm = re.match(r"(\d{4}-\d{2}-\d{2})$", _anc.name)
+        if dm:
+            row["run_date"] = dm.group(1)
+            _date_found = True
             break
     if not _date_found and p_config.exists():
         mtime = p_config.stat().st_mtime
@@ -613,6 +609,13 @@ def load_config_metadata(run_dir: Path) -> dict[str, object]:
                 s = rt.loc[rt["metric"] == "total_s", "value"]
                 if not s.empty:
                     row["train_total_s"] = pd.to_numeric(s.iloc[0], errors="coerce")
+
+                params = md[md["category"] == "params"]
+                p = params.loc[params["metric"] == "processor_total", "value"]
+                if not p.empty:
+                    row["params_processor_total"] = pd.to_numeric(
+                        p.iloc[0], errors="coerce"
+                    )
         except Exception:
             pass
     return row
@@ -1227,67 +1230,42 @@ def main():  # noqa: PLR0912, PLR0915
             ]
         )
 
-    print(f"Loading {len(run_dirs)} runs...")
-    rows = []
-    for d in run_dirs:
-        if not d.exists():
-            print(f"Warning: requested run not found: {d}")
-            continue
-        try:
-            r = load_single_run_metrics(d)
-        except Exception as e:
-            print(f"Error loading {d}: {e}")
-            continue
-        rows.append(r)
-
-    if not rows:
-        print("No valid runs to process.")
-        sys.exit(1)
-
-    df = pd.DataFrame(rows)
-    _parsed = df["run_name"].map(parse_loss_dataset_arch)
-    df["loss_family"] = _parsed.map(
-        lambda x: x[0] if isinstance(x, tuple) and len(x) > 0 else None
-    )
-    parsed_dataset = _parsed.map(
-        lambda x: x[1] if isinstance(x, tuple) and len(x) > 1 else None
-    )
-    parsed_dataset = cast(
-        pd.Series,
-        parsed_dataset.where(
-            ~parsed_dataset.isin(["cached_latents", "latents", "encoded"]), np.nan
-        ),
-    )
-    df["dataset_module"] = parsed_dataset.fillna(
-        df.get("dataset_from_data_path")
-    ).fillna(df["dataset"].map(normalize_dataset_module))
-    df["arch_segment"] = _parsed.map(
-        lambda x: x[2] if isinstance(x, tuple) and len(x) > 2 else None
-    )
-    df["arch_key"] = df["arch_segment"].map(arch_key_from_processor_segment)
-    df["dataset_label"] = df["dataset_module"].map(dataset_label_from_module)
-    df["model_scale"] = assign_model_scale(df)
-
     if args.list:
+        print(f"Loading {len(run_dirs)} runs...")
         m_rows = []
         for rd in run_dirs:
             m_rows.append(load_config_metadata(rd))
         mdf = pd.DataFrame(m_rows)
-        merge_cols = [
-            c
-            for c in [
-                "run_name",
-                "params_processor_total",
-                "dataset_label",
-                "model_scale",
-            ]
-            if c in df.columns
-        ]
-        merged = (
-            pd.merge(df[merge_cols], mdf, on="run_name", how="inner")
-            if not df.empty
-            else mdf
+
+        if mdf.empty:
+            print("No valid runs to process.")
+            sys.exit(1)
+
+        _parsed = mdf["run_name"].map(parse_loss_dataset_arch)
+        mdf["loss_family"] = _parsed.map(
+            lambda x: x[0] if isinstance(x, tuple) and len(x) > 0 else None
         )
+        parsed_dataset = _parsed.map(
+            lambda x: x[1] if isinstance(x, tuple) and len(x) > 1 else None
+        )
+        parsed_dataset = cast(
+            pd.Series,
+            parsed_dataset.where(
+                ~parsed_dataset.isin(["cached_latents", "latents", "encoded"]),
+                np.nan,
+            ),
+        )
+        mdf["dataset_module"] = parsed_dataset.fillna(
+            mdf.get("dataset_from_data_path")
+        ).fillna(mdf["dataset"].map(normalize_dataset_module))
+        mdf["dataset_label"] = mdf["dataset_module"].map(dataset_label_from_module)
+        mdf["arch_segment"] = _parsed.map(
+            lambda x: x[2] if isinstance(x, tuple) and len(x) > 2 else None
+        )
+        mdf["arch_key"] = mdf["arch_segment"].map(arch_key_from_processor_segment)
+        mdf["model_scale"] = assign_model_scale(mdf)
+
+        merged = mdf.copy()
 
         if "train_total_s" in merged.columns:
             _train_s = pd.to_numeric(merged["train_total_s"], errors="coerce")
@@ -1384,6 +1362,47 @@ def main():  # noqa: PLR0912, PLR0915
         disp_cols = [r for c, r in renames.items() if r in merged.columns]
         print(cast(pd.DataFrame, merged[disp_cols]).to_string(index=False))
         sys.exit(0)
+
+    print(f"Loading {len(run_dirs)} runs...")
+    rows = []
+    for d in run_dirs:
+        if not d.exists():
+            print(f"Warning: requested run not found: {d}")
+            continue
+        try:
+            r = load_single_run_metrics(d)
+        except Exception as e:
+            print(f"Error loading {d}: {e}")
+            continue
+        rows.append(r)
+
+    if not rows:
+        print("No valid runs to process.")
+        sys.exit(1)
+
+    df = pd.DataFrame(rows)
+    _parsed = df["run_name"].map(parse_loss_dataset_arch)
+    df["loss_family"] = _parsed.map(
+        lambda x: x[0] if isinstance(x, tuple) and len(x) > 0 else None
+    )
+    parsed_dataset = _parsed.map(
+        lambda x: x[1] if isinstance(x, tuple) and len(x) > 1 else None
+    )
+    parsed_dataset = cast(
+        pd.Series,
+        parsed_dataset.where(
+            ~parsed_dataset.isin(["cached_latents", "latents", "encoded"]), np.nan
+        ),
+    )
+    df["dataset_module"] = parsed_dataset.fillna(
+        df.get("dataset_from_data_path")
+    ).fillna(df["dataset"].map(normalize_dataset_module))
+    df["arch_segment"] = _parsed.map(
+        lambda x: x[2] if isinstance(x, tuple) and len(x) > 2 else None
+    )
+    df["arch_key"] = df["arch_segment"].map(arch_key_from_processor_segment)
+    df["dataset_label"] = df["dataset_module"].map(dataset_label_from_module)
+    df["model_scale"] = assign_model_scale(df)
 
     # Construct plot_group (includes run_name to guarantee no multi-run averaging)
     df["plot_group"] = (
