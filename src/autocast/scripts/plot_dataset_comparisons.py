@@ -93,6 +93,7 @@ def resolve_results_root(outputs_dir: str) -> Path:  # noqa: D103
 
 
 def dataset_label_from_module(dataset_module: str | None) -> str | None:
+    """Return a human-readable label for a dataset module name."""
     if not dataset_module or pd.isna(dataset_module):
         return None
     if dataset_module in DATASET_LABEL_OVERRIDES:
@@ -106,6 +107,7 @@ def _dataset_candidates() -> list[str]:
 
 
 def arch_key_from_processor_segment(segment: str) -> str:
+    """Map a processor name segment to a canonical architecture key."""
     seg = str(segment)
     if not seg:
         return "unknown"
@@ -118,6 +120,7 @@ def arch_key_from_processor_segment(segment: str) -> str:
 def parse_loss_dataset_arch(
     run_name: str | None,
 ) -> tuple[str | None, str | None, str | None]:
+    """Parse a run directory name into (loss_family, dataset_module, arch_segment)."""
     if not run_name:
         return None, None, None
     m = re.match(
@@ -149,6 +152,7 @@ def parse_loss_dataset_arch(
 
 
 def normalize_dataset_module(dataset: str | None) -> str | None:
+    """Strip trailing hex/numeric suffixes from a dataset module path component."""
     if dataset is None or not dataset:
         return None
     try:
@@ -165,7 +169,8 @@ def normalize_dataset_module(dataset: str | None) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-def load_single_run_metrics(run_dir: Path) -> dict:
+def load_single_run_metrics(run_dir: Path) -> dict:  # noqa: PLR0912
+    """Load evaluation metrics and rollout metrics from a single run directory."""
     row = {"run_name": run_dir.name, "run_path": run_dir.name, "dataset": None}
     eval_dir = run_dir / "eval"
 
@@ -221,6 +226,7 @@ def load_single_run_metrics(run_dir: Path) -> dict:
 
 
 def assign_model_scale(df_in: pd.DataFrame) -> pd.Series:
+    """Label each run as 'small' or 'large' relative to its architecture group."""
     out = pd.Series("large", index=df_in.index, dtype="object")
     if MODEL_SCALE_PARAM_COL not in df_in.columns:
         return out
@@ -257,6 +263,7 @@ def assign_model_scale(df_in: pd.DataFrame) -> pd.Series:
 
 
 def load_config_metadata(run_dir: Path) -> dict[str, object]:
+    """Load training config metadata (LR, batch size, noise, etc.) for a run."""
     row: dict[str, object] = {"run_name": run_dir.name}
     p_config = run_dir / "resolved_config.yaml"
     if p_config.exists():
@@ -318,7 +325,8 @@ def _rgb_luminance(rgba):
 def get_hue_and_lightness(
     pg: str, df_in: pd.DataFrame, explicit_groups: list[list[str]] | None
 ):
-    """
+    """Get hue and lightness for a plot group.
+
     Returns (base_color, assigned_color, is_diff, scale).
     If explicit_groups is used, different groups get different base_colors.
     Within a group, lightness varies.
@@ -347,6 +355,7 @@ def get_hue_and_lightness(
 
 
 def plot_group_display_label(pg: str) -> str:
+    """Return a human-readable label for a plot_group key."""
     parts = pg.split("__")
     arch, loss, scale = (
         parts[0],
@@ -368,6 +377,7 @@ def plot_group_display_label(pg: str) -> str:
 def extract_valid_plot_groups_from_run_names(
     run_names: list[str], df_in: pd.DataFrame
 ) -> set[str]:
+    """Return the plot_group keys that correspond to the given run directory names."""
     # Given a list of run dir names, find their corresponding plot_groups in df_in
     return set(
         cast(pd.Series, df_in[df_in["run_name"].isin(run_names)]["plot_group"]).unique()
@@ -377,6 +387,7 @@ def extract_valid_plot_groups_from_run_names(
 def build_family_style(
     df_in: pd.DataFrame, explicit_groups: list[list[str]] | None = None
 ) -> dict:
+    """Build a style dict (color, label, marker, linestyle) for each plot_group."""
     styles = {}
     _present_raw = cast(pd.Series, df_in["plot_group"].dropna())
     present = sorted(_present_raw.unique().tolist())
@@ -424,7 +435,7 @@ def build_family_style(
     # Fallback for remaining
     for pg in present:
         if pg not in styles:
-            c, is_diff, scale = get_hue_and_lightness(pg, df_in, None)
+            c, is_diff, _scale = get_hue_and_lightness(pg, df_in, None)
             styles[pg] = {
                 "color": c,
                 "label": plot_group_display_label(pg),
@@ -440,6 +451,7 @@ def build_family_style(
 
 
 def save_fig(fig, out_dir: Path, name: str):
+    """Save a matplotlib figure to disk and close it."""
     p = out_dir / name
     fig.savefig(p, dpi=120, bbox_inches="tight")
     print(f"Saved: {p}")
@@ -454,6 +466,7 @@ def grouped_bar(
     out_dir: Path,
     styles: dict,
 ):
+    """Render a grouped bar chart of a metric across datasets and model families."""
     if metric not in df_in.columns:
         return
     d = df_in.dropna(subset=[metric]).copy()
@@ -529,6 +542,7 @@ def grouped_bar(
 def plot_coverage_calibration_panel(
     df_in: pd.DataFrame, results_root: Path, out_dir: Path, styles: dict
 ):
+    """Plot the coverage calibration panel (rollout windows x datasets)."""
     curves = []
     base = df_in.dropna(
         subset=["run_path", "dataset_label", "plot_group"]
@@ -629,7 +643,7 @@ def plot_coverage_calibration_panel(
     save_fig(fig, out_dir, "coverage_calibration_panel.png")
 
 
-def plot_lead_time_panel(
+def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
     df_in: pd.DataFrame,
     metrics: list[str],
     results_root: Path,
@@ -637,6 +651,7 @@ def plot_lead_time_panel(
     name: str,
     styles: dict,
 ):
+    """Plot per-metric, per-dataset lead-time curves as a panel figure."""
     rows = []
     base = df_in.dropna(
         subset=["run_path", "dataset_label", "plot_group"]
@@ -789,7 +804,8 @@ def plot_lead_time_panel(
 # ---------------------------------------------------------------------------
 
 
-def main():
+def main():  # noqa: PLR0912, PLR0915
+    """Entry point: parse CLI args and generate all comparison plots."""
     parser = argparse.ArgumentParser(
         description="Generate dataset comparison plots (extracted from notebook)"
     )
@@ -809,12 +825,12 @@ def main():
         "--run-group",
         action="append",
         nargs="+",
-        help="Specify a group of runs. E.g. --run-group run1 run2 --run-group run3 run4",
+        help="Group of runs sharing a color hue. Repeat for multiple groups.",
     )
     parser.add_argument(
         "--runs",
         nargs="+",
-        help="Explicit list of run directory names to include (if not using --run-group)",
+        help="Run directory names to include (alternative to --run-group).",
     )
     parser.add_argument(
         "--datasets",
@@ -967,13 +983,13 @@ def main():
         if args.key and args.value:
             if len(args.key) != len(args.value):
                 print(
-                    "Error: --key and --value must be provided the same number of times."
+                    "Error: --key and --value must be given the same number of times."
                 )
                 sys.exit(1)
 
             mask = pd.Series(False, index=merged.index)
             valid_filters = 0
-            for k, v in zip(args.key, args.value):
+            for k, v in zip(args.key, args.value, strict=False):
                 col = renames.get(k, k)  # map parameter name to display name if used
                 if col in merged.columns:
                     mask = mask | (merged[col].astype(str) == str(v))
