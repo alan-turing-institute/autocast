@@ -400,7 +400,7 @@ def dataset_grid_resolution(
 # ---------------------------------------------------------------------------
 
 
-def load_single_run_metrics(run_dir: Path) -> dict:  # noqa: PLR0912
+def load_single_run_metrics(run_dir: Path) -> dict:  # noqa: PLR0912, PLR0915
     """Load evaluation metrics and rollout metrics from a single run directory."""
     row = {"run_name": run_dir.name, "run_path": run_dir.name, "dataset": None}
     eval_dir = run_dir / "eval"
@@ -445,14 +445,38 @@ def load_single_run_metrics(run_dir: Path) -> dict:  # noqa: PLR0912
     if p_meta.exists():
         md = pd.read_csv(p_meta)
         if not md.empty and {"category", "metric", "value"}.issubset(md.columns):
+            rt = md[md["category"] == "runtime_train"]
+            for metric, out_col in [
+                ("mean_epoch_s", "train_mean_epoch_s"),
+                ("total_s", "train_total_s"),
+                ("min_epoch_s", "train_min_epoch_s"),
+                ("max_epoch_s", "train_max_epoch_s"),
+            ]:
+                s = rt.loc[rt["metric"] == metric, "value"]
+                if not s.empty:
+                    row[out_col] = pd.to_numeric(s.iloc[0], errors="coerce")
+
             params = md[md["category"] == "params"]
             for metric, out_col in [
                 ("model_total", "params_model_total"),
+                ("model_trainable", "params_model_trainable"),
                 ("processor_total", "params_processor_total"),
+                ("encoder_total", "params_encoder_total"),
+                ("decoder_total", "params_decoder_total"),
             ]:
                 s = params.loc[params["metric"] == metric, "value"]
                 if not s.empty:
                     row[out_col] = pd.to_numeric(s.iloc[0], errors="coerce")
+
+    # Benchmark metrics (inference/rollout latency, throughput, memory, flops)
+    p_bench = eval_dir / "benchmark_metrics.csv"
+    if p_bench.exists():
+        bm = pd.read_csv(p_bench)
+        if not bm.empty and {"benchmark_type", "metric", "value"}.issubset(bm.columns):
+            for _, rr in bm.iterrows():
+                prefix = str(rr["benchmark_type"])
+                metric = str(rr["metric"])
+                row[f"{prefix}_{metric}"] = pd.to_numeric(rr["value"], errors="coerce")
 
     # Training metadata (dataset hints for cached latents)
     p_config = run_dir / "resolved_config.yaml"
@@ -607,7 +631,7 @@ def _extract_config_fields(cfg: dict, row: dict[str, object]) -> None:
         row["eff_batch_size"] = int(bs) * n_gpus
 
 
-def load_config_metadata(run_dir: Path) -> dict[str, object]:
+def load_config_metadata(run_dir: Path) -> dict[str, object]:  # noqa: PLR0912
     """Load training config metadata (LR, batch size, noise, etc.)."""
     row: dict[str, object] = {"run_name": run_dir.name}
     p_config = run_dir / "resolved_config.yaml"
@@ -644,12 +668,39 @@ def load_config_metadata(run_dir: Path) -> dict[str, object]:
                 s = rt.loc[rt["metric"] == "total_s", "value"]
                 if not s.empty:
                     row["train_total_s"] = pd.to_numeric(s.iloc[0], errors="coerce")
+                s = rt.loc[rt["metric"] == "mean_epoch_s", "value"]
+                if not s.empty:
+                    row["train_mean_epoch_s"] = pd.to_numeric(
+                        s.iloc[0], errors="coerce"
+                    )
 
                 params = md[md["category"] == "params"]
                 p = params.loc[params["metric"] == "processor_total", "value"]
                 if not p.empty:
                     row["params_processor_total"] = pd.to_numeric(
                         p.iloc[0], errors="coerce"
+                    )
+        except Exception:
+            pass
+
+    # Inference latency from benchmark_metrics.csv
+    p_bench = run_dir / "eval" / "benchmark_metrics.csv"
+    if p_bench.exists():
+        try:
+            bm = pd.read_csv(p_bench)
+            if not bm.empty and {
+                "benchmark_type",
+                "metric",
+                "value",
+            }.issubset(bm.columns):
+                lat = bm.loc[
+                    (bm["benchmark_type"].astype(str) == "model")
+                    & (bm["metric"].astype(str) == "latency_ms_per_sample"),
+                    "value",
+                ]
+                if not lat.empty:
+                    row["model_latency_ms_per_sample"] = pd.to_numeric(
+                        lat.iloc[0], errors="coerce"
                     )
         except Exception:
             pass
@@ -824,6 +875,7 @@ def grouped_bar(
     ylabel: str,
     out_dir: Path,
     styles: dict,
+    y_scale: str = "auto",
 ):
     """Render a grouped bar chart of a metric across datasets and model families."""
     if metric not in df_in.columns:
@@ -874,7 +926,9 @@ def grouped_bar(
             linestyle=style.get("linestyle", "-"),
         )
 
-    if all_positive and min(all_positive) > 0:
+    if y_scale == "linear":
+        ax.set_yscale("linear")
+    elif all_positive and min(all_positive) > 0:
         ax.set_yscale("log")
 
     ax.set_xticks(list(x))
@@ -1311,6 +1365,11 @@ def main():  # noqa: PLR0912, PLR0915
             _train_s = pd.to_numeric(merged["train_total_s"], errors="coerce")
             merged["train_hrs"] = (_train_s / 3600).round(1)  # type: ignore[operator]
 
+        if "model_latency_ms_per_sample" in merged.columns:
+            merged["infer_ms"] = pd.to_numeric(
+                merged["model_latency_ms_per_sample"], errors="coerce"
+            ).round(2)
+
         if "params_processor_total" in merged.columns:
             _params = pd.to_numeric(merged["params_processor_total"], errors="coerce")
             merged["params_M"] = (
@@ -1334,6 +1393,8 @@ def main():  # noqa: PLR0912, PLR0915
             "eff_batch_size",
             "lr",
             "train_hrs",
+            "train_mean_epoch_s",
+            "infer_ms",
             "run_date",
         ]
         show_cols = [c for c in show_cols if c in merged.columns]
@@ -1355,6 +1416,8 @@ def main():  # noqa: PLR0912, PLR0915
             "eff_batch_size": "EffBS",
             "lr": "LR",
             "train_hrs": "Train_hr",
+            "train_mean_epoch_s": "Epoch_s",
+            "infer_ms": "Infer_ms",
             "run_date": "Date",
         }
         merged = merged.rename(columns=renames)
@@ -1467,6 +1530,9 @@ def main():  # noqa: PLR0912, PLR0915
 
     # Styling
     df = cast(pd.DataFrame, df)
+    if "train_total_s" in df.columns:
+        _train_s = pd.to_numeric(df["train_total_s"], errors="coerce")
+        df["train_hrs"] = _train_s / 3600.0
     styles = build_family_style(df, explicit_groups)
 
     n_ds = df["dataset_label"].nunique()
@@ -1488,6 +1554,32 @@ def main():  # noqa: PLR0912, PLR0915
 
     # Render Calibration panel
     plot_coverage_calibration_panel(df, results_dir, out_dir, styles)
+
+    # Render efficiency bars (training/inference), if available.
+    for metric, title, ylabel in [
+        ("train_hrs", "Training time total (hours)", "hours"),
+        ("train_mean_epoch_s", "Training time per epoch (seconds)", "seconds"),
+        (
+            "model_latency_ms_per_sample",
+            "Inference latency per sample (ms)",
+            "ms",
+        ),
+        (
+            "model_throughput_samples_per_sec",
+            "Inference throughput (samples/s)",
+            "samples/s",
+        ),
+    ]:
+        is_train_metric = metric in {"train_hrs", "train_mean_epoch_s"}
+        grouped_bar(
+            df,
+            metric,
+            title,
+            ylabel,
+            out_dir,
+            styles,
+            y_scale="linear" if is_train_metric else "auto",
+        )
 
     # Render lead-time panels
     err_metric = [m for m in args.metrics if "coverage" not in m]
