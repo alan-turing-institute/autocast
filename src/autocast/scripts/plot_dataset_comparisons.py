@@ -474,6 +474,25 @@ def load_single_run_metrics(run_dir: Path) -> dict:  # noqa: PLR0912
 def assign_model_scale(df_in: pd.DataFrame) -> pd.Series:
     """Label each run as 'small' or 'large' relative to its architecture group."""
     out = pd.Series("large", index=df_in.index, dtype="object")
+
+    # If the architecture segment already encodes size intent, trust it.
+    explicit_scale = pd.Series(None, index=df_in.index, dtype="object")
+    if "arch_segment" in df_in.columns:
+        seg = cast(pd.Series, df_in["arch_segment"].fillna(""))
+        seg_s = seg.astype(str)
+        explicit_scale = pd.Series(
+            np.where(
+                seg_s.str.contains(r"(?:^|_)small(?:_|$)"),
+                "small",
+                np.where(seg_s.str.contains(r"(?:^|_)large(?:_|$)"), "large", ""),
+            ),
+            index=df_in.index,
+            dtype="object",
+        )
+        explicit_scale = explicit_scale.replace("", np.nan)
+        out.loc[explicit_scale == "small"] = "small"
+        out.loc[explicit_scale == "large"] = "large"
+
     if MODEL_SCALE_PARAM_COL not in df_in.columns:
         return out
     params = cast(
@@ -487,10 +506,14 @@ def assign_model_scale(df_in: pd.DataFrame) -> pd.Series:
 
     for _, g in df_in.groupby(group_cols, dropna=False):
         idx = g.index
-        p = cast(pd.Series, params.loc[idx])
+        pending_idx = explicit_scale.loc[idx][explicit_scale.loc[idx].isna()].index
+        if len(pending_idx) == 0:
+            continue
+
+        p = cast(pd.Series, params.loc[pending_idx])
         vals = sorted(p.dropna().unique().tolist())
         if len(vals) <= 1:
-            out.loc[idx] = "large"
+            out.loc[pending_idx] = "large"
             continue
         low, high = vals[0], vals[-1]
         low_idx = cast(pd.Series, p[p == low]).index
