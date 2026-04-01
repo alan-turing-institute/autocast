@@ -102,6 +102,133 @@ ROLL_WINDOWS = ["0-1", "0-4", "6-12", "13-30", "31-99"]
 WINDOW_ROWS = ["all", *ROLL_WINDOWS]
 MODEL_SCALE_PARAM_COL = "params_processor_total"
 
+
+# ---------------------------------------------------------------------------
+# Filter expression parser
+# ---------------------------------------------------------------------------
+# Supports: KEY=VALUE, AND, OR, parentheses.
+#   e.g. "Scale=large AND (Dataset=SW2D64 OR Dataset=CNS64)"
+
+
+def _tokenize_filter(expr: str) -> list[str]:
+    """Split a filter expression into tokens.
+
+    Recognised tokens: ``(``, ``)``, ``AND``, ``OR``, ``KEY=VALUE``.
+    """
+    tokens: list[str] = []
+    i = 0
+    while i < len(expr):
+        c = expr[i]
+        if c in " \t":
+            i += 1
+            continue
+        if c in "()":
+            tokens.append(c)
+            i += 1
+            continue
+        # Read a word (could be AND/OR or a KEY=VALUE atom).
+        j = i
+        while j < len(expr) and expr[j] not in " \t()":
+            j += 1
+        tokens.append(expr[i:j])
+        i = j
+    return tokens
+
+
+def _parse_filter_expr(
+    tokens: list[str],
+    pos: int,
+    df: pd.DataFrame,
+    col_aliases: dict[str, str],
+) -> tuple[pd.Series, int]:
+    """Recursive-descent parser.  Returns (boolean mask, next position)."""
+    mask, pos = _parse_or(tokens, pos, df, col_aliases)
+    return mask, pos
+
+
+def _parse_or(
+    tokens: list[str],
+    pos: int,
+    df: pd.DataFrame,
+    col_aliases: dict[str, str],
+) -> tuple[pd.Series, int]:
+    left, pos = _parse_and(tokens, pos, df, col_aliases)
+    while pos < len(tokens) and tokens[pos].upper() == "OR":
+        pos += 1  # consume OR
+        right, pos = _parse_and(tokens, pos, df, col_aliases)
+        left = left | right
+    return left, pos
+
+
+def _parse_and(
+    tokens: list[str],
+    pos: int,
+    df: pd.DataFrame,
+    col_aliases: dict[str, str],
+) -> tuple[pd.Series, int]:
+    left, pos = _parse_atom(tokens, pos, df, col_aliases)
+    while pos < len(tokens) and tokens[pos].upper() == "AND":
+        pos += 1  # consume AND
+        right, pos = _parse_atom(tokens, pos, df, col_aliases)
+        left = left & right
+    return left, pos
+
+
+def _parse_atom(
+    tokens: list[str],
+    pos: int,
+    df: pd.DataFrame,
+    col_aliases: dict[str, str],
+) -> tuple[pd.Series, int]:
+    if pos >= len(tokens):
+        msg = "Unexpected end of filter expression."
+        raise ValueError(msg)
+    tok = tokens[pos]
+    if tok == "(":
+        pos += 1  # consume (
+        mask, pos = _parse_or(tokens, pos, df, col_aliases)
+        if pos >= len(tokens) or tokens[pos] != ")":
+            msg = "Missing closing ')' in filter expression."
+            raise ValueError(msg)
+        pos += 1  # consume )
+        return mask, pos
+    if "=" not in tok:
+        msg = f"Expected KEY=VALUE but got '{tok}' in filter expression."
+        raise ValueError(msg)
+    key, value = tok.split("=", 1)
+    col = col_aliases.get(key, key)
+    if col not in df.columns:
+        print(f"Warning: Metadata filter key '{key}' not found.")
+        return pd.Series(True, index=df.index), pos + 1
+    return df[col].astype(str) == value, pos + 1
+
+
+def apply_filter_expr(
+    expr: str,
+    df: pd.DataFrame,
+    col_aliases: dict[str, str] | None = None,
+) -> pd.DataFrame:
+    """Apply a boolean filter expression to *df* and return the filtered frame.
+
+    Examples::
+
+        apply_filter_expr("Scale=large", df)
+        apply_filter_expr("Scale=large AND Dataset=SW2D64", df)
+        apply_filter_expr("(Scale=large OR Scale=small) AND Dataset=SW2D64", df)
+    """
+    aliases = col_aliases or {}
+    tokens = _tokenize_filter(expr)
+    if not tokens:
+        return df
+    mask, pos = _parse_filter_expr(tokens, 0, df, aliases)
+    if pos != len(tokens):
+        msg = (
+            f"Unexpected token '{tokens[pos]}' at position {pos} in filter expression."
+        )
+        raise ValueError(msg)
+    return cast(pd.DataFrame, df[mask])
+
+
 # ---------------------------------------------------------------------------
 # Core Utilities
 # ---------------------------------------------------------------------------
@@ -989,12 +1116,21 @@ def main():  # noqa: PLR0912, PLR0915
     parser.add_argument(
         "--key",
         action="append",
-        help="Key to filter the metadata table via OR matching. Use with --value.",
+        help="(Deprecated, use --filter) Key for metadata filtering.",
     )
     parser.add_argument(
         "--value",
         action="append",
-        help="Value matching the --key for filtering the metadata table.",
+        help="(Deprecated, use --filter) Value matching the --key.",
+    )
+    parser.add_argument(
+        "--filter",
+        dest="filter_expr",
+        help=(
+            "Boolean filter expression with AND, OR, and parentheses. "
+            'e.g. --filter "Scale=large AND (Dataset=SW2D64 OR '
+            'Dataset=CNS64)"'
+        ),
     )
     args = parser.parse_args()
 
@@ -1129,26 +1265,23 @@ def main():  # noqa: PLR0912, PLR0915
         }
         merged = merged.rename(columns=renames)
 
-        # Apply Key/Value filtering using OR logic across filters
-        if args.key and args.value:
+        # Build filter expression from legacy --key/--value or --filter.
+        filter_expr = args.filter_expr or ""
+        if not filter_expr and args.key and args.value:
             if len(args.key) != len(args.value):
                 print(
                     "Error: --key and --value must be given the same number of times."
                 )
                 sys.exit(1)
+            parts = [f"{k}={v}" for k, v in zip(args.key, args.value, strict=False)]
+            filter_expr = " OR ".join(parts)
 
-            mask = pd.Series(False, index=merged.index)
-            valid_filters = 0
-            for k, v in zip(args.key, args.value, strict=False):
-                col = renames.get(k, k)  # map parameter name to display name if used
-                if col in merged.columns:
-                    mask = mask | (merged[col].astype(str) == str(v))
-                    valid_filters += 1
-                else:
-                    print(f"Warning: Metadata filter key '{k}' not found.")
-
-            if valid_filters > 0:
-                merged = cast(pd.DataFrame, merged[mask])
+        if filter_expr:
+            merged = apply_filter_expr(
+                filter_expr,
+                merged,
+                col_aliases=renames,
+            )
 
         pd.set_option("display.max_rows", None)
         pd.set_option("display.max_columns", None)
