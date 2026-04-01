@@ -583,6 +583,7 @@ def _resolve_resolution(
 def _extract_config_fields(cfg: dict, row: dict[str, object]) -> None:
     """Populate *row* with fields extracted from a resolved Hydra config."""
     datamodule = cfg.get("datamodule", {})
+    row["n_steps_input"] = datamodule.get("n_steps_input")
     row["n_steps_output"] = datamodule.get("n_steps_output")
     row["batch_size"] = datamodule.get("batch_size")
     data_path = datamodule.get("data_path", "")
@@ -1461,6 +1462,7 @@ def main():  # noqa: PLR0912, PLR0915
             "resolution",
             "model_scale",
             "params_M",
+            "n_steps_input",
             "n_steps_output",
             "loss_func",
             "noise_injector",
@@ -1484,6 +1486,7 @@ def main():  # noqa: PLR0912, PLR0915
             "resolution": "Resolution",
             "model_scale": "Scale",
             "params_M": "Params",
+            "n_steps_input": "N_In",
             "n_steps_output": "N_Out",
             "loss_func": "Loss",
             "noise_injector": "NoiseInj",
