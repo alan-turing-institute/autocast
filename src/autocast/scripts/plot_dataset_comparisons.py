@@ -495,8 +495,84 @@ def assign_model_scale(df_in: pd.DataFrame) -> pd.Series:
     return out
 
 
+def _resolve_resolution(
+    row: dict[str, object],
+    proc: dict,
+    data_path: str,
+) -> str | None:
+    """Resolve grid resolution from processor config or dataset heuristics."""
+    res = None
+    proc_sr = proc.get("spatial_resolution")
+    if isinstance(proc_sr, (list, tuple)):
+        vals = [int(v) for v in proc_sr[:2] if v is not None]
+        res = _format_spatial_resolution(vals)
+    if not res:
+        res = dataset_grid_resolution(
+            cast(str | None, row.get("dataset_from_data_path")),
+            data_path,
+        )
+    if not res:
+        _, ds_from_name, _ = parse_loss_dataset_arch(
+            cast(str | None, row.get("run_name"))
+        )
+        if ds_from_name:
+            res = dataset_grid_resolution(ds_from_name, data_path)
+    return res
+
+
+def _extract_config_fields(cfg: dict, row: dict[str, object]) -> None:
+    """Populate *row* with fields extracted from a resolved Hydra config."""
+    datamodule = cfg.get("datamodule", {})
+    row["n_steps_output"] = datamodule.get("n_steps_output")
+    row["batch_size"] = datamodule.get("batch_size")
+    data_path = datamodule.get("data_path", "")
+    row["dataset"] = Path(data_path).name
+    row["dataset_from_data_path"] = dataset_module_from_data_path(data_path)
+    row["loss_func"] = (
+        cfg.get("model", {}).get("loss_func", {}).get("_target_", "").split(".")[-1]
+    )
+    proc = cfg.get("model", {}).get("processor", {})
+    row["processor"] = proc.get("_target_", "").split(".")[-1]
+
+    if isinstance(proc, dict):
+        row["resolution"] = _resolve_resolution(row, proc, data_path)
+
+    inj = cfg.get("model", {}).get("input_noise_injector", {})
+    row["noise_injector"] = inj.get("_target_", "").split(".")[-1] if inj else "None"
+
+    # Noise channels from processor or injector
+    nc = proc.get("n_noise_channels")
+    if nc is None and inj:
+        nc = inj.get("n_noise_channels")
+    row["noise_channels"] = int(nc) if nc is not None else 0
+
+    # ODE / sampling steps (flow_ode_steps or sampler_steps)
+    ode = proc.get("flow_ode_steps") or proc.get("sampler_steps")
+    if ode is not None:
+        row["ode_steps"] = int(ode)
+
+    row["lr"] = cfg.get("optimizer", {}).get("learning_rate")
+
+    # GPU count from trainer config
+    trainer = cfg.get("trainer", {})
+    devices = trainer.get("devices", 1)
+    num_nodes = trainer.get("num_nodes", 1)
+    try:
+        n_gpus = int(devices) * int(num_nodes)
+    except (TypeError, ValueError):
+        n_gpus = 1
+    row["n_gpus"] = n_gpus
+
+    bs = row.get("batch_size")
+    if bs is not None:
+        assert isinstance(bs, int | str | float), (
+            "Batch size must be an integer, string, or float."
+        )
+        row["eff_batch_size"] = int(bs) * n_gpus
+
+
 def load_config_metadata(run_dir: Path) -> dict[str, object]:
-    """Load training config metadata (LR, batch size, noise, etc.) for a run."""
+    """Load training config metadata (LR, batch size, noise, etc.)."""
     row: dict[str, object] = {"run_name": run_dir.name}
     p_config = run_dir / "resolved_config.yaml"
     if p_config.exists():
@@ -504,59 +580,20 @@ def load_config_metadata(run_dir: Path) -> dict[str, object]:
             with open(p_config) as f:
                 cfg = yaml.safe_load(f)
             if cfg:
-                datamodule = cfg.get("datamodule", {})
-                row["n_steps_output"] = datamodule.get("n_steps_output")
-                row["batch_size"] = datamodule.get("batch_size")
-                data_path = datamodule.get("data_path", "")
-                row["dataset"] = Path(data_path).name
-                row["dataset_from_data_path"] = dataset_module_from_data_path(data_path)
-                row["loss_func"] = (
-                    cfg.get("model", {})
-                    .get("loss_func", {})
-                    .get("_target_", "")
-                    .split(".")[-1]
-                )
-                proc = cfg.get("model", {}).get("processor", {})
-                row["processor"] = proc.get("_target_", "").split(".")[-1]
+                _extract_config_fields(cfg, row)
+        except Exception:
+            pass
 
-                res = None
-                if isinstance(proc, dict):
-                    proc_sr = proc.get("spatial_resolution")
-                    if isinstance(proc_sr, (list, tuple)):
-                        vals = [int(v) for v in proc_sr[:2] if v is not None]
-                        res = _format_spatial_resolution(vals)
-
-                if not res:
-                    res = dataset_grid_resolution(
-                        cast(str | None, row.get("dataset_from_data_path")),
-                        data_path,
-                    )
-                # Fallback: try dataset module parsed from run name.
-                if not res:
-                    _, ds_from_name, _ = parse_loss_dataset_arch(
-                        cast(str | None, row.get("run_name"))
-                    )
-                    if ds_from_name:
-                        res = dataset_grid_resolution(ds_from_name, data_path)
-                row["resolution"] = res
-
-                inj = cfg.get("model", {}).get("input_noise_injector", {})
-                row["noise_injector"] = (
-                    inj.get("_target_", "").split(".")[-1] if inj else "None"
-                )
-
-                # Fetch noise channels natively natively off processor if it exists
-                nc = proc.get("n_noise_channels")
-                if nc is None and inj:
-                    nc = inj.get("n_noise_channels")
-                row["noise_channels"] = int(nc) if nc is not None else 0
-
-                # ODE / sampling steps (flow_ode_steps or sampler_steps)
-                ode = proc.get("flow_ode_steps") or proc.get("sampler_steps")
-                if ode is not None:
-                    row["ode_steps"] = int(ode)
-
-                row["lr"] = cfg.get("optimizer", {}).get("learning_rate")
+    # Training time from evaluation_metadata.csv
+    p_meta = run_dir / "eval" / "evaluation_metadata.csv"
+    if p_meta.exists():
+        try:
+            md = pd.read_csv(p_meta)
+            if not md.empty and {"category", "metric", "value"}.issubset(md.columns):
+                rt = md[md["category"] == "runtime_train"]
+                s = rt.loc[rt["metric"] == "total_s", "value"]
+                if not s.empty:
+                    row["train_total_s"] = pd.to_numeric(s.iloc[0], errors="coerce")
         except Exception:
             pass
     return row
@@ -1209,7 +1246,6 @@ def main():  # noqa: PLR0912, PLR0915
             for c in [
                 "run_name",
                 "params_processor_total",
-                "train_total_s",
                 "dataset_label",
                 "model_scale",
             ]
@@ -1227,7 +1263,9 @@ def main():  # noqa: PLR0912, PLR0915
 
         if "params_processor_total" in merged.columns:
             _params = pd.to_numeric(merged["params_processor_total"], errors="coerce")
-            merged["params_M"] = (_params / 1e6).round(1).astype(str) + "M"  # type: ignore[operator]
+            merged["params_M"] = (
+                (_params / 1e6).round(1).astype(str) + "M"  # type: ignore[operator]
+            )
 
         show_cols = [
             "run_name",
@@ -1241,7 +1279,9 @@ def main():  # noqa: PLR0912, PLR0915
             "noise_injector",
             "noise_channels",
             "ode_steps",
+            "n_gpus",
             "batch_size",
+            "eff_batch_size",
             "lr",
             "train_hrs",
         ]
@@ -1259,7 +1299,9 @@ def main():  # noqa: PLR0912, PLR0915
             "noise_injector": "NoiseInj",
             "noise_channels": "NoiseC",
             "ode_steps": "ODE",
+            "n_gpus": "GPUs",
             "batch_size": "BS",
+            "eff_batch_size": "EffBS",
             "lr": "LR",
             "train_hrs": "Train_hr",
         }
