@@ -738,6 +738,24 @@ def extract_valid_plot_groups_from_run_names(
     )
 
 
+def _shade_variant(base_color, idx: int, total: int):
+    """Return a deterministic lightness variant for a color within a family."""
+    if total <= 1:
+        return base_color
+    if total == 2:
+        return (
+            _mix_with_white(base_color, 0.22)
+            if idx == 0
+            else _mix_with_black(base_color, 0.18)
+        )
+    frac = (idx / (total - 1)) - 0.5  # -0.5..0.5
+    return (
+        _mix_with_white(base_color, frac * 0.8)
+        if frac > 0
+        else _mix_with_black(base_color, -frac * 0.6)
+    )
+
+
 def build_family_style(
     df_in: pd.DataFrame, explicit_groups: list[list[str]] | None = None
 ) -> dict:
@@ -760,22 +778,7 @@ def build_family_style(
             for j, pg in enumerate(group_pgs):
                 if pg in styles:
                     continue  # Conflict resolution (first claims)
-                # j=0 -> normal, j=1 -> lighter, j=2 -> darker etc
-                if n == 1:
-                    c = base_color
-                elif n == 2:
-                    c = (
-                        _mix_with_white(base_color, 0.4)
-                        if j == 0
-                        else _mix_with_black(base_color, 0.2)
-                    )
-                else:
-                    frac = (j / (n - 1)) - 0.5  # -0.5 to 0.5
-                    c = (
-                        _mix_with_white(base_color, frac * 1.2)
-                        if frac > 0
-                        else _mix_with_black(base_color, -frac * 0.8)
-                    )
+                c = _shade_variant(base_color, j, n)
 
                 parts = pg.split("__")
                 loss = parts[1] if len(parts) > 1 else "unknown"
@@ -786,16 +789,18 @@ def build_family_style(
                     "linestyle": "-" if loss == "diff" else "--",
                 }
 
-    # Fallback for remaining
-    for pg in present:
-        if pg not in styles:
-            c, is_diff, _scale = get_hue_and_lightness(pg, df_in, None)
-            styles[pg] = {
-                "color": c,
-                "label": plot_group_display_label(pg),
-                "marker": "^" if is_diff else "o",
-                "linestyle": "-" if is_diff else "--",
-            }
+    # Fallback for remaining plot groups: each run gets its own hue.
+    remaining = [pg for pg in present if pg not in styles]
+    cmap = plt.get_cmap("tab20")
+    for i, pg in enumerate(sorted(remaining)):
+        parts = pg.split("__")
+        loss = parts[1] if len(parts) > 1 else "unknown"
+        styles[pg] = {
+            "color": cmap(i % 20),
+            "label": plot_group_display_label(pg),
+            "marker": "^" if loss == "diff" else "o",
+            "linestyle": "-" if loss == "diff" else "--",
+        }
     return styles
 
 
