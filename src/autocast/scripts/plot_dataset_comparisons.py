@@ -916,7 +916,7 @@ def save_fig(fig, out_dir: Path, name: str):
     plt.close(fig)
 
 
-def grouped_bar(
+def grouped_bar(  # noqa: PLR0912, PLR0915
     df_in: pd.DataFrame,
     metric: str,
     title: str,
@@ -940,39 +940,71 @@ def grouped_bar(
     )
 
     datasets = sorted(g["dataset_label"].unique())
-    families = sorted(g[group_col].unique())
+    _families = sorted(g[group_col].unique())
     x = np.arange(len(datasets), dtype=float)
-    width = 0.8 / max(1, len(families))
+
+    # Width should reflect groups present per dataset, not global families across all
+    # datasets. Otherwise datasets with fewer groups render overly narrow bars.
+    present_by_dataset: dict[str, list[str]] = {}
+    max_present = 1
+    for ds in datasets:
+        ds_groups = sorted(
+            cast(
+                pd.Series,
+                g.loc[g["dataset_label"] == ds, group_col].astype(str),  # type: ignore  # noqa: PGH003
+            )
+            .dropna()
+            .unique()
+            .tolist()
+        )
+        present_by_dataset[ds] = ds_groups
+        max_present = max(max_present, len(ds_groups))
+
+    width = 0.8 / max(1, max_present)
 
     fig, ax = plt.subplots(figsize=(max(8.0, 0.9 * len(datasets) + 2.0), 3.8))
     all_positive = []
 
-    for i, fam in enumerate(families):
-        vals = cast(
-            np.ndarray,
-            cast(
+    seen_labels: set[str] = set()
+    for ds_idx, ds in enumerate(datasets):
+        ds_rows = g[g["dataset_label"] == ds].set_index(group_col)
+        ds_groups = present_by_dataset.get(ds, [])
+        for j, fam in enumerate(ds_groups):
+            if fam not in ds_rows.index:
+                continue
+            raw_val = ds_rows.loc[fam, metric]
+            raw_scalar = raw_val.iloc[0] if isinstance(raw_val, pd.Series) else raw_val
+            val_ser = cast(
                 pd.Series,
-                pd.to_numeric(
-                    g[g[group_col] == fam]
-                    .set_index("dataset_label")
-                    .reindex(datasets)[metric],
-                    errors="coerce",
-                ),
-            ).to_numpy(dtype=np.dtype("float64")),  # type: ignore[arg-type]
-        )
-        all_positive.extend(float(v) for v in vals if np.isfinite(v) and v > 0)
-        offs = (i - (len(families) - 1) / 2.0) * width
-        style = styles.get(fam, {"color": "k", "label": fam})
-        ax.bar(
-            x + offs,
-            vals,
-            width=width,
-            label=style["label"],
-            color=style["color"],
-            edgecolor="0.25",
-            linewidth=0.6,
-            linestyle=style.get("linestyle", "-"),
-        )
+                pd.to_numeric(pd.Series([raw_scalar]), errors="coerce"),
+            )
+            if val_ser.empty or pd.isna(val_ser.iloc[0]):
+                continue
+            val = float(val_ser.iloc[0])
+            if not np.isfinite(val):
+                continue
+
+            if val > 0:
+                all_positive.append(val)
+
+            offs = (j - (len(ds_groups) - 1) / 2.0) * width
+            style = styles.get(fam, {"color": "k", "label": fam})
+            label = str(style["label"])
+            if label in seen_labels:
+                label = "_nolegend_"
+            else:
+                seen_labels.add(label)
+
+            ax.bar(
+                float(x[ds_idx]) + offs,
+                val,
+                width=width,
+                label=label,
+                color=style["color"],
+                edgecolor="0.25",
+                linewidth=0.6,
+                linestyle=style.get("linestyle", "-"),
+            )
 
     if y_scale == "linear":
         ax.set_yscale("linear")
