@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import cast
 
@@ -583,6 +584,18 @@ def load_config_metadata(run_dir: Path) -> dict[str, object]:
                 _extract_config_fields(cfg, row)
         except Exception:
             pass
+
+    # Run date from parent directory name (e.g. 2024-01-15/run_name),
+    # falling back to resolved_config.yaml mtime.
+    parent_name = run_dir.parent.name
+    date_match = re.match(r"(\d{4}-\d{2}-\d{2})", parent_name)
+    if date_match:
+        row["run_date"] = date_match.group(1)
+    elif p_config.exists():
+        mtime = p_config.stat().st_mtime
+        row["run_date"] = datetime.fromtimestamp(mtime, tz=timezone.utc).strftime(
+            "%Y-%m-%d"
+        )
 
     # Training time from evaluation_metadata.csv
     p_meta = run_dir / "eval" / "evaluation_metadata.csv"
@@ -1284,6 +1297,7 @@ def main():  # noqa: PLR0912, PLR0915
             "eff_batch_size",
             "lr",
             "train_hrs",
+            "run_date",
         ]
         show_cols = [c for c in show_cols if c in merged.columns]
 
@@ -1304,6 +1318,7 @@ def main():  # noqa: PLR0912, PLR0915
             "eff_batch_size": "EffBS",
             "lr": "LR",
             "train_hrs": "Train_hr",
+            "run_date": "Date",
         }
         merged = merged.rename(columns=renames)
 
