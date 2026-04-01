@@ -1362,13 +1362,18 @@ def main():  # noqa: PLR0912, PLR0915
         merged = mdf.copy()
 
         if "train_total_s" in merged.columns:
-            _train_s = pd.to_numeric(merged["train_total_s"], errors="coerce")
-            merged["train_hrs"] = (_train_s / 3600).round(1)  # type: ignore[operator]
+            _train_s = cast(
+                pd.Series,
+                pd.to_numeric(merged["train_total_s"], errors="coerce"),
+            )
+            merged["train_hrs"] = (_train_s / 3600.0).round(1)
 
         if "model_latency_ms_per_sample" in merged.columns:
-            merged["infer_ms"] = pd.to_numeric(
-                merged["model_latency_ms_per_sample"], errors="coerce"
-            ).round(2)
+            _infer_ms = cast(
+                pd.Series,
+                pd.to_numeric(merged["model_latency_ms_per_sample"], errors="coerce"),
+            )
+            merged["infer_ms"] = _infer_ms.round(2)
 
         if "params_processor_total" in merged.columns:
             _params = pd.to_numeric(merged["params_processor_total"], errors="coerce")
@@ -1531,7 +1536,10 @@ def main():  # noqa: PLR0912, PLR0915
     # Styling
     df = cast(pd.DataFrame, df)
     if "train_total_s" in df.columns:
-        _train_s = pd.to_numeric(df["train_total_s"], errors="coerce")
+        _train_s = cast(
+            pd.Series,
+            pd.to_numeric(df["train_total_s"], errors="coerce"),
+        )
         df["train_hrs"] = _train_s / 3600.0
     styles = build_family_style(df, explicit_groups)
 
