@@ -779,6 +779,26 @@ def plot_group_display_label(pg: str) -> str:
     return f"{model_l} · {scale} · {loss_l}{h}"
 
 
+def _run_name_from_plot_group(pg: str) -> str | None:
+    """Extract run_name from a plot_group token when present."""
+    parts = pg.split("__")
+    if len(parts) > 3 and parts[3]:
+        return parts[3]
+    return None
+
+
+def _style_label_for_plot_group(
+    pg: str,
+    custom_label_by_run: dict[str, str] | None,
+) -> str:
+    """Return custom label for a run when provided, else the default label."""
+    if custom_label_by_run:
+        run_name = _run_name_from_plot_group(pg)
+        if run_name and run_name in custom_label_by_run:
+            return custom_label_by_run[run_name]
+    return plot_group_display_label(pg)
+
+
 def extract_valid_plot_groups_from_run_names(
     run_names: list[str], df_in: pd.DataFrame
 ) -> set[str]:
@@ -808,7 +828,9 @@ def _shade_variant(base_color, idx: int, total: int):
 
 
 def build_family_style(
-    df_in: pd.DataFrame, explicit_groups: list[list[str]] | None = None
+    df_in: pd.DataFrame,
+    explicit_groups: list[list[str]] | None = None,
+    custom_label_by_run: dict[str, str] | None = None,
 ) -> dict:
     """Build a style dict (color, label, marker, linestyle) for each plot_group."""
     styles = {}
@@ -835,7 +857,7 @@ def build_family_style(
                 loss = parts[1] if len(parts) > 1 else "unknown"
                 styles[pg] = {
                     "color": c,
-                    "label": plot_group_display_label(pg),
+                    "label": _style_label_for_plot_group(pg, custom_label_by_run),
                     "marker": "^" if loss == "diff" else "o",
                     "linestyle": "-" if loss == "diff" else "--",
                 }
@@ -848,11 +870,36 @@ def build_family_style(
         loss = parts[1] if len(parts) > 1 else "unknown"
         styles[pg] = {
             "color": cmap(i % 20),
-            "label": plot_group_display_label(pg),
+            "label": _style_label_for_plot_group(pg, custom_label_by_run),
             "marker": "^" if loss == "diff" else "o",
             "linestyle": "-" if loss == "diff" else "--",
         }
     return styles
+
+
+def build_custom_label_map(
+    run_dirs: list[Path], labels: list[str] | None
+) -> dict[str, str]:
+    """Build run_name -> custom label map from CLI labels.
+
+    A label value of "None" (case-insensitive) means: keep default auto label.
+    """
+    if not labels:
+        return {}
+    if len(labels) != len(run_dirs):
+        msg = (
+            "--labels count must match selected run count. "
+            f"Got {len(labels)} labels for {len(run_dirs)} runs."
+        )
+        raise ValueError(msg)
+
+    custom: dict[str, str] = {}
+    for run_dir, label in zip(run_dirs, labels, strict=True):
+        norm = str(label).strip()
+        if norm.casefold() == "none":
+            continue
+        custom[run_dir.name] = norm
+    return custom
 
 
 # ---------------------------------------------------------------------------
@@ -1102,10 +1149,22 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
     if not rows:
         return
     metrics_long = pd.concat(rows, ignore_index=True).dropna(subset=["value"])
+
+    available_metrics = set(metrics_long["metric"].dropna().astype(str).unique())
+    metrics_to_plot = [m for m in metrics if m in available_metrics]
+    missing_metrics = [m for m in metrics if m not in available_metrics]
+    if missing_metrics:
+        print(
+            "Skipping lead-time metrics not present in per-timestep file: "
+            + ", ".join(missing_metrics)
+        )
+    if not metrics_to_plot:
+        return
+
     datasets = sorted(metrics_long["dataset_label"].unique())
     groups = sorted(metrics_long["plot_group"].unique())
 
-    nrows, ncols = len(metrics), len(datasets)
+    nrows, ncols = len(metrics_to_plot), len(datasets)
     fig, axes = plt.subplots(
         nrows,
         ncols,
@@ -1115,7 +1174,7 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
         squeeze=False,
     )
 
-    for r, metric in enumerate(metrics):
+    for r, metric in enumerate(metrics_to_plot):
         sub = metrics_long[metrics_long["metric"] == metric]
         for c, ds_label in enumerate(datasets):
             ax = axes[r][c]
@@ -1246,6 +1305,14 @@ def main():  # noqa: PLR0912, PLR0915
         help="Run directory names to include (alternative to --run-group).",
     )
     parser.add_argument(
+        "--labels",
+        nargs="+",
+        help=(
+            "Custom legend labels in run order (from --runs or flattened --run-group). "
+            "Use 'None' to keep default auto label for a specific run."
+        ),
+    )
+    parser.add_argument(
         "--datasets",
         nargs="+",
         help="Filter to specific dataset modules (e.g., ad64 gs64)",
@@ -1323,6 +1390,12 @@ def main():  # noqa: PLR0912, PLR0915
                 if p.is_dir() and (p / "eval" / "evaluation_metrics.csv").exists()
             ]
         )
+
+    try:
+        custom_label_by_run = build_custom_label_map(run_dirs, args.labels)
+    except ValueError as e:
+        print(f"Error: {e}")
+        sys.exit(1)
 
     if args.list:
         print(f"Loading {len(run_dirs)} runs...")
@@ -1541,7 +1614,11 @@ def main():  # noqa: PLR0912, PLR0915
             pd.to_numeric(df["train_total_s"], errors="coerce"),
         )
         df["train_hrs"] = _train_s / 3600.0
-    styles = build_family_style(df, explicit_groups)
+    styles = build_family_style(
+        df,
+        explicit_groups,
+        custom_label_by_run=custom_label_by_run,
+    )
 
     n_ds = df["dataset_label"].nunique()
     n_mv = df["plot_group"].nunique()
