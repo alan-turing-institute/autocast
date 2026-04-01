@@ -585,13 +585,19 @@ def load_config_metadata(run_dir: Path) -> dict[str, object]:
         except Exception:
             pass
 
-    # Run date from parent directory name (e.g. 2024-01-15/run_name),
-    # falling back to resolved_config.yaml mtime.
-    parent_name = run_dir.parent.name
-    date_match = re.match(r"(\d{4}-\d{2}-\d{2})", parent_name)
-    if date_match:
-        row["run_date"] = date_match.group(1)
-    elif p_config.exists():
+    # Run date: resolve symlinks first (the real path has the original
+    # date directory), then try the given path as fallback.
+    _date_found = False
+    for _rd in (run_dir.resolve(), run_dir):
+        for _anc in (_rd, *_rd.parents):
+            dm = re.match(r"(\d{4}-\d{2}-\d{2})$", _anc.name)
+            if dm:
+                row["run_date"] = dm.group(1)
+                _date_found = True
+                break
+        if _date_found:
+            break
+    if not _date_found and p_config.exists():
         mtime = p_config.stat().st_mtime
         row["run_date"] = datetime.fromtimestamp(mtime, tz=timezone.utc).strftime(
             "%Y-%m-%d"
