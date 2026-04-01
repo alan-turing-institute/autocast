@@ -1188,6 +1188,19 @@ def main():  # noqa: PLR0912, PLR0915
             'Dataset=CNS64)"'
         ),
     )
+    parser.add_argument(
+        "--sort",
+        dest="sort_col",
+        help=(
+            "Column name (display name) to sort the --list table by, "
+            "e.g. --sort Date or --sort Train_hr"
+        ),
+    )
+    parser.add_argument(
+        "--reverse",
+        action="store_true",
+        help="Reverse the sort order when --sort is used",
+    )
     args = parser.parse_args()
 
     results_dir = resolve_results_root(args.results_dir)
@@ -1345,6 +1358,23 @@ def main():  # noqa: PLR0912, PLR0915
                 merged,
                 col_aliases=renames,
             )
+
+        if args.sort_col:
+            if args.sort_col in merged.columns:
+                merged = cast(
+                    pd.DataFrame,
+                    merged.sort_values(
+                        args.sort_col,
+                        ascending=not args.reverse,
+                        na_position="last",
+                    ),
+                )
+            else:
+                available = ", ".join(merged.columns.tolist())
+                print(
+                    f"Warning: --sort column '{args.sort_col}' not found. "
+                    f"Available columns: {available}"
+                )
 
         pd.set_option("display.max_rows", None)
         pd.set_option("display.max_columns", None)
