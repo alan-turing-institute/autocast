@@ -188,6 +188,17 @@ def dataset_module_from_data_path(data_path: str | None) -> str | None:
     return None
 
 
+def resolution_from_run_name(run_name: str | None) -> str | None:
+    """Infer a model resolution token from run_name when present."""
+    if not run_name:
+        return None
+    # Common form: ..._vit_640_<hash>_<hash> or ..._vit_128_<hash>_<hash>
+    m = re.search(r"_vit_(\d{2,5})(?:_|$)", str(run_name))
+    if m:
+        return m.group(1)
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Data Loading
 # ---------------------------------------------------------------------------
@@ -326,6 +337,15 @@ def load_config_metadata(run_dir: Path) -> dict[str, object]:
                 )
                 proc = cfg.get("model", {}).get("processor", {})
                 row["processor"] = proc.get("_target_", "").split(".")[-1]
+                backbone = proc.get("backbone", {}) if isinstance(proc, dict) else {}
+                res = (
+                    backbone.get("hid_channels") if isinstance(backbone, dict) else None
+                )
+                row["resolution"] = (
+                    int(res)
+                    if res is not None
+                    else resolution_from_run_name(run_dir.name)
+                )
 
                 inj = cfg.get("model", {}).get("input_noise_injector", {})
                 row["noise_injector"] = (
@@ -1006,6 +1026,7 @@ def main():  # noqa: PLR0912, PLR0915
             "run_name",
             "dataset_label",
             "processor",
+            "resolution",
             "model_scale",
             "params_M",
             "n_steps_output",
@@ -1022,6 +1043,7 @@ def main():  # noqa: PLR0912, PLR0915
             "run_name": "Run",
             "dataset_label": "Dataset",
             "processor": "Model",
+            "resolution": "Resolution",
             "model_scale": "Scale",
             "params_M": "Params",
             "n_steps_output": "N_Out",
