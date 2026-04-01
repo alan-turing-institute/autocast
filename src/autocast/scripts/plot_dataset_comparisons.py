@@ -118,14 +118,31 @@ def parse_loss_dataset_arch(
 ) -> tuple[str | None, str | None, str | None]:
     if not run_name:
         return None, None, None
-    m = re.match(r"^(diff|crps)_(.+)_([0-9a-f]{7}|[a-z]+)_[0-9a-f]{7}$", str(run_name))
+    m = re.match(
+        r"^(diff|crps|epd)_(.+)_([0-9a-f]{7}|[a-z]+)_[0-9a-f]{7}$", str(run_name)
+    )
     if not m:
         return None, None, None
     loss, mid = m.group(1), m.group(2)
+
+    # Try known datasets
     for ds in _dataset_candidates():
         pfx = ds + "_"
         if mid.startswith(pfx):
             return loss, ds, mid[len(pfx) :]
+
+    # Fallback using known architectures
+    for arch in ARCHITECTURE_PREFIXES:
+        sfx = "_" + arch
+        if sfx in mid:
+            idx = mid.index(sfx)
+            return loss, mid[:idx], mid[idx + 1 :]
+
+    # Ultimate fallback
+    if "_" in mid:
+        s1, s2 = mid.split("_", 1)
+        return loss, s1, s2
+
     return loss, None, mid
 
 
@@ -246,17 +263,20 @@ def load_config_metadata(run_dir: Path) -> dict:
                     .get("_target_", "")
                     .split(".")[-1]
                 )
-                row["processor"] = (
-                    cfg.get("model", {})
-                    .get("processor", {})
-                    .get("_target_", "")
-                    .split(".")[-1]
-                )
+                proc = cfg.get("model", {}).get("processor", {})
+                row["processor"] = proc.get("_target_", "").split(".")[-1]
+
                 inj = cfg.get("model", {}).get("input_noise_injector", {})
                 row["noise_injector"] = (
                     inj.get("_target_", "").split(".")[-1] if inj else "None"
                 )
-                row["noise_channels"] = inj.get("n_noise_channels") if inj else 0
+
+                # Fetch noise channels natively natively off processor if it exists
+                nc = proc.get("n_noise_channels")
+                if nc is None and inj:
+                    nc = inj.get("n_noise_channels")
+                row["noise_channels"] = nc if nc is not None else 0
+
                 row["lr"] = cfg.get("optimizer", {}).get("learning_rate")
         except Exception:
             pass
