@@ -25,13 +25,33 @@ DATASET_LABEL_OVERRIDES = {
     "cns64": "CNS64",
     "gpe_ri_high_complexity": "GPE-RI high",
     "gpe_ri_low_complexity": "GPE-RI low",
+    "gpe_laser_only_wake": "Gpe Laser Only Wake",
     "gpehc64": "GPEHC64",
     "gpelc64": "GPELC64",
     "gs64": "GS64",
     "lb128x32": "LB128x32",
     "rd64": "RD64",
+    "shallow_water2d_128": "Shallow Water2D 128",
     "sw2d464": "SW2D464",
     "sw2d64": "SW2D64",
+}
+
+# Canonical grid resolution for each known dataset module.
+DATASET_RESOLUTION: dict[str, str] = {
+    "ad64": "64x64",
+    "adm32": "64x64",
+    "cns64": "64x64",
+    "gpe_ri_high_complexity": "64x64",
+    "gpe_ri_low_complexity": "64x64",
+    "gpe_laser_only_wake": "64x64",
+    "gpehc64": "64x64",
+    "gpelc64": "64x64",
+    "gs64": "64x64",
+    "lb128x32": "128x32",
+    "rd64": "64x64",
+    "shallow_water2d_128": "128x128",
+    "sw2d464": "64x64",
+    "sw2d64": "64x64",
 }
 
 ARCHITECTURE_PREFIXES = (
@@ -199,6 +219,42 @@ def resolution_from_run_name(run_name: str | None) -> str | None:
     return None
 
 
+def _format_spatial_resolution(vals: list[int] | tuple[int, ...]) -> str | None:
+    """Format 2D spatial resolution as 'W x H' with larger dim first."""
+    if len(vals) < 2:
+        return None
+    a, b = int(vals[0]), int(vals[1])
+    hi, lo = (a, b) if a >= b else (b, a)
+    return f"{hi}x{lo}"
+
+
+def dataset_grid_resolution(
+    dataset_module: str | None, data_path: str | None
+) -> str | None:
+    """Infer canonical grid resolution from dataset identifier or data path."""
+    ds = str(dataset_module or "")
+
+    # Explicit lookup from known dataset modules.
+    if ds in DATASET_RESOLUTION:
+        return DATASET_RESOLUTION[ds]
+
+    # Direct token like lb128x32
+    m = re.search(r"(\d+)x(\d+)", ds)
+    if m:
+        return _format_spatial_resolution([int(m.group(1)), int(m.group(2))])
+
+    # Heuristic: names ending in 64 are typically 64x64 grids.
+    if ds.endswith("64"):
+        return "64x64"
+
+    # 128-grid datasets often include this token in the full path/module name.
+    p = str(data_path or "")
+    if "_128" in ds or "_128" in p:
+        return "128x128"
+
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Data Loading
 # ---------------------------------------------------------------------------
@@ -321,14 +377,12 @@ def load_config_metadata(run_dir: Path) -> dict[str, object]:
             with open(p_config) as f:
                 cfg = yaml.safe_load(f)
             if cfg:
-                row["n_steps_output"] = cfg.get("datamodule", {}).get("n_steps_output")
-                row["batch_size"] = cfg.get("datamodule", {}).get("batch_size")
-                row["dataset"] = Path(
-                    cfg.get("datamodule", {}).get("data_path", "")
-                ).name
-                row["dataset_from_data_path"] = dataset_module_from_data_path(
-                    cfg.get("datamodule", {}).get("data_path", "")
-                )
+                datamodule = cfg.get("datamodule", {})
+                row["n_steps_output"] = datamodule.get("n_steps_output")
+                row["batch_size"] = datamodule.get("batch_size")
+                data_path = datamodule.get("data_path", "")
+                row["dataset"] = Path(data_path).name
+                row["dataset_from_data_path"] = dataset_module_from_data_path(data_path)
                 row["loss_func"] = (
                     cfg.get("model", {})
                     .get("loss_func", {})
@@ -337,15 +391,27 @@ def load_config_metadata(run_dir: Path) -> dict[str, object]:
                 )
                 proc = cfg.get("model", {}).get("processor", {})
                 row["processor"] = proc.get("_target_", "").split(".")[-1]
-                backbone = proc.get("backbone", {}) if isinstance(proc, dict) else {}
-                res = (
-                    backbone.get("hid_channels") if isinstance(backbone, dict) else None
-                )
-                row["resolution"] = (
-                    int(res)
-                    if res is not None
-                    else resolution_from_run_name(run_dir.name)
-                )
+
+                res = None
+                if isinstance(proc, dict):
+                    proc_sr = proc.get("spatial_resolution")
+                    if isinstance(proc_sr, (list, tuple)):
+                        vals = [int(v) for v in proc_sr[:2] if v is not None]
+                        res = _format_spatial_resolution(vals)
+
+                if not res:
+                    res = dataset_grid_resolution(
+                        cast(str | None, row.get("dataset_from_data_path")),
+                        data_path,
+                    )
+                # Fallback: try dataset module parsed from run name.
+                if not res:
+                    _, ds_from_name, _ = parse_loss_dataset_arch(
+                        cast(str | None, row.get("run_name"))
+                    )
+                    if ds_from_name:
+                        res = dataset_grid_resolution(ds_from_name, data_path)
+                row["resolution"] = res
 
                 inj = cfg.get("model", {}).get("input_noise_injector", {})
                 row["noise_injector"] = (
