@@ -254,7 +254,7 @@ def load_config_metadata(run_dir: Path) -> dict:
                 row["noise_injector"] = (
                     inj.get("_target_", "").split(".")[-1] if inj else "None"
                 )
-                row["noise_channels"] = inj.get("n_channels") if inj else 0
+                row["noise_channels"] = inj.get("n_noise_channels") if inj else 0
                 row["lr"] = cfg.get("optimizer", {}).get("learning_rate")
         except Exception:
             pass
@@ -777,6 +777,16 @@ def main():
         action="store_true",
         help="Print a summarized table of run metadata and exit",
     )
+    parser.add_argument(
+        "--key",
+        action="append",
+        help="Key to filter the metadata table via OR matching. Use with --value.",
+    )
+    parser.add_argument(
+        "--value",
+        action="append",
+        help="Value matching the --key for filtering the metadata table.",
+    )
     args = parser.parse_args()
 
     results_dir = resolve_results_root(args.results_dir)
@@ -894,6 +904,27 @@ def main():
             "train_hrs": "Train_hr",
         }
         merged = merged.rename(columns=renames)
+
+        # Apply Key/Value filtering using OR logic across filters
+        if args.key and args.value:
+            if len(args.key) != len(args.value):
+                print(
+                    "Error: --key and --value must be provided the same number of times."
+                )
+                sys.exit(1)
+
+            mask = pd.Series(False, index=merged.index)
+            valid_filters = 0
+            for k, v in zip(args.key, args.value):
+                col = renames.get(k, k)  # map parameter name to display name if used
+                if col in merged.columns:
+                    mask = mask | (merged[col].astype(str) == str(v))
+                    valid_filters += 1
+                else:
+                    print(f"Warning: Metadata filter key '{k}' not found.")
+
+            if valid_filters > 0:
+                merged = merged[mask]
 
         pd.set_option("display.max_rows", None)
         pd.set_option("display.max_columns", None)
