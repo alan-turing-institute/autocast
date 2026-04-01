@@ -424,6 +424,11 @@ def load_config_metadata(run_dir: Path) -> dict[str, object]:
                     nc = inj.get("n_noise_channels")
                 row["noise_channels"] = int(nc) if nc is not None else 0
 
+                # ODE / sampling steps (flow_ode_steps or sampler_steps)
+                ode = proc.get("flow_ode_steps") or proc.get("sampler_steps")
+                if ode is not None:
+                    row["ode_steps"] = int(ode)
+
                 row["lr"] = cfg.get("optimizer", {}).get("learning_rate")
         except Exception:
             pass
@@ -1099,6 +1104,7 @@ def main():  # noqa: PLR0912, PLR0915
             "loss_func",
             "noise_injector",
             "noise_channels",
+            "ode_steps",
             "batch_size",
             "lr",
             "train_hrs",
@@ -1116,6 +1122,7 @@ def main():  # noqa: PLR0912, PLR0915
             "loss_func": "Loss",
             "noise_injector": "NoiseInj",
             "noise_channels": "NoiseC",
+            "ode_steps": "ODE",
             "batch_size": "BS",
             "lr": "LR",
             "train_hrs": "Train_hr",
