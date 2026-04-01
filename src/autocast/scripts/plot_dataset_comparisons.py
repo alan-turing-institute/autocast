@@ -4,9 +4,11 @@ import argparse
 import re
 import sys
 from pathlib import Path
+from typing import cast
 
 import matplotlib as mpl
 import yaml
+from matplotlib.lines import Line2D
 
 mpl.use("Agg")  # Non-interactive backend
 import matplotlib.pyplot as plt
@@ -147,8 +149,13 @@ def parse_loss_dataset_arch(
 
 
 def normalize_dataset_module(dataset: str | None) -> str | None:
-    if pd.isna(dataset) or not dataset:
+    if dataset is None or not dataset:
         return None
+    try:
+        if pd.isna(dataset):  # type: ignore[arg-type]
+            return None
+    except (TypeError, ValueError):
+        pass
     m = re.match(r"^(?P<base>.+)_(?P<suffix>[0-9a-f]{6,}|\d{6,})$", str(dataset))
     return m.group("base") if m else str(dataset)
 
@@ -217,7 +224,9 @@ def assign_model_scale(df_in: pd.DataFrame) -> pd.Series:
     out = pd.Series("large", index=df_in.index, dtype="object")
     if MODEL_SCALE_PARAM_COL not in df_in.columns:
         return out
-    params = pd.to_numeric(df_in[MODEL_SCALE_PARAM_COL], errors="coerce")
+    params = cast(
+        pd.Series, pd.to_numeric(df_in[MODEL_SCALE_PARAM_COL], errors="coerce")
+    )
     group_cols = [
         c for c in ["dataset_module", "loss_family", "arch_key"] if c in df_in.columns
     ]
@@ -226,26 +235,29 @@ def assign_model_scale(df_in: pd.DataFrame) -> pd.Series:
 
     for _, g in df_in.groupby(group_cols, dropna=False):
         idx = g.index
-        p = params.loc[idx]
+        p = cast(pd.Series, params.loc[idx])
         vals = sorted(p.dropna().unique().tolist())
         if len(vals) <= 1:
             out.loc[idx] = "large"
             continue
         low, high = vals[0], vals[-1]
-        out.loc[p[p == low].index] = "small"
-        out.loc[p[p == high].index] = "large"
-        for ii in p[(p != low) & (p != high)].index:
+        low_idx = cast(pd.Series, p[p == low]).index
+        high_idx = cast(pd.Series, p[p == high]).index
+        out.loc[low_idx] = "small"
+        out.loc[high_idx] = "large"
+        mid_mask = (p != low) & (p != high)
+        for ii in cast(pd.Series, p[mid_mask]).index:
             val = p.loc[ii]
             out.loc[ii] = (
                 "small"
-                if pd.notna(val) and abs(val - low) <= abs(val - high)
+                if pd.notna(val) and abs(float(val) - low) <= abs(float(val) - high)
                 else "large"
             )
     return out
 
 
-def load_config_metadata(run_dir: Path) -> dict:
-    row = {"run_name": run_dir.name}
+def load_config_metadata(run_dir: Path) -> dict[str, object]:
+    row: dict[str, object] = {"run_name": run_dir.name}
     p_config = run_dir / "resolved_config.yaml"
     if p_config.exists():
         try:
@@ -275,7 +287,7 @@ def load_config_metadata(run_dir: Path) -> dict:
                 nc = proc.get("n_noise_channels")
                 if nc is None and inj:
                     nc = inj.get("n_noise_channels")
-                row["noise_channels"] = nc if nc is not None else 0
+                row["noise_channels"] = int(nc) if nc is not None else 0
 
                 row["lr"] = cfg.get("optimizer", {}).get("learning_rate")
         except Exception:
@@ -324,7 +336,9 @@ def get_hue_and_lightness(
 
     # Default notebook scheme fallback
     cmap = plt.get_cmap("tab20")
-    hues = sorted({p.split("__")[0] for p in df_in["plot_group"].unique()})
+    hues = sorted(
+        {p.split("__")[0] for p in cast(pd.Series, df_in["plot_group"]).unique()}
+    )
     h_idx = hues.index(arch) % 10 if arch in hues else 0
     c0, c1 = cmap(2 * h_idx), cmap(2 * h_idx + 1)
     light, dark = (c0, c1) if _rgb_luminance(c0) > _rgb_luminance(c1) else (c1, c0)
@@ -355,21 +369,24 @@ def extract_valid_plot_groups_from_run_names(
     run_names: list[str], df_in: pd.DataFrame
 ) -> set[str]:
     # Given a list of run dir names, find their corresponding plot_groups in df_in
-    return set(df_in[df_in["run_name"].isin(run_names)]["plot_group"].unique())
+    return set(
+        cast(pd.Series, df_in[df_in["run_name"].isin(run_names)]["plot_group"]).unique()
+    )
 
 
 def build_family_style(
     df_in: pd.DataFrame, explicit_groups: list[list[str]] | None = None
 ) -> dict:
     styles = {}
-    present = sorted(df_in["plot_group"].dropna().unique())
+    _present_raw = cast(pd.Series, df_in["plot_group"].dropna())
+    present = sorted(_present_raw.unique().tolist())
 
     if explicit_groups and len(explicit_groups) > 0:
         base_cmap = plt.get_cmap("tab10")
         for i, group_runs in enumerate(explicit_groups):
             base_color = base_cmap(i % 10)
             group_pgs = extract_valid_plot_groups_from_run_names(group_runs, df_in)
-            group_pgs = sorted(list(group_pgs))
+            group_pgs = sorted(group_pgs)
             if not group_pgs:
                 continue
 
@@ -459,11 +476,19 @@ def grouped_bar(
     all_positive = []
 
     for i, fam in enumerate(families):
-        vals = pd.to_numeric(
-            g[g[group_col] == fam].set_index("dataset_label").reindex(datasets)[metric],
-            errors="coerce",
-        ).to_numpy(dtype=float)
-        all_positive.extend(v for v in vals if np.isfinite(v) and v > 0)
+        vals = cast(
+            np.ndarray,
+            cast(
+                pd.Series,
+                pd.to_numeric(
+                    g[g[group_col] == fam]
+                    .set_index("dataset_label")
+                    .reindex(datasets)[metric],
+                    errors="coerce",
+                ),
+            ).to_numpy(dtype=np.dtype("float64")),  # type: ignore[arg-type]
+        )
+        all_positive.extend(float(v) for v in vals if np.isfinite(v) and v > 0)
         offs = (i - (len(families) - 1) / 2.0) * width
         style = styles.get(fam, {"color": "k", "label": fam})
         ax.bar(
@@ -551,16 +576,20 @@ def plot_coverage_calibration_panel(
                 (cur_panel["window"] == w) & (cur_panel["dataset_label"] == ds_label)
             ]
             for fam in groups:
-                sf = sub[sub["plot_group"] == fam]
+                sf = cast(pd.DataFrame, sub[sub["plot_group"] == fam])
                 if sf.empty:
                     continue
                 st = styles.get(fam, {"color": "k", "linestyle": "-"})
 
-                # Plot family mean
-                mean_curve = (
-                    sf.groupby("coverage_level", as_index=False)["observed_mean"]
-                    .mean()
-                    .sort_values("coverage_level")
+                # Plot each run's curve individually (no averaging)
+                mean_curve = cast(
+                    pd.DataFrame,
+                    cast(
+                        pd.DataFrame,
+                        sf.groupby("coverage_level", as_index=False)[
+                            "observed_mean"
+                        ].mean(),
+                    ).sort_values("coverage_level"),
                 )
                 ax.plot(
                     mean_curve["coverage_level"],
@@ -576,7 +605,7 @@ def plot_coverage_calibration_panel(
             ax.grid(alpha=0.2)
 
     legend_handles = [
-        plt.Line2D(
+        Line2D(
             [0],
             [0],
             color=styles[g]["color"],
@@ -589,7 +618,7 @@ def plot_coverage_calibration_panel(
     ]
     fig.legend(
         legend_handles,
-        [h.get_label() for h in legend_handles],
+        [str(h.get_label()) for h in legend_handles],
         loc="upper center",
         bbox_to_anchor=(0.5, 0.995),
         ncol=4,
@@ -613,9 +642,14 @@ def plot_lead_time_panel(
         subset=["run_path", "dataset_label", "plot_group"]
     ).drop_duplicates()
     for r in base.itertuples(index=False):
+        run_path = getattr(r, "run_path", None)
+        ds_label = getattr(r, "dataset_label", None)
+        pg = getattr(r, "plot_group", None)
+        if run_path is None or ds_label is None or pg is None:
+            continue
         p = (
             results_root
-            / str(r.run_path)
+            / str(run_path)
             / "eval"
             / "rollout_metrics_per_timestep_channel_0.csv"
         )
@@ -630,11 +664,11 @@ def plot_lead_time_panel(
         ).dropna()
         long["timestep"] = pd.to_numeric(long["timestep"], errors="coerce")
         long["value"] = pd.to_numeric(long["value"], errors="coerce")
-        long = long[long["metric"].isin(metrics)].copy()
+        long = cast(pd.DataFrame, long[long["metric"].isin(metrics)].copy())
         if long.empty:
             continue
-        long["dataset_label"] = r.dataset_label
-        long["plot_group"] = r.plot_group
+        long["dataset_label"] = ds_label
+        long["plot_group"] = pg
         rows.append(long)
 
     if not rows:
@@ -661,13 +695,17 @@ def plot_lead_time_panel(
             is_cov = metric.startswith("coverage_")
             vals = []
             for fam in groups:
-                sf = ds[ds["plot_group"] == fam]
+                sf = cast(pd.DataFrame, ds[ds["plot_group"] == fam])
                 if sf.empty:
                     continue
-                agg = (
-                    sf.groupby("timestep", as_index=False)["value"]
-                    .agg(["mean", "std", "count"])
-                    .sort_values("timestep")
+                agg = cast(
+                    pd.DataFrame,
+                    cast(
+                        pd.DataFrame,
+                        sf.groupby("timestep", as_index=False)["value"].agg(
+                            ["mean", "std", "count"]
+                        ),
+                    ).sort_values("timestep"),
                 )
                 st = styles.get(fam, {"color": "k"})
 
@@ -722,7 +760,7 @@ def plot_lead_time_panel(
                     ymax = 10.0
                 ax.set_ylim(bottom=ymin, top=ymax)
     handles = [
-        plt.Line2D(
+        Line2D(
             [0],
             [0],
             color=styles[g]["color"],
@@ -735,7 +773,7 @@ def plot_lead_time_panel(
     ]
     fig.legend(
         handles,
-        [h.get_label() for h in handles],
+        [str(h.get_label()) for h in handles],
         loc="upper center",
         bbox_to_anchor=(0.5, 0.98),
         ncol=4,
@@ -886,14 +924,12 @@ def main():
         )
 
         if "train_total_s" in merged.columns:
-            merged["train_hrs"] = (
-                pd.to_numeric(merged["train_total_s"], errors="coerce") / 3600
-            ).round(1)
+            _train_s = pd.to_numeric(merged["train_total_s"], errors="coerce")
+            merged["train_hrs"] = (_train_s / 3600).round(1)  # type: ignore[operator]
 
         if "params_processor_total" in merged.columns:
-            merged["params_M"] = (
-                pd.to_numeric(merged["params_processor_total"], errors="coerce") / 1e6
-            ).round(1).astype(str) + "M"
+            _params = pd.to_numeric(merged["params_processor_total"], errors="coerce")
+            merged["params_M"] = (_params / 1e6).round(1).astype(str) + "M"  # type: ignore[operator]
 
         show_cols = [
             "run_name",
@@ -946,18 +982,15 @@ def main():
                     print(f"Warning: Metadata filter key '{k}' not found.")
 
             if valid_filters > 0:
-                merged = merged[mask]
+                merged = cast(pd.DataFrame, merged[mask])
 
         pd.set_option("display.max_rows", None)
         pd.set_option("display.max_columns", None)
         pd.set_option("display.width", 1000)
         pd.set_option("display.max_colwidth", 40)
         print("\n--- Available Runs Metadata ---\n")
-        print(
-            merged[[r for c, r in renames.items() if r in merged.columns]].to_string(
-                index=False
-            )
-        )
+        disp_cols = [r for c, r in renames.items() if r in merged.columns]
+        print(cast(pd.DataFrame, merged[disp_cols]).to_string(index=False))
         sys.exit(0)
 
     # Construct plot_group (includes run_name to guarantee no multi-run averaging)
@@ -973,20 +1006,21 @@ def main():
 
     # Apply dataset and model filters
     if args.datasets:
-        df = df[df["dataset_module"].isin(args.datasets)]
+        df = cast(pd.DataFrame, df[df["dataset_module"].isin(args.datasets)])
     if args.models:
-        df = df[df["arch_key"].isin(args.models)]
+        df = cast(pd.DataFrame, df[df["arch_key"].isin(args.models)])
 
-    if df.empty:
+    if cast(pd.DataFrame, df).empty:
         print("No valid runs remain after applying filters.")
         sys.exit(1)
 
     # Styling
+    df = cast(pd.DataFrame, df)
     styles = build_family_style(df, explicit_groups)
 
-    print(
-        f"Found {len(df['dataset_label'].unique())} datasets and {len(df['plot_group'].unique())} model variants."
-    )
+    n_ds = df["dataset_label"].nunique()
+    n_mv = df["plot_group"].nunique()
+    print(f"Found {n_ds} datasets and {n_mv} model variants.")
 
     # Render overall bars
     for m in args.metrics:
