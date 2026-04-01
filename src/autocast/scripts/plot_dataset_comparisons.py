@@ -828,43 +828,149 @@ def _shade_variant(base_color, idx: int, total: int):
     )
 
 
+def _build_label_color_map(
+    labels: list[str],
+) -> dict[str, tuple]:
+    """Map labels to colors, grouping by prefix before '('."""
+    base_cmap = plt.get_cmap("tab10")
+
+    def _prefix(lbl: str) -> str:
+        idx = lbl.find("(")
+        return lbl[:idx].strip() if idx >= 0 else lbl.strip()
+
+    prefixes = sorted({_prefix(lb) for lb in labels})
+    pfx_hue = {p: i for i, p in enumerate(prefixes)}
+
+    hue_members: dict[int, list[str]] = {}
+    for lb in sorted(set(labels)):
+        hi = pfx_hue[_prefix(lb)]
+        hue_members.setdefault(hi, []).append(lb)
+
+    result: dict[str, tuple] = {}
+    for hi, members in hue_members.items():
+        base = base_cmap(hi % 10)
+        for j, lb in enumerate(members):
+            result[lb] = _shade_variant(base, j, len(members))
+    return result
+
+
+def _apply_explicit_group_styles(
+    styles: dict,
+    df_in: pd.DataFrame,
+    explicit_groups: list[list[str]],
+    custom_label_by_run: dict[str, str] | None,
+    uniform_group_color: bool,
+    group_hues: list[int] | None,
+) -> None:
+    """Assign styles from explicit --run-group definitions."""
+    base_cmap = plt.get_cmap("tab10")
+
+    hue_family: dict[int, list[int]] = {}
+    if group_hues:
+        for gi, hi in enumerate(group_hues):
+            hue_family.setdefault(hi, []).append(gi)
+
+    for i, group_runs in enumerate(explicit_groups):
+        if group_hues and i < len(group_hues):
+            hue_idx = group_hues[i]
+            base_color = base_cmap(hue_idx % 10)
+            siblings = hue_family.get(hue_idx, [i])
+            c = _shade_variant(
+                base_color, siblings.index(i), len(siblings)
+            )
+        else:
+            base_color = base_cmap(i % 10)
+            c = base_color
+
+        group_pgs = extract_valid_plot_groups_from_run_names(
+            group_runs, df_in
+        )
+        group_pgs = sorted(group_pgs)
+        for j, pg in enumerate(group_pgs):
+            if pg in styles:
+                continue
+            run_c = (
+                c
+                if (uniform_group_color or group_hues)
+                else _shade_variant(
+                    base_color, j, len(group_pgs)
+                )
+            )
+            parts = pg.split("__")
+            loss = parts[1] if len(parts) > 1 else "unknown"
+            styles[pg] = {
+                "color": run_c,
+                "label": _style_label_for_plot_group(
+                    pg, custom_label_by_run
+                ),
+                "marker": "^" if loss == "diff" else "o",
+                "linestyle": "-" if loss == "diff" else "--",
+            }
+
+
+def _apply_label_color_styles(
+    styles: dict,
+    pgs: list[str],
+    custom_label_by_run: dict[str, str],
+) -> None:
+    """Assign styles by label — same label gets same color."""
+    pg_label = {}
+    for pg in pgs:
+        rn = _run_name_from_plot_group(pg)
+        if rn and rn in custom_label_by_run:
+            pg_label[pg] = custom_label_by_run[rn]
+        else:
+            pg_label[pg] = _style_label_for_plot_group(
+                pg, custom_label_by_run
+            )
+    label_color = _build_label_color_map(
+        list(pg_label.values())
+    )
+    for pg in pgs:
+        lb = pg_label[pg]
+        parts = pg.split("__")
+        loss = parts[1] if len(parts) > 1 else "unknown"
+        styles[pg] = {
+            "color": label_color[lb],
+            "label": _style_label_for_plot_group(
+                pg, custom_label_by_run
+            ),
+            "marker": "^" if loss == "diff" else "o",
+            "linestyle": "-" if loss == "diff" else "--",
+        }
+
+
 def build_family_style(
     df_in: pd.DataFrame,
     explicit_groups: list[list[str]] | None = None,
     custom_label_by_run: dict[str, str] | None = None,
+    uniform_group_color: bool = False,
+    group_hues: list[int] | None = None,
+    color_by_label: bool = False,
 ) -> dict:
     """Build a style dict (color, label, marker, linestyle) for each plot_group."""
-    styles = {}
+    styles: dict = {}
     _present_raw = cast(pd.Series, df_in["plot_group"].dropna())
     present = sorted(_present_raw.unique().tolist())
 
     if explicit_groups and len(explicit_groups) > 0:
-        base_cmap = plt.get_cmap("tab10")
-        for i, group_runs in enumerate(explicit_groups):
-            base_color = base_cmap(i % 10)
-            group_pgs = extract_valid_plot_groups_from_run_names(group_runs, df_in)
-            group_pgs = sorted(group_pgs)
-            if not group_pgs:
-                continue
+        _apply_explicit_group_styles(
+            styles,
+            df_in,
+            explicit_groups,
+            custom_label_by_run,
+            uniform_group_color,
+            group_hues,
+        )
 
-            # Vary lightness across the group's plot groups
-            n = len(group_pgs)
-            for j, pg in enumerate(group_pgs):
-                if pg in styles:
-                    continue  # Conflict resolution (first claims)
-                c = _shade_variant(base_color, j, n)
-
-                parts = pg.split("__")
-                loss = parts[1] if len(parts) > 1 else "unknown"
-                styles[pg] = {
-                    "color": c,
-                    "label": _style_label_for_plot_group(pg, custom_label_by_run),
-                    "marker": "^" if loss == "diff" else "o",
-                    "linestyle": "-" if loss == "diff" else "--",
-                }
+    remaining = [pg for pg in present if pg not in styles]
+    if color_by_label and custom_label_by_run and remaining:
+        _apply_label_color_styles(
+            styles, remaining, custom_label_by_run
+        )
+        remaining = []
 
     # Fallback for remaining plot groups: each run gets its own hue.
-    remaining = [pg for pg in present if pg not in styles]
     cmap = plt.get_cmap("tab20")
     for i, pg in enumerate(sorted(remaining)):
         parts = pg.split("__")
@@ -1398,6 +1504,30 @@ def main():  # noqa: PLR0912, PLR0915
         action="store_true",
         help="Reverse the sort order when --sort is used",
     )
+    parser.add_argument(
+        "--uniform-group-color",
+        action="store_true",
+        help="Use the same color for all runs in a --run-group",
+    )
+    parser.add_argument(
+        "--group-hues",
+        type=int,
+        nargs="+",
+        help=(
+            "Map each --run-group to a hue index (0-based). "
+            "Groups sharing a hue get shade variants. "
+            "e.g. --group-hues 0 1 0 1"
+        ),
+    )
+    parser.add_argument(
+        "--color-by-label",
+        action="store_true",
+        help=(
+            "Derive colors from --labels: same label = same color. "
+            "Hue families from prefix before '('. "
+            "No --run-group needed."
+        ),
+    )
     args = parser.parse_args()
 
     results_dir = resolve_results_root(args.results_dir)
@@ -1653,6 +1783,9 @@ def main():  # noqa: PLR0912, PLR0915
         df,
         explicit_groups,
         custom_label_by_run=custom_label_by_run,
+        uniform_group_color=args.uniform_group_color,
+        group_hues=args.group_hues,
+        color_by_label=args.color_by_label,
     )
 
     n_ds = df["dataset_label"].nunique()
