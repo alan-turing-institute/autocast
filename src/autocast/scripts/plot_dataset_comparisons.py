@@ -875,16 +875,12 @@ def _apply_explicit_group_styles(
             hue_idx = group_hues[i]
             base_color = base_cmap(hue_idx % 10)
             siblings = hue_family.get(hue_idx, [i])
-            c = _shade_variant(
-                base_color, siblings.index(i), len(siblings)
-            )
+            c = _shade_variant(base_color, siblings.index(i), len(siblings))
         else:
             base_color = base_cmap(i % 10)
             c = base_color
 
-        group_pgs = extract_valid_plot_groups_from_run_names(
-            group_runs, df_in
-        )
+        group_pgs = extract_valid_plot_groups_from_run_names(group_runs, df_in)
         group_pgs = sorted(group_pgs)
         for j, pg in enumerate(group_pgs):
             if pg in styles:
@@ -892,17 +888,13 @@ def _apply_explicit_group_styles(
             run_c = (
                 c
                 if (uniform_group_color or group_hues)
-                else _shade_variant(
-                    base_color, j, len(group_pgs)
-                )
+                else _shade_variant(base_color, j, len(group_pgs))
             )
             parts = pg.split("__")
             loss = parts[1] if len(parts) > 1 else "unknown"
             styles[pg] = {
                 "color": run_c,
-                "label": _style_label_for_plot_group(
-                    pg, custom_label_by_run
-                ),
+                "label": _style_label_for_plot_group(pg, custom_label_by_run),
                 "marker": "^" if loss == "diff" else "o",
                 "linestyle": "-" if loss == "diff" else "--",
             }
@@ -920,21 +912,15 @@ def _apply_label_color_styles(
         if rn and rn in custom_label_by_run:
             pg_label[pg] = custom_label_by_run[rn]
         else:
-            pg_label[pg] = _style_label_for_plot_group(
-                pg, custom_label_by_run
-            )
-    label_color = _build_label_color_map(
-        list(pg_label.values())
-    )
+            pg_label[pg] = _style_label_for_plot_group(pg, custom_label_by_run)
+    label_color = _build_label_color_map(list(pg_label.values()))
     for pg in pgs:
         lb = pg_label[pg]
         parts = pg.split("__")
         loss = parts[1] if len(parts) > 1 else "unknown"
         styles[pg] = {
             "color": label_color[lb],
-            "label": _style_label_for_plot_group(
-                pg, custom_label_by_run
-            ),
+            "label": _style_label_for_plot_group(pg, custom_label_by_run),
             "marker": "^" if loss == "diff" else "o",
             "linestyle": "-" if loss == "diff" else "--",
         }
@@ -965,9 +951,7 @@ def build_family_style(
 
     remaining = [pg for pg in present if pg not in styles]
     if color_by_label and custom_label_by_run and remaining:
-        _apply_label_color_styles(
-            styles, remaining, custom_label_by_run
-        )
+        _apply_label_color_styles(styles, remaining, custom_label_by_run)
         remaining = []
 
     # Fallback for remaining plot groups: each run gets its own hue.
@@ -1020,6 +1004,30 @@ def save_fig(fig, out_dir: Path, name: str):
     fig.savefig(p, dpi=120, bbox_inches="tight")
     print(f"Saved: {p}")
     plt.close(fig)
+
+
+def _dedup_legend_handles(groups: list, styles: dict) -> list[Line2D]:
+    """Build legend handles with duplicate labels removed."""
+    handles = []
+    seen: set[str] = set()
+    for g in groups:
+        if g not in styles:
+            continue
+        lbl = str(styles[g]["label"])
+        if lbl in seen:
+            continue
+        seen.add(lbl)
+        handles.append(
+            Line2D(
+                [0],
+                [0],
+                color=styles[g]["color"],
+                ls=styles[g].get("linestyle", "-"),
+                lw=2,
+                label=lbl,
+            )
+        )
+    return handles
 
 
 def grouped_bar(  # noqa: PLR0912, PLR0915
@@ -1217,18 +1225,7 @@ def plot_coverage_calibration_panel(
                 ax.set_ylabel(w)
             ax.grid(alpha=0.2)
 
-    legend_handles = [
-        Line2D(
-            [0],
-            [0],
-            color=styles[g]["color"],
-            ls=styles[g].get("linestyle", "-"),
-            lw=2,
-            label=styles[g]["label"],
-        )
-        for g in groups
-        if g in styles
-    ]
+    legend_handles = _dedup_legend_handles(groups, styles)
     fig.legend(
         legend_handles,
         [str(h.get_label()) for h in legend_handles],
@@ -1385,18 +1382,7 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
                 if not np.isfinite(ymax) or np.isnan(ymax):
                     ymax = 10.0
                 ax.set_ylim(bottom=ymin, top=ymax)
-    handles = [
-        Line2D(
-            [0],
-            [0],
-            color=styles[g]["color"],
-            ls=styles[g].get("linestyle", "-"),
-            lw=2,
-            label=styles[g]["label"],
-        )
-        for g in groups
-        if g in styles
-    ]
+    handles = _dedup_legend_handles(groups, styles)
     fig.legend(
         handles,
         [str(h.get_label()) for h in handles],
