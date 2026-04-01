@@ -197,10 +197,22 @@ def _parse_atom(
         msg = f"Expected KEY=VALUE but got '{tok}' in filter expression."
         raise ValueError(msg)
     key, value = tok.split("=", 1)
+
+    # Resolve keys case-insensitively across aliases and dataframe columns.
+    key_cf = key.casefold()
     col = col_aliases.get(key, key)
     if col not in df.columns:
-        print(f"Warning: Metadata filter key '{key}' not found.")
-        return pd.Series(True, index=df.index), pos + 1
+        alias_keys_cf = {k.casefold(): k for k in col_aliases}
+        if key_cf in alias_keys_cf:
+            col = col_aliases[alias_keys_cf[key_cf]]
+        else:
+            cols_cf = {c.casefold(): c for c in df.columns}
+            if key_cf in cols_cf:
+                col = cols_cf[key_cf]
+
+    if col not in df.columns:
+        msg = f"Metadata filter key '{key}' not found."
+        raise ValueError(msg)
     return df[col].astype(str) == value, pos + 1
 
 
