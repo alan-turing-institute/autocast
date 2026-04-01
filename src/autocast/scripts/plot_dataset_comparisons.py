@@ -164,6 +164,30 @@ def normalize_dataset_module(dataset: str | None) -> str | None:
     return m.group("base") if m else str(dataset)
 
 
+def dataset_module_from_data_path(data_path: str | None) -> str | None:
+    """Infer dataset module from data_path (including cached latents paths)."""
+    if not data_path:
+        return None
+    p = Path(str(data_path))
+
+    # Most direct case: explicit dataset directory.
+    direct = normalize_dataset_module(p.name)
+    if direct and direct not in {"cached_latents", "latents", "encoded"}:
+        return direct
+
+    # Cached latents case: parent directory usually encodes source AE run,
+    # e.g. ae_cns64_e011131_b3e6f6b -> cns64
+    parent = p.parent.name if p.name in {"cached_latents", "latents", "encoded"} else ""
+    if parent.startswith("ae_"):
+        toks = parent.split("_")[1:]
+        # Strip trailing run/hash suffixes while preserving dataset tokens.
+        while toks and re.fullmatch(r"[0-9a-f]{6,}|\d{6,}", toks[-1]):
+            toks.pop()
+        if toks:
+            return normalize_dataset_module("_".join(toks))
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Data Loading
 # ---------------------------------------------------------------------------
@@ -222,6 +246,21 @@ def load_single_run_metrics(run_dir: Path) -> dict:  # noqa: PLR0912
                 s = params.loc[params["metric"] == metric, "value"]
                 if not s.empty:
                     row[out_col] = pd.to_numeric(s.iloc[0], errors="coerce")
+
+    # Training metadata (dataset hints for cached latents)
+    p_config = run_dir / "resolved_config.yaml"
+    if p_config.exists():
+        try:
+            with open(p_config) as f:
+                cfg = yaml.safe_load(f)
+            if cfg:
+                data_path = cfg.get("datamodule", {}).get("data_path", "")
+                row["dataset"] = (
+                    Path(data_path).name if data_path else row.get("dataset")
+                )
+                row["dataset_from_data_path"] = dataset_module_from_data_path(data_path)
+        except Exception:
+            pass
     return row
 
 
@@ -276,6 +315,9 @@ def load_config_metadata(run_dir: Path) -> dict[str, object]:
                 row["dataset"] = Path(
                     cfg.get("datamodule", {}).get("data_path", "")
                 ).name
+                row["dataset_from_data_path"] = dataset_module_from_data_path(
+                    cfg.get("datamodule", {}).get("data_path", "")
+                )
                 row["loss_func"] = (
                     cfg.get("model", {})
                     .get("loss_func", {})
@@ -908,11 +950,24 @@ def main():  # noqa: PLR0912, PLR0915
 
     df = pd.DataFrame(rows)
     _parsed = df["run_name"].map(parse_loss_dataset_arch)
-    df["loss_family"] = _parsed.map(lambda x: x[0])
-    df["dataset_module"] = _parsed.map(lambda x: x[1]).fillna(
-        df["dataset"].map(normalize_dataset_module)
+    df["loss_family"] = _parsed.map(
+        lambda x: x[0] if isinstance(x, tuple) and len(x) > 0 else None
     )
-    df["arch_segment"] = _parsed.map(lambda x: x[2])
+    parsed_dataset = _parsed.map(
+        lambda x: x[1] if isinstance(x, tuple) and len(x) > 1 else None
+    )
+    parsed_dataset = cast(
+        pd.Series,
+        parsed_dataset.where(
+            ~parsed_dataset.isin(["cached_latents", "latents", "encoded"]), np.nan
+        ),
+    )
+    df["dataset_module"] = parsed_dataset.fillna(
+        df.get("dataset_from_data_path")
+    ).fillna(df["dataset"].map(normalize_dataset_module))
+    df["arch_segment"] = _parsed.map(
+        lambda x: x[2] if isinstance(x, tuple) and len(x) > 2 else None
+    )
     df["arch_key"] = df["arch_segment"].map(arch_key_from_processor_segment)
     df["dataset_label"] = df["dataset_module"].map(dataset_label_from_module)
     df["model_scale"] = assign_model_scale(df)
