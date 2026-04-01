@@ -90,10 +90,12 @@ def resolve_results_root(outputs_dir: str) -> Path:  # noqa: D103
     return (Path.cwd() / p).resolve() if not p.is_absolute() else p.resolve()
 
 
-def dataset_label_from_module(dataset_module: str) -> str:  # noqa: D103
+def dataset_label_from_module(dataset_module: str | None) -> str | None:
+    if not dataset_module or pd.isna(dataset_module):
+        return None
     if dataset_module in DATASET_LABEL_OVERRIDES:
         return DATASET_LABEL_OVERRIDES[dataset_module]
-    return dataset_module.replace("_", " ").title()
+    return str(dataset_module).replace("_", " ").title()
 
 
 def _dataset_candidates() -> list[str]:
