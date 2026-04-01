@@ -969,27 +969,36 @@ def build_family_style(
 
 
 def build_custom_label_map(
-    run_dirs: list[Path], labels: list[str] | None
+    label_run_pairs: list[list[str]] | None,
+    valid_run_names: set[str] | None = None,
 ) -> dict[str, str]:
-    """Build run_name -> custom label map from CLI labels.
+    """Build run_name -> custom label map from ``--label-run`` entries.
 
     A label value of "None" (case-insensitive) means: keep default auto label.
     """
-    if not labels:
+    if not label_run_pairs:
         return {}
-    if len(labels) != len(run_dirs):
-        msg = (
-            "--labels count must match selected run count. "
-            f"Got {len(labels)} labels for {len(run_dirs)} runs."
-        )
-        raise ValueError(msg)
 
     custom: dict[str, str] = {}
-    for run_dir, label in zip(run_dirs, labels, strict=True):
+    for pair in label_run_pairs:
+        if len(pair) != 2:
+            msg = "Each --label-run must provide exactly two values: <run_id> <label>."
+            raise ValueError(msg)
+
+        run_name, label = pair[0], pair[1]
+        if valid_run_names is not None and run_name not in valid_run_names:
+            msg = (
+                f"--label-run references unknown run_id '{run_name}'. "
+                "Ensure it is included via --runs/--run-group or exists in "
+                "auto-discovery."
+            )
+            raise ValueError(msg)
+
         norm = str(label).strip()
         if norm.casefold() == "none":
             continue
-        custom[run_dir.name] = norm
+        custom[run_name] = norm
+
     return custom
 
 
@@ -1430,11 +1439,13 @@ def main():  # noqa: PLR0912, PLR0915
         help="Run directory names to include (alternative to --run-group).",
     )
     parser.add_argument(
-        "--labels",
-        nargs="+",
+        "--label-run",
+        action="append",
+        nargs=2,
+        metavar=("RUN_ID", "LABEL"),
         help=(
-            "Custom legend labels in run order (from --runs or flattened --run-group). "
-            "Use 'None' to keep default auto label for a specific run."
+            "Assign a custom legend label to a specific run id. "
+            "Repeat for multiple mappings. Use LABEL='None' to keep default label."
         ),
     )
     parser.add_argument(
@@ -1509,7 +1520,7 @@ def main():  # noqa: PLR0912, PLR0915
         "--color-by-label",
         action="store_true",
         help=(
-            "Derive colors from --labels: same label = same color. "
+            "Derive colors from --label-run mappings: same label = same color. "
             "Hue families from prefix before '('. "
             "No --run-group needed."
         ),
@@ -1540,8 +1551,13 @@ def main():  # noqa: PLR0912, PLR0915
             ]
         )
 
+    valid_run_names = {rd.name for rd in run_dirs}
+
     try:
-        custom_label_by_run = build_custom_label_map(run_dirs, args.labels)
+        custom_label_by_run = build_custom_label_map(
+            args.label_run,
+            valid_run_names=valid_run_names,
+        )
     except ValueError as e:
         print(f"Error: {e}")
         sys.exit(1)
