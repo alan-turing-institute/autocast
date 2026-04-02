@@ -33,5 +33,5 @@ model:
     _target_: autocast.losses.ensemble.AlphaFairCRPSLoss
   train_metrics:
     crps:
-      _target_: autocast.losses.ensemble.AlphaFairCRPSLoss
+      _target_: autocast.metrics.ensemble.AlphaFairCRPS
 
