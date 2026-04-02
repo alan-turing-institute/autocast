@@ -17,22 +17,22 @@
 # 	--run crps_sw2d64_vit_azula_large_feb5e43_90e3465 "ViT (23hrs)" \
 # 	--output-dir outputs/2026-04-01_collated/plots/sw_23hrs
 
-# Comparison of 1:4, 1:1 and 2:1
-autocast-plots --results-dir outputs/2026-04-01_collated \
-	--run diff_cns64_flow_matching_vit_55a4d1a_511e7b1 "FM (1:4)" \
-	--run diff_sw2d64_flow_matching_vit_4d5fcbd_067529b "FM (1:4)" \
-	--run crps_cns64_vit_azula_large_8fe25aa_d105b90 "ViT (1:4)" \
-	--run crps_sw2d64_vit_azula_large_8fe25aa_74f91d8 "ViT (1:4)" \
-	--run diff_cns64_flow_matching_vit_13eba33_1f075ac "FM (1:1)" \
-	--run diff_sw2d64_flow_matching_vit_13eba33_0bc663c "FM (1:1)" \
-	--run crps_cns64_vit_azula_large_feb5e43_91c22c0 "ViT (1:1)" \
-	--run crps_sw2d64_vit_azula_large_feb5e43_bb3bf07 "ViT (1:1)" \
-	--run diff_cns64_flow_matching_vit_13eba33_9305e6a "FM (2:1)" \
-	--run diff_sw2d64_flow_matching_vit_13eba33_02cb549 "FM (2:1)" \
-	--run crps_cns64_vit_azula_large_feb5e43_b8f68ac "ViT (2:1)" \
-	--run crps_sw2d64_vit_azula_large_feb5e43_ffb68ce "ViT (2:1)" \
-	--color-by-label \
-	--output-dir outputs/2026-04-01_collated/plots/1_4_vs_1_1_vs_2_1_no_cached_latents
+# # Comparison of 1:4, 1:1 and 2:1
+# autocast-plots --results-dir outputs/2026-04-01_collated \
+# 	--run diff_cns64_flow_matching_vit_55a4d1a_511e7b1 "FM (1:4)" \
+# 	--run diff_sw2d64_flow_matching_vit_4d5fcbd_067529b "FM (1:4)" \
+# 	--run crps_cns64_vit_azula_large_8fe25aa_d105b90 "ViT (1:4)" \
+# 	--run crps_sw2d64_vit_azula_large_8fe25aa_74f91d8 "ViT (1:4)" \
+# 	--run diff_cns64_flow_matching_vit_13eba33_1f075ac "FM (1:1)" \
+# 	--run diff_sw2d64_flow_matching_vit_13eba33_0bc663c "FM (1:1)" \
+# 	--run crps_cns64_vit_azula_large_feb5e43_91c22c0 "ViT (1:1)" \
+# 	--run crps_sw2d64_vit_azula_large_feb5e43_bb3bf07 "ViT (1:1)" \
+# 	--run diff_cns64_flow_matching_vit_13eba33_9305e6a "FM (2:1)" \
+# 	--run diff_sw2d64_flow_matching_vit_13eba33_02cb549 "FM (2:1)" \
+# 	--run crps_cns64_vit_azula_large_feb5e43_b8f68ac "ViT (2:1)" \
+# 	--run crps_sw2d64_vit_azula_large_feb5e43_ffb68ce "ViT (2:1)" \
+# 	--color-by-label \
+# 	--output-dir outputs/2026-04-01_collated/plots/1_4_vs_1_1_vs_2_1_no_cached_latents
 
 # # Comparison of 1:4 and 8x gradient steps
 # autocast-plots --results-dir outputs/2026-04-01_collated \
@@ -61,3 +61,13 @@ autocast-plots --results-dir outputs/2026-04-01_collated \
 # 	--color-by-label \
 # 	--group-hues 0 0 0 0 0 0 \
 # 	--output-dir outputs/2026-04-01_collated/plots/ode_steps
+
+
+# Comparison of 1:4, longer 1:4, smoother optimizer 1:4
+autocast-plots --results-dir outputs/2026-04-01_collated \
+	--run crps_cns64_vit_azula_large_8fe25aa_d105b90 "ViT" \
+	--run diff_cns64_flow_matching_vit_55a4d1a_511e7b1 "FM" \
+	--run diff_cns64_flow_matching_vit_13eba33_82f423d "FM (36hrs)" \
+	--run diff_cns64_flow_matching_vit_2007857_2cfb01f "FM (lr=1e-4)" \
+	--color-by-label \
+	--output-dir outputs/2026-04-01_collated/plots/longer_training_and_smoother_optimizer
