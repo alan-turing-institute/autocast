@@ -461,13 +461,45 @@ def _build_loss_func(model_config: DictConfig) -> nn.Module:
     return instantiate(loss_func_config)
 
 
+def _resolve_metric_overrides(metric_cfg: Any) -> Any:
+    """Instantiate metric config overrides into a metric list.
+
+    Hydra metric configs are often provided as keyed mappings, e.g.
+    train_metrics:
+      crps:
+        _target_: ...CRPS
+    The model expects a sequence of metric objects, so we normalise both
+    mapping and sequence styles here.
+    """
+    if metric_cfg is None:
+        return None
+
+    if isinstance(metric_cfg, DictConfig):
+        if "_target_" in metric_cfg:
+            return [instantiate(metric_cfg)]
+        return [
+            instantiate(metric) if isinstance(metric, DictConfig) else metric
+            for metric in metric_cfg.values()
+        ]
+
+    if isinstance(metric_cfg, list | tuple):
+        return [
+            instantiate(metric)
+            if isinstance(metric, DictConfig) and "_target_" in metric
+            else metric
+            for metric in metric_cfg
+        ]
+
+    return metric_cfg
+
+
 def _maybe_add_metric_overrides(
     kwargs: dict[str, Any], model_config: DictConfig
 ) -> None:
     """Forward explicit metric overrides from model config when present."""
     for key in ("train_metrics", "val_metrics", "test_metrics"):
         if key in model_config:
-            kwargs[key] = model_config.get(key)
+            kwargs[key] = _resolve_metric_overrides(model_config.get(key))
 
 
 def setup_processor_model(
