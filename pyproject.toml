@@ -116,27 +116,19 @@ explicit = true
 [tool.uv.sources]
 autoemulate = { git = "https://github.com/alan-turing-institute/autoemulate.git" }
 torch = [
-  { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
 ]
 torchvision = [
-  { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
 ]
 
 [tool.pytest.ini_options]
-testpaths = [
-    "tests",
-]
-pythonpath = [
-    "tests",
-]
-norecursedirs = [
-    "outputs",
-    "slurm_scripts",
-]
+testpaths = ["tests"]
+pythonpath = ["tests"]
+norecursedirs = ["outputs", "slurm_scripts"]
 filterwarnings = [
     # Ignore Lightning warnings that are expected/benign in test environment
     "ignore:You are trying to `self.log\\(\\)` but the `self.trainer` reference is not registered:UserWarning",
     "ignore:GPU available but not used:UserWarning",
     "ignore:The '.*_dataloader' does not have many workers:UserWarning",
-    "ig"
 ]
