@@ -4,7 +4,12 @@ import torch
 from autocast.metrics import ALL_ENSEMBLE_METRICS
 from autocast.metrics.base import BaseMetric
 from autocast.metrics.coverage import Coverage
-from autocast.metrics.ensemble import EnergyScore, SpreadSkillRatio, VariogramScore
+from autocast.metrics.ensemble import (
+    EnergyScore,
+    SpreadSkillRatio,
+    VariogramScore,
+    WinklerScore,
+)
 from autocast.types import TensorBTSC
 from autocast.types.types import TensorBTC
 
@@ -202,6 +207,29 @@ def test_spread_skill_ratio_requires_multiple_ensemble_members():
 
     with pytest.raises(ValueError, match="at least 2 ensemble members"):
         SpreadSkillRatio()(y_pred, y_true)
+
+
+def test_winkler_score_manual_value():
+    # Shape: (B=1, T=1, S=2, C=1, M=5)
+    # Ensemble members: [0, 1, 2, 3, 4], alpha=0.2
+    # Interval bounds: q0.1=0.4, q0.9=3.6
+    # S=0: y=2.0 in interval -> score = width = 3.2
+    # S=1: y=4.6 above upper by 1.0 -> + (2/0.2)*1.0 = +10.0
+    # Mean over spatial points = (3.2 + 13.2) / 2 = 8.2
+    members = torch.arange(5.0)
+    y_pred = members.view(1, 1, 1, 1, 5).expand(1, 1, 2, 1, 5)
+    y_true = torch.tensor([[[[2.0], [4.6]]]])
+
+    value = WinklerScore(alpha=0.2)(y_pred, y_true)
+    assert torch.allclose(value, torch.tensor(8.2), atol=1e-6)
+
+
+def test_winkler_score_invalid_alpha():
+    with pytest.raises(ValueError):  # noqa: PT011
+        WinklerScore(alpha=0.0)
+
+    with pytest.raises(ValueError):  # noqa: PT011
+        WinklerScore(alpha=1.0)
 
 
 @pytest.mark.parametrize("MetricCls", ALL_ENSEMBLE_METRICS)
