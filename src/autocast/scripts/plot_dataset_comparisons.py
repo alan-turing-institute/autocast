@@ -24,17 +24,17 @@ DATASET_LABEL_OVERRIDES = {
     "ad64": "AD64",
     "adm32": "ADM32",
     "cns64": "CNS64",
-    "gpe_ri_high_complexity": "GPE-RI high",
-    "gpe_ri_low_complexity": "GPE-RI low",
-    "gpe_laser_only_wake": "Gpe Laser Only Wake",
+    "gpe_ri_high_complexity": "GPE-H",
+    "gpe_ri_low_complexity": "GPE-L",
+    "gpe_laser_only_wake": "GPE-LW",
     "gpehc64": "GPEHC64",
     "gpelc64": "GPELC64",
     "gs64": "GS64",
     "lb128x32": "LB128x32",
     "rd64": "RD64",
-    "shallow_water2d_128": "Shallow Water2D 128",
-    "sw2d464": "SW2D464",
-    "sw2d64": "SW2D64",
+    "shallow_water2d_128": "SW",
+    "sw2d464": "SW4",
+    "sw2d64": "SW",
 }
 
 # Canonical grid resolution for each known dataset module.

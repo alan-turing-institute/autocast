@@ -102,16 +102,29 @@
 # 	--label-run crps_sw2d64_vit_azula_large_feb5e43_ffb68ce "ViT (2:1)" \
 # 	--output-dir outputs/2026-04-01_collated/plots/1_4_vs_1_1_vs_2_1
 
-# Comparison of 1:4 and 8x gradient steps
+# # Comparison of 1:4 and 8x gradient steps
+# autocast-plots --results-dir outputs/2026-04-01_collated \
+# 	--runs \
+# 		diff_cns64_flow_matching_vit_55a4d1a_511e7b1 \
+# 		diff_sw2d64_flow_matching_vit_4d5fcbd_067529b \
+# 		diff_cns64_flow_matching_vit_c3c9713_d2bcaa2 \
+# 		diff_sw2d64_flow_matching_vit_c3c9713_e4e3ba5 \
+# 	--color-by-label \
+# 	--label-run diff_cns64_flow_matching_vit_55a4d1a_511e7b1 "FM (1:4)" \
+# 	--label-run diff_sw2d64_flow_matching_vit_4d5fcbd_067529b "FM (1:4)" \
+# 	--label-run diff_cns64_flow_matching_vit_c3c9713_d2bcaa2 "FM (64, 24hrs)" \
+# 	--label-run diff_sw2d64_flow_matching_vit_c3c9713_e4e3ba5 "FM (64, 24hrs)" \
+# 	--output-dir outputs/2026-04-01_collated/plots/fm_8x
+
+
+
+
+# # Comparison with 128x128
 autocast-plots --results-dir outputs/2026-04-01_collated \
 	--runs \
-		diff_cns64_flow_matching_vit_55a4d1a_511e7b1 \
-		diff_sw2d64_flow_matching_vit_4d5fcbd_067529b \
-		diff_cns64_flow_matching_vit_c3c9713_d2bcaa2 \
-		diff_sw2d64_flow_matching_vit_c3c9713_e4e3ba5 \
+		crps_shallow_water2d_128_vit_azula_large_05cf9ff_29b49a6 \
+		crps_sw2d64_vit_azula_large_8fe25aa_74f91d8 \
 	--color-by-label \
-	--label-run diff_cns64_flow_matching_vit_55a4d1a_511e7b1 "FM (1:4)" \
-	--label-run diff_sw2d64_flow_matching_vit_4d5fcbd_067529b "FM (1:4)" \
-	--label-run diff_cns64_flow_matching_vit_c3c9713_d2bcaa2 "FM (64, 24hrs)" \
-	--label-run diff_sw2d64_flow_matching_vit_c3c9713_e4e3ba5 "FM (64, 24hrs)" \
-	--output-dir outputs/2026-04-01_collated/plots/fm_8x
+	--label-run crps_shallow_water2d_128_vit_azula_large_05cf9ff_29b49a6 "ViT 64x64" \
+	--label-run crps_sw2d64_vit_azula_large_8fe25aa_74f91d8 "ViT 128x128" \
+	--output-dir outputs/2026-04-01_collated/plots/128x128
