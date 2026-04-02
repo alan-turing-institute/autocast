@@ -46,6 +46,7 @@ from autocast.metrics.ensemble import (
     FairCRPS,
     SpreadSkillRatio,
     VariogramScore,
+    WinklerScore,
 )
 from autocast.models.encoder_processor_decoder import EncoderProcessorDecoder
 from autocast.models.encoder_processor_decoder_ensemble import (
@@ -110,6 +111,7 @@ AVAILABLE_METRICS_ENSEMBLE = {
     "energy": EnergyScore,
     "variogram": VariogramScore,
     "ssr": SpreadSkillRatio,
+    "winkler": WinklerScore,
 }
 
 DEFAULT_EVAL_METRICS = [
@@ -132,6 +134,7 @@ DEFAULT_EVAL_METRICS = [
     "afcrps",
     "energy",
     "ssr",
+    "winkler",
 ]
 
 MEMORY_INTENSIVE_METRICS = {"variogram"}
