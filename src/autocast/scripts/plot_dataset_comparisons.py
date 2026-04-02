@@ -21,17 +21,17 @@ import pandas as pd
 # ---------------------------------------------------------------------------
 
 DATASET_LABEL_OVERRIDES = {
-    "ad64": "AD64",
+    "ad64": "AD",
     "adm32": "ADM32",
-    "cns64": "CNS64",
+    "cns64": "CNS",
     "gpe_ri_high_complexity": "GPE-H",
     "gpe_ri_low_complexity": "GPE-L",
-    "gpe_laser_only_wake": "GPE-LW",
+    "gpe_laser_only_wake": "GPE",
     "gpehc64": "GPEHC64",
     "gpelc64": "GPELC64",
-    "gs64": "GS64",
-    "lb128x32": "LB128x32",
-    "rd64": "RD64",
+    "gs64": "GS",
+    "lb128x32": "LB",
+    "rd64": "RD",
     "shallow_water2d_128": "SW",
     "sw2d464": "SW4",
     "sw2d64": "SW",
@@ -937,6 +937,50 @@ def _apply_explicit_group_styles(
             }
 
 
+def _apply_run_hue_styles(
+    styles: dict,
+    pgs: list[str],
+    hue_group_by_run: dict[str, int],
+    custom_label_by_run: dict[str, str] | None,
+) -> None:
+    """Assign styles using per-run hue group indices from --run <id> [label] <hue>."""
+    base_cmap = plt.get_cmap("tab10")
+
+    # Group plot_groups by hue index, preserving --runs order within each group.
+    hue_members: dict[int, list[str]] = {}
+    no_hue: list[str] = []
+    for pg in pgs:
+        rn = _run_name_from_plot_group(pg)
+        if rn and rn in hue_group_by_run:
+            hue_members.setdefault(hue_group_by_run[rn], []).append(pg)
+        else:
+            no_hue.append(pg)
+
+    for hi, members in sorted(hue_members.items()):
+        base_color = base_cmap(hi % 10)
+        for j, pg in enumerate(members):
+            parts = pg.split("__")
+            loss = parts[1] if len(parts) > 1 else "unknown"
+            styles[pg] = {
+                "color": _shade_variant(base_color, j, len(members)),
+                "label": _style_label_for_plot_group(pg, custom_label_by_run),
+                "marker": "^" if loss == "diff" else "o",
+                "linestyle": "-" if loss == "diff" else "--",
+            }
+
+    # Runs without an explicit hue get sequential colors after the last hue.
+    next_hi = max(hue_members.keys(), default=-1) + 1
+    for i, pg in enumerate(no_hue):
+        parts = pg.split("__")
+        loss = parts[1] if len(parts) > 1 else "unknown"
+        styles[pg] = {
+            "color": base_cmap((next_hi + i) % 10),
+            "label": _style_label_for_plot_group(pg, custom_label_by_run),
+            "marker": "^" if loss == "diff" else "o",
+            "linestyle": "-" if loss == "diff" else "--",
+        }
+
+
 def _apply_label_color_styles(
     styles: dict,
     pgs: list[str],
@@ -970,6 +1014,7 @@ def build_family_style(
     uniform_group_color: bool = False,
     group_hues: list[int] | None = None,
     color_by_label: bool = False,
+    hue_group_by_run: dict[str, int] | None = None,
 ) -> dict:
     """Build a style dict (color, label, marker, linestyle) for each plot_group."""
     styles: dict = {}
@@ -988,7 +1033,10 @@ def build_family_style(
         )
 
     remaining = [pg for pg in present if pg not in styles]
-    if color_by_label and custom_label_by_run and remaining:
+    if hue_group_by_run and remaining:
+        _apply_run_hue_styles(styles, remaining, hue_group_by_run, custom_label_by_run)
+        remaining = []
+    elif color_by_label and custom_label_by_run and remaining:
         _apply_label_color_styles(styles, remaining, custom_label_by_run)
         remaining = []
 
@@ -1610,16 +1658,28 @@ def main():  # noqa: PLR0912, PLR0915
         out_dir.mkdir(parents=True, exist_ok=True)
 
     # Merge --run entries into --runs / --label-run for unified handling.
+    # Each --run entry is: <id> [label] [hue] or <id> [hue] (if 2nd arg is int).
+    hue_group_by_run: dict[str, int] = {}
     if args.run:
         merged_runs: list[str] = []
         merged_labels: list[list[str]] = list(args.label_run or [])
         for entry in args.run:
-            if len(entry) < 1 or len(entry) > 2:
-                print("Error: --run accepts 1 or 2 values: <run_id> [label]")
+            if len(entry) < 1 or len(entry) > 3:
+                print("Error: --run accepts 1-3 values: <id> [label] [hue]")
                 sys.exit(1)
-            merged_runs.append(entry[0])
+            run_id = entry[0]
+            merged_runs.append(run_id)
             if len(entry) == 2:
-                merged_labels.append([entry[0], entry[1]])
+                if entry[1].lstrip("-").isdigit():
+                    hue_group_by_run[run_id] = int(entry[1])
+                else:
+                    merged_labels.append([run_id, entry[1]])
+            elif len(entry) == 3:
+                merged_labels.append([run_id, entry[1]])
+                if not entry[2].lstrip("-").isdigit():
+                    print(f"Error: hue in --run must be an integer, got '{entry[2]}'")
+                    sys.exit(1)
+                hue_group_by_run[run_id] = int(entry[2])
         # --run takes precedence; append any extra --runs
         if args.runs:
             merged_runs.extend(args.runs)
@@ -1878,6 +1938,7 @@ def main():  # noqa: PLR0912, PLR0915
         uniform_group_color=args.uniform_group_color,
         group_hues=args.group_hues,
         color_by_label=args.color_by_label,
+        hue_group_by_run=hue_group_by_run or None,
     )
 
     n_ds = df["dataset_label"].nunique()

@@ -1,5 +1,15 @@
 #!/bin/bash
 
+# CRPS variants
+autocast-plots --results-dir outputs/2026-04-01_collated \
+	--run diff_sw2d64_flow_matching_vit_4d5fcbd_067529b "FM (large)" 0 \
+	--run crps_sw2d64_vit_azula_large_8fe25aa_74f91d8 "ViT (large)" 1 \
+	--run crps_sw2d64_vit_azula_large_60114bf_5d5c8e1 "ViT (1024)" 1 \
+	--run crps_sw2d64_vit_azula_large_concat_60114bf_acf9189 "ViT (concat)" 1 \
+	--run epd_sw2d64_vit_azula_large_8c5f696_c5f3ea9 "ViT (MAE loss)" 1 \
+	--run crps_sw2d64_vit_azula_large_feb5e43_c630eda "ViT (afCRPS loss)" 1 \
+	--output-dir outputs/2026-04-01_collated/plots/sw_crps_variants
+
 # # 23hrs
 # autocast-plots --results-dir outputs/2026-04-01_collated --sort Date --filter "Dataset=SW2D64 AND (Model=AzulaViTProcessor OR Model=FlowMatchingProcessor) AND Resolution=64x64 AND scale=large" \
 # 	--run diff_sw2d64_flow_matching_vit_4d5fcbd_067529b "FM (large)" \
@@ -40,14 +50,14 @@
 # 	--color-by-label \
 # 	--output-dir outputs/2026-04-01_collated/plots/128x128
 
-# Comparison with ODE steps
-autocast-plots --results-dir outputs/2026-04-01_collated \
-	--run diff_cns64_flow_matching_vit_c3c9713_d2bcaa2_25 "FM (25 steps)" \
-	--run diff_cns64_flow_matching_vit_c3c9713_d2bcaa2 "FM (50 steps)" \
-	--run diff_cns64_flow_matching_vit_c3c9713_d2bcaa2_100 "FM (100 steps)" \
-	--run diff_sw2d64_flow_matching_vit_c3c9713_e4e3ba5_25 "FM (25 steps)" \
-	--run diff_sw2d64_flow_matching_vit_c3c9713_e4e3ba5 "FM (50 steps)" \
-	--run diff_sw2d64_flow_matching_vit_c3c9713_e4e3ba5_100 "FM (100 steps)" \
-	--color-by-label \
-	--group-hues 0 0 0 0 0 0 \
-	--output-dir outputs/2026-04-01_collated/plots/ode_steps
+# # Comparison with ODE steps
+# autocast-plots --results-dir outputs/2026-04-01_collated \
+# 	--run diff_cns64_flow_matching_vit_c3c9713_d2bcaa2_25 "FM (25 steps)" \
+# 	--run diff_cns64_flow_matching_vit_c3c9713_d2bcaa2 "FM (50 steps)" \
+# 	--run diff_cns64_flow_matching_vit_c3c9713_d2bcaa2_100 "FM (100 steps)" \
+# 	--run diff_sw2d64_flow_matching_vit_c3c9713_e4e3ba5_25 "FM (25 steps)" \
+# 	--run diff_sw2d64_flow_matching_vit_c3c9713_e4e3ba5 "FM (50 steps)" \
+# 	--run diff_sw2d64_flow_matching_vit_c3c9713_e4e3ba5_100 "FM (100 steps)" \
+# 	--color-by-label \
+# 	--group-hues 0 0 0 0 0 0 \
+# 	--output-dir outputs/2026-04-01_collated/plots/ode_steps
