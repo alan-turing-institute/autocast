@@ -76,9 +76,9 @@
 # TODO: update SW, CNS and GPE with same training schedule (GPE currently 2e-4)
 autocast-plots --results-dir outputs/2026-04-01_collated \
 	--run crps_cns64_vit_azula_large_eb4a4f6_294dc78 "ViT" \
+	--run crps_sw2d64_vit_azula_large_eb4a4f6_682f33b "ViT" \
 	--run diff_cns64_flow_matching_vit_2007857_2cfb01f "FM" \
 	--run diff_sw2d64_flow_matching_vit_cb09424_7566c5e "FM" \
-	--run crps_sw2d64_vit_azula_large_eb4a4f6_682f33b "ViT" \
 	--run crps_gpe_laser_only_wake_vit_azula_large_feb5e43_699855c "ViT" \
 	--run diff_gpe_laser_only_wake_flow_matching_vit_2007857_7ee7dea "FM" \
 	--color-by-label \
@@ -88,9 +88,9 @@ autocast-plots --results-dir outputs/2026-04-01_collated \
 # Compare DM, FM, ViT for SW, CNS
 autocast-plots --results-dir outputs/2026-04-01_collated \
 	--run crps_cns64_vit_azula_large_eb4a4f6_294dc78 "ViT" \
+	--run crps_sw2d64_vit_azula_large_eb4a4f6_682f33b "ViT" \
 	--run diff_cns64_flow_matching_vit_2007857_2cfb01f "FM" \
 	--run diff_sw2d64_flow_matching_vit_cb09424_7566c5e "FM" \
-	--run crps_sw2d64_vit_azula_large_eb4a4f6_682f33b "ViT" \
 	--run diff_cns64_diffusion_vit_fc5b63a_3c040a7 "DM" \
 	--run diff_sw2d64_diffusion_vit_3dd3cf5_e849015 "DM" \
 	--color-by-label \
@@ -99,12 +99,12 @@ autocast-plots --results-dir outputs/2026-04-01_collated \
 
 # Compare ViT and FM for batch_size 32 and 128 trained over 12hrs 1GPU / 3hrs 4GPU
 autocast-plots --results-dir outputs/2026-04-01_collated \
-	--run crps_cns64_vit_azula_large_eb4a4f6_294dc78 "ViT (n=256, CRPS, h=768, bs=128)" \
 	--run diff_cns64_flow_matching_vit_2007857_2cfb01f "FM" \
 	--run diff_sw2d64_flow_matching_vit_cb09424_7566c5e "FM" \
-	--run crps_sw2d64_vit_azula_large_eb4a4f6_682f33b "ViT (n=256, CRPS, h=768, bs=128)" \
 	--run crps_cns64_vit_azula_large_8fe25aa_d105b90 "ViT (n=256, CRPS, h=768, bs=32)" \
 	--run crps_sw2d64_vit_azula_large_8fe25aa_74f91d8 "ViT (n=256, CRPS, h=768, bs=32)" \
+	--run crps_cns64_vit_azula_large_eb4a4f6_294dc78 "ViT (n=256, CRPS, h=768, bs=128)" \
+	--run crps_sw2d64_vit_azula_large_eb4a4f6_682f33b "ViT (n=256, CRPS, h=768, bs=128)" \
 	--color-by-label \
 	--dataset-order SW CNS \
 	--output-dir outputs/2026-04-01_collated/plots/crps_fm_vits_bs_32_vs_128
@@ -112,9 +112,9 @@ autocast-plots --results-dir outputs/2026-04-01_collated \
 
 # Compare DM, FM, ViT for SW, CNS
 autocast-plots --results-dir outputs/2026-04-01_collated \
-	--run crps_cns64_vit_azula_large_eb4a4f6_294dc78 "ViT (n=256, CRPS, h=768)" \
 	--run diff_cns64_flow_matching_vit_2007857_2cfb01f "FM" \
 	--run diff_sw2d64_flow_matching_vit_cb09424_7566c5e "FM" \
+	--run crps_cns64_vit_azula_large_eb4a4f6_294dc78 "ViT (n=256, CRPS, h=768)" \
 	--run crps_sw2d64_vit_azula_large_eb4a4f6_682f33b "ViT (n=256, CRPS, h=768)" \
 	--run crps_cns64_vit_azula_large_1ed9013_babdaa8 "ViT (n=1024, afCRPS, h=632)" \
 	--run crps_cns64_vit_azula_large_1ed9013_4268ef8 "ViT (n=1024, afCRPS, h=768)" \
