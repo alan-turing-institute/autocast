@@ -1,5 +1,6 @@
 """Optimizer configuration mixin for Lightning modules."""
 
+import math
 from typing import Any
 
 import heavyball
@@ -20,6 +21,48 @@ class OptimizerMixin(nn.Module):
 
     # Type hints for attributes expected from the concrete class
     optimizer_config: DictConfig | dict[str, Any] | None
+
+    def _get_scheduler_interval(self, cfg: dict[str, Any]) -> str:
+        """Return scheduler interval ('epoch' or 'step')."""
+        interval = str(cfg.get("scheduler_interval", "epoch")).lower()
+        if interval not in {"epoch", "step"}:
+            msg = (
+                f"scheduler_interval must be either 'epoch' or 'step'. Got: {interval}"
+            )
+            raise ValueError(msg)
+        return interval
+
+    def _as_positive_int(self, value: Any, field_name: str) -> int:
+        """Convert value to a positive integer."""
+        int_value = int(value)
+        if int_value <= 0:
+            msg = f"{field_name} must be a positive integer. Got: {value}"
+            raise ValueError(msg)
+        return int_value
+
+    def _resolve_cosine_horizon(self, cfg: dict[str, Any], interval: str) -> int:
+        """Resolve the cosine horizon used in the scheduler lambda."""
+        explicit_key = "cosine_steps" if interval == "step" else "cosine_epochs"
+        explicit_value = cfg.get(explicit_key)
+        if explicit_value is not None:
+            return self._as_positive_int(explicit_value, explicit_key)
+
+        trainer = getattr(self, "trainer", None)
+        if interval == "step" and trainer is not None:
+            estimated_steps = getattr(trainer, "estimated_stepping_batches", None)
+            if estimated_steps is not None:
+                try:
+                    estimated_int = int(estimated_steps)
+                except (TypeError, ValueError):
+                    estimated_int = 0
+                if estimated_int > 0:
+                    return estimated_int
+
+        if trainer is not None and trainer.max_epochs is not None:
+            return self._as_positive_int(trainer.max_epochs, "trainer.max_epochs")
+
+        fallback = cfg.get("cosine_t_max", 1)
+        return self._as_positive_int(fallback, "cosine_t_max")
 
     def _create_optimizer(
         self, cfg: DictConfig | dict[str, Any]
@@ -133,15 +176,37 @@ class OptimizerMixin(nn.Module):
     ) -> torch.optim.lr_scheduler.LRScheduler:
         """Create learning rate scheduler from config."""
         scheduler_name = str(cfg.get("scheduler", "")).lower()
+        scheduler_interval = self._get_scheduler_interval(cfg)
 
-        if scheduler_name == "cosine":
-            max_epochs = 1
-            trainer = getattr(self, "trainer", None)
-            if trainer is not None and trainer.max_epochs is not None:
-                max_epochs = int(trainer.max_epochs)
-            return torch.optim.lr_scheduler.CosineAnnealingLR(
-                optimizer, T_max=max_epochs, eta_min=0
-            )
+        warmup = int(cfg.get("warmup", 0))
+        warmup = max(warmup, 0)
+        min_lr_ratio = float(cfg.get("min_lr_ratio", 0.0))
+        if not 0.0 <= min_lr_ratio <= 1.0:
+            msg = f"min_lr_ratio must be in [0, 1]. Got: {min_lr_ratio}"
+            raise ValueError(msg)
+
+        if scheduler_name in {"cosine", "cosine_with_restarts"}:
+            horizon = self._resolve_cosine_horizon(cfg, scheduler_interval)
+            use_restarts = scheduler_name == "cosine_with_restarts"
+
+            def cosine_lambda(t: int) -> float:
+                phase_t = t % horizon if use_restarts else t
+                cosine = 0.5 * (
+                    1.0 + math.cos(math.pi * float(phase_t) / float(horizon))
+                )
+                return min_lr_ratio + (1.0 - min_lr_ratio) * cosine
+
+            if warmup > 0:
+
+                def lr_lambda(t: int) -> float:
+                    warm = min(1.0, float(t + 1) / float(warmup + 1))
+                    return warm * cosine_lambda(t)
+
+            else:
+                lr_lambda = cosine_lambda
+
+            return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
+
         if scheduler_name == "step":
             step_size = cfg.get("step_size", 30)
             gamma = cfg.get("gamma", 0.1)
@@ -184,6 +249,7 @@ class OptimizerMixin(nn.Module):
             return optimizer
 
         scheduler = self._create_scheduler(optimizer, cfg)
+        scheduler_interval = self._get_scheduler_interval(cfg)
 
         # ReduceLROnPlateau needs special handling
         if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
@@ -191,8 +257,16 @@ class OptimizerMixin(nn.Module):
                 "optimizer": optimizer,
                 "lr_scheduler": {
                     "scheduler": scheduler,
+                    "interval": "epoch",
                     "monitor": "val_loss",
                 },
             }
 
-        return {"optimizer": optimizer, "lr_scheduler": scheduler}
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "interval": scheduler_interval,
+                "frequency": 1,
+            },
+        }

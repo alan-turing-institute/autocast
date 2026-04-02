@@ -1,5 +1,5 @@
 _target_: autocast.data.datamodule.SpatioTemporalDataModule
-data_path: "${oc.env:AUTOCAST_DATASETS,./datasets}/gpe/laser_only_wake_5b51eac"
+data_path: "${oc.env:AUTOCAST_DATASETS,./datasets}/128x128/gpe/laser_only_wake_f15bdbb"
 batch_size: 16
 n_steps_input: 1
 n_steps_output: 4

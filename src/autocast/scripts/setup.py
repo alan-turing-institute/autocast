@@ -461,6 +461,15 @@ def _build_loss_func(model_config: DictConfig) -> nn.Module:
     return instantiate(loss_func_config)
 
 
+def _maybe_add_metric_overrides(
+    kwargs: dict[str, Any], model_config: DictConfig
+) -> None:
+    """Forward explicit metric overrides from model config when present."""
+    for key in ("train_metrics", "val_metrics", "test_metrics"):
+        if key in model_config:
+            kwargs[key] = model_config.get(key)
+
+
 def setup_processor_model(
     config: DictConfig,
     stats: dict,
@@ -500,6 +509,7 @@ def setup_processor_model(
         "noise_injector": noise_injector,
         "norm": norm,
     }
+    _maybe_add_metric_overrides(kwargs, model_config)
     if is_ensemble:
         kwargs["n_members"] = model_config.get("n_members")
 
@@ -607,6 +617,7 @@ def setup_epd_model(
         "input_noise_injector": noise_injector,
         "norm": norm,
     }
+    _maybe_add_metric_overrides(kwargs, model_config)
     if is_ensemble:
         kwargs["n_members"] = model_config.get("n_members")
 
