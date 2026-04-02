@@ -31,6 +31,7 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
         temporal_method: str = "attention",
         loss_func: nn.Module | None = None,
         n_noise_channels: int | None = None,
+        checkpointing: bool = False,
     ):
         super().__init__()
         self.n_spatial_dims = len(spatial_resolution)
@@ -57,6 +58,7 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
             temporal_method=temporal_method,
             temporal_attention_heads=num_heads,
             temporal_attention_hidden_dim=hidden_dim // num_heads,
+            checkpointing=checkpointing,
             use_precomputed_modulation=True,
         )
 

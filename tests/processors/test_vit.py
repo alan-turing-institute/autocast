@@ -2,6 +2,7 @@ import lightning as L
 from conftest import get_optimizer_config
 
 from autocast.models.processor import ProcessorModel
+from autocast.processors.azula_vit import AzulaViTProcessor
 from autocast.processors.vit import AViTProcessor
 
 
@@ -44,3 +45,29 @@ def test_vit_processor(encoded_batch, encoded_dummy_loader):
         train_dataloaders=encoded_dummy_loader,
         val_dataloaders=encoded_dummy_loader,
     )
+
+
+def test_azula_vit_processor_checkpointing(encoded_batch):
+    input_channels = encoded_batch.encoded_inputs.shape[1]
+    output_channels = encoded_batch.encoded_output_fields.shape[1]
+    spatial_resolution = tuple(encoded_batch.encoded_output_fields.shape[2:])
+
+    processor = AzulaViTProcessor(
+        in_channels=input_channels,
+        out_channels=output_channels,
+        spatial_resolution=spatial_resolution,
+        hidden_dim=64,
+        num_heads=4,
+        n_layers=2,
+        patch_size=4,
+        n_noise_channels=32,
+        checkpointing=True,
+    )
+    model = ProcessorModel(
+        processor=processor,
+        optimizer_config=get_optimizer_config(),
+    )
+
+    train_loss = model.training_step(encoded_batch, 0)
+    assert train_loss.shape == ()
+    train_loss.backward()
