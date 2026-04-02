@@ -96,3 +96,19 @@ autocast-plots --results-dir outputs/2026-04-01_collated \
 	--color-by-label \
 	--dataset-order SW CNS \
 	--output-dir outputs/2026-04-01_collated/plots/crps_fm_dm
+
+# Compare DM, FM, ViT for SW, CNS
+autocast-plots --results-dir outputs/2026-04-01_collated \
+	--run crps_cns64_vit_azula_large_eb4a4f6_294dc78 "ViT (n=256, CRPS, h=768)" \
+	--run diff_cns64_flow_matching_vit_2007857_2cfb01f "FM" \
+	--run diff_sw2d64_flow_matching_vit_cb09424_7566c5e "FM" \
+	--run crps_sw2d64_vit_azula_large_eb4a4f6_682f33b "ViT (n=256, CRPS, h=768)" \
+	--run crps_cns64_vit_azula_large_1ed9013_babdaa8 "ViT (n=1024, afCRPS, h=632)" \
+	--run crps_cns64_vit_azula_large_1ed9013_4268ef8 "ViT (n=1024, afCRPS, h=768)" \
+	--run crps_cns64_vit_azula_large_1ed9013_4268ef8 "ViT (n=1024, afCRPS, h=768)" \
+	--run crps_sw2d64_vit_azula_large_468b553_0bdf23f "ViT (n=256, CRPS, h=768, bs=256, bf16)" \
+	--color-by-label \
+	--dataset-order SW CNS \
+	--output-dir outputs/2026-04-01_collated/plots/crps_fm_vits_comparison_before_24hrs
+
+	
