@@ -252,6 +252,37 @@ def resolve_results_root(outputs_dir: str) -> Path:  # noqa: D103
     return (Path.cwd() / p).resolve() if not p.is_absolute() else p.resolve()
 
 
+def _apply_explicit_order(
+    items: list[str],
+    explicit_order: list[str] | None,
+) -> list[str]:
+    """Return *items* ordered by *explicit_order*, rest appended sorted."""
+    if not explicit_order:
+        return sorted(items)
+    item_set = set(items)
+    ordered = [x for x in explicit_order if x in item_set]
+    remaining = sorted(x for x in items if x not in set(explicit_order))
+    return ordered + remaining
+
+
+def _order_groups_by_label(
+    groups: list[str],
+    styles: dict,
+    hue_order: list[str] | None,
+) -> list[str]:
+    """Sort *groups* (plot_group keys) so their display labels follow *hue_order*."""
+    if not hue_order:
+        return sorted(groups)
+    label_rank = {label: i for i, label in enumerate(hue_order)}
+
+    def _key(pg: str) -> tuple[int, str]:
+        label = styles.get(pg, {}).get("label", pg)
+        rank = label_rank.get(label, len(hue_order))
+        return (rank, label)
+
+    return sorted(groups, key=_key)
+
+
 def dataset_label_from_module(dataset_module: str | None) -> str | None:
     """Return a human-readable label for a dataset module name."""
     if not dataset_module or pd.isna(dataset_module):
@@ -284,7 +315,8 @@ def parse_loss_dataset_arch(
     if not run_name:
         return None, None, None
     m = re.match(
-        r"^(diff|crps|epd)_(.+)_([0-9a-f]{7}|[a-z]+)_[0-9a-f]{7}$", str(run_name)
+        r"^(diff|crps|epd)_(.+)_([0-9a-f]{7}|[a-z]+)_[0-9a-f]{7}(?:_\d+)?$",
+        str(run_name),
     )
     if not m:
         return None, None, None
@@ -818,13 +850,14 @@ def _shade_variant(base_color, idx: int, total: int):
         return (
             _mix_with_white(base_color, 0.22)
             if idx == 0
-            else _mix_with_black(base_color, 0.18)
+            else _mix_with_black(base_color, 0.22)
         )
     frac = (idx / (total - 1)) - 0.5  # -0.5..0.5
+    # Positive frac → darker, negative → lighter (first item = lightest).
     return (
-        _mix_with_white(base_color, frac * 0.8)
+        _mix_with_black(base_color, frac * 0.6)
         if frac > 0
-        else _mix_with_black(base_color, -frac * 0.6)
+        else _mix_with_white(base_color, -frac * 0.8)
     )
 
 
@@ -842,7 +875,11 @@ def _build_label_color_map(
     pfx_hue = {p: i for i, p in enumerate(prefixes)}
 
     hue_members: dict[int, list[str]] = {}
-    for lb in sorted(set(labels)):
+    seen: set[str] = set()
+    for lb in labels:
+        if lb in seen:
+            continue
+        seen.add(lb)
         hi = pfx_hue[_prefix(lb)]
         hue_members.setdefault(hi, []).append(lb)
 
@@ -937,7 +974,8 @@ def build_family_style(
     """Build a style dict (color, label, marker, linestyle) for each plot_group."""
     styles: dict = {}
     _present_raw = cast(pd.Series, df_in["plot_group"].dropna())
-    present = sorted(_present_raw.unique().tolist())
+    # Preserve first-seen order (reflects --runs order) instead of sorting.
+    present = list(dict.fromkeys(_present_raw.tolist()))
 
     if explicit_groups and len(explicit_groups) > 0:
         _apply_explicit_group_styles(
@@ -1047,6 +1085,8 @@ def grouped_bar(  # noqa: PLR0912, PLR0915
     out_dir: Path,
     styles: dict,
     y_scale: str = "auto",
+    dataset_order: list[str] | None = None,
+    hue_order: list[str] | None = None,
 ):
     """Render a grouped bar chart of a metric across datasets and model families."""
     if metric not in df_in.columns:
@@ -1062,8 +1102,8 @@ def grouped_bar(  # noqa: PLR0912, PLR0915
         .reset_index()
     )
 
-    datasets = sorted(g["dataset_label"].unique())
-    _families = sorted(g[group_col].unique())
+    datasets = _apply_explicit_order(list(g["dataset_label"].unique()), dataset_order)
+    _families = _order_groups_by_label(list(g[group_col].unique()), styles, hue_order)
     x = np.arange(len(datasets), dtype=float)
 
     # Width should reflect groups present per dataset, not global families across all
@@ -1071,14 +1111,16 @@ def grouped_bar(  # noqa: PLR0912, PLR0915
     present_by_dataset: dict[str, list[str]] = {}
     max_present = 1
     for ds in datasets:
-        ds_groups = sorted(
+        ds_groups = _order_groups_by_label(
             cast(
                 pd.Series,
                 g.loc[g["dataset_label"] == ds, group_col].astype(str),  # type: ignore  # noqa: PGH003
             )
             .dropna()
             .unique()
-            .tolist()
+            .tolist(),
+            styles,
+            hue_order,
         )
         present_by_dataset[ds] = ds_groups
         max_present = max(max_present, len(ds_groups))
@@ -1156,7 +1198,12 @@ def grouped_bar(  # noqa: PLR0912, PLR0915
 
 
 def plot_coverage_calibration_panel(
-    df_in: pd.DataFrame, results_root: Path, out_dir: Path, styles: dict
+    df_in: pd.DataFrame,
+    results_root: Path,
+    out_dir: Path,
+    styles: dict,
+    dataset_order: list[str] | None = None,
+    hue_order: list[str] | None = None,
 ):
     """Plot the coverage calibration panel (rollout windows x datasets)."""
     curves = []
@@ -1185,8 +1232,12 @@ def plot_coverage_calibration_panel(
     if not curves:
         return
     cur_panel = pd.concat(curves, ignore_index=True)
-    datasets = sorted(cur_panel["dataset_label"].unique())
-    groups = sorted(cur_panel["plot_group"].unique())
+    datasets = _apply_explicit_order(
+        list(cur_panel["dataset_label"].unique()), dataset_order
+    )
+    groups = _order_groups_by_label(
+        list(cur_panel["plot_group"].unique()), styles, hue_order
+    )
 
     nrows, ncols = len(WINDOW_ROWS), max(1, len(datasets))
     fig, axes = plt.subplots(
@@ -1255,6 +1306,8 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
     out_dir: Path,
     name: str,
     styles: dict,
+    dataset_order: list[str] | None = None,
+    hue_order: list[str] | None = None,
 ):
     """Plot per-metric, per-dataset lead-time curves as a panel figure."""
     rows = []
@@ -1306,8 +1359,12 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
     if not metrics_to_plot:
         return
 
-    datasets = sorted(metrics_long["dataset_label"].unique())
-    groups = sorted(metrics_long["plot_group"].unique())
+    datasets = _apply_explicit_order(
+        list(metrics_long["dataset_label"].unique()), dataset_order
+    )
+    groups = _order_groups_by_label(
+        list(metrics_long["plot_group"].unique()), styles, hue_order
+    )
 
     nrows, ncols = len(metrics_to_plot), len(datasets)
     fig, axes = plt.subplots(
@@ -1428,6 +1485,17 @@ def main():  # noqa: PLR0912, PLR0915
         help="Leaf directory name inside plots if --output-dir is not given",
     )
     parser.add_argument(
+        "--run",
+        action="append",
+        nargs="+",
+        metavar="RUN_ID",
+        help=(
+            "Add a run, with optional label: "
+            '--run <id> ["label"]. '
+            "Repeat for each run. Order determines hue order."
+        ),
+    )
+    parser.add_argument(
         "--run-group",
         action="append",
         nargs="+",
@@ -1436,17 +1504,14 @@ def main():  # noqa: PLR0912, PLR0915
     parser.add_argument(
         "--runs",
         nargs="+",
-        help="Run directory names to include (alternative to --run-group).",
+        help="Run directory names to include (alternative to --run).",
     )
     parser.add_argument(
         "--label-run",
         action="append",
         nargs=2,
         metavar=("RUN_ID", "LABEL"),
-        help=(
-            "Assign a custom legend label to a specific run id. "
-            "Repeat for multiple mappings. Use LABEL='None' to keep default label."
-        ),
+        help="(Deprecated, use --run) Assign a custom legend label.",
     )
     parser.add_argument(
         "--datasets",
@@ -1525,6 +1590,14 @@ def main():  # noqa: PLR0912, PLR0915
             "No --run-group needed."
         ),
     )
+    parser.add_argument(
+        "--dataset-order",
+        nargs="+",
+        help=(
+            "Display order for datasets on the x-axis (by label). "
+            'e.g. --dataset-order "SW" "CNS64"'
+        ),
+    )
     args = parser.parse_args()
 
     results_dir = resolve_results_root(args.results_dir)
@@ -1535,6 +1608,23 @@ def main():  # noqa: PLR0912, PLR0915
 
     if not args.list:
         out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Merge --run entries into --runs / --label-run for unified handling.
+    if args.run:
+        merged_runs: list[str] = []
+        merged_labels: list[list[str]] = list(args.label_run or [])
+        for entry in args.run:
+            if len(entry) < 1 or len(entry) > 2:
+                print("Error: --run accepts 1 or 2 values: <run_id> [label]")
+                sys.exit(1)
+            merged_runs.append(entry[0])
+            if len(entry) == 2:
+                merged_labels.append([entry[0], entry[1]])
+        # --run takes precedence; append any extra --runs
+        if args.runs:
+            merged_runs.extend(args.runs)
+        args.runs = merged_runs
+        args.label_run = merged_labels or None
 
     explicit_groups = args.run_group or []
     # Gather explicitly requested runs, or fallback to auto-discover
@@ -1794,21 +1884,57 @@ def main():  # noqa: PLR0912, PLR0915
     n_mv = df["plot_group"].nunique()
     print(f"Found {n_ds} datasets and {n_mv} model variants.")
 
+    ds_order = args.dataset_order
+
+    # Derive hue order from --runs order: first unique label seen wins.
+    hu_order: list[str] | None = None
+    if args.runs and custom_label_by_run:
+        seen: list[str] = []
+        seen_set: set[str] = set()
+        for run in args.runs:
+            label = custom_label_by_run.get(run)
+            if label and label not in seen_set:
+                seen.append(label)
+                seen_set.add(label)
+        if seen:
+            hu_order = seen
+
     # Render overall bars
     for m in args.metrics:
         grouped_bar(
-            df, f"overall_{m}", f"Overall {m.upper()}", m.upper(), out_dir, styles
+            df,
+            f"overall_{m}",
+            f"Overall {m.upper()}",
+            m.upper(),
+            out_dir,
+            styles,
+            dataset_order=ds_order,
+            hue_order=hu_order,
         )
 
     # Render window bars
     for m in args.metrics:
         for w in ROLL_WINDOWS:
             grouped_bar(
-                df, f"{m}_{w}", f"{m.upper()} in window {w}", m.upper(), out_dir, styles
+                df,
+                f"{m}_{w}",
+                f"{m.upper()} in window {w}",
+                m.upper(),
+                out_dir,
+                styles,
+                dataset_order=ds_order,
+                hue_order=hu_order,
             )
 
     # Render Calibration panel
-    plot_coverage_calibration_panel(df, results_dir, out_dir, styles)
+    plot_coverage_calibration_panel(
+        df,
+        results_dir,
+        out_dir,
+        styles,
+        dataset_order=ds_order,
+        hue_order=hu_order,
+    )
 
     # Render efficiency bars (training/inference), if available.
     for metric, title, ylabel in [
@@ -1834,6 +1960,8 @@ def main():  # noqa: PLR0912, PLR0915
             out_dir,
             styles,
             y_scale="linear" if is_train_metric else "auto",
+            dataset_order=ds_order,
+            hue_order=hu_order,
         )
 
     # Render lead-time panels
@@ -1846,11 +1974,25 @@ def main():  # noqa: PLR0912, PLR0915
 
     if err_metric:
         plot_lead_time_panel(
-            df, err_metric, results_dir, out_dir, "lead_time_panel_error.png", styles
+            df,
+            err_metric,
+            results_dir,
+            out_dir,
+            "lead_time_panel_error.png",
+            styles,
+            dataset_order=ds_order,
+            hue_order=hu_order,
         )
     if cov_metric:
         plot_lead_time_panel(
-            df, cov_metric, results_dir, out_dir, "lead_time_panel_coverage.png", styles
+            df,
+            cov_metric,
+            results_dir,
+            out_dir,
+            "lead_time_panel_coverage.png",
+            styles,
+            dataset_order=ds_order,
+            hue_order=hu_order,
         )
 
     print("Finished generating plots.")
