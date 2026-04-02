@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from time import perf_counter
+from typing import cast
 
 import lightning as L
 import pytest
@@ -11,7 +12,9 @@ from hydra import compose, initialize_config_dir
 from lightning.pytorch.callbacks import Timer
 from omegaconf import DictConfig, OmegaConf, open_dict
 
+from autocast.encoders.base import EncoderWithCond
 from autocast.scripts.setup import (
+    _infer_latent_spatial_resolution,
     setup_autoencoder_model,
     setup_epd_model,
     setup_processor_model,
@@ -127,6 +130,43 @@ def test_processor_config_training_step_smoke(config_dir: str, dummy_datamodule)
     loss = model.training_step(batch, batch_idx=0)
     assert torch.is_tensor(loss)
     assert loss.ndim == 0
+
+
+def test_processor_metric_overrides_are_forwarded(config_dir: str, dummy_datamodule):
+    processor_cfg = _load_config(config_dir, "processor/flow_matching").processor
+    with open_dict(processor_cfg):
+        processor_cfg.backbone.include_global_cond = False
+        processor_cfg.backbone.global_cond_channels = 0
+
+    encoded_inputs = torch.randn(2, 2, 4, 4, 1)
+    encoded_outputs = torch.randn(2, 2, 4, 4, 1)
+    cfg = OmegaConf.create(
+        {
+            "model": {
+                "processor": processor_cfg,
+                "loss_func": {"_target_": "torch.nn.MSELoss"},
+                "val_metrics": [],
+                "test_metrics": [],
+            },
+            "optimizer": get_optimizer_config(learning_rate=1e-3),
+            "datamodule": {
+                "stride": 1,
+                "n_steps_input": encoded_inputs.shape[1],
+                "n_steps_output": encoded_outputs.shape[1],
+            },
+        }
+    )
+    batch = EncodedBatch(
+        encoded_inputs=encoded_inputs,
+        encoded_output_fields=encoded_outputs,
+        global_cond=None,
+        encoded_info={},
+    )
+    stats = _stats_from_encoded_batch(batch)
+    model = setup_processor_model(cfg, stats, dummy_datamodule)
+
+    assert model.val_metrics is None
+    assert model.test_metrics is None
 
 
 # --- TrainingTimerCallback ---
@@ -265,3 +305,58 @@ def test_epd_config_forward_smoke(config_dir: str, toy_batch: Batch, dummy_datam
 
     output = model(toy_batch)
     assert output.shape == toy_batch.output_fields.shape
+
+
+def test_epd_metric_overrides_are_forwarded(
+    config_dir: str, toy_batch: Batch, dummy_datamodule
+):
+    model_cfg = _load_config(
+        config_dir,
+        "model/encoder_processor_decoder",
+        overrides=[
+            "encoder@model.encoder=dc",
+            "decoder@model.decoder=dc",
+            "processor@model.processor=flow_matching",
+        ],
+    )
+    cfg = _wrap_model_config(model_cfg)
+    with open_dict(cfg):
+        cfg.optimizer = get_optimizer_config()
+        cfg.datamodule = {
+            "stride": 1,
+            "n_steps_input": toy_batch.input_fields.shape[1],
+            "n_steps_output": toy_batch.output_fields.shape[1],
+        }
+        cfg.model.processor.backbone.include_global_cond = False
+        cfg.model.processor.backbone.global_cond_channels = 0
+        cfg.model.val_metrics = []
+        cfg.model.test_metrics = []
+    stats = _stats_from_batch(toy_batch)
+    model = setup_epd_model(cfg, stats, dummy_datamodule)
+
+    assert model.val_metrics is None
+    assert model.test_metrics is None
+
+
+def test_infer_latent_spatial_resolution_channels_last_with_time():
+    class DummyEncoder:
+        channel_axis = -1
+        outputs_time_channel_concat = False
+
+    encoded = torch.randn(2, 3, 16, 16, 8)  # B,T,W,H,C
+    spatial = _infer_latent_spatial_resolution(
+        encoded, cast(EncoderWithCond, DummyEncoder())
+    )
+    assert spatial == (16, 16)
+
+
+def test_infer_latent_spatial_resolution_channels_first_time_concat():
+    class DummyEncoder:
+        channel_axis = 1
+        outputs_time_channel_concat = True
+
+    encoded = torch.randn(2, 24, 16, 16)  # B,C*T,W,H
+    spatial = _infer_latent_spatial_resolution(
+        encoded, cast(EncoderWithCond, DummyEncoder())
+    )
+    assert spatial == (16, 16)

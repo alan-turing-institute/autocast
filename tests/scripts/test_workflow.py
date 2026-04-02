@@ -365,6 +365,18 @@ def test_infer_dataset_from_workdir_from_datamodule_data_path(tmp_path):
     assert infer_dataset_from_workdir(tmp_path) == "reaction_diffusion"
 
 
+def test_infer_dataset_from_workdir_preserves_nested_dataset_subpath(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("AUTOCAST_DATASETS", "/autocast/datasets")
+    (tmp_path / "resolved_config.yaml").write_text(
+        "datamodule:\n  data_path: /autocast/datasets/gpe/laser_only_wake_e40d7eb\n",
+        encoding="utf-8",
+    )
+
+    assert infer_dataset_from_workdir(tmp_path) == "gpe/laser_only_wake_e40d7eb"
+
+
 def test_infer_dataset_from_workdir_from_datamodule_string(tmp_path):
     (tmp_path / "resolved_config.yaml").write_text(
         'datamodule: "advection_diffusion_multichannel_64_64"\n',
@@ -1228,7 +1240,7 @@ def test_main_unknown_dashed_flag_still_errors(monkeypatch):
         workflow_cli.main()
 
 
-def test_main_eval_dispatches_inferred_dataset_from_workdir(monkeypatch, tmp_path):
+def test_main_eval_does_not_infer_dataset_from_workdir(monkeypatch, tmp_path):
     (tmp_path / "resolved_config.yaml").write_text(
         "datamodule:\n  data_path: /tmp/datasets/reaction_diffusion\n",
         encoding="utf-8",
@@ -1251,11 +1263,11 @@ def test_main_eval_dispatches_inferred_dataset_from_workdir(monkeypatch, tmp_pat
 
     workflow_cli.main()
 
-    assert captured["dataset"] == "reaction_diffusion"
+    assert captured["dataset"] is None
     assert captured["work_dir"] == str(tmp_path)
 
 
-def test_main_benchmark_dispatches_inferred_dataset_from_workdir(monkeypatch, tmp_path):
+def test_main_benchmark_does_not_infer_dataset_from_workdir(monkeypatch, tmp_path):
     (tmp_path / "resolved_config.yaml").write_text(
         "datamodule:\n  data_path: /tmp/datasets/reaction_diffusion\n",
         encoding="utf-8",
@@ -1278,7 +1290,7 @@ def test_main_benchmark_dispatches_inferred_dataset_from_workdir(monkeypatch, tm
 
     workflow_cli.main()
 
-    assert captured["dataset"] == "reaction_diffusion"
+    assert captured["dataset"] is None
     assert captured["work_dir"] == str(tmp_path)
 
 

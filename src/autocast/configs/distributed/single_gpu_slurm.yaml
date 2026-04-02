@@ -14,3 +14,9 @@ hydra:
   launcher:
     gpus_per_node: 1
     tasks_per_node: 1
+    additional_parameters:
+      ntasks: 1
+
+eval:
+  accelerator: auto
+  devices: 1

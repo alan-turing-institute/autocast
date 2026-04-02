@@ -17,7 +17,8 @@ def get_optimizer_config(
     Args:
         learning_rate: Learning rate for the optimizer. Default 1e-4.
         optimizer: Optimizer name ('adam', 'adamw', 'sgd'). Default 'adam'.
-        scheduler: Optional scheduler name ('cosine', 'step', 'plateau').
+        scheduler: Optional scheduler name ('cosine', 'cosine_with_restarts',
+            'step', 'plateau').
             Default None (no scheduler).
         **kwargs: Additional optimizer parameters (e.g., betas, weight_decay,
             step_size, gamma).

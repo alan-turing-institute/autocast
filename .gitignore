@@ -11,6 +11,7 @@ exploratory/data
 outputs
 lightning_logs
 datasets
+run_scripts
 slurm_scripts
 logs
 local_hydra/local_experiment/*.yaml
@@ -20,3 +21,4 @@ core
 .clinerules
 .cursorrules
 .github/copilot-instructions.md
+.agent

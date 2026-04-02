@@ -1,17 +1,28 @@
 """Unit tests for evaluation batch-limit resolution."""
 
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
+import torch
 from omegaconf import OmegaConf
 
+from autocast.metrics.ensemble import CRPS, AlphaFairCRPS, SpreadSkillRatio
 from autocast.scripts.eval.encoder_processor_decoder import (
+    _build_eval_predict_fn,
+    _build_per_timestep_metric_factory,
+    _decode_tensor,
+    _normalize_per_batch_rows,
+    _reindex_per_batch_rows_by_rank,
+    _render_rollouts,
     _resolve_rollout_batch_limit,
     _resolve_rollout_channel_names,
     _resolve_rollout_timestep_limit,
+    _should_skip_metric,
     _split_metric_and_metadata_rows,
     _training_runtime_rows,
 )
+from autocast.types import EncodedBatch
 
 
 def test_resolve_rollout_batch_limit_falls_back_to_test_limit_when_null():
@@ -34,6 +45,76 @@ def test_resolve_rollout_batch_limit_prefers_explicit_rollout_limit():
     )
 
     assert _resolve_rollout_batch_limit(eval_cfg) == 5
+
+
+def test_build_eval_predict_fn_uses_predict_for_wrapped_processor_model():
+    batch = SimpleNamespace(
+        encoded_output_fields=torch.randn(2, 4, 8, 8, 3),
+    )
+    expected = torch.randn(2, 4, 8, 8, 3, 10)
+
+    class WrappedProcessorModel:
+        def _predict(self, arg):
+            assert arg is batch
+            return expected
+
+        def __call__(self, _arg):
+            msg = "predict_fn should not call wrapped model directly"
+            raise AssertionError(msg)
+
+    predict_fn = _build_eval_predict_fn(
+        WrappedProcessorModel(),
+        is_processor_model=True,
+        decode_fn=None,
+    )
+
+    preds, trues = predict_fn(batch)
+
+    assert preds is expected
+    assert trues is batch.encoded_output_fields
+
+
+def test_build_eval_predict_fn_ensemble_expansion():
+    """When n_members > 1, predict_fn expands the batch and adds ensemble dim."""
+
+    inputs = torch.randn(2, 1, 8, 8, 3)
+    targets = torch.randn(2, 4, 8, 8, 3)
+    batch = EncodedBatch(
+        encoded_inputs=inputs,
+        encoded_output_fields=targets,
+        global_cond=None,
+        encoded_info={},
+    )
+
+    class FakeProcessorModel:
+        def _predict(self, b):
+            # Just return a tensor of the right batch shape
+            return torch.randn(b.encoded_inputs.shape[0], 4, 8, 8, 3)
+
+    predict_fn = _build_eval_predict_fn(
+        FakeProcessorModel(),
+        is_processor_model=True,
+        decode_fn=None,
+        n_members=5,
+    )
+
+    preds, trues = predict_fn(batch)
+
+    # preds should have ensemble dim: (B, T, H, W, C, M)
+    assert preds.shape == (2, 4, 8, 8, 3, 5)
+    # trues should remain unchanged
+    assert trues.shape == (2, 4, 8, 8, 3)
+
+
+def test_decode_tensor_preserves_ensemble_axis():
+    x = torch.randn(2, 4, 8, 8, 3, 5)
+
+    def decode_fn(tensor):
+        return tensor[..., :2]
+
+    decoded = _decode_tensor(x, decode_fn, n_members=5)
+
+    assert decoded.shape == (2, 4, 8, 8, 2, 5)
 
 
 def test_resolve_rollout_timestep_limit_multiplies_by_stride():
@@ -83,6 +164,121 @@ def test_split_metric_and_metadata_rows_separates_meta_rows():
             "value": 1.2,
         }
     ]
+
+
+def test_split_metric_and_metadata_rows_skips_malformed_rows():
+    rows = [
+        {"window": "all", "batch_idx": "all", "mse": 0.1},
+        "bad-row",
+        {
+            "window": "meta",
+            "batch_idx": "all",
+            "category": "runtime_eval",
+            "metric": "total_s",
+            "value": 1.2,
+        },
+    ]
+
+    metric_rows, metadata_rows = _split_metric_and_metadata_rows(cast(Any, rows))
+
+    assert metric_rows == [{"window": "all", "batch_idx": "all", "mse": 0.1}]
+    assert metadata_rows == [
+        {
+            "window": "meta",
+            "batch_idx": "all",
+            "category": "runtime_eval",
+            "metric": "total_s",
+            "value": 1.2,
+        }
+    ]
+
+
+def test_normalize_per_batch_rows_flattens_nested_mappings_only():
+    gathered = [
+        [
+            {
+                "window": "all",
+                "batch_idx": torch.tensor(0, dtype=torch.int32),
+                "mse": torch.tensor(0.1),
+            }
+        ],
+        (
+            [{"window": "0-1", "batch_idx": 1, "rmse": 0.2}],
+            "ignore-me",
+            None,
+        ),
+    ]
+
+    normalized = _normalize_per_batch_rows(gathered)
+
+    assert normalized == [
+        {"window": "all", "batch_idx": 0, "mse": pytest.approx(0.1)},
+        {"window": "0-1", "batch_idx": 1, "rmse": 0.2},
+    ]
+
+
+def test_reindex_per_batch_rows_by_rank_interleaves_global_batch_index():
+    rows_by_rank = [
+        [
+            {"window": "all", "batch_idx": 0, "mse": 0.1},
+            {"window": "0-1", "batch_idx": 0, "mse": 0.11},
+            {"window": "all", "batch_idx": 1, "mse": 0.2},
+            {"window": "0-1", "batch_idx": 1, "mse": 0.21},
+        ],
+        [
+            {"window": "all", "batch_idx": 0, "mse": 0.3},
+            {"window": "0-1", "batch_idx": 0, "mse": 0.31},
+            {"window": "all", "batch_idx": 1, "mse": 0.4},
+            {"window": "0-1", "batch_idx": 1, "mse": 0.41},
+        ],
+    ]
+
+    reindexed = _reindex_per_batch_rows_by_rank(rows_by_rank)
+
+    assert [row["batch_idx"] for row in reindexed] == [0, 0, 1, 1, 2, 2, 3, 3]
+    assert [row["window"] for row in reindexed] == [
+        "all",
+        "0-1",
+        "all",
+        "0-1",
+        "all",
+        "0-1",
+        "all",
+        "0-1",
+    ]
+
+
+def test_reindex_per_batch_rows_by_rank_preserves_non_numeric_batch_idx_rows():
+    rows_by_rank = [
+        [{"window": "all", "batch_idx": 0, "mse": 0.1}],
+        [{"window": "meta", "batch_idx": "all", "value": 123.0}],
+    ]
+
+    reindexed = _reindex_per_batch_rows_by_rank(rows_by_rank)
+
+    assert reindexed[0] == {"window": "all", "batch_idx": 0, "mse": 0.1}
+    assert reindexed[1] == {"window": "meta", "batch_idx": "all", "value": 123.0}
+
+
+def test_build_per_timestep_metric_factory_sets_reduce_all_false_for_crps():
+    metric = _build_per_timestep_metric_factory(CRPS)()
+    assert getattr(metric, "reduce_all", None) is False
+
+
+def test_build_per_timestep_metric_factory_sets_reduce_all_false_for_afcrps():
+    metric = _build_per_timestep_metric_factory(AlphaFairCRPS)()
+    assert getattr(metric, "reduce_all", None) is False
+
+
+def test_build_per_timestep_metric_factory_sets_reduce_all_false_for_ssr():
+    metric = _build_per_timestep_metric_factory(SpreadSkillRatio)()
+    assert getattr(metric, "reduce_all", None) is False
+
+
+def test_should_skip_metric_variogram_only():
+    assert _should_skip_metric("variogram") is True
+    assert _should_skip_metric("crps") is False
+    assert _should_skip_metric("ssr") is False
 
 
 def test_resolve_rollout_channel_names_from_norm_with_output_selection():
@@ -170,3 +366,40 @@ def test_training_runtime_rows_fall_back_to_average_without_epoch_times():
     rows = _training_runtime_rows(payload)
 
     assert rows == []
+
+
+def test_render_rollouts_resolves_indices_within_batched_samples(tmp_path, monkeypatch):
+    class DummyModel:
+        def rollout(self, *_args, **_kwargs):
+            preds = torch.randn(4, 3, 2, 2, 1)
+            trues = torch.randn(4, 3, 2, 2, 1)
+            return preds, trues
+
+    captured_paths: list[str] = []
+
+    def _fake_plot_spatiotemporal_video(**kwargs):
+        captured_paths.append(kwargs["save_path"])
+
+    monkeypatch.setattr(
+        "autocast.scripts.eval.encoder_processor_decoder.plot_spatiotemporal_video",
+        _fake_plot_spatiotemporal_video,
+    )
+
+    out_paths = _render_rollouts(
+        model=cast(Any, DummyModel()),
+        dataloader=[object()],
+        batch_indices=[0, 1, 2, 3],
+        video_dir=tmp_path,
+        sample_index=0,
+        fmt="mp4",
+        fps=5,
+        stride=1,
+        max_rollout_steps=2,
+        free_running_only=True,
+        n_members=None,
+    )
+
+    assert len(out_paths) == 4
+    assert len(captured_paths) == 4
+    for idx in range(4):
+        assert any(f"batch_{idx}_sample_{idx}.mp4" in p for p in captured_paths)

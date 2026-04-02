@@ -176,6 +176,7 @@ class SpatioTemporalDataModule(LightningDataModule):
         ftype: str = "torch",
         verbose: bool = False,
         autoencoder_mode: bool = False,
+        full_trajectory_mode: bool = False,
         use_normalization: bool = False,
         normalization_type: type[ZScoreNormalization] | None = ZScoreNormalization,
         normalization_path: None | str = None,
@@ -207,6 +208,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             input_channel_idxs=input_channel_idxs,
             output_channel_idxs=output_channel_idxs,
             autoencoder_mode=self.autoencoder_mode,
+            full_trajectory_mode=full_trajectory_mode,
             dtype=dtype,
             verbose=self.verbose,
             use_normalization=use_normalization,
@@ -238,6 +240,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             input_channel_idxs=input_channel_idxs,
             output_channel_idxs=output_channel_idxs,
             autoencoder_mode=self.autoencoder_mode,
+            full_trajectory_mode=full_trajectory_mode,
             dtype=dtype,
             verbose=self.verbose,
             use_normalization=use_normalization,
@@ -254,6 +257,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             input_channel_idxs=input_channel_idxs,
             output_channel_idxs=output_channel_idxs,
             autoencoder_mode=self.autoencoder_mode,
+            full_trajectory_mode=full_trajectory_mode,
             dtype=dtype,
             verbose=self.verbose,
             use_normalization=use_normalization,
@@ -306,6 +310,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             shuffle=True,
             num_workers=self.num_workers,
             collate_fn=collate_batches,
+            pin_memory=True,
         )
 
     def val_dataloader(self) -> DataLoader:
@@ -316,6 +321,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             shuffle=False,
             num_workers=self.num_workers,
             collate_fn=collate_batches,
+            pin_memory=True,
         )
 
     def rollout_val_dataloader(self, batch_size: int | None = None) -> DataLoader:
@@ -332,6 +338,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             shuffle=False,
             num_workers=self.num_workers,
             collate_fn=collate_batches,
+            pin_memory=True,
         )
 
     def test_dataloader(self) -> DataLoader:
@@ -342,6 +349,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             shuffle=False,
             num_workers=self.num_workers,
             collate_fn=collate_batches,
+            pin_memory=True,
         )
 
     def rollout_test_dataloader(self, batch_size: int | None = None) -> DataLoader:
@@ -358,4 +366,5 @@ class SpatioTemporalDataModule(LightningDataModule):
             shuffle=False,
             num_workers=self.num_workers,
             collate_fn=collate_batches,
+            pin_memory=True,
         )

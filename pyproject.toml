@@ -41,6 +41,7 @@ autocast = "autocast.scripts.workflow:main"
 train_encoder_processor_decoder = "autocast.scripts.train.encoder_processor_decoder:main"
 train_autoencoder = "autocast.scripts.train.autoencoder:main"
 evaluate_encoder_processor_decoder = "autocast.scripts.eval.encoder_processor_decoder:main"
+cache_latents = "autocast.scripts.cache_latents:main"
 autocast-plots = "autocast.scripts.plot_dataset_comparisons:main"
 
 [build-system]
@@ -118,13 +119,16 @@ explicit = true
 [tool.uv.sources]
 autoemulate = { git = "https://github.com/alan-turing-institute/autoemulate.git" }
 torch = [
-  { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
 ]
 torchvision = [
-  { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
 ]
 
 [tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tests"]
+norecursedirs = ["outputs", "slurm_scripts"]
 filterwarnings = [
     # Ignore Lightning warnings that are expected/benign in test environment
     "ignore:You are trying to `self.log\\(\\)` but the `self.trainer` reference is not registered:UserWarning",
