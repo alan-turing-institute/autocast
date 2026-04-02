@@ -63,11 +63,36 @@
 # 	--output-dir outputs/2026-04-01_collated/plots/ode_steps
 
 
-# Comparison of 1:4, longer 1:4, smoother optimizer 1:4
+# # Comparison of 1:4, longer 1:4, smoother optimizer 1:4
+# autocast-plots --results-dir outputs/2026-04-01_collated \
+# 	--run crps_cns64_vit_azula_large_8fe25aa_d105b90 "ViT" \
+# 	--run diff_cns64_flow_matching_vit_55a4d1a_511e7b1 "FM" \
+# 	--run diff_cns64_flow_matching_vit_13eba33_82f423d "FM (36hrs)" \
+# 	--run diff_cns64_flow_matching_vit_2007857_2cfb01f "FM (lr=1e-4)" \
+# 	--color-by-label \
+# 	--output-dir outputs/2026-04-01_collated/plots/longer_training_and_smoother_optimizer
+
+# Compare SW, CNS, GPE
+# TODO: update SW, CNS and GPE with same training schedule (GPE currently 2e-4)
 autocast-plots --results-dir outputs/2026-04-01_collated \
-	--run crps_cns64_vit_azula_large_8fe25aa_d105b90 "ViT" \
-	--run diff_cns64_flow_matching_vit_55a4d1a_511e7b1 "FM" \
-	--run diff_cns64_flow_matching_vit_13eba33_82f423d "FM (36hrs)" \
-	--run diff_cns64_flow_matching_vit_2007857_2cfb01f "FM (lr=1e-4)" \
+	--run crps_cns64_vit_azula_large_eb4a4f6_294dc78 "ViT" \
+	--run diff_cns64_flow_matching_vit_2007857_2cfb01f "FM" \
+	--run diff_sw2d64_flow_matching_vit_cb09424_7566c5e "FM" \
+	--run crps_sw2d64_vit_azula_large_eb4a4f6_682f33b "ViT" \
+	--run crps_gpe_laser_only_wake_vit_azula_large_feb5e43_699855c "ViT" \
+	--run diff_gpe_laser_only_wake_flow_matching_vit_2007857_7ee7dea "FM" \
 	--color-by-label \
-	--output-dir outputs/2026-04-01_collated/plots/longer_training_and_smoother_optimizer
+	--dataset-order SW CNS GPE \
+	--output-dir outputs/2026-04-01_collated/plots/sw_cns_gpe
+
+# Compare DM, FM, ViT for SW, CNS
+autocast-plots --results-dir outputs/2026-04-01_collated \
+	--run crps_cns64_vit_azula_large_eb4a4f6_294dc78 "ViT" \
+	--run diff_cns64_flow_matching_vit_2007857_2cfb01f "FM" \
+	--run diff_sw2d64_flow_matching_vit_cb09424_7566c5e "FM" \
+	--run crps_sw2d64_vit_azula_large_eb4a4f6_682f33b "ViT" \
+	--run diff_cns64_diffusion_vit_fc5b63a_3c040a7 "DM" \
+	--run diff_sw2d64_diffusion_vit_3dd3cf5_e849015 "DM" \
+	--color-by-label \
+	--dataset-order SW CNS \
+	--output-dir outputs/2026-04-01_collated/plots/crps_fm_dm
