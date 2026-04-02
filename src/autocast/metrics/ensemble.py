@@ -652,18 +652,12 @@ class WinklerScore(BTSCMMetric):
 
         Shape conventions
         -----------------
-        - Input prediction tensor: ``y_pred`` has shape ``(B, T, S..., C, M)``
-            where:
-            - ``B``: batch size
-            - ``T``: number of forecast timesteps
-            - ``S...``: one or more spatial dimensions
-            - ``C``: number of channels/variables
-            - ``M``: number of ensemble members
-        - Input truth tensor: ``y_true`` has shape ``(B, T, S..., C)``.
-        - Quantiles are computed along ensemble dim ``M``:
-            - ``l`` (``lower``): ``q_{alpha/2}``, shape ``(B, T, S..., C)``
-            - ``u`` (``upper``): ``q_{1-alpha/2}``, shape ``(B, T, S..., C)``
-            - ``y`` corresponds to ``y_true``, same shape ``(B, T, S..., C)``.
+        - Input prediction tensor: y_pred has shape (B, T, S..., C, M)
+        - Input truth tensor: y_true has shape (B, T, S..., C)
+        - Quantiles are computed along ensemble dim M:
+            - l (lower): ``q_{alpha/2}``, shape (B, T, S..., C)
+            - u (upper): ``q_{1-alpha/2}``, shape (B, T, S..., C)
+            - y corresponds to y_true, same shape (B, T, S..., C).
 
         The internal ``_score`` returns pointwise Winkler scores with shape
         ``(B, T, S..., C)``. The base class then applies ``score_dims`` and
