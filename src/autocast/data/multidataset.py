@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Literal
 
 import torch
 from omegaconf import DictConfig
@@ -29,7 +30,8 @@ class MultiSpatioTemporalDataset(Dataset, BatchMixin):  # noqa: D101
     datasets: list[SpatioTemporalDataset]  # data: list[(N, T, S, C)]
     # masks: list[Tensor] # shape list[(N, ..., num_masks (treat like ensemble))] # num
     # masks: list[TensorBM]  # shape list[(N, M (num_masks, treat like ensemble))] # num
-    masks: TensorDBM
+    # masks: TensorDBM
+    masks: TensorDM
     # Example for reaction diffusion:
     # - Deterministic loop over all combinations of missing/not missing
     #   (apart from all missing)
@@ -40,6 +42,9 @@ class MultiSpatioTemporalDataset(Dataset, BatchMixin):  # noqa: D101
         self,
         data_paths: str | None,
         data: list[dict] | None = None,
+        masks: (
+            TensorDM | Literal["sequential"] | Literal["combinatorial"]
+        ) = "sequential",
         n_steps_input: int = 1,
         n_steps_output: int = 1,
         stride: int = 1,
@@ -58,6 +63,13 @@ class MultiSpatioTemporalDataset(Dataset, BatchMixin):  # noqa: D101
         # list of paths or a list of dicts with paths and other info like normalization
         # stats)
 
+        if masks == "sequential":
+            ...
+        elif masks == "combinatorial":
+            ...
+        else:
+            self.masks = masks
+
         # TODO: create windowed masks like in SpatioTemporalDataset that perfectly
         # match the windowed data samples
         # E.g.
@@ -75,13 +87,21 @@ class MultiSpatioTemporalDataset(Dataset, BatchMixin):  # noqa: D101
         # ensemble masks for that dataset in that window (e.g. different combinations of
         # missing data).
         # TODO: co-pilot to apply from SpatioTemporalDataset to create windowed masks
-        self.all_masks: list[TensorDM] = []
+        # TODO: ALTERNATIVE is to just load the temporal masks (expect user to provide those)
+        # self.all_masks: list[TensorDM] = []
 
     def __getitem__(self, idx) -> ListSample:  # noqa: D105
         outs = []
         for dataset in self.datasets:
             out: Sample = dataset.__getitem__(idx)
             outs.append(out)
-        # [mask for dataset 0 in window 0, mask for dataset 1 in window 0]
-        mask: TensorDM = self.all_masks[idx]
-        return ListSample(inner=outs, mask=mask)
+        # [
+        #   [mask 0 for dataset 0 in window 0, mask 0 for dataset 1 in window 0],
+        #   [mask 1 for dataset 0 in window 0, mask 1 for dataset 1 in window 0]
+        # ]
+        # in case of 2 datasets, masks will be
+        # [[0, 1],
+        # [1, 0],
+        # [1, 1]]
+        # mask: TensorDM = self.all_masks[idx]
+        return ListSample(inner=outs, mask=self.masks)
