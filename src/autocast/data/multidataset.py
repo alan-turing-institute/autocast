@@ -1,3 +1,4 @@
+import itertools
 from dataclasses import dataclass
 from typing import Literal
 
@@ -8,7 +9,7 @@ from torch.utils.data import Dataset
 
 from autocast.data.dataset import BatchMixin, SpatioTemporalDataset
 from autocast.types.batch import Batch, Sample
-from autocast.types.types import TensorDBM, TensorDM, TensorM
+from autocast.types.types import TensorDBM, TensorDM
 
 
 @dataclass
@@ -38,6 +39,54 @@ class MultiSpatioTemporalDataset(Dataset, BatchMixin):  # noqa: D101
     # - Could also have a hierarchy of data availability (e.g. 100, 110, 111)
     #   (if a fidelity level is available, all coarser/lower levels are available too)
 
+    @staticmethod
+    def create_mask(
+        n_levels: int,
+        mode: Literal["sequential", "combinatorial"] = "sequential",
+    ) -> TensorDM:
+        """Create a dataset-by-mask boolean tensor of shape (D, M).
+
+        Convention: True means masked/unavailable, False means available.
+
+                Modes:
+                - sequential: if level l is available, then all lower levels are available.
+                    (hierarchical fidelity availability)
+                - combinatorial: all masking combinations except the all-masked case.
+        """
+        if n_levels <= 0:
+            msg = "n_levels must be > 0."
+            raise ValueError(msg)
+
+        if mode == "sequential":
+            # Same convention as attention masks: True entries are masked.
+            # Example D=3 -> [[0, 1, 1],
+            #                 [0, 0, 1],
+            #                 [0, 0, 0]]
+            return torch.triu(torch.ones((n_levels, n_levels), dtype=torch.bool), 1)
+
+        if mode == "combinatorial":
+            # Keep every masking pattern except "all masked".
+            masks = list(itertools.product([False, True], repeat=n_levels))
+            all_masked = tuple(True for _ in range(n_levels))
+            masks.remove(all_masked)
+            return torch.tensor(masks, dtype=torch.bool).T
+
+        raise ValueError(f"Unknown mask mode: {mode}")
+
+    @staticmethod
+    def _infer_n_levels(
+        data_paths: str | list[str] | tuple[str, ...] | None,
+        data: list[dict] | None,
+    ) -> int:
+        if data is not None:
+            return len(data)
+        if data_paths is None:
+            msg = "Cannot infer number of datasets for mask creation."
+            raise ValueError(msg)
+        if isinstance(data_paths, str):
+            return len(data_paths.split(","))
+        return len(data_paths)
+
     def __init__(
         self,
         data_paths: str | None,
@@ -63,10 +112,9 @@ class MultiSpatioTemporalDataset(Dataset, BatchMixin):  # noqa: D101
         # list of paths or a list of dicts with paths and other info like normalization
         # stats)
 
-        if masks == "sequential":
-            ...
-        elif masks == "combinatorial":
-            ...
+        if isinstance(masks, str):
+            n_levels = self._infer_n_levels(data_paths=data_paths, data=data)
+            self.masks = self.create_mask(n_levels=n_levels, mode=masks)
         else:
             self.masks = masks
 
@@ -87,7 +135,7 @@ class MultiSpatioTemporalDataset(Dataset, BatchMixin):  # noqa: D101
         # ensemble masks for that dataset in that window (e.g. different combinations of
         # missing data).
         # TODO: co-pilot to apply from SpatioTemporalDataset to create windowed masks
-        # TODO: ALTERNATIVE is to just load the temporal masks (expect user to provide those)
+        # TODO: ALTERNATIVE is to just load temporal masks (user-provided)
         # self.all_masks: list[TensorDM] = []
 
     def __getitem__(self, idx) -> ListSample:  # noqa: D105
