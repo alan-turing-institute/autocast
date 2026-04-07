@@ -154,10 +154,26 @@ class VAE(EncoderDecoder):
 
 class MultiEncoder(GenericEncoder[ListBatch, None]):
 
-    def __init__(self, encoders: list[Encoder], attention: bool = False):
+    def __init__(self, encoders: list[Encoder], attention: bool = False, 
+                 embed_dim: int | None = None, n_heads: int = 1, dropout: float = 0.2, 
+                 n_transformer_blocks: int = 1):
 
-        self.encoders = encoders
+        super().__init__()
+        self.encoders = nn.ModuleList(encoders)
         self.attention = attention
+        self.attention_mixer = None
+
+        if attention:
+            if embed_dim is None:
+                raise ValueError("embed_dim must be provided if attention is True.")
+            from autocast.models.multifidelity_transformer import AttentionMixer
+            #TODO: is this the right place for this?
+            self.attention_mixer = AttentionMixer(
+                embedding_dim=embed_dim,
+                n_heads=n_heads,
+                dropout=dropout,
+                n_transformer_blocks=n_transformer_blocks
+            )
 
     def encode(self, batch: ListBatch) -> TensorBNC:
         mask: TensorDBM | None = batch.mask
@@ -182,4 +198,33 @@ class MultiEncoder(GenericEncoder[ListBatch, None]):
         # stack along dataset dim
         stacked = torch.stack(flattened, dim=1)  # [B, D, F]
 
-        # TODO optionally apply attention -- flatten embeddings for this
+        # Apply attention using the mixer
+        if mask is None:
+            # Create a dummy mask of False (everything is available)
+            attn_mask = torch.zeros(stacked.shape[0], stacked.shape[1], dtype=torch.bool, device=stacked.device)
+            return self.attention_mixer(stacked, attn_mask)
+        else:
+
+            #TODO: double-check the following
+
+            # mask is TensorDBM: shape (D, B, M)
+            B, D, F = stacked.shape
+            M = mask.shape[2]
+            
+            # Map representations to (B*M, D, F)
+            # 1. Add M dimension: (B, 1, D, F)
+            # 2. Expand to (B, M, D, F)
+            # 3. Flatten B and M: (B*M, D, F)
+            stacked_expanded = stacked.unsqueeze(1).expand(B, M, D, F).reshape(B * M, D, F)
+            
+            # Map mask to (B*M, D)
+            # 1. Permute (D, B, M) -> (B, M, D)
+            # 2. Flatten B and M: (B*M, D)
+            attn_mask = mask.permute(1, 2, 0).reshape(B * M, D)
+            
+            # Run AttentionMixer, output is (B*M, F)
+            mixed = self.attention_mixer(stacked_expanded, attn_mask)
+            
+            # Reshape back to separate Batch and Ensemble dimensions -> (B, M, F)
+            # You can adjust this to (B*M, F) or (B, F, M) if your decoder expects something specific!
+            return mixed.reshape(B, M, F)
