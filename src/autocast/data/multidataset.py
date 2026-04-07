@@ -15,7 +15,9 @@ from autocast.types.types import TensorDBM, TensorDM
 @dataclass
 class ListSample:  # noqa: D101
     inner: list[Sample]
-    mask: TensorDM  # Dataset by ensemble mask (e.g. for different combinations of missing data across datasets)
+    mask: (
+        TensorDM | None
+    )  # Dataset by ensemble mask (e.g. for different combinations of missing data across datasets)
 
     # def __getitem__(self, idx) -> Sample:
     #     return self.inner[idx]
@@ -24,7 +26,7 @@ class ListSample:  # noqa: D101
 @dataclass
 class ListBatch:  # noqa: D101
     inner: list[Batch]
-    mask: TensorDBM
+    mask: TensorDBM | None
 
 
 class MultiSpatioTemporalDataset(Dataset, BatchMixin):  # noqa: D101
@@ -32,7 +34,7 @@ class MultiSpatioTemporalDataset(Dataset, BatchMixin):  # noqa: D101
     # masks: list[Tensor] # shape list[(N, ..., num_masks (treat like ensemble))] # num
     # masks: list[TensorBM]  # shape list[(N, M (num_masks, treat like ensemble))] # num
     # masks: TensorDBM
-    masks: TensorDM
+    masks: TensorDM | None
     # Example for reaction diffusion:
     # - Deterministic loop over all combinations of missing/not missing
     #   (apart from all missing)
@@ -92,7 +94,7 @@ class MultiSpatioTemporalDataset(Dataset, BatchMixin):  # noqa: D101
         data_paths: str | None,
         data: list[dict] | None = None,
         masks: (
-            TensorDM | Literal["sequential"] | Literal["combinatorial"]
+            TensorDM | Literal["sequential"] | Literal["combinatorial"] | None
         ) = "sequential",
         n_steps_input: int = 1,
         n_steps_output: int = 1,

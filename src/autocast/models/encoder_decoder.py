@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, Literal
 
 import lightning as L
 import torch
@@ -8,12 +8,14 @@ from the_well.data.normalization import ZScoreNormalization
 from torch import nn
 from torchmetrics import Metric
 
+from autocast.data.multidataset import ListBatch
 from autocast.decoders import Decoder
-from autocast.encoders.base import EncoderWithCond
+from autocast.encoders.base import Encoder, EncoderWithCond, GenericEncoder
 from autocast.metrics.utils import MetricsMixin
 from autocast.models.denorm_mixin import DenormMixin
 from autocast.models.optimizer_mixin import OptimizerMixin
 from autocast.types import Batch, Tensor, TensorBNC, TensorBTSC
+from autocast.types.types import TensorDBM
 
 
 class EncoderDecoder(DenormMixin, OptimizerMixin, L.LightningModule, MetricsMixin):
@@ -148,3 +150,36 @@ class VAE(EncoderDecoder):
         std = torch.exp(0.5 * log_var)
         eps = torch.randn_like(std)
         return mu + eps * std
+
+
+class MultiEncoder(GenericEncoder[ListBatch, None]):
+
+    def __init__(self, encoders: list[Encoder], attention: bool = False):
+
+        self.encoders = encoders
+        self.attention = attention
+
+    def encode(self, batch: ListBatch) -> TensorBNC:
+        mask: TensorDBM | None = batch.mask
+
+        outs = []
+        for idx, encoder in enumerate(self.encoders):
+            outs.append(encoder(batch.inner[idx]))
+
+        # TODO: maybe the stacking case without masking (like in icenet-mp)
+        # https://github.com/alan-turing-institute/icenet-mp/blob/580727ad81141a8fd90531e7777aa8a4294472bc/icenet_mp/models/encode_process_decode.py#L88
+        # should be handled in a separate class
+        if not self.attention:
+            # stack along the channel dim
+            stacked_outputs = torch.cat(outs, dim=-1)
+            if mask is not None:
+                msg = "Mask cannot be applied without using attention as the fusion mechanism"
+                raise ValueError(msg)
+            return stacked_outputs
+
+        # flatten each embedding to get [B, F] dim for each dataset
+        flattened = [out.flatten(start_dim=1) for out in outs]
+        # stack along dataset dim
+        stacked = torch.stack(flattened, dim=1)  # [B, D, F]
+
+        # TODO optionally apply attention -- flatten embeddings for this
