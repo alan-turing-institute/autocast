@@ -1,9 +1,12 @@
 import torch
 from torch import nn
 
+
 class TransformerBlock(nn.Module):
+    """A standard Transformer block applying MHA and FFN natively."""
+
     def __init__(self, n_heads, embedding_dimension, ffn_hidden_dimension, dropout):
-        super(TransformerBlock, self).__init__()
+        super().__init__()
         # Multihead Attention
         self.multihead_attn = nn.MultiheadAttention(
             embed_dim=embedding_dimension,
@@ -34,12 +37,21 @@ class TransformerBlock(nn.Module):
         output = self.norm_ffn(x + self.dropout_ffn(ffn_x))
         return output
 
+
 class AttentionMixer(nn.Module):
     """
-    Encapsulates the Transformer mixing and pooling logic (BLOCK 2 & 3) of the MultifidelityTransformer.
+    Encapsulates the Transformer sequence-to-sequence mixing logic.
+
     Expects pre-encoded latent embeddings.
     """
-    def __init__(self, embedding_dim: int, n_heads: int, dropout: float = 0.2, n_transformer_blocks: int = 1):
+
+    def __init__(
+        self,
+        embedding_dim: int,
+        n_heads: int,
+        dropout: float = 0.2,
+        n_transformer_blocks: int = 1,
+    ):
         super().__init__()
         self.embedding_dim = embedding_dim
         self.transformer_blocks = nn.ModuleList(
@@ -48,8 +60,9 @@ class AttentionMixer(nn.Module):
                     n_heads=n_heads,
                     embedding_dimension=embedding_dim,
                     ffn_hidden_dimension=embedding_dim * 4,
-                    dropout=dropout
-                ) for _ in range(n_transformer_blocks)
+                    dropout=dropout,
+                )
+                for _ in range(n_transformer_blocks)
             ]
         )
 
@@ -63,16 +76,11 @@ class AttentionMixer(nn.Module):
                 x=encoded_sequence, attn_mask=levels_mask
             )  # (Batch, Dataset/Levels, embedding_dim)
 
-        # Pooling:
-        # Set to 0 all the embeddings of the levels that we don't have
+        # Prevent masked levels from bubbling bad data through to downstream components
         transformer_output = encoded_sequence.masked_fill(
             mask=levels_mask.unsqueeze(-1), value=0.0
         )
-        
-        # Average the embeddings for the levels that we have
-        # Clamp valid_counts to at least 1 to avoid division by zero if everything is masked
-        valid_counts = (levels_mask == False).sum(dim=-1).unsqueeze(-1)
-        valid_counts = torch.clamp(valid_counts, min=1)
-        final_embedding = transformer_output.sum(dim=-2) / valid_counts
 
-        return final_embedding
+        # Return full sequence without pooling
+        # to maintain identical capacity to torch.cat
+        return transformer_output
