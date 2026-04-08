@@ -1917,9 +1917,9 @@ def plot_panel_figure(
         ┌──── notes (~20% x ~20%) ────┬───────────────────────────────┐
         │                              │ global legend                 │
         ├────────────┬─────────────────┼───────────────┬───────────────┤
-        │ overall    │ coverage        │ lead-time     │ training      │
-        │ metrics    │ calibration     │ (err + cov)   │ curves        │
-        │ (left)     │ panel           │ panel         │               │
+        │ training   │ overall         │ coverage      │ lead-time     │
+        │ curves     │ metrics         │ calibration   │ (err + cov)   │
+        │ (far left) │                 │ panel         │ panel         │
         └────────────┴─────────────────┴───────────────┴───────────────┘
     """
     error_metrics = error_metrics or ["vrmse"]
@@ -1931,12 +1931,14 @@ def plot_panel_figure(
     )
     n_ds = max(1, len(datasets))
 
-    # Figure with a fixed blank top-left area (~20% x ~20%) for handwritten notes.
-    fig = plt.figure(figsize=(5.0 + 2.2 * n_ds + 2.2 * n_ds + 1.9 * n_ds, 9.8))
+    # Keep output shape approximately 16:10 and avoid over-compact single-dataset
+    # renders by using a fixed minimum canvas with gentle dataset-driven scaling.
+    panel_scale = max(1.0, np.sqrt(n_ds / 2.0))
+    fig = plt.figure(figsize=(16.0 * panel_scale, 10.0 * panel_scale))
     outer = fig.add_gridspec(
         5,
         5,
-        width_ratios=[1.0, 1.1 * n_ds, 1.1 * n_ds, 1.1 * n_ds, 0.9 * n_ds],
+        width_ratios=[1.3 * n_ds, 1.0, 1.1 * n_ds, 1.1 * n_ds, 1.0 * n_ds],
         height_ratios=[0.2, 0.8, 1.0, 1.0, 1.0],
         wspace=0.28,
         hspace=0.24,
@@ -1946,8 +1948,30 @@ def plot_panel_figure(
     notes_ax = fig.add_subplot(outer[0, 0])
     notes_ax.set_axis_off()
 
-    # --- Left: two stacked overall-metric bar charts --------------------
-    left = fig.add_subfigure(outer[1:, 0])
+    # --- Far-left: training curves panel --------------------------------
+    train = fig.add_subfigure(outer[1:, 0])
+    n_train = max(1, len(training_metrics))
+    tr_axes = train.subplots(n_train, n_ds, sharex=True, sharey=False, squeeze=False)
+    _ = plot_training_curves(
+        df_in,
+        training_metrics,
+        results_root,
+        out_dir,
+        "panel_training_curves.png",
+        styles,
+        dataset_order=dataset_order,
+        hue_order=hue_order,
+        y_scale=training_yscale,
+        ylim=training_ylim,
+        axes=tr_axes,
+        fig=train,
+        save=False,
+        show_legend=False,
+        force_refresh=training_refresh,
+    )
+
+    # --- Left-middle: two stacked overall-metric bar charts -------------
+    left = fig.add_subfigure(outer[1:, 1])
     left_axes = left.subplots(2, 1)
     for i, m in enumerate(overall_metrics):
         is_cov = "coverage" in m
@@ -1967,8 +1991,8 @@ def plot_panel_figure(
         )
     left.suptitle("")
 
-    # --- Middle-left: coverage calibration panel ------------------------
-    middle = fig.add_subfigure(outer[1:, 1:3])
+    # --- Middle: coverage calibration panel -----------------------------
+    middle = fig.add_subfigure(outer[1:, 2:4])
     nrows_cov = len(WINDOW_ROWS)
     mid_axes = middle.subplots(nrows_cov, n_ds, sharex=True, sharey=True, squeeze=False)
     plot_coverage_calibration_panel(
@@ -1984,8 +2008,8 @@ def plot_panel_figure(
         show_legend=False,
     )
 
-    # --- Middle-right: lead-time error (top) + coverage (bottom) --------
-    right = fig.add_subfigure(outer[1:, 3])
+    # --- Right: lead-time error (top) + coverage (bottom) ---------------
+    right = fig.add_subfigure(outer[1:, 4])
     n_err = len(error_metrics)
     n_cov = len(coverage_metrics)
     right_top, right_bot = right.subfigures(
@@ -2034,28 +2058,6 @@ def plot_panel_figure(
                 bottom=lo if lo is not None else cur_lo,
                 top=hi if hi is not None else cur_hi,
             )
-
-    # --- Far-right: training curves panel -------------------------------
-    train = fig.add_subfigure(outer[1:, 4])
-    n_train = max(1, len(training_metrics))
-    tr_axes = train.subplots(n_train, n_ds, sharex=True, sharey=False, squeeze=False)
-    _ = plot_training_curves(
-        df_in,
-        training_metrics,
-        results_root,
-        out_dir,
-        "panel_training_curves.png",
-        styles,
-        dataset_order=dataset_order,
-        hue_order=hue_order,
-        y_scale=training_yscale,
-        ylim=training_ylim,
-        axes=tr_axes,
-        fig=train,
-        save=False,
-        show_legend=False,
-        force_refresh=training_refresh,
-    )
 
     # --- Global legend --------------------------------------------------
     # Collect groups present anywhere for the legend.
