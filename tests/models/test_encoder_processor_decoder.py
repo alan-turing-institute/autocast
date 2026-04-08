@@ -10,6 +10,10 @@ from autocast.decoders.channels_last import ChannelsLast
 from autocast.encoders.permute_concat import PermuteConcat
 from autocast.models.encoder_decoder import EncoderDecoder
 from autocast.models.encoder_processor_decoder import EncoderProcessorDecoder
+from autocast.nn.noise.noise_injector import (
+    AdditiveNoiseInjector,
+    ConcatenatedNoiseInjector,
+)
 from autocast.processors.base import Processor
 from autocast.types import Batch, EncodedBatch, Tensor
 
@@ -265,3 +269,80 @@ def test_encoder_processor_decoder_rollout_handles_short_trajectory(
     # Ground truth only for windows where data was available
     assert gts is not None
     assert gts.shape == (batch_size, expected_gt_windows * n_steps_output, 32, 32, 1)
+
+
+def _make_epd(channels=2, t_steps=2, latent_noise_injector=None, extra_in=0):
+    """Helper to build a minimal EPD with optional latent noise."""
+    encoder = PermuteConcat(
+        in_channels=channels, n_steps_input=t_steps, with_constants=False
+    )
+    merged = channels * t_steps
+    decoder = ChannelsLast(output_channels=channels, time_steps=t_steps)
+    encoder_decoder = EncoderDecoder(encoder=encoder, decoder=decoder)
+    processor = TinyProcessor(in_channels=merged + extra_in, out_channels=merged)
+    return EncoderProcessorDecoder(
+        encoder_decoder=encoder_decoder,
+        processor=processor,
+        loss_func=nn.MSELoss(),
+        latent_noise_injector=latent_noise_injector,
+        latent_loss_weight=1.0,
+    )
+
+
+def test_latent_noise_injector_additive_forward_and_loss():
+    """Additive latent noise runs through both forward and _latent_loss."""
+    model = _make_epd(latent_noise_injector=AdditiveNoiseInjector(std=0.1))
+    batch = Batch(
+        input_fields=torch.randn(2, 2, 8, 8, 2),
+        output_fields=torch.randn(2, 2, 8, 8, 2),
+        constant_scalars=None,
+        constant_fields=None,
+    )
+    out = model(batch)
+    assert out.shape == batch.output_fields.shape
+
+    loss, _ = model.loss(batch)
+    assert loss.ndim == 0
+    loss.backward()
+
+
+def test_latent_noise_injector_concat_apply_latent_noise():
+    """ConcatenatedNoiseInjector adds channels to encoded_inputs in EncodedBatch.
+
+    Note: ConcatenatedNoiseInjector appends on the last dimension (channels-last).
+    This test verifies the _apply_latent_noise method directly.
+    """
+    n_extra = 3
+    injector = ConcatenatedNoiseInjector(n_channels=n_extra, std=0.5)
+    model = _make_epd(latent_noise_injector=injector)
+
+    encoded_batch = EncodedBatch(
+        encoded_inputs=torch.randn(2, 8, 8, 4),
+        encoded_output_fields=torch.randn(2, 8, 8, 4),
+        global_cond=None,
+        encoded_info={},
+    )
+    noisy = model._apply_latent_noise(encoded_batch)
+    assert noisy.encoded_inputs.shape[-1] == 4 + n_extra
+    assert (
+        noisy.encoded_output_fields.shape == encoded_batch.encoded_output_fields.shape
+    )
+
+
+def test_latent_noise_injector_none_preserves_behavior():
+    """No latent noise injector gives identical results to baseline."""
+    torch.manual_seed(42)
+    batch = Batch(
+        input_fields=torch.randn(2, 2, 8, 8, 2),
+        output_fields=torch.randn(2, 2, 8, 8, 2),
+        constant_scalars=None,
+        constant_fields=None,
+    )
+    model = _make_epd(latent_noise_injector=None)
+    model.eval()
+
+    with torch.no_grad():
+        out1 = model(batch)
+        out2 = model(batch)
+
+    assert torch.allclose(out1, out2)

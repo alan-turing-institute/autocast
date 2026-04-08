@@ -1,3 +1,4 @@
+import warnings
 from collections.abc import Sequence
 from typing import Any
 
@@ -15,7 +16,7 @@ from autocast.models.optimizer_mixin import OptimizerMixin
 from autocast.nn.noise.noise_injector import NoiseInjector
 from autocast.processors.base import Processor
 from autocast.processors.rollout import RolloutMixin
-from autocast.types import Batch, Tensor, TensorBTSC
+from autocast.types import Batch, EncodedBatch, Tensor, TensorBTSC
 from autocast.types.types import TensorBTSCM
 
 
@@ -39,13 +40,16 @@ class EncoderProcessorDecoder(
         rollout_stride: int | None = None,
         teacher_forcing_ratio: float = 0.5,
         max_rollout_steps: int = 10,
-        train_in_latent_space: bool = False,
+        train_in_latent_space: bool | None = None,
         freeze_encoder_decoder: bool = False,
         loss_func: nn.Module | None = None,
+        ambient_loss_weight: float | None = None,
+        latent_loss_weight: float | None = None,
         train_metrics: Sequence[Metric] | None = [],
         val_metrics: Sequence[Metric] | None = None,
         test_metrics: Sequence[Metric] | None = None,
         input_noise_injector: NoiseInjector | None = None,
+        latent_noise_injector: NoiseInjector | None = None,
         norm: ZScoreNormalization | None = None,
         **kwargs: Any,
     ) -> None:
@@ -57,12 +61,17 @@ class EncoderProcessorDecoder(
         self.rollout_stride = rollout_stride if rollout_stride is not None else stride
         self.teacher_forcing_ratio = teacher_forcing_ratio
         self.max_rollout_steps = max_rollout_steps
-        self.train_in_latent_space = train_in_latent_space
         self.freeze_encoder_decoder = freeze_encoder_decoder
         self.input_noise_injector = input_noise_injector
+        self.latent_noise_injector = latent_noise_injector
         self.norm = norm
 
-        if self.train_in_latent_space or self.freeze_encoder_decoder:
+        # Resolve loss weights from train_in_latent_space or explicit weights.
+        self.ambient_loss_weight, self.latent_loss_weight = self._resolve_loss_weights(
+            train_in_latent_space, ambient_loss_weight, latent_loss_weight
+        )
+
+        if self._pure_latent or self.freeze_encoder_decoder:
             self.encoder_decoder.freeze()
         self.loss_func = loss_func
 
@@ -72,6 +81,55 @@ class EncoderProcessorDecoder(
 
         for key, value in kwargs.items():
             setattr(self, key, value)
+
+    @staticmethod
+    def _resolve_loss_weights(
+        train_in_latent_space: bool | None,
+        ambient_loss_weight: float | None,
+        latent_loss_weight: float | None,
+    ) -> tuple[float, float]:
+        """Resolve loss weights from legacy and new-style arguments.
+
+        Legacy ``train_in_latent_space`` is mapped to the weight pair and a
+        deprecation warning is emitted when the old flag is used.
+        """
+        explicit_weights = (
+            ambient_loss_weight is not None or latent_loss_weight is not None
+        )
+
+        if train_in_latent_space is not None and explicit_weights:
+            msg = (
+                "Cannot specify both 'train_in_latent_space' and explicit loss weights "
+                "('ambient_loss_weight' / 'latent_loss_weight'). Use the weight "
+                "parameters instead."
+            )
+            raise ValueError(msg)
+
+        if train_in_latent_space is not None:
+            warnings.warn(
+                "'train_in_latent_space' is deprecated. Use 'ambient_loss_weight' and "
+                "'latent_loss_weight' instead.",
+                DeprecationWarning,
+                stacklevel=3,
+            )
+            if train_in_latent_space:
+                return 0.0, 1.0
+            return 1.0, 0.0
+
+        return (
+            ambient_loss_weight if ambient_loss_weight is not None else 1.0,
+            latent_loss_weight if latent_loss_weight is not None else 0.0,
+        )
+
+    @property
+    def _pure_latent(self) -> bool:
+        """True when training exclusively in latent space (encoder/decoder frozen)."""
+        return self.latent_loss_weight > 0 and self.ambient_loss_weight == 0
+
+    @property
+    def train_in_latent_space(self) -> bool:
+        """Backward-compatible property: True when only latent loss is active."""
+        return self._pure_latent
 
     def _apply_input_noise(self, batch: Batch) -> Batch:
         """Apply input noise if self.input_noise_injector is set."""
@@ -85,6 +143,18 @@ class EncoderProcessorDecoder(
             )
         return batch
 
+    def _apply_latent_noise(self, encoded_batch: EncodedBatch) -> EncodedBatch:
+        """Apply noise in latent space after encoding."""
+        if self.latent_noise_injector is not None:
+            noisy_encoded = self.latent_noise_injector(encoded_batch.encoded_inputs)
+            encoded_batch = EncodedBatch(
+                encoded_inputs=noisy_encoded,
+                encoded_output_fields=encoded_batch.encoded_output_fields,
+                global_cond=encoded_batch.global_cond,
+                encoded_info=encoded_batch.encoded_info,
+            )
+        return encoded_batch
+
     def on_load_checkpoint(self, checkpoint: dict[str, Any]) -> None:
         # PyTorch can serialise _metadata as a real key in the state_dict rather
         # than as an OrderedDict private attribute.  Strict load_state_dict then
@@ -96,25 +166,41 @@ class EncoderProcessorDecoder(
     def forward(self, batch: Batch) -> TensorBTSC | TensorBTSCM:
         batch = self._apply_input_noise(batch)
         encoded, global_cond = self.encoder_decoder.encoder.encode_with_cond(batch)
+        if self.latent_noise_injector is not None:
+            encoded = self.latent_noise_injector(encoded)
         mapped = self.processor.map(encoded, global_cond)
         decoded = self.encoder_decoder.decoder.decode(mapped)
         return decoded
 
+    def _latent_loss(self, batch: Batch) -> Tensor:
+        """Compute loss in latent (encoded) space via the processor."""
+        batch = self._apply_input_noise(batch)
+        encoded_batch = self.encoder_decoder.encoder.encode_batch(batch)
+        encoded_batch = self._apply_latent_noise(encoded_batch)
+        return self.processor.loss(encoded_batch)
+
+    def _ambient_loss(self, batch: Batch) -> tuple[Tensor, Tensor]:
+        """Compute loss in ambient (decoded) space."""
+        if self.loss_func is None:
+            msg = "loss_func must be provided when ambient_loss_weight > 0."
+            raise ValueError(msg)
+        y_pred = self(batch)
+        y_true = batch.output_fields
+        return self.loss_func(y_pred, y_true), y_pred
+
     def loss(self, batch: Batch) -> tuple[Tensor, Tensor | None]:
-        if self.train_in_latent_space:
-            batch = self._apply_input_noise(batch)
-            encoded_batch = self.encoder_decoder.encoder.encode_batch(batch)
-            loss = self.processor.loss(encoded_batch)
-            y_pred = None
-        else:
-            if self.loss_func is None:
-                msg = "loss_func must be provided when training full EPD model."
-                raise ValueError(msg)
-            # Otherwise, train full EPD model
-            y_pred = self(batch)
-            y_true = batch.output_fields
-            loss = self.loss_func(y_pred, y_true)
-        return loss, y_pred
+        total_loss = torch.tensor(0.0, device=batch.input_fields.device)
+        y_pred = None
+
+        if self.ambient_loss_weight > 0:
+            ambient_loss, y_pred = self._ambient_loss(batch)
+            total_loss = total_loss + self.ambient_loss_weight * ambient_loss
+
+        if self.latent_loss_weight > 0:
+            latent_loss = self._latent_loss(batch)
+            total_loss = total_loss + self.latent_loss_weight * latent_loss
+
+        return total_loss, y_pred
 
     def training_step(self, batch: Batch, batch_idx: int) -> Tensor:  # noqa: ARG002
         loss, y_pred = self.loss(batch)

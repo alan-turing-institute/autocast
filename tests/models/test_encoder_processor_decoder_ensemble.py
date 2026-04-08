@@ -92,7 +92,8 @@ def test_epd_ensemble_loss_latent_integration():
         encoder_decoder=encoder_decoder,
         processor=processor,
         n_members=n_members,
-        train_in_latent_space=True,
+        latent_loss_weight=1.0,
+        ambient_loss_weight=0.0,
         loss_func=CRPSLoss(),
     )
 
@@ -112,7 +113,7 @@ def test_epd_ensemble_loss_latent_integration():
 
 
 def test_epd_ensemble_loss_fallback():
-    """Test fallback when n_members=1 or train_in_latent_space=False."""
+    """Test fallback when n_members=1 or latent_loss_weight=0."""
     n_members = 1
     batch_size = 2
     t_steps = 2

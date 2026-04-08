@@ -60,55 +60,33 @@ class EncoderProcessorDecoderEnsemble(EncoderProcessorDecoder):
             denorm = super().denormalize_tensor(flat_members, delta=delta)
             return rearrange(denorm, "(b m) ... c -> b ... c m", b=b, m=self.n_members)
 
-    def loss(self, batch: Batch) -> tuple[Tensor, Tensor | None]:
-        """Compute ensemble-aware loss.
+    def _latent_loss(self, batch: Batch) -> Tensor:
+        """Compute ensemble-aware latent loss.
 
-        If training in latent space (train_in_latent_space=True), we manually handle
-        the ensemble expansion and loss computation.
-
-        If training the full model (train_in_latent_space=False), we rely on
-        super().loss(batch). super().loss(batch) calls self(batch), which calls
-        EncoderProcessorDecoderEnsemble.forward.
-
-        This ensures y_pred has shape [B, ..., M] (TensorBTSCM), suitable for ensemble
-        metrics like CRPS.
+        When an ensemble loss function (e.g. CRPS) is available, expand the batch
+        across ensemble members and compute the loss in latent space.  Otherwise
+        fall back to the base class per-sample latent loss.
         """
-        # If not training in latent space OR if no ensemble-aware loss_func is provided,
-        # we can just use the base class loss.
-        if (
-            not self.train_in_latent_space
-            or self.n_members <= 1
-            or self.loss_func is None
-        ):
-            return super().loss(batch)
+        if self.n_members <= 1 or self.loss_func is None:
+            return super()._latent_loss(batch)
 
-        # TODO: consider removing this logic here as this might be better not
-        # implemented with the ProcessorModel being a better place for this.
-        # Latent Training with potential ensemble loss (e.g. CRPS in latent space)
-        if self.n_members > 1 and self.loss_func is not None:
-            B = batch.input_fields.shape[0]
-            ensemble_batch = batch.repeat(self.n_members)
-            ensemble_batch = self._apply_input_noise(ensemble_batch)
-            encoded_batch = self.encoder_decoder.encoder.encode_batch(ensemble_batch)
+        B = batch.input_fields.shape[0]
+        ensemble_batch = batch.repeat(self.n_members)
+        ensemble_batch = self._apply_input_noise(ensemble_batch)
+        encoded_batch = self.encoder_decoder.encoder.encode_batch(ensemble_batch)
+        encoded_batch = self._apply_latent_noise(encoded_batch)
 
-            # Predictions (stochastic latent maps)
-            preds_flat = self.processor.map(
-                encoded_batch.encoded_inputs, global_cond=encoded_batch.global_cond
-            )
-            preds = rearrange(preds_flat, "(b m) ... -> b ... m", b=B, m=self.n_members)
+        # Predictions (stochastic latent maps)
+        preds_flat = self.processor.map(
+            encoded_batch.encoded_inputs, global_cond=encoded_batch.global_cond
+        )
+        preds = rearrange(preds_flat, "(b m) ... -> b ... m", b=B, m=self.n_members)
 
-            # Targets (encoded ground truth) - take the first from each member group
-            # (assuming encoding of target is deterministic or we want a single target)
-            targets = encoded_batch.encoded_output_fields[:: self.n_members]
+        # Targets (encoded ground truth) - take the first from each member group
+        # (assuming encoding of target is deterministic or we want a single target)
+        targets = encoded_batch.encoded_output_fields[:: self.n_members]
 
-            # If the loss_func can handle BTSCM and BTSC (like CRPS), it works here too
-            # (though BTSC might be BNC in latent space, CRPS works on ndim >= 5)
-            loss = self.loss_func(preds, targets)
-            # Return None so metrics use decoded outputs via self(batch).
-            return loss, None
-
-        # Fallback to standard processor loss (e.g. Diffusion loss) on flattened batch
-        return super().loss(batch)
+        return self.loss_func(preds, targets)
 
     def rollout(
         self,
