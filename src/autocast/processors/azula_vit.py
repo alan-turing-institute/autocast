@@ -31,6 +31,7 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
         temporal_method: str = "attention",
         loss_func: nn.Module | None = None,
         n_noise_channels: int | None = None,
+        n_noise_input_channels: int | None = None,
         checkpointing: bool = False,
     ):
         super().__init__()
@@ -40,6 +41,25 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
             raise ValueError(msg)
 
         self.n_noise_channels = n_noise_channels
+        self.n_noise_input_channels = n_noise_input_channels or n_noise_channels
+
+        if self.n_noise_channels is None and n_noise_input_channels is not None:
+            msg = (
+                "n_noise_input_channels requires n_noise_channels to be set "
+                "for modulation."
+            )
+            raise ValueError(msg)
+
+        self.modulation_proj = None
+        if (
+            self.n_noise_channels
+            and self.n_noise_input_channels
+            and self.n_noise_input_channels != self.n_noise_channels
+        ):
+            self.modulation_proj = nn.Linear(
+                self.n_noise_input_channels, self.n_noise_channels
+            )
+
         self.loss_func = loss_func or nn.MSELoss()
         self.model = TemporalViTBackbone(
             in_channels=in_channels,
@@ -73,18 +93,35 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
         -------
             Output tensor with shape (B, C, H, W).
         """
+        if x_noise is not None and self.modulation_proj is not None:
+            x_noise = self.modulation_proj(x_noise)
+
+        if (
+            self.n_noise_channels
+            and x_noise is not None
+            and x_noise.shape[-1] != self.n_noise_channels
+        ):
+            msg = (
+                f"Expected x_noise with last dim {self.n_noise_channels}, "
+                f"got {x_noise.shape[-1]}."
+            )
+            raise ValueError(msg)
+
         x_in = rearrange(x, "b c h w -> b 1 h w c").contiguous()
         y = self.model(x_in, t=x_noise, cond=None, global_cond=None)
         return rearrange(y, "b 1 h w c -> b c h w").contiguous()
 
     def map(self, x: Tensor, global_cond: Tensor | None = None) -> Tensor:  # noqa: ARG002
-        noise = (
-            torch.randn(
-                x.shape[0], self.n_noise_channels, dtype=x.dtype, device=x.device
+        noise_channels = self.n_noise_input_channels or self.n_noise_channels
+        if self.n_noise_channels:
+            if noise_channels is None:
+                msg = "n_noise_channels is set but no noise input width is available."
+                raise ValueError(msg)
+            noise = torch.randn(
+                x.shape[0], noise_channels, dtype=x.dtype, device=x.device
             )
-            if self.n_noise_channels
-            else torch.zeros(x.shape[0], dtype=x.dtype, device=x.device)
-        )
+        else:
+            noise = torch.zeros(x.shape[0], dtype=x.dtype, device=x.device)
         return self(x, noise)
 
     def loss(self, batch: EncodedBatch) -> Tensor:
