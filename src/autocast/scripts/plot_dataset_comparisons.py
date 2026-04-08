@@ -1416,7 +1416,7 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
     When ``axes`` is provided, draw into that pre-made grid with shape
     (len(metrics_to_plot), n_datasets).
     """
-    rows = []
+    rows: list[pd.DataFrame] = []
     base = df_in.dropna(
         subset=["run_path", "dataset_label", "plot_group"]
     ).drop_duplicates()
@@ -1503,20 +1503,17 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
                     continue
                 agg = cast(
                     pd.DataFrame,
-                    cast(
-                        pd.DataFrame,
-                        sf.groupby("timestep", as_index=False)["value"].agg(
-                            ["mean", "std", "count"]
-                        ),
-                    ).sort_values(by="timestep"),
+                    sf.groupby("timestep", as_index=False)["value"]
+                    .agg(["mean", "std", "count"])
+                    .set_index("timestep")
+                    .sort_index()
+                    .reset_index(),
                 )
                 st = styles.get(fam, {"color": "k"})
+                mean = cast(pd.Series, agg["mean"])
+                std = cast(pd.Series, agg["std"]).fillna(0)
 
-                m = (
-                    agg["mean"].clip(lower=0, upper=1)
-                    if is_cov
-                    else agg["mean"].clip(lower=1e-6)
-                )
+                m = mean.clip(lower=0, upper=1) if is_cov else mean.clip(lower=1e-06)
                 if not is_cov:
                     vals.extend(m.dropna().tolist())
                 ax.plot(
@@ -1527,16 +1524,12 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
                     linestyle=st.get("linestyle", "-"),
                 )
                 if (agg["count"] > 1).any():
-                    y1 = (
-                        (agg["mean"] - agg["std"].fillna(0)).clip(lower=0, upper=1)
-                        if is_cov
-                        else (agg["mean"] - agg["std"].fillna(0)).clip(lower=1e-6)
-                    )
-                    y2 = (
-                        (agg["mean"] + agg["std"].fillna(0)).clip(lower=0, upper=1)
-                        if is_cov
-                        else (agg["mean"] + agg["std"].fillna(0)).clip(lower=1e-6)
-                    )
+                    if is_cov:
+                        y1 = (mean - std).clip(lower=0, upper=1)
+                        y2 = (mean + std).clip(lower=0, upper=1)
+                    else:
+                        y1 = (mean - std).clip(lower=1e-6)
+                        y2 = (mean + std).clip(lower=1e-6)
                     if not is_cov:
                         vals.extend(y1.dropna().tolist())
                         vals.extend(y2.dropna().tolist())
@@ -1589,14 +1582,8 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
 
 
 # ---------------------------------------------------------------------------
-# Training curves: prefer wandb API (full fidelity) with slurm stdout fallback
+# Training curves: wandb API
 # ---------------------------------------------------------------------------
-
-
-_TRAIN_PROGRESS_RE = re.compile(
-    r"Epoch\s+(?P<epoch>\d+):\s*100%[^\r\n]*?"
-    r"(?P<kvs>(?:[a-zA-Z_][a-zA-Z0-9_]*=[-+0-9.eE]+,?\s*)+)",
-)
 
 
 def _training_history_cache_path(run_dir: Path) -> Path:
@@ -1637,7 +1624,7 @@ def parse_training_metrics_from_wandb(  # noqa: PLR0911, PLR0912, PLR0915
     ``<run_dir>/eval/training_history.csv`` to avoid repeat API calls.
 
     Returns a long-format frame with columns ``epoch, metric, value``. Empty
-    on any failure so the caller can fall back to alternative sources.
+    on any failure.
     """
     empty = pd.DataFrame(columns=pd.Index(["epoch", "metric", "value"]))
 
@@ -1744,77 +1731,12 @@ def parse_training_metrics_from_wandb(  # noqa: PLR0911, PLR0912, PLR0915
     return long
 
 
-def parse_training_metrics_from_slurm(run_dir: Path) -> pd.DataFrame:
-    """Parse per-epoch training metrics from a run's slurm stdout files.
-
-    PyTorch Lightning's default progress bar appends ``train_loss=...`` /
-    ``val_loss=...`` tokens to the epoch line at 100% completion; by keeping
-    the latest occurrence per epoch we get the stabilised end-of-epoch values.
-
-    Returns a long-format frame with columns ``epoch, metric, value``.
-    """
-    slurm_files = sorted(run_dir.glob("slurm-*.out"))
-    if not slurm_files:
-        return pd.DataFrame(columns=pd.Index(["epoch", "metric", "value"]))
-
-    per_epoch: dict[int, dict[str, float]] = {}
-    for p in slurm_files:
-        try:
-            text = p.read_text(errors="replace")
-        except OSError:
-            continue
-        # Progress bar uses '\r' to overwrite; split so each update is its own line.
-        lines = text.replace("\r", "\n").splitlines()
-        for ln in lines:
-            if "Epoch" not in ln or "100%" not in ln:
-                continue
-            m = _TRAIN_PROGRESS_RE.search(ln)
-            if not m:
-                continue
-            epoch = int(m.group("epoch"))
-            kv_blob = m.group("kvs")
-            pairs = re.findall(r"([a-zA-Z_][a-zA-Z0-9_]*)=([-+0-9.eE]+)", kv_blob)
-            bucket = per_epoch.setdefault(epoch, {})
-            for k, v in pairs:
-                # Skip non-metric tokens like ``v_num``.
-                if k in {"v_num"}:
-                    continue
-                try:
-                    bucket[k] = float(v)
-                except ValueError:
-                    continue
-
-    if not per_epoch:
-        return pd.DataFrame(columns=pd.Index(["epoch", "metric", "value"]))
-
-    recs: list[dict] = []
-    for epoch in sorted(per_epoch):
-        for metric, value in per_epoch[epoch].items():
-            recs.append({"epoch": epoch, "metric": metric, "value": value})
-    return pd.DataFrame(recs)
-
-
 def load_training_metrics(
     run_dir: Path,
-    source: str = "wandb",
     force_refresh: bool = False,
 ) -> pd.DataFrame:
-    """Load per-epoch training metrics for a single run.
-
-    ``source`` selects the backend:
-      * ``"wandb"`` — wandb API only (no fallback)
-      * ``"slurm"`` — parse Lightning's progress bar from ``slurm-*.out``
-      * ``"auto"`` — try wandb first and fall back to slurm if empty
-    """
-    if source == "wandb":
-        return parse_training_metrics_from_wandb(run_dir, force_refresh=force_refresh)
-    if source == "slurm":
-        return parse_training_metrics_from_slurm(run_dir)
-    # auto
-    wb = parse_training_metrics_from_wandb(run_dir, force_refresh=force_refresh)
-    if not wb.empty:
-        return wb
-    return parse_training_metrics_from_slurm(run_dir)
+    """Load per-epoch training metrics for a single run from wandb."""
+    return parse_training_metrics_from_wandb(run_dir, force_refresh=force_refresh)
 
 
 def plot_training_curves(  # noqa: PLR0912, PLR0915
@@ -1832,14 +1754,12 @@ def plot_training_curves(  # noqa: PLR0912, PLR0915
     fig: FigureBase | None = None,
     save: bool = True,
     show_legend: bool = True,
-    source: str = "wandb",
     force_refresh: bool = False,
 ) -> FigureBase | None:
     """Plot per-metric, per-dataset training curves (epoch vs metric value).
 
-    Training metrics are loaded via :func:`load_training_metrics`. ``source``
-    controls whether wandb, slurm stdout, or both (auto) are used. ``metrics``
-    names should match logged keys, e.g. ``val_loss``, ``val_vrmse``.
+    Training metrics are loaded via :func:`load_training_metrics` from wandb.
+    ``metrics`` names should match logged keys, e.g. ``val_loss``, ``val_vrmse``.
     """
     rows: list[pd.DataFrame] = []
     base = df_in.dropna(
@@ -1854,7 +1774,7 @@ def plot_training_curves(  # noqa: PLR0912, PLR0915
         run_dir = results_root / str(run_path)
         if not run_dir.exists():
             continue
-        tm = load_training_metrics(run_dir, source=source, force_refresh=force_refresh)
+        tm = load_training_metrics(run_dir, force_refresh=force_refresh)
         if tm.empty:
             continue
         tm = cast(pd.DataFrame, tm[tm["metric"].isin(metrics)].copy())
@@ -1865,7 +1785,7 @@ def plot_training_curves(  # noqa: PLR0912, PLR0915
         rows.append(tm)
 
     if not rows:
-        print("No training metrics available (no slurm-*.out progress-bar data found).")
+        print("No training metrics available from wandb history.")
         return None
 
     long = pd.concat(rows, ignore_index=True).dropna(subset=["value"])
@@ -1968,11 +1888,11 @@ def plot_training_curves(  # noqa: PLR0912, PLR0915
 
 
 # ---------------------------------------------------------------------------
-# Slide-ready composite figure
+# Panel composite figure
 # ---------------------------------------------------------------------------
 
 
-def plot_slide_figure(
+def plot_panel_figure(
     df_in: pd.DataFrame,
     results_root: Path,
     out_dir: Path,
@@ -1982,41 +1902,52 @@ def plot_slide_figure(
     overall_metrics: tuple[str, str] = ("vrmse", "coverage"),
     error_metrics: list[str] | None = None,
     coverage_metrics: list[str] | None = None,
+    training_metrics: list[str] | None = None,
+    training_yscale: str = "log",
+    training_ylim: tuple[float | None, float | None] | None = None,
+    training_refresh: bool = False,
     error_ylim: tuple[float | None, float | None] | None = None,
     coverage_ylim: tuple[float | None, float | None] | None = None,
-    name: str = "slide_figure.png",
+    name: str = "panel_figure.png",
 ) -> None:
-    """Render a slide-ready composite figure.
+    """Render a panel composite figure with a reserved notes area.
 
     Layout::
 
-        ┌────────────┬───────────────────┬──────────────────┐
-        │ overall    │ coverage          │ lead-time errors │
-        │ metric 1   │ calibration       ├──────────────────┤
-        ├────────────┤ panel             │ lead-time        │
-        │ overall    │ (windows x        │ coverage levels  │
-        │ metric 2   │  datasets)        │                  │
-        └────────────┴───────────────────┴──────────────────┘
+        ┌──── notes (~20% x ~20%) ────┬───────────────────────────────┐
+        │                              │ global legend                 │
+        ├────────────┬─────────────────┼───────────────┬───────────────┤
+        │ overall    │ coverage        │ lead-time     │ training      │
+        │ metrics    │ calibration     │ (err + cov)   │ curves        │
+        │ (left)     │ panel           │ panel         │               │
+        └────────────┴─────────────────┴───────────────┴───────────────┘
     """
     error_metrics = error_metrics or ["vrmse"]
     coverage_metrics = coverage_metrics or ["coverage_0.9", "coverage_0.5"]
+    training_metrics = training_metrics or ["val_loss", "train_loss"]
 
     datasets = _apply_explicit_order(
         list(df_in["dataset_label"].dropna().unique()), dataset_order
     )
     n_ds = max(1, len(datasets))
 
-    # Figure sized to roughly match a 16:9 slide.
-    fig = plt.figure(figsize=(4.2 + 2.2 * n_ds + 3.2 * n_ds, 9.5))
-    outer = fig.subfigures(
-        1,
-        3,
-        width_ratios=[1.1, 1.3 * n_ds, 1.3 * n_ds],
-        wspace=0.05,
+    # Figure with a fixed blank top-left area (~20% x ~20%) for handwritten notes.
+    fig = plt.figure(figsize=(5.0 + 2.2 * n_ds + 2.2 * n_ds + 1.9 * n_ds, 9.8))
+    outer = fig.add_gridspec(
+        5,
+        5,
+        width_ratios=[1.0, 1.1 * n_ds, 1.1 * n_ds, 1.1 * n_ds, 0.9 * n_ds],
+        height_ratios=[0.2, 0.8, 1.0, 1.0, 1.0],
+        wspace=0.28,
+        hspace=0.24,
     )
 
+    # Top-left reserved notes region (intentionally blank).
+    notes_ax = fig.add_subplot(outer[0, 0])
+    notes_ax.set_axis_off()
+
     # --- Left: two stacked overall-metric bar charts --------------------
-    left = outer[0]
+    left = fig.add_subfigure(outer[1:, 0])
     left_axes = left.subplots(2, 1)
     for i, m in enumerate(overall_metrics):
         is_cov = "coverage" in m
@@ -2036,8 +1967,8 @@ def plot_slide_figure(
         )
     left.suptitle("")
 
-    # --- Middle: coverage calibration panel -----------------------------
-    middle = outer[1]
+    # --- Middle-left: coverage calibration panel ------------------------
+    middle = fig.add_subfigure(outer[1:, 1:3])
     nrows_cov = len(WINDOW_ROWS)
     mid_axes = middle.subplots(nrows_cov, n_ds, sharex=True, sharey=True, squeeze=False)
     plot_coverage_calibration_panel(
@@ -2053,8 +1984,8 @@ def plot_slide_figure(
         show_legend=False,
     )
 
-    # --- Right: lead-time error (top) + coverage (bottom) ---------------
-    right = outer[2]
+    # --- Middle-right: lead-time error (top) + coverage (bottom) --------
+    right = fig.add_subfigure(outer[1:, 3])
     n_err = len(error_metrics)
     n_cov = len(coverage_metrics)
     right_top, right_bot = right.subfigures(
@@ -2103,6 +2034,28 @@ def plot_slide_figure(
                 bottom=lo if lo is not None else cur_lo,
                 top=hi if hi is not None else cur_hi,
             )
+
+    # --- Far-right: training curves panel -------------------------------
+    train = fig.add_subfigure(outer[1:, 4])
+    n_train = max(1, len(training_metrics))
+    tr_axes = train.subplots(n_train, n_ds, sharex=True, sharey=False, squeeze=False)
+    _ = plot_training_curves(
+        df_in,
+        training_metrics,
+        results_root,
+        out_dir,
+        "panel_training_curves.png",
+        styles,
+        dataset_order=dataset_order,
+        hue_order=hue_order,
+        y_scale=training_yscale,
+        ylim=training_ylim,
+        axes=tr_axes,
+        fig=train,
+        save=False,
+        show_legend=False,
+        force_refresh=training_refresh,
+    )
 
     # --- Global legend --------------------------------------------------
     # Collect groups present anywhere for the legend.
@@ -2307,7 +2260,7 @@ def main():  # noqa: PLR0912, PLR0915
         "--training-metrics",
         nargs="+",
         help=(
-            "Training-curve metrics parsed from slurm-*.out progress bar, "
+            "Training-curve metrics read from wandb history, "
             "e.g. --training-metrics val_loss train_loss. "
             "Omit to skip training curve plots."
         ),
@@ -2328,17 +2281,6 @@ def main():  # noqa: PLR0912, PLR0915
         ),
     )
     parser.add_argument(
-        "--training-source",
-        choices=["wandb", "slurm", "auto"],
-        default="wandb",
-        help=(
-            "Backend for training-curve metrics. "
-            "'wandb' (default) uses the public API and requires "
-            "WANDB_API_KEY; 'slurm' parses the Lightning progress bar from "
-            "slurm-*.out; 'auto' tries wandb then falls back to slurm."
-        ),
-    )
-    parser.add_argument(
         "--training-refresh",
         action="store_true",
         help=(
@@ -2347,12 +2289,12 @@ def main():  # noqa: PLR0912, PLR0915
         ),
     )
     parser.add_argument(
-        "--slide-figure",
+        "--panel-figure",
         action="store_true",
         help=(
-            "Also render a slide-ready composite figure with overall bars "
-            "(left), coverage calibration panel (middle), and lead-time "
-            "error + coverage panels (right)."
+            "Also render a composite panel with overall bars, coverage "
+            "calibration, lead-time panels, training curves, and a blank "
+            "top-left notes area (~20% x ~20%)."
         ),
     )
     args = parser.parse_args()
@@ -2823,13 +2765,12 @@ def main():  # noqa: PLR0912, PLR0915
             hue_order=hu_order,
             y_scale=args.training_yscale,
             ylim=training_ylim,
-            source=args.training_source,
             force_refresh=args.training_refresh,
         )
 
-    # Slide-ready composite figure
-    if args.slide_figure:
-        plot_slide_figure(
+    # Composite panel figure
+    if args.panel_figure:
+        plot_panel_figure(
             df,
             results_dir,
             out_dir,
@@ -2844,6 +2785,12 @@ def main():  # noqa: PLR0912, PLR0915
             error_metrics=err_metric or ["vrmse"],
             coverage_metrics=cov_metric
             or ["coverage_0.9", "coverage_0.5", "coverage_0.1"],
+            training_metrics=list(args.training_metrics)
+            if args.training_metrics
+            else ["val_loss", "train_loss"],
+            training_yscale=args.training_yscale,
+            training_ylim=training_ylim,
+            training_refresh=args.training_refresh,
             error_ylim=error_ylim,
             coverage_ylim=coverage_ylim,
         )

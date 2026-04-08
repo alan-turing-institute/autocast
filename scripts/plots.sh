@@ -141,9 +141,8 @@
 # 	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
 # 	--combined-lead-time \
 # 	--training-metrics val_loss train_loss \
-# 	--training-source wandb \
 # 	--training-yscale log \
-# 	--slide-figure \
+# 	--panel-figure \
 # 	--output-dir outputs/2026-04-01_collated/plots/crps_fm_vits_comparison_24hrs
 
 
@@ -163,7 +162,6 @@ autocast-plots --results-dir outputs/2026-04-01_collated \
 	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
 	--combined-lead-time \
 	--training-metrics val_loss train_loss \
-	--training-source wandb \
 	--training-yscale log \
-	--slide-figure \
+	--panel-figure \
 	--output-dir outputs/2026-04-01_collated/plots/crps_fm_vits_comparison_24hrs_v2
