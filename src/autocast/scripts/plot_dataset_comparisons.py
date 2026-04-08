@@ -9,12 +9,15 @@ from typing import cast
 
 import matplotlib as mpl
 import yaml
+from matplotlib.axes import Axes
+from matplotlib.figure import FigureBase
 from matplotlib.lines import Line2D
 
 mpl.use("Agg")  # Non-interactive backend
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import wandb
 
 # ---------------------------------------------------------------------------
 # Constants & Configuration
@@ -1135,13 +1138,22 @@ def grouped_bar(  # noqa: PLR0912, PLR0915
     y_scale: str = "auto",
     dataset_order: list[str] | None = None,
     hue_order: list[str] | None = None,
-):
-    """Render a grouped bar chart of a metric across datasets and model families."""
+    ax: Axes | None = None,
+    save: bool = True,
+    ylim: tuple[float | None, float | None] | None = None,
+    show_legend: bool = True,
+) -> FigureBase | None:
+    """Render a grouped bar chart of a metric across datasets and model families.
+
+    When ``ax`` is provided, draw into it and skip figure creation/saving.
+    ``ylim`` (low, high) overrides automatic y-axis limits; either bound may be
+    ``None`` to keep the auto-computed value on that side.
+    """
     if metric not in df_in.columns:
-        return
+        return None
     d = df_in.dropna(subset=[metric]).copy()
     if d.empty:
-        return
+        return None
 
     group_col = "plot_group"
     g = (
@@ -1175,7 +1187,10 @@ def grouped_bar(  # noqa: PLR0912, PLR0915
 
     width = 0.8 / max(1, max_present)
 
-    fig, ax = plt.subplots(figsize=(max(8.0, 0.9 * len(datasets) + 2.0), 3.8))
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(max(8.0, 0.9 * len(datasets) + 2.0), 3.8))
+    else:
+        fig = ax.figure
     all_positive = []
 
     seen_labels: set[str] = set()
@@ -1230,30 +1245,49 @@ def grouped_bar(  # noqa: PLR0912, PLR0915
     ax.set_title(title)
     ax.grid(axis="y", alpha=0.25)
 
-    # Add compact legend
-    handles, labels = ax.get_legend_handles_labels()
-    if handles:
-        ax.legend(
-            handles,
-            labels,
-            loc="upper left",
-            bbox_to_anchor=(1.01, 1.0),
-            fontsize=8,
-            frameon=False,
+    if ylim is not None:
+        lo, hi = ylim
+        cur_lo, cur_hi = ax.get_ylim()
+        ax.set_ylim(
+            bottom=lo if lo is not None else cur_lo,
+            top=hi if hi is not None else cur_hi,
         )
 
-    save_fig(fig, out_dir, f"{metric}.png")
+    if show_legend:
+        handles, labels = ax.get_legend_handles_labels()
+        if handles:
+            ax.legend(
+                handles,
+                labels,
+                loc="upper left",
+                bbox_to_anchor=(1.01, 1.0),
+                fontsize=8,
+                frameon=False,
+            )
+
+    if save:
+        save_fig(fig, out_dir, f"{metric}.png")
+        return None
+    return fig
 
 
-def plot_coverage_calibration_panel(
+def plot_coverage_calibration_panel(  # noqa: PLR0912
     df_in: pd.DataFrame,
     results_root: Path,
     out_dir: Path,
     styles: dict,
     dataset_order: list[str] | None = None,
     hue_order: list[str] | None = None,
-):
-    """Plot the coverage calibration panel (rollout windows x datasets)."""
+    axes: np.ndarray | None = None,
+    fig: FigureBase | None = None,
+    save: bool = True,
+    show_legend: bool = True,
+) -> FigureBase | None:
+    """Plot the coverage calibration panel (rollout windows x datasets).
+
+    When ``axes`` (2D grid with shape (len(WINDOW_ROWS), n_datasets)) is given,
+    draw into that grid instead of creating a new figure.
+    """
     curves = []
     base = df_in.dropna(
         subset=["run_path", "dataset_label", "plot_group"]
@@ -1278,7 +1312,7 @@ def plot_coverage_calibration_panel(
                     curves.append(c)
 
     if not curves:
-        return
+        return None
     cur_panel = pd.concat(curves, ignore_index=True)
     datasets = _apply_explicit_order(
         list(cur_panel["dataset_label"].unique()), dataset_order
@@ -1288,14 +1322,23 @@ def plot_coverage_calibration_panel(
     )
 
     nrows, ncols = len(WINDOW_ROWS), max(1, len(datasets))
-    fig, axes = plt.subplots(
-        nrows,
-        ncols,
-        figsize=(4.0 * ncols, 2.3 * nrows),
-        sharex=True,
-        sharey=True,
-        squeeze=False,
-    )
+    if axes is None:
+        fig, axes = plt.subplots(
+            nrows,
+            ncols,
+            figsize=(4.0 * ncols, 2.3 * nrows),
+            sharex=True,
+            sharey=True,
+            squeeze=False,
+        )
+    else:
+        # axes supplied by caller; make sure it's a 2D array
+        axes = np.atleast_2d(axes)
+        if fig is None:
+            fig = axes[0][0].figure
+
+    assert axes is not None
+    assert fig is not None
 
     for i, w in enumerate(WINDOW_ROWS):
         for j, ds_label in enumerate(datasets):
@@ -1318,7 +1361,7 @@ def plot_coverage_calibration_panel(
                         sf.groupby("coverage_level", as_index=False)[
                             "observed_mean"
                         ].mean(),
-                    ).sort_values("coverage_level"),
+                    ).sort_values(by="coverage_level"),
                 )
                 ax.plot(
                     mean_curve["coverage_level"],
@@ -1333,18 +1376,22 @@ def plot_coverage_calibration_panel(
                 ax.set_ylabel(w)
             ax.grid(alpha=0.2)
 
-    legend_handles = _dedup_legend_handles(groups, styles)
-    fig.legend(
-        legend_handles,
-        [str(h.get_label()) for h in legend_handles],
-        loc="upper center",
-        bbox_to_anchor=(0.5, 0.995),
-        ncol=4,
-        fontsize=8,
-        frameon=False,
-    )
-    plt.tight_layout(rect=(0, 0, 1, 0.975))
-    save_fig(fig, out_dir, "coverage_calibration_panel.png")
+    if show_legend:
+        legend_handles = _dedup_legend_handles(groups, styles)
+        fig.legend(
+            legend_handles,
+            [str(h.get_label()) for h in legend_handles],
+            loc="upper center",
+            bbox_to_anchor=(0.5, 0.995),
+            ncol=4,
+            fontsize=8,
+            frameon=False,
+        )
+    if save:
+        plt.tight_layout(rect=(0, 0, 1, 0.975))
+        save_fig(fig, out_dir, "coverage_calibration_panel.png")
+        return None
+    return fig
 
 
 def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
@@ -1356,8 +1403,19 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
     styles: dict,
     dataset_order: list[str] | None = None,
     hue_order: list[str] | None = None,
-):
-    """Plot per-metric, per-dataset lead-time curves as a panel figure."""
+    axes: np.ndarray | None = None,
+    fig: FigureBase | None = None,
+    save: bool = True,
+    error_ylim: tuple[float | None, float | None] | None = None,
+    show_legend: bool = True,
+) -> FigureBase | None:
+    """Plot per-metric, per-dataset lead-time curves as a panel figure.
+
+    ``error_ylim`` (low, high) overrides auto y-limits for non-coverage rows;
+    coverage rows remain fixed at [0, 1]. Either bound may be ``None``.
+    When ``axes`` is provided, draw into that pre-made grid with shape
+    (len(metrics_to_plot), n_datasets).
+    """
     rows = []
     base = df_in.dropna(
         subset=["run_path", "dataset_label", "plot_group"]
@@ -1393,7 +1451,7 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
         rows.append(long)
 
     if not rows:
-        return
+        return None
     metrics_long = pd.concat(rows, ignore_index=True).dropna(subset=["value"])
 
     available_metrics = set(metrics_long["metric"].dropna().astype(str).unique())
@@ -1405,7 +1463,7 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
             + ", ".join(missing_metrics)
         )
     if not metrics_to_plot:
-        return
+        return None
 
     datasets = _apply_explicit_order(
         list(metrics_long["dataset_label"].unique()), dataset_order
@@ -1415,14 +1473,22 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
     )
 
     nrows, ncols = len(metrics_to_plot), len(datasets)
-    fig, axes = plt.subplots(
-        nrows,
-        ncols,
-        figsize=(3.6 * ncols, 2.7 * nrows),
-        sharex=True,
-        sharey=False,
-        squeeze=False,
-    )
+    if axes is None:
+        fig, axes = plt.subplots(
+            nrows,
+            ncols,
+            figsize=(3.6 * ncols, 2.7 * nrows),
+            sharex=True,
+            sharey=False,
+            squeeze=False,
+        )
+    else:
+        axes = np.atleast_2d(axes)
+        if fig is None:
+            fig = axes[0][0].figure
+
+    assert axes is not None
+    assert fig is not None
 
     for r, metric in enumerate(metrics_to_plot):
         sub = metrics_long[metrics_long["metric"] == metric]
@@ -1430,7 +1496,7 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
             ax = axes[r][c]
             ds = sub[sub["dataset_label"] == ds_label]
             is_cov = metric.startswith("coverage_")
-            vals = []
+            vals: list[float] = []
             for fam in groups:
                 sf = cast(pd.DataFrame, ds[ds["plot_group"] == fam])
                 if sf.empty:
@@ -1442,7 +1508,7 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
                         sf.groupby("timestep", as_index=False)["value"].agg(
                             ["mean", "std", "count"]
                         ),
-                    ).sort_values("timestep"),
+                    ).sort_values(by="timestep"),
                 )
                 st = styles.get(fam, {"color": "k"})
 
@@ -1489,24 +1555,571 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
                 ax.set_ylim(0, 1)
             elif vals:
                 ax.set_yscale("log")
-                ymin = max(1e-6, min(vals) * 0.8) if vals else 1e-6
-                ymax = max(vals) * 1.25 if vals else 10.0
+                ymin = max(1e-6, min(vals) * 0.8)
+                ymax = max(vals) * 1.25
                 if not np.isfinite(ymin) or np.isnan(ymin):
                     ymin = 1e-6
                 if not np.isfinite(ymax) or np.isnan(ymax):
                     ymax = 10.0
                 ax.set_ylim(bottom=ymin, top=ymax)
-    handles = _dedup_legend_handles(groups, styles)
-    fig.legend(
-        handles,
-        [str(h.get_label()) for h in handles],
-        loc="upper center",
-        bbox_to_anchor=(0.5, 0.98),
-        ncol=4,
-        fontsize=8,
-        frameon=False,
+            # Apply user override for error rows
+            if not is_cov and error_ylim is not None:
+                lo, hi = error_ylim
+                cur_lo, cur_hi = ax.get_ylim()
+                ax.set_ylim(
+                    bottom=lo if lo is not None else cur_lo,
+                    top=hi if hi is not None else cur_hi,
+                )
+    if show_legend:
+        handles = _dedup_legend_handles(groups, styles)
+        fig.legend(
+            handles,
+            [str(h.get_label()) for h in handles],
+            loc="upper center",
+            bbox_to_anchor=(0.5, 0.98),
+            ncol=4,
+            fontsize=8,
+            frameon=False,
+        )
+    if save:
+        plt.tight_layout(rect=(0, 0, 1, 0.94))
+        save_fig(fig, out_dir, name)
+        return None
+    return fig
+
+
+# ---------------------------------------------------------------------------
+# Training curves: prefer wandb API (full fidelity) with slurm stdout fallback
+# ---------------------------------------------------------------------------
+
+
+_TRAIN_PROGRESS_RE = re.compile(
+    r"Epoch\s+(?P<epoch>\d+):\s*100%[^\r\n]*?"
+    r"(?P<kvs>(?:[a-zA-Z_][a-zA-Z0-9_]*=[-+0-9.eE]+,?\s*)+)",
+)
+
+
+def _training_history_cache_path(run_dir: Path) -> Path:
+    return run_dir / "eval" / "training_history.csv"
+
+
+def _load_training_history_cache(run_dir: Path) -> pd.DataFrame | None:
+    p = _training_history_cache_path(run_dir)
+    if not p.exists():
+        return None
+    try:
+        df = pd.read_csv(p)
+    except Exception:
+        return None
+    if df.empty or not {"epoch", "metric", "value"}.issubset(df.columns):
+        return None
+    return df
+
+
+def _save_training_history_cache(run_dir: Path, df: pd.DataFrame) -> None:
+    p = _training_history_cache_path(run_dir)
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        df.to_csv(p, index=False)
+    except OSError:
+        pass
+
+
+def parse_training_metrics_from_wandb(  # noqa: PLR0911, PLR0912, PLR0915
+    run_dir: Path,
+    force_refresh: bool = False,
+) -> pd.DataFrame:
+    """Fetch per-epoch training metrics from wandb for a single run.
+
+    Uses ``resolved_config.yaml`` for the wandb project/entity/display name,
+    resolves the run via the public API, and scans its full history. Assumes
+    ``WANDB_API_KEY`` is set. Results are cached to
+    ``<run_dir>/eval/training_history.csv`` to avoid repeat API calls.
+
+    Returns a long-format frame with columns ``epoch, metric, value``. Empty
+    on any failure so the caller can fall back to alternative sources.
+    """
+    empty = pd.DataFrame(columns=pd.Index(["epoch", "metric", "value"]))
+
+    if not force_refresh:
+        cached = _load_training_history_cache(run_dir)
+        if cached is not None:
+            return cached
+
+    config_p = run_dir / "resolved_config.yaml"
+    if not config_p.exists():
+        return empty
+
+    try:
+        with open(config_p) as f:
+            cfg = yaml.safe_load(f) or {}
+    except OSError:
+        return empty
+
+    wb = (
+        ((cfg.get("logging") or {}).get("wandb") or {}) if isinstance(cfg, dict) else {}
     )
-    plt.tight_layout(rect=(0, 0, 1, 0.94))
+    project = wb.get("project") or "autocast"
+    entity = wb.get("entity")
+    display_name = wb.get("name") or run_dir.name
+
+    try:
+        api = wandb.Api()
+    except Exception as e:
+        print(f"wandb API init failed ({e}); skipping {display_name}.")
+        return empty
+
+    if not entity:
+        entity = getattr(api, "default_entity", None)
+    if not entity:
+        print(
+            f"wandb: no entity configured for {display_name}; "
+            "set logging.wandb.entity or WANDB_ENTITY."
+        )
+        return empty
+
+    path = f"{entity}/{project}"
+    try:
+        runs = list(api.runs(path=path, filters={"display_name": display_name}))
+    except Exception as e:
+        print(f"wandb runs() failed for {display_name} ({path}): {e}")
+        return empty
+
+    if not runs:
+        print(f"wandb: no run found for display_name={display_name!r} in {path}.")
+        return empty
+    if len(runs) > 1:
+        # Prefer the most recently finished run for determinism.
+        runs.sort(key=lambda r: getattr(r, "created_at", ""), reverse=True)
+
+    wrun = runs[0]
+    try:
+        rows = list(wrun.scan_history())
+    except Exception as e:
+        print(f"wandb scan_history failed for {display_name}: {e}")
+        return empty
+
+    if not rows:
+        return empty
+
+    hist = pd.DataFrame(rows)
+    # Find an epoch-like column; prefer an explicit 'epoch' log key.
+    epoch_col: str | None = None
+    for c in ("epoch", "trainer/global_epoch", "_step"):
+        if c in hist.columns:
+            epoch_col = c
+            break
+    if epoch_col is None:
+        return empty
+
+    metric_cols = [
+        c
+        for c in hist.columns
+        if c != epoch_col
+        and not c.startswith("_")
+        and pd.api.types.is_numeric_dtype(hist[c])
+    ]
+    if not metric_cols:
+        return empty
+
+    sub = hist[[epoch_col, *metric_cols]].copy()
+    sub[epoch_col] = pd.to_numeric(sub[epoch_col], errors="coerce")
+    sub = cast(pd.DataFrame, sub[pd.notna(sub[epoch_col])])
+    long = sub.melt(id_vars=epoch_col, var_name="metric", value_name="value").dropna(
+        subset=["value"]
+    )
+    long = long.rename(columns={epoch_col: "epoch"})
+    # Collapse multi-log-per-epoch to a single representative value.
+    grouped = cast(
+        pd.DataFrame,
+        long.groupby(["epoch", "metric"], as_index=False).agg(value=("value", "mean")),
+    )
+    long = cast(
+        pd.DataFrame,
+        grouped.sort_values(by="metric").sort_values(by="epoch", kind="stable"),
+    ).reset_index(drop=True)
+    long["epoch"] = long["epoch"].astype(int, errors="ignore")
+
+    _save_training_history_cache(run_dir, long)
+    return long
+
+
+def parse_training_metrics_from_slurm(run_dir: Path) -> pd.DataFrame:
+    """Parse per-epoch training metrics from a run's slurm stdout files.
+
+    PyTorch Lightning's default progress bar appends ``train_loss=...`` /
+    ``val_loss=...`` tokens to the epoch line at 100% completion; by keeping
+    the latest occurrence per epoch we get the stabilised end-of-epoch values.
+
+    Returns a long-format frame with columns ``epoch, metric, value``.
+    """
+    slurm_files = sorted(run_dir.glob("slurm-*.out"))
+    if not slurm_files:
+        return pd.DataFrame(columns=pd.Index(["epoch", "metric", "value"]))
+
+    per_epoch: dict[int, dict[str, float]] = {}
+    for p in slurm_files:
+        try:
+            text = p.read_text(errors="replace")
+        except OSError:
+            continue
+        # Progress bar uses '\r' to overwrite; split so each update is its own line.
+        lines = text.replace("\r", "\n").splitlines()
+        for ln in lines:
+            if "Epoch" not in ln or "100%" not in ln:
+                continue
+            m = _TRAIN_PROGRESS_RE.search(ln)
+            if not m:
+                continue
+            epoch = int(m.group("epoch"))
+            kv_blob = m.group("kvs")
+            pairs = re.findall(r"([a-zA-Z_][a-zA-Z0-9_]*)=([-+0-9.eE]+)", kv_blob)
+            bucket = per_epoch.setdefault(epoch, {})
+            for k, v in pairs:
+                # Skip non-metric tokens like ``v_num``.
+                if k in {"v_num"}:
+                    continue
+                try:
+                    bucket[k] = float(v)
+                except ValueError:
+                    continue
+
+    if not per_epoch:
+        return pd.DataFrame(columns=pd.Index(["epoch", "metric", "value"]))
+
+    recs: list[dict] = []
+    for epoch in sorted(per_epoch):
+        for metric, value in per_epoch[epoch].items():
+            recs.append({"epoch": epoch, "metric": metric, "value": value})
+    return pd.DataFrame(recs)
+
+
+def load_training_metrics(
+    run_dir: Path,
+    source: str = "wandb",
+    force_refresh: bool = False,
+) -> pd.DataFrame:
+    """Load per-epoch training metrics for a single run.
+
+    ``source`` selects the backend:
+      * ``"wandb"`` — wandb API only (no fallback)
+      * ``"slurm"`` — parse Lightning's progress bar from ``slurm-*.out``
+      * ``"auto"`` — try wandb first and fall back to slurm if empty
+    """
+    if source == "wandb":
+        return parse_training_metrics_from_wandb(run_dir, force_refresh=force_refresh)
+    if source == "slurm":
+        return parse_training_metrics_from_slurm(run_dir)
+    # auto
+    wb = parse_training_metrics_from_wandb(run_dir, force_refresh=force_refresh)
+    if not wb.empty:
+        return wb
+    return parse_training_metrics_from_slurm(run_dir)
+
+
+def plot_training_curves(  # noqa: PLR0912, PLR0915
+    df_in: pd.DataFrame,
+    metrics: list[str],
+    results_root: Path,
+    out_dir: Path,
+    name: str,
+    styles: dict,
+    dataset_order: list[str] | None = None,
+    hue_order: list[str] | None = None,
+    y_scale: str = "log",
+    ylim: tuple[float | None, float | None] | None = None,
+    axes: np.ndarray | None = None,
+    fig: FigureBase | None = None,
+    save: bool = True,
+    show_legend: bool = True,
+    source: str = "wandb",
+    force_refresh: bool = False,
+) -> FigureBase | None:
+    """Plot per-metric, per-dataset training curves (epoch vs metric value).
+
+    Training metrics are loaded via :func:`load_training_metrics`. ``source``
+    controls whether wandb, slurm stdout, or both (auto) are used. ``metrics``
+    names should match logged keys, e.g. ``val_loss``, ``val_vrmse``.
+    """
+    rows: list[pd.DataFrame] = []
+    base = df_in.dropna(
+        subset=["run_path", "dataset_label", "plot_group"]
+    ).drop_duplicates()
+    for r in base.itertuples(index=False):
+        run_path = getattr(r, "run_path", None)
+        ds_label = getattr(r, "dataset_label", None)
+        pg = getattr(r, "plot_group", None)
+        if run_path is None or ds_label is None or pg is None:
+            continue
+        run_dir = results_root / str(run_path)
+        if not run_dir.exists():
+            continue
+        tm = load_training_metrics(run_dir, source=source, force_refresh=force_refresh)
+        if tm.empty:
+            continue
+        tm = cast(pd.DataFrame, tm[tm["metric"].isin(metrics)].copy())
+        if tm.empty:
+            continue
+        tm["dataset_label"] = ds_label
+        tm["plot_group"] = pg
+        rows.append(tm)
+
+    if not rows:
+        print("No training metrics available (no slurm-*.out progress-bar data found).")
+        return None
+
+    long = pd.concat(rows, ignore_index=True).dropna(subset=["value"])
+    available = set(long["metric"].astype(str).unique())
+    metrics_to_plot = [m for m in metrics if m in available]
+    missing = [m for m in metrics if m not in available]
+    if missing:
+        print("Skipping training metrics not found in logs: " + ", ".join(missing))
+    if not metrics_to_plot:
+        return None
+
+    datasets = _apply_explicit_order(
+        list(long["dataset_label"].unique()), dataset_order
+    )
+    groups = _order_groups_by_label(
+        list(long["plot_group"].unique()), styles, hue_order
+    )
+
+    nrows, ncols = len(metrics_to_plot), len(datasets)
+    if axes is None:
+        fig, axes = plt.subplots(
+            nrows,
+            ncols,
+            figsize=(3.6 * ncols, 2.7 * nrows),
+            sharex=False,
+            sharey=False,
+            squeeze=False,
+        )
+    else:
+        axes = np.atleast_2d(axes)
+        if fig is None:
+            fig = axes[0][0].figure
+
+    assert axes is not None
+    assert fig is not None
+
+    for r_idx, metric in enumerate(metrics_to_plot):
+        sub = long[long["metric"] == metric]
+        for c_idx, ds_label in enumerate(datasets):
+            ax = axes[r_idx][c_idx]
+            ds = sub[sub["dataset_label"] == ds_label]
+            vals: list[float] = []
+            for fam in groups:
+                sf = cast(pd.DataFrame, ds[ds["plot_group"] == fam])
+                if sf.empty:
+                    continue
+                agg = cast(
+                    pd.DataFrame,
+                    sf.groupby("epoch", as_index=False).agg(value=("value", "mean")),
+                )
+                agg = cast(pd.DataFrame, agg.sort_values(by="epoch"))
+                st = styles.get(fam, {"color": "k"})
+                ax.plot(
+                    agg["epoch"],
+                    agg["value"],
+                    color=st["color"],
+                    lw=2,
+                    linestyle=st.get("linestyle", "-"),
+                )
+                vals.extend(agg["value"].dropna().tolist())
+
+            if r_idx == 0:
+                ax.set_title(ds_label)
+            if r_idx == nrows - 1:
+                ax.set_xlabel("Epoch")
+            if c_idx == 0:
+                ax.set_ylabel(metric)
+            ax.grid(alpha=0.25)
+
+            positive = [v for v in vals if np.isfinite(v) and v > 0]
+            if y_scale == "log" and positive:
+                ax.set_yscale("log")
+            elif y_scale == "linear":
+                ax.set_yscale("linear")
+
+            if ylim is not None:
+                lo, hi = ylim
+                cur_lo, cur_hi = ax.get_ylim()
+                ax.set_ylim(
+                    bottom=lo if lo is not None else cur_lo,
+                    top=hi if hi is not None else cur_hi,
+                )
+
+    if show_legend:
+        handles = _dedup_legend_handles(groups, styles)
+        fig.legend(
+            handles,
+            [str(h.get_label()) for h in handles],
+            loc="upper center",
+            bbox_to_anchor=(0.5, 0.98),
+            ncol=4,
+            fontsize=8,
+            frameon=False,
+        )
+    if save:
+        plt.tight_layout(rect=(0, 0, 1, 0.94))
+        save_fig(fig, out_dir, name)
+        return None
+    return fig
+
+
+# ---------------------------------------------------------------------------
+# Slide-ready composite figure
+# ---------------------------------------------------------------------------
+
+
+def plot_slide_figure(
+    df_in: pd.DataFrame,
+    results_root: Path,
+    out_dir: Path,
+    styles: dict,
+    dataset_order: list[str] | None = None,
+    hue_order: list[str] | None = None,
+    overall_metrics: tuple[str, str] = ("vrmse", "coverage"),
+    error_metrics: list[str] | None = None,
+    coverage_metrics: list[str] | None = None,
+    error_ylim: tuple[float | None, float | None] | None = None,
+    coverage_ylim: tuple[float | None, float | None] | None = None,
+    name: str = "slide_figure.png",
+) -> None:
+    """Render a slide-ready composite figure.
+
+    Layout::
+
+        ┌────────────┬───────────────────┬──────────────────┐
+        │ overall    │ coverage          │ lead-time errors │
+        │ metric 1   │ calibration       ├──────────────────┤
+        ├────────────┤ panel             │ lead-time        │
+        │ overall    │ (windows x        │ coverage levels  │
+        │ metric 2   │  datasets)        │                  │
+        └────────────┴───────────────────┴──────────────────┘
+    """
+    error_metrics = error_metrics or ["vrmse"]
+    coverage_metrics = coverage_metrics or ["coverage_0.9", "coverage_0.5"]
+
+    datasets = _apply_explicit_order(
+        list(df_in["dataset_label"].dropna().unique()), dataset_order
+    )
+    n_ds = max(1, len(datasets))
+
+    # Figure sized to roughly match a 16:9 slide.
+    fig = plt.figure(figsize=(4.2 + 2.2 * n_ds + 3.2 * n_ds, 9.5))
+    outer = fig.subfigures(
+        1,
+        3,
+        width_ratios=[1.1, 1.3 * n_ds, 1.3 * n_ds],
+        wspace=0.05,
+    )
+
+    # --- Left: two stacked overall-metric bar charts --------------------
+    left = outer[0]
+    left_axes = left.subplots(2, 1)
+    for i, m in enumerate(overall_metrics):
+        is_cov = "coverage" in m
+        grouped_bar(
+            df_in,
+            f"overall_{m}",
+            f"Overall {m.upper()}",
+            m.upper(),
+            out_dir,
+            styles,
+            dataset_order=dataset_order,
+            hue_order=hue_order,
+            ax=left_axes[i],
+            save=False,
+            ylim=None if is_cov else error_ylim,
+            show_legend=False,
+        )
+    left.suptitle("")
+
+    # --- Middle: coverage calibration panel -----------------------------
+    middle = outer[1]
+    nrows_cov = len(WINDOW_ROWS)
+    mid_axes = middle.subplots(nrows_cov, n_ds, sharex=True, sharey=True, squeeze=False)
+    plot_coverage_calibration_panel(
+        df_in,
+        results_root,
+        out_dir,
+        styles,
+        dataset_order=dataset_order,
+        hue_order=hue_order,
+        axes=mid_axes,
+        fig=middle,
+        save=False,
+        show_legend=False,
+    )
+
+    # --- Right: lead-time error (top) + coverage (bottom) ---------------
+    right = outer[2]
+    n_err = len(error_metrics)
+    n_cov = len(coverage_metrics)
+    right_top, right_bot = right.subfigures(
+        2,
+        1,
+        height_ratios=[max(1, n_err), max(1, n_cov)],
+        hspace=0.08,
+    )
+    rt_axes = right_top.subplots(n_err, n_ds, sharex=True, sharey=False, squeeze=False)
+    plot_lead_time_panel(
+        df_in,
+        error_metrics,
+        results_root,
+        out_dir,
+        "slide_lead_time_error.png",
+        styles,
+        dataset_order=dataset_order,
+        hue_order=hue_order,
+        axes=rt_axes,
+        fig=right_top,
+        save=False,
+        error_ylim=error_ylim,
+        show_legend=False,
+    )
+    rb_axes = right_bot.subplots(n_cov, n_ds, sharex=True, sharey=False, squeeze=False)
+    plot_lead_time_panel(
+        df_in,
+        coverage_metrics,
+        results_root,
+        out_dir,
+        "slide_lead_time_coverage.png",
+        styles,
+        dataset_order=dataset_order,
+        hue_order=hue_order,
+        axes=rb_axes,
+        fig=right_bot,
+        save=False,
+        error_ylim=None,
+        show_legend=False,
+    )
+    if coverage_ylim is not None:
+        lo, hi = coverage_ylim
+        for ax in np.asarray(rb_axes).ravel():
+            cur_lo, cur_hi = ax.get_ylim()
+            ax.set_ylim(
+                bottom=lo if lo is not None else cur_lo,
+                top=hi if hi is not None else cur_hi,
+            )
+
+    # --- Global legend --------------------------------------------------
+    # Collect groups present anywhere for the legend.
+    all_groups = list(df_in["plot_group"].dropna().unique())
+    ordered_groups = _order_groups_by_label(all_groups, styles, hue_order)
+    handles = _dedup_legend_handles(ordered_groups, styles)
+    if handles:
+        fig.legend(
+            handles,
+            [str(h.get_label()) for h in handles],
+            loc="upper center",
+            bbox_to_anchor=(0.5, 0.995),
+            ncol=min(6, len(handles)),
+            fontsize=9,
+            frameon=False,
+        )
+
     save_fig(fig, out_dir, name)
 
 
@@ -1646,7 +2259,122 @@ def main():  # noqa: PLR0912, PLR0915
             'e.g. --dataset-order "SW" "CNS64"'
         ),
     )
+    parser.add_argument(
+        "--error-ylim",
+        nargs=2,
+        metavar=("LOW", "HIGH"),
+        help=(
+            "Fixed y-axis range for error metrics (VRMSE, RMSE, etc.) on both "
+            "bar charts and lead-time panels. Use 'auto' on either side to "
+            "keep the automatic bound, e.g. --error-ylim 1e-3 auto"
+        ),
+    )
+    parser.add_argument(
+        "--coverage-ylim",
+        nargs=2,
+        metavar=("LOW", "HIGH"),
+        help=(
+            "Fixed y-axis range for coverage lead-time panels "
+            "(defaults to 0-1). Coverage bars/calibration are unaffected."
+        ),
+    )
+    parser.add_argument(
+        "--lead-time-error-metrics",
+        nargs="+",
+        help=(
+            "Metrics shown as rows in the lead-time error panel and top of "
+            "the combined lead-time panel (default derives from --metrics)."
+        ),
+    )
+    parser.add_argument(
+        "--lead-time-coverage-metrics",
+        nargs="+",
+        help=(
+            "Coverage metrics shown as rows in the lead-time coverage panel "
+            "and bottom of the combined lead-time panel. "
+            "e.g. --lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1"
+        ),
+    )
+    parser.add_argument(
+        "--combined-lead-time",
+        action="store_true",
+        help=(
+            "Also render a single lead-time panel stacking error metrics "
+            "(top rows) and coverage metrics (bottom rows)."
+        ),
+    )
+    parser.add_argument(
+        "--training-metrics",
+        nargs="+",
+        help=(
+            "Training-curve metrics parsed from slurm-*.out progress bar, "
+            "e.g. --training-metrics val_loss train_loss. "
+            "Omit to skip training curve plots."
+        ),
+    )
+    parser.add_argument(
+        "--training-yscale",
+        choices=["log", "linear"],
+        default="log",
+        help="Y-axis scale for training-curve plots (default: log).",
+    )
+    parser.add_argument(
+        "--training-ylim",
+        nargs=2,
+        metavar=("LOW", "HIGH"),
+        help=(
+            "Fixed y-axis range for training-curve plots. "
+            "Use 'auto' on either side to keep the automatic bound."
+        ),
+    )
+    parser.add_argument(
+        "--training-source",
+        choices=["wandb", "slurm", "auto"],
+        default="wandb",
+        help=(
+            "Backend for training-curve metrics. "
+            "'wandb' (default) uses the public API and requires "
+            "WANDB_API_KEY; 'slurm' parses the Lightning progress bar from "
+            "slurm-*.out; 'auto' tries wandb then falls back to slurm."
+        ),
+    )
+    parser.add_argument(
+        "--training-refresh",
+        action="store_true",
+        help=(
+            "Force re-fetching training history from wandb even if a local "
+            "cache (<run>/eval/training_history.csv) already exists."
+        ),
+    )
+    parser.add_argument(
+        "--slide-figure",
+        action="store_true",
+        help=(
+            "Also render a slide-ready composite figure with overall bars "
+            "(left), coverage calibration panel (middle), and lead-time "
+            "error + coverage panels (right)."
+        ),
+    )
     args = parser.parse_args()
+
+    def _parse_ylim(pair: list[str] | None) -> tuple[float | None, float | None] | None:
+        if not pair:
+            return None
+
+        def _one(v: str) -> float | None:
+            if v is None or str(v).lower() in {"auto", "none", "-"}:
+                return None
+            try:
+                return float(v)
+            except ValueError as exc:
+                msg = f"Invalid ylim value: {v!r} (expected number or 'auto')"
+                raise SystemExit(msg) from exc
+
+        return (_one(pair[0]), _one(pair[1]))
+
+    error_ylim = _parse_ylim(args.error_ylim)
+    coverage_ylim = _parse_ylim(args.coverage_ylim)
+    training_ylim = _parse_ylim(args.training_ylim)
 
     results_dir = resolve_results_root(args.results_dir)
     if args.output_dir:
@@ -1962,6 +2690,7 @@ def main():  # noqa: PLR0912, PLR0915
 
     # Render overall bars
     for m in args.metrics:
+        is_cov = "coverage" in m
         grouped_bar(
             df,
             f"overall_{m}",
@@ -1971,10 +2700,12 @@ def main():  # noqa: PLR0912, PLR0915
             styles,
             dataset_order=ds_order,
             hue_order=hu_order,
+            ylim=None if is_cov else error_ylim,
         )
 
     # Render window bars
     for m in args.metrics:
+        is_cov = "coverage" in m
         for w in ROLL_WINDOWS:
             grouped_bar(
                 df,
@@ -1985,6 +2716,7 @@ def main():  # noqa: PLR0912, PLR0915
                 styles,
                 dataset_order=ds_order,
                 hue_order=hu_order,
+                ylim=None if is_cov else error_ylim,
             )
 
     # Render Calibration panel
@@ -2033,6 +2765,12 @@ def main():  # noqa: PLR0912, PLR0915
         cov_metric.extend(["coverage_0.9", "coverage_0.5"])
         err_metric.append("rmse")
 
+    # Explicit overrides
+    if args.lead_time_error_metrics:
+        err_metric = list(args.lead_time_error_metrics)
+    if args.lead_time_coverage_metrics:
+        cov_metric = list(args.lead_time_coverage_metrics)
+
     if err_metric:
         plot_lead_time_panel(
             df,
@@ -2043,6 +2781,7 @@ def main():  # noqa: PLR0912, PLR0915
             styles,
             dataset_order=ds_order,
             hue_order=hu_order,
+            error_ylim=error_ylim,
         )
     if cov_metric:
         plot_lead_time_panel(
@@ -2054,6 +2793,59 @@ def main():  # noqa: PLR0912, PLR0915
             styles,
             dataset_order=ds_order,
             hue_order=hu_order,
+        )
+
+    # Combined lead-time panel (error rows on top, coverage rows below).
+    if args.combined_lead_time and (err_metric or cov_metric):
+        combined_metrics = list(err_metric) + list(cov_metric)
+        plot_lead_time_panel(
+            df,
+            combined_metrics,
+            results_dir,
+            out_dir,
+            "lead_time_panel_combined.png",
+            styles,
+            dataset_order=ds_order,
+            hue_order=hu_order,
+            error_ylim=error_ylim,
+        )
+
+    # Training curves
+    if args.training_metrics:
+        plot_training_curves(
+            df,
+            list(args.training_metrics),
+            results_dir,
+            out_dir,
+            "training_curves.png",
+            styles,
+            dataset_order=ds_order,
+            hue_order=hu_order,
+            y_scale=args.training_yscale,
+            ylim=training_ylim,
+            source=args.training_source,
+            force_refresh=args.training_refresh,
+        )
+
+    # Slide-ready composite figure
+    if args.slide_figure:
+        plot_slide_figure(
+            df,
+            results_dir,
+            out_dir,
+            styles,
+            dataset_order=ds_order,
+            hue_order=hu_order,
+            overall_metrics=(
+                tuple(args.metrics[:2])
+                if len(args.metrics) >= 2
+                else ("vrmse", "coverage")
+            ),
+            error_metrics=err_metric or ["vrmse"],
+            coverage_metrics=cov_metric
+            or ["coverage_0.9", "coverage_0.5", "coverage_0.1"],
+            error_ylim=error_ylim,
+            coverage_ylim=coverage_ylim,
         )
 
     print("Finished generating plots.")

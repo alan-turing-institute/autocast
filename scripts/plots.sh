@@ -125,6 +125,28 @@
 # 	--output-dir outputs/2026-04-01_collated/plots/crps_fm_vits_comparison_before_24hrs
 
 
+# # # Compare FM, ViT for SW, CNS with long 24hrs runs
+# autocast-plots --results-dir outputs/2026-04-01_collated \
+# 	--run diff_cns64_flow_matching_vit_2007857_2cfb01f "FM (3hrs)" \
+# 	--run diff_cns64_flow_matching_vit_1ed9013_893624d "FM (24hrs)" \
+# 	--run crps_cns64_vit_azula_large_1ed9013_babdaa8 "ViT (3hrs, n=1024, afCRPS, h=632)" \
+# 	--run crps_cns64_vit_azula_large_1ed9013_ab31602 "ViT (24hrs, n=1024, afCRPS, h=632)" \
+# 	--run diff_sw2d64_flow_matching_vit_cb09424_7566c5e "FM (3hrs)" \
+# 	--run diff_sw2d64_flow_matching_vit_1ed9013_5529d56 "FM (24hrs)" \
+# 	--run crps_sw2d64_vit_azula_large_1ed9013_6ab9fa2 "ViT (24hrs, n=1024, afCRPS, h=632)" \
+# 	--dataset-order SW CNS \
+# 	--color-by-label \
+# 	--error-ylim 1e-3 1 \
+# 	--lead-time-error-metrics vrmse rmse \
+# 	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
+# 	--combined-lead-time \
+# 	--training-metrics val_loss train_loss \
+# 	--training-source wandb \
+# 	--training-yscale log \
+# 	--slide-figure \
+# 	--output-dir outputs/2026-04-01_collated/plots/crps_fm_vits_comparison_24hrs
+
+
 # # Compare FM, ViT for SW, CNS with long 24hrs runs
 autocast-plots --results-dir outputs/2026-04-01_collated \
 	--run diff_cns64_flow_matching_vit_2007857_2cfb01f "FM (3hrs)" \
@@ -136,4 +158,12 @@ autocast-plots --results-dir outputs/2026-04-01_collated \
 	--run crps_sw2d64_vit_azula_large_1ed9013_6ab9fa2 "ViT (24hrs, n=1024, afCRPS, h=632)" \
 	--dataset-order SW CNS \
 	--color-by-label \
-	--output-dir outputs/2026-04-01_collated/plots/crps_fm_vits_comparison_24hrs
+	--error-ylim 1e-3 1 \
+	--lead-time-error-metrics vrmse rmse \
+	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
+	--combined-lead-time \
+	--training-metrics val_loss train_loss \
+	--training-source wandb \
+	--training-yscale log \
+	--slide-figure \
+	--output-dir outputs/2026-04-01_collated/plots/crps_fm_vits_comparison_24hrs_v2
