@@ -189,6 +189,10 @@ class OptimizerMixin(nn.Module):
             horizon = self._resolve_cosine_horizon(cfg, scheduler_interval)
             use_restarts = scheduler_name == "cosine_with_restarts"
 
+            warmup_ratio = float(cfg.get("warmup_ratio", 0.0))
+            if warmup_ratio > 0.0:
+                warmup = int(warmup_ratio * horizon)
+
             def cosine_lambda(t: int) -> float:
                 phase_t = t % horizon if use_restarts else t
                 cosine = 0.5 * (
