@@ -12,6 +12,7 @@ datasets
 run_scripts
 slurm_scripts
 logs
+docs/_build/
 local_hydra/local_experiment/*.yaml
 !local_hydra/local_experiment/README.md
 core

@@ -1,0 +1,71 @@
+title: "AutoCast: Spatiotemporal Forecasting"
+author: AI for Physical Systems Team at The Alan Turing Institute
+logo: ../AC.png
+theme:
+  primary_color: "#0077CC"
+  logo_only: true
+  display_navbar_logo_on_scroll: true
+
+# Do not force re-execution of notebooks on each build.
+# See https://jupyterbook.org/content/execute.html
+execute:
+  execute_notebooks: cache
+  allow_errors: false
+  timeout: 3600
+  exclude_patterns:
+    - "case_studies/*.ipynb"
+
+# Define the name of the latex output file for PDF builds
+latex:
+  latex_documents:
+    targetname: autocast-docs.tex
+
+# Add a bibtex file so that we can create citations
+bibtex_bibfiles:
+  - references.bib
+
+only_build_toc_files: true
+
+# Information about where the book exists on the web
+repository:
+  url: https://github.com/alan-turing-institute/autocast
+  path_to_book: docs
+  branch: main
+
+# Add GitHub buttons to your book
+# See https://jupyterbook.org/customize/config.html#add-a-link-to-your-repository
+html:
+  use_issues_button: true
+  use_repository_button: true
+  default_mode: dark
+  extra_footer: |
+    Copyright &copy; 2025
+
+sphinx:
+  extra_extensions:
+    - 'sphinx.ext.autodoc'
+    - 'sphinx.ext.napoleon'
+    - 'sphinx.ext.viewcode'
+  config:
+    add_module_names: False
+    nb_execution_raise_on_error: true
+    autodoc_typehints: none
+    autodoc_member_order: 'bysource'
+    autoclass_content: class
+    bibtex_reference_style: author_year
+    intersphinx_mapping:
+      python:
+        - https://docs.python.org/3
+        - null
+      numpy:
+        - https://numpy.org/doc/stable/
+        - null
+      torch:
+        - https://pytorch.org/docs/stable/
+        - null
+      lightning:
+        - https://lightning.ai/docs/pytorch/stable/
+        - null
+    language: en
+    copybutton_prompt_text: "$"
+    html_show_copyright: false
