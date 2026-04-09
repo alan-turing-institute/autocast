@@ -17,6 +17,7 @@ class FlowMatchingProcessor(Processor):
         flow_ode_steps: int = 1,
         n_steps_output: int = 4,
         n_channels_out: int = 1,
+        time_sampling_method: str = "uniform",
     ) -> None:
         # Store core hyperparameters and optional prebuilt backbone.
         super().__init__()
@@ -24,6 +25,7 @@ class FlowMatchingProcessor(Processor):
         self.flow_ode_steps = max(flow_ode_steps, 1)
         self.n_steps_output = n_steps_output
         self.n_channels_out = n_channels_out
+        self.time_sampling_method = time_sampling_method
 
     def flow_field(
         self, z: Tensor, t: Tensor, x: Tensor, global_cond: Tensor | None = None
@@ -70,10 +72,26 @@ class FlowMatchingProcessor(Processor):
         z = torch.randn(z_shape, device=device, dtype=dtype)
         t = torch.zeros(batch_size, device=device, dtype=dtype)
 
-        # Simple fixed-step Euler integration over the flow field.
         dt = torch.tensor(1.0 / self.flow_ode_steps, device=device, dtype=dtype)
+        history = []
+
         for _ in range(self.flow_ode_steps):
-            z = z + dt * self.flow_field(z, t, x, global_cond)
+            f_i = self.flow_field(z, t, x, global_cond)
+            history.append(f_i)
+
+            if len(history) == 1:
+                # Step 1: Euler
+                z = z + dt * history[0]
+            elif len(history) == 2:
+                # Step 2: Adams-Bashforth 2
+                z = z + dt / 2.0 * (3.0 * history[1] - history[0])
+            else:
+                # Step 3+: Adams-Bashforth 3
+                z = z + dt / 12.0 * (
+                    23.0 * history[2] - 16.0 * history[1] + 5.0 * history[0]
+                )
+                history.pop(0)
+
             t = t + dt
         return z
 
@@ -95,13 +113,30 @@ class FlowMatchingProcessor(Processor):
 
         batch_size = target_states.shape[0]
 
-        z0 = torch.randn_like(target_states, requires_grad=True)
-        t = torch.rand(
-            batch_size, device=target_states.device, dtype=target_states.dtype
-        )
-        t_broadcast = t.view(batch_size, *([1] * (target_states.ndim - 1)))
-        zt = (1 - t_broadcast) * z0 + t_broadcast * target_states
+        # Use f32 for calculating variables and velocities to prevent bfloat16 underflow
+        # near t=1
+        target_states_f32 = target_states.to(dtype=torch.float32)
+        z0 = torch.randn_like(target_states_f32, requires_grad=True)
 
-        target_velocity = target_states - z0
-        v_pred = self.flow_field(zt, t, input_states, global_cond=batch.global_cond)
-        return torch.mean((v_pred - target_velocity) ** 2)
+        if self.time_sampling_method == "logit-normal":
+            u = torch.randn(
+                batch_size, device=target_states.device, dtype=torch.float32
+            )
+            t = torch.sigmoid(u)
+        else:
+            t = torch.rand(batch_size, device=target_states.device, dtype=torch.float32)
+
+        t_broadcast = t.view(batch_size, *([1] * (target_states.ndim - 1)))
+        zt = (1 - t_broadcast) * z0 + t_broadcast * target_states_f32
+
+        target_velocity = target_states_f32 - z0
+
+        # Keep inference flow compute in its native precision (e.g. bf16 if mixed
+        # precision)
+        v_pred = self.flow_field(
+            zt.to(dtype=target_states.dtype),
+            t.to(dtype=target_states.dtype),
+            input_states,
+            global_cond=batch.global_cond,
+        )
+        return torch.mean((v_pred.to(dtype=torch.float32) - target_velocity) ** 2)
