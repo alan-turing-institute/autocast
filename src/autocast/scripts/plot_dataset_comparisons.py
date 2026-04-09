@@ -318,7 +318,7 @@ def parse_loss_dataset_arch(
     if not run_name:
         return None, None, None
     m = re.match(
-        r"^(diff|crps|epd)_(.+)_([0-9a-f]{7}|[a-z]+)_[0-9a-f]{7}(?:_\d+)?$",
+        r"^(diff|crps|epd)_(.+)_([0-9a-f]{7}|[a-z]+)_[0-9a-f]{7}(?:_[a-z0-9]+)*$",
         str(run_name),
     )
     if not m:

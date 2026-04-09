@@ -247,14 +247,15 @@ PLOTS_PATH=2026-04-08_plots
 # 	--output-dir outputs/2026-04-01_collated/$PLOTS_PATH/crps_fm_vits_comparison_24hrs_v
 	
 
-# Compare FM, ViT for SW, CNS with long 24hrs runs
+# Compare FM, ViT for CNS with varying batch size, training time, precision and model size
 autocast-plots --results-dir outputs/2026-04-01_collated \
 	--run diff_cns64_flow_matching_vit_2007857_2cfb01f "FM (3hrs)" \
+	--run crps_cns64_vit_azula_large_1ed9013_ab31602 "ViT (24hrs, n=1024, afCRPS, h=632)" \
 	--run crps_cns64_vit_azula_large_1ed9013_babdaa8 "ViT (3hrs, n=1024, afCRPS, h=632)" \
-	--run crps_cns64_vit_azula_large_52e1abc_a729edc "ViT (3hrs, n=1024, afCRPS, h=632, bf16)" \
-	--run crps_cns64_vit_azula_large_52e1abc_1ca7096 "ViT (3hrs, n=4096, afCRPS, h=608, bf16)" \
+	--run crps_cns64_vit_azula_large_6bb8774_bb210b3 "ViT (3hrs, n=1024, afCRPS, h=632, bf16)" \
+	--run crps_cns64_vit_azula_large_52e1abc_1ca7096 "ViT (3hrs, n=4096, afCRPS, h=608, bf16, bs=32)" \
+	--run crps_cns64_vit_azula_large_concat_c8ff6c2_e36b786 "ViT (3hrs, n=1024, afCRPS, h=632, concat, bf16)" \
 	--dataset-order CNS \
-	--color-by-label \
 	--error-ylim 1e-3 1 \
 	--lead-time-error-metrics vrmse rmse \
 	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
@@ -263,5 +264,20 @@ autocast-plots --results-dir outputs/2026-04-01_collated \
 	--training-yscale log \
 	--panel-figure \
 	--output-dir outputs/2026-04-01_collated/$PLOTS_PATH/crps_vits_bf16_4096_vs_1024
+	# --color-by-label \
 
+# # Compare FM, ViT for SW, CNS with long 24hrs runs
+# autocast-plots --results-dir outputs/2026-04-01_collated \
+# 	--run diff_cns64_flow_matching_vit_1ed9013_893624d "FM (24hrs)" \
+# 	--run diff_cns64_flow_matching_vit_1ed9013_893624d_ode_method "FM (24hrs, Adams-Bashforth)" \
+# 	--dataset-order CNS \
+# 	--color-by-label \
+# 	--error-ylim 1e-3 1 \
+# 	--lead-time-error-metrics vrmse rmse \
+# 	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
+# 	--combined-lead-time \
+# 	--training-metrics val_loss train_loss \
+# 	--training-yscale log \
+# 	--panel-figure \
+# 	--output-dir outputs/2026-04-01_collated/$PLOTS_PATH/fm_24hrs_adams_bashforth
 	
