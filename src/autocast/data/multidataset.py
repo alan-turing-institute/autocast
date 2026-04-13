@@ -30,16 +30,8 @@ class ListBatch:  # noqa: D101
 
 
 class MultiSpatioTemporalDataset(Dataset, BatchMixin):  # noqa: D101
-    datasets: list[SpatioTemporalDataset]  # data: list[(N, T, S, C)]
-    # masks: list[Tensor] # shape list[(N, ..., num_masks (treat like ensemble))] # num
-    # masks: list[TensorBM]  # shape list[(N, M (num_masks, treat like ensemble))] # num
-    # masks: TensorDBM
+    datasets: list[SpatioTemporalDataset]
     masks: TensorDM | None
-    # Example for reaction diffusion:
-    # - Deterministic loop over all combinations of missing/not missing
-    #   (apart from all missing)
-    # - Could also have a hierarchy of data availability (e.g. 100, 110, 111)
-    #   (if a fidelity level is available, all coarser/lower levels are available too)
 
     @staticmethod
     def create_mask(
@@ -48,12 +40,12 @@ class MultiSpatioTemporalDataset(Dataset, BatchMixin):  # noqa: D101
     ) -> TensorDM:
         """Create a dataset-by-mask boolean tensor of shape (D, M).
 
-        Convention: True means masked/unavailable, False means available.
+        Convention: True means dataset is masked/unavailable, False means available.
 
-                Modes:
-                - sequential: if level l is available, then all lower levels are available.
-                    (hierarchical fidelity availability)
-                - combinatorial: all masking combinations except the all-masked case.
+        Modes:
+        - sequential: if level l is available, then all lower levels are available.
+            (hierarchical fidelity availability)
+        - combinatorial: all masking combinations except the all-masked case.
         """
         if n_levels <= 0:
             msg = "n_levels must be > 0."
@@ -77,7 +69,7 @@ class MultiSpatioTemporalDataset(Dataset, BatchMixin):  # noqa: D101
 
     @staticmethod
     def _infer_n_levels(
-        data_paths: str | list[str] | tuple[str, ...] | None,
+        data_paths: list[str] | tuple[str, ...] | None,
         data: list[dict] | None,
     ) -> int:
         if data is not None:
@@ -85,13 +77,11 @@ class MultiSpatioTemporalDataset(Dataset, BatchMixin):  # noqa: D101
         if data_paths is None:
             msg = "Cannot infer number of datasets for mask creation."
             raise ValueError(msg)
-        if isinstance(data_paths, str):
-            return len(data_paths.split(","))
         return len(data_paths)
 
     def __init__(
         self,
-        data_paths: str | list[str] | tuple[str, ...] | None = None,
+        data_paths: list[str] | tuple[str, ...] | None = None,
         data: list[dict] | None = None,
         masks: (
             TensorDM | Literal["sequential"] | Literal["combinatorial"] | None
@@ -107,15 +97,15 @@ class MultiSpatioTemporalDataset(Dataset, BatchMixin):  # noqa: D101
         verbose: bool = False,
         use_normalization: bool = False,
         normalization_type: type[ZScoreNormalization] | None = ZScoreNormalization,
-        normalization_path: str | list[str] | None = None,
-        normalization_stats: dict | DictConfig | list[dict | DictConfig] | None = None,
+        normalization_paths: list[str | None] | None = None,
+        normalization_stats: list[dict | DictConfig | None] | None = None,
     ):
         """Initialize MultiSpatioTemporalDataset with multiple datasets.
 
         Parameters
         ----------
-        data_paths: str | list[str] | tuple[str, ...] | None
-            Path(s) to HDF5 files. Can be a comma-separated string or list/tuple.
+        data_paths: list[str] | tuple[str, ...] | None
+            Path to HDF5 files.
         data: list[dict] | None
             List of preloaded data dictionaries. Defaults to None.
         masks: TensorDM | Literal["sequential"] | Literal["combinatorial"] | None
@@ -142,14 +132,12 @@ class MultiSpatioTemporalDataset(Dataset, BatchMixin):  # noqa: D101
             Whether to apply Z-score normalization. Defaults to False.
         normalization_type: type[ZScoreNormalization] | None
             Normalization class to use. Defaults to ZScoreNormalization.
-        normalization_path: str | list[str] | None
-            Path(s) to normalization statistics file(s) (yaml).
-            Can be a single path (applied to all datasets) or a list
-            of paths (one per dataset). Defaults to None.
-        normalization_stats: dict | DictConfig | list[dict | DictConfig] | None
-            Preloaded normalization statistics. Can be a single dict
-            (applied to all datasets) or a list of dicts (one per dataset).
-            Defaults to None.
+        normalization_paths: list[str | None] | None
+            Paths to normalization statistics file(s) (yaml). Has to be a list with same
+            length as number of datasets, or None if not used. Defaults to None.
+        normalization_stats: list[dict | DictConfig | None] | None
+            Preloaded normalization statistics. Has to be a list with same length as
+            number of datasets, or None if not used. Defaults to None.
         """
         # Validate inputs
         if data_paths is not None and data is not None:
@@ -160,46 +148,31 @@ class MultiSpatioTemporalDataset(Dataset, BatchMixin):  # noqa: D101
             msg = "Must provide either data_paths or data."
             raise ValueError(msg)
 
-        # Convert data_paths to list if string
-        if isinstance(data_paths, str):
-            data_paths = [p.strip() for p in data_paths.split(",")]
-
         # Infer number of datasets
         n_datasets = self._infer_n_levels(data_paths=data_paths, data=data)
 
-        # Handle normalization parameters - can be single values or lists
-        # Convert to lists if single values provided
-        if normalization_path is not None:
-            if isinstance(normalization_path, str):
-                # Single path - apply to all datasets
-                normalization_paths = [normalization_path] * n_datasets
-            else:
-                # List of paths
-                normalization_paths = list(normalization_path)
-                if len(normalization_paths) != n_datasets:
-                    msg = (
-                        f"Length of normalization_path list "
-                        f"({len(normalization_paths)}) must match number "
-                        f"of datasets ({n_datasets})"
-                    )
-                    raise ValueError(msg)
+        # Handle normalization parameters
+        if normalization_paths is not None:
+            normalization_paths_list = list(normalization_paths)
+            if len(normalization_paths) != n_datasets:
+                msg = (
+                    f"Length of normalization_path list "
+                    f"({len(normalization_paths)}) must match number "
+                    f"of datasets ({n_datasets})"
+                )
+                raise ValueError(msg)
         else:
-            normalization_paths = [None] * n_datasets
+            normalization_paths_list = [None] * n_datasets
 
         if normalization_stats is not None:
-            if isinstance(normalization_stats, (dict, DictConfig)):
-                # Single stats dict - apply to all datasets
-                normalization_stats_list = [normalization_stats] * n_datasets
-            else:
-                # List of stats dicts
-                normalization_stats_list = list(normalization_stats)
-                if len(normalization_stats_list) != n_datasets:
-                    msg = (
-                        f"Length of normalization_stats list "
-                        f"({len(normalization_stats_list)}) must match "
-                        f"number of datasets ({n_datasets})"
-                    )
-                    raise ValueError(msg)
+            normalization_stats_list = list(normalization_stats)
+            if len(normalization_stats_list) != n_datasets:
+                msg = (
+                    f"Length of normalization_stats list "
+                    f"({len(normalization_stats_list)}) must match "
+                    f"number of datasets ({n_datasets})"
+                )
+                raise ValueError(msg)
         else:
             normalization_stats_list = [None] * n_datasets
 
@@ -222,7 +195,7 @@ class MultiSpatioTemporalDataset(Dataset, BatchMixin):  # noqa: D101
                     verbose=verbose,
                     use_normalization=use_normalization,
                     normalization_type=normalization_type,
-                    normalization_path=normalization_paths[idx],
+                    normalization_path=normalization_paths_list[idx],
                     normalization_stats=normalization_stats_list[idx],
                 )
                 self.datasets.append(dataset)
@@ -243,7 +216,7 @@ class MultiSpatioTemporalDataset(Dataset, BatchMixin):  # noqa: D101
                     verbose=verbose,
                     use_normalization=use_normalization,
                     normalization_type=normalization_type,
-                    normalization_path=normalization_paths[idx],
+                    normalization_path=normalization_paths_list[idx],
                     normalization_stats=normalization_stats_list[idx],
                 )
                 self.datasets.append(dataset)
@@ -256,6 +229,8 @@ class MultiSpatioTemporalDataset(Dataset, BatchMixin):  # noqa: D101
                 raise ValueError(msg)
 
         # Handle masks
+        # TODO: at the moment each sample has the same masks, but we could extend this
+        # in the future to have sample-specific masks if needed
         if isinstance(masks, str):
             n_levels = len(self.datasets)
             self.masks = self.create_mask(n_levels=n_levels, mode=masks)
@@ -282,13 +257,6 @@ class MultiSpatioTemporalDataset(Dataset, BatchMixin):  # noqa: D101
         for dataset in self.datasets:
             out: Sample = dataset.__getitem__(idx)
             outs.append(out)
-        # [
-        #   [mask 0 for dataset 0 in window 0, mask 0 for dataset 1 in window 0],
-        #   [mask 1 for dataset 0 in window 0, mask 1 for dataset 1 in window 0]
-        # ]
-        # in case of 2 datasets, masks will be
-        # [[0, 1],
-        # [1, 0],
-        # [1, 1]]
-        # mask: TensorDM = self.all_masks[idx]
+
+        # each sample has the same mask options
         return ListSample(inner=outs, mask=self.masks)
