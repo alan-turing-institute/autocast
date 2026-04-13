@@ -1,9 +1,11 @@
+import math
 import warnings
 from collections.abc import Sequence
 from typing import Any
 
 import lightning as L
 import torch
+import torch.nn.functional as F
 from omegaconf import DictConfig
 from the_well.data.normalization import ZScoreNormalization
 from torch import nn
@@ -62,8 +64,7 @@ class EncoderDecoder(DenormMixin, OptimizerMixin, L.LightningModule, MetricsMixi
         if self.loss_func is None:
             msg = "Loss function not defined for EncoderDecoder model."
             raise ValueError(msg)
-        x = self(batch)
-        y_pred = self.decoder(x)
+        y_pred = self(batch)
         y_true = batch.output_fields
         # y_pred = self.denormalize_tensor(y_pred)
         # y_true = self.denormalize_tensor(y_true)
@@ -217,6 +218,10 @@ class MultiEncoder(GenericEncoder[ListBatch, None]):
                 n_transformer_blocks=n_transformer_blocks,
             )
 
+    def encode_batch(self, batch: ListBatch, encoded_info: dict | None = None) -> None:
+        msg = "MultiEncoder leverages encode() exclusively"
+        raise NotImplementedError(msg)
+
     def encode(self, batch: ListBatch) -> TensorBNC:
         mask: TensorDBM | None = batch.mask
 
@@ -241,16 +246,25 @@ class MultiEncoder(GenericEncoder[ListBatch, None]):
             return stacked_outputs
 
         transformed_outs = []
-        for i, out in enumerate(outs):
-            # Transform from (..., L_i, C_i) to (..., C_i, L_i) via transpose.
-            out_perm = out.transpose(-2, -1)
+        for out_i in outs:
+            out = out_i[0] if isinstance(out_i, tuple) else out_i
 
-            # Project independently to reach the common `transformer_dim`
-            # From (..., C_i, L_i) to (..., C_i, transformer_dim)
-            if len(self.input_projs) > 0:
-                out_perm = self.input_projs[i](out_perm)
+            # out is (B, T, Spatial..., C_i)
+            # 1. Flatten Spatial -> (B, T, L_i, C_i)
+            out_flat = out.flatten(2, -2)
 
-            transformed_outs.append(out_perm)
+            # 2. Transpose to treat Channels as Tokens -> (B, T, C_i, L_i)
+            out_perm = out_flat.transpose(-2, -1)
+
+            # 3. Parameter-free pooling of the spatial embedding down to
+            # the consensus size; robust on MPS.
+            b_dim, t_dim = out_perm.shape[0], out_perm.shape[1]
+            out_flat2 = out_perm.flatten(0, 1)  # (B*T, C_i, L_i)
+            out_mapped = F.interpolate(
+                out_flat2, size=self.transformer_dim, mode="nearest"
+            )
+            out_mapped = out_mapped.unflatten(0, (b_dim, t_dim))
+            transformed_outs.append(out_mapped)
 
         # Safely concatenate matching inner sequence dimensions along the channels
         # to obtain a Tensor of shape (..., tot_n_channels, transformer_dim)
@@ -286,7 +300,11 @@ class MultiEncoder(GenericEncoder[ListBatch, None]):
             # Align dataset masks with channel-level sequence tokens
             mask_bmd = mask.permute(1, 2, 0)  # (Batch, Ensemble, Dataset)
             chan_repeats = torch.tensor(
-                [out.shape[-1] for out in outs], device=mask.device
+                [
+                    out[0].shape[-1] if isinstance(out, tuple) else out.shape[-1]
+                    for out in outs
+                ],
+                device=mask.device,
             )
             # Duplicate the dataset's boolean mask C_i times for each channel token
             attn_mask_base = torch.repeat_interleave(
@@ -305,7 +323,7 @@ class MultiEncoder(GenericEncoder[ListBatch, None]):
 
             # 3. Prepare Data: Replicate data for every mask (M) in the ensemble
             assert self.transformer_dim is not None
-            stacked_expanded = stacked.unsqueeze(-2).expand(
+            stacked_expanded = stacked.unsqueeze(-3).expand(
                 *batch_dims, M, tot_n_channels, self.transformer_dim
             )
             stacked_flat = stacked_expanded.flatten(0, -3)
@@ -314,11 +332,22 @@ class MultiEncoder(GenericEncoder[ListBatch, None]):
             mixed = self.attention_mixer(stacked_flat, attn_mask_flat)
             mixed = mixed.unflatten(0, [*batch_dims, M])
 
+            # Collapse dummy ensemble dimensionality before decoding
+            # so strict 2D spatial convolution layers aren't tricked into 3D.
+            if M == 1:
+                mixed = mixed.squeeze(len(batch_dims))
+
         # Reduce expressivity back to target_latent_dim
         if self.output_proj is not None:
             mixed = self.output_proj(mixed)
 
         # Restore parity with the expected baseline shape: (*, L, tot_n_channels).
         mixed = mixed.transpose(-2, -1)
+
+        # If the sequence dimension is a perfect square, restore a 2D grid.
+        L_final = mixed.shape[-2]
+
+        s = int(math.sqrt(L_final))
+        mixed = mixed.unflatten(-2, (s, s)) if s * s == L_final else mixed.unsqueeze(-2)
 
         return mixed

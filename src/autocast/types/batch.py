@@ -154,18 +154,42 @@ class EncodedBatch:
 
 
 @dataclass
-class ListSample:  # noqa: D101
+class ListSample:
     """A sample containing a list of Samples (one per dataset) and a mask."""
 
     inner: list[Sample]
-    mask: (
-        TensorDM | None
-    )  # Dataset by ensemble mask (e.g. for different combinations of missing data across datasets)
+    # Dataset-by-ensemble mask for missing data combinations across datasets.
+    mask: TensorDM | None
 
 
 @dataclass
-class ListBatch:  # noqa: D101
+class ListBatch:
     """A batch containing a list of Batches (one per dataset) and a mask."""
 
     inner: list[Batch]
     mask: TensorDBM | None
+    output_fields: TensorBTSC | None = None
+
+    @property
+    def input_fields(self) -> TensorBTSC:
+        return self.inner[0].input_fields
+
+    def repeat(self, m: int) -> "ListBatch":
+        return ListBatch(
+            inner=[b.repeat(m) for b in self.inner],
+            mask=self.mask.repeat_interleave(m, dim=0)
+            if self.mask is not None
+            else None,
+            output_fields=self.output_fields.repeat_interleave(m, dim=0)
+            if self.output_fields is not None
+            else None,
+        )
+
+    def to(self, device: torch.device | str) -> "ListBatch":
+        return ListBatch(
+            inner=[b.to(device) for b in self.inner],
+            mask=self.mask.to(device) if self.mask is not None else None,
+            output_fields=self.output_fields.to(device)
+            if self.output_fields is not None
+            else None,
+        )

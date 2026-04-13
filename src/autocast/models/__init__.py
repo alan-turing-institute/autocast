@@ -1,8 +1,8 @@
-from .multifidelity_transformer import TransformerBlock, AttentionMixer
+from .multifidelity_transformer import AttentionMixer, TransformerBlock
 
-#TODO: do we need this?
+# TODO: do we need this?
 
 __all__ = [
-    "TransformerBlock",
     "AttentionMixer",
+    "TransformerBlock",
 ]
