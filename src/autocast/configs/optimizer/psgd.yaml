@@ -2,6 +2,7 @@ name: "${.optimizer}_${.learning_rate}_${.scheduler}"
 optimizer: "psgd"
 learning_rate: 1e-4
 weight_decay: 0.0
+warmup: 0
 betas: [0.9]
 precondition_frequency: 64
 precondition_frequency_decay: 0.999
