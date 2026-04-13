@@ -10,6 +10,8 @@ from autocast.types.types import (
     TensorBSC,
     TensorBTSC,
     TensorC,
+    TensorDBM,
+    TensorDM,
     TensorNC,
     TensorS,
     TensorSC,
@@ -149,3 +151,21 @@ class EncodedBatch:
             ),
             encoded_info={k: v.to(device) for k, v in self.encoded_info.items()},
         )
+
+
+@dataclass
+class ListSample:  # noqa: D101
+    """A sample containing a list of Samples (one per dataset) and a mask."""
+
+    inner: list[Sample]
+    mask: (
+        TensorDM | None
+    )  # Dataset by ensemble mask (e.g. for different combinations of missing data across datasets)
+
+
+@dataclass
+class ListBatch:  # noqa: D101
+    """A batch containing a list of Batches (one per dataset) and a mask."""
+
+    inner: list[Batch]
+    mask: TensorDBM | None

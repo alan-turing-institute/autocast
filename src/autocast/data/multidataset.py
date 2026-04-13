@@ -8,25 +8,8 @@ from the_well.data.normalization import ZScoreNormalization
 from torch.utils.data import Dataset
 
 from autocast.data.dataset import BatchMixin, SpatioTemporalDataset
-from autocast.types.batch import Batch, Sample
-from autocast.types.types import TensorDBM, TensorDM
-
-
-@dataclass
-class ListSample:  # noqa: D101
-    inner: list[Sample]
-    mask: (
-        TensorDM | None
-    )  # Dataset by ensemble mask (e.g. for different combinations of missing data across datasets)
-
-    # def __getitem__(self, idx) -> Sample:
-    #     return self.inner[idx]
-
-
-@dataclass
-class ListBatch:  # noqa: D101
-    inner: list[Batch]
-    mask: TensorDBM | None
+from autocast.types.batch import ListSample, Sample
+from autocast.types.types import TensorDM
 
 
 class MultiSpatioTemporalDataset(Dataset, BatchMixin):  # noqa: D101

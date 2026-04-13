@@ -2,8 +2,14 @@ from collections.abc import Sequence
 
 import torch
 
-from autocast.data.multidataset import ListBatch, ListSample
-from autocast.types.batch import Batch, EncodedBatch, EncodedSample, Sample
+from autocast.types.batch import (
+    Batch,
+    EncodedBatch,
+    EncodedSample,
+    ListBatch,
+    ListSample,
+    Sample,
+)
 from autocast.types.types import Tensor
 
 
