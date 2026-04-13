@@ -221,6 +221,7 @@ class MultiEncoder(GenericEncoder[ListBatch, None]):
         mask: TensorDBM | None = batch.mask
 
         outs = []
+        # Encode each dataset
         for idx, encoder in enumerate(self.encoders):
             outs.append(encoder(batch.inner[idx]))
 
@@ -245,6 +246,7 @@ class MultiEncoder(GenericEncoder[ListBatch, None]):
             out_perm = out.transpose(-2, -1)
 
             # Project independently to reach the common `transformer_dim`
+            # From (..., C_i, L_i) to (..., C_i, transformer_dim)
             if len(self.input_projs) > 0:
                 out_perm = self.input_projs[i](out_perm)
 
@@ -257,7 +259,10 @@ class MultiEncoder(GenericEncoder[ListBatch, None]):
         tot_n_channels = stacked.shape[-2]
 
         # AttentionMixer expects (batch, tot_n_channels, transformer_dim).
-        # Flatten all dimensions except the last two over the batch dimension.
+        # Flatten all dimensions except the last two over the batch dimension,
+        # such that this works for both spatio-temporal data
+        # (B, T, tot_n_channels, transformer_dim)
+        # and not (B, tot_n_channels, transformer_dim)
         batch_dims = list(stacked.shape[:-2])
 
         # Apply attention using the mixer
@@ -272,42 +277,41 @@ class MultiEncoder(GenericEncoder[ListBatch, None]):
             mixed = self.attention_mixer(stacked_flat, None)
             mixed = mixed.unflatten(0, batch_dims)
         else:
-            # mask is TensorDBM: shape (D, B, M)
+            # mask is TensorDBM: shape (Dataset, Batch, Ensemble)
             B_dim = batch_dims[0]
             extra_batch_dims = batch_dims[1:]
             M = mask.shape[2]
 
-            # Map mask to channels
+            # 1. Prepare Base Mask:
+            # Align dataset masks with channel-level sequence tokens
+            mask_bmd = mask.permute(1, 2, 0)  # (Batch, Ensemble, Dataset)
             chan_repeats = torch.tensor(
                 [out.shape[-1] for out in outs], device=mask.device
             )
-            mask_bmd = mask.permute(1, 2, 0)  # (B, M, D)
+            # Duplicate the dataset's boolean mask C_i times for each channel token
             attn_mask_base = torch.repeat_interleave(
-                mask_bmd, chan_repeats, dim=2
-            )  # (B, M, tot_n_channels)
+                mask_bmd, chan_repeats, dim=-1
+            )  # (Batch, Ensemble, tot_n_channels)
 
-            # Expand representations with the M dimension
-            # stacked: (*batch_dims, tot_n_channels, transformer_dim)
-            #       -> (*batch_dims, 1, tot_n_channels, transformer_dim)
-            #       -> (*batch_dims, M, tot_n_channels, transformer_dim)
+            # 2. Mask Broadcasting:
+            # Expand the mask across any extra spatial/temporal batch dimensions
+            broadcast_shape = (B_dim, *[1] * len(extra_batch_dims), M, tot_n_channels)
+            attn_mask = attn_mask_base.view(broadcast_shape).expand(
+                *batch_dims, M, tot_n_channels
+            )
+
+            # Flatten everything except channels into a single working Batch dimension
+            attn_mask_flat = attn_mask.flatten(0, -2)  # (B*T*M, tot_n_channels)
+
+            # 3. Prepare Data: Replicate data for every mask (M) in the ensemble
             assert self.transformer_dim is not None
             stacked_expanded = stacked.unsqueeze(-2).expand(
                 *batch_dims, M, tot_n_channels, self.transformer_dim
             )
             stacked_flat = stacked_expanded.flatten(0, -3)
 
-            # Expand mask to match data batch dimensions
-            # attn_mask_base is (B, M, tot_n_channels). We insert 1s for any
-            # intermediate temporal batch_dims
-            attn_mask = attn_mask_base.view(
-                B_dim, *[1 for _ in extra_batch_dims], M, tot_n_channels
-            )
-            attn_mask = attn_mask.expand(B_dim, *extra_batch_dims, M, tot_n_channels)
-            attn_mask = attn_mask.flatten(
-                0, -2
-            )  # flatten all batch dimensions into a single sequence
-
-            mixed = self.attention_mixer(stacked_flat, attn_mask)
+            # Run mixing sequence
+            mixed = self.attention_mixer(stacked_flat, attn_mask_flat)
             mixed = mixed.unflatten(0, [*batch_dims, M])
 
         # Reduce expressivity back to target_latent_dim
