@@ -78,15 +78,10 @@ class AttentionMixer(nn.Module):
                 x=encoded_sequence, attn_mask=levels_mask
             )  # (Batch, Dataset/Levels, embedding_dim)
 
-        if levels_mask is not None:
-            # Prevent masked levels from bubbling bad data through
-            # to downstream components
-            transformer_output = encoded_sequence.masked_fill(
-                mask=levels_mask.unsqueeze(-1), value=0.0
-            )
-        else:
-            transformer_output = encoded_sequence
-
         # Return full sequence without pooling
-        # to maintain identical capacity to torch.cat
-        return transformer_output
+        # Since we no longer pool the latents together, we DO NOT perform
+        # a masked_fill with 0.0. The inputs at the masked positions use
+        # their transformer queries to draw contextual information from the
+        # unmasked levels, meaning their output states are rich inferences
+        # that the Decoder needs to successfully predict the targets!
+        return encoded_sequence
