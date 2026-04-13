@@ -78,7 +78,7 @@ class MultiSpatioTemporalDataset(Dataset, BatchMixin):  # noqa: D101
         autoencoder_mode: bool = False,
         dtype: torch.dtype = torch.float32,
         verbose: bool = False,
-        use_normalization: bool = False,
+        use_normalization: list[bool] | bool = False,
         normalization_type: type[ZScoreNormalization] | None = ZScoreNormalization,
         normalization_paths: list[str | None] | None = None,
         normalization_stats: list[dict | DictConfig | None] | None = None,
@@ -111,8 +111,9 @@ class MultiSpatioTemporalDataset(Dataset, BatchMixin):  # noqa: D101
             Data type for tensors. Defaults to torch.float32.
         verbose: bool
             If True, print dataset information.
-        use_normalization: bool
-            Whether to apply Z-score normalization. Defaults to False.
+        use_normalization: list[bool] | bool
+            Whether to apply Z-score normalization. Can be specified per dataset or
+            overall. Defaults to False.
         normalization_type: type[ZScoreNormalization] | None
             Normalization class to use. Defaults to ZScoreNormalization.
         normalization_paths: list[str | None] | None
@@ -135,6 +136,18 @@ class MultiSpatioTemporalDataset(Dataset, BatchMixin):  # noqa: D101
         n_datasets = self._infer_n_levels(data_paths=data_paths, data=data)
 
         # Handle normalization parameters
+        if isinstance(use_normalization, list):
+            if len(use_normalization) != n_datasets:
+                msg = (
+                    f"Length of use_normalization list "
+                    f"({len(use_normalization)}) must match number "
+                    f"of datasets ({n_datasets})"
+                )
+                raise ValueError(msg)
+            use_normalization_list = use_normalization
+        else:
+            use_normalization_list = [use_normalization] * n_datasets
+
         if normalization_paths is not None:
             normalization_paths_list = list(normalization_paths)
             if len(normalization_paths) != n_datasets:
@@ -176,7 +189,7 @@ class MultiSpatioTemporalDataset(Dataset, BatchMixin):  # noqa: D101
                     autoencoder_mode=autoencoder_mode,
                     dtype=dtype,
                     verbose=verbose,
-                    use_normalization=use_normalization,
+                    use_normalization=use_normalization_list[idx],
                     normalization_type=normalization_type,
                     normalization_path=normalization_paths_list[idx],
                     normalization_stats=normalization_stats_list[idx],
@@ -197,7 +210,7 @@ class MultiSpatioTemporalDataset(Dataset, BatchMixin):  # noqa: D101
                     autoencoder_mode=autoencoder_mode,
                     dtype=dtype,
                     verbose=verbose,
-                    use_normalization=use_normalization,
+                    use_normalization=use_normalization_list[idx],
                     normalization_type=normalization_type,
                     normalization_path=normalization_paths_list[idx],
                     normalization_stats=normalization_stats_list[idx],
