@@ -136,6 +136,7 @@ class MultiSpatioTemporalDataset(Dataset, BatchMixin):  # noqa: D101
         n_datasets = self._infer_n_levels(data_paths=data_paths, data=data)
 
         # Handle normalization parameters
+        # TODO: could also have option for different normalization type per dataset
         if isinstance(use_normalization, list):
             if len(use_normalization) != n_datasets:
                 msg = (
