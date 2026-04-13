@@ -66,7 +66,9 @@ class AttentionMixer(nn.Module):
             ]
         )
 
-    def forward(self, encoded_sequence: torch.Tensor, levels_mask: torch.Tensor):
+    def forward(
+        self, encoded_sequence: torch.Tensor, levels_mask: torch.Tensor | None = None
+    ):
         # encoded_sequence: (Batch, Dataset/Levels, embedding_dim)
         # levels_mask: (Batch, Dataset/Levels) - True if level is missing
 
@@ -76,10 +78,14 @@ class AttentionMixer(nn.Module):
                 x=encoded_sequence, attn_mask=levels_mask
             )  # (Batch, Dataset/Levels, embedding_dim)
 
-        # Prevent masked levels from bubbling bad data through to downstream components
-        transformer_output = encoded_sequence.masked_fill(
-            mask=levels_mask.unsqueeze(-1), value=0.0
-        )
+        if levels_mask is not None:
+            # Prevent masked levels from bubbling bad data through
+            # to downstream components
+            transformer_output = encoded_sequence.masked_fill(
+                mask=levels_mask.unsqueeze(-1), value=0.0
+            )
+        else:
+            transformer_output = encoded_sequence
 
         # Return full sequence without pooling
         # to maintain identical capacity to torch.cat

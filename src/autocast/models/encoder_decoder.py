@@ -1,3 +1,4 @@
+import warnings
 from collections.abc import Sequence
 from typing import Any
 
@@ -171,33 +172,46 @@ class MultiEncoder(GenericEncoder[ListBatch, None]):
         self.attention_mixer = None
         self.input_projs = nn.ModuleList()
         self.output_proj = None
+        self.transformer_dim = None
 
         if attention:
-            # We use the maximum latent dimension from all encoders as the
-            # target base latent_dim so that lower dimensionals are expanded
-            # to the biggest dimension without losing expressivity.
-            target_latent_dim = max(enc.latent_channels for enc in encoders)
-            t_dim = (
-                transformer_dim if transformer_dim is not None else target_latent_dim
-            )
+            max_latent_dim = max(enc.latent_channels for enc in encoders)
 
-            # Setup input projections for EACH encoder depending on its latent_channels
-            # This allows each dataset to have a different dimension before
-            # being transformed to the common t_dim.
+            # We use the maximum latent dimension as
+            # embedding dimension to compute attention, if not provided by the user
+            if not transformer_dim:
+                transformer_dim = max_latent_dim
+            elif transformer_dim < max_latent_dim:
+                warnings.warn(
+                    (
+                        "Provided transformer_dim "
+                        f"({transformer_dim}) is smaller than the maximum "
+                        "encoder latent_channels "
+                        f"({max_latent_dim}). This may cause loss of "
+                        "information."
+                    ),
+                    UserWarning,
+                    stacklevel=2,
+                )
+
+            self.transformer_dim = transformer_dim
+
+            # For latent dimension smaller than transformer_dim,
+            # expand it to transformer_dim. If larger, project down.
             for enc in encoders:
                 l_i = enc.latent_channels
-                if l_i != t_dim:
-                    self.input_projs.append(nn.Linear(l_i, t_dim))
+                if l_i != transformer_dim:
+                    self.input_projs.append(nn.Linear(l_i, transformer_dim))
                 else:
                     self.input_projs.append(nn.Identity())
 
-            # Since AttentionMixer operates sequence-to-sequence,
-            # we restore it to the target latent dimension.
-            if target_latent_dim != t_dim:
-                self.output_proj = nn.Linear(t_dim, target_latent_dim)
+            # Once attention is applied, we restore it to the max latent dimension
+            # to remain compatible with non-attention channel stacking.
+            if transformer_dim != max_latent_dim:
+                self.output_proj = nn.Linear(transformer_dim, max_latent_dim)
 
             self.attention_mixer = AttentionMixer(
-                embedding_dim=t_dim,
+                embedding_dim=transformer_dim,
                 n_heads=n_heads,
                 dropout=dropout,
                 n_transformer_blocks=n_transformer_blocks,
@@ -215,7 +229,8 @@ class MultiEncoder(GenericEncoder[ListBatch, None]):
         # should be handled in a separate class
         if not self.attention:
             # stack along the channel dim
-            stacked_outputs = torch.cat(outs, dim=-1)
+            # TODO: this assumes that all encoders maps to the same latent dimension
+            stacked_outputs = torch.cat(outs, dim=-1)  # (B, T, L, sum(C_i))
             if mask is not None:
                 msg = (
                     "Mask cannot be applied without using attention "
@@ -226,8 +241,7 @@ class MultiEncoder(GenericEncoder[ListBatch, None]):
 
         transformed_outs = []
         for i, out in enumerate(outs):
-            # Transform to shape (..., C_i, L_i) implicitly via transpose
-            # irrespective of spatial dimensions
+            # Transform from (..., L_i, C_i) to (..., C_i, L_i) via transpose.
             out_perm = out.transpose(-2, -1)
 
             # Project independently to reach the common `transformer_dim`
@@ -237,9 +251,13 @@ class MultiEncoder(GenericEncoder[ListBatch, None]):
             transformed_outs.append(out_perm)
 
         # Safely concatenate matching inner sequence dimensions along the channels
+        # to obtain a Tensor of shape (..., tot_n_channels, transformer_dim)
         stacked = torch.cat(transformed_outs, dim=-2)
 
-        sum_Ci = stacked.shape[-2]
+        tot_n_channels = stacked.shape[-2]
+
+        # AttentionMixer expects (batch, tot_n_channels, transformer_dim).
+        # Flatten all dimensions except the last two over the batch dimension.
         batch_dims = list(stacked.shape[:-2])
 
         # Apply attention using the mixer
@@ -248,11 +266,10 @@ class MultiEncoder(GenericEncoder[ListBatch, None]):
         )
 
         if mask is None:
+            # Mask is None, meaning we have perfectly unmasked dense data.
             stacked_flat = stacked.flatten(0, -3)
-            attn_mask = torch.zeros(
-                stacked_flat.shape[0], sum_Ci, dtype=torch.bool, device=stacked.device
-            )
-            mixed = self.attention_mixer(stacked_flat, attn_mask)
+            # We directly pass None to AttentionMixer avoiding dense zeroes
+            mixed = self.attention_mixer(stacked_flat, None)
             mixed = mixed.unflatten(0, batch_dims)
         else:
             # mask is TensorDBM: shape (D, B, M)
@@ -267,21 +284,25 @@ class MultiEncoder(GenericEncoder[ListBatch, None]):
             mask_bmd = mask.permute(1, 2, 0)  # (B, M, D)
             attn_mask_base = torch.repeat_interleave(
                 mask_bmd, chan_repeats, dim=2
-            )  # (B, M, sum_Ci)
+            )  # (B, M, tot_n_channels)
 
             # Expand representations with the M dimension
-            # stacked: (*batch_dims, sum_Ci, -1) -> (*batch_dims, 1, sum_Ci, -1)
-            #       -> (*batch_dims, M, sum_Ci, -1)
-            stacked_expanded = stacked.unsqueeze(-2).expand(*batch_dims, M, sum_Ci, -1)
+            # stacked: (*batch_dims, tot_n_channels, transformer_dim)
+            #       -> (*batch_dims, 1, tot_n_channels, transformer_dim)
+            #       -> (*batch_dims, M, tot_n_channels, transformer_dim)
+            assert self.transformer_dim is not None
+            stacked_expanded = stacked.unsqueeze(-2).expand(
+                *batch_dims, M, tot_n_channels, self.transformer_dim
+            )
             stacked_flat = stacked_expanded.flatten(0, -3)
 
             # Expand mask to match data batch dimensions
-            # attn_mask_base is (B, M, sum_Ci). We insert 1s for any
+            # attn_mask_base is (B, M, tot_n_channels). We insert 1s for any
             # intermediate temporal batch_dims
             attn_mask = attn_mask_base.view(
-                B_dim, *[1 for _ in extra_batch_dims], M, sum_Ci
+                B_dim, *[1 for _ in extra_batch_dims], M, tot_n_channels
             )
-            attn_mask = attn_mask.expand(B_dim, *extra_batch_dims, M, sum_Ci)
+            attn_mask = attn_mask.expand(B_dim, *extra_batch_dims, M, tot_n_channels)
             attn_mask = attn_mask.flatten(
                 0, -2
             )  # flatten all batch dimensions into a single sequence
@@ -293,7 +314,7 @@ class MultiEncoder(GenericEncoder[ListBatch, None]):
         if self.output_proj is not None:
             mixed = self.output_proj(mixed)
 
-        # Restore dimension parity with the original expected baseline: (*, L, sum_Ci)
+        # Restore parity with the expected baseline shape: (*, L, tot_n_channels).
         mixed = mixed.transpose(-2, -1)
 
         return mixed
