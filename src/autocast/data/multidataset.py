@@ -91,7 +91,7 @@ class MultiSpatioTemporalDataset(Dataset, BatchMixin):  # noqa: D101
 
     def __init__(
         self,
-        data_paths: str | None,
+        data_paths: str | list[str] | tuple[str, ...] | None = None,
         data: list[dict] | None = None,
         masks: (
             TensorDM | Literal["sequential"] | Literal["combinatorial"] | None
@@ -107,38 +107,175 @@ class MultiSpatioTemporalDataset(Dataset, BatchMixin):  # noqa: D101
         verbose: bool = False,
         use_normalization: bool = False,
         normalization_type: type[ZScoreNormalization] | None = ZScoreNormalization,
-        normalization_path: str | None = None,
-        normalization_stats: dict | DictConfig | None = None,
+        normalization_path: str | list[str] | None = None,
+        normalization_stats: dict | DictConfig | list[dict | DictConfig] | None = None,
     ):
-        # TODO: handle either mutiple data_paths or multiple data dicts (e.g. with a
-        # list of paths or a list of dicts with paths and other info like normalization
-        # stats)
+        """Initialize MultiSpatioTemporalDataset with multiple datasets.
 
+        Parameters
+        ----------
+        data_paths: str | list[str] | tuple[str, ...] | None
+            Path(s) to HDF5 files. Can be a comma-separated string or list/tuple.
+        data: list[dict] | None
+            List of preloaded data dictionaries. Defaults to None.
+        masks: TensorDM | Literal["sequential"] | Literal["combinatorial"] | None
+            Masking strategy or custom mask tensor. Defaults to "sequential".
+        n_steps_input: int
+            Number of input time steps.
+        n_steps_output: int
+            Number of output time steps.
+        stride: int
+            Stride for sampling the data.
+        input_channel_idxs: tuple[int, ...] | None
+            Indices of input channels to use. Defaults to None.
+        output_channel_idxs: tuple[int, ...] | None
+            Indices of output channels to use. Defaults to None.
+        full_trajectory_mode: bool
+            If True, use full trajectories without creating subtrajectories.
+        autoencoder_mode: bool
+            If True, return (input, input) pairs for autoencoder training.
+        dtype: torch.dtype
+            Data type for tensors. Defaults to torch.float32.
+        verbose: bool
+            If True, print dataset information.
+        use_normalization: bool
+            Whether to apply Z-score normalization. Defaults to False.
+        normalization_type: type[ZScoreNormalization] | None
+            Normalization class to use. Defaults to ZScoreNormalization.
+        normalization_path: str | list[str] | None
+            Path(s) to normalization statistics file(s) (yaml).
+            Can be a single path (applied to all datasets) or a list
+            of paths (one per dataset). Defaults to None.
+        normalization_stats: dict | DictConfig | list[dict | DictConfig] | None
+            Preloaded normalization statistics. Can be a single dict
+            (applied to all datasets) or a list of dicts (one per dataset).
+            Defaults to None.
+        """
+        # Validate inputs
+        if data_paths is not None and data is not None:
+            msg = "Cannot provide both data_paths and data."
+            raise ValueError(msg)
+
+        if data_paths is None and data is None:
+            msg = "Must provide either data_paths or data."
+            raise ValueError(msg)
+
+        # Convert data_paths to list if string
+        if isinstance(data_paths, str):
+            data_paths = [p.strip() for p in data_paths.split(",")]
+
+        # Infer number of datasets
+        n_datasets = self._infer_n_levels(data_paths=data_paths, data=data)
+
+        # Handle normalization parameters - can be single values or lists
+        # Convert to lists if single values provided
+        if normalization_path is not None:
+            if isinstance(normalization_path, str):
+                # Single path - apply to all datasets
+                normalization_paths = [normalization_path] * n_datasets
+            else:
+                # List of paths
+                normalization_paths = list(normalization_path)
+                if len(normalization_paths) != n_datasets:
+                    msg = (
+                        f"Length of normalization_path list "
+                        f"({len(normalization_paths)}) must match number "
+                        f"of datasets ({n_datasets})"
+                    )
+                    raise ValueError(msg)
+        else:
+            normalization_paths = [None] * n_datasets
+
+        if normalization_stats is not None:
+            if isinstance(normalization_stats, (dict, DictConfig)):
+                # Single stats dict - apply to all datasets
+                normalization_stats_list = [normalization_stats] * n_datasets
+            else:
+                # List of stats dicts
+                normalization_stats_list = list(normalization_stats)
+                if len(normalization_stats_list) != n_datasets:
+                    msg = (
+                        f"Length of normalization_stats list "
+                        f"({len(normalization_stats_list)}) must match "
+                        f"number of datasets ({n_datasets})"
+                    )
+                    raise ValueError(msg)
+        else:
+            normalization_stats_list = [None] * n_datasets
+
+        # Create datasets
+        self.datasets = []
+
+        if data_paths is not None:
+            for idx, path in enumerate(data_paths):
+                dataset = SpatioTemporalDataset(
+                    data_path=path,
+                    data=None,
+                    n_steps_input=n_steps_input,
+                    n_steps_output=n_steps_output,
+                    stride=stride,
+                    input_channel_idxs=input_channel_idxs,
+                    output_channel_idxs=output_channel_idxs,
+                    full_trajectory_mode=full_trajectory_mode,
+                    autoencoder_mode=autoencoder_mode,
+                    dtype=dtype,
+                    verbose=verbose,
+                    use_normalization=use_normalization,
+                    normalization_type=normalization_type,
+                    normalization_path=normalization_paths[idx],
+                    normalization_stats=normalization_stats_list[idx],
+                )
+                self.datasets.append(dataset)
+
+        elif data is not None:
+            for idx, data_dict in enumerate(data):
+                dataset = SpatioTemporalDataset(
+                    data_path=None,
+                    data=data_dict,
+                    n_steps_input=n_steps_input,
+                    n_steps_output=n_steps_output,
+                    stride=stride,
+                    input_channel_idxs=input_channel_idxs,
+                    output_channel_idxs=output_channel_idxs,
+                    full_trajectory_mode=full_trajectory_mode,
+                    autoencoder_mode=autoencoder_mode,
+                    dtype=dtype,
+                    verbose=verbose,
+                    use_normalization=use_normalization,
+                    normalization_type=normalization_type,
+                    normalization_path=normalization_paths[idx],
+                    normalization_stats=normalization_stats_list[idx],
+                )
+                self.datasets.append(dataset)
+
+        # Validate all datasets have the same length
+        if len(self.datasets) > 1:
+            lengths = [len(ds) for ds in self.datasets]
+            if len(set(lengths)) > 1:
+                msg = f"All datasets must have the same length. Got lengths: {lengths}"
+                raise ValueError(msg)
+
+        # Handle masks
         if isinstance(masks, str):
-            n_levels = self._infer_n_levels(data_paths=data_paths, data=data)
+            n_levels = len(self.datasets)
             self.masks = self.create_mask(n_levels=n_levels, mode=masks)
         else:
             self.masks = masks
 
-        # TODO: create windowed masks like in SpatioTemporalDataset that perfectly
-        # match the windowed data samples
-        # E.g.
-        # Window 1 (4 in, 2 out): []
-        # self.all_masks = [
-        #   [mask for dataset 0 in window 0, mask for dataset 1 in window 0],
-        #   [mask for dataset 0 in window 1, mask for dataset 1 in window 1]]
-        #   ...
-        # ]
-        # NOTE: each mask for a window is an ensemble Tensor (shape M)
-        # TODO: these needs to be constructed such that the windowing removes the
-        # "batch"/"trajetory" dim as is done in SpatioTemporalDataset
-        # This leaves all_masks as a list over trajectories with each element of the
-        # list being a list over the datasets with a TensorM for each dataset to capture
-        # ensemble masks for that dataset in that window (e.g. different combinations of
-        # missing data).
-        # TODO: co-pilot to apply from SpatioTemporalDataset to create windowed masks
-        # TODO: ALTERNATIVE is to just load temporal masks (user-provided)
-        # self.all_masks: list[TensorDM] = []
+        # Validate mask dimensions if provided
+        if self.masks is not None:
+            if self.masks.shape[0] != len(self.datasets):
+                msg = (
+                    f"Mask first dimension ({self.masks.shape[0]}) must match "
+                    f"number of datasets ({len(self.datasets)})"
+                )
+                raise ValueError(msg)
+
+    def __len__(self) -> int:
+        """Return the length of the dataset."""
+        if len(self.datasets) == 0:
+            return 0
+        return len(self.datasets[0])
 
     def __getitem__(self, idx) -> ListSample:  # noqa: D105
         outs = []
