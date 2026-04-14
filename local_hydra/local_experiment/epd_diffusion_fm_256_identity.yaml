@@ -1,0 +1,43 @@
+# @package _global_
+defaults:
+  - /distributed: ddp_4gpu_slurm
+  - override /datamodule: advection_diffusion_multichannel_64_64
+  - override /encoder@model.encoder: identity
+  - override /decoder@model.decoder: identity
+  - override /processor@model.processor: flow_matching_vit
+  - override /backbone@model.processor.backbone: vit
+  - _self_
+
+experiment_name: epd_diffusion_fm_256_identity
+
+datamodule:
+  use_normalization: true
+  batch_size: 256
+
+logging:
+  wandb:
+    enabled: true
+
+model:
+  train_in_latent_space: true
+  processor:
+    backbone:
+      hid_channels: 768
+      hid_blocks: 10
+      attention_heads: 4
+      patch_size: 4
+    flow_ode_steps: 50
+
+optimizer:
+  learning_rate: 0.0002
+
+trainer:
+  callbacks:
+    - _target_: lightning.pytorch.callbacks.ModelCheckpoint
+      save_top_k: 1
+      every_n_epochs: 5
+      save_on_train_epoch_end: true
+      filename: "latest-5ep-{epoch:04d}"
+      auto_insert_metric_name: false
+    - _target_: autocast.callbacks.ema.EMACallback
+      decay: 0.999
