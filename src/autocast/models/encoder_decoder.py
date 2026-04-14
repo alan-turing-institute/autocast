@@ -1,11 +1,9 @@
-import math
 import warnings
 from collections.abc import Sequence
 from typing import Any
 
 import lightning as L
 import torch
-import torch.nn.functional as F
 from omegaconf import DictConfig
 from the_well.data.normalization import ZScoreNormalization
 from torch import nn
@@ -171,58 +169,29 @@ class MultiEncoder(GenericEncoder[ListBatch, None]):
         self.encoders = nn.ModuleList(encoders)
         self.attention = attention
         self.attention_mixer = None
-        self.input_projs = nn.ModuleList()
+        self.input_proj = None
         self.output_proj = None
+        self.latent_dim = None
         self.transformer_dim = None
+        self.n_heads = n_heads
+        self.dropout = dropout
+        self.n_transformer_blocks = n_transformer_blocks
 
         if attention:
-            max_latent_dim = max(enc.latent_channels for enc in encoders)
-
-            # We use the maximum latent dimension as
-            # embedding dimension to compute attention, if not provided by the user
-            if not transformer_dim:
-                transformer_dim = max_latent_dim
-            elif transformer_dim < max_latent_dim:
-                warnings.warn(
-                    (
-                        "Provided transformer_dim "
-                        f"({transformer_dim}) is smaller than the maximum "
-                        "encoder latent_channels "
-                        f"({max_latent_dim}). This may cause loss of "
-                        "information."
-                    ),
-                    UserWarning,
-                    stacklevel=2,
-                )
-
             self.transformer_dim = transformer_dim
-
-            # For latent dimension smaller than transformer_dim,
-            # expand it to transformer_dim. If larger, project down.
-            for enc in encoders:
-                l_i = enc.latent_channels
-                if l_i != transformer_dim:
-                    self.input_projs.append(nn.Linear(l_i, transformer_dim))
-                else:
-                    self.input_projs.append(nn.Identity())
-
-            # Once attention is applied, we restore it to the max latent dimension
-            # to remain compatible with non-attention channel stacking.
-            if transformer_dim != max_latent_dim:
-                self.output_proj = nn.Linear(transformer_dim, max_latent_dim)
-
-            self.attention_mixer = AttentionMixer(
-                embedding_dim=transformer_dim,
-                n_heads=n_heads,
-                dropout=dropout,
-                n_transformer_blocks=n_transformer_blocks,
-            )
+            if transformer_dim is not None:
+                self.attention_mixer = AttentionMixer(
+                    embedding_dim=transformer_dim,
+                    n_heads=n_heads,
+                    dropout=dropout,
+                    n_transformer_blocks=n_transformer_blocks,
+                )
 
     def encode_batch(self, batch: ListBatch, encoded_info: dict | None = None) -> None:
         msg = "MultiEncoder leverages encode() exclusively"
         raise NotImplementedError(msg)
 
-    def encode(self, batch: ListBatch) -> TensorBNC:
+    def encode(self, batch: ListBatch) -> TensorBNC:  # noqa: PLR0912, PLR0915
         mask: TensorDBM | None = batch.mask
 
         outs = []
@@ -246,25 +215,82 @@ class MultiEncoder(GenericEncoder[ListBatch, None]):
             return stacked_outputs
 
         transformed_outs = []
+        spatial_shape: tuple[int, ...] | None = None
         for out_i in outs:
             out = out_i[0] if isinstance(out_i, tuple) else out_i
 
             # out is (B, T, Spatial..., C_i)
-            # 1. Flatten Spatial -> (B, T, L_i, C_i)
+            current_spatial_shape = tuple(out.shape[2:-1])
+            if spatial_shape is None:
+                spatial_shape = current_spatial_shape
+            elif current_spatial_shape != spatial_shape:
+                msg = (
+                    "All encoder outputs must share the same spatial shape. "
+                    f"Got {spatial_shape} and {current_spatial_shape}."
+                )
+                raise ValueError(msg)
+
+            # Flatten spatial dimensions -> (B, T, L, C_i)
             out_flat = out.flatten(2, -2)
+            current_latent_dim = out_flat.shape[-2]
 
-            # 2. Transpose to treat Channels as Tokens -> (B, T, C_i, L_i)
+            if self.latent_dim is None:
+                self.latent_dim = current_latent_dim
+            elif self.latent_dim != current_latent_dim:
+                msg = (
+                    "All encoder outputs must share the same flattened latent "
+                    f"dimension. Got {self.latent_dim} and {current_latent_dim}."
+                )
+                raise ValueError(msg)
+
+            if self.transformer_dim is None:
+                self.transformer_dim = current_latent_dim
+            elif self.transformer_dim < current_latent_dim:
+                warnings.warn(
+                    (
+                        "Provided transformer_dim "
+                        f"({self.transformer_dim}) is smaller than flattened "
+                        "latent dimension "
+                        f"({current_latent_dim}). This may cause loss of "
+                        "information."
+                    ),
+                    UserWarning,
+                    stacklevel=2,
+                )
+
+            if self.input_proj is None:
+                if self.transformer_dim == current_latent_dim:
+                    self.input_proj = nn.Identity()
+                    self.output_proj = nn.Identity()
+                else:
+                    self.input_proj = nn.Linear(
+                        current_latent_dim,
+                        self.transformer_dim,
+                        device=out.device,
+                        dtype=out.dtype,
+                    )
+                    self.output_proj = nn.Linear(
+                        self.transformer_dim,
+                        current_latent_dim,
+                        device=out.device,
+                        dtype=out.dtype,
+                    )
+
+            if self.attention_mixer is None:
+                self.attention_mixer = AttentionMixer(
+                    embedding_dim=self.transformer_dim,
+                    n_heads=self.n_heads,
+                    dropout=self.dropout,
+                    n_transformer_blocks=self.n_transformer_blocks,
+                ).to(device=out.device, dtype=out.dtype)
+
+            # Transpose so we can project latent axis L -> transformer_dim.
+            # (B, T, L, C_i) -> (B, T, C_i, L)
             out_perm = out_flat.transpose(-2, -1)
+            assert self.input_proj is not None
+            transformed_outs.append(self.input_proj(out_perm))
 
-            # 3. Parameter-free pooling of the spatial embedding down to
-            # the consensus size; robust on MPS.
-            b_dim, t_dim = out_perm.shape[0], out_perm.shape[1]
-            out_flat2 = out_perm.flatten(0, 1)  # (B*T, C_i, L_i)
-            out_mapped = F.interpolate(
-                out_flat2, size=self.transformer_dim, mode="nearest"
-            )
-            out_mapped = out_mapped.unflatten(0, (b_dim, t_dim))
-            transformed_outs.append(out_mapped)
+        assert spatial_shape is not None
 
         # Safely concatenate matching inner sequence dimensions along the channels
         # to obtain a Tensor of shape (..., tot_n_channels, transformer_dim)
@@ -337,17 +363,12 @@ class MultiEncoder(GenericEncoder[ListBatch, None]):
             if M == 1:
                 mixed = mixed.squeeze(len(batch_dims))
 
-        # Reduce expressivity back to target_latent_dim
-        if self.output_proj is not None:
-            mixed = self.output_proj(mixed)
+        # Restore original latent dimension after attention.
+        assert self.output_proj is not None
+        mixed = self.output_proj(mixed)
 
-        # Restore parity with the expected baseline shape: (*, L, tot_n_channels).
+        # Restore parity with expected baseline shape: (*, L, tot_n_channels).
         mixed = mixed.transpose(-2, -1)
 
-        # If the sequence dimension is a perfect square, restore a 2D grid.
-        L_final = mixed.shape[-2]
-
-        s = int(math.sqrt(L_final))
-        mixed = mixed.unflatten(-2, (s, s)) if s * s == L_final else mixed.unsqueeze(-2)
-
-        return mixed
+        # Restore latent spatial structure expected by the decoder.
+        return mixed.unflatten(-2, spatial_shape)
