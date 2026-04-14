@@ -210,6 +210,12 @@ def _common_crps_score(
     -------
         Tensor of shape (B, T, S, C) with CRPS scores
     """
+    # Promote to f32: CRPS = term1 - term2 is a difference of nearly-equal
+    # positive terms as the ensemble sharpens, so bf16 causes catastrophic
+    # cancellation and floor-clamps the loss signal late in training.
+    y_pred = y_pred.to(torch.float32)
+    y_true = y_true.to(torch.float32)
+
     # Expand y_true to match ensemble dimension
     n_ensemble = y_pred.shape[-1]
     y_true_expanded = repeat(y_true, "... -> ... m", m=n_ensemble)  # (B, T, S, C, M)
@@ -312,6 +318,11 @@ def _alpha_fair_crps_score(
     -------
         afCRPS: (B, T, S, C)
     """
+    # Promote to f32: see note in _common_crps_score — pairwise differences and
+    # the off-diagonal sum lose precision in bf16 as the ensemble sharpens.
+    y_pred = y_pred.to(torch.float32)
+    y_true = y_true.to(torch.float32)
+
     # Expand y_true to match ensemble dimension
     n_ensemble = y_pred.shape[-1]
     y_true_m = repeat(y_true, "... -> ... m", m=n_ensemble)
