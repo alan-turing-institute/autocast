@@ -282,24 +282,41 @@ PLOTS_PATH=2026-04-08_plots
 # 	--output-dir outputs/2026-04-01_collated/$PLOTS_PATH/fm_24hrs_adams_bashforth
 	
 
-# Revisit recents runs including comparison:
-# - between optimizer with cosine period of 2 epochs compared
-# - 3hrs on 4GPU (or 12hrs on 1GPU) compared to 24hrs on 4GPU
-# - updated 4x batch size, 4x hidden dimension, afCRPS vs CRPS for ViT
+# # Revisit recents runs including comparison:
+# # - between optimizer with cosine period of 2 epochs compared
+# # - 3hrs on 4GPU (or 12hrs on 1GPU) compared to 24hrs on 4GPU
+# # - updated 4x batch size, 4x hidden dimension, afCRPS vs CRPS for ViT
+# autocast-plots --results-dir outputs/2026-04-01_collated \
+# 	--run diff_cns64_flow_matching_vit_55a4d1a_511e7b1 "FM (12hrs, old optim)" \
+# 	--run diff_cns64_flow_matching_vit_2007857_2cfb01f "FM (3hrs)" \
+# 	--run diff_cns64_flow_matching_vit_1ed9013_893624d "FM (24hrs)" \
+# 	--run crps_cns64_vit_azula_large_8fe25aa_d105b90 "ViT (12hrs, 1GPU, n=256, CRPS, h=768, old optim)" \
+# 	--run crps_cns64_vit_azula_large_1ed9013_babdaa8 "ViT (3hrs, n=1024, afCRPS, h=632)" \
+# 	--run crps_cns64_vit_azula_large_1ed9013_ab31602 "ViT (24hrs, n=1024, afCRPS, h=632)" \
+# 	--run diff_sw2d64_flow_matching_vit_4d5fcbd_067529b "FM (12hrs, old optim)" \
+# 	--run diff_sw2d64_flow_matching_vit_cb09424_7566c5e "FM (3hrs)" \
+# 	--run diff_sw2d64_flow_matching_vit_1ed9013_5529d56 "FM (24hrs)" \
+# 	--run crps_sw2d64_vit_azula_large_8fe25aa_74f91d8 "ViT (12hrs, 1GPU, n=256, CRPS, h=768, old optim)" \
+# 	--run crps_cns64_vit_azula_large_1ed9013_babdaa8 "ViT (3hrs, n=1024, afCRPS, h=632)" \
+# 	--run crps_sw2d64_vit_azula_large_1ed9013_6ab9fa2 "ViT (24hrs, n=1024, afCRPS, h=632)" \
+# 	--dataset-order SW, CNS\
+# 	--color-by-label \
+# 	--error-ylim 1e-3 1 \
+# 	--lead-time-error-metrics vrmse rmse \
+# 	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
+# 	--combined-lead-time \
+# 	--training-metrics val_loss train_loss \
+# 	--training-yscale log \
+# 	--panel-figure \
+# 	--output-dir outputs/2026-04-01_collated/$PLOTS_PATH/optimizer_24hrs_crps-changes_comparison
+
+# Revisit b16-mixed with lower batch size and updated optimizers:
+# TODO: add once eval completed
 autocast-plots --results-dir outputs/2026-04-01_collated \
-	--run diff_cns64_flow_matching_vit_55a4d1a_511e7b1 "FM (12hrs, old optim)" \
-	--run diff_cns64_flow_matching_vit_2007857_2cfb01f "FM (3hrs)" \
-	--run diff_cns64_flow_matching_vit_1ed9013_893624d "FM (24hrs)" \
-	--run crps_cns64_vit_azula_large_8fe25aa_d105b90 "ViT (12hrs, 1GPU, n=256, CRPS, h=768, old optim)" \
-	--run crps_cns64_vit_azula_large_1ed9013_babdaa8 "ViT (3hrs, n=1024, afCRPS, h=632)" \
-	--run crps_cns64_vit_azula_large_1ed9013_ab31602 "ViT (24hrs, n=1024, afCRPS, h=632)" \
-	--run diff_sw2d64_flow_matching_vit_4d5fcbd_067529b "FM (12hrs, old optim)" \
-	--run diff_sw2d64_flow_matching_vit_cb09424_7566c5e "FM (3hrs)" \
-	--run diff_sw2d64_flow_matching_vit_1ed9013_5529d56 "FM (24hrs)" \
 	--run crps_sw2d64_vit_azula_large_8fe25aa_74f91d8 "ViT (12hrs, 1GPU, n=256, CRPS, h=768, old optim)" \
-	--run crps_cns64_vit_azula_large_1ed9013_babdaa8 "ViT (3hrs, n=1024, afCRPS, h=632)" \
 	--run crps_sw2d64_vit_azula_large_1ed9013_6ab9fa2 "ViT (24hrs, n=1024, afCRPS, h=632)" \
-	--dataset-order SW, CNS\
+	--run crps_sw2d64_vit_azula_large_ed15816_085752e "ViT (6hrs, n=1024, afCRPS, h=632, b16-mixed, bs=32)" \
+	--dataset-order SW\
 	--color-by-label \
 	--error-ylim 1e-3 1 \
 	--lead-time-error-metrics vrmse rmse \
@@ -308,7 +325,7 @@ autocast-plots --results-dir outputs/2026-04-01_collated \
 	--training-metrics val_loss train_loss \
 	--training-yscale log \
 	--panel-figure \
-	--output-dir outputs/2026-04-01_collated/$PLOTS_PATH/optimizer_24hrs_crps-changes_comparison
+	--output-dir outputs/2026-04-01_collated/$PLOTS_PATH/b16-mixed_lower_bs_comparison
 
 
 
