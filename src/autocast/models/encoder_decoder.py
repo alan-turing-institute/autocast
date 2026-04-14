@@ -169,9 +169,10 @@ class MultiEncoder(GenericEncoder[ListBatch, None]):
         self.encoders = nn.ModuleList(encoders)
         self.attention = attention
         self.attention_mixer = None
-        self.input_proj = None
+        self.input_projs = nn.ModuleList()
         self.output_proj = None
-        self.latent_dim = None
+        self.target_spatial_shape = None
+        self.target_latent_dim = None
         self.transformer_dim = None
         self.n_heads = n_heads
         self.dropout = dropout
@@ -214,83 +215,74 @@ class MultiEncoder(GenericEncoder[ListBatch, None]):
                 raise ValueError(msg)
             return stacked_outputs
 
-        transformed_outs = []
-        spatial_shape: tuple[int, ...] | None = None
+        flat_outs = []
+        spatial_shapes: list[tuple[int, ...]] = []
+        latent_dims: list[int] = []
         for out_i in outs:
             out = out_i[0] if isinstance(out_i, tuple) else out_i
-
-            # out is (B, T, Spatial..., C_i)
-            current_spatial_shape = tuple(out.shape[2:-1])
-            if spatial_shape is None:
-                spatial_shape = current_spatial_shape
-            elif current_spatial_shape != spatial_shape:
-                msg = (
-                    "All encoder outputs must share the same spatial shape. "
-                    f"Got {spatial_shape} and {current_spatial_shape}."
-                )
-                raise ValueError(msg)
-
-            # Flatten spatial dimensions -> (B, T, L, C_i)
+            spatial_shape_i = tuple(out.shape[2:-1])
             out_flat = out.flatten(2, -2)
-            current_latent_dim = out_flat.shape[-2]
+            flat_outs.append(out_flat)
+            spatial_shapes.append(spatial_shape_i)
+            latent_dims.append(out_flat.shape[-2])
 
-            if self.latent_dim is None:
-                self.latent_dim = current_latent_dim
-            elif self.latent_dim != current_latent_dim:
-                msg = (
-                    "All encoder outputs must share the same flattened latent "
-                    f"dimension. Got {self.latent_dim} and {current_latent_dim}."
-                )
-                raise ValueError(msg)
+        max_latent_dim = max(latent_dims)
+        if self.transformer_dim is None:
+            self.transformer_dim = max_latent_dim
+        elif self.transformer_dim < max_latent_dim:
+            warnings.warn(
+                (
+                    "Provided transformer_dim "
+                    f"({self.transformer_dim}) is smaller than the maximum "
+                    "flattened latent dimension "
+                    f"({max_latent_dim}). This may cause loss of "
+                    "information."
+                ),
+                UserWarning,
+                stacklevel=2,
+            )
 
-            if self.transformer_dim is None:
-                self.transformer_dim = current_latent_dim
-            elif self.transformer_dim < current_latent_dim:
-                warnings.warn(
-                    (
-                        "Provided transformer_dim "
-                        f"({self.transformer_dim}) is smaller than flattened "
-                        "latent dimension "
-                        f"({current_latent_dim}). This may cause loss of "
-                        "information."
-                    ),
-                    UserWarning,
-                    stacklevel=2,
-                )
-
-            if self.input_proj is None:
-                if self.transformer_dim == current_latent_dim:
-                    self.input_proj = nn.Identity()
-                    self.output_proj = nn.Identity()
+        if len(self.input_projs) == 0:
+            for latent_dim in latent_dims:
+                if latent_dim == self.transformer_dim:
+                    self.input_projs.append(nn.Identity())
                 else:
-                    self.input_proj = nn.Linear(
-                        current_latent_dim,
-                        self.transformer_dim,
-                        device=out.device,
-                        dtype=out.dtype,
-                    )
-                    self.output_proj = nn.Linear(
-                        self.transformer_dim,
-                        current_latent_dim,
-                        device=out.device,
-                        dtype=out.dtype,
+                    self.input_projs.append(
+                        nn.Linear(
+                            latent_dim,
+                            self.transformer_dim,
+                            device=flat_outs[0].device,
+                            dtype=flat_outs[0].dtype,
+                        )
                     )
 
-            if self.attention_mixer is None:
-                self.attention_mixer = AttentionMixer(
-                    embedding_dim=self.transformer_dim,
-                    n_heads=self.n_heads,
-                    dropout=self.dropout,
-                    n_transformer_blocks=self.n_transformer_blocks,
-                ).to(device=out.device, dtype=out.dtype)
+            if self.transformer_dim == max_latent_dim:
+                self.output_proj = nn.Identity()
+            else:
+                self.output_proj = nn.Linear(
+                    self.transformer_dim,
+                    max_latent_dim,
+                    device=flat_outs[0].device,
+                    dtype=flat_outs[0].dtype,
+                )
 
-            # Transpose so we can project latent axis L -> transformer_dim.
-            # (B, T, L, C_i) -> (B, T, C_i, L)
+            idx_max = latent_dims.index(max_latent_dim)
+            self.target_spatial_shape = spatial_shapes[idx_max]
+            self.target_latent_dim = max_latent_dim
+
+        if self.attention_mixer is None:
+            self.attention_mixer = AttentionMixer(
+                embedding_dim=self.transformer_dim,
+                n_heads=self.n_heads,
+                dropout=self.dropout,
+                n_transformer_blocks=self.n_transformer_blocks,
+            ).to(device=flat_outs[0].device, dtype=flat_outs[0].dtype)
+
+        transformed_outs = []
+        for i, out_flat in enumerate(flat_outs):
+            # Project latent axis: (B, T, L_i, C_i) -> (B, T, C_i, L_i)
             out_perm = out_flat.transpose(-2, -1)
-            assert self.input_proj is not None
-            transformed_outs.append(self.input_proj(out_perm))
-
-        assert spatial_shape is not None
+            transformed_outs.append(self.input_projs[i](out_perm))
 
         # Safely concatenate matching inner sequence dimensions along the channels
         # to obtain a Tensor of shape (..., tot_n_channels, transformer_dim)
@@ -371,4 +363,5 @@ class MultiEncoder(GenericEncoder[ListBatch, None]):
         mixed = mixed.transpose(-2, -1)
 
         # Restore latent spatial structure expected by the decoder.
-        return mixed.unflatten(-2, spatial_shape)
+        assert self.target_spatial_shape is not None
+        return mixed.unflatten(-2, self.target_spatial_shape)

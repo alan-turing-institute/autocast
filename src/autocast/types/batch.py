@@ -65,7 +65,11 @@ class Batch:
         """
         return Batch(
             input_fields=self.input_fields.repeat_interleave(m, dim=0),
-            output_fields=self.output_fields.repeat_interleave(m, dim=0),
+            output_fields=(
+                self.output_fields.repeat_interleave(m, dim=0)
+                if self.output_fields is not None
+                else self.output_fields
+            ),  # type: ignore[arg-type]
             constant_scalars=(
                 self.constant_scalars.repeat_interleave(m, dim=0)
                 if self.constant_scalars is not None
@@ -87,7 +91,11 @@ class Batch:
         """Move batch to device."""
         return Batch(
             input_fields=self.input_fields.to(device),
-            output_fields=self.output_fields.to(device),
+            output_fields=(
+                self.output_fields.to(device)
+                if self.output_fields is not None
+                else self.output_fields
+            ),  # type: ignore[arg-type]
             constant_scalars=(
                 self.constant_scalars.to(device)
                 if self.constant_scalars is not None
