@@ -281,9 +281,19 @@ def test_should_skip_metric_variogram_only():
     assert _should_skip_metric("ssr") is False
 
 
-def test_resolve_rollout_channel_names_from_norm_with_output_selection():
+def test_resolve_rollout_channel_names_from_norm_already_subset():
     dataset = SimpleNamespace(
-        norm=SimpleNamespace(core_field_names=["u", "v", "p"]),
+        norm=SimpleNamespace(core_field_names=["p", "u"]),
+        channel_idxs=(2, 0),
+    )
+
+    assert _resolve_rollout_channel_names(dataset) == ["p", "u"]
+
+
+def test_resolve_rollout_channel_names_from_stats_applies_idxs():
+    dataset = SimpleNamespace(
+        norm=None,
+        normalization_stats={"core_field_names": ["u", "v", "p"]},
         channel_idxs=(2, 0),
     )
 
@@ -302,7 +312,8 @@ def test_resolve_rollout_channel_names_returns_none_without_norm_names():
 
 def test_resolve_rollout_channel_names_returns_none_on_invalid_output_indices():
     dataset = SimpleNamespace(
-        norm=SimpleNamespace(core_field_names=["u", "v"]),
+        norm=None,
+        normalization_stats={"core_field_names": ["u", "v"]},
         channel_idxs=(0, 3),
     )
 
