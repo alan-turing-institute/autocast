@@ -644,3 +644,66 @@ class SpreadSkillRatio(BTSCMMetric):
         ssr = (spread / torch.clamp(skill, min=self.eps)) * correction
 
         return ssr
+
+
+class WinklerScore(BTSCMMetric):
+    r"""
+    Winkler interval score for central prediction intervals.
+
+    For significance level :math:`\alpha \in (0, 1)`, this metric computes
+    central :math:`(1-\alpha)` prediction intervals from ensemble quantiles and
+    returns the per-point interval score
+
+    .. math::
+        W_\alpha = (u - l)
+        + \frac{2}{\alpha}(l - y)\mathbf{1}(y < l)
+        + \frac{2}{\alpha}(y - u)\mathbf{1}(y > u),
+
+        where :math:`l` and :math:`u` are the lower/upper interval bounds.
+
+        Shape conventions
+        -----------------
+        - Input prediction tensor: y_pred has shape (B, T, S..., C, M)
+        - Input truth tensor: y_true has shape (B, T, S..., C)
+        - Quantiles are computed along ensemble dim M:
+            - l (lower): ``q_{alpha/2}``, shape (B, T, S..., C)
+            - u (upper): ``q_{1-alpha/2}``, shape (B, T, S..., C)
+            - y corresponds to y_true, same shape (B, T, S..., C).
+
+        The internal ``_score`` returns pointwise Winkler scores with shape
+        ``(B, T, S..., C)``. The base class then applies ``score_dims`` and
+        ``reduce_all`` reductions:
+        - ``score_dims='spatial'`` (default) -> ``(B, T, C)``
+        - ``score_dims='temporal'`` -> ``(B, S..., C)``
+        - ``score_dims=None`` -> ``(B, T, S..., C)``
+        - if ``reduce_all=True`` (default), ``compute()`` returns a scalar.
+
+    Lower values are better: narrow intervals are rewarded, and misses are
+    penalized in proportion to their distance outside the interval.
+    """
+
+    name: str = "winkler"
+
+    def __init__(self, alpha: float = 0.1, **kwargs):
+        super().__init__(**kwargs)
+        if not (0 < alpha < 1):
+            raise ValueError(f"alpha must be in (0, 1), got {alpha}")
+        self.alpha = alpha
+
+    def _score(self, y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTSC:
+        """Compute pointwise Winkler score before spatial/temporal reductions."""
+        q_low = self.alpha / 2.0
+        q_high = 1.0 - self.alpha / 2.0
+
+        q_tensor = torch.tensor(
+            [q_low, q_high], device=y_pred.device, dtype=y_pred.dtype
+        )
+        quantiles = torch.quantile(y_pred, q_tensor, dim=-1)
+        lower = quantiles[0]
+        upper = quantiles[1]
+
+        width = upper - lower
+        below_penalty = (2.0 / self.alpha) * torch.clamp(lower - y_true, min=0.0)
+        above_penalty = (2.0 / self.alpha) * torch.clamp(y_true - upper, min=0.0)
+
+        return width + below_penalty + above_penalty

@@ -38,9 +38,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         n_steps_input: int = 1,
         n_steps_output: int = 1,
         stride: int = 1,
-        # TODO: support for passing data from dict
-        input_channel_idxs: tuple[int, ...] | None = None,
-        output_channel_idxs: tuple[int, ...] | None = None,
+        channel_idxs: tuple[int, ...] | None = None,
         full_trajectory_mode: bool = False,
         autoencoder_mode: bool = False,
         dtype: torch.dtype = torch.float32,
@@ -67,10 +65,9 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             Stride for sampling the data.
         data: dict | None
             Preloaded data. Defaults to None.
-        input_channel_idxs: tuple[int, ...] | None
-            Indices of input channels to use. Defaults to None.
-        output_channel_idxs: tuple[int, ...] | None
-            Indices of output channels to use. Defaults to None.
+        channel_idxs: tuple[int, ...] | None
+            Indices of channels to select from the raw data (applied to both
+            input and output). If None, all channels are used. Defaults to None.
         full_trajectory_mode: bool
             If True, use full trajectories without creating subtrajectories.
         autoencoder_mode: bool
@@ -104,7 +101,15 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         if data is not None:
             self.parse_data(data)
 
+        if channel_idxs is not None:
+            self.data = self.data[..., list(channel_idxs)]
+
         self.set_up_normalization()
+
+        if channel_idxs is not None and self.norm is not None:
+            self.norm.core_field_names = [
+                self.norm.core_field_names[i] for i in channel_idxs
+            ]
 
         if autoencoder_mode and full_trajectory_mode:
             msg = "autoencoder_mode and full_trajectory_mode cannot both be True."
@@ -124,8 +129,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         self.n_steps_input = n_steps_input
         self.n_steps_output = n_steps_output
         self.stride = stride
-        self.input_channel_idxs = input_channel_idxs
-        self.output_channel_idxs = output_channel_idxs
+        self.channel_idxs = channel_idxs
 
         # Destructured here
         (
