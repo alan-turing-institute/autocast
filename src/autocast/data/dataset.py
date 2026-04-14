@@ -106,6 +106,11 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
 
         self.set_up_normalization()
 
+        if channel_idxs is not None and self.norm is not None:
+            self.norm.core_field_names = [
+                self.norm.core_field_names[i] for i in channel_idxs
+            ]
+
         if autoencoder_mode and full_trajectory_mode:
             msg = "autoencoder_mode and full_trajectory_mode cannot both be True."
             raise ValueError(msg)
