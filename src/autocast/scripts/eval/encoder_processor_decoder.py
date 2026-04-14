@@ -282,11 +282,13 @@ def _resolve_rollout_channel_names(dataset: Any) -> list[str] | None:
 
     norm = getattr(dataset, "norm", None)
     raw_names = getattr(norm, "core_field_names", None)
+    names_already_subset = raw_names is not None
 
     if not isinstance(raw_names, Sequence) or isinstance(raw_names, str):
         normalization_stats = getattr(dataset, "normalization_stats", None)
         if isinstance(normalization_stats, Mapping):
             raw_names = normalization_stats.get("core_field_names")
+            names_already_subset = False
 
     if not isinstance(raw_names, Sequence) or isinstance(raw_names, str):
         return None
@@ -296,7 +298,7 @@ def _resolve_rollout_channel_names(dataset: Any) -> list[str] | None:
         return None
 
     channel_idxs = getattr(dataset, "channel_idxs", None)
-    if channel_idxs is not None:
+    if channel_idxs is not None and not names_already_subset:
         try:
             channel_names = [channel_names[idx] for idx in channel_idxs]
         except (TypeError, IndexError):
