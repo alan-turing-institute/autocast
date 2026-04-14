@@ -2,73 +2,37 @@
 from lightning.pytorch.callbacks import Callback
 from torch.optim.swa_utils import AveragedModel, get_ema_multi_avg_fn
 
+EMA_CHECKPOINT_KEY = "ema_state_dict"
+
 
 class EMACallback(Callback):
     """Exponential Moving Average (EMA) callback for PyTorch Lightning.
 
-    Maintains an EMA of the model parameters and swaps them in during
-    validation, testing, and prediction. This greatly stabilizes metrics
-    for generative models (Diffusion/Flow Matching) and mitigates overfitting
-    late in training.
+    Silently maintains an EMA of the model parameters during training and
+    writes them into the checkpoint under a dedicated key
+    (``ema_state_dict``) so that ``state_dict`` still reflects the raw
+    training weights. Validation/train metrics therefore stay comparable
+    across runs; eval scripts opt in to the EMA weights explicitly.
     """
 
     def __init__(self, decay: float = 0.9999):
         super().__init__()
         self.decay = decay
         self.ema_model = None
-        self.original_state_dict = None
 
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
         """Update EMA parameters after every training batch."""
         if self.ema_model is not None:
             self.ema_model.update_parameters(pl_module)
 
-    def _swap_model_weights(self, pl_module):
-        """Swap current model weights with the EMA weights."""
-        if self.ema_model is None:
-            return
-
-        # Store original training weights
-        self.original_state_dict = {
-            k: v.clone().detach() for k, v in pl_module.state_dict().items()
-        }
-        # Load EMA weights into the Lightning module
-        # Note: AveragedModel wraps the original module in a 'module' attribute
-        pl_module.load_state_dict(self.ema_model.module.state_dict())
-
-    def _restore_original_weights(self, pl_module):
-        """Restore original training weights."""
-        if self.original_state_dict is not None:
-            pl_module.load_state_dict(self.original_state_dict)
-            self.original_state_dict = None
-
-    def on_validation_start(self, trainer, pl_module):
-        self._swap_model_weights(pl_module)
-
-    def on_validation_end(self, trainer, pl_module):
-        self._restore_original_weights(pl_module)
-
-    def on_test_start(self, trainer, pl_module):
-        self._swap_model_weights(pl_module)
-
-    def on_test_end(self, trainer, pl_module):
-        self._restore_original_weights(pl_module)
-
-    def on_predict_start(self, trainer, pl_module):
-        self._swap_model_weights(pl_module)
-
-    def on_predict_end(self, trainer, pl_module):
-        self._restore_original_weights(pl_module)
-
     def on_save_checkpoint(self, trainer, pl_module, checkpoint: dict) -> None:
-        """Overwrite the saved state_dict with the EMA weights for clean inference.
+        """Persist EMA weights alongside the raw training state_dict.
 
-        This ensures that when standalone evaluation scripts (like eval.py)
-        extract checkpoint['state_dict'], they natively load the high-fidelity
-        EMA parameters instead of the noisy optimizer training state!
+        Stored under a separate top-level key so eval scripts can opt in
+        without affecting training-time checkpoints or resume behaviour.
         """
         if self.ema_model is not None:
-            checkpoint["state_dict"] = {
+            checkpoint[EMA_CHECKPOINT_KEY] = {
                 k: v.clone() for k, v in self.ema_model.module.state_dict().items()
             }
 

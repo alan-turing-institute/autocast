@@ -64,10 +64,28 @@ def load_checkpoint_payload(checkpoint_path: Path) -> Mapping[str, Any]:
 
 def extract_state_dict(
     checkpoint: Mapping[str, Any],
+    *,
+    use_ema: bool = False,
 ) -> OrderedDict[str, torch.Tensor]:
-    """Extract and clean the state dict from a checkpoint payload."""
+    """Extract and clean the state dict from a checkpoint payload.
+
+    When ``use_ema=True`` the EMA weights written by ``EMACallback`` under
+    the ``ema_state_dict`` top-level key are returned instead of the raw
+    training weights. Raises if the flag is set but no EMA weights are
+    present — a silent fallback would make eval runs hard to interpret.
+    """
     if isinstance(checkpoint, Mapping):
-        state_dict = checkpoint.get("state_dict", checkpoint)
+        if use_ema:
+            ema_sd = checkpoint.get("ema_state_dict")
+            if ema_sd is None:
+                msg = (
+                    "use_ema=True but checkpoint has no 'ema_state_dict'. "
+                    "Was EMACallback enabled during training?"
+                )
+                raise KeyError(msg)
+            state_dict = ema_sd
+        else:
+            state_dict = checkpoint.get("state_dict", checkpoint)
     else:
         state_dict = checkpoint
     if not isinstance(state_dict, Mapping):
