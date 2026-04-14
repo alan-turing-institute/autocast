@@ -113,10 +113,10 @@ class FlowMatchingProcessor(Processor):
 
         batch_size = target_states.shape[0]
 
-        # Use f32 for calculating variables and velocities to prevent bfloat16 underflow
-        # near t=1
+        # Use f32 for the (1-t)*z0 + t*target interpolation: bf16 has ~8 mantissa
+        # bits, so t near 1 loses precision in (1-t) and the mix collapses.
         target_states_f32 = target_states.to(dtype=torch.float32)
-        z0 = torch.randn_like(target_states_f32, requires_grad=True)
+        z0 = torch.randn_like(target_states_f32)
 
         if self.time_sampling_method == "logit-normal":
             u = torch.randn(
@@ -131,11 +131,12 @@ class FlowMatchingProcessor(Processor):
 
         target_velocity = target_states_f32 - z0
 
-        # Keep inference flow compute in its native precision (e.g. bf16 if mixed
-        # precision)
+        # Backbone forward runs under autocast; zt is cast to bf16 explicitly to
+        # save activation memory, but t stays in f32 so the SineEncoding time
+        # embedding sees full scalar precision before its Linear layers downcast.
         v_pred = self.flow_field(
             zt.to(dtype=target_states.dtype),
-            t.to(dtype=target_states.dtype),
+            t,
             input_states,
             global_cond=batch.global_cond,
         )
