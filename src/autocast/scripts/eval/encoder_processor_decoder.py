@@ -295,14 +295,14 @@ def _resolve_rollout_channel_names(dataset: Any) -> list[str] | None:
     if not channel_names:
         return None
 
-    output_channel_idxs = getattr(dataset, "output_channel_idxs", None)
-    if output_channel_idxs is not None:
+    channel_idxs = getattr(dataset, "channel_idxs", None)
+    if channel_idxs is not None:
         try:
-            channel_names = [channel_names[idx] for idx in output_channel_idxs]
+            channel_names = [channel_names[idx] for idx in channel_idxs]
         except (TypeError, IndexError):
             log.warning(
-                "Could not apply output_channel_idxs=%s to channel names %s.",
-                output_channel_idxs,
+                "Could not apply channel_idxs=%s to channel names %s.",
+                channel_idxs,
                 channel_names,
             )
             return None
