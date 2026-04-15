@@ -1034,9 +1034,20 @@ def main(cfg: DictConfig) -> None:
 
 def _extract_processor_state_dict(
     checkpoint_payload: Mapping[str, Any],
+    *,
+    use_ema: bool = False,
 ) -> dict[str, Any]:
     """Return only the processor sub-module weights with the prefix stripped."""
-    state_dict = checkpoint_payload.get("state_dict", checkpoint_payload)
+    if use_ema:
+        state_dict = checkpoint_payload.get("ema_state_dict")
+        if state_dict is None:
+            msg = (
+                "use_ema=True but checkpoint has no 'ema_state_dict'. "
+                "Was EMACallback enabled during training?"
+            )
+            raise KeyError(msg)
+    else:
+        state_dict = checkpoint_payload.get("state_dict", checkpoint_payload)
     return {
         k[len("processor.") :]: v
         for k, v in state_dict.items()
@@ -1192,6 +1203,16 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     checkpoint_payload = load_checkpoint_payload(checkpoint_path)
     processor_only = _is_processor_only_checkpoint(checkpoint_payload)
 
+    use_ema = bool(eval_cfg.get("use_ema", False))
+    if use_ema:
+        if "ema_state_dict" not in checkpoint_payload:
+            msg = (
+                "eval.use_ema=True but checkpoint has no 'ema_state_dict'. "
+                "Was EMACallback enabled during training?"
+            )
+            raise KeyError(msg)
+        log.info("Loading EMA weights from checkpoint (eval.use_ema=True)")
+
     # Setup datamodule and resolve config
     datamodule, cfg, stats = setup_datamodule(cfg)
 
@@ -1258,12 +1279,14 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 "+ processor checkpoint."
             )
             model = setup_epd_model(cfg, stats, datamodule=datamodule)
-            processor_sd = _extract_processor_state_dict(checkpoint_payload)
+            processor_sd = _extract_processor_state_dict(
+                checkpoint_payload, use_ema=use_ema
+            )
             load_result = model.processor.load_state_dict(processor_sd, strict=True)
         else:
             model = setup_processor_model(cfg, stats, datamodule=datamodule)
             load_result = model.load_state_dict(
-                extract_state_dict(checkpoint_payload), strict=True
+                extract_state_dict(checkpoint_payload, use_ema=use_ema), strict=True
             )
             if isinstance(example_batch, EncodedBatch):
                 # Mode 2: try to load decoder for data-space evaluation
@@ -1280,7 +1303,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     else:
         model = setup_epd_model(cfg, stats, datamodule=datamodule)
         load_result = model.load_state_dict(
-            extract_state_dict(checkpoint_payload), strict=True
+            extract_state_dict(checkpoint_payload, use_ema=use_ema), strict=True
         )
 
     if load_result.missing_keys or load_result.unexpected_keys:
