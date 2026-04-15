@@ -7,6 +7,7 @@ defaults:
   - logging: wandb
   - optional eval: processor
   - _self_
+  - optional local_experiment: null
 
 seed: 42
 experiment_name: processor
