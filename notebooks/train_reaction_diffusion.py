@@ -13,6 +13,40 @@ from autocast.decoders.dc import DCDecoder
 from autocast.encoders.dc import DCEncoder
 from autocast.models.encoder_decoder import EncoderDecoder, MultiEncoder
 from autocast.types.batch import Batch, ListBatch
+from autocast.utils.plots import plot_spatiotemporal_video
+
+SCENARIO_LABELS = [
+    "lf1_only",
+    "lf2_only",
+    "both_available",
+]
+
+
+def build_combinatorial_mask(batch_size: int, device: torch.device | None = None):
+    """Build TensorDBM mask (Dataset, Batch, Ensemble) for 3 scenarios.
+
+    Mask semantics: True means missing level.
+    Scenario order:
+    - lf1_only           -> [False, True]
+    - lf2_only           -> [True, False]
+    - both_available     -> [False, False]
+
+    Notes
+    -----
+    Dataset index mapping in this script is:
+    - dataset 0 -> LF1
+    - dataset 1 -> LF2
+    """
+    scenario_mask = torch.tensor(
+        [
+            [False, True, False],
+            [True, False, False],
+        ],
+        dtype=torch.bool,
+        device=device,
+    )  # (Dataset=2, Ensemble=3)
+
+    return scenario_mask.unsqueeze(1).expand(-1, batch_size, -1).contiguous()
 
 
 class MultiFidelityLocalDataset(Dataset):
@@ -32,15 +66,7 @@ class MultiFidelityLocalDataset(Dataset):
         self.targets = data["targets"]  # (B, T, 64, 64, 2) -> hf grid target
         self.scalars = data["constant_scalars"]  # Shape: (B, 2)
 
-        # Combinatorial mask across the 2 available fidelity levels.
-        # (D, M) -> 2 Datasets, 3 Combos ([T,F], [F,T], [F,F])
-        if mask_mode == "combinatorial":
-            # MultiEncoder expects TensorDBM: (Dataset, Batch, Ensemble).
-            # In AttentionMixer, True means "missing level".
-            # Here all fidelity levels are present, so mask must be False.
-            self.masks = torch.zeros(2, self.level_0.shape[0], 1, dtype=torch.bool)
-        else:
-            self.masks = None
+        self.mask_mode = mask_mode
 
     def __len__(self):
         return self.targets.shape[0]
@@ -60,9 +86,7 @@ class MultiFidelityLocalDataset(Dataset):
             constant_fields=None,
         )
 
-        return ListBatch(
-            inner=[b0, b1], mask=self.masks, output_fields=self.targets[idx]
-        )
+        return ListBatch(inner=[b0, b1], mask=None, output_fields=self.targets[idx])
 
 
 def custom_collate(batch):
@@ -71,9 +95,18 @@ def custom_collate(batch):
     l1_inputs = torch.stack([b.inner[1].input_fields for b in batch])
     targets = torch.stack([b.output_fields for b in batch])
 
-    # Expand to TensorDBM layout (Dataset, Batch, Ensemble).
-    # True means missing; use all False when all levels are available.
-    masks = torch.zeros(2, l0_inputs.shape[0], 1, dtype=torch.bool)
+    # Build full combinatorial TensorDBM mask (Dataset, Batch, Ensemble=3).
+    # True means missing level.
+    batch_size = l0_inputs.shape[0]
+    all_masks = build_combinatorial_mask(batch_size=batch_size, device=l0_inputs.device)
+    masks = all_masks
+
+    # MultiEncoder folds the mask ensemble axis into the batch axis before
+    # decoding, so targets must follow the same layout: (B, T, ...) ->
+    # (B, M, T, ...) -> (B*M, T, ...).
+    n_scenarios = masks.shape[-1]
+    targets = targets.unsqueeze(1).expand(-1, n_scenarios, -1, -1, -1, -1)
+    targets = targets.flatten(0, 1).contiguous()
 
     return ListBatch(
         inner=[
@@ -104,8 +137,14 @@ def main():
     # 1. Prepare Datasets & Dataloaders
     # -------------------------------------------------------------
     print("Loading synthetic Reaction-Diffusion datasets...")
-    train_ds = MultiFidelityLocalDataset(os.path.join(base_dir, "train", "data.pt"))
-    val_ds = MultiFidelityLocalDataset(os.path.join(base_dir, "valid", "data.pt"))
+    train_ds = MultiFidelityLocalDataset(
+        os.path.join(base_dir, "train", "data.pt"),
+        mask_mode="combinatorial",
+    )
+    val_ds = MultiFidelityLocalDataset(
+        os.path.join(base_dir, "valid", "data.pt"),
+        mask_mode="combinatorial",
+    )
 
     # Use standard dataloaders providing our collated structural chunks
     train_loader = DataLoader(
@@ -180,7 +219,7 @@ def main():
     wandb_logger = WandbLogger(project="autocast-reaction-diffusion")
 
     trainer = L.Trainer(
-        max_epochs=300,
+        max_epochs=100,
         accelerator="auto",
         enable_checkpointing=False,
         logger=wandb_logger,
@@ -198,54 +237,142 @@ def main():
 
     # Grab the first available set
     batch = next(iter(val_loader))
-    b0_hf = None
-    b0_target = batch.output_fields[0].numpy()
-
-    # Move data sequentially through prediction
-    with torch.no_grad():
-        preds = autoencoder_model(batch).detach().cpu().numpy()
-        b0_hf = preds[0]
-        # B0 predicted data has shape (T, 64, 64, 2) if attention mask has no M dimension
-        # Wait, if MultiEncoder masks exist, the shape is (T, M, 64, 64, 2).
-
-    from autocast.utils.plots import plot_spatiotemporal_video
-
-    print(f"Prediction raw shape: {b0_hf.shape}")
-    print(
-        "Prediction diagnostics "
-        f"(finite={np.isfinite(b0_hf).all()}, "
-        f"min={float(np.nanmin(b0_hf)):.6f}, "
-        f"max={float(np.nanmax(b0_hf)):.6f})"
+    b0_target = batch.output_fields[0].cpu().numpy()
+    batch_size = batch.inner[0].input_fields.shape[0]
+    eval_masks = build_combinatorial_mask(
+        batch_size=batch_size,
+        device=batch.inner[0].input_fields.device,
     )
+    scenario_preds: dict[str, np.ndarray] = {}
 
-    # If the network predicted multiple models for the M dimensional ensemble, we select M=0.
-    if len(b0_hf.shape) == 5:
-        b0_hf = b0_hf[:, 0, :, :, :]  # Pick the first ensemble mask
+    scenario_labels = SCENARIO_LABELS[: eval_masks.shape[-1]]
 
-    # We add a dummy batch dimension for plot_spatiotemporal_video since it expects TensorBTSC
-    pred_tensor = torch.tensor(b0_hf).unsqueeze(0)
-    true_tensor = torch.tensor(b0_target).unsqueeze(0)
+    scenario_metrics = {}
+    for m_idx, scenario_name in enumerate(scenario_labels):
+        scenario_batch = ListBatch(
+            inner=batch.inner,
+            mask=eval_masks[:, :, m_idx : m_idx + 1],
+            output_fields=batch.output_fields,
+        )
 
-    video_path = os.path.join(base_dir, "validation_reaction_diffusion.mp4")
+        with torch.no_grad():
+            pred_m = autoencoder_model(scenario_batch).detach().cpu().numpy()[0]
 
-    anim = plot_spatiotemporal_video(
-        true=true_tensor,
-        pred=pred_tensor,
-        batch_idx=0,
-        save_path=video_path,
-        colorbar_mode="column",
-        channel_names=["U", "V"],
+        scenario_preds[scenario_name] = pred_m
+        true_m = b0_target
+
+        print(f"Prediction raw shape [{scenario_name}]: {pred_m.shape}")
+        print(
+            f"Prediction diagnostics [{scenario_name}] "
+            f"(finite={np.isfinite(pred_m).all()}, "
+            f"min={float(np.nanmin(pred_m)):.6f}, "
+            f"max={float(np.nanmax(pred_m)):.6f})"
+        )
+
+        mse_m = float(np.mean((pred_m - true_m) ** 2))
+        mae_m = float(np.mean(np.abs(pred_m - true_m)))
+        rmse_m = float(np.sqrt(mse_m))
+        scenario_metrics[scenario_name] = {
+            "mse": mse_m,
+            "mae": mae_m,
+            "rmse": rmse_m,
+        }
+
+        pred_tensor = torch.tensor(pred_m).unsqueeze(0)
+        true_tensor = torch.tensor(true_m).unsqueeze(0)
+        video_path = os.path.join(base_dir, f"validation_{scenario_name}.mp4")
+
+        plot_spatiotemporal_video(
+            true=true_tensor,
+            pred=pred_tensor,
+            batch_idx=0,
+            save_path=video_path,
+            colorbar_mode="column",
+            channel_names=["U", "V"],
+            title=f"Validation: {scenario_name}",
+        )
+
+        wandb.log(
+            {
+                f"Validation/{scenario_name}_video": wandb.Video(
+                    video_path, fps=5, format="mp4"
+                ),
+                f"Validation/{scenario_name}_mse": mse_m,
+                f"Validation/{scenario_name}_mae": mae_m,
+                f"Validation/{scenario_name}_rmse": rmse_m,
+            }
+        )
+
+    # Comparison plot across scenarios for quick error inspection.
+    comparison_fig_path = os.path.join(
+        base_dir, "validation_scenarios_error_comparison.png"
     )
+    metric_names = ["mse", "mae", "rmse"]
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+    for ax, metric_name in zip(axes, metric_names, strict=False):
+        values = [scenario_metrics[name][metric_name] for name in scenario_labels]
+        ax.bar(scenario_labels, values)
+        ax.set_title(metric_name.upper())
+        ax.set_ylabel(metric_name.upper())
+        ax.tick_params(axis="x", rotation=20)
+
+    fig.tight_layout()
+    fig.savefig(comparison_fig_path, dpi=150)
+    plt.close(fig)
+
+    # Snapshot comparison: final time step predictions and absolute error for each scenario.
+    snapshot_path = os.path.join(
+        base_dir, "validation_scenarios_snapshot_comparison.png"
+    )
+    last_t = -1
+    ncols = len(scenario_labels)
+    fig, axes = plt.subplots(3, ncols, figsize=(4 * ncols, 10))
+    if ncols == 1:
+        axes = np.expand_dims(axes, axis=1)
+
+    for c_idx, scenario_name in enumerate(scenario_labels):
+        pred_frame = scenario_preds[scenario_name][last_t, :, :, 0]
+        true_frame = b0_target[last_t, :, :, 0]
+        err_frame = np.abs(pred_frame - true_frame)
+
+        im0 = axes[0, c_idx].imshow(true_frame, cmap="viridis", aspect="auto")
+        axes[0, c_idx].set_title(f"{scenario_name}: true (U)")
+        fig.colorbar(im0, ax=axes[0, c_idx], fraction=0.046, pad=0.04)
+
+        im1 = axes[1, c_idx].imshow(pred_frame, cmap="viridis", aspect="auto")
+        axes[1, c_idx].set_title(f"{scenario_name}: pred (U)")
+        fig.colorbar(im1, ax=axes[1, c_idx], fraction=0.046, pad=0.04)
+
+        im2 = axes[2, c_idx].imshow(err_frame, cmap="inferno", aspect="auto")
+        axes[2, c_idx].set_title(f"{scenario_name}: |error| (U)")
+        fig.colorbar(im2, ax=axes[2, c_idx], fraction=0.046, pad=0.04)
+
+        for r_idx in range(3):
+            axes[r_idx, c_idx].set_xticks([])
+            axes[r_idx, c_idx].set_yticks([])
+
+    fig.tight_layout()
+    fig.savefig(snapshot_path, dpi=150)
+    plt.close(fig)
 
     wandb.log(
         {
-            "Validation/Target_vs_Prediction_Video": wandb.Video(
-                video_path, fps=5, format="mp4"
-            )
+            "Validation/scenarios_error_comparison": wandb.Image(comparison_fig_path),
+            "Validation/scenarios_snapshot_comparison": wandb.Image(snapshot_path),
         }
     )
+
+    print("Per-scenario validation metrics:")
+    for scenario_name, metric_values in scenario_metrics.items():
+        print(
+            f"  {scenario_name}: "
+            f"MSE={metric_values['mse']:.6e}, "
+            f"MAE={metric_values['mae']:.6e}, "
+            f"RMSE={metric_values['rmse']:.6e}"
+        )
+
     wandb.finish()
-    print("Done! View your visualizations on the WANDB dashboard.")
+    print("Done! View scenario-wise videos, plots, and metrics on the WANDB dashboard.")
 
 
 if __name__ == "__main__":

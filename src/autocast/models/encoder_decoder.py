@@ -350,10 +350,17 @@ class MultiEncoder(GenericEncoder[ListBatch, None]):
             mixed = self.attention_mixer(stacked_flat, attn_mask_flat)
             mixed = mixed.unflatten(0, [*batch_dims, M])
 
-            # Collapse dummy ensemble dimensionality before decoding
-            # so strict 2D spatial convolution layers aren't tricked into 3D.
-            if M == 1:
-                mixed = mixed.squeeze(len(batch_dims))
+            # Keep mask scenarios as independent batch items for the decoder.
+            # Current shape is (*batch_dims, M, tot_n_channels, transformer_dim),
+            # where *batch_dims starts with B. Reorder to (B, M, *extra_batch_dims,
+            # tot_n_channels, transformer_dim), then fold (B, M) -> (B*M).
+            # Example with temporal data: (B, T, M, C_tot, D_tr) ->
+            # (B, M, T, C_tot, D_tr) -> (B*M, T, C_tot, D_tr).
+            n_leading = len(batch_dims) + 1
+            permute_order = [0, n_leading - 1, *range(1, n_leading - 1)]
+            permute_order.extend([n_leading, n_leading + 1])
+            mixed = mixed.permute(*permute_order)
+            mixed = mixed.flatten(0, 1)
 
         # Restore original latent dimension after attention.
         assert self.output_proj is not None

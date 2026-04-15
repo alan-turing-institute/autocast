@@ -67,13 +67,20 @@ This ensures that each mask scenario is processed independently, but efficiently
 This is exactly the expected `AttentionMixer` input shape:
 - `(batch, n_fidelity_levels, transformer_dim)`
 
-where here `Batch = B*T`, `n_fidelity_levels = sum_C`.
+where here `Batch = B*T` (or `B*T*M` when using mask ensembles), `n_fidelity_levels = sum_C`.
 
 ## 3. After AttentionMixer
 
 Attention output (no mask case):
 
 - `(B*T, sum_C, transformer_dim) -> (B, T, sum_C, transformer_dim)`
+
+Attention output (masked case with `M` scenarios):
+
+- The mixer operates on `(B*T*M, sum_C, transformer_dim)`.
+- After mixing, the implementation keeps mask scenarios as independent batch items for decoding:
+   `(B, T, M, sum_C, transformer_dim) -> (B*M, T, sum_C, transformer_dim)`.
+- So the decoder sees shape `(B*M, T, L1, L2, ..., C)` after projection/unflattening.
 
 Then project back from transformer width to a target latent flat size:
 
@@ -83,7 +90,14 @@ Then project back from transformer width to a target latent flat size:
 
 ## 4. Masked attention 
 
-`mask` is expected as `TensorDBM` with shape `(D, B, M)`, where `D` is the numnber of dataset, `B` is batch, and `D` is the masking combination (e.g. for `D=2` we could have `M=3` combinatiorial masks, i.e., `[1,0], [0,1], [1,1]`).
+`mask` is expected as `TensorDBM` with shape `(D, B, M)`, where `D` is the number of datasets, `B` is batch size, and `M` is the number of masking scenarios.
+For the 2-level case and `M=3`, the scenarios are:
+
+- LF1 only available: `[False, True]`
+- LF2 only available: `[True, False]`
+- both available: `[False, False]`
+
+where `False` means available and `True` means masked (missing).
 Note that we assume masking is applied to all channels of a given dataset, that is either all channels are avialable or all are masked.
 
 The code maps dataset-level masks to channel-token masks:
@@ -105,7 +119,8 @@ Important semantic detail: in `AttentionMixer` / `MultiheadAttention`, `True` in
 - Flatten latent space: `List[(B, T, L_i_flat, C_i)]`
 - Project flattened latent axis to transformer width: `List[(B, T, C_i, transformer_dim)]`
 - Concatenate levels: `(B, T, sum_C, transformer_dim)`
-- Attention input: `(B*T, sum_C, transformer_dim)`
+- Attention input: `(B*T, sum_C, transformer_dim)` or `(B*T*M, sum_C, transformer_dim)` with mask ensembles
 - Project back to latent flat size, transpose, and unflatten:
-  `(B, T, L1_target, L2_target, ..., sum_C)`
+   `(B, T, L1_target, L2_target, ..., sum_C)` (no mask)
+   or `(B*M, T, L1_target, L2_target, ..., sum_C)` (masked with ensembles)
 
