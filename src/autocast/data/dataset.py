@@ -31,7 +31,7 @@ class BatchMixin:
 class SpatioTemporalDataset(Dataset, BatchMixin):
     """A class for spatio-temporal datasets."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0915
         self,
         data_path: str | None,
         data: dict | None = None,
@@ -110,6 +110,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             self.norm.core_field_names = [
                 self.norm.core_field_names[i] for i in channel_idxs
             ]
+            self.norm._precompute_flattened_stats()
 
         if autoencoder_mode and full_trajectory_mode:
             msg = "autoencoder_mode and full_trajectory_mode cannot both be True."
