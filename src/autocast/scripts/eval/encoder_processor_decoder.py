@@ -69,6 +69,7 @@ from autocast.scripts.setup import (
     setup_epd_model,
     setup_processor_model,
 )
+from autocast.scripts.training import apply_float32_matmul_precision
 from autocast.scripts.utils import get_default_config_path
 from autocast.types.batch import Batch, EncodedBatch
 from autocast.utils import plot_spatiotemporal_video
@@ -76,9 +77,6 @@ from autocast.utils.plots import (
     compute_metrics_from_dataloader,
     compute_metrics_per_timestep_from_dataloader,
 )
-
-# Set matmul precision for A100/H100
-torch.set_float32_matmul_precision("high")
 
 log = logging.getLogger(__name__)
 
@@ -1165,6 +1163,10 @@ def _is_processor_only_checkpoint(checkpoint_payload: Mapping[str, Any]) -> bool
 def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # noqa: PLR0912, PLR0915
     """Run evaluation using an already-composed config."""
     logging.basicConfig(level=logging.INFO)
+
+    # cfg will override the default of float32 matmul precision to "high" that's set
+    # here to maintain backward compatibility where this was set but not configurable.
+    apply_float32_matmul_precision(cfg, default="high")
 
     umask_value = cfg.get("umask")
     if umask_value is not None:

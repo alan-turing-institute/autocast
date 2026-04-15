@@ -25,6 +25,39 @@ from autocast.scripts.setup import setup_autoencoder_model, setup_datamodule
 log = logging.getLogger(__name__)
 
 
+_VALID_MATMUL_PRECISIONS = {"highest", "high", "medium"}
+
+
+def apply_float32_matmul_precision(
+    config: DictConfig, default: str | None = None
+) -> None:
+    """Apply `torch.set_float32_matmul_precision` from config if set.
+
+    Accepts "highest" (pure f32), "high" (TF32 matmul, f32 accumulate), or
+    "medium" (TF32 matmul + accumulate). On Ampere+ GPUs, "high" gives most of
+    the TF32 throughput win while keeping f32 accumulation — a much safer
+    tradeoff than bf16-mixed for precision-sensitive objectives.
+
+    If the config key is unset (or null), `default` is used. If `default` is
+    also None, PyTorch's own default ("highest") is left untouched. Training
+    entrypoints pass `default=None` (opt-in); the eval entrypoint passes
+    `default="high"` for backward compatibility with the previous hardcoded
+    behavior.
+    """
+    precision = config.get("float32_matmul_precision")
+    if precision is None:
+        precision = default
+    if precision is None:
+        return
+    precision = str(precision)
+    if precision not in _VALID_MATMUL_PRECISIONS:
+        valid = sorted(_VALID_MATMUL_PRECISIONS)
+        msg = f"float32_matmul_precision must be one of {valid}, got {precision!r}"
+        raise ValueError(msg)
+    torch.set_float32_matmul_precision(precision)
+    log.info("Set torch.float32_matmul_precision to %r", precision)
+
+
 def _resolve_checkpoint_path(
     work_dir: Path,
     output_cfg: DictConfig | dict,
@@ -321,6 +354,8 @@ def run_training(
     # Ensure work_dir is a Path
     work_dir = Path(work_dir)
 
+    apply_float32_matmul_precision(config)
+
     # Setup logger
     logging_cfg = config.get("logging")
     logging_cfg_resolved = (
@@ -505,6 +540,7 @@ def train_autoencoder(
 ) -> Path:
     """Train the autoencoder defined in `cfg` and return the checkpoint path."""
     log.info("Starting autoencoder experiment: %s", config.get("experiment_name"))
+    apply_float32_matmul_precision(config)
     L.seed_everything(config.get("seed", 42), workers=True)
 
     resolved_cfg = OmegaConf.to_container(config, resolve=True)
