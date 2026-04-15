@@ -137,6 +137,77 @@ def test_normalized_data_is_transformed(deterministic_data, stats_dict):
     )
 
 
+def test_channel_idxs_slices_data_and_subsets_norm(deterministic_data, stats_dict):
+    """`channel_idxs` should slice data channels and align norm field names."""
+    dataset = ReactionDiffusionDataset(
+        data_path=None,
+        data=deterministic_data,
+        n_steps_input=2,
+        n_steps_output=1,
+        channel_idxs=(1,),
+        use_normalization=True,
+        normalization_type=ZScoreNormalization,
+        normalization_stats=stats_dict,
+    )
+
+    # Sliced data keeps only channel 1 (V).
+    assert dataset.data.shape[-1] == 1
+    assert dataset[0].input_fields.shape[-1] == 1
+
+    # Norm field names subset to match sliced channels.
+    assert dataset.norm is not None
+    assert dataset.norm.core_field_names == ["V"]
+
+    # Normalization uses V stats (mean=4.0, std=2.0) against the original V channel.
+    expected = (deterministic_data["data"][0][:2, ..., 1] - 4.0) / 2.0
+    assert torch.allclose(dataset[0].input_fields[..., 0], expected)
+
+
+def test_channel_idxs_none_is_noop(deterministic_data):
+    """`channel_idxs=None` should leave all channels intact."""
+    dataset = ReactionDiffusionDataset(
+        data_path=None,
+        data=deterministic_data,
+        n_steps_input=2,
+        n_steps_output=1,
+        channel_idxs=None,
+        use_normalization=False,
+    )
+    assert dataset.data.shape[-1] == 2
+    assert dataset[0].input_fields.shape[-1] == 2
+
+
+def test_datamodule_threads_channel_idxs(deterministic_data, stats_dict):
+    """DataModule should propagate `channel_idxs` to all sub-datasets."""
+    dm = SpatioTemporalDataModule(
+        data_path=None,
+        data={
+            "train": deterministic_data,
+            "valid": deterministic_data,
+            "test": deterministic_data,
+        },
+        dataset_cls=ReactionDiffusionDataset,
+        n_steps_input=2,
+        n_steps_output=1,
+        batch_size=1,
+        channel_idxs=(0,),
+        use_normalization=True,
+        normalization_type=ZScoreNormalization,
+        normalization_stats=stats_dict,
+    )
+
+    for ds in (
+        dm.train_dataset,
+        dm.val_dataset,
+        dm.test_dataset,
+        dm.rollout_val_dataset,
+        dm.rollout_test_dataset,
+    ):
+        assert ds.data.shape[-1] == 1
+        assert ds.norm is not None
+        assert ds.norm.core_field_names == ["U"]
+
+
 def test_datamodule_with_and_without_normalization(deterministic_data, stats_dict):
     """Test DataModule can be configured with or without normalization."""
 
