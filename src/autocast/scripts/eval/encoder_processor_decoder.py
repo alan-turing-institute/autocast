@@ -69,6 +69,7 @@ from autocast.scripts.setup import (
     setup_epd_model,
     setup_processor_model,
 )
+from autocast.scripts.training import apply_float32_matmul_precision
 from autocast.scripts.utils import get_default_config_path
 from autocast.types.batch import Batch, EncodedBatch
 from autocast.utils import plot_spatiotemporal_video
@@ -76,9 +77,6 @@ from autocast.utils.plots import (
     compute_metrics_from_dataloader,
     compute_metrics_per_timestep_from_dataloader,
 )
-
-# Set matmul precision for A100/H100
-torch.set_float32_matmul_precision("high")
 
 log = logging.getLogger(__name__)
 
@@ -282,11 +280,13 @@ def _resolve_rollout_channel_names(dataset: Any) -> list[str] | None:
 
     norm = getattr(dataset, "norm", None)
     raw_names = getattr(norm, "core_field_names", None)
+    names_already_subset = raw_names is not None
 
     if not isinstance(raw_names, Sequence) or isinstance(raw_names, str):
         normalization_stats = getattr(dataset, "normalization_stats", None)
         if isinstance(normalization_stats, Mapping):
             raw_names = normalization_stats.get("core_field_names")
+            names_already_subset = False
 
     if not isinstance(raw_names, Sequence) or isinstance(raw_names, str):
         return None
@@ -295,14 +295,14 @@ def _resolve_rollout_channel_names(dataset: Any) -> list[str] | None:
     if not channel_names:
         return None
 
-    output_channel_idxs = getattr(dataset, "output_channel_idxs", None)
-    if output_channel_idxs is not None:
+    channel_idxs = getattr(dataset, "channel_idxs", None)
+    if channel_idxs is not None and not names_already_subset:
         try:
-            channel_names = [channel_names[idx] for idx in output_channel_idxs]
+            channel_names = [channel_names[idx] for idx in channel_idxs]
         except (TypeError, IndexError):
             log.warning(
-                "Could not apply output_channel_idxs=%s to channel names %s.",
-                output_channel_idxs,
+                "Could not apply channel_idxs=%s to channel names %s.",
+                channel_idxs,
                 channel_names,
             )
             return None
@@ -1152,6 +1152,10 @@ def _is_processor_only_checkpoint(checkpoint_payload: Mapping[str, Any]) -> bool
 def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # noqa: PLR0912, PLR0915
     """Run evaluation using an already-composed config."""
     logging.basicConfig(level=logging.INFO)
+
+    # cfg will override the default of float32 matmul precision to "high" that's set
+    # here to maintain backward compatibility where this was set but not configurable.
+    apply_float32_matmul_precision(cfg, default="high")
 
     umask_value = cfg.get("umask")
     if umask_value is not None:
