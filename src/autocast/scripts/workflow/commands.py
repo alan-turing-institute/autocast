@@ -897,12 +897,18 @@ def cache_latents_command(
 
 
 def _extract_epoch_times_from_checkpoint(ckpt_path: Path) -> list[float] | None:
-    """Read per-epoch durations saved by TrainingTimerCallback."""
-    import torch
+    """Read per-epoch durations saved by ``TrainingTimerCallback``.
 
+    Loads the Lightning checkpoint at *ckpt_path* and looks for the
+    ``epoch_times_s`` list persisted by
+    :class:`~autocast.scripts.training.TrainingTimerCallback`.  Returns
+    ``None`` when the checkpoint is missing or does not contain timing data.
+    """
     if not ckpt_path.exists():
         return None
     try:
+        import torch  # noqa: PLC0415 - deferred to avoid import at CLI startup
+
         ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
         callbacks = ckpt.get("callbacks", {})
         for key, state in callbacks.items():
@@ -920,10 +926,18 @@ def _compute_max_epochs(
     budget_hours: float,
     margin: float = 0.02,
 ) -> dict:
-    """Compute max_epochs that fits within *budget_hours* with a safety margin."""
+    """Compute ``max_epochs`` that fits within *budget_hours*.
+
+    Subtracts *margin* (fraction) from the budget and rounds down to a
+    whole epoch via ``floor()``, guaranteeing that:
+
+    1. All ``max_epochs`` epochs complete before the wall-clock budget.
+    2. A cosine half-period schedule (``cosine_epochs = max_epochs``)
+       reaches exactly zero and never starts increasing again.
+    """
     budget_seconds = budget_hours * 3600
     usable_seconds = budget_seconds * (1.0 - margin)
-    max_epochs = int(math.floor(usable_seconds / seconds_per_epoch))
+    max_epochs = math.floor(usable_seconds / seconds_per_epoch)
     expected_hours = (max_epochs * seconds_per_epoch) / 3600
     headroom_hours = budget_hours - expected_hours
     return {
@@ -938,7 +952,7 @@ def _compute_max_epochs(
 
 def time_epochs_command(
     *,
-    mode: str,
+    mode: str,  # noqa: ARG001 - kept for CLI dispatch consistency
     dataset: str | None,
     output_base: str,
     overrides: list[str],
@@ -951,13 +965,34 @@ def time_epochs_command(
     runtime_typechecking: bool = False,
     dry_run: bool = False,
 ) -> dict | None:
-    """Run a short training to time per-epoch duration and recommend max_epochs.
+    """Run a short training to time per-epoch duration and recommend ``max_epochs``.
 
-    Executes *num_epochs* epochs of EPD training with logging and testing
-    disabled, extracts per-epoch wall-clock times from the
-    ``TrainingTimerCallback`` checkpoint, and prints the recommended
-    ``trainer.max_epochs`` for a cosine half-period schedule that completes
-    within *budget_hours*.
+    Executes *num_epochs* epochs of EPD training with W&B logging and
+    testing disabled, saves a checkpoint so that per-epoch wall-clock
+    times can be extracted from ``TrainingTimerCallback``, and prints the
+    recommended ``trainer.max_epochs`` for a cosine half-period schedule
+    (``optimizer=adamw_half``) that completes within *budget_hours*.
+
+    The calculation is conservative: a *margin* fraction is subtracted
+    from the budget **and** the result is rounded down to a whole epoch,
+    so the schedule will always reach zero before the wall-clock limit.
+    ``trainer.max_time`` is emitted as a hard safety stop equal to the
+    full (un-margined) budget.
+
+    Parameters
+    ----------
+    dataset:
+        Hydra datamodule group name (e.g. ``"advection_diffusion_multichannel"``).
+    output_base:
+        Root output directory (forwarded to ``build_train_overrides``).
+    overrides:
+        Additional Hydra overrides forwarded to the timing run.
+    num_epochs:
+        How many epochs to run for the timing measurement.
+    budget_hours:
+        Target wall-clock budget in hours.
+    margin:
+        Fraction of *budget_hours* held back as safety headroom (default 2 %).
     """
     timing_run_id = run_id or "timing"
 
@@ -980,7 +1015,7 @@ def time_epochs_command(
             f"output.checkpoint_path={ckpt_path}",
         ]
 
-        final_work_dir, _resolved_run_id, command_overrides = build_train_overrides(
+        _final_work_dir, _resolved_run_id, command_overrides = build_train_overrides(
             kind="epd",
             mode="local",  # timing always runs locally
             dataset=dataset,
@@ -993,8 +1028,6 @@ def time_epochs_command(
         )
 
         if dry_run:
-            from autocast.scripts.workflow.helpers import format_command
-
             cmd = run_module_command(TRAIN_MODULES["epd"], command_overrides)
             print(f"DRY-RUN: {format_command(cmd)}")
             print(f"\nWould time {num_epochs} epochs, then compute max_epochs")
