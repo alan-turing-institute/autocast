@@ -177,6 +177,34 @@ uv run autocast time-epochs --dry-run datamodule=reaction_diffusion
 `processor`.  Use the same kind you intend to train so that the per-epoch
 measurement reflects the actual model and data pipeline.
 
+#### Batch timing via SLURM
+
+With `--mode slurm` the timing run is submitted as a SLURM job and the CLI
+exits immediately, printing a follow-up command to retrieve results once the
+job completes:
+
+```bash
+# Submit timing jobs for several configs at once
+uv run autocast time-epochs --mode slurm --kind ae \
+    datamodule=reaction_diffusion --run-group timing
+uv run autocast time-epochs --mode slurm --kind epd \
+    datamodule=shallow_water2d --run-group timing \
+    experiment=epd_crps_vit_large_ps4_64
+
+# Once the SLURM jobs finish, compute results from the checkpoints
+uv run autocast time-epochs --from-checkpoint outputs/timing/ae_.../timing.ckpt
+uv run autocast time-epochs --from-checkpoint outputs/timing/epd_.../timing.ckpt
+```
+
+`--from-checkpoint` reads an existing checkpoint, extracts the per-epoch
+times, and prints the recommendation — no training is run.  You can also
+use it to recompute with a different budget or margin:
+
+```bash
+uv run autocast time-epochs --from-checkpoint outputs/timing/epd_.../timing.ckpt \
+    -b 12 -m 0.05
+```
+
 The output includes recommended Hydra overrides ready to copy-paste:
 
 ```

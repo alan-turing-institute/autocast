@@ -192,6 +192,14 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.02,
         help="Safety margin fraction subtracted from budget (default: 0.02 = 2%%).",
     )
+    time_parser.add_argument(
+        "--from-checkpoint",
+        metavar="CKPT",
+        help=(
+            "Path to an existing timing checkpoint. Skips training and "
+            "computes the recommendation directly."
+        ),
+    )
     _add_common_args(time_parser)
 
     return parser
@@ -378,6 +386,7 @@ def main() -> None:
             run_group=args.run_group,
             run_id=args.run_id,
             work_dir=args.workdir,
+            from_checkpoint=args.from_checkpoint,
             runtime_typechecking=args.runtime_typechecking,
             dry_run=args.dry_run,
         )
