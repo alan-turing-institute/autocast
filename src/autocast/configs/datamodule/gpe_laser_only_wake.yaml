@@ -8,3 +8,4 @@ verbose: false
 use_normalization: false
 normalization_path: ${.data_path}/stats.yml
 num_workers: 0
+channel_idxs: [1, 2]
