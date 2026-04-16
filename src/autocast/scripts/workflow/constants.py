@@ -28,6 +28,7 @@ DATASET_NAME_TOKENS: dict[str, str] = {
     "conditioned_navier_stokes": "cns64",
     "gpe_low_complexity": "gpelc64",
     "gpe_high_complexity": "gpehc64",
+    "gpe_laser_only_wake": "gpe64",
     "shallow_water2d": "sw2d64",
     "shallow_water2d_4": "sw2d464",
 }

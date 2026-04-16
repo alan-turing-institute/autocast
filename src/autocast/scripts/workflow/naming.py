@@ -122,6 +122,57 @@ def _preset_overrides_for_naming(overrides: list[str]) -> list[str]:
     return hints
 
 
+def _unquote(value: str) -> str:
+    return value.strip().strip('"').strip("'")
+
+
+def _dataset_key_from_data_path(data_path: str) -> str | None:
+    """Infer canonical dataset key from a filesystem data path."""
+    normalized = Path(_unquote(data_path))
+    dataset_dir = normalized.name
+
+    for key in sorted(DATASET_NAME_TOKENS, key=len, reverse=True):
+        if dataset_dir == key or dataset_dir.startswith(f"{key}_"):
+            return key
+
+    if (
+        len(normalized.parts) >= 2
+        and normalized.parts[-2] == "gpe"
+        and dataset_dir.startswith("laser_only_wake")
+    ):
+        return "gpe_laser_only_wake"
+
+    return None
+
+
+def _dataset_key_from_cached_latents(cache_path: str) -> str | None:  # noqa: PLR0911
+    """Infer source dataset key from a cached-latents directory."""
+    cache_dir = Path(_unquote(cache_path)).expanduser()
+    ae_config = cache_dir / "autoencoder_config.yaml"
+    if not ae_config.exists():
+        return None
+
+    loaded = OmegaConf.to_container(OmegaConf.load(ae_config), resolve=True)
+    if not isinstance(loaded, dict):
+        return None
+
+    datamodule_cfg = loaded.get("datamodule")
+    if isinstance(datamodule_cfg, str):
+        return datamodule_cfg
+    if not isinstance(datamodule_cfg, dict):
+        return None
+
+    dataset_name = datamodule_cfg.get("dataset")
+    if isinstance(dataset_name, str) and dataset_name:
+        return dataset_name
+
+    source_data_path = datamodule_cfg.get("data_path")
+    if isinstance(source_data_path, str):
+        return _dataset_key_from_data_path(source_data_path)
+
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -130,7 +181,18 @@ def _preset_overrides_for_naming(overrides: list[str]) -> list[str]:
 def dataset_name_token(dataset: str, overrides: list[str]) -> str:
     """Short token for *dataset* used in auto-generated run names."""
     datamodule_cfg = extract_override_value(overrides, "datamodule") or dataset
-    return sanitize_name_part(DATASET_NAME_TOKENS.get(datamodule_cfg, datamodule_cfg))
+    data_path_override = extract_override_value(overrides, "datamodule.data_path")
+
+    if datamodule_cfg == "cached_latents" and data_path_override:
+        inferred = _dataset_key_from_cached_latents(data_path_override)
+        if inferred:
+            datamodule_cfg = inferred
+
+    dataset_key = datamodule_cfg
+    if data_path_override:
+        dataset_key = _dataset_key_from_data_path(data_path_override) or dataset_key
+
+    return sanitize_name_part(DATASET_NAME_TOKENS.get(dataset_key, dataset_key))
 
 
 def auto_run_name(kind: str, dataset: str, overrides: list[str]) -> str:
