@@ -269,9 +269,14 @@ def _attach_reset_timer_callback(
 class TrainingTimerCallback(Callback):
     """Measures wall-clock training time and persists it to the checkpoint.
 
-    Records total training time and per-epoch durations.  The values are
-    stored via ``state_dict()`` so the eval script can read them directly
-    from the checkpoint's ``callbacks`` block.
+    Records total training time and per-epoch durations.  Each epoch
+    measurement spans the **full cycle** — training batches *and* the
+    subsequent validation loop — so that the ``time-epochs`` command can
+    accurately predict wall-clock budget consumption.
+
+    Epoch boundaries are measured from one ``on_train_epoch_start`` to the
+    next; the final epoch is closed out in ``on_train_end`` (which fires
+    after the last validation loop).
 
     Note
     ----
@@ -305,19 +310,20 @@ class TrainingTimerCallback(Callback):
         self, trainer: L.Trainer, pl_module: L.LightningModule
     ) -> None:
         del trainer, pl_module
-        self._epoch_start = perf_counter()
-
-    def on_train_epoch_end(
-        self, trainer: L.Trainer, pl_module: L.LightningModule
-    ) -> None:
-        del trainer, pl_module
+        now = perf_counter()
+        # Close out the *previous* epoch (training + validation + overhead).
         if self._epoch_start is not None:
-            self._epoch_times_s.append(perf_counter() - self._epoch_start)
+            self._epoch_times_s.append(now - self._epoch_start)
+        self._epoch_start = now
 
     def on_train_end(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
         del trainer, pl_module
+        now = perf_counter()
+        # Close out the final epoch (includes its validation loop).
+        if self._epoch_start is not None:
+            self._epoch_times_s.append(now - self._epoch_start)
         if self._train_start is not None:
-            self.training_runtime_total_s = perf_counter() - self._train_start
+            self.training_runtime_total_s = now - self._train_start
 
     def state_dict(self) -> dict:  # type: ignore[override]
         runtime_elapsed_s = self._current_elapsed_runtime_s()
