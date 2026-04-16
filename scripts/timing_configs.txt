@@ -1,0 +1,17 @@
+# Each line is a set of Hydra overrides for one model/dataset configuration.
+# Blank lines and lines starting with '#' are skipped.
+# These are passed to train_encoder_processor_decoder alongside timing overrides.
+#
+# Add your combos below.  Examples:
+#
+# Default model + different datasets:
+datamodule=advection_diffusion_multichannel
+# datamodule=shallow_water2d
+# datamodule=reaction_diffusion
+# datamodule=gray_scott
+# datamodule=advection_diffusion_multichannel_64_64
+#
+# With experiment overrides (different processor/model):
+# experiment=epd_fno_64
+# experiment=epd_crps_vit_large_ps4_64
+# experiment=epd_flow_matching_64_fast
