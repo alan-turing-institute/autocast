@@ -10,7 +10,7 @@ experiment_name: ae_dc_large_gpe_laser_only_wake
 
 datamodule:
   use_normalization: true
-  batch_size: 64
+  batch_size: 16
 
 model:
   encoder:
