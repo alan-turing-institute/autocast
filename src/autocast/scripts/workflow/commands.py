@@ -935,6 +935,16 @@ def _compute_max_epochs(
     2. A cosine half-period schedule (``cosine_epochs = max_epochs``)
        reaches exactly zero and never starts increasing again.
     """
+    if seconds_per_epoch <= 0:
+        msg = "seconds_per_epoch must be positive"
+        raise ValueError(msg)
+    if budget_hours <= 0:
+        msg = "budget_hours must be positive"
+        raise ValueError(msg)
+    if not (0.0 <= margin < 1.0):
+        msg = "margin must be in [0, 1)"
+        raise ValueError(msg)
+
     budget_seconds = budget_hours * 3600
     usable_seconds = budget_seconds * (1.0 - margin)
     max_epochs = math.floor(usable_seconds / seconds_per_epoch)
@@ -952,16 +962,22 @@ def _compute_max_epochs(
 
 def _format_max_time(budget_hours: float) -> str:
     """Format *budget_hours* as a ``DD:HH:MM:SS`` string for Lightning."""
-    if budget_hours != int(budget_hours):
-        return f"{int(budget_hours):02d}:{int(budget_hours % 1 * 60):02d}:00:00"
-    return f"{int(budget_hours):02d}:00:00:00"
+    if budget_hours <= 0:
+        msg = "budget_hours must be positive"
+        raise ValueError(msg)
+
+    total_seconds = round(budget_hours * 3600)
+    days, rem = divmod(total_seconds, 24 * 3600)
+    hours, rem = divmod(rem, 3600)
+    minutes, seconds = divmod(rem, 60)
+    return f"{days:02d}:{hours:02d}:{minutes:02d}:{seconds:02d}"
 
 
 def _print_timing_results(
     epoch_times: list[float],
     budget_hours: float,
     margin: float,
-) -> dict:
+) -> dict | None:
     """Compute and print the ``max_epochs`` recommendation from epoch timings."""
     seconds_per_epoch = sum(epoch_times) / len(epoch_times)
     print(
@@ -969,8 +985,19 @@ def _print_timing_results(
         + ", ".join(f"{t:.1f}s" for t in epoch_times)
     )
 
-    result = _compute_max_epochs(seconds_per_epoch, budget_hours, margin)
-    max_time_str = _format_max_time(budget_hours)
+    try:
+        result = _compute_max_epochs(seconds_per_epoch, budget_hours, margin)
+        max_time_str = _format_max_time(budget_hours)
+    except ValueError as exc:
+        print(f"\nERROR: {exc}")
+        return None
+
+    if result["max_epochs"] < 1:
+        print(
+            "\nERROR: Computed max_epochs < 1. Increase the budget, reduce the "
+            "margin, or re-check the epoch timing estimate."
+        )
+        return None
 
     print(f"\n{'=' * 60}")
     print(f"  Seconds/epoch:  {result['seconds_per_epoch']:.1f}s")
@@ -986,6 +1013,120 @@ def _print_timing_results(
         f"optimizer=adamw_half"
     )
     return result
+
+
+def _validate_time_epochs_args(
+    *, num_epochs: int, budget_hours: float, margin: float
+) -> None:
+    if num_epochs < 1:
+        msg = "--num-epochs must be >= 1"
+        raise ValueError(msg)
+    if budget_hours <= 0:
+        msg = "--budget must be > 0"
+        raise ValueError(msg)
+    if not (0.0 <= margin < 1.0):
+        msg = "--margin must be in [0, 1)"
+        raise ValueError(msg)
+
+
+def _run_time_epochs_training(
+    *,
+    kind: str,
+    mode: str,
+    dataset: str | None,
+    output_base: str,
+    overrides: list[str],
+    num_epochs: int,
+    budget_hours: float,
+    margin: float,
+    run_group: str | None,
+    run_id: str | None,
+    work_dir: str | None,
+    runtime_typechecking: bool,
+    dry_run: bool,
+) -> tuple[list[float] | None, bool]:
+    """Run timing training job and return (epoch_times, exit_early)."""
+    timing_run_id = run_id or "timing"
+
+    use_tempdir = mode == "local" and work_dir is None
+    tmpdir_ctx = (
+        tempfile.TemporaryDirectory(prefix="autocast_timing_") if use_tempdir else None
+    )
+    tmpdir = tmpdir_ctx.__enter__() if tmpdir_ctx is not None else None
+
+    try:
+        effective_work_dir = tmpdir if use_tempdir else work_dir
+
+        timing_overrides = [
+            f"++trainer.max_epochs={num_epochs}",
+            "++trainer.max_time=null",
+            "logging.wandb.enabled=false",
+            "output.skip_test=true",
+            "output.save_config=false",
+            "output.checkpoint_path=timing.ckpt",
+        ]
+
+        final_work_dir, _resolved_run_id, command_overrides = build_train_overrides(
+            kind=kind,
+            mode=mode,
+            dataset=dataset,
+            output_base=output_base,
+            run_group=run_group,
+            run_id=timing_run_id,
+            work_dir=str(effective_work_dir)
+            if effective_work_dir is not None
+            else None,
+            resume_from=None,
+            overrides=[*timing_overrides, *overrides],
+        )
+
+        ckpt_path = final_work_dir / "timing.ckpt"
+
+        if dry_run:
+            cmd = run_module_command(TRAIN_MODULES[kind], command_overrides)
+            print(f"DRY-RUN: {format_command(cmd)}")
+            print(f"\nWould time {num_epochs} epochs, then compute max_epochs")
+            print(f"for a {budget_hours}h budget with {margin:.0%} margin.")
+            return None, True
+
+        if mode == "slurm":
+            run_module(
+                TRAIN_MODULES[kind],
+                command_overrides,
+                dry_run=False,
+                mode="slurm",
+                runtime_typechecking=runtime_typechecking,
+            )
+            retrieve_cmd = (
+                f"uv run autocast time-epochs "
+                f"--from-checkpoint {ckpt_path} "
+                f"-b {budget_hours} -m {margin}"
+            )
+            final_work_dir.mkdir(parents=True, exist_ok=True)
+            (final_work_dir / "retrieve.sh").write_text(
+                f"#!/usr/bin/env bash\n{retrieve_cmd}\n"
+            )
+            print(f"\nSLURM job submitted. Workdir: {final_work_dir}")
+            print("Once complete, compute results with:")
+            print(f"  {retrieve_cmd}")
+            print(
+                "\nOr collect all timing results at once:\n"
+                '  for f in outputs/timing/*/retrieve.sh; do bash "$f"; done'
+            )
+            return None, True
+
+        print(f"Timing {num_epochs} epoch(s) to estimate per-epoch duration...")
+        run_module(
+            TRAIN_MODULES[kind],
+            command_overrides,
+            dry_run=False,
+            mode="local",
+            runtime_typechecking=runtime_typechecking,
+        )
+        return _extract_epoch_times_from_checkpoint(ckpt_path), False
+    finally:
+        if tmpdir_ctx is not None:
+            tmpdir_ctx.__exit__(None, None, None)
 
 
 def time_epochs_command(
@@ -1043,9 +1184,16 @@ def time_epochs_command(
         Path to an existing checkpoint; skips training and computes the
         recommendation directly.
     """
-    # ------------------------------------------------------------------
-    # Fast path: compute from an existing checkpoint (no training needed)
-    # ------------------------------------------------------------------
+    try:
+        _validate_time_epochs_args(
+            num_epochs=num_epochs,
+            budget_hours=budget_hours,
+            margin=margin,
+        )
+    except ValueError as exc:
+        print(f"ERROR: {exc}")
+        return None
+
     if from_checkpoint is not None:
         ckpt = Path(from_checkpoint)
         epoch_times = _extract_epoch_times_from_checkpoint(ckpt)
@@ -1058,100 +1206,23 @@ def time_epochs_command(
             return None
         return _print_timing_results(epoch_times, budget_hours, margin)
 
-    # ------------------------------------------------------------------
-    # Training path: run a short timing job (local or SLURM)
-    # ------------------------------------------------------------------
-    timing_run_id = run_id or "timing"
-
-    # Local without explicit workdir: use a tempdir (cleaned up after).
-    # SLURM or explicit workdir: use a persistent path so results survive.
-    use_tempdir = mode == "local" and work_dir is None
-    tmpdir_ctx = (
-        tempfile.TemporaryDirectory(prefix="autocast_timing_") if use_tempdir else None
+    epoch_times, exit_early = _run_time_epochs_training(
+        kind=kind,
+        mode=mode,
+        dataset=dataset,
+        output_base=output_base,
+        overrides=overrides,
+        num_epochs=num_epochs,
+        budget_hours=budget_hours,
+        margin=margin,
+        run_group=run_group,
+        run_id=run_id,
+        work_dir=work_dir,
+        runtime_typechecking=runtime_typechecking,
+        dry_run=dry_run,
     )
-    tmpdir = tmpdir_ctx.__enter__() if tmpdir_ctx is not None else None
-
-    try:
-        effective_work_dir = tmpdir if use_tempdir else work_dir
-
-        # Build overrides: short run, no wandb, no test, checkpoint for
-        # timer extraction.  Use a relative checkpoint name so the
-        # training script resolves it against its own work_dir.
-        timing_overrides = [
-            f"++trainer.max_epochs={num_epochs}",
-            "++trainer.max_time=null",
-            "logging.wandb.enabled=false",
-            "output.skip_test=true",
-            "output.save_config=false",
-            "output.checkpoint_path=timing.ckpt",
-        ]
-
-        final_work_dir, _resolved_run_id, command_overrides = build_train_overrides(
-            kind=kind,
-            mode=mode,
-            dataset=dataset,
-            output_base=output_base,
-            run_group=run_group,
-            run_id=timing_run_id,
-            work_dir=(
-                str(effective_work_dir) if effective_work_dir is not None else None
-            ),
-            resume_from=None,
-            overrides=[*timing_overrides, *overrides],
-        )
-
-        ckpt_path = final_work_dir / "timing.ckpt"
-
-        if dry_run:
-            cmd = run_module_command(TRAIN_MODULES[kind], command_overrides)
-            print(f"DRY-RUN: {format_command(cmd)}")
-            print(f"\nWould time {num_epochs} epochs, then compute max_epochs")
-            print(f"for a {budget_hours}h budget with {margin:.0%} margin.")
-            return None
-
-        if mode == "slurm":
-            run_module(
-                TRAIN_MODULES[kind],
-                command_overrides,
-                dry_run=False,
-                mode="slurm",
-                runtime_typechecking=runtime_typechecking,
-            )
-            retrieve_cmd = (
-                f"uv run autocast time-epochs "
-                f"--from-checkpoint {ckpt_path} "
-                f"-b {budget_hours} -m {margin}"
-            )
-            # Write retrieval command to workdir so batch results are easy
-            # to collect: for f in outputs/timing/*/retrieve.sh; do bash "$f"; done
-            final_work_dir.mkdir(parents=True, exist_ok=True)
-            (final_work_dir / "retrieve.sh").write_text(
-                f"#!/usr/bin/env bash\n{retrieve_cmd}\n"
-            )
-            print(f"\nSLURM job submitted. Workdir: {final_work_dir}")
-            print("Once complete, compute results with:")
-            print(f"  {retrieve_cmd}")
-            print(
-                "\nOr collect all timing results at once:\n"
-                "  for f in outputs/timing/*/retrieve.sh; "
-                'do bash "$f"; done'
-            )
-            return None
-
-        # Local execution
-        print(f"Timing {num_epochs} epoch(s) to estimate per-epoch duration...")
-        run_module(
-            TRAIN_MODULES[kind],
-            command_overrides,
-            dry_run=False,
-            mode="local",
-            runtime_typechecking=runtime_typechecking,
-        )
-
-        epoch_times = _extract_epoch_times_from_checkpoint(ckpt_path)
-    finally:
-        if tmpdir_ctx is not None:
-            tmpdir_ctx.__exit__(None, None, None)
+    if exit_early:
+        return None
 
     if not epoch_times:
         print(

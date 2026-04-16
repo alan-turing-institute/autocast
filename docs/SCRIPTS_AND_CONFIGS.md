@@ -217,7 +217,7 @@ The output includes recommended Hydra overrides ready to copy-paste:
 ============================================================
 
 Recommended overrides:
-  trainer.max_epochs=564 trainer.max_time=24:00:00:00 optimizer=adamw_half
+  trainer.max_epochs=564 trainer.max_time=01:00:00:00 optimizer=adamw_half
 ```
 
 The calculation is conservative:
