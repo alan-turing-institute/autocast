@@ -12,6 +12,7 @@ from autocast.scripts.workflow.commands import (
     eval_command,
     infer_dataset_from_workdir,
     infer_resume_checkpoint,
+    time_epochs_command,
     train_command,
     train_eval_single_job_command,
 )
@@ -153,6 +154,53 @@ def build_parser() -> argparse.ArgumentParser:
         help=("Output directory for cached latents. Defaults to <workdir>/cached."),
     )
     _add_common_args(cache_parser)
+
+    # -- time-epochs -------------------------------------------------------
+    time_parser = subparsers.add_parser(
+        "time-epochs",
+        description=(
+            "Run a short training (ae, epd, or processor) to time per-epoch "
+            "duration and compute the recommended trainer.max_epochs for a "
+            "cosine half-period schedule within a given wall-clock budget."
+        ),
+    )
+    _add_train_args(time_parser)
+    time_parser.add_argument(
+        "--kind",
+        choices=["ae", "epd", "processor"],
+        default="epd",
+        help="Training kind to time (default: epd).",
+    )
+    time_parser.add_argument(
+        "-n",
+        "--num-epochs",
+        type=int,
+        default=3,
+        help="Number of epochs to run for timing (default: 3).",
+    )
+    time_parser.add_argument(
+        "-b",
+        "--budget",
+        type=float,
+        default=24.0,
+        help="Wall-clock budget in hours (default: 24).",
+    )
+    time_parser.add_argument(
+        "-m",
+        "--margin",
+        type=float,
+        default=0.02,
+        help="Safety margin fraction subtracted from budget (default: 0.02 = 2%%).",
+    )
+    time_parser.add_argument(
+        "--from-checkpoint",
+        metavar="CKPT",
+        help=(
+            "Path to an existing timing checkpoint. Skips training and "
+            "computes the recommendation directly."
+        ),
+    )
+    _add_common_args(time_parser)
 
     return parser
 
@@ -315,6 +363,30 @@ def main() -> None:
             work_dir=args.workdir,
             output_dir=getattr(args, "output_dir", None),
             overrides=combined_overrides,
+            runtime_typechecking=args.runtime_typechecking,
+            dry_run=args.dry_run,
+        )
+        return
+
+    if args.command == "time-epochs":
+        dataset = _resolve_dataset(
+            work_dir=args.workdir,
+            overrides=combined_overrides,
+        )
+
+        time_epochs_command(
+            kind=args.kind,
+            mode=args.mode,
+            dataset=dataset,
+            output_base=args.output_base,
+            overrides=combined_overrides,
+            num_epochs=args.num_epochs,
+            budget_hours=args.budget,
+            margin=args.margin,
+            run_group=args.run_group,
+            run_id=args.run_id,
+            work_dir=args.workdir,
+            from_checkpoint=args.from_checkpoint,
             runtime_typechecking=args.runtime_typechecking,
             dry_run=args.dry_run,
         )

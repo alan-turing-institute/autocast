@@ -269,9 +269,14 @@ def _attach_reset_timer_callback(
 class TrainingTimerCallback(Callback):
     """Measures wall-clock training time and persists it to the checkpoint.
 
-    Records total training time and per-epoch durations.  The values are
-    stored via ``state_dict()`` so the eval script can read them directly
-    from the checkpoint's ``callbacks`` block.
+    Records total training time and per-epoch durations.  Each epoch
+    measurement spans the **full cycle** — training batches *and* the
+    subsequent validation loop — so that the ``time-epochs`` command can
+    accurately predict wall-clock budget consumption.
+
+    Epoch boundaries are measured from one ``on_train_epoch_start`` to the
+    next; the final epoch is closed out in ``on_train_end`` (which fires
+    after the last validation loop).
 
     Note
     ----
@@ -305,19 +310,20 @@ class TrainingTimerCallback(Callback):
         self, trainer: L.Trainer, pl_module: L.LightningModule
     ) -> None:
         del trainer, pl_module
-        self._epoch_start = perf_counter()
-
-    def on_train_epoch_end(
-        self, trainer: L.Trainer, pl_module: L.LightningModule
-    ) -> None:
-        del trainer, pl_module
+        now = perf_counter()
+        # Close out the *previous* epoch (training + validation + overhead).
         if self._epoch_start is not None:
-            self._epoch_times_s.append(perf_counter() - self._epoch_start)
+            self._epoch_times_s.append(now - self._epoch_start)
+        self._epoch_start = now
 
     def on_train_end(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
         del trainer, pl_module
+        now = perf_counter()
+        # Close out the final epoch (includes its validation loop).
+        if self._epoch_start is not None:
+            self._epoch_times_s.append(now - self._epoch_start)
         if self._train_start is not None:
-            self.training_runtime_total_s = perf_counter() - self._train_start
+            self.training_runtime_total_s = now - self._train_start
 
     def state_dict(self) -> dict:  # type: ignore[override]
         runtime_elapsed_s = self._current_elapsed_runtime_s()
@@ -570,6 +576,7 @@ def train_autoencoder(
     trainer = instantiate(
         trainer_cfg, logger=wandb_logger, default_root_dir=str(work_dir)
     )
+    trainer.callbacks.append(TrainingTimerCallback())
     output_cfg = config.get("output", {})
     if output_cfg.get("save_config", False) and trainer.is_global_zero:
         save_resolved_config(
@@ -622,12 +629,11 @@ def train_autoencoder(
         log.info("Starting training from scratch (no resume checkpoint).")
         trainer.fit(model=model, datamodule=datamodule)
 
-    checkpoint_name = output_cfg.get("checkpoint_name", "autoencoder.ckpt")
-    checkpoint_target = Path(checkpoint_name)
-    checkpoint_path = (
-        checkpoint_target
-        if checkpoint_target.is_absolute()
-        else (work_dir / checkpoint_target)
+    checkpoint_path = _resolve_checkpoint_path(
+        work_dir,
+        output_cfg,
+        output_cfg.get("checkpoint_path"),
+        default_name="autoencoder.ckpt",
     )
     if trainer.is_global_zero:
         trainer.save_checkpoint(checkpoint_path)
