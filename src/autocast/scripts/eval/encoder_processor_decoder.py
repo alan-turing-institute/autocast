@@ -280,11 +280,13 @@ def _resolve_rollout_channel_names(dataset: Any) -> list[str] | None:
 
     norm = getattr(dataset, "norm", None)
     raw_names = getattr(norm, "core_field_names", None)
+    names_already_subset = raw_names is not None
 
     if not isinstance(raw_names, Sequence) or isinstance(raw_names, str):
         normalization_stats = getattr(dataset, "normalization_stats", None)
         if isinstance(normalization_stats, Mapping):
             raw_names = normalization_stats.get("core_field_names")
+            names_already_subset = False
 
     if not isinstance(raw_names, Sequence) or isinstance(raw_names, str):
         return None
@@ -293,14 +295,14 @@ def _resolve_rollout_channel_names(dataset: Any) -> list[str] | None:
     if not channel_names:
         return None
 
-    output_channel_idxs = getattr(dataset, "output_channel_idxs", None)
-    if output_channel_idxs is not None:
+    channel_idxs = getattr(dataset, "channel_idxs", None)
+    if channel_idxs is not None and not names_already_subset:
         try:
-            channel_names = [channel_names[idx] for idx in output_channel_idxs]
+            channel_names = [channel_names[idx] for idx in channel_idxs]
         except (TypeError, IndexError):
             log.warning(
-                "Could not apply output_channel_idxs=%s to channel names %s.",
-                output_channel_idxs,
+                "Could not apply channel_idxs=%s to channel names %s.",
+                channel_idxs,
                 channel_names,
             )
             return None
