@@ -159,12 +159,18 @@ def build_parser() -> argparse.ArgumentParser:
     time_parser = subparsers.add_parser(
         "time-epochs",
         description=(
-            "Run a short EPD training to time per-epoch duration and compute "
-            "the recommended trainer.max_epochs for a cosine half-period "
-            "schedule within a given wall-clock budget."
+            "Run a short training (ae, epd, or processor) to time per-epoch "
+            "duration and compute the recommended trainer.max_epochs for a "
+            "cosine half-period schedule within a given wall-clock budget."
         ),
     )
     _add_train_args(time_parser)
+    time_parser.add_argument(
+        "--kind",
+        choices=["ae", "epd", "processor"],
+        default="epd",
+        help="Training kind to time (default: epd).",
+    )
     time_parser.add_argument(
         "-n",
         "--num-epochs",
@@ -361,6 +367,7 @@ def main() -> None:
         )
 
         time_epochs_command(
+            kind=args.kind,
             mode=args.mode,
             dataset=dataset,
             output_base=args.output_base,

@@ -952,6 +952,7 @@ def _compute_max_epochs(
 
 def time_epochs_command(
     *,
+    kind: str = "epd",
     mode: str,  # noqa: ARG001 - kept for CLI dispatch consistency
     dataset: str | None,
     output_base: str,
@@ -967,11 +968,11 @@ def time_epochs_command(
 ) -> dict | None:
     """Run a short training to time per-epoch duration and recommend ``max_epochs``.
 
-    Executes *num_epochs* epochs of EPD training with W&B logging and
-    testing disabled, saves a checkpoint so that per-epoch wall-clock
-    times can be extracted from ``TrainingTimerCallback``, and prints the
-    recommended ``trainer.max_epochs`` for a cosine half-period schedule
-    (``optimizer=adamw_half``) that completes within *budget_hours*.
+    Executes *num_epochs* epochs of training (ae, epd, or processor) with
+    W&B logging and testing disabled, saves a checkpoint so that per-epoch
+    wall-clock times can be extracted from ``TrainingTimerCallback``, and
+    prints the recommended ``trainer.max_epochs`` for a cosine half-period
+    schedule (``optimizer=adamw_half``) that completes within *budget_hours*.
 
     The calculation is conservative: a *margin* fraction is subtracted
     from the budget **and** the result is rounded down to a whole epoch,
@@ -981,6 +982,8 @@ def time_epochs_command(
 
     Parameters
     ----------
+    kind:
+        Training kind: ``"ae"``, ``"epd"``, or ``"processor"``.
     dataset:
         Hydra datamodule group name (e.g. ``"advection_diffusion_multichannel"``).
     output_base:
@@ -1016,7 +1019,7 @@ def time_epochs_command(
         ]
 
         _final_work_dir, _resolved_run_id, command_overrides = build_train_overrides(
-            kind="epd",
+            kind=kind,
             mode="local",  # timing always runs locally
             dataset=dataset,
             output_base=output_base,
@@ -1028,7 +1031,7 @@ def time_epochs_command(
         )
 
         if dry_run:
-            cmd = run_module_command(TRAIN_MODULES["epd"], command_overrides)
+            cmd = run_module_command(TRAIN_MODULES[kind], command_overrides)
             print(f"DRY-RUN: {format_command(cmd)}")
             print(f"\nWould time {num_epochs} epochs, then compute max_epochs")
             print(f"for a {budget_hours}h budget with {margin:.0%} margin.")
@@ -1036,7 +1039,7 @@ def time_epochs_command(
 
         print(f"Timing {num_epochs} epoch(s) to estimate per-epoch duration...")
         run_module(
-            TRAIN_MODULES["epd"],
+            TRAIN_MODULES[kind],
             command_overrides,
             dry_run=False,
             mode="local",

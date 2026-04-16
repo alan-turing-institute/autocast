@@ -153,8 +153,14 @@ epochs), measuring per-epoch wall-clock duration, and computing the
 `max_epochs` that fits within a given budget:
 
 ```bash
-# Time 3 epochs and compute max_epochs for a 24h budget
+# Time 3 EPD epochs (default) and compute max_epochs for a 24h budget
 uv run autocast time-epochs datamodule=advection_diffusion_multichannel
+
+# Time an autoencoder run
+uv run autocast time-epochs --kind ae datamodule=reaction_diffusion
+
+# Time a processor run
+uv run autocast time-epochs --kind processor datamodule=reaction_diffusion
 
 # Custom: 5 timing epochs, 12h budget, 2% safety margin
 uv run autocast time-epochs -n 5 -b 12 -m 0.02 \
@@ -166,6 +172,10 @@ uv run autocast time-epochs experiment=epd_crps_vit_large_ps4_64
 # Dry-run to inspect the generated command
 uv run autocast time-epochs --dry-run datamodule=reaction_diffusion
 ```
+
+`--kind` selects the training type to time: `ae`, `epd` (default), or
+`processor`.  Use the same kind you intend to train so that the per-epoch
+measurement reflects the actual model and data pipeline.
 
 The output includes recommended Hydra overrides ready to copy-paste:
 

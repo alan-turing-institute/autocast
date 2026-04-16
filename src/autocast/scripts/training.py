@@ -570,6 +570,7 @@ def train_autoencoder(
     trainer = instantiate(
         trainer_cfg, logger=wandb_logger, default_root_dir=str(work_dir)
     )
+    trainer.callbacks.append(TrainingTimerCallback())
     output_cfg = config.get("output", {})
     if output_cfg.get("save_config", False) and trainer.is_global_zero:
         save_resolved_config(
@@ -622,12 +623,11 @@ def train_autoencoder(
         log.info("Starting training from scratch (no resume checkpoint).")
         trainer.fit(model=model, datamodule=datamodule)
 
-    checkpoint_name = output_cfg.get("checkpoint_name", "autoencoder.ckpt")
-    checkpoint_target = Path(checkpoint_name)
-    checkpoint_path = (
-        checkpoint_target
-        if checkpoint_target.is_absolute()
-        else (work_dir / checkpoint_target)
+    checkpoint_path = _resolve_checkpoint_path(
+        work_dir,
+        output_cfg,
+        output_cfg.get("checkpoint_path"),
+        default_name="autoencoder.ckpt",
     )
     if trainer.is_global_zero:
         trainer.save_checkpoint(checkpoint_path)
