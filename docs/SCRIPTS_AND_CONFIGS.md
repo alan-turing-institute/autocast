@@ -191,6 +191,52 @@ The calculation is conservative:
 Per-epoch times are extracted from the `TrainingTimerCallback` saved in the
 checkpoint, which excludes model setup and data loading overhead.
 
+#### How `max_epochs` and `max_time` interact at runtime
+
+The recommended overrides set **two** stopping conditions:
+
+| Condition | Controlled by | What happens |
+|---|---|---|
+| Epoch limit | `trainer.max_epochs` | Training stops cleanly after completing this many epochs. |
+| Wall-clock limit | `trainer.max_time` | Lightning hard-stops training when the clock runs out. |
+
+Lightning stops at whichever fires first.
+
+**Faster than expected** (each epoch takes less time than the timing run
+measured): `max_epochs` fires first.  All epochs complete, and the cosine LR
+schedule reaches exactly zero.  `max_time` is never triggered.  This is the
+ideal outcome.
+
+**Slower than expected** (each epoch takes more time): `max_time` fires first,
+cutting training short before all `max_epochs` have completed.  The cosine
+schedule has *not* reached zero — the final LR is positive.
+
+The 2% default margin tolerates up to ~2% slower epochs before `max_time`
+intervenes.  The `floor()` rounding adds a small additional buffer (up to
+one epoch's worth).  For workloads where epoch duration is stable
+(compute-bound, data in memory), 2% is sufficient.  For I/O-bound workloads
+that stream from a shared parallel filesystem, consider `--margin 0.05` or
+higher.
+
+**The cosine cannot overshoot and start increasing.**
+`cosine_lambda(t) = 0.5 * (1 + cos(pi * t / max_epochs))` is monotonically
+decreasing over `[0, max_epochs]`.  Training terminates at `max_epochs`, so
+the second half of the cosine period is never entered.  If `max_time`
+intervenes earlier, the LR is still on the decreasing branch — it simply
+hasn't reached zero yet.
+
+#### Choosing a margin
+
+| Scenario | Recommended `--margin` |
+|---|---|
+| Data in memory, single GPU (very stable epoch times) | 0.02 (default) |
+| Local NVMe data loading | 0.02 – 0.03 |
+| Streaming from Lustre / GPFS | 0.05 – 0.10 |
+
+To empirically check variance, run `time-epochs` twice at different cluster
+load levels.  If the two per-epoch estimates agree within 3%, 2% margin is
+safe.  If they diverge more, match the margin to the observed variance.
+
 ## Lower-level script entry points (advanced)
 
 AutoCast uses a set of Python scripts located in `src/autocast/scripts/` as entry points for training and evaluation. These scripts are exposed as CLI commands via `pyproject.toml`.
