@@ -183,14 +183,14 @@ def dataset_name_token(dataset: str, overrides: list[str]) -> str:
     datamodule_cfg = extract_override_value(overrides, "datamodule") or dataset
     data_path_override = extract_override_value(overrides, "datamodule.data_path")
 
+    dataset_key = datamodule_cfg
     if datamodule_cfg == "cached_latents" and data_path_override:
         inferred = _dataset_key_from_cached_latents(data_path_override)
         if inferred:
-            datamodule_cfg = inferred
+            dataset_key = inferred
 
-    dataset_key = datamodule_cfg
-    if data_path_override:
-        dataset_key = _dataset_key_from_data_path(data_path_override) or dataset_key
+        elif inferred_from_path := _dataset_key_from_data_path(data_path_override):
+            dataset_key = inferred_from_path
 
     return sanitize_name_part(DATASET_NAME_TOKENS.get(dataset_key, dataset_key))
 

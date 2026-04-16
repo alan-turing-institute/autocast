@@ -224,9 +224,9 @@ def test_dataset_name_token_handles_gpe_laser_only_wake_alias():
     assert dataset_name_token("gpe_laser_only_wake", []) == "gpe64"
 
 
-def test_dataset_name_token_infers_from_datamodule_data_path():
+def test_dataset_name_token_ignores_data_path_when_not_cached_latents():
     overrides = ["datamodule.data_path=/tmp/datasets/reaction_diffusion_e3e8515"]
-    assert dataset_name_token("something_else", overrides) == "rd64"
+    assert dataset_name_token("something_else", overrides) == "something_else"
 
 
 def test_dataset_name_token_cached_latents_uses_saved_autoencoder_dataset(tmp_path):
