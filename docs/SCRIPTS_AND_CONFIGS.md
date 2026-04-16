@@ -141,6 +141,56 @@ For launching many prewritten runs from a manifest list:
 bash scripts/launch_from_manifest.sh run_manifests/example_runs.txt
 ```
 
+### Timing epochs and computing `max_epochs` for cosine schedules
+
+When using the `adamw_half` optimizer (half-period cosine LR schedule), the
+learning rate decays from its initial value to zero over exactly
+`trainer.max_epochs` epochs.  If training is cut short by `trainer.max_time`
+before all epochs complete, the schedule will not have reached zero.
+
+The `time-epochs` subcommand solves this by running a short timing run (a few
+epochs), measuring per-epoch wall-clock duration, and computing the
+`max_epochs` that fits within a given budget:
+
+```bash
+# Time 3 epochs and compute max_epochs for a 24h budget
+uv run autocast time-epochs datamodule=advection_diffusion_multichannel
+
+# Custom: 5 timing epochs, 12h budget, 2% safety margin
+uv run autocast time-epochs -n 5 -b 12 -m 0.02 \
+    datamodule=shallow_water2d
+
+# With experiment overrides
+uv run autocast time-epochs experiment=epd_crps_vit_large_ps4_64
+
+# Dry-run to inspect the generated command
+uv run autocast time-epochs --dry-run datamodule=reaction_diffusion
+```
+
+The output includes recommended Hydra overrides ready to copy-paste:
+
+```
+============================================================
+  Seconds/epoch:  150.0s
+  Budget:         24.0h (margin: 2%)
+  max_epochs:     564
+  Expected time:  23.5h
+  Headroom:       0.5h
+============================================================
+
+Recommended overrides:
+  trainer.max_epochs=564 trainer.max_time=24:00:00:00 optimizer=adamw_half
+```
+
+The calculation is conservative:
+- A 2% safety margin (configurable with `-m`) is subtracted from the budget.
+- The result is rounded **down** to a whole epoch (`floor`), so the cosine
+  schedule always completes its full half-period.
+- `trainer.max_time` is set to the full (un-margined) budget as a hard stop.
+
+Per-epoch times are extracted from the `TrainingTimerCallback` saved in the
+checkpoint, which excludes model setup and data loading overhead.
+
 ## Lower-level script entry points (advanced)
 
 AutoCast uses a set of Python scripts located in `src/autocast/scripts/` as entry points for training and evaluation. These scripts are exposed as CLI commands via `pyproject.toml`.
