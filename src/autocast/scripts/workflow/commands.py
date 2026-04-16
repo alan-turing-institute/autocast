@@ -1,11 +1,13 @@
-"""Train, eval, and train-eval command implementations."""
+"""Train, eval, train-eval, and time-epochs command implementations."""
 
 from __future__ import annotations
 
 import json
+import math
 import os
 import shlex
 import subprocess
+import tempfile
 from pathlib import Path
 
 import pandas as pd
@@ -887,3 +889,164 @@ def cache_latents_command(
         mode=mode,
         runtime_typechecking=runtime_typechecking,
     )
+
+
+# ---------------------------------------------------------------------------
+# time-epochs
+# ---------------------------------------------------------------------------
+
+
+def _extract_epoch_times_from_checkpoint(ckpt_path: Path) -> list[float] | None:
+    """Read per-epoch durations saved by TrainingTimerCallback."""
+    import torch
+
+    if not ckpt_path.exists():
+        return None
+    try:
+        ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+        callbacks = ckpt.get("callbacks", {})
+        for key, state in callbacks.items():
+            if "TrainingTimerCallback" in key and "epoch_times_s" in state:
+                times = state["epoch_times_s"]
+                if times:
+                    return times
+    except Exception:
+        pass
+    return None
+
+
+def _compute_max_epochs(
+    seconds_per_epoch: float,
+    budget_hours: float,
+    margin: float = 0.02,
+) -> dict:
+    """Compute max_epochs that fits within *budget_hours* with a safety margin."""
+    budget_seconds = budget_hours * 3600
+    usable_seconds = budget_seconds * (1.0 - margin)
+    max_epochs = int(math.floor(usable_seconds / seconds_per_epoch))
+    expected_hours = (max_epochs * seconds_per_epoch) / 3600
+    headroom_hours = budget_hours - expected_hours
+    return {
+        "max_epochs": max_epochs,
+        "seconds_per_epoch": round(seconds_per_epoch, 2),
+        "expected_hours": round(expected_hours, 2),
+        "headroom_hours": round(headroom_hours, 2),
+        "budget_hours": budget_hours,
+        "margin": margin,
+    }
+
+
+def time_epochs_command(
+    *,
+    mode: str,
+    dataset: str | None,
+    output_base: str,
+    overrides: list[str],
+    num_epochs: int = 3,
+    budget_hours: float = 24.0,
+    margin: float = 0.02,
+    run_group: str | None = None,
+    run_id: str | None = None,
+    work_dir: str | None = None,
+    runtime_typechecking: bool = False,
+    dry_run: bool = False,
+) -> dict | None:
+    """Run a short training to time per-epoch duration and recommend max_epochs.
+
+    Executes *num_epochs* epochs of EPD training with logging and testing
+    disabled, extracts per-epoch wall-clock times from the
+    ``TrainingTimerCallback`` checkpoint, and prints the recommended
+    ``trainer.max_epochs`` for a cosine half-period schedule that completes
+    within *budget_hours*.
+    """
+    timing_run_id = run_id or "timing"
+
+    with tempfile.TemporaryDirectory(prefix="autocast_timing_") as tmpdir:
+        timing_work_dir = Path(tmpdir) if work_dir is None else Path(work_dir)
+        timing_work_dir.mkdir(parents=True, exist_ok=True)
+        ckpt_path = timing_work_dir / "timing.ckpt"
+
+        # Build overrides: short run, no wandb, no test, checkpoint for timer
+        # extraction.  Keep trainer.callbacks default so TrainingTimerCallback
+        # is registered by run_training.
+        # Use ++key (force-set) so overrides work regardless of whether the
+        # key already exists in the config struct.
+        timing_overrides = [
+            f"++trainer.max_epochs={num_epochs}",
+            "++trainer.max_time=null",
+            "logging.wandb.enabled=false",
+            "output.skip_test=true",
+            "output.save_config=false",
+            f"output.checkpoint_path={ckpt_path}",
+        ]
+
+        final_work_dir, _resolved_run_id, command_overrides = build_train_overrides(
+            kind="epd",
+            mode="local",  # timing always runs locally
+            dataset=dataset,
+            output_base=output_base,
+            run_group=run_group,
+            run_id=timing_run_id,
+            work_dir=str(timing_work_dir),
+            resume_from=None,
+            overrides=[*timing_overrides, *overrides],
+        )
+
+        if dry_run:
+            from autocast.scripts.workflow.helpers import format_command
+
+            cmd = run_module_command(TRAIN_MODULES["epd"], command_overrides)
+            print(f"DRY-RUN: {format_command(cmd)}")
+            print(f"\nWould time {num_epochs} epochs, then compute max_epochs")
+            print(f"for a {budget_hours}h budget with {margin:.0%} margin.")
+            return None
+
+        print(f"Timing {num_epochs} epoch(s) to estimate per-epoch duration...")
+        run_module(
+            TRAIN_MODULES["epd"],
+            command_overrides,
+            dry_run=False,
+            mode="local",
+            runtime_typechecking=runtime_typechecking,
+        )
+
+        # Extract per-epoch times from the checkpoint
+        epoch_times = _extract_epoch_times_from_checkpoint(ckpt_path)
+
+    if epoch_times:
+        seconds_per_epoch = sum(epoch_times) / len(epoch_times)
+        source = "TrainingTimerCallback"
+        print(
+            f"\nPer-epoch times (from {source}): "
+            + ", ".join(f"{t:.1f}s" for t in epoch_times)
+        )
+    else:
+        print(
+            "\nWARNING: Could not extract per-epoch times from checkpoint. "
+            "No timing data available."
+        )
+        return None
+
+    result = _compute_max_epochs(seconds_per_epoch, budget_hours, margin)
+
+    max_time_str = (
+        f"{int(budget_hours):02d}:{int(budget_hours % 1 * 60):02d}:00:00"
+        if budget_hours != int(budget_hours)
+        else f"{int(budget_hours):02d}:00:00:00"
+    )
+
+    print(f"\n{'=' * 60}")
+    print(f"  Seconds/epoch:  {result['seconds_per_epoch']:.1f}s")
+    print(f"  Budget:         {budget_hours}h (margin: {margin:.0%})")
+    print(f"  max_epochs:     {result['max_epochs']}")
+    print(f"  Expected time:  {result['expected_hours']:.1f}h")
+    print(f"  Headroom:       {result['headroom_hours']:.1f}h")
+    print(f"{'=' * 60}")
+    print("\nRecommended overrides:")
+    print(
+        f"  trainer.max_epochs={result['max_epochs']} "
+        f"trainer.max_time={max_time_str} "
+        f"optimizer=adamw_half"
+    )
+
+    return result
