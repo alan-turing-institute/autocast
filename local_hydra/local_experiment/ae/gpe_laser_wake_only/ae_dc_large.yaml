@@ -1,0 +1,31 @@
+# @package _global_
+defaults:
+  - /distributed: ddp_4gpu_slurm
+  - override /datamodule: gpe_laser_only_wake
+  - override /model: autoencoder_dc_large
+  - override /optimizer: psgd
+  - _self_
+
+experiment_name: ae_dc_large_gpe_laser_only_wake
+
+datamodule:
+  use_normalization: true
+  batch_size: 64
+
+model:
+  encoder:
+    periodic: false
+  decoder:
+    periodic: false
+
+logging:
+  wandb:
+    enabled: true
+
+optimizer:
+  learning_rate: 1e-5
+  weight_decay: 0.0
+  scheduler: cosine
+
+trainer:
+  gradient_clip_val: 1.0
