@@ -46,6 +46,7 @@ from autocast.metrics.ensemble import (
     FairCRPS,
     SpreadSkillRatio,
     VariogramScore,
+    WinklerScore,
 )
 from autocast.models.encoder_processor_decoder import EncoderProcessorDecoder
 from autocast.models.encoder_processor_decoder_ensemble import (
@@ -68,6 +69,7 @@ from autocast.scripts.setup import (
     setup_epd_model,
     setup_processor_model,
 )
+from autocast.scripts.training import apply_float32_matmul_precision
 from autocast.scripts.utils import get_default_config_path
 from autocast.types.batch import Batch, EncodedBatch
 from autocast.utils import plot_spatiotemporal_video
@@ -75,9 +77,6 @@ from autocast.utils.plots import (
     compute_metrics_from_dataloader,
     compute_metrics_per_timestep_from_dataloader,
 )
-
-# Set matmul precision for A100/H100
-torch.set_float32_matmul_precision("high")
 
 log = logging.getLogger(__name__)
 
@@ -110,6 +109,7 @@ AVAILABLE_METRICS_ENSEMBLE = {
     "energy": EnergyScore,
     "variogram": VariogramScore,
     "ssr": SpreadSkillRatio,
+    "winkler": WinklerScore,
 }
 
 DEFAULT_EVAL_METRICS = [
@@ -132,6 +132,7 @@ DEFAULT_EVAL_METRICS = [
     "afcrps",
     "energy",
     "ssr",
+    "winkler",
 ]
 
 MEMORY_INTENSIVE_METRICS = {"variogram"}
@@ -279,11 +280,13 @@ def _resolve_rollout_channel_names(dataset: Any) -> list[str] | None:
 
     norm = getattr(dataset, "norm", None)
     raw_names = getattr(norm, "core_field_names", None)
+    names_already_subset = raw_names is not None
 
     if not isinstance(raw_names, Sequence) or isinstance(raw_names, str):
         normalization_stats = getattr(dataset, "normalization_stats", None)
         if isinstance(normalization_stats, Mapping):
             raw_names = normalization_stats.get("core_field_names")
+            names_already_subset = False
 
     if not isinstance(raw_names, Sequence) or isinstance(raw_names, str):
         return None
@@ -292,14 +295,14 @@ def _resolve_rollout_channel_names(dataset: Any) -> list[str] | None:
     if not channel_names:
         return None
 
-    output_channel_idxs = getattr(dataset, "output_channel_idxs", None)
-    if output_channel_idxs is not None:
+    channel_idxs = getattr(dataset, "channel_idxs", None)
+    if channel_idxs is not None and not names_already_subset:
         try:
-            channel_names = [channel_names[idx] for idx in output_channel_idxs]
+            channel_names = [channel_names[idx] for idx in channel_idxs]
         except (TypeError, IndexError):
             log.warning(
-                "Could not apply output_channel_idxs=%s to channel names %s.",
-                output_channel_idxs,
+                "Could not apply channel_idxs=%s to channel names %s.",
+                channel_idxs,
                 channel_names,
             )
             return None
@@ -1031,9 +1034,20 @@ def main(cfg: DictConfig) -> None:
 
 def _extract_processor_state_dict(
     checkpoint_payload: Mapping[str, Any],
+    *,
+    use_ema: bool = False,
 ) -> dict[str, Any]:
     """Return only the processor sub-module weights with the prefix stripped."""
-    state_dict = checkpoint_payload.get("state_dict", checkpoint_payload)
+    if use_ema:
+        state_dict = checkpoint_payload.get("ema_state_dict")
+        if state_dict is None:
+            msg = (
+                "use_ema=True but checkpoint has no 'ema_state_dict'. "
+                "Was EMACallback enabled during training?"
+            )
+            raise KeyError(msg)
+    else:
+        state_dict = checkpoint_payload.get("state_dict", checkpoint_payload)
     return {
         k[len("processor.") :]: v
         for k, v in state_dict.items()
@@ -1150,6 +1164,10 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     """Run evaluation using an already-composed config."""
     logging.basicConfig(level=logging.INFO)
 
+    # cfg will override the default of float32 matmul precision to "high" that's set
+    # here to maintain backward compatibility where this was set but not configurable.
+    apply_float32_matmul_precision(cfg, default="high")
+
     umask_value = cfg.get("umask")
     if umask_value is not None:
         os.umask(int(str(umask_value), 8))
@@ -1188,6 +1206,16 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     log.info("Loading checkpoint from %s", checkpoint_path)
     checkpoint_payload = load_checkpoint_payload(checkpoint_path)
     processor_only = _is_processor_only_checkpoint(checkpoint_payload)
+
+    use_ema = bool(eval_cfg.get("use_ema", False))
+    if use_ema:
+        if "ema_state_dict" not in checkpoint_payload:
+            msg = (
+                "eval.use_ema=True but checkpoint has no 'ema_state_dict'. "
+                "Was EMACallback enabled during training?"
+            )
+            raise KeyError(msg)
+        log.info("Loading EMA weights from checkpoint (eval.use_ema=True)")
 
     # Setup datamodule and resolve config
     datamodule, cfg, stats = setup_datamodule(cfg)
@@ -1255,12 +1283,14 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 "+ processor checkpoint."
             )
             model = setup_epd_model(cfg, stats, datamodule=datamodule)
-            processor_sd = _extract_processor_state_dict(checkpoint_payload)
+            processor_sd = _extract_processor_state_dict(
+                checkpoint_payload, use_ema=use_ema
+            )
             load_result = model.processor.load_state_dict(processor_sd, strict=True)
         else:
             model = setup_processor_model(cfg, stats, datamodule=datamodule)
             load_result = model.load_state_dict(
-                extract_state_dict(checkpoint_payload), strict=True
+                extract_state_dict(checkpoint_payload, use_ema=use_ema), strict=True
             )
             if isinstance(example_batch, EncodedBatch):
                 # Mode 2: try to load decoder for data-space evaluation
@@ -1277,7 +1307,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     else:
         model = setup_epd_model(cfg, stats, datamodule=datamodule)
         load_result = model.load_state_dict(
-            extract_state_dict(checkpoint_payload), strict=True
+            extract_state_dict(checkpoint_payload, use_ema=use_ema), strict=True
         )
 
     if load_result.missing_keys or load_result.unexpected_keys:

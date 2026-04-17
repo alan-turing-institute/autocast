@@ -209,7 +209,7 @@ requires-dist = [
     { name = "beartype", specifier = ">=0.22.8" },
     { name = "einops", specifier = ">=0.8.1" },
     { name = "h5py", specifier = ">=3.15.1" },
-    { name = "heavyball", specifier = ">=1.4.3" },
+    { name = "heavyball", specifier = "==1.4.3" },
     { name = "hydra-core", specifier = ">=1.3.2" },
     { name = "ipykernel", marker = "extra == 'dev'", specifier = ">=7.1.0" },
     { name = "jaxtyping", specifier = ">=0.3.3" },
@@ -828,7 +828,7 @@ wheels = [
 
 [[package]]
 name = "heavyball"
-version = "2.3.0"
+version = "1.4.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
@@ -836,9 +836,9 @@ dependencies = [
     { name = "torch", version = "2.9.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux' and sys_platform != 'win32'" },
     { name = "torch", version = "2.10.0+cu126", source = { registry = "https://download.pytorch.org/whl/cu126" }, marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c6/ec/69d7da1dcf5df0382874626f09b7736d98e6dc7e3aeefffb6fd31dbd035c/heavyball-2.3.0.tar.gz", hash = "sha256:43c640f0da22ec2f6e0ff6db91475bf8c763ca98bd1e3723c7876996f3eb7fe2", size = 89611, upload-time = "2026-03-10T22:06:14.688Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/7b/b3/ffae922664aef7ef42c53a5e5ceaac610b64de685d26e32b590b915846f6/heavyball-1.4.3.tar.gz", hash = "sha256:754ad6fdd48120668cf26f54a545e16e7b7cfebf76f7d44431d96959c44280df", size = 53011, upload-time = "2025-01-02T07:54:36.258Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3b/83/2ff550ffe433dc337dbd4a300db1e0b939ce881836c821ae0629d8100baa/heavyball-2.3.0-py3-none-any.whl", hash = "sha256:031fbed35fe37b0e62f138220787ce9a0b5f3f1f839f3621b301457f506aca23", size = 60054, upload-time = "2026-03-10T22:06:12.513Z" },
+    { url = "https://files.pythonhosted.org/packages/47/25/41f87875e6018dd58b3e2b7f0c77701c338a9755362326165787311c6842/heavyball-1.4.3-py3-none-any.whl", hash = "sha256:8c7adf1120185b2e7c44417b7c47267bf62d264865d40a903fd306449cd53043", size = 30838, upload-time = "2025-01-02T07:54:34.527Z" },
 ]
 
 [[package]]
@@ -2601,12 +2601,12 @@ dependencies = [
     { name = "typing-extensions", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
 ]
 wheels = [
-    { url = "https://download.pytorch.org/whl/cu126/torch-2.10.0%2Bcu126-cp311-cp311-manylinux_2_28_aarch64.whl", hash = "sha256:3a5fb967ffb53ffa0d2579c9819491cfc36c557040de6fdeabcfcfb45df019bc" },
-    { url = "https://download.pytorch.org/whl/cu126/torch-2.10.0%2Bcu126-cp311-cp311-manylinux_2_28_x86_64.whl", hash = "sha256:a9a9ba3b2baf23c044499ffbcbed88e04b6e38b94189c7dc42dd2cfcdd8c55c0" },
-    { url = "https://download.pytorch.org/whl/cu126/torch-2.10.0%2Bcu126-cp311-cp311-win_amd64.whl", hash = "sha256:4749cd32e32ed55179ff2ff0407e0ae5077fe4d332bfa49258f4578d09eccb40" },
-    { url = "https://download.pytorch.org/whl/cu126/torch-2.10.0%2Bcu126-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:81264238b3d8840276dd30c31f393e325b8f5da6390d18ac2a80dacecfd693ea" },
-    { url = "https://download.pytorch.org/whl/cu126/torch-2.10.0%2Bcu126-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:2a7a569206f07965eff69b28e147676540bb0ba6e1a39410802b6e4708cb8356" },
-    { url = "https://download.pytorch.org/whl/cu126/torch-2.10.0%2Bcu126-cp312-cp312-win_amd64.whl", hash = "sha256:95d8409b8a15191de4c2958e86ca47f3ea8f9739b994ee4ca0e7586f37336413" },
+    { url = "https://download-r2.pytorch.org/whl/cu126/torch-2.10.0%2Bcu126-cp311-cp311-manylinux_2_28_aarch64.whl", hash = "sha256:3a5fb967ffb53ffa0d2579c9819491cfc36c557040de6fdeabcfcfb45df019bc" },
+    { url = "https://download-r2.pytorch.org/whl/cu126/torch-2.10.0%2Bcu126-cp311-cp311-manylinux_2_28_x86_64.whl", hash = "sha256:a9a9ba3b2baf23c044499ffbcbed88e04b6e38b94189c7dc42dd2cfcdd8c55c0" },
+    { url = "https://download-r2.pytorch.org/whl/cu126/torch-2.10.0%2Bcu126-cp311-cp311-win_amd64.whl", hash = "sha256:4749cd32e32ed55179ff2ff0407e0ae5077fe4d332bfa49258f4578d09eccb40" },
+    { url = "https://download-r2.pytorch.org/whl/cu126/torch-2.10.0%2Bcu126-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:81264238b3d8840276dd30c31f393e325b8f5da6390d18ac2a80dacecfd693ea" },
+    { url = "https://download-r2.pytorch.org/whl/cu126/torch-2.10.0%2Bcu126-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:2a7a569206f07965eff69b28e147676540bb0ba6e1a39410802b6e4708cb8356" },
+    { url = "https://download-r2.pytorch.org/whl/cu126/torch-2.10.0%2Bcu126-cp312-cp312-win_amd64.whl", hash = "sha256:95d8409b8a15191de4c2958e86ca47f3ea8f9739b994ee4ca0e7586f37336413" },
 ]
 
 [[package]]

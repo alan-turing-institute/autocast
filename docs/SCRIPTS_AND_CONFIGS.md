@@ -141,6 +141,140 @@ For launching many prewritten runs from a manifest list:
 bash scripts/launch_from_manifest.sh run_manifests/example_runs.txt
 ```
 
+### Timing epochs and computing `max_epochs` for cosine schedules
+
+When using the `adamw_half` optimizer (half-period cosine LR schedule), the
+learning rate decays from its initial value to zero over exactly
+`trainer.max_epochs` epochs.  If training is cut short by `trainer.max_time`
+before all epochs complete, the schedule will not have reached zero.
+
+The `time-epochs` subcommand solves this by running a short timing run (a few
+epochs), measuring per-epoch wall-clock duration, and computing the
+`max_epochs` that fits within a given budget:
+
+```bash
+# Time 3 EPD epochs (default) and compute max_epochs for a 24h budget
+uv run autocast time-epochs datamodule=advection_diffusion_multichannel
+
+# Time an autoencoder run
+uv run autocast time-epochs --kind ae datamodule=reaction_diffusion
+
+# Time a processor run
+uv run autocast time-epochs --kind processor datamodule=reaction_diffusion
+
+# Custom: 5 timing epochs, 12h budget, 2% safety margin
+uv run autocast time-epochs -n 5 -b 12 -m 0.02 \
+    datamodule=shallow_water2d
+
+# With experiment overrides
+uv run autocast time-epochs experiment=epd_crps_vit_large_ps4_64
+
+# Dry-run to inspect the generated command
+uv run autocast time-epochs --dry-run datamodule=reaction_diffusion
+```
+
+`--kind` selects the training type to time: `ae`, `epd` (default), or
+`processor`.  Use the same kind you intend to train so that the per-epoch
+measurement reflects the actual model and data pipeline.
+
+#### Batch timing via SLURM
+
+With `--mode slurm` the timing run is submitted as a SLURM job and the CLI
+exits immediately, printing a follow-up command to retrieve results once the
+job completes:
+
+```bash
+# Submit timing jobs for several configs at once
+uv run autocast time-epochs --mode slurm --kind ae \
+    datamodule=reaction_diffusion --run-group timing
+uv run autocast time-epochs --mode slurm --kind epd \
+    datamodule=shallow_water2d --run-group timing \
+    experiment=epd_crps_vit_large_ps4_64
+
+# Once the SLURM jobs finish, compute results from the checkpoints
+uv run autocast time-epochs --from-checkpoint outputs/timing/ae_.../timing.ckpt
+uv run autocast time-epochs --from-checkpoint outputs/timing/epd_.../timing.ckpt
+```
+
+`--from-checkpoint` reads an existing checkpoint, extracts the per-epoch
+times, and prints the recommendation — no training is run.  You can also
+use it to recompute with a different budget or margin:
+
+```bash
+uv run autocast time-epochs --from-checkpoint outputs/timing/epd_.../timing.ckpt \
+    -b 12 -m 0.05
+```
+
+The output includes recommended Hydra overrides ready to copy-paste:
+
+```
+============================================================
+  Seconds/epoch:  150.0s
+  Budget:         24.0h (margin: 2%)
+  max_epochs:     564
+  Expected time:  23.5h
+  Headroom:       0.5h
+============================================================
+
+Recommended overrides:
+  trainer.max_epochs=564 trainer.max_time=01:00:00:00 optimizer=adamw_half
+```
+
+The calculation is conservative:
+- A 2% safety margin (configurable with `-m`) is subtracted from the budget.
+- The result is rounded **down** to a whole epoch (`floor`), so the cosine
+  schedule always completes its full half-period.
+- `trainer.max_time` is set to the full (un-margined) budget as a hard stop.
+
+Per-epoch times are extracted from the `TrainingTimerCallback` saved in the
+checkpoint, which excludes model setup and data loading overhead.
+
+#### How `max_epochs` and `max_time` interact at runtime
+
+The recommended overrides set **two** stopping conditions:
+
+| Condition | Controlled by | What happens |
+|---|---|---|
+| Epoch limit | `trainer.max_epochs` | Training stops cleanly after completing this many epochs. |
+| Wall-clock limit | `trainer.max_time` | Lightning hard-stops training when the clock runs out. |
+
+Lightning stops at whichever fires first.
+
+**Faster than expected** (each epoch takes less time than the timing run
+measured): `max_epochs` fires first.  All epochs complete, and the cosine LR
+schedule reaches exactly zero.  `max_time` is never triggered.  This is the
+ideal outcome.
+
+**Slower than expected** (each epoch takes more time): `max_time` fires first,
+cutting training short before all `max_epochs` have completed.  The cosine
+schedule has *not* reached zero — the final LR is positive.
+
+The 2% default margin tolerates up to ~2% slower epochs before `max_time`
+intervenes.  The `floor()` rounding adds a small additional buffer (up to
+one epoch's worth).  For workloads where epoch duration is stable
+(compute-bound, data in memory), 2% is sufficient.  For I/O-bound workloads
+that stream from a shared parallel filesystem, consider `--margin 0.05` or
+higher.
+
+**The cosine cannot overshoot and start increasing.**
+`cosine_lambda(t) = 0.5 * (1 + cos(pi * t / max_epochs))` is monotonically
+decreasing over `[0, max_epochs]`.  Training terminates at `max_epochs`, so
+the second half of the cosine period is never entered.  If `max_time`
+intervenes earlier, the LR is still on the decreasing branch — it simply
+hasn't reached zero yet.
+
+#### Choosing a margin
+
+| Scenario | Recommended `--margin` |
+|---|---|
+| Data in memory, single GPU (very stable epoch times) | 0.02 (default) |
+| Local NVMe data loading | 0.02 – 0.03 |
+| Streaming from Lustre / GPFS | 0.05 – 0.10 |
+
+To empirically check variance, run `time-epochs` twice at different cluster
+load levels.  If the two per-epoch estimates agree within 3%, 2% margin is
+safe.  If they diverge more, match the margin to the observed variance.
+
 ## Lower-level script entry points (advanced)
 
 AutoCast uses a set of Python scripts located in `src/autocast/scripts/` as entry points for training and evaluation. These scripts are exposed as CLI commands via `pyproject.toml`.

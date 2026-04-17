@@ -7,9 +7,15 @@ defaults:
   - logging: wandb
   - optional eval: processor
   - _self_
+  - optional experiment: null
+  - optional local_experiment: null
 
 seed: 42
 experiment_name: processor
+
+# torch.set_float32_matmul_precision: one of {highest, high, medium} or null.
+# See encoder_processor_decoder.yaml for details.
+float32_matmul_precision: null
 
 output:
   checkpoint_name: processor.ckpt

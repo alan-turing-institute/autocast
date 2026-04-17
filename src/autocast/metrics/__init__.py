@@ -27,6 +27,7 @@ from .ensemble import (
     FairCRPS,
     SpreadSkillRatio,
     VariogramScore,
+    WinklerScore,
 )
 
 __all__ = [
@@ -57,6 +58,7 @@ __all__ = [
     "PowerSpectrumRMSETail",
     "SpreadSkillRatio",
     "VariogramScore",
+    "WinklerScore",
 ]
 
 ALL_DETERMINISTIC_METRICS = (
@@ -87,6 +89,7 @@ ALL_ENSEMBLE_METRICS = (
     EnergyScore,
     VariogramScore,
     SpreadSkillRatio,
+    WinklerScore,
     Coverage,
     MultiCoverage,
 )

@@ -25,6 +25,39 @@ from autocast.scripts.setup import setup_autoencoder_model, setup_datamodule
 log = logging.getLogger(__name__)
 
 
+_VALID_MATMUL_PRECISIONS = {"highest", "high", "medium"}
+
+
+def apply_float32_matmul_precision(
+    config: DictConfig, default: str | None = None
+) -> None:
+    """Apply `torch.set_float32_matmul_precision` from config if set.
+
+    Accepts "highest" (pure f32), "high" (TF32 matmul, f32 accumulate), or
+    "medium" (TF32 matmul + accumulate). On Ampere+ GPUs, "high" gives most of
+    the TF32 throughput win while keeping f32 accumulation — a much safer
+    tradeoff than bf16-mixed for precision-sensitive objectives.
+
+    If the config key is unset (or null), `default` is used. If `default` is
+    also None, PyTorch's own default ("highest") is left untouched. Training
+    entrypoints pass `default=None` (opt-in); the eval entrypoint passes
+    `default="high"` for backward compatibility with the previous hardcoded
+    behavior.
+    """
+    precision = config.get("float32_matmul_precision")
+    if precision is None:
+        precision = default
+    if precision is None:
+        return
+    precision = str(precision)
+    if precision not in _VALID_MATMUL_PRECISIONS:
+        valid = sorted(_VALID_MATMUL_PRECISIONS)
+        msg = f"float32_matmul_precision must be one of {valid}, got {precision!r}"
+        raise ValueError(msg)
+    torch.set_float32_matmul_precision(precision)
+    log.info("Set torch.float32_matmul_precision to %r", precision)
+
+
 def _resolve_checkpoint_path(
     work_dir: Path,
     output_cfg: DictConfig | dict,
@@ -236,9 +269,14 @@ def _attach_reset_timer_callback(
 class TrainingTimerCallback(Callback):
     """Measures wall-clock training time and persists it to the checkpoint.
 
-    Records total training time and per-epoch durations.  The values are
-    stored via ``state_dict()`` so the eval script can read them directly
-    from the checkpoint's ``callbacks`` block.
+    Records total training time and per-epoch durations.  Each epoch
+    measurement spans the **full cycle** — training batches *and* the
+    subsequent validation loop — so that the ``time-epochs`` command can
+    accurately predict wall-clock budget consumption.
+
+    Epoch boundaries are measured from one ``on_train_epoch_start`` to the
+    next; the final epoch is closed out in ``on_train_end`` (which fires
+    after the last validation loop).
 
     Note
     ----
@@ -272,19 +310,20 @@ class TrainingTimerCallback(Callback):
         self, trainer: L.Trainer, pl_module: L.LightningModule
     ) -> None:
         del trainer, pl_module
-        self._epoch_start = perf_counter()
-
-    def on_train_epoch_end(
-        self, trainer: L.Trainer, pl_module: L.LightningModule
-    ) -> None:
-        del trainer, pl_module
+        now = perf_counter()
+        # Close out the *previous* epoch (training + validation + overhead).
         if self._epoch_start is not None:
-            self._epoch_times_s.append(perf_counter() - self._epoch_start)
+            self._epoch_times_s.append(now - self._epoch_start)
+        self._epoch_start = now
 
     def on_train_end(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
         del trainer, pl_module
+        now = perf_counter()
+        # Close out the final epoch (includes its validation loop).
+        if self._epoch_start is not None:
+            self._epoch_times_s.append(now - self._epoch_start)
         if self._train_start is not None:
-            self.training_runtime_total_s = perf_counter() - self._train_start
+            self.training_runtime_total_s = now - self._train_start
 
     def state_dict(self) -> dict:  # type: ignore[override]
         runtime_elapsed_s = self._current_elapsed_runtime_s()
@@ -320,6 +359,8 @@ def run_training(
     """Standardized training loop."""
     # Ensure work_dir is a Path
     work_dir = Path(work_dir)
+
+    apply_float32_matmul_precision(config)
 
     # Setup logger
     logging_cfg = config.get("logging")
@@ -505,6 +546,7 @@ def train_autoencoder(
 ) -> Path:
     """Train the autoencoder defined in `cfg` and return the checkpoint path."""
     log.info("Starting autoencoder experiment: %s", config.get("experiment_name"))
+    apply_float32_matmul_precision(config)
     L.seed_everything(config.get("seed", 42), workers=True)
 
     resolved_cfg = OmegaConf.to_container(config, resolve=True)
@@ -534,6 +576,7 @@ def train_autoencoder(
     trainer = instantiate(
         trainer_cfg, logger=wandb_logger, default_root_dir=str(work_dir)
     )
+    trainer.callbacks.append(TrainingTimerCallback())
     output_cfg = config.get("output", {})
     if output_cfg.get("save_config", False) and trainer.is_global_zero:
         save_resolved_config(
@@ -586,12 +629,11 @@ def train_autoencoder(
         log.info("Starting training from scratch (no resume checkpoint).")
         trainer.fit(model=model, datamodule=datamodule)
 
-    checkpoint_name = output_cfg.get("checkpoint_name", "autoencoder.ckpt")
-    checkpoint_target = Path(checkpoint_name)
-    checkpoint_path = (
-        checkpoint_target
-        if checkpoint_target.is_absolute()
-        else (work_dir / checkpoint_target)
+    checkpoint_path = _resolve_checkpoint_path(
+        work_dir,
+        output_cfg,
+        output_cfg.get("checkpoint_path"),
+        default_name="autoencoder.ckpt",
     )
     if trainer.is_global_zero:
         trainer.save_checkpoint(checkpoint_path)
