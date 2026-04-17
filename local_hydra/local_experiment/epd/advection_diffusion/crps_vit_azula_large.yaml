@@ -30,7 +30,9 @@ model:
   encoder:
     with_constants: true
   processor:
-    hidden_dim: 632
+    hidden_dim: 568
+    num_heads: 8
+    n_layers: 12
     n_noise_channels: 1024
   loss_func:
     _target_: autocast.losses.ensemble.AlphaFairCRPSLoss

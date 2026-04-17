@@ -29,7 +29,10 @@ optimizer:
 model:
   n_members: 8
   processor:
-    hidden_dim: 632
+    hidden_dim: 568
+    num_heads: 8
+    n_layers: 12
+    patch_size: 1
     n_noise_channels: 1024
   loss_func:
     _target_: autocast.losses.ensemble.AlphaFairCRPSLoss

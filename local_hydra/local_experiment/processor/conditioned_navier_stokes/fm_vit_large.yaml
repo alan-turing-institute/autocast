@@ -26,6 +26,8 @@ optimizer:
 model:
   processor:
     backbone:
-      hid_channels: 640
+      hid_channels: 704
+      hid_blocks: 12
+      attention_heads: 8
     flow_ode_steps: 50
   val_metrics: []

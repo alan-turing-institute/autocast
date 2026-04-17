@@ -35,7 +35,9 @@ model:
     with_constants: true
   processor:
     backbone:
-      hid_channels: 640
+      hid_channels: 704
+      hid_blocks: 12
+      attention_heads: 8
       # patch_size=4 keeps token count at 16x16 = 256, matching vit_azula_large
       # on the same permute_concat features (CRPS-in-ambient architecture parity).
       patch_size: 4
