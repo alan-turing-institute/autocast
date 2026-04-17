@@ -17,6 +17,10 @@ set -euo pipefail
 # learning_rate (2e-4) and warmup (0) are baked into each per-dataset
 # local_experiment config; adjust the yaml to change them.
 COSINE_EPOCHS=1080
+# Save checkpoints at 25/50/75/100% of the schedule (top_k=-1 keeps all).
+# save_last: true (set in trainer/default.yaml) ensures last.ckpt captures
+# the final epoch even if it doesn't land on a quarter boundary.
+QUARTER_EPOCHS=$((COSINE_EPOCHS / 4))
 BUDGET_MAX_TIME="00:23:59:00"
 # SLURM timeout with 1-min buffer beyond the 24h budget.
 TIMEOUT_MIN=1439
@@ -69,6 +73,9 @@ for datamodule in "${!EXPERIMENTS[@]}"; do
             optimizer.cosine_epochs="${COSINE_EPOCHS}" \
             hydra.launcher.timeout_min="${TIMEOUT_MIN}" \
             trainer.max_time="${BUDGET_MAX_TIME}" \
-            +trainer.max_epochs="${COSINE_EPOCHS}"
+            +trainer.max_epochs="${COSINE_EPOCHS}" \
+            trainer.callbacks.0.every_n_epochs="${QUARTER_EPOCHS}" \
+            trainer.callbacks.0.save_top_k=-1 \
+            trainer.callbacks.0.filename="quarter-{epoch:04d}"
     done
 done
