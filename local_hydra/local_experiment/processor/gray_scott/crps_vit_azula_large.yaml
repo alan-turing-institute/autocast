@@ -1,0 +1,39 @@
+# @package _global_
+defaults:
+  - /distributed: ddp_4gpu_slurm
+  - override /datamodule: cached_latents
+  - override /processor@model.processor: vit_azula_large
+  - override /optimizer: adamw_half
+  - _self_
+
+experiment_name: processor_crps_vit_azula_large_gray_scott
+
+# batch_size kept at 32 to mirror ambient-space CRPS (epd/*/crps_vit_azula_large.yaml):
+# ProcessorModelEnsemble expands the batch by n_members=8 under the hood, so the
+# effective memory footprint is 8x what it looks like. This keeps parity with the
+# ambient CRPS runs and leaves headroom.
+datamodule:
+  batch_size: 32
+  # data_path supplied at runtime (points at <ae_run_dir>/cached_latents)
+
+float32_matmul_precision: high
+
+logging:
+  wandb:
+    enabled: true
+
+optimizer:
+  learning_rate: 2e-4
+  warmup: 0
+
+model:
+  n_members: 8
+  processor:
+    hidden_dim: 632
+    n_noise_channels: 1024
+  loss_func:
+    _target_: autocast.losses.ensemble.AlphaFairCRPSLoss
+  train_metrics:
+    crps:
+      _target_: autocast.metrics.ensemble.AlphaFairCRPS
+  val_metrics: []
