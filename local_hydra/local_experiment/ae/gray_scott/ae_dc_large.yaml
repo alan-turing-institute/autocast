@@ -15,8 +15,10 @@ datamodule:
 model:
   encoder:
     periodic: true
+    pixel_shuffle: true
   decoder:
     periodic: true
+    pixel_shuffle: true
 
 logging:
   wandb:

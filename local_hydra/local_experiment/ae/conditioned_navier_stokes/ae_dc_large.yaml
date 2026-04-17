@@ -12,6 +12,12 @@ datamodule:
   use_normalization: true
   batch_size: 16
 
+model:
+  encoder:
+    pixel_shuffle: true
+  decoder:
+    pixel_shuffle: true
+
 logging:
   wandb:
     enabled: true
