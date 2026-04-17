@@ -11,12 +11,13 @@ defaults:
 
 experiment_name: epd_fm_vit_large_advection_diffusion
 
-# batch_size kept at 32 to mirror ambient-space CRPS (epd/*/crps_vit_azula_large.yaml).
-# FM doesn't need ensemble multiplication, but operating on 64x64 ambient features
-# keeps activations high; 32/GPU holds parity with the ambient CRPS runs.
+# batch_size=256 targets parity with CRPS *effective* batch
+# (ambient CRPS bs=32 x n_members=8 = 256 per GPU): FM/diffusion benefit
+# from large batches. If this OOMs at 64x64 x patch_size=4, step down to
+# 128 then 64 — document the reason if lowered.
 datamodule:
   use_normalization: true
-  batch_size: 32
+  batch_size: 256
 
 float32_matmul_precision: high
 
