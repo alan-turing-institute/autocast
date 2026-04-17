@@ -265,3 +265,86 @@ def test_encoder_processor_decoder_rollout_handles_short_trajectory(
     # Ground truth only for windows where data was available
     assert gts is not None
     assert gts.shape == (batch_size, expected_gt_windows * n_steps_output, 32, 32, 1)
+
+
+class CountingPermuteConcat(PermuteConcat):
+    """PermuteConcat encoder that tracks how many times ``encode`` is called."""
+
+    def __init__(
+        self, in_channels: int, n_steps_input: int, with_constants: bool = False
+    ) -> None:
+        super().__init__(
+            in_channels=in_channels,
+            n_steps_input=n_steps_input,
+            with_constants=with_constants,
+        )
+        self.encode_calls = 0
+
+    def encode(self, batch: Batch) -> Tensor:  # type: ignore[override]
+        self.encode_calls += 1
+        return super().encode(batch)
+
+
+def test_encoder_processor_decoder_rollout_re_encodes_each_step(make_toy_batch):
+    """Ambient rollout must re-invoke the encoder at every rollout step.
+
+    This is the invariant the whole ``eval.mode=ambient`` path rests on: in
+    ambient rollout each step decodes the prediction and re-encodes it as
+    the next input, so decode/encode drift accumulates. If a future refactor
+    ever collapsed this into a latent-only loop, latent and ambient eval
+    would silently report the same numbers and ambient-vs-latent ablations
+    would be meaningless. This test pins the contract.
+    """
+    max_rollout_steps = 3
+    n_steps_input = 2
+    n_steps_output = 2
+    stride = 2
+    batch_size = 2
+    trajectory_length = 20
+
+    batch = make_toy_batch(
+        batch_size=batch_size,
+        t_in=n_steps_input,
+        t_out=trajectory_length - n_steps_input,
+    )
+    output_channels = batch.output_fields.shape[-1]
+    merged_input_channels = output_channels * n_steps_input
+    merged_output_channels = output_channels * n_steps_output
+
+    encoder = CountingPermuteConcat(
+        in_channels=output_channels,
+        n_steps_input=n_steps_input,
+        with_constants=False,
+    )
+    decoder = ChannelsLast(output_channels=output_channels, time_steps=n_steps_output)
+    loss = nn.MSELoss()
+    encoder_decoder = EncoderDecoder(encoder=encoder, decoder=decoder, loss_func=loss)
+    processor = TinyProcessor(
+        in_channels=merged_input_channels, out_channels=merged_output_channels
+    )
+    model = EncoderProcessorDecoder(
+        encoder_decoder=encoder_decoder,
+        processor=processor,
+        loss_func=loss,
+        optimizer_config=get_optimizer_config(),
+        stride=stride,
+        max_rollout_steps=max_rollout_steps,
+    )
+    model.eval()
+
+    calls_before = encoder.encode_calls
+    preds, _ = model.rollout(
+        batch,
+        stride=stride,
+        max_rollout_steps=max_rollout_steps,
+        free_running_only=True,
+    )
+    calls_during = encoder.encode_calls - calls_before
+
+    assert calls_during >= max_rollout_steps, (
+        "Ambient rollout must invoke the encoder at least once per rollout "
+        f"step; got {calls_during} encode calls for "
+        f"{max_rollout_steps} rollout steps."
+    )
+    assert preds.shape[0] == batch_size
+    assert preds.shape[1] == max_rollout_steps * n_steps_output
