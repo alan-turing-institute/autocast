@@ -2,6 +2,26 @@
 # Path to checkpoint for evaluation (required for eval)
 checkpoint: null
 
+# Evaluation mode selector (controls rollout space, not just metrics space).
+#
+#   auto     (default) infer from checkpoint type + batch type + autoencoder_checkpoint.
+#            Preserves historical behavior.
+#   ambient  Force full encoder -> processor -> decoder rollout. Each rollout step
+#            decodes and re-encodes, so decode/encode drift is included in the
+#            metrics -- this is the apples-to-apples regime for comparing against
+#            models that natively roll out in ambient/data space (e.g. CRPS baselines).
+#            Requires `autoencoder_checkpoint=<ae.ckpt>` and a raw-Batch datamodule.
+#            When the datamodule yields EncodedBatch (cached latents), the eval
+#            script auto-substitutes the datamodule from
+#            `<cache_dir>/autoencoder_config.yaml` written by `autocast cache-latents`.
+#            Pass `datamodule=...` explicitly to override that default.
+#   latent   Force latent-space rollout (processor predictions are fed back as
+#            latents; encoder is not re-invoked). Metrics are decoded to data
+#            space via the decoder saved alongside the cached latents if
+#            available, otherwise computed in latent space. Requires an
+#            EncodedBatch datamodule (cached latents).
+mode: auto
+
 # Evaluation metrics to compute
 metrics:
   - mse

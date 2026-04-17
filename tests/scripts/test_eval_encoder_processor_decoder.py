@@ -9,20 +9,27 @@ from omegaconf import OmegaConf
 
 from autocast.metrics.ensemble import CRPS, AlphaFairCRPS, SpreadSkillRatio
 from autocast.scripts.eval.encoder_processor_decoder import (
+    EVAL_PATH_AMBIENT_EPD,
+    EVAL_PATH_LATENT_CACHED_LATENT_ONLY,
+    EVAL_PATH_LATENT_CACHED_WITH_DECODER,
     _build_eval_predict_fn,
     _build_per_timestep_metric_factory,
     _decode_tensor,
+    _maybe_swap_to_ambient_datamodule,
+    _normalize_eval_mode,
     _normalize_per_batch_rows,
     _reindex_per_batch_rows_by_rank,
     _render_rollouts,
+    _resolve_eval_path,
     _resolve_rollout_batch_limit,
     _resolve_rollout_channel_names,
     _resolve_rollout_timestep_limit,
     _should_skip_metric,
     _split_metric_and_metadata_rows,
     _training_runtime_rows,
+    _validate_resolved_eval_path,
 )
-from autocast.types import EncodedBatch
+from autocast.types import Batch, EncodedBatch
 
 
 def test_resolve_rollout_batch_limit_falls_back_to_test_limit_when_null():
@@ -414,3 +421,218 @@ def test_render_rollouts_resolves_indices_within_batched_samples(tmp_path, monke
     assert len(captured_paths) == 4
     for idx in range(4):
         assert any(f"batch_{idx}_sample_{idx}.mp4" in p for p in captured_paths)
+
+
+# ---------------------------------------------------------------------------
+# eval.mode + ambient/latent path resolution
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_eval_mode_accepts_known_values_and_none():
+    assert _normalize_eval_mode(None) == "auto"
+    assert _normalize_eval_mode("auto") == "auto"
+    assert _normalize_eval_mode("Ambient") == "ambient"
+    assert _normalize_eval_mode("LATENT") == "latent"
+
+
+def test_normalize_eval_mode_rejects_unknown():
+    with pytest.raises(ValueError, match=r"Unknown eval\.mode"):
+        _normalize_eval_mode("something-else")
+
+
+@pytest.mark.parametrize(
+    ("processor_only", "batch_type", "ae_ckpt", "decoder_loaded", "expected"),
+    [
+        (False, "batch", False, False, EVAL_PATH_AMBIENT_EPD),
+        (False, "encoded", False, False, EVAL_PATH_AMBIENT_EPD),
+        (True, "batch", True, False, EVAL_PATH_AMBIENT_EPD),
+        (True, "encoded", False, True, EVAL_PATH_LATENT_CACHED_WITH_DECODER),
+        (True, "encoded", False, False, EVAL_PATH_LATENT_CACHED_LATENT_ONLY),
+    ],
+)
+def test_resolve_eval_path_matches_run_evaluation_branches(
+    processor_only, batch_type, ae_ckpt, decoder_loaded, expected
+):
+    example_batch = (
+        Batch(
+            input_fields=torch.zeros(1, 1, 2, 2, 1),
+            output_fields=torch.zeros(1, 1, 2, 2, 1),
+            constant_scalars=None,
+            constant_fields=None,
+        )
+        if batch_type == "batch"
+        else EncodedBatch(
+            encoded_inputs=torch.zeros(1, 1, 2, 2, 1),
+            encoded_output_fields=torch.zeros(1, 1, 2, 2, 1),
+            global_cond=None,
+            encoded_info={},
+        )
+    )
+
+    resolved = _resolve_eval_path(
+        processor_only=processor_only,
+        example_batch=example_batch,
+        has_autoencoder_checkpoint=ae_ckpt,
+        decode_fn_loaded=decoder_loaded,
+    )
+
+    assert resolved == expected
+
+
+def test_validate_resolved_eval_path_auto_is_always_ok():
+    for path in (
+        EVAL_PATH_AMBIENT_EPD,
+        EVAL_PATH_LATENT_CACHED_WITH_DECODER,
+        EVAL_PATH_LATENT_CACHED_LATENT_ONLY,
+    ):
+        _validate_resolved_eval_path(eval_mode="auto", resolved_path=path)
+
+
+def test_validate_resolved_eval_path_ambient_rejects_latent_path():
+    with pytest.raises(ValueError, match=r"eval\.mode=ambient"):
+        _validate_resolved_eval_path(
+            eval_mode="ambient",
+            resolved_path=EVAL_PATH_LATENT_CACHED_WITH_DECODER,
+        )
+
+
+def test_validate_resolved_eval_path_latent_rejects_ambient_path():
+    with pytest.raises(ValueError, match=r"eval\.mode=latent"):
+        _validate_resolved_eval_path(
+            eval_mode="latent",
+            resolved_path=EVAL_PATH_AMBIENT_EPD,
+        )
+
+
+def test_validate_resolved_eval_path_happy_paths():
+    _validate_resolved_eval_path(
+        eval_mode="ambient",
+        resolved_path=EVAL_PATH_AMBIENT_EPD,
+    )
+    _validate_resolved_eval_path(
+        eval_mode="latent",
+        resolved_path=EVAL_PATH_LATENT_CACHED_WITH_DECODER,
+    )
+    _validate_resolved_eval_path(
+        eval_mode="latent",
+        resolved_path=EVAL_PATH_LATENT_CACHED_LATENT_ONLY,
+    )
+
+
+def test_maybe_swap_to_ambient_datamodule_is_noop_for_raw_batch(tmp_path):
+    cfg = OmegaConf.create(
+        {"datamodule": {"_target_": "raw.DataModule", "data_path": str(tmp_path)}}
+    )
+    raw_batch = Batch(
+        input_fields=torch.zeros(1, 1, 2, 2, 1),
+        output_fields=torch.zeros(1, 1, 2, 2, 1),
+        constant_scalars=None,
+        constant_fields=None,
+    )
+
+    result = _maybe_swap_to_ambient_datamodule(
+        cfg, eval_mode="ambient", example_batch=raw_batch
+    )
+
+    assert result is cfg
+    assert cfg.datamodule._target_ == "raw.DataModule"
+
+
+def test_maybe_swap_to_ambient_datamodule_is_noop_for_non_ambient(tmp_path):
+    cfg = OmegaConf.create(
+        {
+            "datamodule": {
+                "_target_": "cached.LatentDataModule",
+                "data_path": str(tmp_path),
+            }
+        }
+    )
+    encoded = EncodedBatch(
+        encoded_inputs=torch.zeros(1, 1, 2, 2, 1),
+        encoded_output_fields=torch.zeros(1, 1, 2, 2, 1),
+        global_cond=None,
+        encoded_info={},
+    )
+
+    result = _maybe_swap_to_ambient_datamodule(
+        cfg, eval_mode="auto", example_batch=encoded
+    )
+
+    assert result is cfg
+    assert cfg.datamodule._target_ == "cached.LatentDataModule"
+
+
+def test_maybe_swap_to_ambient_datamodule_loads_from_cache_dir(tmp_path):
+    ae_cfg_path = tmp_path / "autoencoder_config.yaml"
+    OmegaConf.save(
+        OmegaConf.create(
+            {
+                "datamodule": {
+                    "_target_": "raw.TheWellDataModule",
+                    "data_path": "/path/to/raw",
+                    "use_normalization": True,
+                }
+            }
+        ),
+        ae_cfg_path,
+    )
+    cfg = OmegaConf.create(
+        {
+            "datamodule": {
+                "_target_": "cached.LatentDataModule",
+                "data_path": str(tmp_path),
+            }
+        }
+    )
+    encoded = EncodedBatch(
+        encoded_inputs=torch.zeros(1, 1, 2, 2, 1),
+        encoded_output_fields=torch.zeros(1, 1, 2, 2, 1),
+        global_cond=None,
+        encoded_info={},
+    )
+
+    result = _maybe_swap_to_ambient_datamodule(
+        cfg, eval_mode="ambient", example_batch=encoded
+    )
+
+    assert result is cfg
+    assert cfg.datamodule._target_ == "raw.TheWellDataModule"
+    assert cfg.datamodule.data_path == "/path/to/raw"
+    assert cfg.datamodule.use_normalization is True
+
+
+def test_maybe_swap_to_ambient_datamodule_errors_without_ae_config(tmp_path):
+    cfg = OmegaConf.create(
+        {
+            "datamodule": {
+                "_target_": "cached.LatentDataModule",
+                "data_path": str(tmp_path),
+            }
+        }
+    )
+    encoded = EncodedBatch(
+        encoded_inputs=torch.zeros(1, 1, 2, 2, 1),
+        encoded_output_fields=torch.zeros(1, 1, 2, 2, 1),
+        global_cond=None,
+        encoded_info={},
+    )
+
+    with pytest.raises(FileNotFoundError, match=r"autoencoder_config\.yaml"):
+        _maybe_swap_to_ambient_datamodule(
+            cfg, eval_mode="ambient", example_batch=encoded
+        )
+
+
+def test_maybe_swap_to_ambient_datamodule_errors_without_data_path():
+    cfg = OmegaConf.create({"datamodule": {"_target_": "cached.LatentDataModule"}})
+    encoded = EncodedBatch(
+        encoded_inputs=torch.zeros(1, 1, 2, 2, 1),
+        encoded_output_fields=torch.zeros(1, 1, 2, 2, 1),
+        global_cond=None,
+        encoded_info={},
+    )
+
+    with pytest.raises(ValueError, match="no data_path"):
+        _maybe_swap_to_ambient_datamodule(
+            cfg, eval_mode="ambient", example_batch=encoded
+        )
