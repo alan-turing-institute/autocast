@@ -1,0 +1,19 @@
+# @package _global_
+defaults:
+  - /distributed: single_gpu_slurm
+  - override /datamodule: gray_scott
+  - override /encoder@model.encoder: dc_large
+  - override /decoder@model.decoder: dc_large
+  - _self_
+
+experiment_name: cache_latents_gray_scott
+
+# Must match the AE training config (ae/gray_scott/ae_dc_large.yaml)
+# so encoder/decoder architectures align with the checkpoint weights.
+model:
+  encoder:
+    periodic: true
+    pixel_shuffle: true
+  decoder:
+    periodic: true
+    pixel_shuffle: true

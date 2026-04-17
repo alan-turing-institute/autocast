@@ -1,0 +1,19 @@
+# @package _global_
+defaults:
+  - /distributed: single_gpu_slurm
+  - override /datamodule: conditioned_navier_stokes
+  - override /encoder@model.encoder: dc_large
+  - override /decoder@model.decoder: dc_large
+  - _self_
+
+experiment_name: cache_latents_conditioned_navier_stokes
+
+# Must match the AE training config (ae/conditioned_navier_stokes/ae_dc_large.yaml)
+# so encoder/decoder architectures align with the checkpoint weights.
+model:
+  encoder:
+    periodic: false
+    pixel_shuffle: true
+  decoder:
+    periodic: false
+    pixel_shuffle: true
