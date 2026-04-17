@@ -14,8 +14,10 @@ datamodule:
 
 model:
   encoder:
+    periodic: false
     pixel_shuffle: true
   decoder:
+    periodic: false
     pixel_shuffle: true
 
 logging:
