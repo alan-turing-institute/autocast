@@ -2,8 +2,8 @@
 defaults:
   - /distributed: ddp_4gpu_slurm
   - override /datamodule: gpe_laser_only_wake
-  - override /encoder@model.encoder: permute_concat
-  - override /decoder@model.decoder: channels_last
+  - override /encoder@model.encoder: identity
+  - override /decoder@model.decoder: identity
   - override /processor@model.processor: flow_matching_vit
   - override /backbone@model.processor.backbone: vit
   - override /optimizer: adamw_half
@@ -31,15 +31,12 @@ optimizer:
 
 model:
   train_in_latent_space: true
-  encoder:
-    with_constants: true
   processor:
     backbone:
       hid_channels: 704
       hid_blocks: 12
       attention_heads: 8
-      # patch_size=4 keeps token count at 16x16 = 256, matching vit_azula_large
-      # on the same permute_concat features (CRPS-in-ambient architecture parity).
+      # patch_size=4 keeps token count at 16x16 = 256 on 64x64 grids.
       patch_size: 4
     flow_ode_steps: 50
   val_metrics: []
