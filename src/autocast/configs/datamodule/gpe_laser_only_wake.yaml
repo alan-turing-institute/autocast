@@ -8,4 +8,5 @@ verbose: false
 use_normalization: false
 normalization_path: ${.data_path}/stats.yml
 num_workers: 0
+# Added 2026-04-17: previously unset (all channels loaded).
 channel_idxs: [1, 2]
