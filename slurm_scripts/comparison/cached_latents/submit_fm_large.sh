@@ -1,11 +1,12 @@
 #!/bin/bash
 
 set -euo pipefail
-# Final 24h FM-in-latent-space runs for 4 target datasets.
-# Uses per-dataset local_experiment configs that pin the ViT backbone
-# (hid_channels=640), flow_matching_vit processor (flow_ode_steps=50),
-# adamw_half optimizer (LR=1e-4, warmup=0), bs=256/GPU, and
-# float32_matmul_precision=high.
+# Final 24h FM-in-latent runs for 4 target datasets.
+# Model: flow_matching_vit (vit backbone, hid_channels=704, hid_blocks=12,
+# attention_heads=8, patch_size=1, flow_ode_steps=50). Optimizer: adamw_half
+# (LR=1e-4, warmup=0). Batch size: 256/GPU.
+# See local_hydra/local_experiment/processor/<dataset>/fm_vit_large.yaml for
+# the authoritative hyperparameters.
 #
 # COSINE_EPOCHS is a placeholder pending timing runs — once
 # submit_fm_timing.sh completes and per-epoch times are extracted via

@@ -1,10 +1,12 @@
 #!/bin/bash
 
 set -euo pipefail
-# Submit CRPS timing jobs for 4 target datasets.
-# Uses per-dataset local_experiment configs that pin the datamodule,
-# processor (vit_azula_large), optimizer (adamw_half), batch size (32/GPU),
-# and float32_matmul_precision=high.
+# Submit CRPS-in-ambient timing jobs for 4 target datasets.
+# Model: vit_azula_large (hidden_dim=568, n_layers=12, num_heads=8,
+# patch_size=4, n_noise_channels=1024). Optimizer: adamw_half (LR=2e-4,
+# warmup=0). Batch size: 32/GPU (x4 GPUs x n_members=8 = 1024 effective).
+# See local_hydra/local_experiment/epd/<dataset>/crps_vit_azula_large.yaml
+# for the authoritative hyperparameters.
 # Runs 5 epochs each to measure per-epoch wall-clock time, then use
 #   uv run autocast time-epochs --from-checkpoint <path>/timing.ckpt -b 24
 # to compute the max_epochs for a 24h budget.

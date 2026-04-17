@@ -1,13 +1,14 @@
 #!/bin/bash
 
 set -euo pipefail
-# Submit FM-in-ambient-space timing jobs for 4 target datasets.
-# Uses per-dataset local_experiment configs that pin permute_concat +
-# channels_last encoder/decoder (architecture parity with ambient CRPS),
-# flow_matching_vit processor (vit backbone, hid_channels=640, patch_size=4,
-# flow_ode_steps=50), adamw_half optimizer (LR=1e-4, warmup=0), bs=256/GPU
-# (effective-batch parity with CRPS bs=32 x n_members=8), and
-# float32_matmul_precision=high.
+# Submit FM-in-ambient timing jobs for 4 target datasets.
+# Model: flow_matching_vit (vit backbone, hid_channels=704, hid_blocks=12,
+# attention_heads=8, patch_size=4, flow_ode_steps=50). Encoder/decoder:
+# permute_concat + channels_last (architecture parity with ambient CRPS).
+# Optimizer: adamw_half (LR=1e-4, warmup=0). Batch size: 256/GPU
+# (effective-batch parity with CRPS bs=32 x n_members=8).
+# See local_hydra/local_experiment/epd/<dataset>/fm_vit_large.yaml for the
+# authoritative hyperparameters.
 # Runs 5 epochs each to measure per-epoch wall-clock time, then use
 #   uv run autocast time-epochs --from-checkpoint <path>/timing.ckpt -b 24
 # to compute the max_epochs for a 24h budget.

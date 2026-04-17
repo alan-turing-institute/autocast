@@ -1,13 +1,14 @@
 #!/bin/bash
 
 set -euo pipefail
-# Final 24h FM-in-ambient-space runs for 4 target datasets.
-# Uses per-dataset local_experiment configs that pin permute_concat +
-# channels_last encoder/decoder (architecture parity with ambient CRPS),
-# flow_matching_vit processor (vit backbone, hid_channels=640, patch_size=4,
-# flow_ode_steps=50), adamw_half optimizer (LR=1e-4, warmup=0), bs=256/GPU
-# (effective-batch parity with CRPS bs=32 x n_members=8), and
-# float32_matmul_precision=high.
+# Final 24h FM-in-ambient runs for 4 target datasets.
+# Model: flow_matching_vit (vit backbone, hid_channels=704, hid_blocks=12,
+# attention_heads=8, patch_size=4, flow_ode_steps=50). Encoder/decoder:
+# permute_concat + channels_last (architecture parity with ambient CRPS).
+# Optimizer: adamw_half (LR=1e-4, warmup=0). Batch size: 256/GPU
+# (effective-batch parity with CRPS bs=32 x n_members=8).
+# See local_hydra/local_experiment/epd/<dataset>/fm_vit_large.yaml for the
+# authoritative hyperparameters.
 #
 # COSINE_EPOCHS is a placeholder pending timing runs — once
 # submit_fm_ambient_timing.sh completes and per-epoch times are extracted via

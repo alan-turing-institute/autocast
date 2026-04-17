@@ -7,12 +7,14 @@ set -euo pipefail
 # per-dataset AE under local_hydra/local_experiment/ae/<dataset>/) with the
 # AE run dir whose checkpoint will be loaded.
 #
-# The checkpoint is read from <ae_run_dir>/autoencoder.ckpt and latents are
-# written to <ae_run_dir>/cached_latents/{train,valid,test}.
+# Checkpoint lookup: prefers <ae_run_dir>/autoencoder.ckpt (written at the
+# end of a full AE run). If that doesn't exist (AE still training) the
+# newest <ae_run_dir>/autocast/*/checkpoints/latest-*.ckpt is used instead —
+# fine for timing since compute throughput doesn't depend on AE quality.
+# Do NOT use a temp ckpt for the final `large/` runs — re-run this script
+# once submit_ae_large.sh has completed and autoencoder.ckpt is in place.
 #
-# Fill in each ae_run_dir once submit_ae_large.sh completes — the paths below
-# are placeholders matching the 2026-04-17 launch (still training at time of
-# writing).
+# Latents are written to <ae_run_dir>/cached_latents/{train,valid,test}.
 declare -A EXPERIMENTS=(
     ["gray_scott"]="cache_latents/gray_scott/cache_latents"
     ["gpe_laser_only_wake"]="cache_latents/gpe_laser_wake_only/cache_latents"
@@ -33,8 +35,13 @@ for datamodule in "${!EXPERIMENTS[@]}"; do
     ckpt="${ae_run_dir}/autoencoder.ckpt"
 
     if [[ ! -f "$ckpt" ]]; then
-        echo "Skipping ${datamodule}: missing checkpoint ${ckpt}" >&2
-        continue
+        # Fallback: newest latest-*.ckpt from any wandb run under this ae_run_dir.
+        ckpt="$(ls -t "${ae_run_dir}"/autocast/*/checkpoints/latest-*.ckpt 2>/dev/null | head -n 1 || true)"
+        if [[ -z "$ckpt" || ! -f "$ckpt" ]]; then
+            echo "Skipping ${datamodule}: no autoencoder.ckpt or latest-*.ckpt under ${ae_run_dir}" >&2
+            continue
+        fi
+        echo "Using temp checkpoint (AE still training?): ${ckpt}" >&2
     fi
 
     cache_workdir="${ae_run_dir}/cached_latents"

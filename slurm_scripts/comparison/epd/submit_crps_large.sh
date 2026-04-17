@@ -1,11 +1,11 @@
 #!/bin/bash
 
 set -euo pipefail
-# Final 24h CRPS (encoder-processor-decoder) runs for 4 target datasets.
-# Uses per-dataset local_experiment configs that pin the datamodule,
-# processor (vit_azula_large), optimizer (adamw_half), batch size (32/GPU),
-# float32_matmul_precision=high, and the CRPS model head
-# (AlphaFairCRPSLoss, n_members=10, n_noise_channels=1024, hidden_dim=632).
+# Final 24h CRPS-in-ambient runs for 4 target datasets.
+# Model: vit_azula_large (hidden_dim=568, n_layers=12, num_heads=8,
+# patch_size=4, n_noise_channels=1024). Head: AlphaFairCRPSLoss, n_members=8.
+# See local_hydra/local_experiment/epd/<dataset>/crps_vit_azula_large.yaml
+# for the authoritative hyperparameters.
 #
 # Fixed cosine schedule across datasets (LOLA App. B methodology):
 # all datasets train for the same number of epochs.

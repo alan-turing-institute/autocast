@@ -1,12 +1,13 @@
 #!/bin/bash
 
 set -euo pipefail
-# Final 24h CRPS-in-latent-space runs for 4 target datasets.
-# Uses per-dataset local_experiment configs that pin the AzulaViTProcessor
-# (vit_azula_large, hidden_dim=632, n_noise_channels=1024), adamw_half
-# optimizer (LR=2e-4, warmup=0), bs=32/GPU (ensemble expands by n_members=8
-# internally), n_members=8, AlphaFairCRPSLoss, and
-# float32_matmul_precision=high.
+# Final 24h CRPS-in-latent runs for 4 target datasets.
+# Model: AzulaViTProcessor / vit_azula_large (hidden_dim=568, n_layers=12,
+# num_heads=8, patch_size=1, n_noise_channels=1024). Head: AlphaFairCRPSLoss,
+# n_members=8. Optimizer: adamw_half (LR=2e-4, warmup=0). Batch: 32/GPU x
+# n_members=8 internal expansion.
+# See local_hydra/local_experiment/processor/<dataset>/crps_vit_azula_large.yaml
+# for the authoritative hyperparameters.
 #
 # COSINE_EPOCHS is a placeholder pending timing runs — once
 # submit_crps_latent_timing.sh completes and per-epoch times are extracted via
