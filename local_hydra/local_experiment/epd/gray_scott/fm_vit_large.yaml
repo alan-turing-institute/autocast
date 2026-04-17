@@ -1,0 +1,42 @@
+# @package _global_
+defaults:
+  - /distributed: ddp_4gpu_slurm
+  - override /datamodule: gray_scott
+  - override /encoder@model.encoder: permute_concat
+  - override /decoder@model.decoder: channels_last
+  - override /processor@model.processor: flow_matching_vit
+  - override /backbone@model.processor.backbone: vit
+  - override /optimizer: adamw_half
+  - _self_
+
+experiment_name: epd_fm_vit_large_gray_scott
+
+# batch_size kept at 32 to mirror ambient-space CRPS (epd/*/crps_vit_azula_large.yaml).
+# FM doesn't need ensemble multiplication, but operating on 64x64 ambient features
+# keeps activations high; 32/GPU holds parity with the ambient CRPS runs.
+datamodule:
+  use_normalization: true
+  batch_size: 32
+
+float32_matmul_precision: high
+
+logging:
+  wandb:
+    enabled: true
+
+optimizer:
+  learning_rate: 1e-4
+  warmup: 0
+
+model:
+  train_in_latent_space: true
+  encoder:
+    with_constants: true
+  processor:
+    backbone:
+      hid_channels: 640
+      # patch_size=4 keeps token count at 16x16 = 256, matching vit_azula_large
+      # on the same permute_concat features (CRPS-in-ambient architecture parity).
+      patch_size: 4
+    flow_ode_steps: 50
+  val_metrics: []
