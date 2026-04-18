@@ -82,9 +82,7 @@ def test_azula_vit_processor_5d_multistep():
     pred = processor.map(x, global_cond=None)
     assert pred.shape == targets.shape
 
-    model = ProcessorModel(
-        processor=processor, optimizer_config=get_optimizer_config()
-    )
+    model = ProcessorModel(processor=processor, optimizer_config=get_optimizer_config())
     train_loss = model.training_step(batch, 0)
     assert train_loss.shape == ()
     train_loss.backward()

@@ -12,8 +12,8 @@ from autocast.scripts.setup import (
     _filter_kwargs_for_target,
     _get_latent_channels,
     _get_module_device,
-    _resolve_processor_temporal_steps,
     _resolve_module_device,
+    _resolve_processor_temporal_steps,
     _set_if_auto,
     resolve_auto_params,
     setup_autoencoder_components,
@@ -208,7 +208,7 @@ def test_resolve_processor_temporal_steps_for_time_concatenating_encoder():
         outputs_time_channel_concat = True
 
     steps_in, steps_out = _resolve_processor_temporal_steps(
-        TimeConcatEncoder(),
+        TimeConcatEncoder(),  # type: ignore - just testing resolution logic, not actual encoder behavior
         n_steps_input=4,
         n_steps_output=2,
     )
@@ -222,7 +222,7 @@ def test_resolve_processor_temporal_steps_for_regular_encoder():
         outputs_time_channel_concat = False
 
     steps_in, steps_out = _resolve_processor_temporal_steps(
-        RegularEncoder(),
+        RegularEncoder(),  # type: ignore - just testing resolution logic, not actual encoder behavior
         n_steps_input=4,
         n_steps_output=2,
     )
@@ -236,7 +236,7 @@ def test_resolve_processor_temporal_steps_defaults_to_non_concat_when_missing_at
         pass
 
     steps_in, steps_out = _resolve_processor_temporal_steps(
-        EncoderWithoutFlag(),
+        EncoderWithoutFlag(),  # type: ignore - just testing resolution logic, not actual encoder behavior
         n_steps_input=4,
         n_steps_output=2,
     )
