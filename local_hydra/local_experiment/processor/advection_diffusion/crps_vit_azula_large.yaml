@@ -34,6 +34,8 @@ model:
     n_layers: 12
     patch_size: 1
     n_noise_channels: 1024
+    global_cond_channels: auto
+    include_global_cond: true
   loss_func:
     _target_: autocast.losses.ensemble.AlphaFairCRPSLoss
   train_metrics:

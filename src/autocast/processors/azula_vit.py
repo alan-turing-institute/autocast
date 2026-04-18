@@ -32,6 +32,8 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
         loss_func: nn.Module | None = None,
         n_noise_channels: int | None = None,
         n_noise_input_channels: int | None = None,
+        global_cond_channels: int | None = None,
+        include_global_cond: bool = False,
         checkpointing: bool = False,
     ):
         super().__init__()
@@ -42,6 +44,8 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
 
         self.n_noise_channels = n_noise_channels
         self.n_noise_input_channels = n_noise_input_channels or n_noise_channels
+        self.global_cond_channels = global_cond_channels
+        self.include_global_cond = include_global_cond
 
         if self.n_noise_channels is None and n_noise_input_channels is not None:
             msg = (
@@ -68,8 +72,8 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
             n_steps_output=1,
             n_steps_input=1,
             mod_features=n_noise_channels or 256,
-            global_cond_channels=None,
-            include_global_cond=False,
+            global_cond_channels=global_cond_channels,
+            include_global_cond=include_global_cond,
             hid_channels=hidden_dim,
             hid_blocks=n_layers,
             attention_heads=num_heads,
@@ -82,12 +86,19 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
             use_precomputed_modulation=True,
         )
 
-    def forward(self, x: Tensor, x_noise: Tensor | None = None) -> Tensor:
+    def forward(
+        self,
+        x: Tensor,
+        x_noise: Tensor | None = None,
+        global_cond: Tensor | None = None,
+    ) -> Tensor:
         """Run TemporalViT with channel-first inputs and outputs.
 
         Args:
             x: Input tensor with shape (B, C, H, W).
             x_noise: Optional noise/modulation tensor.
+            global_cond: Optional global conditioning tensor with shape
+                (B, C_global). Used only when include_global_cond=True.
 
         Returns
         -------
@@ -107,22 +118,49 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
             )
             raise ValueError(msg)
 
+        if (
+            not self.n_noise_channels
+            and x_noise is not None
+            and x_noise.shape[-1] != self.model.mod_features
+        ):
+            msg = (
+                f"Expected x_noise with last dim {self.model.mod_features}, "
+                f"got {x_noise.shape[-1]}."
+            )
+            raise ValueError(msg)
+
+        model_global_cond = None
+        if self.include_global_cond:
+            if global_cond is None:
+                msg = "global_cond must be provided when include_global_cond=True."
+                raise ValueError(msg)
+            if global_cond.shape[-1] != self.global_cond_channels:
+                msg = (
+                    f"Expected global_cond with last dim "
+                    f"{self.global_cond_channels}, got "
+                    f"{global_cond.shape[-1]}."
+                )
+                raise ValueError(msg)
+            model_global_cond = global_cond
+
         x_in = rearrange(x, "b c h w -> b 1 h w c").contiguous()
-        y = self.model(x_in, t=x_noise, cond=None, global_cond=None)
+        y = self.model(x_in, t=x_noise, cond=None, global_cond=model_global_cond)
         return rearrange(y, "b 1 h w c -> b c h w").contiguous()
 
-    def map(self, x: Tensor, global_cond: Tensor | None = None) -> Tensor:  # noqa: ARG002
+    def map(self, x: Tensor, global_cond: Tensor | None = None) -> Tensor:
         noise_channels = self.n_noise_input_channels or self.n_noise_channels
+        if noise_channels is None:
+            noise_channels = self.model.mod_features
+
         if self.n_noise_channels:
-            if noise_channels is None:
-                msg = "n_noise_channels is set but no noise input width is available."
-                raise ValueError(msg)
             noise = torch.randn(
                 x.shape[0], noise_channels, dtype=x.dtype, device=x.device
             )
         else:
-            noise = torch.zeros(x.shape[0], dtype=x.dtype, device=x.device)
-        return self(x, noise)
+            noise = torch.zeros(
+                x.shape[0], noise_channels, dtype=x.dtype, device=x.device
+            )
+        return self(x, noise, global_cond=global_cond)
 
     def loss(self, batch: EncodedBatch) -> Tensor:
         pred = self.map(batch.encoded_inputs, batch.global_cond)
