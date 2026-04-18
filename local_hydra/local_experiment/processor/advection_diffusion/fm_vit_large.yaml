@@ -19,6 +19,9 @@ logging:
   wandb:
     enabled: true
 
+output:
+  skip_test: true
+
 optimizer:
   learning_rate: 1e-4
   warmup: 0

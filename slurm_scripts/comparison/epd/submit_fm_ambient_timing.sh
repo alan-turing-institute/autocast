@@ -4,7 +4,9 @@ set -euo pipefail
 # Submit FM-in-ambient timing jobs for 4 target datasets.
 # Model: flow_matching_vit (vit backbone, hid_channels=704, hid_blocks=12,
 # attention_heads=8, patch_size=4, flow_ode_steps=50). Encoder/decoder:
-# permute_concat + channels_last (architecture parity with ambient CRPS).
+# identity (conditioning flows via backbone global_cond / AdaLN, not
+# spatial concatenation — distinct mechanism from CRPS ambient's
+# permute_concat).
 # Optimizer: adamw_half (LR=1e-4, warmup=0). Batch size: 256/GPU
 # (effective-batch parity with CRPS bs=32 x n_members=8).
 # See local_hydra/local_experiment/epd/<dataset>/fm_vit_large.yaml for the

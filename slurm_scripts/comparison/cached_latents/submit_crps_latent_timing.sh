@@ -1,7 +1,7 @@
 #!/bin/bash
 
 set -euo pipefail
-# Submit CRPS-in-latent timing jobs for 4 target datasets.
+# Ablation: submit CRPS-in-cached-latent timing jobs for 4 target datasets.
 # Model: AzulaViTProcessor / vit_azula_large (hidden_dim=568, n_layers=12,
 # num_heads=8, patch_size=1, n_noise_channels=1024). Optimizer: adamw_half
 # (LR=2e-4, warmup=0). Batch: 32/GPU x n_members=8 internal expansion;
@@ -53,7 +53,7 @@ for datamodule in "${!EXPERIMENTS[@]}"; do
 
     uv run autocast time-epochs --kind processor --mode slurm \
         --run-group "${RUN_GROUP}" \
-        --run-id "crps_latent_b32_${datamodule}" \
+        --run-id "crps_latent_ablation_b32_${datamodule}" \
         -n "${NUM_TIMING_EPOCHS}" \
         -b "${BUDGET_HOURS}" \
         local_experiment="${experiment}" \
@@ -67,4 +67,4 @@ done
 echo "All timing jobs submitted."
 echo ""
 echo "Once SLURM jobs complete, collect all results with:"
-echo "  for f in outputs/${RUN_GROUP}/crps_latent_b32_*/retrieve.sh; do bash \"\$f\"; done"
+echo "  for f in outputs/${RUN_GROUP}/crps_latent_ablation_b32_*/retrieve.sh; do bash \"\$f\"; done"
