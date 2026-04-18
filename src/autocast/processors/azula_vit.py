@@ -54,15 +54,6 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
             )
             raise ValueError(msg)
 
-        if self.include_global_cond and (
-            self.global_cond_channels is None or self.global_cond_channels <= 0
-        ):
-            msg = (
-                "include_global_cond=True requires global_cond_channels to be "
-                "set to a positive integer."
-            )
-            raise ValueError(msg)
-
         self.modulation_proj = None
         if (
             self.n_noise_channels
