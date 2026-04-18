@@ -99,13 +99,20 @@ extracted per-dataset from `*_timing.sh` via
 `uv run autocast time-epochs --from-checkpoint <path>/timing.ckpt -b 24`
 and live in `COSINE_EPOCHS_BY_DATASET` at the top of each `*_large.sh`.
 
-Ambient (CRPS re-timed 2026-04-18 via `timing_efficient_crps`; FM 2026-04-17):
+Ambient (timing 2026-04-18; CRPS from `timing_efficient_crps/`, FM from `timing/`):
 
 | variant | gray_scott | gpe_laser_only_wake | cond_navier_stokes | advection_diffusion |
 |---|---|---|---|---|
 | CRPS ambient (permute_concat) | **398** (212.3 s/ep) | 478 (177.0) | 472 (179.2) | 479 (176.6) |
 | CRPS-via-AE ambient (EPD)     | **49**  (1723.5 s/ep) | 85  (990.8) | 86  (984.1) | 58  (1436.4) |
-| FM ambient                    | **2619** (32.3 s/ep)  | 3097 (27.3) | 2917 (29.0) | 3279 (25.8) |
+| FM ambient                    | **2649** (32.0 s/ep)  | 3194 (26.5) | 2998 (28.2) | 3247 (26.1) |
+
+Latent (timing 2026-04-18, FM only — full 4-dataset CRPS-latent timing pending):
+
+| variant | gray_scott | gpe_laser_only_wake | cond_navier_stokes | advection_diffusion |
+|---|---|---|---|---|
+| FM latent (cached) | **2868** (29.5 s/ep) | 3442 (24.6) | 3276 (25.8) | 3331 (25.4) |
+| CRPS latent (cached) | 1080 (placeholder) | 1080 | 1080 | 1080 |
 
 CNS-only ablations (timing 2026-04-18):
 
@@ -114,8 +121,11 @@ CNS-only ablations (timing 2026-04-18):
 | CRPS ambient (identity + global_cond AdaLN) | 469 (180.4 s/ep) |
 | CRPS latent (cached, ablation)              | 345 (244.8 s/ep) |
 
-Latent (4-dataset CRPS / FM): placeholders (1080) pending
-`submit_{crps_latent,fm}_timing.sh`.
+All `s/ep` values are the mean across the 4 epoch durations recorded by
+`TrainingTimerCallback` in `last.ckpt`. The timer runs 5 epochs but the
+final epoch is closed in `on_train_end`, which fires *after* the
+checkpoint save during `on_train_epoch_end` — so `last.ckpt` captures
+epochs 0–3 (n=4) of a 5-epoch timing run.
 
 Each script saves quarter-schedule checkpoints (every `cosine_epochs / 4`)
 plus `last.ckpt` at train-end (guaranteed final state). Quarter boundaries
