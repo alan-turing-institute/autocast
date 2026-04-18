@@ -384,15 +384,6 @@ class AzulaUNetProcessor(Processor[EncodedBatch]):
         self.global_cond_channels = global_cond_channels
         self.include_global_cond = include_global_cond
 
-        if self.include_global_cond and (
-            self.global_cond_channels is None or self.global_cond_channels <= 0
-        ):
-            msg = (
-                "include_global_cond=True requires global_cond_channels to be "
-                "set to a positive integer."
-            )
-            raise ValueError(msg)
-
         self.model = TemporalUNetBackbone(
             in_channels=in_channels,
             out_channels=out_channels,
@@ -468,7 +459,12 @@ class AzulaUNetProcessor(Processor[EncodedBatch]):
             )
             raise ValueError(msg)
 
-        model_mod = x_noise
+        if x_noise is None:
+            model_mod = torch.zeros(
+                x.shape[0], self.model.mod_features, dtype=x.dtype, device=x.device
+            )
+        else:
+            model_mod = x_noise
         model_global_cond = None
         if self.include_global_cond:
             if global_cond is None:
