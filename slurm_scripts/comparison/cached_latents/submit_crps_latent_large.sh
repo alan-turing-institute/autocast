@@ -9,18 +9,20 @@ set -euo pipefail
 # See local_hydra/local_experiment/processor/<dataset>/crps_vit_azula_large.yaml
 # for the authoritative hyperparameters.
 #
-# COSINE_EPOCHS is a placeholder pending timing runs — once
-# submit_crps_latent_timing.sh completes and per-epoch times are extracted via
+# Per-dataset cosine schedule: each (method, dataset) pair fills its own
+# 24h budget so each model gets its best shot within budget. PLACEHOLDERS
+# pending submit_crps_latent_timing.sh — extract per-dataset values via
 #   uv run autocast time-epochs --from-checkpoint <path>/timing.ckpt -b 24
-# replace 1080 with the recommended value for the slowest dataset.
+# and replace each entry below.
 #
 # learning_rate (2e-4) and warmup (0) are baked into each per-dataset
 # local_experiment config; adjust the yaml to change them.
-COSINE_EPOCHS=1080
-# Save checkpoints at 25/50/75/100% of the schedule (top_k=-1 keeps all).
-# save_last: true (set in trainer/default.yaml) ensures last.ckpt captures
-# the final epoch even if it doesn't land on a quarter boundary.
-QUARTER_EPOCHS=$((COSINE_EPOCHS / 4))
+declare -A COSINE_EPOCHS_BY_DATASET=(
+    ["gray_scott"]=1080                 # placeholder
+    ["gpe_laser_only_wake"]=1080        # placeholder
+    ["conditioned_navier_stokes"]=1080  # placeholder
+    ["advection_diffusion"]=1080        # placeholder
+)
 BUDGET_MAX_TIME="00:23:59:00"
 # SLURM timeout with 1-min buffer beyond the 24h budget.
 TIMEOUT_MIN=1439
@@ -45,6 +47,11 @@ for datamodule in "${!EXPERIMENTS[@]}"; do
     experiment="${EXPERIMENTS[$datamodule]}"
     ae_run_dir="${AE_RUN_DIRS[$datamodule]}"
     cache_dir="${ae_run_dir}/cached_latents"
+    cosine_epochs="${COSINE_EPOCHS_BY_DATASET[$datamodule]}"
+    # Save checkpoints at 25/50/75/100% of the schedule (top_k=-1 keeps all).
+    # save_last: true (set in trainer/default.yaml) ensures last.ckpt captures
+    # the final epoch even if it doesn't land on a quarter boundary.
+    quarter_epochs=$((cosine_epochs / 4))
 
     if [[ ! -d "${cache_dir}/train" ]] || [[ ! -d "${cache_dir}/valid" ]] || [[ ! -d "${cache_dir}/test" ]]; then
         echo "Skipping ${datamodule}: cache missing train/valid/test under ${cache_dir}" >&2
@@ -64,17 +71,17 @@ for datamodule in "${!EXPERIMENTS[@]}"; do
         echo "  datamodule: ${datamodule}"
         echo "  local_experiment: ${experiment}"
         echo "  cache dir: ${cache_dir}"
-        echo "  cosine_epochs: ${COSINE_EPOCHS}"
+        echo "  cosine_epochs: ${cosine_epochs}"
 
         uv run autocast processor --mode slurm "${dry_run_arg[@]}" \
             local_experiment="${experiment}" \
             datamodule.data_path="${cache_dir}" \
             logging.wandb.enabled=true \
-            optimizer.cosine_epochs="${COSINE_EPOCHS}" \
+            optimizer.cosine_epochs="${cosine_epochs}" \
             hydra.launcher.timeout_min="${TIMEOUT_MIN}" \
             trainer.max_time="${BUDGET_MAX_TIME}" \
-            +trainer.max_epochs="${COSINE_EPOCHS}" \
-            trainer.callbacks.0.every_n_epochs="${QUARTER_EPOCHS}" \
+            +trainer.max_epochs="${cosine_epochs}" \
+            trainer.callbacks.0.every_n_epochs="${quarter_epochs}" \
             trainer.callbacks.0.save_top_k=-1 \
             trainer.callbacks.0.filename="quarter-{epoch:04d}"
     done

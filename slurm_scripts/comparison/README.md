@@ -63,3 +63,50 @@ only 2×2=4 tokens — nearly no spatial structure. The
 `processor/<dataset>/crps_vit_azula_large.yaml` configs explicitly override
 `patch_size: 1` (64 tokens). The FM `vit` backbone already defaults to
 `patch_size=1`, so no override is needed for FM-latent.
+
+## Conditioning mechanism
+
+The four variants pass conditioning (e.g. `constant_scalars`) through two
+different paths, and this is intentional — not an oversight:
+
+| variant | encoder | global_cond on backbone | conditioning path |
+|---|---|---|---|
+| CRPS ambient | `permute_concat` (`with_constants: true`) | **off** (processor `include_global_cond: false`) | spatial channels |
+| FM ambient | `identity` | **on** (backbone default) | AdaLN modulation |
+| CRPS latent | — (cached latents) | **on** (explicit override) | AdaLN modulation |
+| FM latent | — (cached latents) | **on** (backbone default + auto-detect) | AdaLN modulation |
+
+Setup auto-fills `global_cond_channels` from `encoder.encode_cond(batch)` /
+`batch.global_cond`. For CRPS ambient, `AzulaViTProcessor.include_global_cond`
+is hard-coded false in `vit_azula_large.yaml`, so the auto-detected value is
+ignored — conditioning flows only through `permute_concat`'s spatial
+concatenation.
+
+Planned ablation (not in this submission round): CRPS ambient with
+`identity` encoder + `include_global_cond: true` to match FM ambient's
+conditioning path exactly and isolate the encoder effect.
+
+## Cosine schedule (per-dataset, 24h budget)
+
+Each `(variant, dataset)` pair gets its own `COSINE_EPOCHS` so every run
+fills its 24h wall-clock budget — no model is held back by another
+dataset's slower epoch times. This lets us claim each (method, dataset)
+result was given its best shot within the fixed 24h budget, which is the
+load-bearing constraint for the CRPS vs FM comparison. Values are
+extracted per-dataset from `*_timing.sh` via
+`uv run autocast time-epochs --from-checkpoint <path>/timing.ckpt -b 24`
+and live in `COSINE_EPOCHS_BY_DATASET` at the top of each `*_large.sh`.
+
+Ambient (timing 2026-04-17):
+
+| variant | gray_scott | gpe_laser_only_wake | cond_navier_stokes | advection_diffusion |
+|---|---|---|---|---|
+| CRPS ambient | **398** (212.3 s/ep) | 477 (177.3) | 471 (179.5) | 486 (174.0) |
+| FM ambient | **2619** (32.3 s/ep) | 3097 (27.3) | 2917 (29.0) | 3279 (25.8) |
+
+Latent: placeholders (1080) pending `submit_{crps_latent,fm}_timing.sh`.
+
+Each script saves quarter-schedule checkpoints (every `cosine_epochs / 4`)
+plus `last.ckpt` at train-end (guaranteed final state). Quarter boundaries
+differ per dataset, which is fine — within-dataset curves are what we
+compare, and absolute losses are only compared within a dataset.

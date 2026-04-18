@@ -7,21 +7,19 @@ set -euo pipefail
 # See local_hydra/local_experiment/epd/<dataset>/crps_vit_azula_large.yaml
 # for the authoritative hyperparameters.
 #
-# Fixed cosine schedule across datasets (LOLA App. B methodology):
-# all datasets train for the same number of epochs.
-#
-# COSINE_EPOCHS is a placeholder pending timing runs — once
-# submit_crps_timing.sh completes and per-epoch times are extracted via
+# Per-dataset cosine schedule: each (method, dataset) pair fills its own
+# 24h budget so each model gets its best shot within budget. Values from
+# submit_crps_timing.sh (2026-04-17) via
 #   uv run autocast time-epochs --from-checkpoint <path>/timing.ckpt -b 24
-# replace 240 with the recommended value for the slowest dataset.
 #
 # learning_rate (2e-4) and warmup (0) are baked into each per-dataset
 # local_experiment config; adjust the yaml to change them.
-COSINE_EPOCHS=240
-# Save checkpoints at 25/50/75/100% of the schedule (top_k=-1 keeps all).
-# save_last: true (set in trainer/default.yaml) ensures last.ckpt captures
-# the final epoch even if it doesn't land on a quarter boundary.
-QUARTER_EPOCHS=$((COSINE_EPOCHS / 4))
+declare -A COSINE_EPOCHS_BY_DATASET=(
+    ["gray_scott"]=398                  # 212.3s/epoch
+    ["gpe_laser_only_wake"]=477         # 177.3s/epoch
+    ["conditioned_navier_stokes"]=471   # 179.5s/epoch
+    ["advection_diffusion"]=486         # 174.0s/epoch
+)
 BUDGET_MAX_TIME="00:23:59:00"
 # SLURM timeout with 1-min buffer beyond the 24h budget.
 TIMEOUT_MIN=1439
@@ -37,6 +35,11 @@ declare -A EXPERIMENTS=(
 
 for datamodule in "${!EXPERIMENTS[@]}"; do
     experiment="${EXPERIMENTS[$datamodule]}"
+    cosine_epochs="${COSINE_EPOCHS_BY_DATASET[$datamodule]}"
+    # Save checkpoints at 25/50/75/100% of the schedule (top_k=-1 keeps all).
+    # save_last: true (set in trainer/default.yaml) ensures last.ckpt captures
+    # the final epoch even if it doesn't land on a quarter boundary.
+    quarter_epochs=$((cosine_epochs / 4))
 
     for run_dry in "${RUN_DRY_STATES[@]}"; do
         dry_run_arg=()
@@ -50,16 +53,16 @@ for datamodule in "${!EXPERIMENTS[@]}"; do
         echo "  mode: ${run_label}"
         echo "  datamodule: ${datamodule}"
         echo "  local_experiment: ${experiment}"
-        echo "  cosine_epochs: ${COSINE_EPOCHS}"
+        echo "  cosine_epochs: ${cosine_epochs}"
 
         uv run autocast epd --mode slurm "${dry_run_arg[@]}" \
             local_experiment="${experiment}" \
             logging.wandb.enabled=true \
-            optimizer.cosine_epochs="${COSINE_EPOCHS}" \
+            optimizer.cosine_epochs="${cosine_epochs}" \
             hydra.launcher.timeout_min="${TIMEOUT_MIN}" \
             trainer.max_time="${BUDGET_MAX_TIME}" \
-            +trainer.max_epochs="${COSINE_EPOCHS}" \
-            trainer.callbacks.0.every_n_epochs="${QUARTER_EPOCHS}" \
+            +trainer.max_epochs="${cosine_epochs}" \
+            trainer.callbacks.0.every_n_epochs="${quarter_epochs}" \
             trainer.callbacks.0.save_top_k=-1 \
             trainer.callbacks.0.filename="quarter-{epoch:04d}"
     done
