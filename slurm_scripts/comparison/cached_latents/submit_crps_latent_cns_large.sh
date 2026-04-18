@@ -58,5 +58,5 @@ for run_dry in "${RUN_DRY_STATES[@]}"; do
         +trainer.max_epochs="${COSINE_EPOCHS}" \
         trainer.callbacks.0.every_n_epochs="${quarter_epochs}" \
         trainer.callbacks.0.save_top_k=-1 \
-        trainer.callbacks.0.filename="quarter-{epoch:04d}"
+        trainer.callbacks.0.filename=\"quarter-{epoch:04d}\"
 done

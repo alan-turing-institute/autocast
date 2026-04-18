@@ -81,6 +81,6 @@ for datamodule in "${!EXPERIMENTS[@]}"; do
             +trainer.max_epochs="${cosine_epochs}" \
             trainer.callbacks.0.every_n_epochs="${quarter_epochs}" \
             trainer.callbacks.0.save_top_k=-1 \
-            trainer.callbacks.0.filename="quarter-{epoch:04d}"
+            trainer.callbacks.0.filename=\"quarter-{epoch:04d}\"
     done
 done
