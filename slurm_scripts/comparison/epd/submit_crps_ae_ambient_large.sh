@@ -11,10 +11,10 @@ set -euo pipefail
 #   uv run autocast time-epochs --from-checkpoint <path>/timing.ckpt -b 24
 
 declare -A COSINE_EPOCHS_BY_DATASET=(
-    ["gray_scott"]=49                   # 1724.6 s/ep (timing_efficient_crps, 2026-04-18)
-    ["gpe_laser_only_wake"]=85          #  991.0 s/ep (timing_efficient_crps, 2026-04-18)
+    # ["gray_scott"]=49                   # 1724.6 s/ep (timing_efficient_crps, 2026-04-18)
+    # ["gpe_laser_only_wake"]=85          #  991.0 s/ep (timing_efficient_crps, 2026-04-18)
     ["conditioned_navier_stokes"]=85    #  985.0 s/ep (timing_efficient_crps, 2026-04-18)
-    ["advection_diffusion"]=58          # 1436.9 s/ep (timing_efficient_crps, 2026-04-18)
+    # ["advection_diffusion"]=58          # 1436.9 s/ep (timing_efficient_crps, 2026-04-18)
 )
 BUDGET_MAX_TIME="00:23:59:00"
 # SLURM timeout with 1-min buffer beyond the 24h budget.
@@ -22,16 +22,16 @@ TIMEOUT_MIN=1439
 RUN_DRY_STATES=("true" "false")
 
 declare -A EXPERIMENTS=(
-    ["gray_scott"]="epd/gray_scott/crps_vit_azula_large_ae_ambient"
-    ["gpe_laser_only_wake"]="epd/gpe_laser_wake_only/crps_vit_azula_large_ae_ambient"
+    # ["gray_scott"]="epd/gray_scott/crps_vit_azula_large_ae_ambient"
+    # ["gpe_laser_only_wake"]="epd/gpe_laser_wake_only/crps_vit_azula_large_ae_ambient"
     ["conditioned_navier_stokes"]="epd/conditioned_navier_stokes/crps_vit_azula_large_ae_ambient"
-    ["advection_diffusion"]="epd/advection_diffusion/crps_vit_azula_large_ae_ambient"
+    # ["advection_diffusion"]="epd/advection_diffusion/crps_vit_azula_large_ae_ambient"
 )
 declare -A AE_RUN_DIRS=(
-    ["gray_scott"]="$HOME/autocast/outputs/2026-04-17/ae_gs64_3a7999b_ed36b8e"
-    ["gpe_laser_only_wake"]="$HOME/autocast/outputs/2026-04-17/ae_gpe64_3a7999b_31e1c9f"
+    # ["gray_scott"]="$HOME/autocast/outputs/2026-04-17/ae_gs64_3a7999b_ed36b8e"
+    # ["gpe_laser_only_wake"]="$HOME/autocast/outputs/2026-04-17/ae_gpe64_3a7999b_31e1c9f"
     ["conditioned_navier_stokes"]="$HOME/autocast/outputs/2026-04-17/ae_cns64_3a7999b_b9c29f8"
-    ["advection_diffusion"]="$HOME/autocast/outputs/2026-04-17/ae_ad64_3a7999b_1a1e300"
+    # ["advection_diffusion"]="$HOME/autocast/outputs/2026-04-17/ae_ad64_3a7999b_1a1e300"
 )
 
 for datamodule in "${!EXPERIMENTS[@]}"; do
