@@ -1,5 +1,6 @@
 import pytest
 import torch
+from einops import rearrange, repeat
 
 from autocast.metrics import ALL_ENSEMBLE_METRICS
 from autocast.metrics.base import BaseMetric
@@ -9,6 +10,8 @@ from autocast.metrics.ensemble import (
     SpreadSkillRatio,
     VariogramScore,
     WinklerScore,
+    _alpha_fair_crps_score,
+    _common_crps_score,
 )
 from autocast.types import TensorBTSC
 from autocast.types.types import TensorBTC
@@ -258,3 +261,112 @@ def test_ensemble_metrics_device_consistency(MetricCls):
     value = metric(y_pred, y_true)
 
     assert value.device.type == target_device.type
+
+
+def _reference_common_crps_score(
+    y_pred: torch.Tensor, y_true: torch.Tensor, adjustment_factor: float
+) -> torch.Tensor:
+    """Reference O(M^2) implementation kept for test purposes only."""
+    n_ensemble = y_pred.shape[-1]
+    y_true_expanded = repeat(y_true, "... -> ... m", m=n_ensemble)
+    term1 = torch.mean(torch.abs(y_pred - y_true_expanded), dim=-1)
+    term2 = (
+        0.5
+        * torch.mean(
+            torch.abs(
+                rearrange(y_pred, "... m -> ... 1 m")
+                - rearrange(y_pred, "... m -> ... m 1")
+            ),
+            dim=(-2, -1),
+        )
+        * adjustment_factor
+    )
+    return term1 - term2
+
+
+def _reference_alpha_fair_crps_score(
+    y_pred: torch.Tensor, y_true: torch.Tensor, alpha: float
+) -> torch.Tensor:
+    """Reference O(M^2) implementation kept for test purposes only."""
+    n_ensemble = y_pred.shape[-1]
+    y_true_m = repeat(y_true, "... -> ... m", m=n_ensemble)
+    eps = (1.0 - alpha) / n_ensemble
+
+    abs_diff_ens = torch.abs(
+        rearrange(y_pred, "... m -> ... 1 m") - rearrange(y_pred, "... m -> ... m 1")
+    )
+    abs_diff_truth = torch.abs(y_pred - y_true_m)
+
+    mask = ~torch.eye(n_ensemble, dtype=torch.bool, device=y_pred.device)
+    mask = mask.view(*([1] * (abs_diff_ens.ndim - 2)), n_ensemble, n_ensemble)
+
+    term_pair = (
+        rearrange(abs_diff_truth, "... m -> ... m 1")
+        + rearrange(abs_diff_truth, "... m -> ... 1 m")
+        - (1.0 - eps) * abs_diff_ens
+    )
+    term_pair = term_pair.masked_fill(~mask, 0.0)
+    sum_pair = term_pair.sum(dim=(-1, -2))
+    norm = 2.0 * n_ensemble * (n_ensemble - 1)
+    return sum_pair / norm
+
+
+@pytest.mark.parametrize("adjustment_factor", [1.0, 11.0 / 10.0])
+@pytest.mark.parametrize("n_ensemble", [2, 5, 11])
+def test_common_crps_matches_reference(adjustment_factor, n_ensemble):
+    torch.manual_seed(0)
+    y_pred = torch.randn((2, 3, 4, 5, n_ensemble), dtype=torch.float64)
+    y_true = torch.randn((2, 3, 4, 5), dtype=torch.float64)
+
+    fast = _common_crps_score(y_pred, y_true, adjustment_factor=adjustment_factor)
+    ref = _reference_common_crps_score(
+        y_pred, y_true, adjustment_factor=adjustment_factor
+    )
+
+    assert torch.allclose(fast, ref, atol=1e-10, rtol=1e-10)
+
+
+@pytest.mark.parametrize("alpha", [0.25, 0.75, 0.95, 1.0])
+@pytest.mark.parametrize("n_ensemble", [2, 5, 11])
+def test_alpha_fair_crps_matches_reference(alpha, n_ensemble):
+    torch.manual_seed(0)
+    y_pred = torch.randn((2, 3, 4, 5, n_ensemble), dtype=torch.float64)
+    y_true = torch.randn((2, 3, 4, 5), dtype=torch.float64)
+
+    fast = _alpha_fair_crps_score(y_pred, y_true, alpha=alpha)
+    ref = _reference_alpha_fair_crps_score(y_pred, y_true, alpha=alpha)
+
+    assert torch.allclose(fast, ref, atol=1e-10, rtol=1e-10)
+
+
+@pytest.mark.parametrize("adjustment_factor", [1.0, 4.0 / 3.0])
+def test_common_crps_gradients_match_reference(adjustment_factor):
+    torch.manual_seed(0)
+    y_pred = torch.randn((2, 2, 3, 2, 4), dtype=torch.float64, requires_grad=True)
+    y_true = torch.randn((2, 2, 3, 2), dtype=torch.float64)
+
+    fast = _common_crps_score(y_pred, y_true, adjustment_factor=adjustment_factor).sum()
+    (grad_fast,) = torch.autograd.grad(fast, y_pred)
+
+    y_pred_ref = y_pred.detach().clone().requires_grad_(True)
+    ref = _reference_common_crps_score(
+        y_pred_ref, y_true, adjustment_factor=adjustment_factor
+    ).sum()
+    (grad_ref,) = torch.autograd.grad(ref, y_pred_ref)
+
+    assert torch.allclose(grad_fast, grad_ref, atol=1e-10, rtol=1e-10)
+
+
+def test_alpha_fair_crps_gradients_match_reference():
+    torch.manual_seed(0)
+    y_pred = torch.randn((2, 2, 3, 2, 4), dtype=torch.float64, requires_grad=True)
+    y_true = torch.randn((2, 2, 3, 2), dtype=torch.float64)
+
+    fast = _alpha_fair_crps_score(y_pred, y_true, alpha=0.95).sum()
+    (grad_fast,) = torch.autograd.grad(fast, y_pred)
+
+    y_pred_ref = y_pred.detach().clone().requires_grad_(True)
+    ref = _reference_alpha_fair_crps_score(y_pred_ref, y_true, alpha=0.95).sum()
+    (grad_ref,) = torch.autograd.grad(ref, y_pred_ref)
+
+    assert torch.allclose(grad_fast, grad_ref, atol=1e-10, rtol=1e-10)
