@@ -60,6 +60,7 @@ for datamodule in "${!EXPERIMENTS[@]}"; do
         echo "  cosine_epochs: ${cosine_epochs}"
 
         uv run autocast epd --mode slurm "${dry_run_arg[@]}" \
+            datamodule="${datamodule}" \
             local_experiment="${experiment}" \
             logging.wandb.enabled=true \
             optimizer.cosine_epochs="${cosine_epochs}" \
