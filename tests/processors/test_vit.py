@@ -49,14 +49,14 @@ def test_vit_processor(encoded_batch, encoded_dummy_loader):
     )
 
 
-def test_azula_vit_processor_5d_input():
-    """Cached-latent path feeds (B, T, H, W, C); forward must preserve shape.
+def test_azula_vit_processor_5d_multistep():
+    """Cached-latent path: T_in=1, T_out=4. Processor folds T into C internally.
 
-    Regression test for the einops error triggered when CRPS-in-latent runs
-    called ``AzulaViTProcessor.map`` with a 5D tensor (previous implementation
-    assumed 4D BCHW from encoders like PermuteConcat).
+    Regression test for CRPS-in-latent: AzulaViTProcessor must produce a 5D
+    output with shape (B, n_steps_output, H, W, C) when given a 5D input,
+    mirroring what ``PermuteConcat + ChannelsLast`` achieves in ambient mode.
     """
-    b, t, h, w, c = 2, 1, 8, 8, 4
+    b, t_in, t_out, h, w, c = 2, 1, 4, 8, 8, 4
     processor = AzulaViTProcessor(
         in_channels=c,
         out_channels=c,
@@ -67,9 +67,11 @@ def test_azula_vit_processor_5d_input():
         patch_size=1,
         temporal_method="none",
         n_noise_channels=32,
+        n_steps_input=t_in,
+        n_steps_output=t_out,
     )
-    x = torch.randn(b, t, h, w, c)
-    targets = torch.randn(b, t, h, w, c)
+    x = torch.randn(b, t_in, h, w, c)
+    targets = torch.randn(b, t_out, h, w, c)
     batch = EncodedBatch(
         encoded_inputs=x,
         encoded_output_fields=targets,
@@ -78,7 +80,7 @@ def test_azula_vit_processor_5d_input():
     )
 
     pred = processor.map(x, global_cond=None)
-    assert pred.shape == x.shape
+    assert pred.shape == targets.shape
 
     model = ProcessorModel(
         processor=processor, optimizer_config=get_optimizer_config()

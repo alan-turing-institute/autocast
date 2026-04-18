@@ -36,6 +36,8 @@ model:
     n_noise_channels: 1024
     global_cond_channels: auto
     include_global_cond: true
+    n_steps_input: ${datamodule.n_steps_input}
+    n_steps_output: ${datamodule.n_steps_output}
   loss_func:
     _target_: autocast.losses.ensemble.AlphaFairCRPSLoss
   train_metrics:
