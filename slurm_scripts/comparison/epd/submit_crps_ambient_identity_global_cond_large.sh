@@ -14,7 +14,7 @@ set -euo pipefail
 # and then extracting:
 #   uv run autocast time-epochs --from-checkpoint <path>/timing.ckpt -b 24
 declare -A COSINE_EPOCHS_BY_DATASET=(
-    ["conditioned_navier_stokes"]=471  # seed from CRPS ambient baseline; update from timing
+    ["conditioned_navier_stokes"]=469  # 180.4 s/ep (timing 2026-04-18)
 )
 BUDGET_MAX_TIME="00:23:59:00"
 # SLURM timeout with 1-min buffer beyond the 24h budget.
