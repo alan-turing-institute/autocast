@@ -92,17 +92,22 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
         x_noise: Tensor | None = None,
         global_cond: Tensor | None = None,
     ) -> Tensor:
-        """Run TemporalViT with channel-first inputs and outputs.
+        """Run TemporalViT with channel-first or channels-last-with-time inputs.
+
+        Accepts both shapes so the same processor works in ambient mode (with
+        encoders like ``PermuteConcat`` that fold T into C) and in latent mode
+        (cached latents that keep an explicit T dim):
 
         Args:
-            x: Input tensor with shape (B, C, H, W).
+            x: Input tensor with shape (B, C, H, W) or (B, T, H, W, C).
             x_noise: Optional noise/modulation tensor.
             global_cond: Optional global conditioning tensor with shape
                 (B, C_global). Used only when include_global_cond=True.
 
         Returns
         -------
-            Output tensor with shape (B, C, H, W).
+            Output tensor with the same rank as ``x``: (B, C, H, W) if ``x`` was
+            4D, (B, T, H, W, C) otherwise.
         """
         if x_noise is not None and self.modulation_proj is not None:
             x_noise = self.modulation_proj(x_noise)
@@ -143,9 +148,23 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
                 raise ValueError(msg)
             model_global_cond = global_cond
 
-        x_in = rearrange(x, "b c h w -> b 1 h w c").contiguous()
+        is_channel_first = x.ndim == 4
+        if is_channel_first:
+            x_in = rearrange(x, "b c h w -> b 1 h w c").contiguous()
+        elif x.ndim == 5:
+            x_in = x.contiguous()
+        else:
+            msg = (
+                f"Expected x with 4 dims (B, C, H, W) or 5 dims (B, T, H, W, C), "
+                f"got shape {tuple(x.shape)}."
+            )
+            raise ValueError(msg)
+
         y = self.model(x_in, t=x_noise, cond=None, global_cond=model_global_cond)
-        return rearrange(y, "b 1 h w c -> b c h w").contiguous()
+
+        if is_channel_first:
+            return rearrange(y, "b 1 h w c -> b c h w").contiguous()
+        return y.contiguous()
 
     def map(self, x: Tensor, global_cond: Tensor | None = None) -> Tensor:
         noise_channels = self.n_noise_input_channels or self.n_noise_channels

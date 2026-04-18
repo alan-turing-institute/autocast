@@ -1,9 +1,11 @@
 import lightning as L
+import torch
 from conftest import get_optimizer_config
 
 from autocast.models.processor import ProcessorModel
 from autocast.processors.azula_vit import AzulaViTProcessor
 from autocast.processors.vit import AViTProcessor
+from autocast.types import EncodedBatch
 
 
 def test_vit_processor(encoded_batch, encoded_dummy_loader):
@@ -45,6 +47,45 @@ def test_vit_processor(encoded_batch, encoded_dummy_loader):
         train_dataloaders=encoded_dummy_loader,
         val_dataloaders=encoded_dummy_loader,
     )
+
+
+def test_azula_vit_processor_5d_input():
+    """Cached-latent path feeds (B, T, H, W, C); forward must preserve shape.
+
+    Regression test for the einops error triggered when CRPS-in-latent runs
+    called ``AzulaViTProcessor.map`` with a 5D tensor (previous implementation
+    assumed 4D BCHW from encoders like PermuteConcat).
+    """
+    b, t, h, w, c = 2, 1, 8, 8, 4
+    processor = AzulaViTProcessor(
+        in_channels=c,
+        out_channels=c,
+        spatial_resolution=(h, w),
+        hidden_dim=64,
+        num_heads=4,
+        n_layers=2,
+        patch_size=1,
+        temporal_method="none",
+        n_noise_channels=32,
+    )
+    x = torch.randn(b, t, h, w, c)
+    targets = torch.randn(b, t, h, w, c)
+    batch = EncodedBatch(
+        encoded_inputs=x,
+        encoded_output_fields=targets,
+        global_cond=None,
+        encoded_info={},
+    )
+
+    pred = processor.map(x, global_cond=None)
+    assert pred.shape == x.shape
+
+    model = ProcessorModel(
+        processor=processor, optimizer_config=get_optimizer_config()
+    )
+    train_loss = model.training_step(batch, 0)
+    assert train_loss.shape == ()
+    train_loss.backward()
 
 
 def test_azula_vit_processor_checkpointing(encoded_batch):
