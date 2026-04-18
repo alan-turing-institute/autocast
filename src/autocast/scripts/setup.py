@@ -148,6 +148,23 @@ def _infer_latent_spatial_resolution(
     return spatial
 
 
+def _resolve_processor_temporal_steps(
+    encoder: EncoderWithCond,
+    *,
+    n_steps_input: int,
+    n_steps_output: int,
+) -> tuple[int, int]:
+    """Resolve processor temporal-step defaults for the given encoder.
+
+    Encoders like PermuteConcat expose ``outputs_time_channel_concat=True``
+    and already fold time into channels. For these, processors should run with
+    a single effective time token and let decoders handle unfolding.
+    """
+    if bool(getattr(encoder, "outputs_time_channel_concat", False)):
+        return 1, 1
+    return n_steps_input, n_steps_output
+
+
 def _apply_processor_channel_defaults(
     processor_config: DictConfig | None,
     *,
@@ -627,14 +644,20 @@ def setup_epd_model(
         encoded_example, encoder
     )
 
+    proc_n_steps_input, proc_n_steps_output = _resolve_processor_temporal_steps(
+        encoder,
+        n_steps_input=steps_in,
+        n_steps_output=steps_out,
+    )
+
     # TODO: currently "out_channels" and "in_channels" are only used in the config for
     # ViT and FNO, while "n_channels_out" is used in flow_matching and diffusions
     proc_kwargs = {
         "in_channels": latent_channels,
         "out_channels": latent_channels_out,
         "n_channels_out": latent_channels_out,
-        "n_steps_input": steps_in,
-        "n_steps_output": steps_out,
+        "n_steps_input": proc_n_steps_input,
+        "n_steps_output": proc_n_steps_output,
         "spatial_resolution": latent_spatial_resolution,
     }
     processor = _build_processor(model_config, proc_kwargs, global_cond_channels)

@@ -12,6 +12,7 @@ from autocast.scripts.setup import (
     _filter_kwargs_for_target,
     _get_latent_channels,
     _get_module_device,
+    _resolve_processor_temporal_steps,
     _resolve_module_device,
     _set_if_auto,
     resolve_auto_params,
@@ -200,6 +201,48 @@ def test_build_processor_uses_inferred_steps_when_processor_steps_not_explicit()
 
     assert processor.n_steps_input == 2
     assert processor.n_steps_output == 4
+
+
+def test_resolve_processor_temporal_steps_for_time_concatenating_encoder():
+    class TimeConcatEncoder:
+        outputs_time_channel_concat = True
+
+    steps_in, steps_out = _resolve_processor_temporal_steps(
+        TimeConcatEncoder(),
+        n_steps_input=4,
+        n_steps_output=2,
+    )
+
+    assert steps_in == 1
+    assert steps_out == 1
+
+
+def test_resolve_processor_temporal_steps_for_regular_encoder():
+    class RegularEncoder:
+        outputs_time_channel_concat = False
+
+    steps_in, steps_out = _resolve_processor_temporal_steps(
+        RegularEncoder(),
+        n_steps_input=4,
+        n_steps_output=2,
+    )
+
+    assert steps_in == 4
+    assert steps_out == 2
+
+
+def test_resolve_processor_temporal_steps_defaults_to_non_concat_when_missing_attr():
+    class EncoderWithoutFlag:
+        pass
+
+    steps_in, steps_out = _resolve_processor_temporal_steps(
+        EncoderWithoutFlag(),
+        n_steps_input=4,
+        n_steps_output=2,
+    )
+
+    assert steps_in == 4
+    assert steps_out == 2
 
 
 # --- resolve_auto_params ---
