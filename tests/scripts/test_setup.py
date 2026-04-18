@@ -8,6 +8,7 @@ from autocast.encoders.base import Encoder
 from autocast.scripts.setup import (
     _apply_processor_channel_defaults,
     _build_loss_func,
+    _build_processor,
     _filter_kwargs_for_target,
     _get_latent_channels,
     _get_module_device,
@@ -139,6 +140,66 @@ def test_apply_processor_handles_none_config():
         n_steps_output=2,
         n_channels_out=16,
     )
+
+
+def test_build_processor_prefers_explicit_processor_step_counts():
+    model_cfg = OmegaConf.create(
+        {
+            "processor": {
+                "_target_": "autocast.processors.vit_latent.AViTLatentProcessor",
+                "global_cond_channels": 0,
+                "include_global_cond": False,
+                "n_steps_input": 7,
+                "n_steps_output": 9,
+                "hidden_dim": 8,
+                "num_heads": 2,
+                "n_layers": 1,
+            }
+        }
+    )
+    proc_kwargs = {
+        "in_channels": 3,
+        "out_channels": 3,
+        "n_steps_input": 2,
+        "n_steps_output": 4,
+        "n_channels_out": 3,
+        "spatial_resolution": (8, 8),
+    }
+
+    processor = _build_processor(model_cfg, proc_kwargs)
+
+    assert processor.n_steps_input == 7
+    assert processor.n_steps_output == 9
+
+
+def test_build_processor_uses_inferred_steps_when_processor_steps_not_explicit():
+    model_cfg = OmegaConf.create(
+        {
+            "processor": {
+                "_target_": "autocast.processors.vit_latent.AViTLatentProcessor",
+                "global_cond_channels": 0,
+                "include_global_cond": False,
+                "n_steps_input": "auto",
+                "n_steps_output": None,
+                "hidden_dim": 8,
+                "num_heads": 2,
+                "n_layers": 1,
+            }
+        }
+    )
+    proc_kwargs = {
+        "in_channels": 3,
+        "out_channels": 3,
+        "n_steps_input": 2,
+        "n_steps_output": 4,
+        "n_channels_out": 3,
+        "spatial_resolution": (8, 8),
+    }
+
+    processor = _build_processor(model_cfg, proc_kwargs)
+
+    assert processor.n_steps_input == 2
+    assert processor.n_steps_output == 4
 
 
 # --- resolve_auto_params ---

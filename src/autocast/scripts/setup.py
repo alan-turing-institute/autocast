@@ -448,8 +448,19 @@ def _build_processor(
         global_cond_channels=global_cond_channels,
         spatial_resolution=proc_kwargs.get("spatial_resolution"),
     )
+
+    # Keep explicit processor temporal-step settings canonical.
+    instantiation_kwargs = dict(proc_kwargs)
+    if processor_config is not None:
+        for key in ("n_steps_input", "n_steps_output"):
+            if key in processor_config and processor_config.get(key) not in (
+                None,
+                "auto",
+            ):
+                instantiation_kwargs.pop(key, None)
+
     target = processor_config.get("_target_") if processor_config else None
-    filtered_kwargs = _filter_kwargs_for_target(target, proc_kwargs)
+    filtered_kwargs = _filter_kwargs_for_target(target, instantiation_kwargs)
     return instantiate(processor_config, **filtered_kwargs)
 
 

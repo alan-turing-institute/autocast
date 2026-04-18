@@ -42,6 +42,7 @@ from autocast.scripts.workflow.overrides import (
     strip_hydra_sweep_controls,
 )
 from autocast.scripts.workflow.slurm import (
+    _load_preset_launcher_cfg,
     _parse_override_scalar,
     _should_use_srun,
     submit_manifest_via_sbatch,
@@ -184,6 +185,35 @@ def test_should_use_srun_respects_explicit_override():
         _should_use_srun({"tasks_per_node": 2, "gpus_per_node": 2, "use_srun": False})
         is False
     )
+
+
+def test_load_preset_launcher_cfg_ignores_unrelated_interpolation(
+    tmp_path: Path, monkeypatch
+):
+    local_cfg = tmp_path / "local_hydra" / "local_experiment" / "repro.yaml"
+    local_cfg.parent.mkdir(parents=True, exist_ok=True)
+    local_cfg.write_text(
+        "\n".join(
+            [
+                "defaults:",
+                "  - /distributed: ddp_4gpu_slurm",
+                "model:",
+                "  processor:",
+                "    n_steps_input: ${datamodule.n_steps_input}",
+                "hydra:",
+                "  launcher:",
+                "    partition: gpu",
+                "    timeout_min: 120",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(tmp_path)
+    launcher_cfg = _load_preset_launcher_cfg(["local_experiment=repro"])
+
+    assert launcher_cfg.get("partition") == "gpu"
+    assert launcher_cfg.get("timeout_min") == 120
 
 
 # ---------------------------------------------------------------------------
