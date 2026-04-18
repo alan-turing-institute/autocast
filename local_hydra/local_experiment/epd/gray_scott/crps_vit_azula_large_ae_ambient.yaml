@@ -12,7 +12,12 @@ experiment_name: epd_crps_vit_azula_large_ae_ambient_gray_scott
 
 datamodule:
   use_normalization: true
-  batch_size: 32
+  # Microbatch to reduce memory in decoder-heavy AE ambient CRPS path.
+  # Effective batch remains 32 via trainer.accumulate_grad_batches=4.
+  batch_size: 8
+
+trainer:
+  accumulate_grad_batches: 4
 
 float32_matmul_precision: high
 
