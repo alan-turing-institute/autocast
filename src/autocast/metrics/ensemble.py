@@ -3,7 +3,7 @@ from typing import Literal
 
 import numpy as np
 import torch
-from einops import rearrange, repeat
+from einops import rearrange
 
 from autocast.metrics.base import BaseMetric
 from autocast.types import (
@@ -192,6 +192,33 @@ class BTSCMMetric(BaseMetric[TensorBTSCM, TensorBTSC]):
         return y_pred, y_true
 
 
+def _sorted_pairwise_abs_weighted_sum(y_pred: TensorBTSCM) -> TensorBTSC:
+    r"""
+    Compute :math:`\sum_{k=1}^{M} (2k - M - 1)\, x_{(k)}` along the ensemble dim.
+
+    This is the order-statistic identity that lets the pairwise absolute
+    difference sum be evaluated in O(M log M) time and O(M) memory instead of
+    the O(M^2) / O(M^2)-memory broadcasting approach:
+
+    .. math::
+        \sum_{j,k=1}^{M} |x_j - x_k| = 2 \sum_{k=1}^{M} (2k - M - 1)\, x_{(k)},
+
+    where :math:`x_{(k)}` is the k-th order statistic.
+
+    Args:
+        y_pred: Predictions of shape (..., M)
+
+    Returns
+    -------
+        Tensor of shape (...) containing the weighted sum of sorted values.
+    """
+    n_ensemble = y_pred.shape[-1]
+    y_sorted = torch.sort(y_pred, dim=-1).values
+    k = torch.arange(1, n_ensemble + 1, device=y_pred.device, dtype=y_pred.dtype)
+    weights = 2.0 * k - (n_ensemble + 1)
+    return (y_sorted * weights).sum(dim=-1)
+
+
 def _common_crps_score(
     y_pred: TensorBTSCM, y_true: TensorBTSC, adjustment_factor: float
 ) -> TensorBTSC:
@@ -200,6 +227,10 @@ def _common_crps_score(
 
     Expected input shape: (B, T, S, C, M)
     Expected output shape: (B, T, S, C)
+
+    Uses the sort-based identity for the pairwise ensemble term to avoid
+    materialising the (..., M, M) tensor that naive broadcasting would produce,
+    reducing peak activation memory from O(M^2) to O(M).
 
     Args:
         y_pred: Predictions of shape (B, T, S, C, M)
@@ -210,27 +241,16 @@ def _common_crps_score(
     -------
         Tensor of shape (B, T, S, C) with CRPS scores
     """
-    # Expand y_true to match ensemble dimension
     n_ensemble = y_pred.shape[-1]
-    y_true_expanded = repeat(y_true, "... -> ... m", m=n_ensemble)  # (B, T, S, C, M)
 
-    # Compute CRPS using the formula
-    term1: TensorBTSC = torch.mean(torch.abs(y_pred - y_true_expanded), dim=-1)
-    term2: TensorBTSC = (
-        0.5
-        * torch.mean(
-            torch.abs(
-                rearrange(y_pred, "... m -> ... 1 m")  # (B, T, S, C, 1, M)
-                - rearrange(y_pred, "... m -> ... m 1")  # (B, T, S, C, M, 1)
-            ),  # (B, T, S, C, M, M)
-            dim=(-2, -1),  # (B, T, S, C)
-        )
-        * adjustment_factor  # e.g. for FairCRPS this is M / (M-1)
-    )
+    term1: TensorBTSC = torch.mean(torch.abs(y_pred - y_true.unsqueeze(-1)), dim=-1)
 
-    crps: TensorBTSC = term1 - term2
+    # 0.5 * mean_{j,k} |x_j - x_k| * adj
+    #   = (adj / M^2) * sum_k (2k - M - 1) x_{(k)}
+    pairwise_weighted_sum = _sorted_pairwise_abs_weighted_sum(y_pred)
+    term2: TensorBTSC = pairwise_weighted_sum * (adjustment_factor / (n_ensemble**2))
 
-    return crps
+    return term1 - term2
 
 
 class CRPS(BTSCMMetric):
@@ -300,8 +320,18 @@ class FairCRPS(BTSCMMetric):
 def _alpha_fair_crps_score(
     y_pred: TensorBTSCM, y_true: TensorBTSC, alpha: float
 ) -> TensorBTSC:
-    """
+    r"""
     Compute afCRPS reduced over spatial dims only.
+
+    Uses the order-statistic identity to avoid the (..., M, M) activation:
+
+    .. math::
+        \text{afCRPS}
+        = \frac{1}{M}\sum_j |x_j - y|
+          - \frac{1-\varepsilon}{M(M-1)} \sum_{k=1}^{M} (2k - M - 1) x_{(k)},
+
+    with :math:`\varepsilon = (1-\alpha)/M`. This is algebraically identical to
+    the off-diagonal pair sum form but needs only O(M) memory.
 
     Args:
         y_pred: (B, T, S, C, M)
@@ -312,43 +342,22 @@ def _alpha_fair_crps_score(
     -------
         afCRPS: (B, T, S, C)
     """
-    # Expand y_true to match ensemble dimension
     n_ensemble = y_pred.shape[-1]
-    y_true_m = repeat(y_true, "... -> ... m", m=n_ensemble)
-
     eps = (1.0 - alpha) / n_ensemble
 
-    abs_diff_ens = torch.abs(
-        rearrange(y_pred, "... m -> ... 1 m") - rearrange(y_pred, "... m -> ... m 1")
-    )  # (B, T, S, C, M, M)
+    # (1/M) * sum_j |x_j - y|
+    mean_abs_diff_truth: TensorBTSC = torch.mean(
+        torch.abs(y_pred - y_true.unsqueeze(-1)), dim=-1
+    )
 
-    abs_diff_truth = torch.abs(y_pred - y_true_m)  # (B, T, S, C, M)
+    # sum_{j,k} |x_j - x_k| = 2 * sum_k (2k - M - 1) x_{(k)}; diagonal is zero so
+    # this equals sum_{j != k} |x_j - x_k|.
+    pairwise_weighted_sum = _sorted_pairwise_abs_weighted_sum(y_pred)
+    pairwise_term = (
+        (1.0 - eps) / (n_ensemble * (n_ensemble - 1))
+    ) * pairwise_weighted_sum
 
-    # build the stable sum over pairwise terms
-    # zero the diagonal (j == k) since afCRPS sums only off-diagonal pairs.
-    mask = ~torch.eye(n_ensemble, dtype=torch.bool, device=y_pred.device)  # (M, M)
-    # (M, M) -> (1, 1, 1, 1, M, M)
-    mask = mask.view(*([1] * (abs_diff_ens.ndim - 2)), n_ensemble, n_ensemble)
-
-    # pairwise sum term: |x_j - y| + |x_k - y| - (1 - eps) * |x_j - x_k|
-    term_pair = (
-        rearrange(abs_diff_truth, "... m -> ... m 1")
-        + rearrange(abs_diff_truth, "... m -> ... 1 m")
-        - (1.0 - eps) * abs_diff_ens  # (..., M, M)
-    )  # (B, T, S, C, M, M)
-
-    # apply mask to set j == k terms to zero
-    term_pair = term_pair.masked_fill(~mask, 0.0)  # (B, T, S, C, M, M)
-
-    # sum over all off-diagonal pairs
-    sum_pair = term_pair.sum(dim=(-1, -2))  # (B, T, S, C)
-
-    # normalization factor = 2 M (M - 1)
-    norm = 2.0 * n_ensemble * (n_ensemble - 1)
-
-    afcrps = sum_pair / norm
-
-    return afcrps
+    return mean_abs_diff_truth - pairwise_term
 
 
 class AlphaFairCRPS(BTSCMMetric):
