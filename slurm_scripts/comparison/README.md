@@ -103,29 +103,28 @@ Ambient (timing 2026-04-18; CRPS from `timing_efficient_crps/`, FM from `timing/
 
 | variant | gray_scott | gpe_laser_only_wake | cond_navier_stokes | advection_diffusion |
 |---|---|---|---|---|
-| CRPS ambient (permute_concat) | **398** (212.3 s/ep) | 478 (177.0) | 472 (179.2) | 479 (176.6) |
-| CRPS-via-AE ambient (EPD)     | **49**  (1723.5 s/ep) | 85  (990.8) | 86  (984.1) | 58  (1436.4) |
-| FM ambient                    | **2649** (32.0 s/ep)  | 3194 (26.5) | 2998 (28.2) | 3247 (26.1) |
+| CRPS ambient (permute_concat) | **399** (212.0 s/ep) | 477 (177.2) | 473 (178.8) | 478 (177.0) |
+| CRPS-via-AE ambient (EPD)     | **49**  (1724.6 s/ep) | 85  (991.0) | 85  (985.0) | 58  (1436.9) |
+| FM ambient                    | **2631** (32.2 s/ep)  | 3171 (26.7) | 2982 (28.4) | 3264 (25.9) |
 
 Latent (timing 2026-04-18, FM only — full 4-dataset CRPS-latent timing pending):
 
 | variant | gray_scott | gpe_laser_only_wake | cond_navier_stokes | advection_diffusion |
 |---|---|---|---|---|
-| FM latent (cached) | **2868** (29.5 s/ep) | 3442 (24.6) | 3276 (25.8) | 3331 (25.4) |
+| FM latent (cached) | **2830** (29.9 s/ep) | 3411 (24.8) | 3223 (26.3) | 3314 (25.6) |
 | CRPS latent (cached) | 1080 (placeholder) | 1080 | 1080 | 1080 |
 
 CNS-only ablations (timing 2026-04-18):
 
 | variant | conditioned_navier_stokes |
 |---|---|
-| CRPS ambient (identity + global_cond AdaLN) | 469 (180.4 s/ep) |
-| CRPS latent (cached, ablation)              | 345 (244.8 s/ep) |
+| CRPS ambient (identity + global_cond AdaLN) | 469 (180.3 s/ep) |
+| CRPS latent (cached, ablation)              | 345 (245.0 s/ep) |
 
-All `s/ep` values are the mean across the 4 epoch durations recorded by
-`TrainingTimerCallback` in `last.ckpt`. The timer runs 5 epochs but the
-final epoch is closed in `on_train_end`, which fires *after* the
-checkpoint save during `on_train_epoch_end` — so `last.ckpt` captures
-epochs 0–3 (n=4) of a 5-epoch timing run.
+All `s/ep` values are the mean across the n=5 epoch durations recorded by
+`TrainingTimerCallback` in `timing.ckpt` (saved after `on_train_end`, so
+it captures the final epoch — unlike `last.ckpt`, which is saved during
+`on_train_epoch_end` and only holds the first 4 durations).
 
 Each script saves quarter-schedule checkpoints (every `cosine_epochs / 4`)
 plus `last.ckpt` at train-end (guaranteed final state). Quarter boundaries

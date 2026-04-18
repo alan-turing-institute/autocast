@@ -14,7 +14,7 @@ set -euo pipefail
 DATAMODULE="conditioned_navier_stokes"
 EXPERIMENT="processor/conditioned_navier_stokes/crps_vit_azula_large"
 AE_RUN_DIR="$HOME/autocast/outputs/2026-04-17/ae_cns64_3a7999b_b9c29f8"
-COSINE_EPOCHS=345  # 244.8 s/ep (timing 2026-04-18)
+COSINE_EPOCHS=345  # 245.0 s/ep (timing_efficient_crps, 2026-04-18)
 
 BUDGET_MAX_TIME="00:23:59:00"
 # SLURM timeout with 1-min buffer beyond the 24h budget.

@@ -11,10 +11,10 @@ set -euo pipefail
 #   uv run autocast time-epochs --from-checkpoint <path>/timing.ckpt -b 24
 
 declare -A COSINE_EPOCHS_BY_DATASET=(
-    ["gray_scott"]=49                   # 1723.5 s/ep (timing 2026-04-18)
-    ["gpe_laser_only_wake"]=85          #  990.8 s/ep (timing 2026-04-18)
-    ["conditioned_navier_stokes"]=86    #  984.1 s/ep (timing 2026-04-18)
-    ["advection_diffusion"]=58          # 1436.4 s/ep (timing 2026-04-18)
+    ["gray_scott"]=49                   # 1724.6 s/ep (timing_efficient_crps, 2026-04-18)
+    ["gpe_laser_only_wake"]=85          #  991.0 s/ep (timing_efficient_crps, 2026-04-18)
+    ["conditioned_navier_stokes"]=85    #  985.0 s/ep (timing_efficient_crps, 2026-04-18)
+    ["advection_diffusion"]=58          # 1436.9 s/ep (timing_efficient_crps, 2026-04-18)
 )
 BUDGET_MAX_TIME="00:23:59:00"
 # SLURM timeout with 1-min buffer beyond the 24h budget.

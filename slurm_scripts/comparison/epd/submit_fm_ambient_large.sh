@@ -19,10 +19,10 @@ set -euo pipefail
 # learning_rate (1e-4) and warmup (0) are baked into each per-dataset
 # local_experiment config; adjust the yaml to change them.
 declare -A COSINE_EPOCHS_BY_DATASET=(
-    ["gray_scott"]=2649                 # 32.0 s/ep
-    ["gpe_laser_only_wake"]=3194        # 26.5 s/ep
-    ["conditioned_navier_stokes"]=2998  # 28.2 s/ep
-    ["advection_diffusion"]=3247        # 26.1 s/ep
+    ["gray_scott"]=2631                 # 32.2 s/ep
+    ["gpe_laser_only_wake"]=3171        # 26.7 s/ep
+    ["conditioned_navier_stokes"]=2982  # 28.4 s/ep
+    ["advection_diffusion"]=3264        # 25.9 s/ep
 )
 BUDGET_MAX_TIME="00:23:59:00"
 # SLURM timeout with 1-min buffer beyond the 24h budget.
