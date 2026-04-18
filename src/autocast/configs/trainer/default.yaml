@@ -19,4 +19,13 @@ callbacks:
     save_on_train_epoch_end: true
     filename: "latest-5ep-{epoch:04d}"
     auto_insert_metric_name: false
+  # Added 2026-04-17. Drop with `~trainer.callbacks.1` to restore previous
+  # single-callback behaviour.
+  # TODO: refactor callbacks into composable groups so opt-out is index-free.
+  - _target_: lightning.pytorch.callbacks.ModelCheckpoint
+    monitor: val_loss
+    mode: min
+    save_top_k: 1
+    filename: "best-val-{epoch:04d}-{val_loss:.4f}"
+    auto_insert_metric_name: false
 
