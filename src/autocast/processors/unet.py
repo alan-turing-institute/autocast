@@ -352,6 +352,12 @@ class AzulaUNetProcessor(Processor[EncodedBatch]):
     n_noise_channels: int | None = None
         Number of noise channels for conditional normalization. If None, no
         noise conditioning is used. Default is None.
+    global_cond_channels: int | None, optional
+        Width of the optional global conditioning vector.
+    include_global_cond: bool, optional
+        Whether to inject global conditioning into modulation.
+        Uses the same two-layer embedding pattern as ViT temporal backbones.
+        Default is False.
     """
 
     def __init__(
@@ -368,11 +374,42 @@ class AzulaUNetProcessor(Processor[EncodedBatch]):
         gradient_checkpointing: bool = False,
         loss_func: nn.Module | None = None,
         n_noise_channels: int | None = None,
+        global_cond_channels: int | None = None,
+        include_global_cond: bool = False,
     ):
         super().__init__()
 
         # the default is 0 for no noise conditioning
         self.n_noise_channels = n_noise_channels or 0
+        self.global_cond_channels = global_cond_channels
+        self.include_global_cond = include_global_cond
+
+        if self.include_global_cond and (
+            self.global_cond_channels is None or self.global_cond_channels <= 0
+        ):
+            msg = (
+                "include_global_cond=True requires global_cond_channels to be "
+                "set to a positive integer."
+            )
+            raise ValueError(msg)
+
+        if self.include_global_cond and self.n_noise_channels <= 0:
+            msg = (
+                "include_global_cond=True requires n_noise_channels to be set "
+                "to a positive integer."
+            )
+            raise ValueError(msg)
+
+        self.global_cond_embedding = None
+        if self.include_global_cond:
+            if self.global_cond_channels is None:
+                msg = "global_cond_channels must be set when include_global_cond=True."
+                raise ValueError(msg)
+            self.global_cond_embedding = nn.Sequential(
+                nn.Linear(self.global_cond_channels, self.n_noise_channels),
+                nn.SiLU(),
+                nn.Linear(self.n_noise_channels, self.n_noise_channels),
+            )
 
         # instantiate Azula UNet
         self.model = UNet(
@@ -395,7 +432,12 @@ class AzulaUNetProcessor(Processor[EncodedBatch]):
         self.gradient_checkpointing = gradient_checkpointing
         self.loss_func = loss_func or nn.MSELoss()
 
-    def forward(self, x: Tensor, x_noise: Tensor | None = None) -> Tensor:
+    def forward(
+        self,
+        x: Tensor,
+        x_noise: Tensor | None = None,
+        global_cond: Tensor | None = None,
+    ) -> Tensor:
         """Forward pass through the Azula UNet.
 
         Parameters
@@ -404,13 +446,47 @@ class AzulaUNetProcessor(Processor[EncodedBatch]):
             Input tensor of shape (B, C_in, *spatial_dims).
         x_noise : Tensor | None
             Optional noise conditioning tensor of shape (B, n_noise_channels).
+        global_cond : Tensor | None
+            Optional global conditioning tensor of shape (B, C_global).
+            Used only when include_global_cond=True.
 
         Returns
         -------
         Tensor
             Output tensor of shape (B, C_out, *spatial_dims).
         """
-        return self.model(x, mod=x_noise)
+        if (
+            x_noise is not None
+            and self.n_noise_channels > 0
+            and x_noise.shape[-1] != self.n_noise_channels
+        ):
+            msg = (
+                f"Expected x_noise with last dim {self.n_noise_channels}, "
+                f"got {x_noise.shape[-1]}."
+            )
+            raise ValueError(msg)
+
+        model_mod = x_noise
+        if self.include_global_cond:
+            if global_cond is None:
+                msg = "global_cond must be provided when include_global_cond=True."
+                raise ValueError(msg)
+            if global_cond.shape[-1] != self.global_cond_channels:
+                msg = (
+                    f"Expected global_cond with last dim "
+                    f"{self.global_cond_channels}, got "
+                    f"{global_cond.shape[-1]}."
+                )
+                raise ValueError(msg)
+
+            if self.global_cond_embedding is None:
+                msg = "global_cond_embedding was not initialized."
+                raise RuntimeError(msg)
+
+            global_mod = self.global_cond_embedding(global_cond)
+            model_mod = global_mod if model_mod is None else model_mod + global_mod
+
+        return self.model(x, mod=model_mod)
 
     def map(self, x: Tensor, global_cond: Tensor | None) -> Tensor:
         """Map input states to output states.
@@ -420,21 +496,20 @@ class AzulaUNetProcessor(Processor[EncodedBatch]):
         x : Tensor
             Input tensor of shape (B, C_in, *spatial_dims).
         global_cond : Tensor | None
-            Optional conditioning tensor, currently not used.
+            Optional conditioning vector. Used when include_global_cond=True.
 
         Returns
         -------
         Tensor
             Output tensor of shape (B, C_out, *spatial_dims).
         """
-        _ = global_cond
         if self.n_noise_channels > 0:
             noise = torch.randn(
                 x.shape[0], self.n_noise_channels, dtype=x.dtype, device=x.device
             )
         else:
             noise = None
-        return self(x, x_noise=noise)
+        return self(x, x_noise=noise, global_cond=global_cond)
 
     def loss(self, batch: EncodedBatch) -> Tensor:
         """Compute loss between output and target.
