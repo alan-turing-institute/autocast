@@ -468,11 +468,8 @@ def run_training(
         log.info("Starting training from scratch (no resume checkpoint).")
         trainer.fit(model=model, datamodule=datamodule)
 
-    # Run testing if not skipped
-    if not skip_test:
-        trainer.test(model=model, datamodule=datamodule)
-
-    # Save stable checkpoint target (prefer callback checkpoint)
+    # Save stable checkpoint target (prefer callback checkpoint) immediately
+    # after fit so a checkpoint exists even if optional test later fails.
     if trainer.is_global_zero:
         _save_or_link_checkpoint_target(trainer, checkpoint_path)
 
@@ -481,8 +478,12 @@ def run_training(
             checkpoint_path.unlink()
             trainer.save_checkpoint(checkpoint_path)
 
-    # Ensure non-zero ranks do not proceed with stale filesystem view.
+    # Ensure non-zero ranks observe the finalized checkpoint before test.
     trainer.strategy.barrier("checkpoint-alias-finalize")
+
+    # Run testing if not skipped.
+    if not skip_test:
+        trainer.test(model=model, datamodule=datamodule)
 
 
 @torch.no_grad()
