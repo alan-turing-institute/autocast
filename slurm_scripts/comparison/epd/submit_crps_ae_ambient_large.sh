@@ -1,22 +1,15 @@
 #!/bin/bash
 
 set -euo pipefail
-# Ablation: final 24h CRPS-in-cached-latent runs for 4 target datasets.
-# Model: AzulaViTProcessor / vit_azula_large (hidden_dim=568, n_layers=12,
-# num_heads=8, patch_size=1, n_noise_channels=1024). Head: AlphaFairCRPSLoss,
-# n_members=8. Optimizer: adamw_half (LR=2e-4, warmup=0). Batch: 32/GPU x
-# n_members=8 internal expansion.
-# See local_hydra/local_experiment/processor/<dataset>/crps_vit_azula_large.yaml
-# for the authoritative hyperparameters.
+# Final 24h primary CRPS-via-AE runs for 4 target datasets.
+# This variant uses EPD with a pretrained autoencoder checkpoint for
+# encode/decode around the processor, while CRPS is still computed in ambient
+# space (train_in_latent_space=false).
 #
-# Per-dataset cosine schedule: each (method, dataset) pair fills its own
-# 24h budget so each model gets its best shot within budget. PLACEHOLDERS
-# pending submit_crps_latent_timing.sh — extract per-dataset values via
+# Replace the placeholder COSINE_EPOCHS values after running
+# submit_crps_ae_ambient_timing.sh and extracting:
 #   uv run autocast time-epochs --from-checkpoint <path>/timing.ckpt -b 24
-# and replace each entry below.
-#
-# learning_rate (2e-4) and warmup (0) are baked into each per-dataset
-# local_experiment config; adjust the yaml to change them.
+
 declare -A COSINE_EPOCHS_BY_DATASET=(
     ["gray_scott"]=1080                 # placeholder
     ["gpe_laser_only_wake"]=1080        # placeholder
@@ -28,13 +21,11 @@ BUDGET_MAX_TIME="00:23:59:00"
 TIMEOUT_MIN=1439
 RUN_DRY_STATES=("true" "false")
 
-# Per-dataset local_experiment + AE run dir (cached latents live under
-# <ae_run_dir>/cached_latents/).
 declare -A EXPERIMENTS=(
-    ["gray_scott"]="processor/gray_scott/crps_vit_azula_large"
-    ["gpe_laser_only_wake"]="processor/gpe_laser_wake_only/crps_vit_azula_large"
-    ["conditioned_navier_stokes"]="processor/conditioned_navier_stokes/crps_vit_azula_large"
-    ["advection_diffusion"]="processor/advection_diffusion/crps_vit_azula_large"
+    ["gray_scott"]="epd/gray_scott/crps_vit_azula_large_ae_ambient"
+    ["gpe_laser_only_wake"]="epd/gpe_laser_wake_only/crps_vit_azula_large_ae_ambient"
+    ["conditioned_navier_stokes"]="epd/conditioned_navier_stokes/crps_vit_azula_large_ae_ambient"
+    ["advection_diffusion"]="epd/advection_diffusion/crps_vit_azula_large_ae_ambient"
 )
 declare -A AE_RUN_DIRS=(
     ["gray_scott"]="$HOME/autocast/outputs/2026-04-17/ae_gs64_3a7999b_ed36b8e"
@@ -46,17 +37,22 @@ declare -A AE_RUN_DIRS=(
 for datamodule in "${!EXPERIMENTS[@]}"; do
     experiment="${EXPERIMENTS[$datamodule]}"
     ae_run_dir="${AE_RUN_DIRS[$datamodule]}"
-    cache_dir="${ae_run_dir}/cached_latents"
     cosine_epochs="${COSINE_EPOCHS_BY_DATASET[$datamodule]}"
+
+    ckpt="${ae_run_dir}/autoencoder.ckpt"
+    if [[ ! -f "${ckpt}" ]]; then
+        ckpt="$(ls -t "${ae_run_dir}"/autocast/*/checkpoints/latest-*.ckpt 2>/dev/null | head -n 1 || true)"
+        if [[ -z "${ckpt}" || ! -f "${ckpt}" ]]; then
+            echo "Skipping ${datamodule}: no autoencoder.ckpt or latest-*.ckpt under ${ae_run_dir}" >&2
+            continue
+        fi
+        echo "Using temp checkpoint (AE still training?): ${ckpt}" >&2
+    fi
+
     # Save checkpoints at 25/50/75/100% of the schedule (top_k=-1 keeps all).
     # save_last: true (set in trainer/default.yaml) ensures last.ckpt captures
     # the final epoch even if it doesn't land on a quarter boundary.
     quarter_epochs=$((cosine_epochs / 4))
-
-    if [[ ! -d "${cache_dir}/train" ]] || [[ ! -d "${cache_dir}/valid" ]] || [[ ! -d "${cache_dir}/test" ]]; then
-        echo "Skipping ${datamodule}: cache missing train/valid/test under ${cache_dir}" >&2
-        continue
-    fi
 
     for run_dry in "${RUN_DRY_STATES[@]}"; do
         dry_run_arg=()
@@ -66,16 +62,16 @@ for datamodule in "${!EXPERIMENTS[@]}"; do
             run_label="slurm --dry-run"
         fi
 
-        echo "Submitting CRPS-in-latent training"
+        echo "Submitting CRPS-via-AE (ambient loss) training"
         echo "  mode: ${run_label}"
         echo "  datamodule: ${datamodule}"
         echo "  local_experiment: ${experiment}"
-        echo "  cache dir: ${cache_dir}"
+        echo "  autoencoder checkpoint: ${ckpt}"
         echo "  cosine_epochs: ${cosine_epochs}"
 
-        uv run autocast processor --mode slurm "${dry_run_arg[@]}" \
+        uv run autocast epd --mode slurm "${dry_run_arg[@]}" \
             local_experiment="${experiment}" \
-            datamodule.data_path="${cache_dir}" \
+            autoencoder_checkpoint="${ckpt}" \
             logging.wandb.enabled=true \
             optimizer.cosine_epochs="${cosine_epochs}" \
             hydra.launcher.timeout_min="${TIMEOUT_MIN}" \

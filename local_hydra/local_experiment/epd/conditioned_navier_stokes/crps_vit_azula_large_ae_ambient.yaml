@@ -1,0 +1,52 @@
+# @package _global_
+defaults:
+  - /distributed: ddp_4gpu_slurm
+  - override /datamodule: conditioned_navier_stokes
+  - override /encoder@model.encoder: dc_large
+  - override /decoder@model.decoder: dc_large
+  - override /processor@model.processor: vit_azula_large
+  - override /optimizer: adamw_half
+  - _self_
+
+experiment_name: epd_crps_vit_azula_large_ae_ambient_conditioned_navier_stokes
+
+datamodule:
+  use_normalization: true
+  batch_size: 32
+
+float32_matmul_precision: high
+
+logging:
+  wandb:
+    enabled: true
+
+optimizer:
+  learning_rate: 2e-4
+  warmup: 0
+
+model:
+  # Primary CRPS variant: process in AE latent space, decode to ambient, and
+  # compute CRPS in ambient space.
+  train_in_latent_space: false
+  freeze_encoder_decoder: true
+  n_members: 8
+  encoder:
+    periodic: false
+    pixel_shuffle: true
+  decoder:
+    periodic: false
+    pixel_shuffle: true
+  processor:
+    hidden_dim: 568
+    num_heads: 8
+    n_layers: 12
+    patch_size: 1
+    n_noise_channels: 1024
+    global_cond_channels: auto
+    include_global_cond: true
+  loss_func:
+    _target_: autocast.losses.ensemble.AlphaFairCRPSLoss
+  train_metrics:
+    crps:
+      _target_: autocast.metrics.ensemble.AlphaFairCRPS
+  val_metrics: []

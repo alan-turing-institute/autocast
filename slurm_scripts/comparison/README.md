@@ -11,10 +11,11 @@ and latent space, across 4 datasets.
 | variant | subcommand | Hydra config | scripts |
 |---|---|---|---|
 | AE (shared) | `autocast ae` | `ae/<dataset>/dc_large.yaml` | `ae/` |
-| CRPS ambient | `autocast epd` | `epd/<dataset>/crps_vit_azula_large.yaml` | `epd/submit_crps_*.sh` |
+| CRPS ambient (baseline concat) | `autocast epd` | `epd/<dataset>/crps_vit_azula_large.yaml` | `epd/submit_crps_*.sh` |
+| CRPS via AE latent core (primary) | `autocast epd` | `epd/<dataset>/crps_vit_azula_large_ae_ambient.yaml` | `epd/submit_crps_ae_ambient_*.sh` |
 | FM ambient | `autocast epd` | `epd/<dataset>/fm_vit_large.yaml` | `epd/submit_fm_ambient_*.sh` |
-| CRPS latent | `autocast processor` | `processor/<dataset>/crps_vit_azula_large.yaml` | `cached_latents/submit_crps_latent_*.sh` |
-| FM latent | `autocast processor` | `processor/<dataset>/fm_vit_large.yaml` | `cached_latents/submit_fm_*.sh` |
+| CRPS latent (cached, ablation) | `autocast processor` | `processor/<dataset>/crps_vit_azula_large.yaml` | `cached_latents/submit_crps_latent_*.sh` |
+| FM latent (cached, primary FM latent) | `autocast processor` | `processor/<dataset>/fm_vit_large.yaml` | `cached_latents/submit_fm_*.sh` |
 
 Hydra configs live at `local_hydra/local_experiment/{ae,cache_latents,epd,processor}/<dataset>/`.
 Scripts in `cached_latents/` first cache latents via `submit_cache_latents.sh`,
@@ -25,8 +26,9 @@ then run the latent-space processor variants.
 1. `ae/submit_ae_timing.sh` — per-epoch timing for AE
 2. `ae/submit_ae_large.sh` — full AE training (provides `<ae_run_dir>`)
 3. `cached_latents/submit_cache_latents.sh` — cache latents from trained AE
-4. All remaining scripts in `epd/` and `cached_latents/` are independent and
-   can be submitted in parallel once their dependencies above are complete.
+4. Primary runs: `epd/submit_crps_ae_ambient_*.sh`,
+   `epd/submit_fm_ambient_*.sh`, and `cached_latents/submit_fm_*.sh`.
+5. `cached_latents/submit_crps_latent_*.sh` is kept as an ablation.
 
 ## Model-size matrix (~80M params, DiT-aligned)
 
