@@ -3,6 +3,7 @@ import torch
 from torch import nn
 
 from autocast.losses.ensemble import CRPSLoss
+from autocast.metrics.ensemble import CRPS
 from autocast.models.processor_ensemble import ProcessorModelEnsemble
 from autocast.processors.base import Processor
 from autocast.types import EncodedBatch, Tensor
@@ -140,3 +141,37 @@ def test_processor_ensemble_predict_returns_flat_batch():
     # _predict returns flat (B, T, H, W, C) — ensemble expansion is handled by callers
     expected_shape = (batch_size, *output_field_shape)
     assert preds.shape == expected_shape
+
+
+def test_processor_ensemble_training_step_metrics_use_ensemble_predictions():
+    """Regression: CRPS metrics in training_step require a member axis on y_pred."""
+    n_members = 3
+    batch_size = 2
+    input_shape = (batch_size, 1, 8, 8, 4)
+    output_field_shape = (2, 8, 8, 4)
+    output_batch_shape = (batch_size, *output_field_shape)
+
+    inputs = torch.randn(*input_shape)
+    targets = torch.randn(*output_batch_shape)
+
+    batch = EncodedBatch(
+        encoded_inputs=inputs,
+        encoded_output_fields=targets,
+        global_cond=None,
+        encoded_info={},
+    )
+
+    processor = SimpleLinearProcessor(input_dim=4, output_dim=4, output_time_steps=2)
+    ensemble = ProcessorModelEnsemble(
+        processor=processor,
+        n_members=n_members,
+        loss_func=CRPSLoss(),
+        train_metrics=[CRPS(reduce_all=True)],
+    )
+
+    # Before the fix this path raised ValueError in CRPS _check_input because
+    # training metrics saw flat predictions without an ensemble member axis.
+    loss = ensemble.training_step(batch, batch_idx=0)
+
+    assert isinstance(loss, torch.Tensor)
+    assert loss.ndim == 0
