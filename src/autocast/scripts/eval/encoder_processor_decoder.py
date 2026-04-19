@@ -1,5 +1,6 @@
 """Evaluation CLI for encoder-processor-decoder checkpoints."""
 
+import contextlib
 import logging
 import os
 from collections.abc import Callable, Mapping, Sequence
@@ -1079,6 +1080,91 @@ def _load_autoencoder_config_from_cache(cache_dir: Path) -> DictConfig | None:
         return None
 
 
+def _load_autoencoder_run_config_from_checkpoint(
+    autoencoder_checkpoint: Any,
+) -> DictConfig | None:
+    """Load an autoencoder run config by walking up from a checkpoint path.
+
+    This supports both symlinked convenience checkpoints like
+    ``<run>/autoencoder.ckpt`` and concrete files under
+    ``<run>/autocast/<id>/checkpoints/*.ckpt``.
+    """
+    if autoencoder_checkpoint is None:
+        return None
+
+    ckpt_path = Path(str(autoencoder_checkpoint)).expanduser()
+    candidate_ckpts = [ckpt_path]
+    with contextlib.suppress(FileNotFoundError):
+        candidate_ckpts.append(ckpt_path.resolve())
+
+    seen_dirs: set[Path] = set()
+    for candidate_ckpt in candidate_ckpts:
+        for parent in candidate_ckpt.parents:
+            if parent in seen_dirs:
+                continue
+            seen_dirs.add(parent)
+            for config_name in (
+                "resolved_autoencoder_config.yaml",
+                "resolved_config.yaml",
+            ):
+                config_path = parent / config_name
+                if not config_path.exists():
+                    continue
+                try:
+                    loaded = OmegaConf.load(config_path)
+                    if isinstance(loaded, DictConfig):
+                        return loaded
+                except Exception as exc:
+                    log.warning(
+                        "Could not load autoencoder run config from %s: %s",
+                        config_path,
+                        exc,
+                    )
+    return None
+
+
+def _maybe_inject_encoder_decoder_from_autoencoder_checkpoint(
+    cfg: DictConfig,
+) -> DictConfig:
+    """Backfill missing model.encoder/decoder from autoencoder checkpoint config."""
+    model_cfg = cfg.get("model", {})
+    if model_cfg.get("encoder") is not None and model_cfg.get("decoder") is not None:
+        return cfg
+
+    ae_cfg = _load_autoencoder_run_config_from_checkpoint(
+        cfg.get("autoencoder_checkpoint")
+    )
+    if ae_cfg is None:
+        return cfg
+
+    ae_model_cfg = ae_cfg.get("model", {})
+    ae_encoder_cfg = ae_model_cfg.get("encoder")
+    ae_decoder_cfg = ae_model_cfg.get("decoder")
+    if ae_encoder_cfg is None or ae_decoder_cfg is None:
+        return cfg
+
+    with open_dict(cfg):
+        model_node = cfg.get("model")
+        if not isinstance(model_node, DictConfig):
+            cfg.model = OmegaConf.create({})
+
+    model_cfg = cfg.get("model")
+    if not isinstance(model_cfg, DictConfig):
+        return cfg
+
+    with open_dict(model_cfg):
+        if model_cfg.get("encoder") is None:
+            model_cfg["encoder"] = ae_encoder_cfg
+        if model_cfg.get("decoder") is None:
+            model_cfg["decoder"] = ae_decoder_cfg
+
+    log.info(
+        "Ambient eval: injected missing model.encoder/model.decoder from "
+        "autoencoder checkpoint config."
+    )
+    return cfg
+
+
 def _normalize_eval_mode(mode: Any) -> str:
     """Normalize and validate the eval.mode config value."""
     if mode is None:
@@ -1420,6 +1506,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 "Mode 1 eval: reconstructing full EPD from autoencoder checkpoint "
                 "+ processor checkpoint."
             )
+            cfg = _maybe_inject_encoder_decoder_from_autoencoder_checkpoint(cfg)
             model = setup_epd_model(cfg, stats, datamodule=datamodule)
             processor_sd = _extract_processor_state_dict(
                 checkpoint_payload, use_ema=use_ema
