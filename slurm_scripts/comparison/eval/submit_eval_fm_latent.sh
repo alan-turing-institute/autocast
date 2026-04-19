@@ -65,7 +65,8 @@ for run_dir in "${RUN_DIRS[@]}"; do
 
         uv run autocast eval --mode slurm "${dry_run_arg[@]}" \
             --workdir "${run_dir}" \
-            eval.mode=ambient \
+            eval.checkpoint=processor.ckpt \
+            ++eval.mode=ambient \
             +autoencoder_checkpoint="${ae_ckpt}" \
             eval.batch_size="${EVAL_BATCH_SIZE}" \
             hydra.launcher.timeout_min="${TIMEOUT_MIN}"
