@@ -9,18 +9,17 @@ set -euo pipefail
 # the authoritative hyperparameters.
 #
 # Per-dataset cosine schedule: each (method, dataset) pair fills its own
-# 24h budget so each model gets its best shot within budget. PLACEHOLDERS
-# pending submit_fm_timing.sh — extract per-dataset values via
+# 24h budget so each model gets its best shot within budget. Values from
+# submit_fm_timing.sh (2026-04-18) via
 #   uv run autocast time-epochs --from-checkpoint <path>/timing.ckpt -b 24
-# and replace each entry below.
 #
 # learning_rate (1e-4) and warmup (0) are baked into each per-dataset
 # local_experiment config; adjust the yaml to change them.
 declare -A COSINE_EPOCHS_BY_DATASET=(
-    ["gray_scott"]=1080                 # placeholder
-    ["gpe_laser_only_wake"]=1080        # placeholder
-    ["conditioned_navier_stokes"]=1080  # placeholder
-    ["advection_diffusion"]=1080        # placeholder
+    ["gray_scott"]=2830                 # 29.9 s/ep
+    ["gpe_laser_only_wake"]=3411        # 24.8 s/ep
+    ["conditioned_navier_stokes"]=3223  # 26.3 s/ep
+    ["advection_diffusion"]=3314        # 25.6 s/ep
 )
 BUDGET_MAX_TIME="00:23:59:00"
 # SLURM timeout with 1-min buffer beyond the 24h budget.
@@ -82,6 +81,6 @@ for datamodule in "${!EXPERIMENTS[@]}"; do
             +trainer.max_epochs="${cosine_epochs}" \
             trainer.callbacks.0.every_n_epochs="${quarter_epochs}" \
             trainer.callbacks.0.save_top_k=-1 \
-            trainer.callbacks.0.filename="quarter-{epoch:04d}"
+            trainer.callbacks.0.filename=\"quarter-{epoch:04d}\"
     done
 done

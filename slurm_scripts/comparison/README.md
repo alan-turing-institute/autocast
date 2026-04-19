@@ -99,14 +99,32 @@ extracted per-dataset from `*_timing.sh` via
 `uv run autocast time-epochs --from-checkpoint <path>/timing.ckpt -b 24`
 and live in `COSINE_EPOCHS_BY_DATASET` at the top of each `*_large.sh`.
 
-Ambient (timing 2026-04-17):
+Ambient (timing 2026-04-18; CRPS from `timing_efficient_crps/`, FM from `timing/`):
 
 | variant | gray_scott | gpe_laser_only_wake | cond_navier_stokes | advection_diffusion |
 |---|---|---|---|---|
-| CRPS ambient | **398** (212.3 s/ep) | 477 (177.3) | 471 (179.5) | 486 (174.0) |
-| FM ambient | **2619** (32.3 s/ep) | 3097 (27.3) | 2917 (29.0) | 3279 (25.8) |
+| CRPS ambient (permute_concat) | **399** (212.0 s/ep) | 477 (177.2) | 473 (178.8) | 478 (177.0) |
+| CRPS-via-AE ambient (EPD)     | **49**  (1724.6 s/ep) | 85  (991.0) | 85  (985.0) | 58  (1436.9) |
+| FM ambient                    | **2631** (32.2 s/ep)  | 3171 (26.7) | 2982 (28.4) | 3264 (25.9) |
 
-Latent: placeholders (1080) pending `submit_{crps_latent,fm}_timing.sh`.
+Latent (timing 2026-04-18, FM only — full 4-dataset CRPS-latent timing pending):
+
+| variant | gray_scott | gpe_laser_only_wake | cond_navier_stokes | advection_diffusion |
+|---|---|---|---|---|
+| FM latent (cached) | **2830** (29.9 s/ep) | 3411 (24.8) | 3223 (26.3) | 3314 (25.6) |
+| CRPS latent (cached) | 1080 (placeholder) | 1080 | 1080 | 1080 |
+
+CNS-only ablations (timing 2026-04-18):
+
+| variant | conditioned_navier_stokes |
+|---|---|
+| CRPS ambient (identity + global_cond AdaLN) | 469 (180.3 s/ep) |
+| CRPS latent (cached, ablation)              | 345 (245.0 s/ep) |
+
+All `s/ep` values are the mean across the n=5 epoch durations recorded by
+`TrainingTimerCallback` in `timing.ckpt` (saved after `on_train_end`, so
+it captures the final epoch — unlike `last.ckpt`, which is saved during
+`on_train_epoch_end` and only holds the first 4 durations).
 
 Each script saves quarter-schedule checkpoints (every `cosine_epochs / 4`)
 plus `last.ckpt` at train-end (guaranteed final state). Quarter boundaries

@@ -13,16 +13,16 @@ set -euo pipefail
 #
 # Per-dataset cosine schedule: each (method, dataset) pair fills its own
 # 24h budget so each model gets its best shot within budget. Values from
-# submit_fm_ambient_timing.sh (2026-04-17) via
+# submit_fm_ambient_timing.sh (2026-04-18) via
 #   uv run autocast time-epochs --from-checkpoint <path>/timing.ckpt -b 24
 #
 # learning_rate (1e-4) and warmup (0) are baked into each per-dataset
 # local_experiment config; adjust the yaml to change them.
 declare -A COSINE_EPOCHS_BY_DATASET=(
-    ["gray_scott"]=2619                 # 32.3s/epoch
-    ["gpe_laser_only_wake"]=3097        # 27.3s/epoch
-    ["conditioned_navier_stokes"]=2917  # 29.0s/epoch
-    ["advection_diffusion"]=3279        # 25.8s/epoch
+    ["gray_scott"]=2631                 # 32.2 s/ep
+    ["gpe_laser_only_wake"]=3171        # 26.7 s/ep
+    ["conditioned_navier_stokes"]=2982  # 28.4 s/ep
+    ["advection_diffusion"]=3264        # 25.9 s/ep
 )
 BUDGET_MAX_TIME="00:23:59:00"
 # SLURM timeout with 1-min buffer beyond the 24h budget.
@@ -60,6 +60,7 @@ for datamodule in "${!EXPERIMENTS[@]}"; do
         echo "  cosine_epochs: ${cosine_epochs}"
 
         uv run autocast epd --mode slurm "${dry_run_arg[@]}" \
+            datamodule="${datamodule}" \
             local_experiment="${experiment}" \
             logging.wandb.enabled=true \
             optimizer.cosine_epochs="${cosine_epochs}" \
@@ -68,6 +69,6 @@ for datamodule in "${!EXPERIMENTS[@]}"; do
             +trainer.max_epochs="${cosine_epochs}" \
             trainer.callbacks.0.every_n_epochs="${quarter_epochs}" \
             trainer.callbacks.0.save_top_k=-1 \
-            trainer.callbacks.0.filename="quarter-{epoch:04d}"
+            trainer.callbacks.0.filename=\"quarter-{epoch:04d}\"
     done
 done

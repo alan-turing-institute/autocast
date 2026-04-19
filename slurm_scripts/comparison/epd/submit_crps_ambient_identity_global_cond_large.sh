@@ -14,7 +14,7 @@ set -euo pipefail
 # and then extracting:
 #   uv run autocast time-epochs --from-checkpoint <path>/timing.ckpt -b 24
 declare -A COSINE_EPOCHS_BY_DATASET=(
-    ["conditioned_navier_stokes"]=471  # seed from CRPS ambient baseline; update from timing
+    ["conditioned_navier_stokes"]=469  # 180.3 s/ep (timing_efficient_crps, 2026-04-18)
 )
 BUDGET_MAX_TIME="00:23:59:00"
 # SLURM timeout with 1-min buffer beyond the 24h budget.
@@ -48,6 +48,7 @@ for datamodule in "${!EXPERIMENTS[@]}"; do
         echo "  cosine_epochs: ${cosine_epochs}"
 
         uv run autocast epd --mode slurm "${dry_run_arg[@]}" \
+            datamodule="${datamodule}" \
             local_experiment="${experiment}" \
             logging.wandb.enabled=true \
             optimizer.cosine_epochs="${cosine_epochs}" \
@@ -56,6 +57,6 @@ for datamodule in "${!EXPERIMENTS[@]}"; do
             +trainer.max_epochs="${cosine_epochs}" \
             trainer.callbacks.0.every_n_epochs="${quarter_epochs}" \
             trainer.callbacks.0.save_top_k=-1 \
-            trainer.callbacks.0.filename="quarter-{epoch:04d}"
+            trainer.callbacks.0.filename=\"quarter-{epoch:04d}\"
     done
 done
