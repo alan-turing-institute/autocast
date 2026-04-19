@@ -26,8 +26,13 @@ mode: auto
 metrics:
   - mse
   - mae
+  - nmse
+  - nmae
   - rmse
+  - nrmse
+  - vmse
   - vrmse
+  - linf
   - psrmse
   - psrmse_low
   - psrmse_mid
@@ -43,6 +48,7 @@ metrics:
   - afcrps
   - energy
   - ssr
+  - winkler
 
 # Output paths (default to work_dir if not specified)
 csv_path: null

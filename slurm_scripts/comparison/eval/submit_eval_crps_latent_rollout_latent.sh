@@ -20,6 +20,7 @@ set -euo pipefail
 EVAL_BATCH_SIZE=8
 TIMEOUT_MIN=240
 RUN_DRY_STATES=("true" "false")
+EVAL_METRICS="[mse,mae,nmse,nmae,rmse,nrmse,vmse,vrmse,linf,psrmse,psrmse_low,psrmse_mid,psrmse_high,psrmse_tail,pscc,pscc_low,pscc_mid,pscc_high,pscc_tail,crps,fcrps,afcrps,energy,ssr,winkler]"
 
 # (run_dir, autoencoder_checkpoint) pairs. Extend as more cached-latent CRPS
 # runs land (gs, gpe, ad) — the AE paths are the same as training.
@@ -58,12 +59,14 @@ for run_dir in "${RUN_DIRS[@]}"; do
         echo "  run_dir: ${run_dir}"
         echo "  autoencoder_checkpoint: ${ae_ckpt}"
         echo "  eval.batch_size: ${EVAL_BATCH_SIZE}"
+        echo "  eval.metrics: ${EVAL_METRICS}"
 
         uv run autocast eval --mode slurm "${dry_run_arg[@]}" \
             --workdir "${run_dir}" \
             eval.checkpoint=processor.ckpt \
             ++eval.mode=latent \
             +autoencoder_checkpoint="${ae_ckpt}" \
+            eval.metrics="${EVAL_METRICS}" \
             eval.batch_size="${EVAL_BATCH_SIZE}" \
             hydra.launcher.timeout_min="${TIMEOUT_MIN}"
     done

@@ -12,6 +12,7 @@ set -euo pipefail
 EVAL_BATCH_SIZE=4
 TIMEOUT_MIN=360
 RUN_DRY_STATES=("true" "false")
+EVAL_METRICS="[mse,mae,nmse,nmae,rmse,nrmse,vmse,vrmse,linf,psrmse,psrmse_low,psrmse_mid,psrmse_high,psrmse_tail,pscc,pscc_low,pscc_mid,pscc_high,pscc_tail,crps,fcrps,afcrps,energy,ssr,winkler]"
 
 RUN_DIRS=(
     "outputs/2026-04-18/diff_gs64_flow_matching_vit_0f89f06_6e3a299"
@@ -38,9 +39,11 @@ for run_dir in "${RUN_DIRS[@]}"; do
         echo "  mode: ${run_label}"
         echo "  run_dir: ${run_dir}"
         echo "  eval.batch_size: ${EVAL_BATCH_SIZE}"
+        echo "  eval.metrics: ${EVAL_METRICS}"
 
         uv run autocast eval --mode slurm "${dry_run_arg[@]}" \
             --workdir "${run_dir}" \
+            eval.metrics="${EVAL_METRICS}" \
             eval.batch_size="${EVAL_BATCH_SIZE}" \
             hydra.launcher.timeout_min="${TIMEOUT_MIN}"
     done
