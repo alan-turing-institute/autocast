@@ -332,6 +332,40 @@ def test_auto_run_name_hidden_dim_included():
     assert "256" in name
 
 
+def test_auto_run_name_local_experiment_ignores_unresolved_interpolation(
+    tmp_path: Path, monkeypatch
+):
+    local_cfg = tmp_path / "local_hydra" / "local_experiment" / "repro.yaml"
+    local_cfg.parent.mkdir(parents=True, exist_ok=True)
+    local_cfg.write_text(
+        "\n".join(
+            [
+                "model:",
+                "  processor:",
+                "    _target_: autocast.nn.vit.TemporalViTBackbone",
+                "    n_steps_input: ${datamodule.n_steps_input}",
+                "  loss_func:",
+                "    _target_: autocast.losses.ensemble.CRPSLoss",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(tmp_path)
+
+    with (
+        patch("autocast.scripts.workflow.naming._git_hash", return_value="abc1234"),
+        patch("autocast.scripts.workflow.naming._short_uuid", return_value="xyz7890"),
+    ):
+        name = auto_run_name(
+            "epd",
+            "reaction_diffusion",
+            ["local_experiment=repro"],
+        )
+
+    assert name == "crps_rd64_vit_abc1234_xyz7890"
+
+
 # ---------------------------------------------------------------------------
 # commands
 # ---------------------------------------------------------------------------

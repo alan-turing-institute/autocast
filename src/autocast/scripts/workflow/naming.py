@@ -8,6 +8,7 @@ import uuid
 from pathlib import Path
 
 from omegaconf import OmegaConf
+from omegaconf.errors import OmegaConfBaseException
 
 from autocast.scripts.workflow.constants import DATASET_NAME_TOKENS, NAMING_DEFAULT_KEYS
 from autocast.scripts.workflow.overrides import extract_override_value
@@ -85,7 +86,13 @@ def _extract_naming_hints_from_preset(path: Path) -> list[str]:
     if not path.exists():
         return []
 
-    loaded = OmegaConf.to_container(OmegaConf.load(path), resolve=True)
+    try:
+        # Naming only needs a few literal fields; avoid resolving unrelated
+        # interpolations that can fail outside full Hydra composition.
+        loaded = OmegaConf.to_container(OmegaConf.load(path), resolve=False)
+    except OmegaConfBaseException:
+        return []
+
     if not isinstance(loaded, dict):
         return []
 
