@@ -1,0 +1,117 @@
+#!/bin/bash
+
+set -euo pipefail
+# 24h production runs for the ensemble-size ablation (CNS only for now).
+# Mirrors slurm_scripts/comparison/epd/submit_crps_large.sh but sweeps
+# (regime, n_members, bs_per_gpu) instead of (dataset,).
+#
+# COSINE_EPOCHS_BY_COMBO is populated from submit_ensemble_timing.sh via
+#   uv run autocast time-epochs --from-checkpoint <path>/timing.ckpt -b 24
+# and then pasted in below. PLACEHOLDER values flag combos pending timing.
+
+# Placeholder cosine_epochs — replace once timing results land.
+declare -A COSINE_EPOCHS_BY_COMBO=(
+    ["conditioned_navier_stokes:eff_bs1024:4"]=473     # placeholder (main: 473 @ bs=32, m=8)
+    ["conditioned_navier_stokes:eff_bs1024:16"]=473    # placeholder
+    ["conditioned_navier_stokes:eff_bs1024:32"]=473    # placeholder
+    ["conditioned_navier_stokes:per_gpu_bs128:4"]=946  # placeholder (2× main; half per-step)
+    ["conditioned_navier_stokes:per_gpu_bs128:16"]=946 # placeholder
+)
+
+BUDGET_MAX_TIME="00:23:59:00"
+TIMEOUT_MIN=1439
+NUM_GPUS=4
+RUN_DRY_STATES=("true" "false")
+
+# Sanity-check the COMBOS table up front: bail before submitting anything
+# if a (regime, n_members, bs_per_gpu) triple violates its regime invariant.
+assert_combo() {
+    local regime="$1" n_members="$2" bs_per_gpu="$3"
+    case "${regime}" in
+        eff_bs1024)
+            local expected=$((bs_per_gpu * n_members * NUM_GPUS))
+            if (( expected != 1024 )); then
+                echo "FATAL: eff_bs1024 combo (m=${n_members}, bs=${bs_per_gpu}) gives effective global ${expected}, expected 1024" >&2
+                exit 1
+            fi
+            ;;
+        per_gpu_bs128)
+            local expected=$((bs_per_gpu * n_members))
+            if (( expected != 128 )); then
+                echo "FATAL: per_gpu_bs128 combo (m=${n_members}, bs=${bs_per_gpu}) gives effective per-GPU ${expected}, expected 128" >&2
+                exit 1
+            fi
+            ;;
+        *)
+            echo "FATAL: unknown regime '${regime}'" >&2
+            exit 1
+            ;;
+    esac
+}
+
+declare -A DATASETS=(
+    ["conditioned_navier_stokes"]="epd/conditioned_navier_stokes/crps_vit_azula_large"
+    # ["gray_scott"]="epd/gray_scott/crps_vit_azula_large"
+)
+
+# (regime, n_members, bs_per_gpu) triples, matching submit_ensemble_timing.sh.
+COMBOS=(
+    "eff_bs1024 4 64"
+    "eff_bs1024 16 16"
+    "eff_bs1024 32 8"
+    "per_gpu_bs128 4 32"
+    "per_gpu_bs128 16 8"
+)
+
+for combo in "${COMBOS[@]}"; do
+    read -r regime n_members bs_per_gpu <<< "${combo}"
+    assert_combo "${regime}" "${n_members}" "${bs_per_gpu}"
+done
+
+for datamodule in "${!DATASETS[@]}"; do
+    experiment="${DATASETS[$datamodule]}"
+
+    for combo in "${COMBOS[@]}"; do
+        read -r regime n_members bs_per_gpu <<< "${combo}"
+        key="${datamodule}:${regime}:${n_members}"
+        cosine_epochs="${COSINE_EPOCHS_BY_COMBO[$key]:-}"
+
+        if [[ -z "${cosine_epochs}" ]]; then
+            echo "Skipping ${key}: no COSINE_EPOCHS_BY_COMBO entry" >&2
+            continue
+        fi
+
+        quarter_epochs=$((cosine_epochs / 4))
+        run_id="crps_${datamodule}_${regime}_m${n_members}"
+
+        for run_dry in "${RUN_DRY_STATES[@]}"; do
+            dry_run_arg=()
+            run_label="slurm"
+            if [[ "${run_dry}" == "true" ]]; then
+                dry_run_arg=(--dry-run)
+                run_label="slurm --dry-run"
+            fi
+
+            echo "Submitting ensemble-size training"
+            echo "  mode: ${run_label}"
+            echo "  datamodule: ${datamodule}"
+            echo "  regime: ${regime}  n_members: ${n_members}  bs_per_gpu: ${bs_per_gpu}"
+            echo "  cosine_epochs: ${cosine_epochs}"
+
+            uv run autocast epd --mode slurm "${dry_run_arg[@]}" \
+                --run-id "${run_id}" \
+                datamodule="${datamodule}" \
+                local_experiment="${experiment}" \
+                model.n_members="${n_members}" \
+                datamodule.batch_size="${bs_per_gpu}" \
+                logging.wandb.enabled=true \
+                optimizer.cosine_epochs="${cosine_epochs}" \
+                hydra.launcher.timeout_min="${TIMEOUT_MIN}" \
+                trainer.max_time="${BUDGET_MAX_TIME}" \
+                +trainer.max_epochs="${cosine_epochs}" \
+                trainer.callbacks.0.every_n_epochs="${quarter_epochs}" \
+                trainer.callbacks.0.save_top_k=-1 \
+                trainer.callbacks.0.filename=\"quarter-{epoch:04d}\"
+        done
+    done
+done
