@@ -600,6 +600,8 @@ def eval_command(
     effective_overrides = _append_inferred_eval_checkpoint(
         work_dir, effective_overrides
     )
+    if not contains_override(effective_overrides, "eval.devices="):
+        effective_overrides.append("eval.devices=1")
 
     _eval_dir, command_overrides = build_eval_overrides(
         mode=mode,
@@ -634,6 +636,8 @@ def benchmark_command(
     effective_overrides = _append_inferred_eval_checkpoint(
         work_dir, effective_overrides
     )
+    if not contains_override(effective_overrides, "eval.devices="):
+        effective_overrides.append("eval.devices=1")
 
     if not contains_override(effective_overrides, "eval.benchmark.enabled="):
         effective_overrides.append("eval.benchmark.enabled=true")
