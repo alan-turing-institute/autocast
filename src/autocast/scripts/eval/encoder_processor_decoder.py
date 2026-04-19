@@ -1218,6 +1218,7 @@ def _maybe_swap_to_ambient_datamodule(
         )
         raise FileNotFoundError(msg)
 
+    original_datamodule = cfg.get("datamodule", {})
     ae_datamodule = ae_cfg.get("datamodule")
     if ae_datamodule is None:
         msg = (
@@ -1227,6 +1228,23 @@ def _maybe_swap_to_ambient_datamodule(
         )
         raise ValueError(msg)
 
+    # The cached autoencoder config is written by `cache-latents`, which forces
+    # full_trajectory_mode=True for encoding. For eval we need windowed batches
+    # matching processor training (n_steps_input / n_steps_output), otherwise
+    # metric shapes become incompatible.
+    swapped_datamodule = OmegaConf.create(ae_datamodule)
+    with open_dict(swapped_datamodule):
+        OmegaConf.update(swapped_datamodule, "autoencoder_mode", False, merge=True)
+        OmegaConf.update(swapped_datamodule, "full_trajectory_mode", False, merge=True)
+        for step_key in ("n_steps_input", "n_steps_output", "stride"):
+            step_value = (
+                original_datamodule.get(step_key)
+                if isinstance(original_datamodule, Mapping)
+                else None
+            )
+            if isinstance(step_value, int) and step_value > 0:
+                OmegaConf.update(swapped_datamodule, step_key, step_value, merge=True)
+
     log.info(
         "eval.mode=ambient: substituting cached_latents datamodule with the "
         "raw-data datamodule from %s/autoencoder_config.yaml so the encoder "
@@ -1234,7 +1252,7 @@ def _maybe_swap_to_ambient_datamodule(
         data_path,
     )
     with open_dict(cfg):
-        cfg.datamodule = ae_datamodule
+        cfg.datamodule = swapped_datamodule
     return cfg
 
 
