@@ -8,7 +8,7 @@ set -euo pipefail
 # latent-space CRPS numbers directly comparable with the ambient CRPS and
 # FM baselines (see slurm_scripts/comparison/eval/README.md).
 #
-# Requires PR #327 (origin/add-eval-modes — eval.mode selector). When ambient
+# The eval.mode selector landed via PR #327 and is now in-tree. When ambient
 # is requested on a cached-latents datamodule, eval auto-substitutes the raw
 # datamodule from <cache_dir>/autoencoder_config.yaml; the trained AE weights
 # are supplied via autoencoder_checkpoint.

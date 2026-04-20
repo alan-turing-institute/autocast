@@ -1,21 +1,16 @@
 #!/bin/bash
 
 set -euo pipefail
-# Evaluate CRPS cached-latent processor runs (2026-04-19) in AMBIENT mode.
+# Evaluate CRPS cached-latent processor runs (2026-04-19) in LATENT mode.
 #
-# eval.mode=ambient forces encoder->processor->decoder rollout at every
-# step, so decode/encode drift is included in the metrics. This makes the
-# latent-space CRPS numbers directly comparable with the ambient CRPS and
-# FM baselines (see slurm_scripts/comparison/eval/README.md).
+# eval.mode=latent rolls out only in latent space and writes results to
+# eval_latent/ so ambient-vs-latent comparisons can coexist per run.
 #
-# Requires PR #327 (origin/add-eval-modes — eval.mode selector). When ambient
-# is requested on a cached-latents datamodule, eval auto-substitutes the raw
-# datamodule from <cache_dir>/autoencoder_config.yaml; the trained AE weights
-# are supplied via autoencoder_checkpoint.
+# The eval.mode selector landed via PR #327 and is now in-tree. We still pass
+# autoencoder_checkpoint to load the trained AE for eval setup/final decode.
 #
-# Batch size: cached-latent eval pays the ambient AE encode/decode per step
-# but processor forward is cheap (64 tokens vs 256 for ambient-patch4), so
-# 8/GPU fits comfortably — same as pure-ambient CRPS.
+# Batch size: latent rollout avoids per-step AE encode/decode, so 8/GPU is a
+# conservative setting and matches the ambient-compare CRPS script.
 
 EVAL_BATCH_SIZE=8
 TIMEOUT_MIN=240

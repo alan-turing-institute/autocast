@@ -1,21 +1,16 @@
 #!/bin/bash
 
 set -euo pipefail
-# Evaluate FM cached-latent processor runs (2026-04-18) in AMBIENT mode.
+# Evaluate FM cached-latent processor runs (2026-04-18) in LATENT mode.
 #
-# eval.mode=ambient forces encoder->processor->decoder rollout at every
-# step, so decode/encode drift is included in the metrics — the apples-to-
-# apples regime for comparison with the ambient FM baseline.
+# eval.mode=latent rolls out in latent space and writes results to eval_latent/
+# so ambient-vs-latent comparisons can coexist per run.
 #
-# Requires PR #327 (origin/add-eval-modes — eval.mode selector). When ambient
-# is requested on a cached-latents datamodule, eval auto-substitutes the raw
-# datamodule from <cache_dir>/autoencoder_config.yaml; the trained AE weights
-# are supplied via autoencoder_checkpoint.
+# The eval.mode selector landed via PR #327 and is now in-tree. We still pass
+# autoencoder_checkpoint to load the trained AE for eval setup/final decode.
 #
-# Batch size: ambient rollout pays encode/decode every step plus 50 ODE
-# substeps through the processor. Cached-latent processor forward is lighter
-# (64 tokens vs 256 for ambient FM), so 4/GPU is a safe start; the tight
-# spot is the same ODE + AE stack so it mirrors FM-ambient.
+# Batch size: latent rollout avoids per-step AE encode/decode, but FM still
+# pays 50 ODE substeps per rollout step, so 4/GPU remains a safe baseline.
 
 EVAL_BATCH_SIZE=4
 TIMEOUT_MIN=360
@@ -59,7 +54,7 @@ for run_dir in "${RUN_DIRS[@]}"; do
             run_label="slurm --dry-run"
         fi
 
-        echo "Submitting FM cached-latent eval (mode=ambient)"
+        echo "Submitting FM cached-latent eval (mode=latent)"
         echo "  mode: ${run_label}"
         echo "  run_dir: ${run_dir}"
         echo "  autoencoder_checkpoint: ${ae_ckpt}"
