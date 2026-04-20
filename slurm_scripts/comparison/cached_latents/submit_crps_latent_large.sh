@@ -1,6 +1,7 @@
 #!/bin/bash
 
 set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/validate_cached_latents_against_ae.sh"
 # Ablation: final 24h CRPS-in-cached-latent runs for 4 target datasets.
 # Model: AzulaViTProcessor / vit_azula_large (hidden_dim=568, n_layers=12,
 # num_heads=8, patch_size=1, n_noise_channels=1024). Head: AlphaFairCRPSLoss,
@@ -55,6 +56,10 @@ for datamodule in "${!EXPERIMENTS[@]}"; do
 
     if [[ ! -d "${cache_dir}/train" ]] || [[ ! -d "${cache_dir}/valid" ]] || [[ ! -d "${cache_dir}/test" ]]; then
         echo "Skipping ${datamodule}: cache missing train/valid/test under ${cache_dir}" >&2
+        continue
+    fi
+    if ! validate_cached_latents_against_ae "${ae_run_dir}"; then
+        echo "Skipping ${datamodule}: cached-latents config mismatch vs AE training config" >&2
         continue
     fi
 

@@ -1,6 +1,7 @@
 #!/bin/bash
 
 set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/validate_cached_latents_against_ae.sh"
 # Final 24h FM-in-latent runs for 4 target datasets.
 # Model: flow_matching_vit (vit backbone, hid_channels=704, hid_blocks=12,
 # attention_heads=8, patch_size=1, flow_ode_steps=50). Optimizer: adamw_half
@@ -53,6 +54,10 @@ for datamodule in "${!EXPERIMENTS[@]}"; do
 
     if [[ ! -d "${cache_dir}/train" ]] || [[ ! -d "${cache_dir}/valid" ]] || [[ ! -d "${cache_dir}/test" ]]; then
         echo "Skipping ${datamodule}: cache missing train/valid/test under ${cache_dir}" >&2
+        continue
+    fi
+    if ! validate_cached_latents_against_ae "${ae_run_dir}"; then
+        echo "Skipping ${datamodule}: cached-latents config mismatch vs AE training config" >&2
         continue
     fi
 
