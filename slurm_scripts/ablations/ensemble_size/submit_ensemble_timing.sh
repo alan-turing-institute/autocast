@@ -3,11 +3,10 @@
 set -euo pipefail
 # Timing runs for the ensemble-size ablation (CNS only for now).
 #
-# Two regimes (see README):
-#   eff_bs1024:    fixed global effective batch = 1024 (matches main budget).
-#                  n_members ∈ {4, 16, 32}; bs_per_gpu adjusted inversely.
-#   per_gpu_bs128: fixed per-GPU effective batch = 128.
-#                  n_members ∈ {4, 16}; bs_per_gpu adjusted inversely.
+# Two regimes (see README). Current defaults are m=16, but COMBOS is meant
+# to be extended as the ablation grows:
+#   fixed_bs32: fixed datamodule.batch_size=32/GPU (same as main CRPS run).
+#   eff_bs1024: fixed global effective batch = 1024 (matches main budget).
 #
 # Each combo inherits the CRPS-ambient baseline (CNS) and overrides
 # model.n_members + datamodule.batch_size via CLI — no new experiment
@@ -21,37 +20,33 @@ declare -A DATASETS=(
 )
 
 # (regime, n_members, bs_per_gpu) triples. bs_per_gpu chosen so that:
-#   eff_bs1024:    bs_per_gpu × n_members × 4 GPUs = 1024
-#   per_gpu_bs128: bs_per_gpu × n_members            = 128
+#   fixed_bs32:    bs_per_gpu                         = 32
+#   eff_bs1024:    bs_per_gpu × n_members × 4 GPUs   = 1024
 COMBOS=(
-    "eff_bs1024 4 64"
+    "fixed_bs32 16 32"
     "eff_bs1024 16 16"
-    "eff_bs1024 32 8"
-    "per_gpu_bs128 4 32"
-    "per_gpu_bs128 16 8"
 )
 
 BUDGET_HOURS=24
 NUM_TIMING_EPOCHS=5
 NUM_GPUS=4
-RUN_GROUP="$(date +%Y-%m-%d)/timing_ensemble"
+RUN_GROUP="$(date +%Y-%m-%d)/timing_ensemble_m16"
 
 # Sanity-check the COMBOS table up front: bail before submitting anything
 # if a (regime, n_members, bs_per_gpu) triple violates its regime invariant.
 assert_combo() {
     local regime="$1" n_members="$2" bs_per_gpu="$3"
     case "${regime}" in
+        fixed_bs32)
+            if (( bs_per_gpu != 32 )); then
+                echo "FATAL: fixed_bs32 combo expects bs_per_gpu=32, got bs_per_gpu=${bs_per_gpu}" >&2
+                exit 1
+            fi
+            ;;
         eff_bs1024)
             local expected=$((bs_per_gpu * n_members * NUM_GPUS))
             if (( expected != 1024 )); then
                 echo "FATAL: eff_bs1024 combo (m=${n_members}, bs=${bs_per_gpu}) gives effective global ${expected}, expected 1024" >&2
-                exit 1
-            fi
-            ;;
-        per_gpu_bs128)
-            local expected=$((bs_per_gpu * n_members))
-            if (( expected != 128 )); then
-                echo "FATAL: per_gpu_bs128 combo (m=${n_members}, bs=${bs_per_gpu}) gives effective per-GPU ${expected}, expected 128" >&2
                 exit 1
             fi
             ;;

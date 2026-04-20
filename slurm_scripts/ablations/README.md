@@ -15,8 +15,8 @@ change per ablation.
 
 | ablation | type | datasets | runs | status |
 |---|---|---|---|---|
-| ensemble_size (fixed global eff. bs=1024) | sweep | CNS | 3 | scaffolded |
-| ensemble_size (fixed per-GPU eff. bs=128) | sweep | CNS | 2 | scaffolded |
+| ensemble_size (m=16, fixed bs=32) | sweep | CNS | 1 | ready |
+| ensemble_size (m=16, fixed global eff. bs=1024) | sweep | CNS | 1 | ready |
 | noise_channels | sweep | CNS | 1+ | stub |
 | crps_variants (AlphaFair / Fair / CRPS) | comparison | CNS | 3 | stub |
 | fm_vs_diffusion | comparison | CNS | 1 | stub |
