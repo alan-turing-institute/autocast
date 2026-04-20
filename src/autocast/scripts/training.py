@@ -325,6 +325,26 @@ class TrainingTimerCallback(Callback):
         if self._train_start is not None:
             self.training_runtime_total_s = now - self._train_start
 
+        # Emit human-readable timing info into stdout/stderr logs so timing
+        # runs are inspectable without loading timing.ckpt.
+        if self._epoch_times_s:
+            n = len(self._epoch_times_s)
+            mean_epoch_s = sum(self._epoch_times_s) / n
+            min_epoch_s = min(self._epoch_times_s)
+            max_epoch_s = max(self._epoch_times_s)
+            log.info(
+                "TrainingTimerCallback: epochs=%d mean=%.1fs min=%.1fs max=%.1fs",
+                n,
+                mean_epoch_s,
+                min_epoch_s,
+                max_epoch_s,
+            )
+            if n <= 12:
+                log.info(
+                    "TrainingTimerCallback epoch_times_s: %s",
+                    ", ".join(f"{t:.1f}s" for t in self._epoch_times_s),
+                )
+
     def state_dict(self) -> dict:  # type: ignore[override]
         runtime_elapsed_s = self._current_elapsed_runtime_s()
         d: dict = {

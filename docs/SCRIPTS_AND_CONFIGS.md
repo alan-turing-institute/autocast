@@ -229,6 +229,11 @@ The calculation is conservative:
 Per-epoch times are extracted from the `TrainingTimerCallback` saved in the
 checkpoint, which excludes model setup and data loading overhead.
 
+Timing runs also emit a human-readable timing summary to logs at train end
+(epoch count, mean/min/max epoch seconds, and the per-epoch list for short
+runs), so you can quickly inspect timing quality without loading the
+checkpoint first.
+
 #### How `max_epochs` and `max_time` interact at runtime
 
 The recommended overrides set **two** stopping conditions:
