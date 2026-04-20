@@ -261,7 +261,16 @@ def normalize_eval_subdir(eval_subdir: str | None) -> str:
     if eval_subdir is None:
         return DEFAULT_EVAL_SUBDIR
     normalized = str(eval_subdir).strip().strip("/").strip()
-    return normalized if normalized else DEFAULT_EVAL_SUBDIR
+    if not normalized:
+        return DEFAULT_EVAL_SUBDIR
+
+    token = normalized.casefold()
+    # Friendly aliases for --run ... eval=<token>
+    if token in {"eval", "ambient", "default"}:
+        return DEFAULT_EVAL_SUBDIR
+    if token in {"latent", "eval_latent"}:
+        return "eval_latent"
+    return normalized
 
 
 def _apply_explicit_order(
@@ -447,11 +456,13 @@ def dataset_grid_resolution(
 def load_single_run_metrics(  # noqa: PLR0912, PLR0915
     run_dir: Path,
     eval_subdir: str = DEFAULT_EVAL_SUBDIR,
+    run_ref: str | None = None,
 ) -> dict:
     """Load evaluation metrics and rollout metrics from a single run directory."""
     resolved_eval_subdir = normalize_eval_subdir(eval_subdir)
     row = {
-        "run_name": run_dir.name,
+        "run_name": run_ref or run_dir.name,
+        "run_id": run_dir.name,
         "run_path": run_dir.name,
         "eval_subdir": resolved_eval_subdir,
         "dataset": None,
@@ -688,11 +699,13 @@ def _extract_config_fields(cfg: dict, row: dict[str, object]) -> None:
 def load_config_metadata(  # noqa: PLR0912
     run_dir: Path,
     eval_subdir: str = DEFAULT_EVAL_SUBDIR,
+    run_ref: str | None = None,
 ) -> dict[str, object]:
     """Load training config metadata (LR, batch size, noise, etc.)."""
     resolved_eval_subdir = normalize_eval_subdir(eval_subdir)
     row: dict[str, object] = {
-        "run_name": run_dir.name,
+        "run_name": run_ref or run_dir.name,
+        "run_id": run_dir.name,
         "eval_subdir": resolved_eval_subdir,
     }
     p_config = run_dir / "resolved_config.yaml"
@@ -848,6 +861,18 @@ def _run_name_from_plot_group(pg: str) -> str | None:
     return None
 
 
+def _run_ref_aliases(run_name: str) -> list[str]:
+    """Return lookup aliases for a run ref with optional eval/index suffixes."""
+    aliases = [run_name]
+    base = run_name.split("#", 1)[0]
+    if base not in aliases:
+        aliases.append(base)
+    core = base.split("::eval=", 1)[0]
+    if core not in aliases:
+        aliases.append(core)
+    return aliases
+
+
 def _style_label_for_plot_group(
     pg: str,
     custom_label_by_run: dict[str, str] | None,
@@ -855,8 +880,10 @@ def _style_label_for_plot_group(
     """Return custom label for a run when provided, else the default label."""
     if custom_label_by_run:
         run_name = _run_name_from_plot_group(pg)
-        if run_name and run_name in custom_label_by_run:
-            return custom_label_by_run[run_name]
+        if run_name:
+            for alias in _run_ref_aliases(run_name):
+                if alias in custom_label_by_run:
+                    return custom_label_by_run[alias]
     return plot_group_display_label(pg)
 
 
@@ -865,9 +892,10 @@ def extract_valid_plot_groups_from_run_names(
 ) -> set[str]:
     """Return the plot_group keys that correspond to the given run directory names."""
     # Given a list of run dir names, find their corresponding plot_groups in df_in
-    return set(
-        cast(pd.Series, df_in[df_in["run_name"].isin(run_names)]["plot_group"]).unique()
-    )
+    mask = cast(pd.Series, df_in["run_name"].isin(run_names))
+    if "run_id" in df_in.columns:
+        mask = cast(pd.Series, mask | df_in["run_id"].isin(run_names))
+    return set(cast(pd.Series, df_in[mask]["plot_group"]).unique())
 
 
 def _shade_variant(base_color, idx: int, total: int):
@@ -970,6 +998,7 @@ def _apply_run_hue_styles(
     pgs: list[str],
     hue_group_by_run: dict[str, int],
     custom_label_by_run: dict[str, str] | None,
+    uniform_run_hue_color: bool,
 ) -> None:
     """Assign styles using per-run hue group indices from --run <id> [label] <hue>."""
     base_cmap = plt.get_cmap("tab10")
@@ -979,19 +1008,40 @@ def _apply_run_hue_styles(
     no_hue: list[str] = []
     for pg in pgs:
         rn = _run_name_from_plot_group(pg)
-        if rn and rn in hue_group_by_run:
-            hue_members.setdefault(hue_group_by_run[rn], []).append(pg)
-        else:
-            no_hue.append(pg)
+        hue_idx: int | None = None
+        if rn:
+            for alias in _run_ref_aliases(rn):
+                if alias in hue_group_by_run:
+                    hue_idx = hue_group_by_run[alias]
+                    break
+        if hue_idx is not None:
+            hue_members.setdefault(hue_idx, []).append(pg)
+            continue
+        no_hue.append(pg)
 
     for hi, members in sorted(hue_members.items()):
         base_color = base_cmap(hi % 10)
-        for j, pg in enumerate(members):
+        # Assign shades by unique label (first-seen), not by run index.
+        # This keeps color/lightness stable across datasets when the label matches.
+        member_labels = [
+            str(_style_label_for_plot_group(pg, custom_label_by_run)) for pg in members
+        ]
+        unique_labels = list(dict.fromkeys(member_labels))
+        label_to_color = {
+            lb: (
+                base_color
+                if uniform_run_hue_color
+                else _shade_variant(base_color, j, len(unique_labels))
+            )
+            for j, lb in enumerate(unique_labels)
+        }
+
+        for pg, lb in zip(members, member_labels, strict=False):
             parts = pg.split("__")
             loss = parts[1] if len(parts) > 1 else "unknown"
             styles[pg] = {
-                "color": _shade_variant(base_color, j, len(members)),
-                "label": _style_label_for_plot_group(pg, custom_label_by_run),
+                "color": label_to_color[lb],
+                "label": lb,
                 "marker": "^" if loss == "diff" else "o",
                 "linestyle": "-" if loss == "diff" else "--",
             }
@@ -1018,10 +1068,17 @@ def _apply_label_color_styles(
     pg_label = {}
     for pg in pgs:
         rn = _run_name_from_plot_group(pg)
-        if rn and rn in custom_label_by_run:
-            pg_label[pg] = custom_label_by_run[rn]
-        else:
-            pg_label[pg] = _style_label_for_plot_group(pg, custom_label_by_run)
+        lbl: str | None = None
+        if rn:
+            for alias in _run_ref_aliases(rn):
+                if alias in custom_label_by_run:
+                    lbl = custom_label_by_run[alias]
+                    break
+        pg_label[pg] = (
+            lbl
+            if lbl is not None
+            else _style_label_for_plot_group(pg, custom_label_by_run)
+        )
     label_color = _build_label_color_map(list(pg_label.values()))
     for pg in pgs:
         lb = pg_label[pg]
@@ -1040,6 +1097,7 @@ def build_family_style(
     explicit_groups: list[list[str]] | None = None,
     custom_label_by_run: dict[str, str] | None = None,
     uniform_group_color: bool = False,
+    uniform_run_hue_color: bool = False,
     group_hues: list[int] | None = None,
     color_by_label: bool = False,
     hue_group_by_run: dict[str, int] | None = None,
@@ -1062,7 +1120,13 @@ def build_family_style(
 
     remaining = [pg for pg in present if pg not in styles]
     if hue_group_by_run and remaining:
-        _apply_run_hue_styles(styles, remaining, hue_group_by_run, custom_label_by_run)
+        _apply_run_hue_styles(
+            styles,
+            remaining,
+            hue_group_by_run,
+            custom_label_by_run,
+            uniform_run_hue_color,
+        )
         remaining = []
     elif color_by_label and custom_label_by_run and remaining:
         _apply_label_color_styles(styles, remaining, custom_label_by_run)
@@ -1940,7 +2004,7 @@ def plot_training_curves(  # noqa: PLR0912, PLR0915
 # ---------------------------------------------------------------------------
 
 
-def plot_panel_figure(
+def plot_panel_figure(  # noqa: PLR0915
     df_in: pd.DataFrame,
     results_root: Path,
     out_dir: Path,
@@ -1972,7 +2036,10 @@ def plot_panel_figure(
     """
     error_metrics = error_metrics or ["vrmse"]
     coverage_metrics = coverage_metrics or ["coverage_0.9", "coverage_0.5"]
-    training_metrics = training_metrics or ["val_loss", "train_loss"]
+    if training_metrics is None:
+        training_metrics = ["val_loss", "train_loss"]
+    training_metrics = list(training_metrics)
+    include_training_panel = len(training_metrics) > 0
 
     datasets = _apply_explicit_order(
         list(df_in["dataset_label"].dropna().unique()), dataset_order
@@ -1983,43 +2050,62 @@ def plot_panel_figure(
     # renders by using a fixed minimum canvas with gentle dataset-driven scaling.
     panel_scale = max(1.0, np.sqrt(n_ds / 2.0))
     fig = plt.figure(figsize=(16.0 * panel_scale, 10.0 * panel_scale))
-    outer = fig.add_gridspec(
-        5,
-        5,
-        width_ratios=[1.3 * n_ds, 1.0, 1.1 * n_ds, 1.1 * n_ds, 1.0 * n_ds],
-        height_ratios=[0.2, 0.8, 1.0, 1.0, 1.0],
-        wspace=0.28,
-        hspace=0.24,
-    )
+    if include_training_panel:
+        outer = fig.add_gridspec(
+            5,
+            5,
+            width_ratios=[1.3 * n_ds, 1.0, 1.1 * n_ds, 1.1 * n_ds, 1.0 * n_ds],
+            height_ratios=[0.2, 0.8, 1.0, 1.0, 1.0],
+            wspace=0.28,
+            hspace=0.24,
+        )
+        left_spec = outer[1:, 1]
+        middle_spec = outer[1:, 2:4]
+        right_spec = outer[1:, 4]
+    else:
+        outer = fig.add_gridspec(
+            5,
+            4,
+            width_ratios=[1.0, 1.1 * n_ds, 1.1 * n_ds, 1.0 * n_ds],
+            height_ratios=[0.2, 0.8, 1.0, 1.0, 1.0],
+            wspace=0.28,
+            hspace=0.24,
+        )
+        left_spec = outer[1:, 0]
+        middle_spec = outer[1:, 1:3]
+        right_spec = outer[1:, 3]
 
     # Top-left reserved notes region (intentionally blank).
     notes_ax = fig.add_subplot(outer[0, 0])
     notes_ax.set_axis_off()
 
     # --- Far-left: training curves panel --------------------------------
-    train = fig.add_subfigure(outer[1:, 0])
-    n_train = max(1, len(training_metrics))
-    tr_axes = train.subplots(n_train, n_ds, sharex=True, sharey=False, squeeze=False)
-    _ = plot_training_curves(
-        df_in,
-        training_metrics,
-        results_root,
-        out_dir,
-        "panel_training_curves.png",
-        styles,
-        dataset_order=dataset_order,
-        hue_order=hue_order,
-        y_scale=training_yscale,
-        ylim=training_ylim,
-        axes=tr_axes,
-        fig=train,
-        save=False,
-        show_legend=False,
-        force_refresh=training_refresh,
-    )
+    if include_training_panel:
+        train = fig.add_subfigure(outer[1:, 0])
+        n_train = max(1, len(training_metrics))
+        tr_axes = train.subplots(
+            n_train, n_ds, sharex=True, sharey=False, squeeze=False
+        )
+        _ = plot_training_curves(
+            df_in,
+            training_metrics,
+            results_root,
+            out_dir,
+            "panel_training_curves.png",
+            styles,
+            dataset_order=dataset_order,
+            hue_order=hue_order,
+            y_scale=training_yscale,
+            ylim=training_ylim,
+            axes=tr_axes,
+            fig=train,
+            save=False,
+            show_legend=False,
+            force_refresh=training_refresh,
+        )
 
     # --- Left-middle: two stacked overall-metric bar charts -------------
-    left = fig.add_subfigure(outer[1:, 1])
+    left = fig.add_subfigure(left_spec)
     left_axes = left.subplots(2, 1)
     for i, m in enumerate(overall_metrics):
         is_cov = "coverage" in m
@@ -2040,7 +2126,7 @@ def plot_panel_figure(
     left.suptitle("")
 
     # --- Middle: coverage calibration panel -----------------------------
-    middle = fig.add_subfigure(outer[1:, 2:4])
+    middle = fig.add_subfigure(middle_spec)
     nrows_cov = len(WINDOW_ROWS)
     mid_axes = middle.subplots(nrows_cov, n_ds, sharex=True, sharey=True, squeeze=False)
     plot_coverage_calibration_panel(
@@ -2057,7 +2143,7 @@ def plot_panel_figure(
     )
 
     # --- Right: lead-time error (top) + coverage (bottom) ---------------
-    right = fig.add_subfigure(outer[1:, 4])
+    right = fig.add_subfigure(right_spec)
     n_err = len(error_metrics)
     n_cov = len(coverage_metrics)
     right_top, right_bot = right.subfigures(
@@ -2156,7 +2242,8 @@ def main():  # noqa: PLR0912, PLR0915
         help=(
             "Add a run, with optional label: "
             '--run <id> ["label"] [hue] [eval=<subdir>]. '
-            "Repeat for each run. Order determines hue order."
+            "Repeat for each run. Integer hue overrides --color-by-label "
+            "for that run and groups runs into a shared hue family."
         ),
     )
     parser.add_argument(
@@ -2234,6 +2321,14 @@ def main():  # noqa: PLR0912, PLR0915
         "--uniform-group-color",
         action="store_true",
         help="Use the same color for all runs in a --run-group",
+    )
+    parser.add_argument(
+        "--uniform-run-hue-color",
+        action="store_true",
+        help=(
+            "Use the same color for runs sharing an integer hue in --run "
+            "(otherwise shades vary within each hue group)."
+        ),
     )
     parser.add_argument(
         "--group-hues",
@@ -2347,6 +2442,14 @@ def main():  # noqa: PLR0912, PLR0915
             "top-left notes area (~20% x ~20%)."
         ),
     )
+    parser.add_argument(
+        "--panel-figure-no-training",
+        action="store_true",
+        help=(
+            "Also render a panel variant without the training-curves column. "
+            "Can be combined with --panel-figure to save both variants."
+        ),
+    )
     args = parser.parse_args()
 
     def _parse_ylim(pair: list[str] | None) -> tuple[float | None, float | None] | None:
@@ -2386,6 +2489,7 @@ def main():  # noqa: PLR0912, PLR0915
     #   <id> <label> <hue>
     hue_group_by_run: dict[str, int] = {}
     eval_subdir_by_run: dict[str, str] = {}
+    run_order: list[str] = []
 
     def _parse_run_entry(
         entry: list[str],
@@ -2438,49 +2542,95 @@ def main():  # noqa: PLR0912, PLR0915
     if args.run:
         merged_runs: list[str] = []
         merged_labels: list[list[str]] = list(args.label_run or [])
+        parsed_entries: list[tuple[str, str | None, int | None, str]] = []
         for entry in args.run:
             try:
                 run_id, label, hue, run_eval_subdir = _parse_run_entry(entry)
             except ValueError as e:
                 print(e)
                 sys.exit(1)
+            parsed_entries.append(
+                (run_id, label, hue, normalize_eval_subdir(run_eval_subdir))
+            )
             merged_runs.append(run_id)
             eval_subdir_by_run[run_id] = normalize_eval_subdir(run_eval_subdir)
+
+        # Build stable per-entry refs so repeated run_ids with different eval/labels
+        # are treated as distinct series in style/legend/hue mapping.
+        ref_counts: dict[str, int] = {}
+        for run_id, label, hue, run_eval_subdir in parsed_entries:
+            base_ref = run_id
+            if run_eval_subdir != DEFAULT_EVAL_SUBDIR:
+                base_ref = f"{run_id}::eval={run_eval_subdir}"
+            n_seen = ref_counts.get(base_ref, 0)
+            ref_counts[base_ref] = n_seen + 1
+            run_ref = base_ref if n_seen == 0 else f"{base_ref}#{n_seen + 1}"
+            run_order.append(run_ref)
             if label is not None:
-                merged_labels.append([run_id, label])
+                merged_labels.append([run_ref, label])
             if hue is not None:
-                hue_group_by_run[run_id] = hue
+                hue_group_by_run[run_ref] = hue
         # --run takes precedence; append any extra --runs
         if args.runs:
-            merged_runs.extend(args.runs)
+            for run_id in args.runs:
+                merged_runs.append(run_id)
+                run_order.append(run_id)
         args.runs = merged_runs
         args.label_run = merged_labels or None
+    elif args.runs:
+        run_order = list(args.runs)
 
     explicit_groups = args.run_group or []
     # Gather explicitly requested runs, or fallback to auto-discover
     if explicit_groups:
         run_targets = [
-            (results_dir / r, DEFAULT_EVAL_SUBDIR) for g in explicit_groups for r in g
+            (results_dir / r, DEFAULT_EVAL_SUBDIR, r)
+            for g in explicit_groups
+            for r in g
         ]
     elif args.runs:
-        run_targets = [
-            (
-                results_dir / r,
-                normalize_eval_subdir(eval_subdir_by_run.get(r, DEFAULT_EVAL_SUBDIR)),
-            )
-            for r in args.runs
-        ]
+        run_targets = []
+        if args.run:
+            ref_counts = {}
+            for entry in args.run:
+                run_id, _, _, run_eval_subdir = _parse_run_entry(entry)
+                eval_subdir = normalize_eval_subdir(run_eval_subdir)
+                base_ref = run_id
+                if eval_subdir != DEFAULT_EVAL_SUBDIR:
+                    base_ref = f"{run_id}::eval={eval_subdir}"
+                n_seen = ref_counts.get(base_ref, 0)
+                ref_counts[base_ref] = n_seen + 1
+                run_ref = base_ref if n_seen == 0 else f"{base_ref}#{n_seen + 1}"
+                run_targets.append((results_dir / run_id, eval_subdir, run_ref))
+            if args.runs:
+                for run_id in args.runs[len(args.run) :]:
+                    run_targets.append(
+                        (results_dir / run_id, DEFAULT_EVAL_SUBDIR, run_id)
+                    )
+        else:
+            run_targets = [
+                (
+                    results_dir / r,
+                    normalize_eval_subdir(
+                        eval_subdir_by_run.get(r, DEFAULT_EVAL_SUBDIR)
+                    ),
+                    r,
+                )
+                for r in args.runs
+            ]
     else:
         run_targets = sorted(
             [
-                (p, DEFAULT_EVAL_SUBDIR)
+                (p, DEFAULT_EVAL_SUBDIR, p.name)
                 for p in results_dir.iterdir()
                 if p.is_dir() and (p / "eval" / "evaluation_metrics.csv").exists()
             ],
             key=lambda x: x[0],
         )
 
-    valid_run_names = {rd.name for rd, _ in run_targets}
+    valid_run_names = {
+        name for rd, _, run_ref in run_targets for name in (run_ref, rd.name)
+    }
 
     try:
         custom_label_by_run = build_custom_label_map(
@@ -2494,15 +2644,17 @@ def main():  # noqa: PLR0912, PLR0915
     if args.list:
         print(f"Loading {len(run_targets)} runs...")
         m_rows = []
-        for rd, run_eval_subdir in run_targets:
-            m_rows.append(load_config_metadata(rd, eval_subdir=run_eval_subdir))
+        for rd, run_eval_subdir, run_ref in run_targets:
+            m_rows.append(
+                load_config_metadata(rd, eval_subdir=run_eval_subdir, run_ref=run_ref)
+            )
         mdf = pd.DataFrame(m_rows)
 
         if mdf.empty:
             print("No valid runs to process.")
             sys.exit(1)
 
-        _parsed = mdf["run_name"].map(parse_loss_dataset_arch)
+        _parsed = mdf["run_id"].map(parse_loss_dataset_arch)
         mdf["loss_family"] = _parsed.map(
             lambda x: x[0] if isinstance(x, tuple) and len(x) > 0 else None
         )
@@ -2642,12 +2794,16 @@ def main():  # noqa: PLR0912, PLR0915
 
     print(f"Loading {len(run_targets)} runs...")
     rows = []
-    for d, run_eval_subdir in run_targets:
+    for d, run_eval_subdir, run_ref in run_targets:
         if not d.exists():
             print(f"Warning: requested run not found: {d}")
             continue
         try:
-            r = load_single_run_metrics(d, eval_subdir=run_eval_subdir)
+            r = load_single_run_metrics(
+                d,
+                eval_subdir=run_eval_subdir,
+                run_ref=run_ref,
+            )
         except Exception as e:
             print(f"Error loading {d}: {e}")
             continue
@@ -2658,7 +2814,7 @@ def main():  # noqa: PLR0912, PLR0915
         sys.exit(1)
 
     df = pd.DataFrame(rows)
-    _parsed = df["run_name"].map(parse_loss_dataset_arch)
+    _parsed = df["run_id"].map(parse_loss_dataset_arch)
     df["loss_family"] = _parsed.map(
         lambda x: x[0] if isinstance(x, tuple) and len(x) > 0 else None
     )
@@ -2715,6 +2871,7 @@ def main():  # noqa: PLR0912, PLR0915
         explicit_groups,
         custom_label_by_run=custom_label_by_run,
         uniform_group_color=args.uniform_group_color,
+        uniform_run_hue_color=args.uniform_run_hue_color,
         group_hues=args.group_hues,
         color_by_label=args.color_by_label,
         hue_group_by_run=hue_group_by_run or None,
@@ -2728,10 +2885,10 @@ def main():  # noqa: PLR0912, PLR0915
 
     # Derive hue order from --runs order: first unique label seen wins.
     hu_order: list[str] | None = None
-    if args.runs and custom_label_by_run:
+    if run_order and custom_label_by_run:
         seen: list[str] = []
         seen_set: set[str] = set()
-        for run in args.runs:
+        for run in run_order:
             label = custom_label_by_run.get(run)
             if label and label not in seen_set:
                 seen.append(label)
@@ -2877,31 +3034,43 @@ def main():  # noqa: PLR0912, PLR0915
             force_refresh=args.training_refresh,
         )
 
-    # Composite panel figure
+    # Composite panel figure(s)
+    panel_kwargs = {
+        "dataset_order": ds_order,
+        "hue_order": hu_order,
+        "overall_metrics": (
+            tuple(args.metrics[:2]) if len(args.metrics) >= 2 else ("vrmse", "coverage")
+        ),
+        "error_metrics": err_metric or ["vrmse"],
+        "coverage_metrics": cov_metric
+        or ["coverage_0.9", "coverage_0.5", "coverage_0.1"],
+        "training_yscale": args.training_yscale,
+        "training_ylim": training_ylim,
+        "training_refresh": args.training_refresh,
+        "error_ylim": error_ylim,
+        "coverage_ylim": coverage_ylim,
+    }
     if args.panel_figure:
         plot_panel_figure(
             df,
             results_dir,
             out_dir,
             styles,
-            dataset_order=ds_order,
-            hue_order=hu_order,
-            overall_metrics=(
-                tuple(args.metrics[:2])
-                if len(args.metrics) >= 2
-                else ("vrmse", "coverage")
-            ),
-            error_metrics=err_metric or ["vrmse"],
-            coverage_metrics=cov_metric
-            or ["coverage_0.9", "coverage_0.5", "coverage_0.1"],
             training_metrics=list(args.training_metrics)
             if args.training_metrics
             else ["val_loss", "train_loss"],
-            training_yscale=args.training_yscale,
-            training_ylim=training_ylim,
-            training_refresh=args.training_refresh,
-            error_ylim=error_ylim,
-            coverage_ylim=coverage_ylim,
+            name="panel_figure.png",
+            **panel_kwargs,
+        )
+    if args.panel_figure_no_training:
+        plot_panel_figure(
+            df,
+            results_dir,
+            out_dir,
+            styles,
+            training_metrics=[],
+            name="panel_figure_no_training.png",
+            **panel_kwargs,
         )
 
     print("Finished generating plots.")

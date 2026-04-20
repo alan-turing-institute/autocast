@@ -1,6 +1,95 @@
 #!/bin/bash
 
-PLOTS_PATH=2026-04-08_plots
+PLOTS_PATH=2026-04-20_plots
+
+
+# Comparison with previous CNS results
+autocast-plots --results-dir outputs/2026-04-20_collated \
+	--run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (ambient)" 0 \
+	--run diff_cns64_flow_matching_vit_0f89f06_483bb70 "FM (ambient)" 1 \
+	--run diff_cns64_flow_matching_vit_0f89f06_0e1c64b "FM (latent, eval=ambient)" 2 \
+	--run diff_gpe64_flow_matching_vit_0f89f06_b954f94 "FM (latent, eval=ambient)" 2 \
+	--run diff_gs64_flow_matching_vit_0f89f06_f6e8f51 "FM (latent, eval=ambient)" 2 \
+	--dataset-order AD CNS GPE GS \
+	--error-ylim 1e-5 1 \
+	--lead-time-error-metrics vrmse rmse \
+	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
+	--combined-lead-time \
+	--training-metrics val_loss train_loss \
+	--training-yscale log \
+	--panel-figure \
+	--panel-figure-no-training \
+	--output-dir outputs/2026-04-20_collated/$PLOTS_PATH/comparison_with_exploratory_results
+
+
+
+# Main comparison: CRPS ambient variants, CRPS processor-on-latents, FM ambient (EPD)
+autocast-plots --results-dir outputs/2026-04-20_collated \
+	--run crps_ad64_vit_azula_large_0f89f06_4667606 "CRPS (ambient)" 0 \
+	--run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (ambient)" 0 \
+	--run crps_gpe64_vit_azula_large_0f89f06_d337bd8 "CRPS (ambient)" 0 \
+	--run crps_gs64_vit_azula_large_0f89f06_779325a "CRPS (ambient) " 0 \
+	--run diff_ad64_flow_matching_vit_0f89f06_725d44a "FM (ambient)" 1 \
+	--run diff_cns64_flow_matching_vit_0f89f06_483bb70 "FM (ambient)" 1 \
+	--run diff_gpe64_flow_matching_vit_0f89f06_3b3604d "FM (ambient)" 1 \
+	--run diff_gs64_flow_matching_vit_0f89f06_6e3a299 "FM (ambient)" 1 \
+	--run diff_ad64_flow_matching_vit_0f89f06_df2137c "FM (latent, eval=ambient)" 2 \
+	--run diff_cns64_flow_matching_vit_0f89f06_0e1c64b "FM (latent, eval=ambient)" 2 \
+	--run diff_gpe64_flow_matching_vit_0f89f06_b954f94 "FM (latent, eval=ambient)" 2 \
+	--run diff_gs64_flow_matching_vit_0f89f06_f6e8f51 "FM (latent, eval=ambient)" 2 \
+	--dataset-order AD CNS GPE GS \
+	--error-ylim 1e-5 1 \
+	--lead-time-error-metrics vrmse rmse \
+	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
+	--combined-lead-time \
+	--training-metrics val_loss train_loss \
+	--training-yscale log \
+	--panel-figure \
+	--panel-figure-no-training \
+	--output-dir outputs/2026-04-20_collated/$PLOTS_PATH/main_comparison_eval_ambient
+
+# # Main comparison: CRPS ambient variants, CRPS processor-on-latents, FM ambient (EPD), FM processor-on-latents
+# autocast-plots --results-dir outputs/2026-04-20_collated \
+# 	--run crps_ad64_vit_azula_large_0f89f06_4667606 "CRPS (ambient)" 0 \
+# 	--run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (ambient)" 0 \
+# 	--run crps_gpe64_vit_azula_large_0f89f06_d337bd8 "CRPS (ambient)" 0 \
+# 	--run crps_gs64_vit_azula_large_0f89f06_779325a "CRPS (ambient) " 0 \
+# 	--run diff_ad64_flow_matching_vit_0f89f06_725d44a "FM (ambient)" 1 \
+# 	--run diff_cns64_flow_matching_vit_0f89f06_483bb70 "FM (ambient)" 1 \
+# 	--run diff_gpe64_flow_matching_vit_0f89f06_3b3604d "FM (ambient)" 1 \
+# 	--run diff_gs64_flow_matching_vit_0f89f06_6e3a299 "FM (ambient)" 1 \
+# 	--run diff_ad64_flow_matching_vit_0f89f06_df2137c "FM (latent, eval=ambient)" 2 \
+# 	--run diff_cns64_flow_matching_vit_0f89f06_0e1c64b "FM (latent, eval=ambient)" 2 \
+# 	--run diff_gpe64_flow_matching_vit_0f89f06_b954f94 "FM (latent, eval=ambient)" 2 \
+# 	--run diff_gs64_flow_matching_vit_0f89f06_f6e8f51 "FM (latent, eval=ambient)" 2 \
+# 	# --run diff_ad64_flow_matching_vit_0f89f06_df2137c "FM (latent, eval=latent)" 3 eval=eval_latent \
+# 	# --run diff_cns64_flow_matching_vit_0f89f06_0e1c64b "FM (latent, eval=latent)" 3 eval=eval_latent \
+# 	# --run diff_gpe64_flow_matching_vit_0f89f06_b954f94 "FM (latent, eval=latent)" 3 eval=eval_latent \
+# 	# --run diff_gs64_flow_matching_vit_0f89f06_f6e8f51 "FM (latent, eval=latent)" 3 eval=eval_latent \
+# 	--dataset-order AD CNS GPE GS \
+# 	--error-ylim 1e-5 1 \
+# 	--lead-time-error-metrics vrmse rmse \
+# 	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
+# 	--combined-lead-time \
+# 	--training-metrics val_loss train_loss \
+# 	--training-yscale log \
+# 	--panel-figure \
+# 	--panel-figure-no-training \
+# 	--output-dir outputs/2026-04-20_collated/$PLOTS_PATH/main_comparison
+
+
+# Ablation on CRPS variants for CNS
+
+# --run crps_cns64_vit_azula_large_0f89f06_e7e60d9 "CRPS latent (EPD AE-ambient)" \
+# --run crps_cns64_vit_azula_large_0f89f06_cf53b48 "CRPS ambient (EPD identity+global-cond)" \
+# --run crps_cns64_vit_azula_large_58712c4_71ba7be "CRPS latent (processor, eval=ambient)" \
+
+# Comparison of CRPS with CRPS in latent space with AE
+
+
+# ---
+
+# PLOTS_PATH=2026-04-08_plots
 
 # # CRPS variants
 # autocast-plots --results-dir outputs/2026-04-01_collated \
@@ -310,41 +399,36 @@ PLOTS_PATH=2026-04-08_plots
 # 	--panel-figure \
 # 	--output-dir outputs/2026-04-01_collated/$PLOTS_PATH/optimizer_24hrs_crps-changes_comparison
 
-# Revisit b16-mixed with lower batch size and updated optimizers:
-# TODO: add once eval completed
-autocast-plots --results-dir outputs/2026-04-01_collated \
-	--run crps_sw2d64_vit_azula_large_8fe25aa_74f91d8 "ViT (12hrs, 1GPU, n=256, CRPS, h=768, old optim)" \
-	--run crps_sw2d64_vit_azula_large_1ed9013_6ab9fa2 "ViT (24hrs, n=1024, afCRPS, h=632)" \
-	--run crps_sw2d64_vit_azula_large_ed15816_085752e "ViT (6hrs, n=1024, afCRPS, h=632, b16-mixed, bs=32)" \
-	--dataset-order SW\
-	--color-by-label \
-	--error-ylim 1e-3 1 \
-	--lead-time-error-metrics vrmse rmse \
-	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
-	--combined-lead-time \
-	--training-metrics val_loss train_loss \
-	--training-yscale log \
-	--panel-figure \
-	--output-dir outputs/2026-04-01_collated/$PLOTS_PATH/b16-mixed_lower_bs_comparison
+# # Revisit b16-mixed with lower batch size and updated optimizers:
+# # TODO: add once eval completed
+# autocast-plots --results-dir outputs/2026-04-01_collated \
+# 	--run crps_sw2d64_vit_azula_large_8fe25aa_74f91d8 "ViT (12hrs, 1GPU, n=256, CRPS, h=768, old optim)" \
+# 	--run crps_sw2d64_vit_azula_large_1ed9013_6ab9fa2 "ViT (24hrs, n=1024, afCRPS, h=632)" \
+# 	--run crps_sw2d64_vit_azula_large_ed15816_085752e "ViT (6hrs, n=1024, afCRPS, h=632, b16-mixed, bs=32)" \
+# 	--dataset-order SW\
+# 	--color-by-label \
+# 	--error-ylim 1e-3 1 \
+# 	--lead-time-error-metrics vrmse rmse \
+# 	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
+# 	--combined-lead-time \
+# 	--training-metrics val_loss train_loss \
+# 	--training-yscale log \
+# 	--panel-figure \
+# 	--output-dir outputs/2026-04-01_collated/$PLOTS_PATH/b16-mixed_lower_bs_comparison
 
-# SW in ambient compared to latent
-autocast-plots --results-dir outputs/2026-04-01_collated \
-	--run crps_sw2d64_vit_azula_large_1ed9013_6ab9fa2 "ViT (24hrs, n=1024, afCRPS, h=632)" \
-	--run diff_sw2d64_flow_matching_vit_cb09424_7566c5e "FM (3hrs)" \
-	--run diff_sw2d64_flow_matching_vit_53e8e0e_933bcfa "FM (3hrs ambient, new optim)" \
-	--run diff_sw2d64_flow_matching_vit_53e8e0e_933bcfa_ema "FM (3hrs ambient, new optim, EMA)" \
-	--dataset-order SW\
-	--color-by-label \
-	--error-ylim 1e-3 1 \
-	--lead-time-error-metrics vrmse rmse \
-	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
-	--combined-lead-time \
-	--training-metrics val_loss train_loss \
-	--training-yscale log \
-	--panel-figure \
-	--output-dir outputs/2026-04-01_collated/$PLOTS_PATH/sw_ambient_vs_latent
-
-
-
-
-
+# # SW in ambient compared to latent
+# autocast-plots --results-dir outputs/2026-04-01_collated \
+# 	--run crps_sw2d64_vit_azula_large_1ed9013_6ab9fa2 "ViT (24hrs, n=1024, afCRPS, h=632)" \
+# 	--run diff_sw2d64_flow_matching_vit_cb09424_7566c5e "FM (3hrs)" \
+# 	--run diff_sw2d64_flow_matching_vit_53e8e0e_933bcfa "FM (3hrs ambient, new optim)" \
+# 	--run diff_sw2d64_flow_matching_vit_53e8e0e_933bcfa_ema "FM (3hrs ambient, new optim, EMA)" \
+# 	--dataset-order SW\
+# 	--color-by-label \
+# 	--error-ylim 1e-3 1 \
+# 	--lead-time-error-metrics vrmse rmse \
+# 	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
+# 	--combined-lead-time \
+# 	--training-metrics val_loss train_loss \
+# 	--training-yscale log \
+# 	--panel-figure \
+# 	--output-dir outputs/2026-04-01_collated/$PLOTS_PATH/sw_ambient_vs_latent
