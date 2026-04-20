@@ -10,6 +10,9 @@ experiment_name: cache_latents_gpe_laser_only_wake
 
 # Must match the AE training config (ae/gpe_laser_wake_only/ae_dc_large.yaml)
 # so encoder/decoder architectures align with the checkpoint weights.
+datamodule:
+  use_normalization: true
+
 model:
   encoder:
     periodic: false

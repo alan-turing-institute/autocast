@@ -11,8 +11,13 @@ checkpoint: encoder_processor_decoder.ckpt
 metrics:
   - mse
   - mae
+  - nmse
+  - nmae
   - rmse
+  - nrmse
+  - vmse
   - vrmse
+  - linf
   - psrmse
   - psrmse_low
   - psrmse_mid
@@ -28,6 +33,7 @@ metrics:
   - afcrps
   - energy
   - ssr
+  - winkler
 
 max_rollout_steps: 25
 batch_size: 1

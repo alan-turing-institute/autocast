@@ -1,5 +1,6 @@
 """Evaluation CLI for encoder-processor-decoder checkpoints."""
 
+import contextlib
 import logging
 import os
 from collections.abc import Callable, Mapping, Sequence
@@ -136,6 +137,14 @@ DEFAULT_EVAL_METRICS = [
 ]
 
 MEMORY_INTENSIVE_METRICS = {"variogram"}
+
+EVAL_MODES = ("auto", "ambient", "latent")
+
+# Resolved eval paths exposed for validation / testing. Each corresponds to
+# exactly one branch in `run_evaluation`'s model-selection block.
+EVAL_PATH_AMBIENT_EPD = "ambient_epd"  # full EPD checkpoint or processor+AE
+EVAL_PATH_LATENT_CACHED_WITH_DECODER = "latent_cached_with_decoder"  # Mode 2
+EVAL_PATH_LATENT_CACHED_LATENT_ONLY = "latent_cached_latent_only"  # fallback
 
 
 def _decode_tensor(
@@ -1071,6 +1080,224 @@ def _load_autoencoder_config_from_cache(cache_dir: Path) -> DictConfig | None:
         return None
 
 
+def _load_autoencoder_run_config_from_checkpoint(
+    autoencoder_checkpoint: Any,
+) -> DictConfig | None:
+    """Load an autoencoder run config by walking up from a checkpoint path.
+
+    This supports both symlinked convenience checkpoints like
+    ``<run>/autoencoder.ckpt`` and concrete files under
+    ``<run>/autocast/<id>/checkpoints/*.ckpt``.
+    """
+    if autoencoder_checkpoint is None:
+        return None
+
+    ckpt_path = Path(str(autoencoder_checkpoint)).expanduser()
+    candidate_ckpts = [ckpt_path]
+    with contextlib.suppress(FileNotFoundError):
+        candidate_ckpts.append(ckpt_path.resolve())
+
+    seen_dirs: set[Path] = set()
+    for candidate_ckpt in candidate_ckpts:
+        for parent in candidate_ckpt.parents:
+            if parent in seen_dirs:
+                continue
+            seen_dirs.add(parent)
+            for config_name in (
+                "resolved_autoencoder_config.yaml",
+                "resolved_config.yaml",
+            ):
+                config_path = parent / config_name
+                if not config_path.exists():
+                    continue
+                try:
+                    loaded = OmegaConf.load(config_path)
+                    if isinstance(loaded, DictConfig):
+                        return loaded
+                except Exception as exc:
+                    log.warning(
+                        "Could not load autoencoder run config from %s: %s",
+                        config_path,
+                        exc,
+                    )
+    return None
+
+
+def _maybe_inject_encoder_decoder_from_autoencoder_checkpoint(
+    cfg: DictConfig,
+) -> DictConfig:
+    """Backfill missing model.encoder/decoder from autoencoder checkpoint config."""
+    model_cfg = cfg.get("model", {})
+    if model_cfg.get("encoder") is not None and model_cfg.get("decoder") is not None:
+        return cfg
+
+    ae_cfg = _load_autoencoder_run_config_from_checkpoint(
+        cfg.get("autoencoder_checkpoint")
+    )
+    if ae_cfg is None:
+        return cfg
+
+    ae_model_cfg = ae_cfg.get("model", {})
+    ae_encoder_cfg = ae_model_cfg.get("encoder")
+    ae_decoder_cfg = ae_model_cfg.get("decoder")
+    if ae_encoder_cfg is None or ae_decoder_cfg is None:
+        return cfg
+
+    with open_dict(cfg):
+        model_node = cfg.get("model")
+        if not isinstance(model_node, DictConfig):
+            cfg.model = OmegaConf.create({})
+
+    model_cfg = cfg.get("model")
+    if not isinstance(model_cfg, DictConfig):
+        return cfg
+
+    with open_dict(model_cfg):
+        if model_cfg.get("encoder") is None:
+            model_cfg["encoder"] = ae_encoder_cfg
+        if model_cfg.get("decoder") is None:
+            model_cfg["decoder"] = ae_decoder_cfg
+
+    log.info(
+        "Ambient eval: injected missing model.encoder/model.decoder from "
+        "autoencoder checkpoint config."
+    )
+    return cfg
+
+
+def _normalize_eval_mode(mode: Any) -> str:
+    """Normalize and validate the eval.mode config value."""
+    if mode is None:
+        return "auto"
+    mode_str = str(mode).strip().lower()
+    if mode_str not in EVAL_MODES:
+        msg = f"Unknown eval.mode={mode!r}. Valid values: {', '.join(EVAL_MODES)}."
+        raise ValueError(msg)
+    return mode_str
+
+
+def _maybe_swap_to_ambient_datamodule(
+    cfg: DictConfig,
+    *,
+    eval_mode: str,
+    example_batch: Any,
+) -> DictConfig:
+    """Substitute the raw-data datamodule from `autoencoder_config.yaml`.
+
+    When the user requests ``eval.mode=ambient`` but the current datamodule
+    yields ``EncodedBatch`` (cached latents), we cannot run encoder->processor
+    ->decoder in ambient space: the encoder needs raw fields.  This helper
+    reads the ``autoencoder_config.yaml`` written next to the cached latents
+    by ``autocast cache-latents`` and overwrites ``cfg.datamodule`` with the
+    datamodule the autoencoder was trained on, which guarantees matching
+    normalization and field layout.
+
+    Returns the (possibly-modified) ``cfg`` in-place. Raises a descriptive
+    error when the swap is needed but ``autoencoder_config.yaml`` is absent;
+    callers should pass ``datamodule=...`` explicitly in that case.
+    """
+    if eval_mode != "ambient" or not isinstance(example_batch, EncodedBatch):
+        return cfg
+
+    data_path = cfg.get("datamodule", {}).get("data_path")
+    if not data_path:
+        msg = (
+            "eval.mode=ambient requires a raw-data datamodule, but the current "
+            "datamodule yields EncodedBatch and has no data_path to locate the "
+            "original autoencoder config. Pass datamodule=<raw> explicitly."
+        )
+        raise ValueError(msg)
+
+    ae_cfg = _load_autoencoder_config_from_cache(Path(data_path))
+    if ae_cfg is None:
+        msg = (
+            "eval.mode=ambient requested but the cached-latents directory "
+            f"{data_path} has no 'autoencoder_config.yaml'. Either regenerate "
+            "the cache with a recent `autocast cache-latents` (which saves the "
+            "autoencoder config), or pass datamodule=<raw> explicitly."
+        )
+        raise FileNotFoundError(msg)
+
+    original_datamodule = cfg.get("datamodule", {})
+    ae_datamodule = ae_cfg.get("datamodule")
+    if ae_datamodule is None:
+        msg = (
+            f"autoencoder_config.yaml at {data_path} is missing a 'datamodule' "
+            "section; cannot auto-wire ambient eval. Pass datamodule=<raw> "
+            "explicitly."
+        )
+        raise ValueError(msg)
+
+    # The cached autoencoder config is written by `cache-latents`, which forces
+    # full_trajectory_mode=True for encoding. For eval we need windowed batches
+    # matching processor training (n_steps_input / n_steps_output), otherwise
+    # metric shapes become incompatible.
+    swapped_datamodule = OmegaConf.create(ae_datamodule)
+    with open_dict(swapped_datamodule):
+        OmegaConf.update(swapped_datamodule, "autoencoder_mode", False, merge=True)
+        OmegaConf.update(swapped_datamodule, "full_trajectory_mode", False, merge=True)
+        for step_key in ("n_steps_input", "n_steps_output", "stride"):
+            step_value = (
+                original_datamodule.get(step_key)
+                if isinstance(original_datamodule, Mapping)
+                else None
+            )
+            if isinstance(step_value, int) and step_value > 0:
+                OmegaConf.update(swapped_datamodule, step_key, step_value, merge=True)
+
+    log.info(
+        "eval.mode=ambient: substituting cached_latents datamodule with the "
+        "raw-data datamodule from %s/autoencoder_config.yaml so the encoder "
+        "sees the same fields/normalization it was trained on.",
+        data_path,
+    )
+    with open_dict(cfg):
+        cfg.datamodule = swapped_datamodule
+    return cfg
+
+
+def _resolve_eval_path(
+    *,
+    processor_only: bool,
+    example_batch: Any,
+    has_autoencoder_checkpoint: bool,
+    decode_fn_loaded: bool,
+) -> str:
+    """Map the auto-detected branch in `run_evaluation` to a stable label."""
+    if not processor_only:
+        return EVAL_PATH_AMBIENT_EPD
+    if isinstance(example_batch, Batch) and has_autoencoder_checkpoint:
+        return EVAL_PATH_AMBIENT_EPD
+    if decode_fn_loaded:
+        return EVAL_PATH_LATENT_CACHED_WITH_DECODER
+    return EVAL_PATH_LATENT_CACHED_LATENT_ONLY
+
+
+def _validate_resolved_eval_path(*, eval_mode: str, resolved_path: str) -> None:
+    """Raise if the resolved code path disagrees with the user-requested mode."""
+    if eval_mode == "auto":
+        return
+    if eval_mode == "ambient" and resolved_path != EVAL_PATH_AMBIENT_EPD:
+        msg = (
+            "eval.mode=ambient but the resolved eval path is "
+            f"{resolved_path!r}. Ambient eval requires a full EPD checkpoint, "
+            "OR a processor-only checkpoint combined with "
+            "autoencoder_checkpoint=<ae.ckpt> AND a raw-Batch datamodule. "
+            "Double-check eval.checkpoint, autoencoder_checkpoint, and "
+            "datamodule=."
+        )
+        raise ValueError(msg)
+    if eval_mode == "latent" and resolved_path == EVAL_PATH_AMBIENT_EPD:
+        msg = (
+            "eval.mode=latent but the resolved eval path is "
+            f"{resolved_path!r}. Latent-space eval requires a processor-only "
+            "checkpoint paired with an EncodedBatch (cached_latents) "
+            "datamodule. Use datamodule=cached_latents and remove "
+            "autoencoder_checkpoint=, or switch to eval.mode=ambient/auto."
+        )
+        raise ValueError(msg)
+
+
 def _try_build_decode_fn(
     cfg: DictConfig,
 ) -> "tuple[Any, Any] | tuple[None, None]":
@@ -1180,11 +1407,13 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     eval_batch_size: int = eval_cfg.get("batch_size", 1)
     max_test_batches = eval_cfg.get("max_test_batches")
     max_rollout_batches = _resolve_rollout_batch_limit(eval_cfg)
+    eval_mode = _normalize_eval_mode(eval_cfg.get("mode", "auto"))
     log.info(
         "Batch limits: max_test_batches=%s, max_rollout_batches=%s",
         max_test_batches,
         max_rollout_batches,
     )
+    log.info("eval.mode=%s", eval_mode)
 
     checkpoint_path = resolve_checkpoint_path(
         eval_cfg,
@@ -1219,6 +1448,19 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
 
     # Setup datamodule and resolve config
     datamodule, cfg, stats = setup_datamodule(cfg)
+
+    # If the user asked for ambient eval but the resolved datamodule yields
+    # EncodedBatch (cached_latents), substitute the raw-data datamodule stored
+    # in the cache dir's autoencoder_config.yaml and rebuild. Honors an
+    # explicit `datamodule=...` override implicitly: when the override targets
+    # a raw-Batch datamodule the swap becomes a no-op.
+    cfg = _maybe_swap_to_ambient_datamodule(
+        cfg,
+        eval_mode=eval_mode,
+        example_batch=stats.get("example_batch"),
+    )
+    if eval_mode == "ambient" and isinstance(stats.get("example_batch"), EncodedBatch):
+        datamodule, cfg, stats = setup_datamodule(cfg)
 
     # Override model n_members from eval config if specified
     if "n_members" in eval_cfg:
@@ -1282,6 +1524,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 "Mode 1 eval: reconstructing full EPD from autoencoder checkpoint "
                 "+ processor checkpoint."
             )
+            cfg = _maybe_inject_encoder_decoder_from_autoencoder_checkpoint(cfg)
             model = setup_epd_model(cfg, stats, datamodule=datamodule)
             processor_sd = _extract_processor_state_dict(
                 checkpoint_payload, use_ema=use_ema
@@ -1317,6 +1560,18 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
             f"Unexpected keys: {load_result.unexpected_keys}."
         )
         raise RuntimeError(msg)
+
+    resolved_eval_path = _resolve_eval_path(
+        processor_only=processor_only,
+        example_batch=example_batch,
+        has_autoencoder_checkpoint=bool(cfg.get("autoencoder_checkpoint")),
+        decode_fn_loaded=decode_fn is not None,
+    )
+    log.info("Resolved eval path: %s", resolved_eval_path)
+    _validate_resolved_eval_path(
+        eval_mode=eval_mode,
+        resolved_path=resolved_eval_path,
+    )
 
     # Get eval parameters from config
     metrics_list = eval_cfg.get("metrics", DEFAULT_EVAL_METRICS)

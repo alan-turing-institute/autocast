@@ -1,6 +1,8 @@
 #!/bin/bash
 
 set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/validate_cached_latents_against_ae.sh"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 # Cache autoencoder latents for the 4 target datasets.
 # Each entry pairs a local_experiment config (which bakes in the datamodule
 # + encoder/decoder architecture — periodic, pixel_shuffle — matching the
@@ -15,6 +17,8 @@ set -euo pipefail
 # once submit_ae_large.sh has completed and autoencoder.ckpt is in place.
 #
 # Latents are written to <ae_run_dir>/cached_latents/{train,valid,test}.
+# The local_experiment yaml is source of truth; this script fails fast if
+# datamodule.use_normalization in the yaml mismatches AE training config.
 declare -A EXPERIMENTS=(
     ["gray_scott"]="cache_latents/gray_scott/cache_latents"
     ["gpe_laser_only_wake"]="cache_latents/gpe_laser_wake_only/cache_latents"
@@ -45,6 +49,10 @@ for datamodule in "${!EXPERIMENTS[@]}"; do
     fi
 
     cache_workdir="${ae_run_dir}/cached_latents"
+    if ! validate_cache_experiment_against_ae "${ae_run_dir}" "${experiment}" "${REPO_ROOT}"; then
+        echo "Skipping ${datamodule}: cache-latents experiment config mismatch vs AE training config" >&2
+        continue
+    fi
 
     if [[ -d "$cache_workdir" ]]; then
         echo "Warning: cache workdir already exists, will overwrite: $cache_workdir" >&2

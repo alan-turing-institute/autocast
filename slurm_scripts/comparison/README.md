@@ -20,6 +20,14 @@ and latent space, across 4 datasets.
 Hydra configs live at `local_hydra/local_experiment/{ae,cache_latents,epd,processor}/<dataset>/`.
 Scripts in `cached_latents/` first cache latents via `submit_cache_latents.sh`,
 then run the latent-space processor variants.
+For cache generation, `local_hydra/local_experiment/cache_latents/...` remains
+the source of truth; scripts fail fast if its `datamodule.use_normalization`
+does not match `<ae_run_dir>/resolved_autoencoder_config.yaml`.
+All latent submit scripts now fail fast if
+`<ae_run_dir>/cached_latents/autoencoder_config.yaml` does not match
+`<ae_run_dir>/resolved_autoencoder_config.yaml` for critical datamodule fields
+(`data_path`, `n_steps_input`, `n_steps_output`, `stride`, `use_normalization`,
+`normalization_path`).
 
 ## Submission order
 

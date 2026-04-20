@@ -10,6 +10,9 @@ experiment_name: cache_latents_conditioned_navier_stokes
 
 # Must match the AE training config (ae/conditioned_navier_stokes/ae_dc_large.yaml)
 # so encoder/decoder architectures align with the checkpoint weights.
+datamodule:
+  use_normalization: true
+
 model:
   encoder:
     periodic: false
