@@ -15,6 +15,9 @@ set -euo pipefail
 # once submit_ae_large.sh has completed and autoencoder.ckpt is in place.
 #
 # Latents are written to <ae_run_dir>/cached_latents/{train,valid,test}.
+# Normalization must match AE training. We read use_normalization from
+# <ae_run_dir>/resolved_autoencoder_config.yaml when available and pass it
+# explicitly to cache-latents to avoid drifting datamodule defaults.
 declare -A EXPERIMENTS=(
     ["gray_scott"]="cache_latents/gray_scott/cache_latents"
     ["gpe_laser_only_wake"]="cache_latents/gpe_laser_wake_only/cache_latents"
@@ -31,6 +34,7 @@ declare -A AE_RUN_DIRS=(
 for datamodule in "${!EXPERIMENTS[@]}"; do
     experiment="${EXPERIMENTS[$datamodule]}"
     ae_run_dir="${AE_RUN_DIRS[$datamodule]}"
+    ae_resolved_cfg="${ae_run_dir}/resolved_autoencoder_config.yaml"
 
     ckpt="${ae_run_dir}/autoencoder.ckpt"
 
@@ -45,6 +49,15 @@ for datamodule in "${!EXPERIMENTS[@]}"; do
     fi
 
     cache_workdir="${ae_run_dir}/cached_latents"
+    if [[ ! -f "${ae_resolved_cfg}" ]]; then
+        echo "Skipping ${datamodule}: missing ${ae_resolved_cfg} (can't safely infer normalization)" >&2
+        continue
+    fi
+    ae_use_normalization="$(awk '/^[[:space:]]*use_normalization:[[:space:]]*/ {print $2; exit}' "${ae_resolved_cfg}")"
+    if [[ "${ae_use_normalization}" != "true" && "${ae_use_normalization}" != "false" ]]; then
+        echo "Skipping ${datamodule}: could not parse use_normalization from ${ae_resolved_cfg}" >&2
+        continue
+    fi
 
     if [[ -d "$cache_workdir" ]]; then
         echo "Warning: cache workdir already exists, will overwrite: $cache_workdir" >&2
@@ -54,6 +67,7 @@ for datamodule in "${!EXPERIMENTS[@]}"; do
     echo "  datamodule: ${datamodule}"
     echo "  local_experiment: ${experiment}"
     echo "  autoencoder run: ${ae_run_dir}"
+    echo "  datamodule.use_normalization: ${ae_use_normalization}"
     echo "  cache workdir: ${cache_workdir}"
 
     uv run autocast cache-latents --mode slurm \
@@ -61,5 +75,6 @@ for datamodule in "${!EXPERIMENTS[@]}"; do
         --output-dir "${cache_workdir}" \
         autoencoder_checkpoint="${ckpt}" \
         local_experiment="${experiment}" \
+        datamodule.use_normalization="${ae_use_normalization}" \
         hydra.launcher.timeout_min=120 || echo "FAILED to submit: ${datamodule}" >&2
 done
