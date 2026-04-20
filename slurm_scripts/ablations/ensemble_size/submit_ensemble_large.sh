@@ -21,6 +21,11 @@ BUDGET_MAX_TIME="00:23:59:00"
 TIMEOUT_MIN=1439
 NUM_GPUS=4
 RUN_DRY_STATES=("true" "false")
+# Group runs under outputs/<date>/ensemble_size/ so run dirs keep the full
+# auto-naming convention (crps_<dataset>_<proc>_<git>_<uuid>) one level below
+# the top-level analysis OUTPUTS_DIR. The ablation knob (regime, m) is
+# surfaced via logging.wandb.name.
+RUN_GROUP="$(date +%Y-%m-%d)/ensemble_size"
 
 # Sanity-check the COMBOS table up front: bail before submitting anything
 # if a (regime, n_members, bs_per_gpu) triple violates its regime invariant.
@@ -77,7 +82,7 @@ for datamodule in "${!DATASETS[@]}"; do
         fi
 
         quarter_epochs=$((cosine_epochs / 4))
-        run_id="crps_${datamodule}_${regime}_m${n_members}"
+        wandb_name="ensemble_m${n_members}_${regime}"
 
         for run_dry in "${RUN_DRY_STATES[@]}"; do
             dry_run_arg=()
@@ -92,14 +97,16 @@ for datamodule in "${!DATASETS[@]}"; do
             echo "  datamodule: ${datamodule}"
             echo "  regime: ${regime}  n_members: ${n_members}  bs_per_gpu: ${bs_per_gpu}"
             echo "  cosine_epochs: ${cosine_epochs}"
+            echo "  wandb.name: ${wandb_name}"
 
             uv run autocast epd --mode slurm "${dry_run_arg[@]}" \
-                --run-id "${run_id}" \
+                --run-group "${RUN_GROUP}" \
                 datamodule="${datamodule}" \
                 local_experiment="${experiment}" \
                 model.n_members="${n_members}" \
                 datamodule.batch_size="${bs_per_gpu}" \
                 logging.wandb.enabled=true \
+                logging.wandb.name="${wandb_name}" \
                 optimizer.cosine_epochs="${cosine_epochs}" \
                 hydra.launcher.timeout_min="${TIMEOUT_MIN}" \
                 trainer.max_time="${BUDGET_MAX_TIME}" \
