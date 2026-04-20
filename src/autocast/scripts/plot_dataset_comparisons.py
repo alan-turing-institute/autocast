@@ -105,6 +105,7 @@ MODEL_FAMILY_DISPLAY_LABELS = {
 ROLL_WINDOWS = ["0-1", "0-4", "6-12", "13-30", "31-99"]
 WINDOW_ROWS = ["all", *ROLL_WINDOWS]
 MODEL_SCALE_PARAM_COL = "params_processor_total"
+DEFAULT_EVAL_SUBDIR = "eval"
 
 
 # ---------------------------------------------------------------------------
@@ -253,6 +254,14 @@ def apply_filter_expr(
 def resolve_results_root(outputs_dir: str) -> Path:  # noqa: D103
     p = Path(outputs_dir).expanduser()
     return (Path.cwd() / p).resolve() if not p.is_absolute() else p.resolve()
+
+
+def normalize_eval_subdir(eval_subdir: str | None) -> str:
+    """Normalize an eval subdir value and fall back to the default."""
+    if eval_subdir is None:
+        return DEFAULT_EVAL_SUBDIR
+    normalized = str(eval_subdir).strip().strip("/").strip()
+    return normalized if normalized else DEFAULT_EVAL_SUBDIR
 
 
 def _apply_explicit_order(
@@ -435,10 +444,19 @@ def dataset_grid_resolution(
 # ---------------------------------------------------------------------------
 
 
-def load_single_run_metrics(run_dir: Path) -> dict:  # noqa: PLR0912, PLR0915
+def load_single_run_metrics(  # noqa: PLR0912, PLR0915
+    run_dir: Path,
+    eval_subdir: str = DEFAULT_EVAL_SUBDIR,
+) -> dict:
     """Load evaluation metrics and rollout metrics from a single run directory."""
-    row = {"run_name": run_dir.name, "run_path": run_dir.name, "dataset": None}
-    eval_dir = run_dir / "eval"
+    resolved_eval_subdir = normalize_eval_subdir(eval_subdir)
+    row = {
+        "run_name": run_dir.name,
+        "run_path": run_dir.name,
+        "eval_subdir": resolved_eval_subdir,
+        "dataset": None,
+    }
+    eval_dir = run_dir / resolved_eval_subdir
 
     # Evaluation metrics
     p_eval = eval_dir / "evaluation_metrics.csv"
@@ -667,9 +685,16 @@ def _extract_config_fields(cfg: dict, row: dict[str, object]) -> None:
         row["eff_batch_size"] = int(bs) * n_gpus
 
 
-def load_config_metadata(run_dir: Path) -> dict[str, object]:  # noqa: PLR0912
+def load_config_metadata(  # noqa: PLR0912
+    run_dir: Path,
+    eval_subdir: str = DEFAULT_EVAL_SUBDIR,
+) -> dict[str, object]:
     """Load training config metadata (LR, batch size, noise, etc.)."""
-    row: dict[str, object] = {"run_name": run_dir.name}
+    resolved_eval_subdir = normalize_eval_subdir(eval_subdir)
+    row: dict[str, object] = {
+        "run_name": run_dir.name,
+        "eval_subdir": resolved_eval_subdir,
+    }
     p_config = run_dir / "resolved_config.yaml"
     if p_config.exists():
         try:
@@ -695,7 +720,7 @@ def load_config_metadata(run_dir: Path) -> dict[str, object]:  # noqa: PLR0912
         )
 
     # Training time from evaluation_metadata.csv
-    p_meta = run_dir / "eval" / "evaluation_metadata.csv"
+    p_meta = run_dir / resolved_eval_subdir / "evaluation_metadata.csv"
     if p_meta.exists():
         try:
             md = pd.read_csv(p_meta)
@@ -720,7 +745,7 @@ def load_config_metadata(run_dir: Path) -> dict[str, object]:  # noqa: PLR0912
             pass
 
     # Inference latency from benchmark_metrics.csv
-    p_bench = run_dir / "eval" / "benchmark_metrics.csv"
+    p_bench = run_dir / resolved_eval_subdir / "benchmark_metrics.csv"
     if p_bench.exists():
         try:
             bm = pd.read_csv(p_bench)
@@ -1299,7 +1324,8 @@ def plot_coverage_calibration_panel(  # noqa: PLR0912
                 if w == "all"
                 else f"rollout_coverage_window_{w}.csv"
             )
-            p = results_root / r["run_path"] / "eval" / fn
+            eval_subdir = normalize_eval_subdir(cast(str | None, r.get("eval_subdir")))
+            p = results_root / str(r["run_path"]) / eval_subdir / fn
             if p.exists():
                 c = pd.read_csv(p)
                 if not c.empty and {"coverage_level", "observed_mean"}.issubset(
@@ -1422,6 +1448,7 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
     ).drop_duplicates()
     for r in base.itertuples(index=False):
         run_path = getattr(r, "run_path", None)
+        eval_subdir = normalize_eval_subdir(getattr(r, "eval_subdir", None))
         ds_label = getattr(r, "dataset_label", None)
         pg = getattr(r, "plot_group", None)
         if run_path is None or ds_label is None or pg is None:
@@ -1429,7 +1456,7 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
         p = (
             results_root
             / str(run_path)
-            / "eval"
+            / eval_subdir
             / "rollout_metrics_per_timestep_channel_0.csv"
         )
         if not p.exists():
@@ -1586,12 +1613,18 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
 # ---------------------------------------------------------------------------
 
 
-def _training_history_cache_path(run_dir: Path) -> Path:
-    return run_dir / "eval" / "training_history.csv"
+def _training_history_cache_path(
+    run_dir: Path,
+    eval_subdir: str = DEFAULT_EVAL_SUBDIR,
+) -> Path:
+    return run_dir / normalize_eval_subdir(eval_subdir) / "training_history.csv"
 
 
-def _load_training_history_cache(run_dir: Path) -> pd.DataFrame | None:
-    p = _training_history_cache_path(run_dir)
+def _load_training_history_cache(
+    run_dir: Path,
+    eval_subdir: str = DEFAULT_EVAL_SUBDIR,
+) -> pd.DataFrame | None:
+    p = _training_history_cache_path(run_dir, eval_subdir=eval_subdir)
     if not p.exists():
         return None
     try:
@@ -1603,8 +1636,12 @@ def _load_training_history_cache(run_dir: Path) -> pd.DataFrame | None:
     return df
 
 
-def _save_training_history_cache(run_dir: Path, df: pd.DataFrame) -> None:
-    p = _training_history_cache_path(run_dir)
+def _save_training_history_cache(
+    run_dir: Path,
+    df: pd.DataFrame,
+    eval_subdir: str = DEFAULT_EVAL_SUBDIR,
+) -> None:
+    p = _training_history_cache_path(run_dir, eval_subdir=eval_subdir)
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
         df.to_csv(p, index=False)
@@ -1614,6 +1651,7 @@ def _save_training_history_cache(run_dir: Path, df: pd.DataFrame) -> None:
 
 def parse_training_metrics_from_wandb(  # noqa: PLR0911, PLR0912, PLR0915
     run_dir: Path,
+    eval_subdir: str = DEFAULT_EVAL_SUBDIR,
     force_refresh: bool = False,
 ) -> pd.DataFrame:
     """Fetch per-epoch training metrics from wandb for a single run.
@@ -1621,7 +1659,7 @@ def parse_training_metrics_from_wandb(  # noqa: PLR0911, PLR0912, PLR0915
     Uses ``resolved_config.yaml`` for the wandb project/entity/display name,
     resolves the run via the public API, and scans its full history. Assumes
     ``WANDB_API_KEY`` is set. Results are cached to
-    ``<run_dir>/eval/training_history.csv`` to avoid repeat API calls.
+    ``<run_dir>/<eval_subdir>/training_history.csv`` to avoid repeat API calls.
 
     Returns a long-format frame with columns ``epoch, metric, value``. Empty
     on any failure.
@@ -1629,7 +1667,7 @@ def parse_training_metrics_from_wandb(  # noqa: PLR0911, PLR0912, PLR0915
     empty = pd.DataFrame(columns=pd.Index(["epoch", "metric", "value"]))
 
     if not force_refresh:
-        cached = _load_training_history_cache(run_dir)
+        cached = _load_training_history_cache(run_dir, eval_subdir=eval_subdir)
         if cached is not None:
             return cached
 
@@ -1727,16 +1765,21 @@ def parse_training_metrics_from_wandb(  # noqa: PLR0911, PLR0912, PLR0915
     ).reset_index(drop=True)
     long["epoch"] = long["epoch"].astype(int, errors="ignore")
 
-    _save_training_history_cache(run_dir, long)
+    _save_training_history_cache(run_dir, long, eval_subdir=eval_subdir)
     return long
 
 
 def load_training_metrics(
     run_dir: Path,
+    eval_subdir: str = DEFAULT_EVAL_SUBDIR,
     force_refresh: bool = False,
 ) -> pd.DataFrame:
     """Load per-epoch training metrics for a single run from wandb."""
-    return parse_training_metrics_from_wandb(run_dir, force_refresh=force_refresh)
+    return parse_training_metrics_from_wandb(
+        run_dir,
+        eval_subdir=eval_subdir,
+        force_refresh=force_refresh,
+    )
 
 
 def plot_training_curves(  # noqa: PLR0912, PLR0915
@@ -1767,6 +1810,7 @@ def plot_training_curves(  # noqa: PLR0912, PLR0915
     ).drop_duplicates()
     for r in base.itertuples(index=False):
         run_path = getattr(r, "run_path", None)
+        eval_subdir = normalize_eval_subdir(getattr(r, "eval_subdir", None))
         ds_label = getattr(r, "dataset_label", None)
         pg = getattr(r, "plot_group", None)
         if run_path is None or ds_label is None or pg is None:
@@ -1774,7 +1818,11 @@ def plot_training_curves(  # noqa: PLR0912, PLR0915
         run_dir = results_root / str(run_path)
         if not run_dir.exists():
             continue
-        tm = load_training_metrics(run_dir, force_refresh=force_refresh)
+        tm = load_training_metrics(
+            run_dir,
+            eval_subdir=eval_subdir,
+            force_refresh=force_refresh,
+        )
         if tm.empty:
             continue
         tm = cast(pd.DataFrame, tm[tm["metric"].isin(metrics)].copy())
@@ -2107,7 +2155,7 @@ def main():  # noqa: PLR0912, PLR0915
         metavar="RUN_ID",
         help=(
             "Add a run, with optional label: "
-            '--run <id> ["label"]. '
+            '--run <id> ["label"] [hue] [eval=<subdir>]. '
             "Repeat for each run. Order determines hue order."
         ),
     )
@@ -2287,7 +2335,7 @@ def main():  # noqa: PLR0912, PLR0915
         action="store_true",
         help=(
             "Force re-fetching training history from wandb even if a local "
-            "cache (<run>/eval/training_history.csv) already exists."
+            "cache (<run>/<eval_subdir>/training_history.csv) already exists."
         ),
     )
     parser.add_argument(
@@ -2330,28 +2378,78 @@ def main():  # noqa: PLR0912, PLR0915
         out_dir.mkdir(parents=True, exist_ok=True)
 
     # Merge --run entries into --runs / --label-run for unified handling.
-    # Each --run entry is: <id> [label] [hue] or <id> [hue] (if 2nd arg is int).
+    # Each --run entry is: <id> [label] [hue] [eval=<subdir>] in any order
+    # for optional fields, with backward-compatible support for:
+    #   <id>
+    #   <id> <label>
+    #   <id> <hue>
+    #   <id> <label> <hue>
     hue_group_by_run: dict[str, int] = {}
+    eval_subdir_by_run: dict[str, str] = {}
+
+    def _parse_run_entry(
+        entry: list[str],
+    ) -> tuple[str, str | None, int | None, str | None]:
+        if not entry:
+            msg = "Error: --run requires at least <id>."
+            raise ValueError(msg)
+
+        run_id = entry[0]
+        label: str | None = None
+        hue: int | None = None
+        eval_subdir: str | None = None
+
+        for tok in entry[1:]:
+            tok_s = str(tok)
+            tok_l = tok_s.lower()
+            if tok_l.startswith("eval="):
+                if eval_subdir is not None:
+                    msg = (
+                        f"Error: duplicate eval subdir in --run {run_id!r}. "
+                        "Use one eval=<subdir> token."
+                    )
+                    raise ValueError(msg)
+                eval_value = tok_s.split("=", 1)[1]
+                if not eval_value.strip():
+                    msg = (
+                        f"Error: empty eval subdir in --run {run_id!r}. "
+                        "Use eval=<subdir>."
+                    )
+                    raise ValueError(msg)
+                eval_subdir = eval_value
+                continue
+
+            if hue is None and tok_s.lstrip("-").isdigit():
+                hue = int(tok_s)
+                continue
+
+            if label is None:
+                label = tok_s
+                continue
+
+            msg = (
+                f"Error: unrecognized extra token {tok_s!r} in --run {run_id!r}. "
+                "Expected optional [label] [hue] and/or eval=<subdir>."
+            )
+            raise ValueError(msg)
+
+        return run_id, label, hue, eval_subdir
+
     if args.run:
         merged_runs: list[str] = []
         merged_labels: list[list[str]] = list(args.label_run or [])
         for entry in args.run:
-            if len(entry) < 1 or len(entry) > 3:
-                print("Error: --run accepts 1-3 values: <id> [label] [hue]")
+            try:
+                run_id, label, hue, run_eval_subdir = _parse_run_entry(entry)
+            except ValueError as e:
+                print(e)
                 sys.exit(1)
-            run_id = entry[0]
             merged_runs.append(run_id)
-            if len(entry) == 2:
-                if entry[1].lstrip("-").isdigit():
-                    hue_group_by_run[run_id] = int(entry[1])
-                else:
-                    merged_labels.append([run_id, entry[1]])
-            elif len(entry) == 3:
-                merged_labels.append([run_id, entry[1]])
-                if not entry[2].lstrip("-").isdigit():
-                    print(f"Error: hue in --run must be an integer, got '{entry[2]}'")
-                    sys.exit(1)
-                hue_group_by_run[run_id] = int(entry[2])
+            eval_subdir_by_run[run_id] = normalize_eval_subdir(run_eval_subdir)
+            if label is not None:
+                merged_labels.append([run_id, label])
+            if hue is not None:
+                hue_group_by_run[run_id] = hue
         # --run takes precedence; append any extra --runs
         if args.runs:
             merged_runs.extend(args.runs)
@@ -2361,19 +2459,28 @@ def main():  # noqa: PLR0912, PLR0915
     explicit_groups = args.run_group or []
     # Gather explicitly requested runs, or fallback to auto-discover
     if explicit_groups:
-        run_dirs = [results_dir / r for g in explicit_groups for r in g]
+        run_targets = [
+            (results_dir / r, DEFAULT_EVAL_SUBDIR) for g in explicit_groups for r in g
+        ]
     elif args.runs:
-        run_dirs = [results_dir / r for r in args.runs]
+        run_targets = [
+            (
+                results_dir / r,
+                normalize_eval_subdir(eval_subdir_by_run.get(r, DEFAULT_EVAL_SUBDIR)),
+            )
+            for r in args.runs
+        ]
     else:
-        run_dirs = sorted(
+        run_targets = sorted(
             [
-                p
+                (p, DEFAULT_EVAL_SUBDIR)
                 for p in results_dir.iterdir()
                 if p.is_dir() and (p / "eval" / "evaluation_metrics.csv").exists()
-            ]
+            ],
+            key=lambda x: x[0],
         )
 
-    valid_run_names = {rd.name for rd in run_dirs}
+    valid_run_names = {rd.name for rd, _ in run_targets}
 
     try:
         custom_label_by_run = build_custom_label_map(
@@ -2385,10 +2492,10 @@ def main():  # noqa: PLR0912, PLR0915
         sys.exit(1)
 
     if args.list:
-        print(f"Loading {len(run_dirs)} runs...")
+        print(f"Loading {len(run_targets)} runs...")
         m_rows = []
-        for rd in run_dirs:
-            m_rows.append(load_config_metadata(rd))
+        for rd, run_eval_subdir in run_targets:
+            m_rows.append(load_config_metadata(rd, eval_subdir=run_eval_subdir))
         mdf = pd.DataFrame(m_rows)
 
         if mdf.empty:
@@ -2533,14 +2640,14 @@ def main():  # noqa: PLR0912, PLR0915
         print(cast(pd.DataFrame, merged[disp_cols]).to_string(index=False))
         sys.exit(0)
 
-    print(f"Loading {len(run_dirs)} runs...")
+    print(f"Loading {len(run_targets)} runs...")
     rows = []
-    for d in run_dirs:
+    for d, run_eval_subdir in run_targets:
         if not d.exists():
             print(f"Warning: requested run not found: {d}")
             continue
         try:
-            r = load_single_run_metrics(d)
+            r = load_single_run_metrics(d, eval_subdir=run_eval_subdir)
         except Exception as e:
             print(f"Error loading {d}: {e}")
             continue
