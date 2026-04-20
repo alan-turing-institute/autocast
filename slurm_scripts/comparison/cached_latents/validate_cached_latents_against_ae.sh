@@ -46,6 +46,59 @@ yaml_get_scalar_in_block() {
     ' "${yaml_file}"
 }
 
+resolve_oc_env_scalar() {
+    local raw="$1"
+
+    # Handle scalars like:
+    #   ${oc.env:VAR,./fallback}/suffix
+    # used in Hydra yaml files before interpolation is resolved.
+    if [[ "${raw}" =~ ^\$\{oc\.env:([^,}]+),([^}]*)\}(.*)$ ]]; then
+        local var_name="${BASH_REMATCH[1]}"
+        local fallback="${BASH_REMATCH[2]}"
+        local suffix="${BASH_REMATCH[3]}"
+        local var_value="${!var_name:-}"
+        if [[ -n "${var_value}" ]]; then
+            printf "%s\n" "${var_value}${suffix}"
+        else
+            printf "%s\n" "${fallback}${suffix}"
+        fi
+        return 0
+    fi
+
+    printf "%s\n" "${raw}"
+}
+
+normalize_path_scalar() {
+    local raw="$1"
+    local block_data_path="${2:-}"
+    local token='${.data_path}'
+    local resolved
+
+    # Handle same-block references such as "${.data_path}/stats.yml".
+    if [[ -n "${block_data_path}" && "${raw}" == *"${token}"* ]]; then
+        raw="${raw//$token/${block_data_path}}"
+    fi
+
+    resolved="$(resolve_oc_env_scalar "${raw}")"
+
+    # Expand leading "~" so HOME-relative paths compare consistently.
+    if [[ "${resolved}" == "~/"* ]]; then
+        resolved="${HOME}/${resolved#~/}"
+    fi
+
+    # Canonicalize when possible; if the path does not exist, still normalize
+    # relative references against the current working directory.
+    if [[ -e "${resolved}" ]]; then
+        resolved="$(realpath "${resolved}")"
+    elif [[ "${resolved}" != /* ]]; then
+        resolved="$(realpath -m "${resolved}" 2>/dev/null || printf "%s" "${resolved}")"
+    fi
+
+    # Avoid mismatch from a trailing slash only.
+    resolved="${resolved%/}"
+    printf "%s\n" "${resolved}"
+}
+
 validate_cached_latents_against_ae() {
     local ae_run_dir="$1"
     local ae_cfg="${ae_run_dir}/resolved_autoencoder_config.yaml"
@@ -68,11 +121,17 @@ validate_cached_latents_against_ae() {
         "use_normalization"
         "normalization_path"
     )
+    local ae_data_path_raw
+    local cache_data_path_raw
+    ae_data_path_raw="$(yaml_get_scalar_in_block "${ae_cfg}" "datamodule" "data_path")"
+    cache_data_path_raw="$(yaml_get_scalar_in_block "${cache_cfg}" "datamodule" "data_path")"
 
     local key
     for key in "${keys[@]}"; do
         local ae_val
         local cache_val
+        local ae_cmp
+        local cache_cmp
         ae_val="$(yaml_get_scalar_in_block "${ae_cfg}" "datamodule" "${key}")"
         cache_val="$(yaml_get_scalar_in_block "${cache_cfg}" "datamodule" "${key}")"
 
@@ -80,10 +139,20 @@ validate_cached_latents_against_ae() {
             echo "Missing datamodule.${key} in ${ae_cfg} or ${cache_cfg}" >&2
             return 1
         fi
-        if [[ "${ae_val}" != "${cache_val}" ]]; then
+        ae_cmp="${ae_val}"
+        cache_cmp="${cache_val}"
+        if [[ "${key}" == "data_path" || "${key}" == "normalization_path" ]]; then
+            ae_cmp="$(normalize_path_scalar "${ae_val}" "${ae_data_path_raw}")"
+            cache_cmp="$(normalize_path_scalar "${cache_val}" "${cache_data_path_raw}")"
+        fi
+        if [[ "${ae_cmp}" != "${cache_cmp}" ]]; then
             echo "Mismatch datamodule.${key}" >&2
             echo "  AE config:     ${ae_val}" >&2
             echo "  Cached config: ${cache_val}" >&2
+            if [[ "${key}" == "data_path" || "${key}" == "normalization_path" ]]; then
+                echo "  AE normalized:     ${ae_cmp}" >&2
+                echo "  Cached normalized: ${cache_cmp}" >&2
+            fi
             echo "  AE cfg:        ${ae_cfg}" >&2
             echo "  Cache cfg:     ${cache_cfg}" >&2
             return 1
