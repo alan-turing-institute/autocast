@@ -109,6 +109,79 @@ DEFAULT_EVAL_SUBDIR = "eval"
 
 
 # ---------------------------------------------------------------------------
+# Lead-time panel group presets
+# ---------------------------------------------------------------------------
+# Each preset targets a qualitatively distinct aspect of ensemble forecast
+# quality and produces a dedicated lead-time panel (rows=metrics, cols=datasets).
+# Fields:
+#   metrics:  row keys (must match rows in rollout_metrics_per_timestep_channel_0.csv)
+#   name:     output PNG filename
+#   title:    short human-readable group title (used for legend/caption)
+#   yscale:   'log' (default for error-like scores) or 'linear' (for ratios)
+#   ref:      optional y reference line (e.g. 1.0 for SSR's ideal dispersion)
+METRIC_GROUP_PRESETS: dict[str, dict[str, object]] = {
+    "probabilistic_scores": {
+        "metrics": ["crps", "fcrps", "afcrps", "winkler"],
+        "name": "lead_time_panel_probabilistic_scores.png",
+        "title": "Marginal proper scoring rules (CRPS family + Winkler)",
+        "yscale": "log",
+        "ref": None,
+    },
+    "coherence": {
+        "metrics": ["energy"],
+        "name": "lead_time_panel_coherence.png",
+        "title": "Spatiotemporal coherence (Energy Score / multivariate CRPS)",
+        "yscale": "log",
+        "ref": None,
+    },
+    "coherence_plus": {
+        "metrics": ["energy", "variogram"],
+        "name": "lead_time_panel_coherence_plus.png",
+        "title": "Spatiotemporal coherence (Energy + Variogram, memory-intensive)",
+        "yscale": "log",
+        "ref": None,
+    },
+    "dispersion": {
+        "metrics": ["ssr"],
+        "name": "lead_time_panel_dispersion.png",
+        "title": "Dispersion (Spread-Skill Ratio, ideal=1.0)",
+        "yscale": "linear",
+        "ref": 1.0,
+    },
+    "physics_ps": {
+        "metrics": [
+            "psrmse_low",
+            "psrmse_mid",
+            "psrmse_high",
+            "psrmse_tail",
+        ],
+        "name": "lead_time_panel_physics_ps.png",
+        "title": "Physics: power-spectrum RMSE by band",
+        "yscale": "log",
+        "ref": None,
+    },
+    "physics_pscc": {
+        "metrics": [
+            "pscc_low",
+            "pscc_mid",
+            "pscc_high",
+            "pscc_tail",
+        ],
+        "name": "lead_time_panel_physics_pscc.png",
+        "title": "Physics: power-spectrum cross-correlation RMSE by band",
+        "yscale": "log",
+        "ref": None,
+    },
+}
+
+DEFAULT_METRIC_GROUPS: tuple[str, ...] = (
+    "probabilistic_scores",
+    "coherence",
+    "physics_ps",
+)
+
+
+# ---------------------------------------------------------------------------
 # Filter expression parser
 # ---------------------------------------------------------------------------
 # Supports: KEY=VALUE, AND, OR, parentheses.
@@ -1498,6 +1571,8 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
     save: bool = True,
     error_ylim: tuple[float | None, float | None] | None = None,
     show_legend: bool = True,
+    yscale: str | None = None,
+    ref_value: float | None = None,
 ) -> FigureBase | None:
     """Plot per-metric, per-dataset lead-time curves as a panel figure.
 
@@ -1505,6 +1580,11 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
     coverage rows remain fixed at [0, 1]. Either bound may be ``None``.
     When ``axes`` is provided, draw into that pre-made grid with shape
     (len(metrics_to_plot), n_datasets).
+
+    ``yscale`` forces the y-axis scale for non-coverage rows (``'log'`` or
+    ``'linear'``). When omitted, the historical default of log-scale is used.
+    ``ref_value`` draws a dashed horizontal reference line at that y value on
+    every non-coverage subplot (e.g. 1.0 for SSR's ideal dispersion).
     """
     rows: list[pd.DataFrame] = []
     base = df_in.dropna(
@@ -1587,6 +1667,12 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
             ax = axes[r][c]
             ds = sub[sub["dataset_label"] == ds_label]
             is_cov = metric.startswith("coverage_")
+            is_ssr = metric == "ssr"
+            # Per-metric y treatment: SSR is a dimensionless reliability
+            # diagnostic with ideal=1.0, so it renders on a linear axis with
+            # a dashed reference line regardless of the panel-wide settings.
+            row_yscale = "linear" if is_ssr else yscale
+            row_ref = 1.0 if (is_ssr and ref_value is None) else ref_value
             vals: list[float] = []
             for fam in groups:
                 sf = cast(pd.DataFrame, ds[ds["plot_group"] == fam])
@@ -1635,19 +1721,43 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
             if c == 0:
                 ax.set_ylabel(metric)
             ax.grid(alpha=0.25)
+            use_log = (row_yscale or "log") == "log"
             if is_cov:
                 ax.set_ylim(0, 1)
             elif vals:
-                ax.set_yscale("log")
-                ymin = max(1e-6, min(vals) * 0.8)
-                ymax = max(vals) * 1.25
-                if not np.isfinite(ymin) or np.isnan(ymin):
-                    ymin = 1e-6
-                if not np.isfinite(ymax) or np.isnan(ymax):
-                    ymax = 10.0
+                if use_log:
+                    ax.set_yscale("log")
+                    ymin = max(1e-6, min(vals) * 0.8)
+                    ymax = max(vals) * 1.25
+                    if not np.isfinite(ymin) or np.isnan(ymin):
+                        ymin = 1e-6
+                    if not np.isfinite(ymax) or np.isnan(ymax):
+                        ymax = 10.0
+                else:
+                    ax.set_yscale("linear")
+                    finite = [v for v in vals if np.isfinite(v)]
+                    if finite:
+                        lo_v, hi_v = min(finite), max(finite)
+                        pad = max(
+                            1e-6, 0.1 * (hi_v - lo_v if hi_v > lo_v else abs(hi_v))
+                        )
+                        ymin, ymax = lo_v - pad, hi_v + pad
+                        if row_ref is not None:
+                            ymin = min(ymin, row_ref - pad)
+                            ymax = max(ymax, row_ref + pad)
+                    else:
+                        ymin, ymax = 0.0, 1.0
                 ax.set_ylim(bottom=ymin, top=ymax)
-            # Apply user override for error rows
-            if not is_cov and error_ylim is not None:
+            if not is_cov and row_ref is not None:
+                ax.axhline(
+                    row_ref,
+                    color="black",
+                    linestyle=":",
+                    linewidth=1.0,
+                    alpha=0.6,
+                )
+            # Apply user override for error rows (skip SSR: ratio diagnostic)
+            if not is_cov and not is_ssr and error_ylim is not None:
                 lo, hi = error_ylim
                 cur_lo, cur_hi = ax.get_ylim()
                 ax.set_ylim(
@@ -2186,12 +2296,18 @@ def plot_panel_figure(  # noqa: PLR0915
     )
     if coverage_ylim is not None:
         lo, hi = coverage_ylim
-        for ax in np.asarray(rb_axes).ravel():
-            cur_lo, cur_hi = ax.get_ylim()
-            ax.set_ylim(
-                bottom=lo if lo is not None else cur_lo,
-                top=hi if hi is not None else cur_hi,
-            )
+        rb_arr = np.asarray(rb_axes)
+        for r, metric in enumerate(coverage_metrics):
+            # SSR is a ratio diagnostic (linear, ref=1.0) mixed into the
+            # coverage panel; do not squash it onto the coverage [0, 1] axis.
+            if metric == "ssr":
+                continue
+            for ax in rb_arr[r]:
+                cur_lo, cur_hi = ax.get_ylim()
+                ax.set_ylim(
+                    bottom=lo if lo is not None else cur_lo,
+                    top=hi if hi is not None else cur_hi,
+                )
 
     # --- Global legend --------------------------------------------------
     # Collect groups present anywhere for the legend.
@@ -2399,6 +2515,30 @@ def main():  # noqa: PLR0912, PLR0915
         help=(
             "Also render a single lead-time panel stacking error metrics "
             "(top rows) and coverage metrics (bottom rows)."
+        ),
+    )
+    parser.add_argument(
+        "--no-ssr-in-coverage",
+        dest="include_ssr_in_coverage",
+        action="store_false",
+        default=True,
+        help=(
+            "Suppress the default behavior of appending 'ssr' as a row to "
+            "the lead-time coverage panel (ssr renders with a linear axis "
+            "and a reference line at 1.0)."
+        ),
+    )
+    parser.add_argument(
+        "--metric-groups",
+        nargs="+",
+        default=list(DEFAULT_METRIC_GROUPS),
+        choices=[*METRIC_GROUP_PRESETS.keys(), "all", "none"],
+        help=(
+            "Lead-time panel groups to render. "
+            "Presets: "
+            + ", ".join(METRIC_GROUP_PRESETS.keys())
+            + ". Use 'all' for every preset or 'none' to skip. "
+            f"Default: {' '.join(DEFAULT_METRIC_GROUPS)}."
         ),
     )
     parser.add_argument(
@@ -2979,6 +3119,12 @@ def main():  # noqa: PLR0912, PLR0915
     if args.lead_time_coverage_metrics:
         cov_metric = list(args.lead_time_coverage_metrics)
 
+    # SSR is a dimensionless dispersion diagnostic (ideal=1.0) that belongs
+    # alongside the coverage rows in the lead-time coverage panel. Append
+    # once unless the user has already included it via --lead-time-coverage-metrics.
+    if args.include_ssr_in_coverage and "ssr" not in cov_metric:
+        cov_metric = [*cov_metric, "ssr"]
+
     if err_metric:
         plot_lead_time_panel(
             df,
@@ -3016,6 +3162,39 @@ def main():  # noqa: PLR0912, PLR0915
             dataset_order=ds_order,
             hue_order=hu_order,
             error_ylim=error_ylim,
+        )
+
+    # Per-group lead-time panels (SSR, coherence, balancing coverage, physics)
+    group_selection = list(args.metric_groups or [])
+    if "none" in group_selection:
+        group_selection = []
+    elif "all" in group_selection:
+        group_selection = list(METRIC_GROUP_PRESETS.keys())
+    # Dedup while preserving order
+    seen_groups: set[str] = set()
+    ordered_groups: list[str] = []
+    for g in group_selection:
+        if g in METRIC_GROUP_PRESETS and g not in seen_groups:
+            ordered_groups.append(g)
+            seen_groups.add(g)
+    for group_id in ordered_groups:
+        preset = METRIC_GROUP_PRESETS[group_id]
+        group_metrics = cast(list[str], preset["metrics"])
+        group_name = cast(str, preset["name"])
+        group_yscale = cast(str, preset.get("yscale", "log"))
+        group_ref = cast("float | None", preset.get("ref"))
+        plot_lead_time_panel(
+            df,
+            group_metrics,
+            results_dir,
+            out_dir,
+            group_name,
+            styles,
+            dataset_order=ds_order,
+            hue_order=hu_order,
+            error_ylim=None,
+            yscale=group_yscale,
+            ref_value=group_ref,
         )
 
     # Training curves
