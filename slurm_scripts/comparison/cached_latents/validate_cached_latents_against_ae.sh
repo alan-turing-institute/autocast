@@ -93,3 +93,45 @@ validate_cached_latents_against_ae() {
     echo "Validated cached-latent settings against AE config for ${ae_run_dir}"
     return 0
 }
+
+validate_cache_experiment_against_ae() {
+    local ae_run_dir="$1"
+    local local_experiment="$2"
+    local repo_root="$3"
+    local ae_cfg="${ae_run_dir}/resolved_autoencoder_config.yaml"
+    local experiment_cfg="${repo_root}/local_hydra/local_experiment/${local_experiment}.yaml"
+
+    if [[ ! -f "${ae_cfg}" ]]; then
+        echo "Missing AE resolved config: ${ae_cfg}" >&2
+        return 1
+    fi
+    if [[ ! -f "${experiment_cfg}" ]]; then
+        echo "Missing cache-latents experiment config: ${experiment_cfg}" >&2
+        return 1
+    fi
+
+    local ae_use_norm
+    local exp_use_norm
+    ae_use_norm="$(yaml_get_scalar_in_block "${ae_cfg}" "datamodule" "use_normalization")"
+    exp_use_norm="$(yaml_get_scalar_in_block "${experiment_cfg}" "datamodule" "use_normalization")"
+
+    if [[ "${ae_use_norm}" != "true" && "${ae_use_norm}" != "false" ]]; then
+        echo "Could not parse datamodule.use_normalization in ${ae_cfg}" >&2
+        return 1
+    fi
+    if [[ "${exp_use_norm}" != "true" && "${exp_use_norm}" != "false" ]]; then
+        echo "cache-latents experiment must explicitly set datamodule.use_normalization in ${experiment_cfg}" >&2
+        return 1
+    fi
+    if [[ "${ae_use_norm}" != "${exp_use_norm}" ]]; then
+        echo "Mismatch datamodule.use_normalization between AE and cache-latents experiment" >&2
+        echo "  AE config:        ${ae_use_norm}" >&2
+        echo "  Experiment config:${exp_use_norm}" >&2
+        echo "  AE cfg:           ${ae_cfg}" >&2
+        echo "  Experiment cfg:   ${experiment_cfg}" >&2
+        return 1
+    fi
+
+    echo "Validated cache-latents experiment normalization against AE config for ${ae_run_dir}"
+    return 0
+}
