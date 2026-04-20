@@ -8,12 +8,13 @@ set -euo pipefail
 #
 # COSINE_EPOCHS_BY_COMBO is populated from submit_ensemble_timing.sh via
 #   uv run autocast time-epochs --from-checkpoint <path>/timing.ckpt -b 24
-# and then pasted in below. PLACEHOLDER values flag combos pending timing.
+# and then pasted in below.
 
-# Placeholder cosine_epochs — replace once timing results land.
+# Per-combo cosine_epochs from timing runs (2026-04-20) via:
+#   uv run autocast time-epochs --from-checkpoint <path>/timing.ckpt -b 24 -m 0.02
 declare -A COSINE_EPOCHS_BY_COMBO=(
-    ["conditioned_navier_stokes:fixed_bs32:16"]=473   # placeholder
-    ["conditioned_navier_stokes:eff_bs1024:16"]=473   # placeholder
+    ["conditioned_navier_stokes:fixed_bs32:16"]=253   # 334.6 s/ep
+    ["conditioned_navier_stokes:eff_bs1024:16"]=249   # 340.0 s/ep
 )
 
 BUDGET_MAX_TIME="00:23:59:00"
