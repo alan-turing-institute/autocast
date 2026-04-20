@@ -10,6 +10,9 @@ experiment_name: cache_latents_advection_diffusion
 
 # Must match the AE training config (ae/advection_diffusion/ae_dc_large.yaml)
 # so encoder/decoder architectures align with the checkpoint weights.
+datamodule:
+  use_normalization: true
+
 model:
   encoder:
     periodic: true

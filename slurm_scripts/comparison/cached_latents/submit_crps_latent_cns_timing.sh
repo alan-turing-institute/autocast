@@ -1,6 +1,7 @@
 #!/bin/bash
 
 set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/validate_cached_latents_against_ae.sh"
 # Ablation: submit CRPS-in-cached-latent timing run for
 # conditioned_navier_stokes only.
 # Model: AzulaViTProcessor / vit_azula_large (hidden_dim=568, n_layers=12,
@@ -20,6 +21,10 @@ cache_dir="${AE_RUN_DIR}/cached_latents"
 
 if [[ ! -d "${cache_dir}/train" ]] || [[ ! -d "${cache_dir}/valid" ]] || [[ ! -d "${cache_dir}/test" ]]; then
     echo "Skipping ${DATAMODULE}: cache missing train/valid/test under ${cache_dir}" >&2
+    exit 1
+fi
+if ! validate_cached_latents_against_ae "${AE_RUN_DIR}"; then
+    echo "Skipping ${DATAMODULE}: cached-latents config mismatch vs AE training config" >&2
     exit 1
 fi
 
