@@ -18,7 +18,8 @@ experiment_name: ae
 
 # torch.set_float32_matmul_precision: one of {highest, high, medium} or null.
 # See encoder_processor_decoder.yaml for details.
-float32_matmul_precision: null
+# Default changed 2026-04-17 from `null` to `high`.
+float32_matmul_precision: high
 
 datamodule:
   autoencoder_mode: true

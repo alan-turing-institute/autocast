@@ -12,7 +12,6 @@ outputs
 lightning_logs
 datasets
 run_scripts
-slurm_scripts
 logs
 local_hydra/local_experiment/*.yaml
 !local_hydra/local_experiment/README.md

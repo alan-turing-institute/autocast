@@ -42,6 +42,7 @@ from autocast.scripts.workflow.overrides import (
     strip_hydra_sweep_controls,
 )
 from autocast.scripts.workflow.slurm import (
+    _load_preset_launcher_cfg,
     _parse_override_scalar,
     _should_use_srun,
     submit_manifest_via_sbatch,
@@ -186,6 +187,35 @@ def test_should_use_srun_respects_explicit_override():
     )
 
 
+def test_load_preset_launcher_cfg_ignores_unrelated_interpolation(
+    tmp_path: Path, monkeypatch
+):
+    local_cfg = tmp_path / "local_hydra" / "local_experiment" / "repro.yaml"
+    local_cfg.parent.mkdir(parents=True, exist_ok=True)
+    local_cfg.write_text(
+        "\n".join(
+            [
+                "defaults:",
+                "  - /distributed: ddp_4gpu_slurm",
+                "model:",
+                "  processor:",
+                "    n_steps_input: ${datamodule.n_steps_input}",
+                "hydra:",
+                "  launcher:",
+                "    partition: gpu",
+                "    timeout_min: 120",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(tmp_path)
+    launcher_cfg = _load_preset_launcher_cfg(["local_experiment=repro"])
+
+    assert launcher_cfg.get("partition") == "gpu"
+    assert launcher_cfg.get("timeout_min") == 120
+
+
 # ---------------------------------------------------------------------------
 # naming
 # ---------------------------------------------------------------------------
@@ -300,6 +330,40 @@ def test_auto_run_name_hidden_dim_included():
             ["processor@model.processor=fno", "model.processor.hidden_channels=256"],
         )
     assert "256" in name
+
+
+def test_auto_run_name_local_experiment_ignores_unresolved_interpolation(
+    tmp_path: Path, monkeypatch
+):
+    local_cfg = tmp_path / "local_hydra" / "local_experiment" / "repro.yaml"
+    local_cfg.parent.mkdir(parents=True, exist_ok=True)
+    local_cfg.write_text(
+        "\n".join(
+            [
+                "model:",
+                "  processor:",
+                "    _target_: autocast.nn.vit.TemporalViTBackbone",
+                "    n_steps_input: ${datamodule.n_steps_input}",
+                "  loss_func:",
+                "    _target_: autocast.losses.ensemble.CRPSLoss",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(tmp_path)
+
+    with (
+        patch("autocast.scripts.workflow.naming._git_hash", return_value="abc1234"),
+        patch("autocast.scripts.workflow.naming._short_uuid", return_value="xyz7890"),
+    ):
+        name = auto_run_name(
+            "epd",
+            "reaction_diffusion",
+            ["local_experiment=repro"],
+        )
+
+    assert name == "crps_rd64_vit_abc1234_xyz7890"
 
 
 # ---------------------------------------------------------------------------

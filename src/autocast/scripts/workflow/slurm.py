@@ -67,7 +67,7 @@ def load_launcher_defaults(launcher_name: str) -> dict:
         if not path.exists():
             continue
         cfg = OmegaConf.load(path)
-        loaded = OmegaConf.to_container(cfg, resolve=True)
+        loaded = OmegaConf.to_container(cfg, resolve=False)
         if isinstance(loaded, dict):
             loaded.pop("defaults", None)
             return loaded
@@ -109,13 +109,17 @@ def _load_preset_launcher_cfg(overrides: list[str]) -> dict:
         path = cfg_root / "distributed" / f"{name}.yaml"
         if not path.exists():
             return {}
-        loaded = OmegaConf.to_container(OmegaConf.load(path), resolve=True)
+        loaded = OmegaConf.to_container(OmegaConf.load(path), resolve=False)
         return loaded if isinstance(loaded, dict) else {}
 
     def _load_launcher_from_file(path: Path) -> dict:
         if not path.exists():
             return {}
-        raw = OmegaConf.to_container(OmegaConf.load(path), resolve=True)
+        # Do not resolve the whole experiment config here; it may contain
+        # interpolations that are valid only during full Hydra composition
+        # (e.g. model.processor.n_steps_input -> datamodule.n_steps_input).
+        # We only need the hydra.launcher subtree for submission defaults.
+        raw = OmegaConf.to_container(OmegaConf.load(path), resolve=False)
         if not isinstance(raw, dict):
             return {}
         distributed = _extract_distributed_preset_name(raw)
@@ -124,7 +128,7 @@ def _load_preset_launcher_cfg(overrides: list[str]) -> dict:
             if distributed
             else raw
         )
-        cfg = OmegaConf.to_container(merged, resolve=True)
+        cfg = OmegaConf.to_container(merged, resolve=False)
         if not isinstance(cfg, dict):
             return {}
         hydra_cfg = cfg.get("hydra")

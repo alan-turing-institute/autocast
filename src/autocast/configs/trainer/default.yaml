@@ -13,10 +13,33 @@ gradient_clip_val: null
 # Save checkpoints mid-epoch (step-based), not only at epoch end.
 # Override at runtime, e.g.: trainer.callbacks.0.every_n_train_steps=500
 callbacks:
+  # Rolling checkpoint. save_last: true ensures last.ckpt is a real file
+  # written on every validation/train end (not a lagging symlink), so the
+  # final-epoch state is always captured even if every_n_epochs doesn't
+  # land on max_epochs exactly.
   - _target_: lightning.pytorch.callbacks.ModelCheckpoint
     save_top_k: 1
     every_n_epochs: 5
     save_on_train_epoch_end: true
+    save_last: true
     filename: "latest-5ep-{epoch:04d}"
     auto_insert_metric_name: false
+  # Added 2026-04-17. Drop with `~trainer.callbacks.1` to restore previous
+  # single-callback behaviour.
+  # TODO: refactor callbacks into composable groups so opt-out is index-free.
+  - _target_: lightning.pytorch.callbacks.ModelCheckpoint
+    monitor: val_loss
+    mode: min
+    save_top_k: 1
+    save_last: false  # rolling callback above owns last.ckpt
+    filename: "best-val-{epoch:04d}-{val_loss:.4f}"
+    auto_insert_metric_name: false
+  # EMA of model weights. decay=0.999 gives a half-life of ~700 steps,
+  # which is a sensible fraction of our shorter runs (FM-ambient ~12k
+  # steps) without being wildly reactive on the longest (CRPS-latent
+  # ~420k steps).
+  # Stored under a dedicated checkpoint key; raw training weights are
+  # unaffected.
+  - _target_: autocast.callbacks.ema.EMACallback
+    decay: 0.999
 
