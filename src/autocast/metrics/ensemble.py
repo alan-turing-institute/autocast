@@ -579,8 +579,8 @@ class SpreadSkillRatio(BTSCMMetric):
 
     name: str = "ssr"
 
-    def __init__(self, eps: float = 1e-6):
-        super().__init__()
+    def __init__(self, eps: float = 1e-6, **kwargs):
+        super().__init__(**kwargs)
         if eps <= 0:
             msg = "eps must be > 0"
             raise ValueError(msg)
@@ -598,8 +598,8 @@ class SpreadSkillRatio(BTSCMMetric):
         Compute corrected spread-to-skill ratio.
 
         Reductions (spatial/temporal) are applied to the variance and MSE before
-        taking the square root and computing the ratio, matching macroscopic
-        approaches like Lola's.
+        taking the square root and computing the ratio (i.e., reduce variance/MSE
+        first, then sqrt, then divide).
 
         Args:
             y_pred: (B, T, S, C, M)
@@ -634,7 +634,7 @@ class SpreadSkillRatio(BTSCMMetric):
             skill_sq = skill_sq.mean(dim=1)
             spread_var = spread_var.mean(dim=1)
 
-        # Compute macroscopic spread, skill, and ratio
+        # Reduce to spread, skill, and take ratio
         skill = torch.sqrt(skill_sq)
         spread = torch.sqrt(spread_var)
 
