@@ -1,7 +1,7 @@
 #!/bin/bash
 
 set -euo pipefail
-# Evaluate FM cached-latent processor runs (2026-04-18) in AMBIENT mode.
+# Evaluate FM cached-latent processor runs (2026-04-20_part) in AMBIENT mode.
 #
 # eval.mode=ambient forces encoder->processor->decoder rollout at every
 # step, so decode/encode drift is included in the metrics — the apples-to-
@@ -23,16 +23,16 @@ RUN_DRY_STATES=("true" "false")
 EVAL_METRICS="[mse,mae,nmse,nmae,rmse,nrmse,vmse,vrmse,linf,psrmse,psrmse_low,psrmse_mid,psrmse_high,psrmse_tail,pscc,pscc_low,pscc_mid,pscc_high,pscc_tail,crps,fcrps,afcrps,energy,ssr,winkler]"
 
 RUN_DIRS=(
-    "outputs/2026-04-18/diff_gs64_flow_matching_vit_0f89f06_f6e8f51"
-    "outputs/2026-04-18/diff_gpe64_flow_matching_vit_0f89f06_b954f94"
-    "outputs/2026-04-18/diff_cns64_flow_matching_vit_0f89f06_0e1c64b"
-    "outputs/2026-04-18/diff_ad64_flow_matching_vit_0f89f06_df2137c"
+    "outputs/2026-04-20_part/diff_gs64_flow_matching_vit_09490da_7e9e331"
+    "outputs/2026-04-20_part/diff_gpe64_flow_matching_vit_09490da_47bf39a"
+    "outputs/2026-04-20_part/diff_cns64_flow_matching_vit_09490da_636fcc3"
+    "outputs/2026-04-20_part/diff_ad64_flow_matching_vit_09490da_dae1382"
 )
 declare -A AE_CKPT=(
-    ["outputs/2026-04-18/diff_gs64_flow_matching_vit_0f89f06_f6e8f51"]="$HOME/autocast/outputs/2026-04-17/ae_gs64_3a7999b_ed36b8e/autoencoder.ckpt"
-    ["outputs/2026-04-18/diff_gpe64_flow_matching_vit_0f89f06_b954f94"]="$HOME/autocast/outputs/2026-04-17/ae_gpe64_3a7999b_31e1c9f/autoencoder.ckpt"
-    ["outputs/2026-04-18/diff_cns64_flow_matching_vit_0f89f06_0e1c64b"]="$HOME/autocast/outputs/2026-04-17/ae_cns64_3a7999b_b9c29f8/autoencoder.ckpt"
-    ["outputs/2026-04-18/diff_ad64_flow_matching_vit_0f89f06_df2137c"]="$HOME/autocast/outputs/2026-04-17/ae_ad64_3a7999b_1a1e300/autoencoder.ckpt"
+    ["outputs/2026-04-20_part/diff_gs64_flow_matching_vit_09490da_7e9e331"]="$HOME/autocast/outputs/2026-04-17/ae_gs64_3a7999b_ed36b8e/autoencoder.ckpt"
+    ["outputs/2026-04-20_part/diff_gpe64_flow_matching_vit_09490da_47bf39a"]="$HOME/autocast/outputs/2026-04-17/ae_gpe64_3a7999b_31e1c9f/autoencoder.ckpt"
+    ["outputs/2026-04-20_part/diff_cns64_flow_matching_vit_09490da_636fcc3"]="$HOME/autocast/outputs/2026-04-17/ae_cns64_3a7999b_b9c29f8/autoencoder.ckpt"
+    ["outputs/2026-04-20_part/diff_ad64_flow_matching_vit_09490da_dae1382"]="$HOME/autocast/outputs/2026-04-17/ae_ad64_3a7999b_1a1e300/autoencoder.ckpt"
 )
 
 for run_dir in "${RUN_DIRS[@]}"; do

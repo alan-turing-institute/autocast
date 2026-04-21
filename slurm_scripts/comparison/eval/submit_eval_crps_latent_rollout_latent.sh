@@ -1,7 +1,7 @@
 #!/bin/bash
 
 set -euo pipefail
-# Evaluate CRPS cached-latent processor runs (2026-04-19) in LATENT mode.
+# Evaluate CRPS cached-latent processor runs (2026-04-20_part) in LATENT mode.
 #
 # eval.mode=latent rolls out only in latent space and writes results to
 # eval_latent/ so ambient-vs-latent comparisons can coexist per run.
@@ -21,10 +21,10 @@ EVAL_METRICS="[mse,mae,nmse,nmae,rmse,nrmse,vmse,vrmse,linf,psrmse,psrmse_low,ps
 # (run_dir, autoencoder_checkpoint) pairs. Extend as more cached-latent CRPS
 # runs land (gs, gpe, ad) — the AE paths are the same as training.
 RUN_DIRS=(
-    "outputs/2026-04-19/crps_cns64_vit_azula_large_58712c4_71ba7be"
+    "outputs/2026-04-20_part/crps_cns64_vit_azula_large_09490da_8b7573d"
 )
 declare -A AE_CKPT=(
-    ["outputs/2026-04-19/crps_cns64_vit_azula_large_58712c4_71ba7be"]="$HOME/autocast/outputs/2026-04-17/ae_cns64_3a7999b_b9c29f8/autoencoder.ckpt"
+    ["outputs/2026-04-20_part/crps_cns64_vit_azula_large_09490da_8b7573d"]="$HOME/autocast/outputs/2026-04-17/ae_cns64_3a7999b_b9c29f8/autoencoder.ckpt"
 )
 
 for run_dir in "${RUN_DIRS[@]}"; do
