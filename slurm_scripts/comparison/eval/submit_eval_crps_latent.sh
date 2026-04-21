@@ -1,21 +1,17 @@
 #!/bin/bash
 
 set -euo pipefail
-# Evaluate CRPS cached-latent processor runs (2026-04-20_part) in AMBIENT mode.
+# Evaluate CRPS cached-latent processor runs from 2026-04-20 using the
+# default eval.mode=auto path.
 #
-# eval.mode=ambient forces encoder->processor->decoder rollout at every
-# step, so decode/encode drift is included in the metrics. This makes the
-# latent-space CRPS numbers directly comparable with the ambient CRPS and
-# FM baselines (see slurm_scripts/comparison/eval/README.md).
+# After PR #339, auto resolves to encode_once for processor-only cached-latent
+# runs when autoencoder_checkpoint is supplied. That preserves raw-space
+# metrics while avoiding the extra per-step decode->encode drift charged by
+# the ambient ablation.
 #
-# The eval.mode selector landed via PR #327 and is now in-tree. When ambient
-# is requested on a cached-latents datamodule, eval auto-substitutes the raw
-# datamodule from <cache_dir>/autoencoder_config.yaml; the trained AE weights
-# are supplied via autoencoder_checkpoint.
-#
-# Batch size: cached-latent eval pays the ambient AE encode/decode per step
-# but processor forward is cheap (64 tokens vs 256 for ambient-patch4), so
-# 8/GPU fits comfortably — same as pure-ambient CRPS.
+# Batch size: encode_once is lighter than ambient because the encoder runs
+# only once. CRPS remains cheap enough that 8/GPU is still a conservative,
+# comparison-friendly default.
 
 EVAL_BATCH_SIZE=8
 TIMEOUT_MIN=240
@@ -25,12 +21,11 @@ EVAL_METRICS="[mse,mae,nmse,nmae,rmse,nrmse,vmse,vrmse,linf,psrmse,psrmse_low,ps
 # (run_dir, autoencoder_checkpoint) pairs. Extend as more cached-latent CRPS
 # runs land (gs, gpe, ad) — the AE paths are the same as training.
 RUN_DIRS=(
-    "outputs/2026-04-20_part/crps_cns64_vit_azula_large_09490da_8b7573d"
+    "outputs/2026-04-20/crps_cns64_vit_azula_large_09490da_8b7573d"
 )
 declare -A AE_CKPT=(
-    ["outputs/2026-04-20_part/crps_cns64_vit_azula_large_09490da_8b7573d"]="$HOME/autocast/outputs/2026-04-17/ae_cns64_3a7999b_b9c29f8/autoencoder.ckpt"
+    ["outputs/2026-04-20/crps_cns64_vit_azula_large_09490da_8b7573d"]="$HOME/autocast/outputs/2026-04-17/ae_cns64_3a7999b_b9c29f8/autoencoder.ckpt"
 )
-source .venv/bin/activate
 for run_dir in "${RUN_DIRS[@]}"; do
     ae_ckpt="${AE_CKPT[$run_dir]:-}"
     if [[ -z "${ae_ckpt}" ]]; then
@@ -54,18 +49,18 @@ for run_dir in "${RUN_DIRS[@]}"; do
             run_label="slurm --dry-run"
         fi
 
-        echo "Submitting CRPS cached-latent eval (mode=ambient)"
+        echo "Submitting CRPS cached-latent eval (mode=auto -> encode_once)"
         echo "  mode: ${run_label}"
         echo "  run_dir: ${run_dir}"
         echo "  autoencoder_checkpoint: ${ae_ckpt}"
+        echo "  eval.mode: auto"
         echo "  eval.batch_size: ${EVAL_BATCH_SIZE}"
         echo "  eval.metrics: ${EVAL_METRICS}"
 
-        autocast eval --mode slurm "${dry_run_arg[@]}" \
+        uv run autocast eval --mode slurm "${dry_run_arg[@]}" \
             --workdir "${run_dir}" \
             eval.checkpoint=processor.ckpt \
-            ++eval.mode=ambient \
-            +autoencoder_checkpoint="${ae_ckpt}" \
+            autoencoder_checkpoint="${ae_ckpt}" \
             eval.metrics="${EVAL_METRICS}" \
             eval.batch_size="${EVAL_BATCH_SIZE}" \
             hydra.launcher.timeout_min="${TIMEOUT_MIN}"

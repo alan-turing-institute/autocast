@@ -1,15 +1,15 @@
 # Eval scripts for the comparison study
 
 Six submission scripts cover ambient and cached-latent checkpoints produced
-under `outputs/2026-04-18/` and `outputs/2026-04-19/`. Each script iterates
+under `outputs/2026-04-18/` and `outputs/2026-04-20/`. Each script iterates
 `--dry-run` first, then submits for real.
 
 | script | runs covered | eval.mode | eval.batch_size |
 |---|---|---|---|
 | `submit_eval_crps_ambient.sh` | `outputs/2026-04-18/crps_*` (4 primary + 2 CNS ablations) | default (auto → ambient) | 8 |
 | `submit_eval_fm_ambient.sh` | `outputs/2026-04-18/diff_*` ambient (4 datasets) | default (auto → ambient) | 4 |
-| `submit_eval_crps_latent.sh` | `outputs/2026-04-19/crps_*` cached-latent (CNS so far) | `ambient` | 8 |
-| `submit_eval_fm_latent.sh` | `outputs/2026-04-18/diff_*` cached-latent (4 datasets) | `ambient` | 4 |
+| `submit_eval_crps_latent.sh` | `outputs/2026-04-20/crps_*` cached-latent (CNS so far) | default (`auto -> encode_once`) | 8 |
+| `submit_eval_fm_latent.sh` | `outputs/2026-04-20/diff_*` cached-latent (4 datasets) | default (`auto -> encode_once`) | 4 |
 | `submit_eval_crps_latent_rollout_latent.sh` | same runs as `submit_eval_crps_latent.sh` | `latent` (writes to `eval_latent/`) | 8 |
 | `submit_eval_fm_latent_rollout_latent.sh` | same runs as `submit_eval_fm_latent.sh` | `latent` (writes to `eval_latent/`) | 4 |
 
@@ -21,30 +21,25 @@ for 25 steps on 64×64 fields:
 - **CRPS** (single forward per step) handles `eval.batch_size=8` fine.
 - **FM / diffusion** integrates `flow_ode_steps=50` per rollout step, so
   ambient fits `eval.batch_size=4` — drop to 2 if OOM.
-- **Cached-latent in ambient mode** still encodes/decodes at every step
-  but the processor forward is cheaper (64 tokens vs 256 for
-  ambient-patch4), so the CRPS variant matches ambient CRPS at 8 and the
-  FM variant matches ambient FM at 4. Can try bumping up if there's
-  headroom.
+- **Cached-latent via `auto -> encode_once`** encodes once up front,
+  decodes per step, and scores against raw ground truth. It is cheaper
+  than the ambient ablation while still being faithful for processor-only
+  evaluation, so the CRPS variant stays at 8 and the FM variant stays at 4
+  for easy comparison with the ambient scripts.
 - **Cached-latent in latent mode** avoids per-step AE encode/decode and is
   typically cheaper. We keep 8 (CRPS) / 4 (FM) for consistency across
   comparisons; increase only after confirming cluster headroom.
 
 ## eval.mode for cached latents
 
-The cached-latent scripts use the `eval.mode` selector that landed via
-[PR #327](https://github.com/alan-turing-institute/autocast/pull/327) and is
-now available in-tree. `eval.mode=ambient` forces full
-`encoder → processor → decoder` rollout, so the decode/encode drift is
-included in the metrics — the only fair regime for cross-comparison with
-ambient CRPS/FM baselines that roll out in data space natively. Latent-only
-rollout (`eval.mode=latent`) is faster and is useful as an additional
-diagnostic view when written to a separate subdir (`eval_latent/`).
-
-When `eval.mode=ambient` is set on a cached-latents datamodule, the eval
-script auto-substitutes the raw datamodule from
-`<cache_dir>/autoencoder_config.yaml`, and the AE weights are supplied via
-`autoencoder_checkpoint=<ae.ckpt>` (hard-coded per run in each script).
+The cached-latent comparison scripts now rely on the default
+`eval.mode=auto`, which after
+[PR #339](https://github.com/alan-turing-institute/autocast/pull/339)
+resolves to `encode_once` for processor-only cached-latent runs when
+`autoencoder_checkpoint=<ae.ckpt>` is supplied. That keeps metrics in raw
+data space while avoiding the extra decode/encode drift charged by the
+explicit ambient ablation. The latent-rollout variants still set
+`eval.mode=latent` and write to a separate `eval_latent/` subdir.
 
 ## Submission order
 

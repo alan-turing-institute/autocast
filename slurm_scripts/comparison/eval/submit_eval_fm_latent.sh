@@ -1,21 +1,17 @@
 #!/bin/bash
 
 set -euo pipefail
-# Evaluate FM cached-latent processor runs (2026-04-20_part) in AMBIENT mode.
+# Evaluate FM cached-latent processor runs from 2026-04-20 using the default
+# eval.mode=auto path.
 #
-# eval.mode=ambient forces encoder->processor->decoder rollout at every
-# step, so decode/encode drift is included in the metrics — the apples-to-
-# apples regime for comparison with the ambient FM baseline.
+# After PR #339, auto resolves to encode_once for processor-only cached-latent
+# runs when autoencoder_checkpoint is supplied. That keeps metrics in raw data
+# space against decoded rollouts, without charging per-step decode->encode
+# drift as the ambient ablation does.
 #
-# The eval.mode selector landed via PR #327 and is now in-tree. When ambient
-# is requested on a cached-latents datamodule, eval auto-substitutes the raw
-# datamodule from <cache_dir>/autoencoder_config.yaml; the trained AE weights
-# are supplied via autoencoder_checkpoint.
-#
-# Batch size: ambient rollout pays encode/decode every step plus 50 ODE
-# substeps through the processor. Cached-latent processor forward is lighter
-# (64 tokens vs 256 for ambient FM), so 4/GPU is a safe start; the tight
-# spot is the same ODE + AE stack so it mirrors FM-ambient.
+# Batch size: encode_once is cheaper than ambient because the encoder only
+# runs once, but FM still pays 50 ODE substeps per rollout step. 4/GPU remains
+# a safe baseline and stays aligned with the ambient FM comparison script.
 
 EVAL_BATCH_SIZE=4
 TIMEOUT_MIN=360
@@ -23,18 +19,17 @@ RUN_DRY_STATES=("true" "false")
 EVAL_METRICS="[mse,mae,nmse,nmae,rmse,nrmse,vmse,vrmse,linf,psrmse,psrmse_low,psrmse_mid,psrmse_high,psrmse_tail,pscc,pscc_low,pscc_mid,pscc_high,pscc_tail,crps,fcrps,afcrps,energy,ssr,winkler]"
 
 RUN_DIRS=(
-    "outputs/2026-04-20_part/diff_gs64_flow_matching_vit_09490da_7e9e331"
-    "outputs/2026-04-20_part/diff_gpe64_flow_matching_vit_09490da_47bf39a"
-    "outputs/2026-04-20_part/diff_cns64_flow_matching_vit_09490da_636fcc3"
-    "outputs/2026-04-20_part/diff_ad64_flow_matching_vit_09490da_dae1382"
+    "outputs/2026-04-20/diff_gs64_flow_matching_vit_09490da_7e9e331"
+    "outputs/2026-04-20/diff_gpe64_flow_matching_vit_09490da_47bf39a"
+    "outputs/2026-04-20/diff_cns64_flow_matching_vit_09490da_636fcc3"
+    "outputs/2026-04-20/diff_ad64_flow_matching_vit_09490da_dae1382"
 )
 declare -A AE_CKPT=(
-    ["outputs/2026-04-20_part/diff_gs64_flow_matching_vit_09490da_7e9e331"]="$HOME/autocast/outputs/2026-04-17/ae_gs64_3a7999b_ed36b8e/autoencoder.ckpt"
-    ["outputs/2026-04-20_part/diff_gpe64_flow_matching_vit_09490da_47bf39a"]="$HOME/autocast/outputs/2026-04-17/ae_gpe64_3a7999b_31e1c9f/autoencoder.ckpt"
-    ["outputs/2026-04-20_part/diff_cns64_flow_matching_vit_09490da_636fcc3"]="$HOME/autocast/outputs/2026-04-17/ae_cns64_3a7999b_b9c29f8/autoencoder.ckpt"
-    ["outputs/2026-04-20_part/diff_ad64_flow_matching_vit_09490da_dae1382"]="$HOME/autocast/outputs/2026-04-17/ae_ad64_3a7999b_1a1e300/autoencoder.ckpt"
+    ["outputs/2026-04-20/diff_gs64_flow_matching_vit_09490da_7e9e331"]="$HOME/autocast/outputs/2026-04-17/ae_gs64_3a7999b_ed36b8e/autoencoder.ckpt"
+    ["outputs/2026-04-20/diff_gpe64_flow_matching_vit_09490da_47bf39a"]="$HOME/autocast/outputs/2026-04-17/ae_gpe64_3a7999b_31e1c9f/autoencoder.ckpt"
+    ["outputs/2026-04-20/diff_cns64_flow_matching_vit_09490da_636fcc3"]="$HOME/autocast/outputs/2026-04-17/ae_cns64_3a7999b_b9c29f8/autoencoder.ckpt"
+    ["outputs/2026-04-20/diff_ad64_flow_matching_vit_09490da_dae1382"]="$HOME/autocast/outputs/2026-04-17/ae_ad64_3a7999b_1a1e300/autoencoder.ckpt"
 )
-source .venv/bin/activate
 for run_dir in "${RUN_DIRS[@]}"; do
     ae_ckpt="${AE_CKPT[$run_dir]:-}"
     if [[ -z "${ae_ckpt}" ]]; then
@@ -58,18 +53,18 @@ for run_dir in "${RUN_DIRS[@]}"; do
             run_label="slurm --dry-run"
         fi
 
-        echo "Submitting FM cached-latent eval (mode=ambient)"
+        echo "Submitting FM cached-latent eval (mode=auto -> encode_once)"
         echo "  mode: ${run_label}"
         echo "  run_dir: ${run_dir}"
         echo "  autoencoder_checkpoint: ${ae_ckpt}"
+        echo "  eval.mode: auto"
         echo "  eval.batch_size: ${EVAL_BATCH_SIZE}"
         echo "  eval.metrics: ${EVAL_METRICS}"
 
-        autocast eval --mode slurm "${dry_run_arg[@]}" \
+        uv run autocast eval --mode slurm "${dry_run_arg[@]}" \
             --workdir "${run_dir}" \
             eval.checkpoint=processor.ckpt \
-            ++eval.mode=ambient \
-            +autoencoder_checkpoint="${ae_ckpt}" \
+            autoencoder_checkpoint="${ae_ckpt}" \
             eval.metrics="${EVAL_METRICS}" \
             eval.batch_size="${EVAL_BATCH_SIZE}" \
             hydra.launcher.timeout_min="${TIMEOUT_MIN}"
