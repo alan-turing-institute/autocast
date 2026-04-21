@@ -148,6 +148,10 @@ RESOLVABLE_EVAL_MODES = ("encode_once", "ambient", "latent")
 EVAL_PATH_AMBIENT_EPD = "ambient_epd"  # full EPD checkpoint or processor+AE (ambient)
 EVAL_PATH_ENCODE_ONCE = "encode_once"  # processor+AE, latent rollout, raw truth
 EVAL_PATH_LATENT_CACHED_WITH_DECODER = "latent_cached_with_decoder"  # latent+decoder
+# Dev sense-check path: metrics computed directly in the autoencoder's raw
+# latent space. Only reachable via an explicit opt-in
+# (``eval.latent_space_metrics=true`` combined with ``eval.mode=latent``);
+# see ``_validate_latent_space_metrics`` below.
 EVAL_PATH_LATENT_CACHED_LATENT_ONLY = "latent_cached_latent_only"  # latent-only
 
 
@@ -1289,7 +1293,12 @@ def _resolve_auto_eval_mode(
     if isinstance(example_batch, EncodedBatch):
         # Processor trained on cached latents. Use encode_once when the
         # autoencoder checkpoint is available so we score against raw
-        # ground truth; otherwise fall back to latent.
+        # ground truth; otherwise fall back to latent. If no decoder can
+        # then be built from the cached-latents directory the run will
+        # fail fast downstream (see
+        # ``_require_decoder_unless_latent_metrics_opt_in``); the user can
+        # pin ``eval.mode=latent eval.latent_space_metrics=true`` to
+        # opt into a latent-only sense check.
         if has_autoencoder_checkpoint:
             return "encode_once"
         return "latent"
@@ -1460,6 +1469,75 @@ def _validate_resolved_eval_path(*, eval_mode: str, resolved_path: str) -> None:
         raise ValueError(msg)
 
 
+def _validate_latent_space_metrics_flag(
+    *,
+    requested_eval_mode: str,
+    latent_space_metrics: bool,
+) -> None:
+    """Reject ``eval.latent_space_metrics=true`` when it cannot apply.
+
+    The flag only makes sense paired with an explicit ``eval.mode=latent``;
+    every other mode is defined to score against raw (data-space) ground
+    truth and so fundamentally requires a working decoder. ``auto`` is
+    rejected as well because the dispatch decision is made per-run and the
+    flag would silently change metric semantics depending on which concrete
+    mode ``auto`` happens to pick.
+    """
+    if not latent_space_metrics:
+        return
+    if requested_eval_mode != "latent":
+        msg = (
+            "eval.latent_space_metrics=true is only valid with an explicit "
+            f"eval.mode=latent, but eval.mode={requested_eval_mode!r} was "
+            "requested. Raw-space modes (auto / ambient / encode_once) "
+            "require a decoder by definition. Either drop "
+            "latent_space_metrics, or pin eval.mode=latent to opt in to "
+            "latent-only metrics as a development sense check."
+        )
+        raise ValueError(msg)
+
+
+def _require_decoder_unless_latent_metrics_opt_in(
+    *,
+    resolved_path: str,
+    latent_space_metrics: bool,
+) -> None:
+    """Fail fast when the resolved path has no decoder and the opt-in is off.
+
+    Previously ``eval.mode=latent`` would silently fall back to computing
+    metrics directly in raw latent space whenever no decoder could be
+    built. That produced numbers that look like evaluation results but are
+    not comparable across runs, so we now require the user to opt in via
+    ``eval.latent_space_metrics=true`` before taking that branch.
+    """
+    if resolved_path != EVAL_PATH_LATENT_CACHED_LATENT_ONLY:
+        return
+    if latent_space_metrics:
+        log.warning(
+            "eval.latent_space_metrics=true: computing metrics in the "
+            "autoencoder's raw latent space because no decoder could be "
+            "built from the cached-latents directory. These numbers are a "
+            "development sense check only -- they are not comparable "
+            "across runs (latent space is basis-dependent) and physics-"
+            "aware metrics (psrmse*, pscc*, variogram) are not meaningful "
+            "here. Provide a reachable decoder and set "
+            "latent_space_metrics=false (default) for publishable results."
+        )
+        return
+    msg = (
+        "eval.mode=latent could not build a decoder from the cached-"
+        "latents directory, so metrics would be computed directly in the "
+        "autoencoder's raw latent space. That fallback used to be silent "
+        "but produces numbers that are not comparable across runs, so it "
+        "now requires an explicit opt-in. Either:\n"
+        "  * make the decoder reachable (ensure autoencoder_config.yaml "
+        "and the AE checkpoint are present in the cache directory), or\n"
+        "  * pass eval.latent_space_metrics=true to confirm you want a "
+        "latent-only dev sense check."
+    )
+    raise RuntimeError(msg)
+
+
 def _try_build_decode_fn(
     cfg: DictConfig,
 ) -> "tuple[Any, Any] | tuple[None, None]":
@@ -1571,6 +1649,11 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     max_rollout_batches = _resolve_rollout_batch_limit(eval_cfg)
     requested_eval_mode = _normalize_eval_mode(eval_cfg.get("mode"))
     eval_mode = requested_eval_mode
+    latent_space_metrics = bool(eval_cfg.get("latent_space_metrics", False))
+    _validate_latent_space_metrics_flag(
+        requested_eval_mode=requested_eval_mode,
+        latent_space_metrics=latent_space_metrics,
+    )
     log.info(
         "Batch limits: max_test_batches=%s, max_rollout_batches=%s",
         max_test_batches,
@@ -1674,9 +1757,14 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     #   Requires `eval.mode=latent` (encode_once is rejected for this path
     #   because it can never see raw ground truth here).
     #
-    # Fallback - pure latent-space processor eval:
-    #   No `autoencoder_checkpoint` / no `autoencoder_config.yaml` available.
-    #   Metrics are computed in latent space. Requires `eval.mode=latent`.
+    # Dev sense-check - latent-only metrics (opt-in):
+    #   `eval.mode=latent` + `eval.latent_space_metrics=true`.  Skips the
+    #   decoder entirely and compares processor predictions against cached
+    #   latents directly in the autoencoder's raw latent space. Intended as a
+    #   cheap check for small processors paired with expensive autoencoders;
+    #   results are not comparable across runs and physics-aware metrics are
+    #   not meaningful.  Any other combination (no decoder + flag off) is now
+    #   rejected by `_require_decoder_unless_latent_metrics_opt_in`.
 
     example_batch = stats.get("example_batch")
 
@@ -1723,17 +1811,26 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 extract_state_dict(checkpoint_payload, use_ema=use_ema), strict=True
             )
             if isinstance(example_batch, EncodedBatch):
-                # Mode 2: try to load decoder for data-space evaluation
-                decoder_module, decode_fn = _try_build_decode_fn(cfg)
-                if decode_fn is not None:
+                if latent_space_metrics:
                     log.info(
-                        "Mode 2 eval: processor (cached latents) + decoder → "
-                        "data-space metrics."
+                        "Mode 2 eval: processor (cached latents) + "
+                        "latent_space_metrics=true → skipping decoder lookup."
                     )
                 else:
-                    log.info(
-                        "Mode fallback: no decoder found — evaluating in latent space."
-                    )
+                    # Mode 2: try to load decoder for data-space evaluation
+                    decoder_module, decode_fn = _try_build_decode_fn(cfg)
+                    if decode_fn is not None:
+                        log.info(
+                            "Mode 2 eval: processor (cached latents) + "
+                            "decoder → data-space metrics."
+                        )
+                    else:
+                        log.info(
+                            "Mode 2 eval: no decoder found; "
+                            "_require_decoder_unless_latent_metrics_opt_in "
+                            "will decide whether to fail fast or emit a "
+                            "latent-space dev-sense-check warning."
+                        )
     else:
         model = setup_epd_model(cfg, stats, datamodule=datamodule)
         load_result = model.load_state_dict(
@@ -1759,6 +1856,10 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     _validate_resolved_eval_path(
         eval_mode=eval_mode,
         resolved_path=resolved_eval_path,
+    )
+    _require_decoder_unless_latent_metrics_opt_in(
+        resolved_path=resolved_eval_path,
+        latent_space_metrics=latent_space_metrics,
     )
     if (
         requested_eval_mode == "encode_once"

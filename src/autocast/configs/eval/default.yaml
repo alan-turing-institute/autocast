@@ -36,12 +36,29 @@ checkpoint: null
 #   latent       Force latent-space rollout (processor predictions are fed
 #                back as latents; encoder is never invoked). Metrics are
 #                decoded to data space via the decoder saved alongside the
-#                cached latents if available, otherwise computed in latent
-#                space. Requires an EncodedBatch datamodule (cached latents)
-#                and intentionally measures against decoded cached latents
-#                (i.e. an autoencoder reconstruction of ground truth) rather
-#                than against raw ground truth.
+#                cached latents. Requires an EncodedBatch datamodule
+#                (cached latents) and intentionally measures against decoded
+#                cached latents (i.e. an autoencoder reconstruction of
+#                ground truth) rather than against raw ground truth.
+#                When no decoder can be built this mode fails fast; set
+#                `eval.latent_space_metrics=true` to opt into computing
+#                metrics directly in latent space as a dev sense-check.
 mode: auto
+
+# Opt-in flag for computing evaluation metrics in raw latent space.
+#
+# When true AND `eval.mode=latent`, the decoder step is skipped entirely:
+# predictions and cached-latent targets are compared in the autoencoder's
+# raw latent space. This is intended as a cheap sense-check for iterating
+# on a small processor paired with a large / expensive autoencoder; the
+# resulting numbers are NOT comparable across runs (latent space is basis-
+# dependent) and physics-aware metrics (psrmse*, pscc*, variogram) are not
+# meaningful there.
+#
+# Rejected for `eval.mode` in (auto, ambient, encode_once) because those
+# modes require a decoder to produce raw-space predictions by definition.
+# Leave this as `false` for any results you plan to publish or compare.
+latent_space_metrics: false
 
 # Evaluation metrics to compute
 metrics:

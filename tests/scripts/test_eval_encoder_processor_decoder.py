@@ -22,6 +22,7 @@ from autocast.scripts.eval.encoder_processor_decoder import (
     _normalize_per_batch_rows,
     _reindex_per_batch_rows_by_rank,
     _render_rollouts,
+    _require_decoder_unless_latent_metrics_opt_in,
     _resolve_auto_eval_mode,
     _resolve_eval_path,
     _resolve_rollout_batch_limit,
@@ -30,6 +31,7 @@ from autocast.scripts.eval.encoder_processor_decoder import (
     _should_skip_metric,
     _split_metric_and_metadata_rows,
     _training_runtime_rows,
+    _validate_latent_space_metrics_flag,
     _validate_resolved_eval_path,
 )
 from autocast.types import Batch, EncodedBatch
@@ -603,6 +605,66 @@ def test_validate_resolved_eval_path_happy_paths():
     _validate_resolved_eval_path(
         eval_mode="latent",
         resolved_path=EVAL_PATH_LATENT_CACHED_LATENT_ONLY,
+    )
+
+
+@pytest.mark.parametrize("mode", ["auto", "ambient", "encode_once"])
+def test_validate_latent_space_metrics_flag_rejects_non_latent_modes(mode):
+    with pytest.raises(ValueError, match=r"eval\.latent_space_metrics=true"):
+        _validate_latent_space_metrics_flag(
+            requested_eval_mode=mode,
+            latent_space_metrics=True,
+        )
+
+
+def test_validate_latent_space_metrics_flag_allows_explicit_latent():
+    _validate_latent_space_metrics_flag(
+        requested_eval_mode="latent",
+        latent_space_metrics=True,
+    )
+
+
+@pytest.mark.parametrize("mode", ["auto", "ambient", "encode_once", "latent"])
+def test_validate_latent_space_metrics_flag_noop_when_false(mode):
+    _validate_latent_space_metrics_flag(
+        requested_eval_mode=mode,
+        latent_space_metrics=False,
+    )
+
+
+def test_require_decoder_fails_fast_without_opt_in():
+    with pytest.raises(RuntimeError, match=r"latent_space_metrics=true"):
+        _require_decoder_unless_latent_metrics_opt_in(
+            resolved_path=EVAL_PATH_LATENT_CACHED_LATENT_ONLY,
+            latent_space_metrics=False,
+        )
+
+
+def test_require_decoder_allows_opt_in_and_warns(caplog):
+    with caplog.at_level("WARNING"):
+        _require_decoder_unless_latent_metrics_opt_in(
+            resolved_path=EVAL_PATH_LATENT_CACHED_LATENT_ONLY,
+            latent_space_metrics=True,
+        )
+
+    assert any(
+        "latent_space_metrics=true" in record.message for record in caplog.records
+    ), "expected a prominent warning about latent-only metrics"
+
+
+@pytest.mark.parametrize(
+    "resolved_path",
+    [
+        EVAL_PATH_AMBIENT_EPD,
+        EVAL_PATH_ENCODE_ONCE,
+        EVAL_PATH_LATENT_CACHED_WITH_DECODER,
+    ],
+)
+@pytest.mark.parametrize("flag", [True, False])
+def test_require_decoder_is_noop_for_decoded_paths(resolved_path, flag):
+    _require_decoder_unless_latent_metrics_opt_in(
+        resolved_path=resolved_path,
+        latent_space_metrics=flag,
     )
 
 

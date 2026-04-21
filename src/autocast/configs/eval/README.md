@@ -97,7 +97,7 @@ run time.
 | ------------- | ------------------- | ---------------------- | ------------ | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
 | `encode_once` | **once** (step 0)   | latent space           | per step     | raw `batch.output_fields` (denormalized)   | fair processor-only eval that avoids decode/encode drift but still scores against real ground truth.               |
 | `ambient`     | per rollout step    | data space (re-encoded each step) | per step     | raw `batch.output_fields` (denormalized)   | apples-to-apples comparisons with pure-ambient baselines (e.g. CRPS vs. a non-autoencoder model).                  |
-| `latent`      | once (step 0)       | latent space           | only for metrics (or not at all) | **decoded cached latents** (autoencoder reconstruction of ground truth) | measure the processor against what the autoencoder sees -- isolates processor error but hides AE reconstruction error. |
+| `latent`      | once (step 0)       | latent space           | only for metrics (or skipped via `latent_space_metrics=true`) | **decoded cached latents** (autoencoder reconstruction of ground truth) | measure the processor against what the autoencoder sees -- isolates processor error but hides AE reconstruction error. |
 
 ### `auto` (default)
 
@@ -116,7 +116,10 @@ run:
   reconstruction error is visible against raw ground truth).
 - **Processor trained on cached latents, autoencoder not reachable**
   -> `latent`. The only faithful option when you can decode but not
-  re-encode.
+  re-encode. If no decoder can be built either, `auto` does not silently
+  fall through to latent-only metrics -- it fails fast so you either fix
+  the autoencoder path or opt in explicitly via
+  `eval.mode=latent eval.latent_space_metrics=true`.
 
 The resolved mode is logged at INFO as `eval.mode=auto resolved to <X>`.
 
@@ -140,12 +143,37 @@ override).
 `eval.mode=latent` forces latent-space rollout: the processor's predicted
 latent is fed back as the next latent input and the encoder is never
 invoked past step 0. Metrics are decoded to data space via the decoder
-saved alongside the cached latents when available, otherwise reported in
-latent space, and **compared against decoded cached latents** -- i.e. an
-autoencoder reconstruction of ground truth, not the raw fields. Use this
-when you want to isolate the processor's rollout quality in its own
-training distribution and explicitly accept that AE reconstruction error is
-hidden from the metric.
+saved alongside the cached latents and **compared against decoded cached
+latents** -- i.e. an autoencoder reconstruction of ground truth, not the
+raw fields. Use this when you want to isolate the processor's rollout
+quality in its own training distribution and explicitly accept that AE
+reconstruction error is hidden from the metric.
+
+A reachable decoder is required; if the cache directory's
+`autoencoder_config.yaml` or checkpoint is missing the run fails fast
+rather than silently falling back to computing metrics in raw latent
+space (those numbers were never comparable across runs).
+
+##### Dev sense-check: latent-only metrics
+
+Sometimes you want to iterate on a small processor paired with a large /
+expensive autoencoder and skip the decoder entirely. Pass
+`eval.mode=latent eval.latent_space_metrics=true` to opt in:
+
+```bash
+autocast eval --workdir <processor_workdir> \
+  eval.mode=latent \
+  eval.latent_space_metrics=true \
+  eval.checkpoint=<processor.ckpt>
+```
+
+This skips the decoder lookup and compares processor predictions against
+cached latents directly in the autoencoder's raw latent space. Treat the
+numbers as a cheap sanity check only: they are **not comparable across
+runs** (latent space is basis-dependent) and physics-aware metrics
+(`psrmse*`, `pscc*`, `variogram`) are not meaningful. The flag is
+rejected for any other `eval.mode` because the raw-space modes (`auto`,
+`ambient`, `encode_once`) require a decoder by definition.
 
 ### Running the ablations
 
