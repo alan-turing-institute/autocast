@@ -3,12 +3,13 @@
 set -euo pipefail
 # 24h production runs for the ensemble-size ablation.
 # Mirrors slurm_scripts/comparison/epd/submit_crps_large.sh but sweeps
-# (regime, n_members, bs_per_gpu) combos from COMBOS. Current defaults are
-# m=16 pilot runs, but the table is designed to be extended.
+# (regime, n_members, bs_per_gpu) combos from COMBOS. The active submit list
+# is currently just the three non-CNS `eff_bs1024` runs; other combos are
+# kept commented for later.
 #
 # Current coverage:
-#   gray_scott / gpe_laser_only_wake / advection_diffusion: eff_bs1024 only
-#   conditioned_navier_stokes: already run separately, commented out below
+#   active now: gray_scott / gpe_laser_only_wake / advection_diffusion at eff_bs1024
+#   parked for later: conditioned_navier_stokes and fixed_bs32 combos
 #
 # COSINE_EPOCHS_BY_COMBO can be pre-populated from submit_ensemble_timing.sh via
 #   uv run autocast time-epochs --from-checkpoint <path>/timing.ckpt -b 24 -m 0.02
@@ -134,7 +135,7 @@ declare -A REGIMES_BY_DATASET=(
 
 # (regime, n_members, bs_per_gpu) triples, matching submit_ensemble_timing.sh.
 COMBOS=(
-    "fixed_bs32 16 32"
+    # "fixed_bs32 16 32"
     "eff_bs1024 16 16"
 )
 

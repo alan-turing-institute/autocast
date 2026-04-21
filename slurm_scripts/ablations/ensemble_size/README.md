@@ -1,9 +1,11 @@
 # Ensemble size ablation
 
 First-pass defaults focus on `n_members=16` under two batch-size
-regimes. CNS keeps both regimes, and the `eff_bs1024` branch now extends
-the same CRPS ambient baseline pattern to `gray_scott`, `gpe_laser_only_wake`,
-and `advection_diffusion`. All runs inherit from the matching per-dataset
+regimes. For the current submission pass, the active scripts are pared
+down to just three `eff_bs1024` runs on `gray_scott`,
+`gpe_laser_only_wake`, and `advection_diffusion`; the CNS entries and
+`fixed_bs32` combo are left commented for later reuse. All runs inherit
+from the matching per-dataset
 `local_hydra/local_experiment/epd/<dataset>/crps_vit_azula_large.yaml`;
 the ablation is a pure CLI override on `model.n_members` +
 `datamodule.batch_size`, so no new experiment configs are needed.
@@ -40,16 +42,16 @@ Keep `bs_crps × n_members × 4 GPUs = 1024`. With `n_members=16`,
 | `gpe_laser_only_wake` | no | yes |
 | `advection_diffusion` | no | yes |
 
-This keeps the original CNS pilot intact while extending the
-compute-matched (`1024` effective global batch) CRPS runs to the other
-three comparison datasets.
+This keeps the original CNS pilot in reserve while the active submit
+scripts target only the three compute-matched (`1024` effective global
+batch) CRPS ablations on the other comparison datasets.
 
 ## Files
 
 | file | purpose |
 |---|---|
-| `submit_ensemble_timing.sh` | 5-epoch timing for CNS `fixed_bs32` + all 4 datasets under `eff_bs1024` → `timing.ckpt` per run |
-| `submit_ensemble_large.sh`  | 24h production runs for the same coverage, using cached or timing-derived cosine schedules |
+| `submit_ensemble_timing.sh` | 5-epoch timing for the three active `eff_bs1024` runs (`gray_scott`, `gpe_laser_only_wake`, `advection_diffusion`) → `timing.ckpt` per run |
+| `submit_ensemble_large.sh`  | 24h production runs for the same three active runs, using cached or timing-derived cosine schedules |
 
 ## Extending the sweep
 

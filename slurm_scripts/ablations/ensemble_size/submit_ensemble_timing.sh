@@ -3,8 +3,8 @@
 set -euo pipefail
 # Timing runs for the ensemble-size ablation.
 #
-# Two regimes (see README). Current defaults are m=16, but COMBOS is meant
-# to be extended as the ablation grows:
+# Two regimes exist in the ablation design (see README), but the active
+# submit list below is limited to the three non-CNS `eff_bs1024` runs for now:
 #   fixed_bs32: fixed datamodule.batch_size=32/GPU (same as main CRPS run).
 #   eff_bs1024: fixed global effective batch = 1024 (matches main budget).
 #
@@ -13,8 +13,8 @@ set -euo pipefail
 # configs. Timing runs disable wandb + skip_test; produce timing.ckpt.
 #
 # Current coverage:
-#   gray_scott / gpe_laser_only_wake / advection_diffusion: eff_bs1024 only
-#   conditioned_navier_stokes: already run separately, commented out below
+#   active now: gray_scott / gpe_laser_only_wake / advection_diffusion at eff_bs1024
+#   parked for later: conditioned_navier_stokes and fixed_bs32 combos
 
 declare -A DATASETS=(
     ["gray_scott"]="epd/gray_scott/crps_vit_azula_large"
@@ -34,7 +34,7 @@ declare -A REGIMES_BY_DATASET=(
 #   fixed_bs32:    bs_per_gpu                         = 32
 #   eff_bs1024:    bs_per_gpu × n_members × 4 GPUs   = 1024
 COMBOS=(
-    "fixed_bs32 16 32"
+    # "fixed_bs32 16 32"
     "eff_bs1024 16 16"
 )
 
