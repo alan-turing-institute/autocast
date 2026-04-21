@@ -18,7 +18,12 @@ params ~= depth x width^2
 
 Canonical ViT/DiT families often co-scale heads with width, but for this
 ablation we keep heads fixed at `8` in both models so width and depth are the
-only scaling knobs.
+only scaling knobs. The baselines already run at non-standard head dimensions
+(CRPS `568/8 = 71`, FM `704/8 = 88`), so holding heads fixed preserves the
+baseline attention geometry rather than introducing a second architectural
+change at large only. Resulting large head dimensions (`96` and `112`) are
+within the range used by prior transformer families (e.g. ViT-H uses `80`,
+DiT-XL uses `72`).
 
 There is no architectural restriction forcing odd block counts here. Even
 depth works fine in this codebase; the current sweep uses `16` blocks/layers
@@ -90,8 +95,8 @@ Those are perfectly valid, but the committed sweep prefers the cleaner shared
 
 | file | purpose |
 |---|---|
-| `local_hydra/local_experiment/ablations/model_size/conditioned_navier_stokes/crps_vit_azula_160m.yaml` | CRPS ambient ~2x preset |
-| `local_hydra/local_experiment/ablations/model_size/conditioned_navier_stokes/fm_vit_160m.yaml` | FM ambient ~2x preset |
+| `local_hydra/local_experiment/ablations/model_size/conditioned_navier_stokes/crps_vit_azula_2x.yaml` | CRPS ambient ~2x preset |
+| `local_hydra/local_experiment/ablations/model_size/conditioned_navier_stokes/fm_vit_2x.yaml` | FM ambient ~2x preset |
 | `slurm_scripts/ablations/model_size/submit_model_size_timing.sh` | 5-epoch timing runs for both variants |
 | `slurm_scripts/ablations/model_size/submit_model_size_large.sh` | 24h production runs after filling cosine epochs |
 
@@ -104,8 +109,10 @@ CLI overrides. That keeps auto-generated run dirs descriptive:
 - CRPS large-run dirs resolve like `crps_cns64_vit_azula_large_768_<git>_<uuid>`.
 - FM large-run dirs resolve like `diff_cns64_flow_matching_vit_896_<git>_<uuid>`.
 - The ablation knob itself is surfaced in `logging.wandb.name`
-  (`model_size_crps_160m` / `model_size_fm_160m`), which also feeds the SLURM
-  job name, mirroring `ensemble_size`.
+  (`model_size_crps_2x` / `model_size_fm_2x`), which also feeds the SLURM
+  job name, mirroring `ensemble_size`. The label matches the honest measured
+  scale (~2.09x / ~2.10x); avoid calling these runs "160M" in the paper
+  since the actual processor param counts are ~168-169M.
 
 ## Workflow
 

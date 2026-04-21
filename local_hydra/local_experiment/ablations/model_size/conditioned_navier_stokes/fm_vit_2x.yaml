@@ -3,13 +3,13 @@ defaults:
   - /local_experiment/epd/conditioned_navier_stokes/fm_vit_large
   - _self_
 
-experiment_name: ablation_model_size_fm_vit_160m_conditioned_navier_stokes
+experiment_name: ablation_model_size_fm_vit_2x_conditioned_navier_stokes
 
 model:
   processor:
     backbone:
       # Measured at ~168.6M processor params in the CNS ambient setup, versus
-      # ~80.3M for the baseline 704/12/8 backbone.
+      # ~80.3M for the baseline 704/12/8 backbone (~2.10x).
       hid_channels: 896
       hid_blocks: 16
       attention_heads: 8

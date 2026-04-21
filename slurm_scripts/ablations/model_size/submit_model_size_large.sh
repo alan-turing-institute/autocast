@@ -10,11 +10,11 @@ set -euo pipefail
 declare -A DATASETS=(
     ["conditioned_navier_stokes"]="conditioned_navier_stokes"
 )
-VARIANTS=("crps_160m" "fm_160m")
+VARIANTS=("crps_2x" "fm_2x")
 
 declare -A COSINE_EPOCHS_BY_VARIANT=(
-    # ["conditioned_navier_stokes:crps_160m"]=...
-    # ["conditioned_navier_stokes:fm_160m"]=...
+    # ["conditioned_navier_stokes:crps_2x"]=...
+    # ["conditioned_navier_stokes:fm_2x"]=...
 )
 
 BUDGET_MAX_TIME="00:23:59:00"
@@ -32,7 +32,7 @@ resolve_variant() {
     variant_overrides=()
 
     case "${variant}" in
-        crps_160m)
+        crps_2x)
             experiment="epd/conditioned_navier_stokes/crps_vit_azula_large"
             variant_overrides=(
                 "model.processor.hidden_dim=768"
@@ -43,7 +43,7 @@ resolve_variant() {
                 "datamodule.batch_size=16"
             )
             ;;
-        fm_160m)
+        fm_2x)
             experiment="epd/conditioned_navier_stokes/fm_vit_large"
             variant_overrides=(
                 "model.processor.backbone.hid_channels=896"
