@@ -21,7 +21,7 @@ change per ablation.
 | crps_variants (AlphaFair / Fair / CRPS) | comparison | CNS | 3 | stub |
 | fm_vs_diffusion | comparison | CNS | 1 | stub |
 | arch_unet_fno_vit | comparison | CNS | 2 | stub |
-| model_size | sweep | CNS | 1 | stub |
+| model_size | sweep | CNS | 2 | ready |
 | cached_latent_crps | comparison | CNS | 1 (done, 2026-04-19) | stub |
 | cond_global_vs_permute | comparison | CNS | 1 (done for CRPS-ViT, 2026-04-18) | stub |
 | eval_only/ode_steps | eval-only | FM runs | 0 | stub |
