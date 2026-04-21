@@ -30,7 +30,7 @@ RUN_DIRS=(
 declare -A AE_CKPT=(
     ["outputs/2026-04-20_part/crps_cns64_vit_azula_large_09490da_8b7573d"]="$HOME/autocast/outputs/2026-04-17/ae_cns64_3a7999b_b9c29f8/autoencoder.ckpt"
 )
-
+source .venv/bin/activate
 for run_dir in "${RUN_DIRS[@]}"; do
     ae_ckpt="${AE_CKPT[$run_dir]:-}"
     if [[ -z "${ae_ckpt}" ]]; then
@@ -61,7 +61,7 @@ for run_dir in "${RUN_DIRS[@]}"; do
         echo "  eval.batch_size: ${EVAL_BATCH_SIZE}"
         echo "  eval.metrics: ${EVAL_METRICS}"
 
-        uv run autocast eval --mode slurm "${dry_run_arg[@]}" \
+        autocast eval --mode slurm "${dry_run_arg[@]}" \
             --workdir "${run_dir}" \
             eval.checkpoint=processor.ckpt \
             ++eval.mode=ambient \

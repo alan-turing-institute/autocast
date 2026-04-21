@@ -34,7 +34,7 @@ declare -A AE_CKPT=(
     ["outputs/2026-04-20_part/diff_cns64_flow_matching_vit_09490da_636fcc3"]="$HOME/autocast/outputs/2026-04-17/ae_cns64_3a7999b_b9c29f8/autoencoder.ckpt"
     ["outputs/2026-04-20_part/diff_ad64_flow_matching_vit_09490da_dae1382"]="$HOME/autocast/outputs/2026-04-17/ae_ad64_3a7999b_1a1e300/autoencoder.ckpt"
 )
-
+source .venv/bin/activate
 for run_dir in "${RUN_DIRS[@]}"; do
     ae_ckpt="${AE_CKPT[$run_dir]:-}"
     if [[ -z "${ae_ckpt}" ]]; then
@@ -65,7 +65,7 @@ for run_dir in "${RUN_DIRS[@]}"; do
         echo "  eval.batch_size: ${EVAL_BATCH_SIZE}"
         echo "  eval.metrics: ${EVAL_METRICS}"
 
-        uv run autocast eval --mode slurm "${dry_run_arg[@]}" \
+        autocast eval --mode slurm "${dry_run_arg[@]}" \
             --workdir "${run_dir}" \
             eval.checkpoint=processor.ckpt \
             ++eval.mode=ambient \

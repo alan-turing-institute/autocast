@@ -1,7 +1,7 @@
 #!/bin/bash
 
 set -euo pipefail
-# Evaluate FM cached-latent processor runs (2026-04-18) in LATENT mode.
+# Evaluate FM cached-latent processor runs (2026-04-20_part) in LATENT mode.
 #
 # eval.mode=latent rolls out in latent space and writes results to eval_latent/
 # so ambient-vs-latent comparisons can coexist per run.
@@ -19,18 +19,18 @@ EVAL_SUBDIR="eval_latent"
 EVAL_METRICS="[mse,mae,nmse,nmae,rmse,nrmse,vmse,vrmse,linf,psrmse,psrmse_low,psrmse_mid,psrmse_high,psrmse_tail,pscc,pscc_low,pscc_mid,pscc_high,pscc_tail,crps,fcrps,afcrps,energy,ssr,winkler]"
 
 RUN_DIRS=(
-    "outputs/2026-04-18/diff_gs64_flow_matching_vit_0f89f06_f6e8f51"
-    "outputs/2026-04-18/diff_gpe64_flow_matching_vit_0f89f06_b954f94"
-    "outputs/2026-04-18/diff_cns64_flow_matching_vit_0f89f06_0e1c64b"
-    "outputs/2026-04-18/diff_ad64_flow_matching_vit_0f89f06_df2137c"
+    "outputs/2026-04-20_part/diff_gs64_flow_matching_vit_09490da_7e9e331"
+    "outputs/2026-04-20_part/diff_gpe64_flow_matching_vit_09490da_47bf39a"
+    "outputs/2026-04-20_part/diff_cns64_flow_matching_vit_09490da_636fcc3"
+    "outputs/2026-04-20_part/diff_ad64_flow_matching_vit_09490da_dae1382"
 )
 declare -A AE_CKPT=(
-    ["outputs/2026-04-18/diff_gs64_flow_matching_vit_0f89f06_f6e8f51"]="$HOME/autocast/outputs/2026-04-17/ae_gs64_3a7999b_ed36b8e/autoencoder.ckpt"
-    ["outputs/2026-04-18/diff_gpe64_flow_matching_vit_0f89f06_b954f94"]="$HOME/autocast/outputs/2026-04-17/ae_gpe64_3a7999b_31e1c9f/autoencoder.ckpt"
-    ["outputs/2026-04-18/diff_cns64_flow_matching_vit_0f89f06_0e1c64b"]="$HOME/autocast/outputs/2026-04-17/ae_cns64_3a7999b_b9c29f8/autoencoder.ckpt"
-    ["outputs/2026-04-18/diff_ad64_flow_matching_vit_0f89f06_df2137c"]="$HOME/autocast/outputs/2026-04-17/ae_ad64_3a7999b_1a1e300/autoencoder.ckpt"
+    ["outputs/2026-04-20_part/diff_gs64_flow_matching_vit_09490da_7e9e331"]="$HOME/autocast/outputs/2026-04-17/ae_gs64_3a7999b_ed36b8e/autoencoder.ckpt"
+    ["outputs/2026-04-20_part/diff_gpe64_flow_matching_vit_09490da_47bf39a"]="$HOME/autocast/outputs/2026-04-17/ae_gpe64_3a7999b_31e1c9f/autoencoder.ckpt"
+    ["outputs/2026-04-20_part/diff_cns64_flow_matching_vit_09490da_636fcc3"]="$HOME/autocast/outputs/2026-04-17/ae_cns64_3a7999b_b9c29f8/autoencoder.ckpt"
+    ["outputs/2026-04-20_part/diff_ad64_flow_matching_vit_09490da_dae1382"]="$HOME/autocast/outputs/2026-04-17/ae_ad64_3a7999b_1a1e300/autoencoder.ckpt"
 )
-
+source .venv/bin/activate
 for run_dir in "${RUN_DIRS[@]}"; do
     ae_ckpt="${AE_CKPT[$run_dir]:-}"
     if [[ -z "${ae_ckpt}" ]]; then
@@ -62,7 +62,7 @@ for run_dir in "${RUN_DIRS[@]}"; do
         echo "  eval.metrics: ${EVAL_METRICS}"
         echo "  output_dir: ${run_dir}/${EVAL_SUBDIR}"
 
-        uv run autocast eval --mode slurm "${dry_run_arg[@]}" \
+        autocast eval --mode slurm "${dry_run_arg[@]}" \
             --workdir "${run_dir}" \
             eval.checkpoint=processor.ckpt \
             ++eval.mode=latent \

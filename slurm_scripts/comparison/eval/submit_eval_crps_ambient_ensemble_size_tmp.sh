@@ -18,7 +18,7 @@ RUN_DIRS=(
     "outputs/2026-04-20_part/ensemble_size/crps_cns64_vit_azula_large_0db40e1_5e157a5"  # ensemble_m16_fixed_bs32
     "outputs/2026-04-20_part/ensemble_size/crps_cns64_vit_azula_large_0db40e1_dcd79e4"  # ensemble_m16_eff_bs1024
 )
-
+source .venv/bin/activate
 for run_dir in "${RUN_DIRS[@]}"; do
     if [[ ! -f "${run_dir}/resolved_config.yaml" ]]; then
         echo "Skipping ${run_dir}: resolved_config.yaml missing" >&2
@@ -39,7 +39,7 @@ for run_dir in "${RUN_DIRS[@]}"; do
         echo "  eval.batch_size: ${EVAL_BATCH_SIZE}"
         echo "  eval.metrics: ${EVAL_METRICS}"
 
-        uv run autocast eval --mode slurm "${dry_run_arg[@]}" \
+        autocast eval --mode slurm "${dry_run_arg[@]}" \
             --workdir "${run_dir}" \
             eval.metrics="${EVAL_METRICS}" \
             eval.batch_size="${EVAL_BATCH_SIZE}" \
