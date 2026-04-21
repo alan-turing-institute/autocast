@@ -10,10 +10,17 @@ set -euo pipefail
 declare -A DATASETS=(
     ["conditioned_navier_stokes"]="conditioned_navier_stokes"
 )
-VARIANTS=("crps_2x" "fm_2x")
+VARIANTS=(
+    "crps_0p4x"
+    "crps_2x"
+    "fm_0p4x"
+    "fm_2x"
+)
 
 declare -A COSINE_EPOCHS_BY_VARIANT=(
+    # ["conditioned_navier_stokes:crps_0p4x"]=...
     # ["conditioned_navier_stokes:crps_2x"]=...
+    # ["conditioned_navier_stokes:fm_0p4x"]=...
     # ["conditioned_navier_stokes:fm_2x"]=...
 )
 
@@ -32,6 +39,17 @@ resolve_variant() {
     variant_overrides=()
 
     case "${variant}" in
+        crps_0p4x)
+            experiment="epd/conditioned_navier_stokes/crps_vit_azula_large"
+            variant_overrides=(
+                "model.processor.hidden_dim=376"
+                "model.processor.n_layers=8"
+                "model.processor.num_heads=8"
+                "model.processor.n_noise_channels=1024"
+                "model.n_members=16"
+                "datamodule.batch_size=16"
+            )
+            ;;
         crps_2x)
             experiment="epd/conditioned_navier_stokes/crps_vit_azula_large"
             variant_overrides=(
@@ -41,6 +59,14 @@ resolve_variant() {
                 "model.processor.n_noise_channels=1024"
                 "model.n_members=16"
                 "datamodule.batch_size=16"
+            )
+            ;;
+        fm_0p4x)
+            experiment="epd/conditioned_navier_stokes/fm_vit_large"
+            variant_overrides=(
+                "model.processor.backbone.hid_channels=472"
+                "model.processor.backbone.hid_blocks=8"
+                "model.processor.backbone.attention_heads=8"
             )
             ;;
         fm_2x)
