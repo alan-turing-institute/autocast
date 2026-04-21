@@ -9,7 +9,9 @@ from omegaconf import OmegaConf
 
 from autocast.metrics.ensemble import CRPS, AlphaFairCRPS, SpreadSkillRatio
 from autocast.scripts.eval.encoder_processor_decoder import (
+    DEFAULT_EVAL_MODE,
     EVAL_PATH_AMBIENT_EPD,
+    EVAL_PATH_ENCODE_ONCE,
     EVAL_PATH_LATENT_CACHED_LATENT_ONLY,
     EVAL_PATH_LATENT_CACHED_WITH_DECODER,
     _build_eval_predict_fn,
@@ -20,6 +22,8 @@ from autocast.scripts.eval.encoder_processor_decoder import (
     _normalize_per_batch_rows,
     _reindex_per_batch_rows_by_rank,
     _render_rollouts,
+    _require_decoder_unless_latent_metrics_opt_in,
+    _resolve_auto_eval_mode,
     _resolve_eval_path,
     _resolve_rollout_batch_limit,
     _resolve_rollout_channel_names,
@@ -27,6 +31,7 @@ from autocast.scripts.eval.encoder_processor_decoder import (
     _should_skip_metric,
     _split_metric_and_metadata_rows,
     _training_runtime_rows,
+    _validate_latent_space_metrics_flag,
     _validate_resolved_eval_path,
 )
 from autocast.types import Batch, EncodedBatch
@@ -428,9 +433,14 @@ def test_render_rollouts_resolves_indices_within_batched_samples(tmp_path, monke
 # ---------------------------------------------------------------------------
 
 
+def test_default_eval_mode_is_auto():
+    assert DEFAULT_EVAL_MODE == "auto"
+
+
 def test_normalize_eval_mode_accepts_known_values_and_none():
     assert _normalize_eval_mode(None) == "auto"
-    assert _normalize_eval_mode("auto") == "auto"
+    assert _normalize_eval_mode("Auto") == "auto"
+    assert _normalize_eval_mode("Encode_Once") == "encode_once"
     assert _normalize_eval_mode("Ambient") == "ambient"
     assert _normalize_eval_mode("LATENT") == "latent"
 
@@ -440,52 +450,106 @@ def test_normalize_eval_mode_rejects_unknown():
         _normalize_eval_mode("something-else")
 
 
-@pytest.mark.parametrize(
-    ("processor_only", "batch_type", "ae_ckpt", "decoder_loaded", "expected"),
-    [
-        (False, "batch", False, False, EVAL_PATH_AMBIENT_EPD),
-        (False, "encoded", False, False, EVAL_PATH_AMBIENT_EPD),
-        (True, "batch", True, False, EVAL_PATH_AMBIENT_EPD),
-        (True, "encoded", False, True, EVAL_PATH_LATENT_CACHED_WITH_DECODER),
-        (True, "encoded", False, False, EVAL_PATH_LATENT_CACHED_LATENT_ONLY),
-    ],
-)
-def test_resolve_eval_path_matches_run_evaluation_branches(
-    processor_only, batch_type, ae_ckpt, decoder_loaded, expected
-):
-    example_batch = (
-        Batch(
+def _example_batch(kind):
+    if kind == "batch":
+        return Batch(
             input_fields=torch.zeros(1, 1, 2, 2, 1),
             output_fields=torch.zeros(1, 1, 2, 2, 1),
             constant_scalars=None,
             constant_fields=None,
         )
-        if batch_type == "batch"
-        else EncodedBatch(
-            encoded_inputs=torch.zeros(1, 1, 2, 2, 1),
-            encoded_output_fields=torch.zeros(1, 1, 2, 2, 1),
-            global_cond=None,
-            encoded_info={},
-        )
+    return EncodedBatch(
+        encoded_inputs=torch.zeros(1, 1, 2, 2, 1),
+        encoded_output_fields=torch.zeros(1, 1, 2, 2, 1),
+        global_cond=None,
+        encoded_info={},
     )
 
-    resolved = _resolve_eval_path(
+
+@pytest.mark.parametrize(
+    ("processor_only", "batch_type", "ae_ckpt", "expected"),
+    [
+        # Full EPD (or stateless AE baked into processor) -> ambient.
+        (False, "batch", False, "ambient"),
+        (False, "encoded", False, "ambient"),
+        (False, "batch", True, "ambient"),
+        # Processor-only on raw Batch with AE -> encode_once.
+        (True, "batch", True, "encode_once"),
+        # Processor-only on cached latents with AE -> encode_once (a swap will
+        # happen downstream); without AE -> latent.
+        (True, "encoded", True, "encode_once"),
+        (True, "encoded", False, "latent"),
+        # Processor-only on raw Batch without AE: falls back to latent.
+        (True, "batch", False, "latent"),
+    ],
+)
+def test_resolve_auto_eval_mode_picks_faithful_default(
+    processor_only, batch_type, ae_ckpt, expected
+):
+    resolved = _resolve_auto_eval_mode(
         processor_only=processor_only,
-        example_batch=example_batch,
+        example_batch=_example_batch(batch_type),
         has_autoencoder_checkpoint=ae_ckpt,
-        decode_fn_loaded=decoder_loaded,
     )
 
     assert resolved == expected
 
 
-def test_validate_resolved_eval_path_auto_is_always_ok():
-    for path in (
-        EVAL_PATH_AMBIENT_EPD,
+_RESOLVE_EVAL_PATH_CASES = [
+    # Full EPD: always resolves to ambient_epd regardless of mode.
+    ("ambient", False, "batch", False, False, EVAL_PATH_AMBIENT_EPD),
+    ("encode_once", False, "batch", False, False, EVAL_PATH_AMBIENT_EPD),
+    ("ambient", False, "encoded", False, False, EVAL_PATH_AMBIENT_EPD),
+    # Processor-only + raw Batch + AE ckpt: mode selects the path.
+    ("ambient", True, "batch", True, False, EVAL_PATH_AMBIENT_EPD),
+    ("encode_once", True, "batch", True, False, EVAL_PATH_ENCODE_ONCE),
+    # Processor-only + cached latents: latent paths, independent of mode.
+    ("latent", True, "encoded", False, True, EVAL_PATH_LATENT_CACHED_WITH_DECODER),
+    ("latent", True, "encoded", False, False, EVAL_PATH_LATENT_CACHED_LATENT_ONLY),
+    # encode_once on cached latents still maps to the latent paths here;
+    # _validate_resolved_eval_path is what rejects the combination.
+    (
+        "encode_once",
+        True,
+        "encoded",
+        False,
+        True,
         EVAL_PATH_LATENT_CACHED_WITH_DECODER,
+    ),
+    (
+        "encode_once",
+        True,
+        "encoded",
+        False,
+        False,
         EVAL_PATH_LATENT_CACHED_LATENT_ONLY,
-    ):
-        _validate_resolved_eval_path(eval_mode="auto", resolved_path=path)
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    (
+        "eval_mode",
+        "processor_only",
+        "batch_type",
+        "ae_ckpt",
+        "decoder_loaded",
+        "expected",
+    ),
+    _RESOLVE_EVAL_PATH_CASES,
+)
+def test_resolve_eval_path_matches_run_evaluation_branches(
+    eval_mode, processor_only, batch_type, ae_ckpt, decoder_loaded, expected
+):
+    resolved = _resolve_eval_path(
+        eval_mode=eval_mode,
+        processor_only=processor_only,
+        example_batch=_example_batch(batch_type),
+        has_autoencoder_checkpoint=ae_ckpt,
+        decode_fn_loaded=decoder_loaded,
+    )
+
+    assert resolved == expected
 
 
 def test_validate_resolved_eval_path_ambient_rejects_latent_path():
@@ -504,10 +568,35 @@ def test_validate_resolved_eval_path_latent_rejects_ambient_path():
         )
 
 
+def test_validate_resolved_eval_path_latent_rejects_encode_once_path():
+    with pytest.raises(ValueError, match=r"eval\.mode=latent"):
+        _validate_resolved_eval_path(
+            eval_mode="latent",
+            resolved_path=EVAL_PATH_ENCODE_ONCE,
+        )
+
+
+def test_validate_resolved_eval_path_encode_once_rejects_latent_paths():
+    for path in (
+        EVAL_PATH_LATENT_CACHED_WITH_DECODER,
+        EVAL_PATH_LATENT_CACHED_LATENT_ONLY,
+    ):
+        with pytest.raises(ValueError, match=r"eval\.mode=encode_once"):
+            _validate_resolved_eval_path(eval_mode="encode_once", resolved_path=path)
+
+
 def test_validate_resolved_eval_path_happy_paths():
     _validate_resolved_eval_path(
         eval_mode="ambient",
         resolved_path=EVAL_PATH_AMBIENT_EPD,
+    )
+    _validate_resolved_eval_path(
+        eval_mode="encode_once",
+        resolved_path=EVAL_PATH_AMBIENT_EPD,
+    )
+    _validate_resolved_eval_path(
+        eval_mode="encode_once",
+        resolved_path=EVAL_PATH_ENCODE_ONCE,
     )
     _validate_resolved_eval_path(
         eval_mode="latent",
@@ -517,6 +606,59 @@ def test_validate_resolved_eval_path_happy_paths():
         eval_mode="latent",
         resolved_path=EVAL_PATH_LATENT_CACHED_LATENT_ONLY,
     )
+
+
+@pytest.mark.parametrize("mode", ["auto", "ambient", "encode_once"])
+def test_validate_latent_space_metrics_flag_rejects_non_latent_modes(mode):
+    with pytest.raises(ValueError, match=r"eval\.latent_space_metrics"):
+        _validate_latent_space_metrics_flag(
+            requested_eval_mode=mode,
+            latent_space_metrics=True,
+        )
+    # flag=False is always a no-op, regardless of mode.
+    _validate_latent_space_metrics_flag(
+        requested_eval_mode=mode,
+        latent_space_metrics=False,
+    )
+
+
+def test_validate_latent_space_metrics_flag_allows_explicit_latent():
+    _validate_latent_space_metrics_flag(
+        requested_eval_mode="latent",
+        latent_space_metrics=True,
+    )
+
+
+def test_require_decoder_fails_fast_without_opt_in():
+    with pytest.raises(RuntimeError, match=r"latent_space_metrics=true"):
+        _require_decoder_unless_latent_metrics_opt_in(
+            resolved_path=EVAL_PATH_LATENT_CACHED_LATENT_ONLY,
+            latent_space_metrics=False,
+        )
+
+
+def test_require_decoder_allows_opt_in_and_warns(caplog):
+    with caplog.at_level("WARNING"):
+        _require_decoder_unless_latent_metrics_opt_in(
+            resolved_path=EVAL_PATH_LATENT_CACHED_LATENT_ONLY,
+            latent_space_metrics=True,
+        )
+    # Decoded paths are no-ops whether or not the flag is set.
+    for path in (
+        EVAL_PATH_AMBIENT_EPD,
+        EVAL_PATH_ENCODE_ONCE,
+        EVAL_PATH_LATENT_CACHED_WITH_DECODER,
+    ):
+        _require_decoder_unless_latent_metrics_opt_in(
+            resolved_path=path, latent_space_metrics=False
+        )
+        _require_decoder_unless_latent_metrics_opt_in(
+            resolved_path=path, latent_space_metrics=True
+        )
+
+    assert any(
+        "latent_space_metrics=true" in record.message for record in caplog.records
+    ), "expected a prominent warning about latent-only metrics"
 
 
 def test_maybe_swap_to_ambient_datamodule_is_noop_for_raw_batch(tmp_path):
@@ -555,11 +697,49 @@ def test_maybe_swap_to_ambient_datamodule_is_noop_for_non_ambient(tmp_path):
     )
 
     result = _maybe_swap_to_ambient_datamodule(
-        cfg, eval_mode="auto", example_batch=encoded
+        cfg, eval_mode="latent", example_batch=encoded
     )
 
     assert result is cfg
     assert cfg.datamodule._target_ == "cached.LatentDataModule"
+
+
+def test_maybe_swap_to_ambient_datamodule_swaps_for_encode_once(tmp_path):
+    # encode_once also needs raw inputs (encoder runs once); same swap as ambient.
+    ae_cfg_path = tmp_path / "autoencoder_config.yaml"
+    OmegaConf.save(
+        OmegaConf.create(
+            {
+                "datamodule": {
+                    "_target_": "raw.TheWellDataModule",
+                    "data_path": "/path/to/raw",
+                    "use_normalization": True,
+                }
+            }
+        ),
+        ae_cfg_path,
+    )
+    cfg = OmegaConf.create(
+        {
+            "datamodule": {
+                "_target_": "cached.LatentDataModule",
+                "data_path": str(tmp_path),
+            }
+        }
+    )
+    encoded = EncodedBatch(
+        encoded_inputs=torch.zeros(1, 1, 2, 2, 1),
+        encoded_output_fields=torch.zeros(1, 1, 2, 2, 1),
+        global_cond=None,
+        encoded_info={},
+    )
+
+    _maybe_swap_to_ambient_datamodule(
+        cfg, eval_mode="encode_once", example_batch=encoded
+    )
+
+    assert cfg.datamodule._target_ == "raw.TheWellDataModule"
+    assert cfg.datamodule.data_path == "/path/to/raw"
 
 
 def test_maybe_swap_to_ambient_datamodule_loads_from_cache_dir(tmp_path):
