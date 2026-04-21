@@ -2,62 +2,16 @@
 # Path to checkpoint for evaluation (required for eval)
 checkpoint: null
 
-# Evaluation mode selector (controls rollout space, not just metrics space).
-#
-#   auto         (default) Dispatch to a concrete mode based on the
-#                checkpoint + datamodule + autoencoder availability so that
-#                every run gets a fair eval without extra flags:
-#                  - full EPD (or stateless encoder/decoder baked into a
-#                    processor run)                -> ambient
-#                  - processor-only + autoencoder  -> encode_once
-#                  - processor-only + cached latents, no AE -> latent
-#                The chosen mode is logged at INFO. Prefer this for most
-#                runs; use an explicit mode only to force a specific
-#                rollout regime or to compare runs under identical
-#                semantics.
-#   encode_once  Encoder runs once on raw inputs, processor rolls out in
-#                latent space, decoder runs per step; metrics are computed
-#                against the raw denormalized ground-truth fields. Isolates
-#                processor error from autoencoder decode/encode drift
-#                while still scoring against real ground truth. On full
-#                EPD / stateless-AE runs this aliases to `ambient` and
-#                emits a warning (there is no separate latent rollout to
-#                isolate). Requires `autoencoder_checkpoint=<ae.ckpt>` when
-#                the processor was trained on cached latents; in that case
-#                the cached-latent datamodule is auto-swapped for the raw
-#                datamodule from `<cache_dir>/autoencoder_config.yaml`.
-#   ambient      Force full encoder -> processor -> decoder rollout at every
-#                step. Each step decodes and re-encodes, so autoencoder
-#                decode/encode drift is charged to the metrics -- this is
-#                the apples-to-apples regime for comparing against models
-#                that natively roll out in ambient/data space (e.g. pure-
-#                ambient CRPS baselines). Same datamodule-swap behavior as
-#                `encode_once` when starting from cached latents.
-#   latent       Force latent-space rollout (processor predictions are fed
-#                back as latents; encoder is never invoked). Metrics are
-#                decoded to data space via the decoder saved alongside the
-#                cached latents. Requires an EncodedBatch datamodule
-#                (cached latents) and intentionally measures against decoded
-#                cached latents (i.e. an autoencoder reconstruction of
-#                ground truth) rather than against raw ground truth.
-#                When no decoder can be built this mode fails fast; set
-#                `eval.latent_space_metrics=true` to opt into computing
-#                metrics directly in latent space as a dev sense-check.
+# Evaluation mode selector; controls rollout space, not just metrics space.
+# Values: auto (default dispatcher) | encode_once | ambient | latent.
+# See `autocast/configs/eval/README.md` for the full comparison and the
+# auto-dispatch rules; the resolved mode is logged at INFO.
 mode: auto
 
-# Opt-in flag for computing evaluation metrics in raw latent space.
-#
-# When true AND `eval.mode=latent`, the decoder step is skipped entirely:
-# predictions and cached-latent targets are compared in the autoencoder's
-# raw latent space. This is intended as a cheap sense-check for iterating
-# on a small processor paired with a large / expensive autoencoder; the
-# resulting numbers are NOT comparable across runs (latent space is basis-
-# dependent) and physics-aware metrics (psrmse*, pscc*, variogram) are not
-# meaningful there.
-#
-# Rejected for `eval.mode` in (auto, ambient, encode_once) because those
-# modes require a decoder to produce raw-space predictions by definition.
-# Leave this as `false` for any results you plan to publish or compare.
+# Dev sense-check: compute metrics directly in raw latent space. Only
+# honored with an explicit `eval.mode=latent` and skips the decoder
+# entirely. Numbers are not comparable across runs and physics-aware
+# metrics are not meaningful -- leave as `false` for real evals.
 latent_space_metrics: false
 
 # Evaluation metrics to compute
