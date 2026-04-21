@@ -44,9 +44,11 @@ python -m autocast.scripts.eval.encoder_processor_decoder \
 All eval configs support these parameters:
 
 - `checkpoint`: Path to model checkpoint (required for evaluation)
-- `mode`: Evaluation regime (`auto` | `ambient` | `latent`). Controls the
-  **rollout space**, not just the metrics space. See
-  [Ambient vs latent rollout](#ambient-vs-latent-rollout) below.
+- `mode`: Evaluation regime (`auto` (default) | `encode_once` | `ambient` |
+  `latent`). Controls the **rollout space**, not just the metrics space.
+  `auto` dispatches to a concrete mode at run time based on the checkpoint
+  and datamodule, so omitting the flag gives the fair default for every
+  run. See [Evaluation modes](#evaluation-modes) below.
 - `metrics`: List of metrics to compute (default includes mse/mae/rmse/vrmse,
   power spectrum scores `psrmse*`, cross-correlation spectrum scores `pscc*`,
   and ensemble scores `crps`, `fcrps`, `afcrps`, `energy`, `ssr`; `variogram`
@@ -83,50 +85,94 @@ process so Fabric DDP initialises automatically — no extra flags needed.
 - `max_rollout_steps`: Maximum number of rollout steps
 - `free_running_only`: Whether to disable teacher forcing
 
-## Ambient vs latent rollout
+## Evaluation modes
 
-Processor checkpoints trained on cached latents can be evaluated in two
-qualitatively different regimes. The `eval.mode` knob makes the choice
-explicit and surfaces clear errors when the rest of the config is
-inconsistent with the request.
+The `eval.mode` knob controls the **rollout space** and what the metrics
+compare against. The three concrete modes give the same answer on single-
+step (windowed test) metrics; they only diverge during free-running
+rollout. `auto` is a dispatcher that picks one of the concrete modes at
+run time.
 
-- `eval.mode=auto` (default) preserves historical behavior: the script picks
-  a path based on `(checkpoint type, datamodule batch type,
-  autoencoder_checkpoint)`.
-- `eval.mode=ambient` forces full `encoder -> processor -> decoder` rollout.
-  Each rollout step decodes to ambient fields and re-encodes on the next
-  step, so decode/encode drift is included in the metrics. **This is the
-  apples-to-apples regime for comparing against baselines that natively roll
-  out in data space (e.g. a CRPS comparison against a non-autoencoder
-  model).** Requires `autoencoder_checkpoint=<ae.ckpt>` and a raw-Batch
-  datamodule. When the current datamodule yields `EncodedBatch` (cached
-  latents), eval auto-substitutes the datamodule from
-  `<cache_dir>/autoencoder_config.yaml` saved by `autocast cache-latents`.
-  Pass `datamodule=...` explicitly to override the default.
-- `eval.mode=latent` forces latent-space rollout: the processor's predicted
-  latent is fed back as the next latent input; the encoder is invoked only
-  once. Metrics are decoded to data space via the decoder saved alongside
-  the cached latents when available, otherwise they are reported in latent
-  space. Requires an `EncodedBatch` / cached-latents datamodule.
+| mode          | encoder runs        | processor rolls out in | decoder runs | ground truth used                          | when to use                                                                                                        |
+| ------------- | ------------------- | ---------------------- | ------------ | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| `encode_once` | **once** (step 0)   | latent space           | per step     | raw `batch.output_fields` (denormalized)   | fair processor-only eval that avoids decode/encode drift but still scores against real ground truth.               |
+| `ambient`     | per rollout step    | data space (re-encoded each step) | per step     | raw `batch.output_fields` (denormalized)   | apples-to-apples comparisons with pure-ambient baselines (e.g. CRPS vs. a non-autoencoder model).                  |
+| `latent`      | once (step 0)       | latent space           | only for metrics (or not at all) | **decoded cached latents** (autoencoder reconstruction of ground truth) | measure the processor against what the autoencoder sees -- isolates processor error but hides AE reconstruction error. |
 
-### Running the ambient ablation
+### `auto` (default)
+
+`eval.mode=auto` dispatches to the faithful concrete mode for the current
+run:
+
+- **Full EPD checkpoints** (including processor runs with stateless
+  encoder/decoder baked in, e.g. `permute_concat` + `identity`) -> `ambient`.
+  `encode_once` and `ambient` are numerically identical here; `auto`
+  picks `ambient` to keep logs quiet. Passing `eval.mode=encode_once`
+  explicitly on such a run still works but emits a warning.
+- **Processor trained on cached latents + autoencoder available**
+  (either via `autoencoder_checkpoint=<ae.ckpt>` or via
+  `<cache_dir>/autoencoder_config.yaml`) -> `encode_once`. Strictly fairer
+  than `ambient` (no drift penalty) **and** than `latent` (AE
+  reconstruction error is visible against raw ground truth).
+- **Processor trained on cached latents, autoencoder not reachable**
+  -> `latent`. The only faithful option when you can decode but not
+  re-encode.
+
+The resolved mode is logged at INFO as `eval.mode=auto resolved to <X>`.
+
+### Explicit modes
+
+#### Ambient: apples-to-apples with pure-ambient baselines
+
+`eval.mode=ambient` forces full `encoder -> processor -> decoder` at every
+rollout step. The decoded field is re-encoded as the next step's input, so
+autoencoder decode/encode drift compounds into the metrics. This is the
+right regime when the baseline model operates natively in data space and you
+want to charge the autoencoder for any error it introduces. Requires
+`autoencoder_checkpoint=<ae.ckpt>` and a raw-Batch datamodule. When the
+current datamodule yields `EncodedBatch` (cached latents), eval
+auto-substitutes the datamodule from `<cache_dir>/autoencoder_config.yaml`
+saved by `autocast cache-latents` (pass `datamodule=...` explicitly to
+override).
+
+#### Latent: measure the processor against the AE's view of the world
+
+`eval.mode=latent` forces latent-space rollout: the processor's predicted
+latent is fed back as the next latent input and the encoder is never
+invoked past step 0. Metrics are decoded to data space via the decoder
+saved alongside the cached latents when available, otherwise reported in
+latent space, and **compared against decoded cached latents** -- i.e. an
+autoencoder reconstruction of ground truth, not the raw fields. Use this
+when you want to isolate the processor's rollout quality in its own
+training distribution and explicitly accept that AE reconstruction error is
+hidden from the metric.
+
+### Running the ablations
 
 Given an autoencoder checkpoint and a processor checkpoint trained on its
-cached latents, a minimal invocation is:
+cached latents:
 
 ```bash
-# Ambient (encoder -> processor -> decoder at every rollout step)
+# Default: auto -> encode_once here (fair processor-only eval, raw ground truth).
+autocast eval --workdir <processor_workdir> \
+  eval.checkpoint=<processor.ckpt> \
+  autoencoder_checkpoint=<autoencoder.ckpt>
+
+# Apples-to-apples with pure-ambient baselines (charges AE drift).
 autocast eval --workdir <processor_workdir> \
   eval.mode=ambient \
   eval.checkpoint=<processor.ckpt> \
   autoencoder_checkpoint=<autoencoder.ckpt>
 
-# Latent (processor rollout stays in latent space; decoded only for metrics)
+# Processor-only latent view; no raw ground truth, hides AE reconstruction error.
 autocast eval --workdir <processor_workdir> \
   eval.mode=latent \
   eval.checkpoint=<processor.ckpt>
 ```
 
-The ambient run will differ from the latent run by exactly the
-decode/encode drift accumulated over rollout steps, which is the relevant
-delta when comparing against purely-ambient baselines.
+The three runs differ on rollout metrics as follows:
+
+- `ambient - encode_once` = decode/encode drift accumulated over rollout
+  steps (charged to the autoencoder).
+- `encode_once - latent` = visibility of AE reconstruction error against the
+  raw field (absent from `latent`, included in `encode_once`).
