@@ -11,17 +11,19 @@ declare -A DATASETS=(
     ["conditioned_navier_stokes"]="conditioned_navier_stokes"
 )
 VARIANTS=(
-    "crps_0p4x"
+    # "crps_0p4x"
     "crps_2x"
-    "fm_0p4x"
+    # "fm_0p4x"
     "fm_2x"
 )
 
+# Per-variant cosine_epochs from timing runs (2026-04-21) via:
+#   uv run autocast time-epochs --from-checkpoint <path>/timing.ckpt -b 24
 declare -A COSINE_EPOCHS_BY_VARIANT=(
     # ["conditioned_navier_stokes:crps_0p4x"]=...
-    # ["conditioned_navier_stokes:crps_2x"]=...
+    ["conditioned_navier_stokes:crps_2x"]=159    # 532.1 s/ep
     # ["conditioned_navier_stokes:fm_0p4x"]=...
-    # ["conditioned_navier_stokes:fm_2x"]=...
+    ["conditioned_navier_stokes:fm_2x"]=1755     # 48.2 s/ep
 )
 
 BUDGET_MAX_TIME="00:23:59:00"

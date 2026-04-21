@@ -51,7 +51,7 @@ only dial that differs between CRPS and FM (different backbone APIs).
 | CRPS latent | `vit_azula_large` | 568 | 12 | 8 | 1 | 8×8=64 | 80.72M |
 | FM latent | `vit` (flow-matching) | 704 | 12 | 8 | 1 | 8×8=64 | 79.91M |
 
-The CNS-only ~160M follow-up sweep that scales these ambient baselines lives in
+The CNS-only model-size follow-up sweep around these ambient baselines lives in
 `slurm_scripts/ablations/model_size/README.md`.
 
 ## Effective-batch parity (FM vs CRPS)
