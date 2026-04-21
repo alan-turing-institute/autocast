@@ -21,11 +21,9 @@ set -euo pipefail
 declare -A COSINE_EPOCHS_BY_COMBO=(
     ["conditioned_navier_stokes:fixed_bs32:16"]=253   # 334.6 s/ep
     ["conditioned_navier_stokes:eff_bs1024:16"]=249   # 340.0 s/ep
-    # Fill these after timing runs land, or let the script derive them from
-    # outputs/*/crps_<dataset>_eff_bs1024_m16/timing.ckpt automatically:
-    # ["gray_scott:eff_bs1024:16"]=...
-    # ["gpe_laser_only_wake:eff_bs1024:16"]=...
-    # ["advection_diffusion:eff_bs1024:16"]=...
+    ["gray_scott:eff_bs1024:16"]=204                  # 414.1 s/ep
+    ["gpe_laser_only_wake:eff_bs1024:16"]=244         # 345.8 s/ep
+    ["advection_diffusion:eff_bs1024:16"]=244         # 346.6 s/ep
 )
 
 BUDGET_MAX_TIME="00:23:59:00"
