@@ -1,9 +1,10 @@
 # Ensemble size ablation
 
-First-pass CNS defaults focus on `n_members=16` under two batch-size
-regimes, but the submit scripts are combo-driven and meant to be
-extended. All runs inherit from
-`local_hydra/local_experiment/epd/conditioned_navier_stokes/crps_vit_azula_large.yaml`;
+First-pass defaults focus on `n_members=16` under two batch-size
+regimes. CNS keeps both regimes, and the `eff_bs1024` branch now extends
+the same CRPS ambient baseline pattern to `gray_scott`, `gpe_laser_only_wake`,
+and `advection_diffusion`. All runs inherit from the matching per-dataset
+`local_hydra/local_experiment/epd/<dataset>/crps_vit_azula_large.yaml`;
 the ablation is a pure CLI override on `model.n_members` +
 `datamodule.batch_size`, so no new experiment configs are needed.
 
@@ -30,17 +31,25 @@ Keep `bs_crps × n_members × 4 GPUs = 1024`. With `n_members=16`,
 |---:|---:|---:|---:|
 | 16 | 16 | 256 | 1024 |
 
-## Datasets
+## Dataset coverage
 
-CNS only for the first pass. `DATASETS` in each submit script has the
-CNS entry; adding a second dataset means uncommenting the relevant line.
+| dataset | `fixed_bs32` | `eff_bs1024` |
+|---|---:|---:|
+| `conditioned_navier_stokes` | yes | yes |
+| `gray_scott` | no | yes |
+| `gpe_laser_only_wake` | no | yes |
+| `advection_diffusion` | no | yes |
+
+This keeps the original CNS pilot intact while extending the
+compute-matched (`1024` effective global batch) CRPS runs to the other
+three comparison datasets.
 
 ## Files
 
 | file | purpose |
 |---|---|
-| `submit_ensemble_timing.sh` | 5-epoch timing for the 2 `m=16` combos → `timing.ckpt` per run |
-| `submit_ensemble_large.sh`  | 24h production runs for the same 2 combos with per-combo cosine schedule |
+| `submit_ensemble_timing.sh` | 5-epoch timing for CNS `fixed_bs32` + all 4 datasets under `eff_bs1024` → `timing.ckpt` per run |
+| `submit_ensemble_large.sh`  | 24h production runs for the same coverage, using cached or timing-derived cosine schedules |
 
 ## Extending the sweep
 
@@ -50,12 +59,19 @@ per regime so bad tuples fail fast before any submission:
 - `fixed_bs32`: require `bs_per_gpu=32`; vary `n_members`.
 - `eff_bs1024`: require `bs_per_gpu × n_members × 4 GPUs = 1024`.
 
-When adding a combo, also add its key to `COSINE_EPOCHS_BY_COMBO` in
-`submit_ensemble_large.sh` after timing results are available.
+Dataset coverage is controlled separately via `REGIMES_BY_DATASET` in
+each submit script, so extending `eff_bs1024` without broadening
+`fixed_bs32` is a one-line change per dataset.
 
 ## Scheduling
 
-Per-combo `cosine_epochs` is populated from `timing.ckpt` via
-`uv run autocast time-epochs --from-checkpoint <path>/timing.ckpt -b 24`.
-Placeholders live in `COSINE_EPOCHS_BY_COMBO` at the top of
-`submit_ensemble_large.sh` — replace before submitting the 24h runs.
+`submit_ensemble_large.sh` first checks `COSINE_EPOCHS_BY_COMBO`. If a
+key is missing, it looks for the matching timing run
+`outputs/*/crps_<dataset>_<regime>_m<n_members>/timing.ckpt` and derives
+`trainer.max_epochs` on the fly with:
+
+`uv run autocast time-epochs --from-checkpoint <path>/timing.ckpt -b 24 -m 0.02`
+
+That means the added `gray_scott`, `gpe_laser_only_wake`, and
+`advection_diffusion` `eff_bs1024` runs become submit-ready as soon as
+their timing jobs finish, without another script edit.

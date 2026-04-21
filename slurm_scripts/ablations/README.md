@@ -6,17 +6,19 @@ loosely here for all three — true ablations (EMA on/off), comparisons
 (FM vs diffusion, ViT vs U-Net), and sweeps (ensemble size, noise
 channels) — to match how ML papers usually label this section.
 
-Everything is **CNS-only for now**. A second dataset will be added once
-the main 4-dataset comparison results are in. Each script uses a
-`declare -A DATASETS` mapping so adding a second dataset is a one-line
-change per ablation.
+Most ablations are still **CNS-only for now**. The current exception is
+`ensemble_size` under the `eff_bs1024` regime, which now extends to the
+other three main comparison datasets (`gray_scott`,
+`gpe_laser_only_wake`, `advection_diffusion`) in addition to CNS. Each
+script keeps dataset coverage local so widening an ablation remains a
+small edit.
 
 ## Status table
 
 | ablation | type | datasets | runs | status |
 |---|---|---|---|---|
 | ensemble_size (m=16, fixed bs=32) | sweep | CNS | 1 | ready |
-| ensemble_size (m=16, fixed global eff. bs=1024) | sweep | CNS | 1 | ready |
+| ensemble_size (m=16, fixed global eff. bs=1024) | sweep | GS / GPE / CNS / AD | 4 | timing ready |
 | noise_channels | sweep | CNS | 1+ | stub |
 | crps_variants (AlphaFair / Fair / CRPS) | comparison | CNS | 3 | stub |
 | fm_vs_diffusion | comparison | CNS | 1 | stub |
@@ -36,8 +38,9 @@ the same pipeline.
 
 - **Flexible by construction.** Each ablation is a self-contained
   subdirectory. Changing the knob values, swapping to a different
-  baseline, or dropping an ablation is a localized edit. Adding a second
-  dataset is a one-line change in each submit script's `DATASETS` map.
+  baseline, or dropping an ablation is a localized edit. Dataset
+  coverage lives inside each ablation's submit scripts, so extending one
+  ablation does not spill into the others.
 - **Baselines stay in `local_hydra/local_experiment/{epd,processor}/`.**
   Ablation configs extend those via Hydra `defaults`. When the sweep is
   a one-liner (e.g. ensemble size → `model.n_members` +

@@ -1,22 +1,33 @@
 #!/bin/bash
 
 set -euo pipefail
-# Timing runs for the ensemble-size ablation (CNS only for now).
+# Timing runs for the ensemble-size ablation.
 #
 # Two regimes (see README). Current defaults are m=16, but COMBOS is meant
 # to be extended as the ablation grows:
 #   fixed_bs32: fixed datamodule.batch_size=32/GPU (same as main CRPS run).
 #   eff_bs1024: fixed global effective batch = 1024 (matches main budget).
 #
-# Each combo inherits the CRPS-ambient baseline (CNS) and overrides
+# Each combo inherits the per-dataset CRPS-ambient baseline and overrides
 # model.n_members + datamodule.batch_size via CLI — no new experiment
 # configs. Timing runs disable wandb + skip_test; produce timing.ckpt.
 #
-# To add a second dataset, add an entry to DATASETS below.
+# Current coverage:
+#   conditioned_navier_stokes: fixed_bs32 + eff_bs1024
+#   gray_scott / gpe_laser_only_wake / advection_diffusion: eff_bs1024 only
 
 declare -A DATASETS=(
+    ["gray_scott"]="epd/gray_scott/crps_vit_azula_large"
+    ["gpe_laser_only_wake"]="epd/gpe_laser_wake_only/crps_vit_azula_large"
     ["conditioned_navier_stokes"]="epd/conditioned_navier_stokes/crps_vit_azula_large"
-    # ["gray_scott"]="epd/gray_scott/crps_vit_azula_large"
+    ["advection_diffusion"]="epd/advection_diffusion/crps_vit_azula_large"
+)
+
+declare -A REGIMES_BY_DATASET=(
+    ["gray_scott"]="eff_bs1024"
+    ["gpe_laser_only_wake"]="eff_bs1024"
+    ["conditioned_navier_stokes"]="fixed_bs32 eff_bs1024"
+    ["advection_diffusion"]="eff_bs1024"
 )
 
 # (regime, n_members, bs_per_gpu) triples. bs_per_gpu chosen so that:
@@ -57,6 +68,20 @@ assert_combo() {
     esac
 }
 
+dataset_supports_regime() {
+    local datamodule="$1" regime="$2"
+    local supported="${REGIMES_BY_DATASET[$datamodule]:-}"
+    local supported_regime
+
+    for supported_regime in ${supported}; do
+        if [[ "${supported_regime}" == "${regime}" ]]; then
+            return 0
+        fi
+    done
+
+    return 1
+}
+
 for combo in "${COMBOS[@]}"; do
     read -r regime n_members bs_per_gpu <<< "${combo}"
     assert_combo "${regime}" "${n_members}" "${bs_per_gpu}"
@@ -67,6 +92,11 @@ for datamodule in "${!DATASETS[@]}"; do
 
     for combo in "${COMBOS[@]}"; do
         read -r regime n_members bs_per_gpu <<< "${combo}"
+        if ! dataset_supports_regime "${datamodule}" "${regime}"; then
+            echo "Skipping ${datamodule}/${regime}: regime not enabled for this dataset" >&2
+            continue
+        fi
+
         run_id="crps_${datamodule}_${regime}_m${n_members}"
 
         echo "Submitting ensemble-size timing run"
