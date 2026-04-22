@@ -46,36 +46,16 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--training-yscale log \
 	--panel-figure \
 	--panel-figure-no-training \
-	--output-dir outputs/2026-04-20_collated/$PLOTS_PATH/main_comparison_eval_latent
+	--output-dir outputs/2026-04-20_collated/$PLOTS_PATH/main_comparison
 	
-
-# Ablation on CRPS variants for CNS
-
-# Ablation with CRPS latent and AE-ambient latents for CNS
-autocast-plots --results-dir outputs/2026-04-20_collated \
-	--run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (ambient, m=8)" 0 \
-	--run crps_cns64_vit_azula_large_0f89f06_e7e60d9 "CRPS (latent, AE-ambient, m=8)" 0 \
-	--run diff_cns64_flow_matching_vit_0f89f06_483bb70 "FM (ambient)" 1 \
-	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 2 \
-	--dataset-order CNS \
-	--error-ylim 1e-5 1 \
-	--lead-time-error-metrics vrmse rmse \
-	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
-	--combined-lead-time \
-	--training-metrics val_loss train_loss \
-	--training-yscale log \
-	--panel-figure \
-	--panel-figure-no-training \
-	--output-dir outputs/2026-04-20_collated/$PLOTS_PATH/ablation_crps_ambient_vit_latent_eval_latent
-
 
 # Ablation with CRPS ViT using global cond instead of permute_concat and channels last
 # --run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (ambient)" 0 \
 autocast-plots --results-dir outputs/2026-04-20_collated \
-	--run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (ambient, m=8)" 0 \
-	--run crps_cns64_vit_azula_large_0f89f06_cf53b48 "CRPS (ambient, identity+global-cond, m=8)" 0 \
 	--run diff_cns64_flow_matching_vit_0f89f06_483bb70 "FM (ambient)" 1 \
 	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 2 \
+	--run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (ambient, m=8)" 0 \
+	--run crps_cns64_vit_azula_large_0f89f06_cf53b48 "CRPS (ambient, identity+global-cond, m=8)" 0 \
 	--dataset-order CNS \
 	--error-ylim 1e-5 1 \
 	--lead-time-error-metrics vrmse rmse \
@@ -91,11 +71,11 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 # Usign cached latents for evaluation instead of AE-ambient latents for CRPS latent variant
 # --run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (ambient)" 0 \
 autocast-plots --results-dir outputs/2026-04-20_collated \
+	--run diff_cns64_flow_matching_vit_0f89f06_483bb70 "FM (ambient)" 1 \
+	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 2 \
 	--run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (ambient, m=8)" 0 \
 	--run crps_cns64_vit_azula_large_0f89f06_e7e60d9 "CRPS (latent, CRPS in ambient, m=8)" 0 \
 	--run crps_cns64_vit_azula_large_09490da_8b7573d "CRPS (latent, CRPS in latent, m=8)" 0 \
-	--run diff_cns64_flow_matching_vit_0f89f06_483bb70 "FM (ambient)" 1 \
-	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 2 \
 	--dataset-order CNS \
 	--error-ylim 1e-5 1 \
 	--lead-time-error-metrics vrmse rmse \
@@ -105,17 +85,17 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--training-yscale log \
 	--panel-figure \
 	--panel-figure-no-training \
-	--output-dir outputs/2026-04-20_collated/$PLOTS_PATH/ablation_crps_latent_vit_latent_eval_latent
+	--output-dir outputs/2026-04-20_collated/$PLOTS_PATH/ablation_crps_vit_latent
 
 
 # Ablation with CRPS ensemble size
 # TODO: update with final runs
 autocast-plots --results-dir outputs/2026-04-20_collated \
+	--run diff_cns64_flow_matching_vit_0f89f06_483bb70 "FM (ambient)" 1 \
+	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 2 \
 	--run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (ambient, m=8)" 0 \
 	--run crps_cns64_vit_azula_large_0db40e1_5e157a5 "CRPS (ambient, m=16, bs=32)" 0 \
 	--run crps_cns64_vit_azula_large_0db40e1_dcd79e4 "CRPS (ambient, m=16, eff_bs=1024)" 0 \
-	--run diff_cns64_flow_matching_vit_0f89f06_483bb70 "FM (ambient)" 1 \
-	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 2 \
 	--dataset-order CNS \
 	--error-ylim 1e-5 1 \
 	--lead-time-error-metrics vrmse rmse \
