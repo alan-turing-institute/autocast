@@ -9,9 +9,9 @@ set -euo pipefail
 # metrics while avoiding the extra per-step decode->encode drift charged by
 # the ambient ablation.
 #
-# Batch size: cached-latent eval pays the ambient AE encode/decode per step
-# but processor forward is cheap (64 tokens vs 256 for ambient-patch4), so
-# 8/GPU fits comfortably — same as pure-ambient CRPS.
+# Batch size: encode_once pays one upfront AE encode and a decode each rollout
+# step while still scoring in raw data space. That is cheaper than the
+# explicit ambient ablation, so 8/GPU stays aligned with ambient CRPS.
 #
 # We also pin eval.n_members explicitly here so the comparison scripts do not
 # depend on the global eval default staying at 10.

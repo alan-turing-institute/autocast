@@ -1,21 +1,17 @@
 #!/bin/bash
 
 set -euo pipefail
-# Evaluate FM cached-latent processor runs (2026-04-18) in AMBIENT mode.
+# Evaluate FM cached-latent processor runs from 2026-04-20 using the
+# default eval.mode=auto path.
 #
-# eval.mode=ambient forces encoder->processor->decoder rollout at every
-# step, so decode/encode drift is included in the metrics — the apples-to-
-# apples regime for comparison with the ambient FM baseline.
+# After PR #339, auto resolves to encode_once for processor-only cached-latent
+# runs when autoencoder_checkpoint is supplied. That preserves raw-space
+# metrics while avoiding the extra per-step decode->encode drift charged by
+# the ambient ablation.
 #
-# The eval.mode selector landed via PR #327 and is now in-tree. When ambient
-# is requested on a cached-latents datamodule, eval auto-substitutes the raw
-# datamodule from <cache_dir>/autoencoder_config.yaml; the trained AE weights
-# are supplied via autoencoder_checkpoint.
-#
-# Batch size: ambient rollout pays encode/decode every step plus 50 ODE
-# substeps through the processor. Cached-latent processor forward is lighter
-# (64 tokens vs 256 for ambient FM), so 4/GPU is a safe start; the tight
-# spot is the same ODE + AE stack so it mirrors FM-ambient.
+# Batch size: encode_once pays one upfront AE encode plus a decode each rollout
+# step, while FM still pays 50 ODE substeps through the processor. That keeps
+# 4/GPU as the same conservative baseline as ambient FM.
 #
 # We also pin eval.n_members explicitly here so the comparison scripts do not
 # depend on the global eval default staying at 10.
