@@ -13,6 +13,12 @@ set -euo pipefail
 # numbers per dataset, we sort the available quarter checkpoints and pick the
 # third one (the 0.75 checkpoint) for each run.
 #
+# Force eval.mode=ambient here. These quarter checkpoints can look
+# processor-only to the early eval.mode=auto dispatcher because stateless
+# encoders/decoders (PermuteConcat / ChannelsLast) contribute no
+# encoder_decoder.* weights, even though the full raw-space ambient path is the
+# correct evaluation route for these runs.
+#
 # Batch size: keep 4/GPU as the same conservative first pass used by the
 # standard ambient ensemble-size eval script.
 
@@ -49,15 +55,18 @@ resolve_three_quarter_checkpoint() {
 }
 
 for run_dir in "${RUN_DIRS[@]}"; do
-    if [[ ! -f "${run_dir}/resolved_config.yaml" ]]; then
+    run_dir_abs="$(realpath "${run_dir}")"
+    if [[ ! -f "${run_dir_abs}/resolved_config.yaml" ]]; then
         echo "Skipping ${run_dir}: resolved_config.yaml missing" >&2
         continue
     fi
 
-    if ! eval_ckpt="$(resolve_three_quarter_checkpoint "${run_dir}")"; then
+    if ! eval_ckpt="$(resolve_three_quarter_checkpoint "${run_dir_abs}")"; then
         echo "Skipping ${run_dir}: fewer than three quarter-*.ckpt files found" >&2
         continue
     fi
+    eval_ckpt_abs="$(realpath "${eval_ckpt}")"
+    eval_output_dir="${run_dir_abs}/${EVAL_SUBDIR}"
 
     for run_dry in "${RUN_DRY_STATES[@]}"; do
         dry_run_arg=()
@@ -69,19 +78,21 @@ for run_dir in "${RUN_DIRS[@]}"; do
 
         echo "Submitting ensemble-size CRPS ambient eval (0.75 checkpoint)"
         echo "  mode: ${run_label}"
-        echo "  run_dir: ${run_dir}"
-        echo "  eval.checkpoint: ${eval_ckpt}"
+        echo "  run_dir: ${run_dir_abs}"
+        echo "  eval.checkpoint: ${eval_ckpt_abs}"
+        echo "  eval.mode: ambient"
         echo "  output_subdir: ${EVAL_SUBDIR}"
         echo "  eval.batch_size: ${EVAL_BATCH_SIZE}"
         echo "  eval.n_members: ${EVAL_N_MEMBERS}"
         echo "  eval.metrics: ${EVAL_METRICS}"
 
         uv run autocast eval --mode slurm "${dry_run_arg[@]}" \
-            --workdir "${run_dir}" \
+            --workdir "${run_dir_abs}" \
             --output-subdir "${EVAL_SUBDIR}" \
-            eval.checkpoint="${eval_ckpt}" \
-            eval.csv_path="${run_dir}/${EVAL_SUBDIR}/evaluation_metrics.csv" \
-            eval.video_dir="${run_dir}/${EVAL_SUBDIR}/videos" \
+            eval.checkpoint="${eval_ckpt_abs}" \
+            eval.mode=ambient \
+            eval.csv_path="${eval_output_dir}/evaluation_metrics.csv" \
+            eval.video_dir="${eval_output_dir}/videos" \
             eval.metrics="${EVAL_METRICS}" \
             eval.batch_size="${EVAL_BATCH_SIZE}" \
             eval.n_members="${EVAL_N_MEMBERS}" \
