@@ -1,19 +1,27 @@
 #!/bin/bash
 
 set -euo pipefail
-# Evaluate FM cached-latent processor runs from 2026-04-20 using the default
-# eval.mode=auto path.
+# Evaluate FM cached-latent processor runs (2026-04-18) in AMBIENT mode.
 #
-# After PR #339, auto resolves to encode_once for processor-only cached-latent
-# runs when autoencoder_checkpoint is supplied. That keeps metrics in raw data
-# space against decoded rollouts, without charging per-step decode->encode
-# drift as the ambient ablation does.
+# eval.mode=ambient forces encoder->processor->decoder rollout at every
+# step, so decode/encode drift is included in the metrics — the apples-to-
+# apples regime for comparison with the ambient FM baseline.
 #
-# Batch size: encode_once is cheaper than ambient because the encoder only
-# runs once, but FM still pays 50 ODE substeps per rollout step. 4/GPU remains
-# a safe baseline and stays aligned with the ambient FM comparison script.
+# The eval.mode selector landed via PR #327 and is now in-tree. When ambient
+# is requested on a cached-latents datamodule, eval auto-substitutes the raw
+# datamodule from <cache_dir>/autoencoder_config.yaml; the trained AE weights
+# are supplied via autoencoder_checkpoint.
+#
+# Batch size: ambient rollout pays encode/decode every step plus 50 ODE
+# substeps through the processor. Cached-latent processor forward is lighter
+# (64 tokens vs 256 for ambient FM), so 4/GPU is a safe start; the tight
+# spot is the same ODE + AE stack so it mirrors FM-ambient.
+#
+# We also pin eval.n_members explicitly here so the comparison scripts do not
+# depend on the global eval default staying at 10.
 
 EVAL_BATCH_SIZE=4
+EVAL_N_MEMBERS=10
 TIMEOUT_MIN=360
 RUN_DRY_STATES=("true" "false")
 EVAL_METRICS="[mse,mae,nmse,nmae,rmse,nrmse,vmse,vrmse,linf,psrmse,psrmse_low,psrmse_mid,psrmse_high,psrmse_tail,pscc,pscc_low,pscc_mid,pscc_high,pscc_tail,crps,fcrps,afcrps,energy,ssr,winkler]"
@@ -59,6 +67,7 @@ for run_dir in "${RUN_DIRS[@]}"; do
         echo "  autoencoder_checkpoint: ${ae_ckpt}"
         echo "  eval.mode: auto"
         echo "  eval.batch_size: ${EVAL_BATCH_SIZE}"
+        echo "  eval.n_members: ${EVAL_N_MEMBERS}"
         echo "  eval.metrics: ${EVAL_METRICS}"
 
         uv run autocast eval --mode slurm "${dry_run_arg[@]}" \
@@ -67,6 +76,7 @@ for run_dir in "${RUN_DIRS[@]}"; do
             +autoencoder_checkpoint="${ae_ckpt}" \
             eval.metrics="${EVAL_METRICS}" \
             eval.batch_size="${EVAL_BATCH_SIZE}" \
+            eval.n_members="${EVAL_N_MEMBERS}" \
             hydra.launcher.timeout_min="${TIMEOUT_MIN}"
     done
 done

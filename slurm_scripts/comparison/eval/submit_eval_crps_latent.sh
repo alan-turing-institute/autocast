@@ -9,11 +9,15 @@ set -euo pipefail
 # metrics while avoiding the extra per-step decode->encode drift charged by
 # the ambient ablation.
 #
-# Batch size: encode_once is lighter than ambient because the encoder runs
-# only once. CRPS remains cheap enough that 8/GPU is still a conservative,
-# comparison-friendly default.
+# Batch size: cached-latent eval pays the ambient AE encode/decode per step
+# but processor forward is cheap (64 tokens vs 256 for ambient-patch4), so
+# 8/GPU fits comfortably — same as pure-ambient CRPS.
+#
+# We also pin eval.n_members explicitly here so the comparison scripts do not
+# depend on the global eval default staying at 10.
 
 EVAL_BATCH_SIZE=8
+EVAL_N_MEMBERS=10
 TIMEOUT_MIN=240
 RUN_DRY_STATES=("true" "false")
 EVAL_METRICS="[mse,mae,nmse,nmae,rmse,nrmse,vmse,vrmse,linf,psrmse,psrmse_low,psrmse_mid,psrmse_high,psrmse_tail,pscc,pscc_low,pscc_mid,pscc_high,pscc_tail,crps,fcrps,afcrps,energy,ssr,winkler]"
@@ -55,6 +59,7 @@ for run_dir in "${RUN_DIRS[@]}"; do
         echo "  autoencoder_checkpoint: ${ae_ckpt}"
         echo "  eval.mode: auto"
         echo "  eval.batch_size: ${EVAL_BATCH_SIZE}"
+        echo "  eval.n_members: ${EVAL_N_MEMBERS}"
         echo "  eval.metrics: ${EVAL_METRICS}"
 
         uv run autocast eval --mode slurm "${dry_run_arg[@]}" \
@@ -63,6 +68,7 @@ for run_dir in "${RUN_DIRS[@]}"; do
             +autoencoder_checkpoint="${ae_ckpt}" \
             eval.metrics="${EVAL_METRICS}" \
             eval.batch_size="${EVAL_BATCH_SIZE}" \
+            eval.n_members="${EVAL_N_MEMBERS}" \
             hydra.launcher.timeout_min="${TIMEOUT_MIN}"
     done
 done
