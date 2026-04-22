@@ -99,10 +99,7 @@ def build_parser() -> argparse.ArgumentParser:
     eval_parser.add_argument(
         "--output-subdir",
         default="eval",
-        help=(
-            "Evaluation output subdirectory under --workdir "
-            "(default: eval)."
-        ),
+        help=("Evaluation output subdirectory under --workdir (default: eval)."),
     )
     _add_common_args(eval_parser)
 
