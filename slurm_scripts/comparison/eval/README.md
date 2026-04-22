@@ -1,5 +1,10 @@
 # Eval scripts for the comparison study
 
+This directory is for the canonical comparison-suite evals. When an eval
+submitter only targets a study-specific ablation run set, keep it under
+`slurm_scripts/ablations/<name>/eval/` until that run set is promoted into the
+main comparison.
+
 Six submission scripts cover ambient and cached-latent checkpoints produced
 under `outputs/2026-04-18/` and `outputs/2026-04-19/`. Each script iterates
 `--dry-run` first, then submits for real.

@@ -60,4 +60,7 @@ the same pipeline.
    `uv run autocast time-epochs --from-checkpoint <path>/timing.ckpt -b 24`
    and paste into `submit_*_large.sh` (matches `comparison/` flow).
 3. `submit_*_large.sh` — 24h production runs, dry-run first.
-4. `slurm_scripts/comparison/eval/` — eval with matching `eval.batch_size`.
+4. Eval from the script local to the study:
+   `slurm_scripts/comparison/eval/` for the canonical comparison suite, and
+   `slurm_scripts/ablations/<name>/eval/` for ablation-only run sets that have
+   not been promoted into the main comparison yet.

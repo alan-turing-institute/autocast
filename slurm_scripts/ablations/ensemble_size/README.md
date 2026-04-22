@@ -52,6 +52,7 @@ batch) CRPS ablations on the other comparison datasets.
 |---|---|
 | `submit_ensemble_timing.sh` | 5-epoch timing for the three active `eff_bs1024` runs (`gray_scott`, `gpe_laser_only_wake`, `advection_diffusion`) → `timing.ckpt` per run |
 | `submit_ensemble_large.sh`  | 24h production runs for the same three active runs, using cached or timing-derived cosine schedules |
+| `eval/submit_eval_crps_ambient.sh` | ambient eval for the current `m=16` CRPS run set (CNS `fixed_bs32` pilot plus all available `eff_bs1024` runs), with conservative `eval.batch_size=4` and explicit `eval.n_members=10` to match the comparison-study eval regime |
 
 ## Extending the sweep
 
@@ -64,6 +65,16 @@ per regime so bad tuples fail fast before any submission:
 Dataset coverage is controlled separately via `REGIMES_BY_DATASET` in
 each submit script, so extending `eff_bs1024` without broadening
 `fixed_bs32` is a one-line change per dataset.
+
+## Eval placement
+
+Ensemble-size eval now lives under `slurm_scripts/ablations/ensemble_size/eval/`
+rather than `slurm_scripts/comparison/eval/`. The reason is organizational:
+the run set is still partly ablation-only (`fixed_bs32`) even though the
+`eff_bs1024` subset may later graduate into the main comparison baseline.
+
+If that promotion happens, move the promoted run dirs into a comparison-level
+eval script and leave only the genuinely ablation-only runs here.
 
 ## Scheduling
 
