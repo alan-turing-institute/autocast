@@ -8,7 +8,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--run crps_cns64_vit_azula_large_1ed9013_ab31602 "CRPS (24hrs, prelim, n=1024, afCRPS, h=632, layers=10)" 0 \
 	--run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (24hrs, update, n=1024, afCRPS, h=568, layers=12)" 0 \
 	--run diff_cns64_flow_matching_vit_1ed9013_893624d "FM (24hrs, prelim)" 1 \
-	--run diff_cns64_flow_matching_vit_0f89f06_0e1c64b "FM (latent, eval=latent)" 1 eval=eval_latent \
+	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 1 \
 	--dataset-order CNS \
 	--error-ylim 1e-3 1 \
 	--lead-time-error-metrics vrmse rmse \
@@ -30,10 +30,10 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--run diff_cns64_flow_matching_vit_0f89f06_483bb70 "FM (ambient)" 1 \
 	--run diff_gpe64_flow_matching_vit_0f89f06_3b3604d "FM (ambient)" 1 \
 	--run diff_gs64_flow_matching_vit_0f89f06_6e3a299 "FM (ambient)" 1 \
-	--run diff_ad64_flow_matching_vit_0f89f06_df2137c "FM (latent, eval=latent)" 2 eval=eval_latent \
-	--run diff_cns64_flow_matching_vit_0f89f06_0e1c64b "FM (latent, eval=latent)" 2 eval=eval_latent \
-	--run diff_gpe64_flow_matching_vit_0f89f06_b954f94 "FM (latent, eval=latent)" 2 eval=eval_latent \
-	--run diff_gs64_flow_matching_vit_0f89f06_f6e8f51 "FM (latent, eval=latent)" 2 eval=eval_latent \
+	--run diff_ad64_flow_matching_vit_09490da_dae1382 "FM (latent)" 2 \
+	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 2 \
+	--run diff_gpe64_flow_matching_vit_09490da_47bf39a "FM (latent)" 2 \
+	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "FM (latent)" 2 \
 	--dataset-order AD CNS GPE GS \
 	--error-ylim 1e-5 1 \
 	--lead-time-error-metrics vrmse rmse \
@@ -45,22 +45,15 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--panel-figure-no-training \
 	--output-dir outputs/2026-04-20_collated/$PLOTS_PATH/main_comparison_eval_latent
 	
-# Currently incorrect latents to be rerun upon fixing the latents
-# --run diff_ad64_flow_matching_vit_0f89f06_df2137c "FM (latent, eval=ambient)" 2 \
-# --run diff_cns64_flow_matching_vit_0f89f06_0e1c64b "FM (latent, eval=ambient)" 2 \
-# --run diff_gpe64_flow_matching_vit_0f89f06_b954f94 "FM (latent, eval=ambient)" 2 \
-# --run diff_gs64_flow_matching_vit_0f89f06_f6e8f51 "FM (latent, eval=ambient)" 2 \
-
 
 # Ablation on CRPS variants for CNS
 
 # Ablation with CRPS latent and AE-ambient latents for CNS
-# --run crps_cns64_vit_azula_large_0f89f06_e7e60d9 "CRPS latent (EPD AE-ambient)" \
 autocast-plots --results-dir outputs/2026-04-20_collated \
 	--run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (ambient)" 0 \
 	--run crps_cns64_vit_azula_large_0f89f06_e7e60d9 "CRPS (latent, AE-ambient)" 0 \
 	--run diff_cns64_flow_matching_vit_0f89f06_483bb70 "FM (ambient)" 1 \
-	--run diff_cns64_flow_matching_vit_0f89f06_0e1c64b "FM (latent, eval=latent)" 2 eval=eval_latent \
+	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 2 \
 	--dataset-order CNS \
 	--error-ylim 1e-5 1 \
 	--lead-time-error-metrics vrmse rmse \
@@ -78,7 +71,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (ambient)" 0 \
 	--run crps_cns64_vit_azula_large_0f89f06_cf53b48 "CRPS (ambient, identity+global-cond)" 0 \
 	--run diff_cns64_flow_matching_vit_0f89f06_483bb70 "FM (ambient)" 1 \
-	--run diff_cns64_flow_matching_vit_0f89f06_0e1c64b "FM (latent, eval=latent)" 2 eval=eval_latent \
+	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 2 \
 	--dataset-order CNS \
 	--error-ylim 1e-5 1 \
 	--lead-time-error-metrics vrmse rmse \
@@ -95,9 +88,9 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 autocast-plots --results-dir outputs/2026-04-20_collated \
 	--run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (ambient)" 0 \
 	--run crps_cns64_vit_azula_large_0f89f06_e7e60d9 "CRPS (latent, CRPS in ambient)" 0 \
-	--run crps_cns64_vit_azula_large_58712c4_71ba7be "CRPS (latent, CRPS in latent, eval=latent)" 0 eval=eval_latent \
+	--run crps_cns64_vit_azula_large_09490da_8b7573d "CRPS (latent, CRPS in latent)" 0 \
 	--run diff_cns64_flow_matching_vit_0f89f06_483bb70 "FM (ambient)" 1 \
-	--run diff_cns64_flow_matching_vit_0f89f06_0e1c64b "FM (latent, eval=latent)" 2 eval=eval_latent \
+	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 2 \
 	--dataset-order CNS \
 	--error-ylim 1e-5 1 \
 	--lead-time-error-metrics vrmse rmse \
@@ -111,12 +104,13 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 
 
 # Ablation with CRPS ensemble size
+# TODO: update with final runs
 autocast-plots --results-dir outputs/2026-04-20_collated \
 	--run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (ambient)" 0 \
 	--run crps_cns64_vit_azula_large_0db40e1_5e157a5 "CRPS (ambient, m=16, bs=32)" 0 \
 	--run crps_cns64_vit_azula_large_0db40e1_dcd79e4 "CRPS (ambient, m=16, eff_bs=1024)" 0 \
 	--run diff_cns64_flow_matching_vit_0f89f06_483bb70 "FM (ambient)" 1 \
-	--run diff_cns64_flow_matching_vit_0f89f06_0e1c64b "FM (latent, eval=latent)" 2 eval=eval_latent \
+	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 2 \
 	--dataset-order CNS \
 	--error-ylim 1e-5 1 \
 	--lead-time-error-metrics vrmse rmse \
