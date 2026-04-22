@@ -28,10 +28,11 @@ RUN_DIRS=(
     # "outputs/2026-04-20_part_8hr/ensemble_size/crps_cns64_vit_azula_large_0db40e1_5e157a5"  # ensemble_m16_fixed_bs32
     # "outputs/2026-04-20_part_8hr/ensemble_size/crps_cns64_vit_azula_large_0db40e1_dcd79e4"  # ensemble_m16_eff_bs1024
     # Active compute-matched eff_bs1024 runs on the other comparison datasets.
-    # "outputs/2026-04-20/ensemble_size/crps_cns64_vit_azula_large_0db40e1_dcd79e4"  # ensemble_m16_eff_bs1024
-    "outputs/2026-04-21/ensemble_size/crps_gs64_vit_azula_large_ac1bb06_639963f"
-    "outputs/2026-04-21/ensemble_size/crps_gpe64_vit_azula_large_ac1bb06_638585e"
-    "outputs/2026-04-21/ensemble_size/crps_ad64_vit_azula_large_ac1bb06_ef6368d"
+    "outputs/2026-04-20/ensemble_size/crps_cns64_vit_azula_large_0db40e1_5e157a5"  # ensemble_m16_fixed_bs32
+    "outputs/2026-04-20/ensemble_size/crps_cns64_vit_azula_large_0db40e1_dcd79e4"  # ensemble_m16_eff_bs1024
+    # "outputs/2026-04-21/ensemble_size/crps_gs64_vit_azula_large_ac1bb06_639963f"
+    # "outputs/2026-04-21/ensemble_size/crps_gpe64_vit_azula_large_ac1bb06_638585e"
+    # "outputs/2026-04-21/ensemble_size/crps_ad64_vit_azula_large_ac1bb06_ef6368d"
 )
 
 for run_dir in "${RUN_DIRS[@]}"; do
