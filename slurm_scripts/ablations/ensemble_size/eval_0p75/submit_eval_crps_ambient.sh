@@ -25,7 +25,7 @@ EVAL_METRICS="[mse,mae,nmse,nmae,rmse,nrmse,vmse,vrmse,linf,psrmse,psrmse_low,ps
 
 RUN_DIRS=(
     # CNS pilot runs retained alongside the compute-matched sweep.
-    "outputs/2026-04-20/ensemble_size/crps_cns64_vit_azula_large_0db40e1_5e157a5"  # ensemble_m16_fixed_bs32
+    # "outputs/2026-04-20/ensemble_size/crps_cns64_vit_azula_large_0db40e1_5e157a5"  # ensemble_m16_fixed_bs32
     # Compute-matched eff_bs1024 runs across comparison datasets.
     "outputs/2026-04-20/ensemble_size/crps_cns64_vit_azula_large_0db40e1_dcd79e4"
     "outputs/2026-04-21/ensemble_size/crps_gs64_vit_azula_large_ac1bb06_639963f"
@@ -38,7 +38,7 @@ resolve_three_quarter_checkpoint() {
     local -a quarter_ckpts=()
 
     mapfile -t quarter_ckpts < <(
-        find "${run_dir}" -maxdepth 1 -type f -name 'quarter-*.ckpt' | sort
+        find "${run_dir}" -type f -path '*/checkpoints/quarter-*.ckpt' | sort
     )
 
     if (( ${#quarter_ckpts[@]} < 3 )); then
