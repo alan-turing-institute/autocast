@@ -7,6 +7,8 @@ from autocast.metrics.base import BaseMetric
 from autocast.metrics.coverage import Coverage
 from autocast.metrics.ensemble import (
     EnergyScore,
+    EnsembleSkill,
+    EnsembleSpread,
     SpreadSkillRatio,
     VariogramScore,
     WinklerScore,
@@ -25,7 +27,7 @@ ENSEMBLE_BASE_METRICS = tuple(
 ENSEMBLE_ERROR_METRICS = tuple(
     m
     for m in ENSEMBLE_BASE_METRICS
-    if m not in [Coverage, VariogramScore, SpreadSkillRatio]
+    if m not in [Coverage, VariogramScore, SpreadSkillRatio, EnsembleSpread]
 )
 
 
@@ -349,6 +351,45 @@ def test_spread_skill_ratio_stateful_returns_per_lead_time_and_is_mean_of_ratios
     assert not torch.allclose(
         value, torch.full_like(value, float(expected_macroscopic)), rtol=2e-1
     ), value
+
+
+def test_ensemble_spread_matches_lola_correction():
+    # Shape: (B=1, T=1, S=1, C=1, M=2)
+    # Members: [0, 2]
+    # unbiased var = 2, sqrt(var)=sqrt(2)
+    # corrected spread = sqrt(2) * sqrt((M+1)/M) = sqrt(3)
+    y_pred = torch.tensor([[[[[0.0, 2.0]]]]])
+    y_true = torch.tensor([[[[0.0]]]])
+
+    value = EnsembleSpread()(y_pred, y_true)
+    assert torch.allclose(value, torch.tensor(3.0**0.5), atol=1e-6)
+
+
+def test_ensemble_spread_can_be_uncorrected():
+    y_pred = torch.tensor([[[[[0.0, 2.0]]]]])
+    y_true = torch.tensor([[[[0.0]]]])
+
+    value = EnsembleSpread(corrected=False)(y_pred, y_true)
+    assert torch.allclose(value, torch.tensor(2.0**0.5), atol=1e-6)
+
+
+def test_ensemble_spread_requires_multiple_ensemble_members():
+    y_pred = torch.ones((1, 1, 1, 1, 1))
+    y_true = torch.ones((1, 1, 1, 1))
+
+    with pytest.raises(ValueError, match="at least 2 ensemble members"):
+        EnsembleSpread()(y_pred, y_true)
+
+
+def test_ensemble_skill_is_rmse_of_ensemble_mean():
+    # Shape: (B=1, T=1, S=1, C=1, M=2)
+    # Members: [0, 2], truth: [0]
+    # mean=1 -> rmse = 1
+    y_pred = torch.tensor([[[[[0.0, 2.0]]]]])
+    y_true = torch.tensor([[[[0.0]]]])
+
+    value = EnsembleSkill()(y_pred, y_true)
+    assert torch.allclose(value, torch.tensor(1.0), atol=1e-6)
 
 
 def test_winkler_score_manual_value():

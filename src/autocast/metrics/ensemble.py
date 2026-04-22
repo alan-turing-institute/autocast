@@ -644,6 +644,118 @@ class SpreadSkillRatio(BTSCMMetric):
         return ssr
 
 
+class EnsembleSpread(BTSCMMetric):
+    r"""
+    Ensemble spread for probabilistic forecasts.
+
+    Notes
+    -----
+    By default, returns a **finite-ensemble corrected spread**:
+
+    .. math::
+        \text{Spread}_{\text{corr}} =
+            \sqrt{\left\langle \mathrm{Var}_{m,\text{unbiased}}(x_m)\right\rangle}
+            \sqrt{\frac{M + 1}{M}}.
+
+    This correction is commonly used so that spread and skill are comparable for
+    finite ensemble sizes when using unbiased sample variance. It matches the
+    form used in LoLA/paper evaluations (Appendix "Spread / Skill") where:
+    ``spread = sqrt((M+1)/(M-1) * mean((x_m - mean_m)^2))``, since
+    ``Var_unbiased = (M/(M-1)) * mean((x_m - mean_m)^2)``.
+
+    If ``corrected=False``, returns the uncorrected macroscopic ensemble standard
+    deviation computed from the unbiased variance estimator:
+
+    .. math::
+        \sqrt{\left\langle \mathrm{Var}_{m,\text{unbiased}}(x_m)\right\rangle}.
+    """
+
+    name: str = "spread"
+
+    def __init__(self, *, corrected: bool = True):
+        super().__init__()
+        self.corrected = corrected
+
+    def _score(self, y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTSC:
+        """Not used directly; we override score() to change reduction order."""
+        msg = "EnsembleSpread overrides score() directly."
+        raise NotImplementedError(msg)
+
+    def score(
+        self, y_pred: ArrayLike, y_true: ArrayLike
+    ) -> TensorBTC | TensorBSC | TensorBTSC:
+        y_pred_tensor, y_true_tensor = self._check_input(y_pred, y_true)
+
+        n_ensemble = y_pred_tensor.shape[-1]
+        if n_ensemble < 2:
+            raise ValueError(
+                "EnsembleSpread requires at least 2 ensemble members "
+                f"(got {n_ensemble})."
+            )
+
+        spread_var = y_pred_tensor.var(dim=-1, unbiased=True)  # (B, T, S..., C)
+
+        # Reduce variance before sqrt (macroscopic approach)
+        if self.score_dims == "spatial":
+            n_spatial_dims = self._infer_n_spatial_dims(y_true_tensor)
+            spatial_dims = tuple(range(2, 2 + n_spatial_dims))
+            spread_var = spread_var.mean(dim=spatial_dims)
+        elif self.score_dims == "temporal":
+            spread_var = spread_var.mean(dim=1)
+
+        spread = torch.sqrt(spread_var)
+
+        if self.corrected:
+            correction = float(np.sqrt((n_ensemble + 1) / n_ensemble))
+            spread = spread * correction
+
+        return spread
+
+
+class EnsembleSkill(BTSCMMetric):
+    r"""
+    Ensemble skill defined as RMSE of the ensemble mean.
+
+    Notes
+    -----
+    Skill is defined as the RMSE of the ensemble mean:
+
+    .. math::
+        \text{Skill} = \sqrt{\left\langle (\bar{x} - y)^2 \right\rangle},
+
+    where :math:`\langle \cdot \rangle` denotes the spatial mean.
+
+    This metric reduces the squared error over spatial/temporal dimensions *before*
+    taking the square root (macroscopic RMSE), as is commonly done in ensemble
+    forecast evaluation (and in LoLA/paper appendices).
+    """
+
+    name: str = "skill"
+
+    def _score(self, y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTSC:
+        """Not used directly; we override score() to change reduction order."""
+        msg = "EnsembleSkill overrides score() directly."
+        raise NotImplementedError(msg)
+
+    def score(
+        self, y_pred: ArrayLike, y_true: ArrayLike
+    ) -> TensorBTC | TensorBSC | TensorBTSC:
+        y_pred_tensor, y_true_tensor = self._check_input(y_pred, y_true)
+
+        ensemble_mean = y_pred_tensor.mean(dim=-1)
+        skill_sq = (ensemble_mean - y_true_tensor) ** 2
+
+        # Reduce MSE before sqrt (macroscopic approach)
+        if self.score_dims == "spatial":
+            n_spatial_dims = self._infer_n_spatial_dims(y_true_tensor)
+            spatial_dims = tuple(range(2, 2 + n_spatial_dims))
+            skill_sq = skill_sq.mean(dim=spatial_dims)
+        elif self.score_dims == "temporal":
+            skill_sq = skill_sq.mean(dim=1)
+
+        return torch.sqrt(skill_sq)
+
+
 class WinklerScore(BTSCMMetric):
     r"""
     Winkler interval score for central prediction intervals.

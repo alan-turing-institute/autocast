@@ -44,6 +44,8 @@ from autocast.metrics.ensemble import (
     CRPS,
     AlphaFairCRPS,
     EnergyScore,
+    EnsembleSkill,
+    EnsembleSpread,
     FairCRPS,
     SpreadSkillRatio,
     VariogramScore,
@@ -109,6 +111,8 @@ AVAILABLE_METRICS_ENSEMBLE = {
     "afcrps": AlphaFairCRPS,
     "energy": EnergyScore,
     "variogram": VariogramScore,
+    "spread": EnsembleSpread,
+    "skill": EnsembleSkill,
     "ssr": SpreadSkillRatio,
     "winkler": WinklerScore,
 }
