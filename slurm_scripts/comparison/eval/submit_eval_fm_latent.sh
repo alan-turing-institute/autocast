@@ -16,8 +16,12 @@ set -euo pipefail
 # substeps through the processor. Cached-latent processor forward is lighter
 # (64 tokens vs 256 for ambient FM), so 4/GPU is a safe start; the tight
 # spot is the same ODE + AE stack so it mirrors FM-ambient.
+#
+# We also pin eval.n_members explicitly here so the comparison scripts do not
+# depend on the global eval default staying at 10.
 
 EVAL_BATCH_SIZE=4
+EVAL_N_MEMBERS=10
 TIMEOUT_MIN=360
 RUN_DRY_STATES=("true" "false")
 EVAL_METRICS="[mse,mae,nmse,nmae,rmse,nrmse,vmse,vrmse,linf,psrmse,psrmse_low,psrmse_mid,psrmse_high,psrmse_tail,pscc,pscc_low,pscc_mid,pscc_high,pscc_tail,crps,fcrps,afcrps,energy,ssr,winkler]"
@@ -63,6 +67,7 @@ for run_dir in "${RUN_DIRS[@]}"; do
         echo "  run_dir: ${run_dir}"
         echo "  autoencoder_checkpoint: ${ae_ckpt}"
         echo "  eval.batch_size: ${EVAL_BATCH_SIZE}"
+        echo "  eval.n_members: ${EVAL_N_MEMBERS}"
         echo "  eval.metrics: ${EVAL_METRICS}"
 
         uv run autocast eval --mode slurm "${dry_run_arg[@]}" \
@@ -72,6 +77,7 @@ for run_dir in "${RUN_DIRS[@]}"; do
             +autoencoder_checkpoint="${ae_ckpt}" \
             eval.metrics="${EVAL_METRICS}" \
             eval.batch_size="${EVAL_BATCH_SIZE}" \
+            eval.n_members="${EVAL_N_MEMBERS}" \
             hydra.launcher.timeout_min="${TIMEOUT_MIN}"
     done
 done

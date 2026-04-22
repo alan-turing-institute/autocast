@@ -11,8 +11,12 @@ set -euo pipefail
 #
 # Batch size: latent rollout avoids per-step AE encode/decode, so 8/GPU is a
 # conservative setting and matches the ambient-compare CRPS script.
+#
+# We also pin eval.n_members explicitly here so the comparison scripts do not
+# depend on the global eval default staying at 10.
 
 EVAL_BATCH_SIZE=8
+EVAL_N_MEMBERS=10
 TIMEOUT_MIN=240
 RUN_DRY_STATES=("true" "false")
 EVAL_SUBDIR="eval_latent"
@@ -55,6 +59,7 @@ for run_dir in "${RUN_DIRS[@]}"; do
         echo "  run_dir: ${run_dir}"
         echo "  autoencoder_checkpoint: ${ae_ckpt}"
         echo "  eval.batch_size: ${EVAL_BATCH_SIZE}"
+        echo "  eval.n_members: ${EVAL_N_MEMBERS}"
         echo "  eval.metrics: ${EVAL_METRICS}"
         echo "  output_dir: ${run_dir}/${EVAL_SUBDIR}"
 
@@ -65,6 +70,7 @@ for run_dir in "${RUN_DIRS[@]}"; do
             +autoencoder_checkpoint="${ae_ckpt}" \
             eval.metrics="${EVAL_METRICS}" \
             eval.batch_size="${EVAL_BATCH_SIZE}" \
+            eval.n_members="${EVAL_N_MEMBERS}" \
             hydra.sweep.dir="${run_dir}/${EVAL_SUBDIR}" \
             hydra.launcher.timeout_min="${TIMEOUT_MIN}"
     done

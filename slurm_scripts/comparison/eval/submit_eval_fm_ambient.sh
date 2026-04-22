@@ -8,8 +8,12 @@ set -euo pipefail
 # Batch size: diffusion rollout is ODE-integrated (flow_ode_steps=50) per
 # rollout step, so ambient 64x64 × n_members=10 × 50 ODE substeps is the
 # tightest of the three. 4/GPU fits; drop to 2 if OOM.
+#
+# We also pin eval.n_members explicitly here so the comparison scripts do not
+# depend on the global eval default staying at 10.
 
 EVAL_BATCH_SIZE=4
+EVAL_N_MEMBERS=10
 TIMEOUT_MIN=360
 RUN_DRY_STATES=("true" "false")
 EVAL_METRICS="[mse,mae,nmse,nmae,rmse,nrmse,vmse,vrmse,linf,psrmse,psrmse_low,psrmse_mid,psrmse_high,psrmse_tail,pscc,pscc_low,pscc_mid,pscc_high,pscc_tail,crps,fcrps,afcrps,energy,ssr,winkler]"
@@ -39,12 +43,14 @@ for run_dir in "${RUN_DIRS[@]}"; do
         echo "  mode: ${run_label}"
         echo "  run_dir: ${run_dir}"
         echo "  eval.batch_size: ${EVAL_BATCH_SIZE}"
+        echo "  eval.n_members: ${EVAL_N_MEMBERS}"
         echo "  eval.metrics: ${EVAL_METRICS}"
 
         uv run autocast eval --mode slurm "${dry_run_arg[@]}" \
             --workdir "${run_dir}" \
             eval.metrics="${EVAL_METRICS}" \
             eval.batch_size="${EVAL_BATCH_SIZE}" \
+            eval.n_members="${EVAL_N_MEMBERS}" \
             hydra.launcher.timeout_min="${TIMEOUT_MIN}"
     done
 done
