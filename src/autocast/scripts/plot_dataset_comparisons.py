@@ -1867,7 +1867,7 @@ def parse_training_metrics_from_wandb(  # noqa: PLR0911, PLR0912, PLR0915
     display_name = wb.get("name") or run_dir.name
 
     try:
-        api = wandb.Api()
+        api = wandb.Api(timeout=60)
     except Exception as e:
         print(f"wandb API init failed ({e}); skipping {display_name}.")
         return empty
