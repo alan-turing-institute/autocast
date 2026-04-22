@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from time import perf_counter
+from types import SimpleNamespace
 from typing import cast
 
 import lightning as L
@@ -9,9 +10,10 @@ import pytest
 import torch
 from conftest import get_optimizer_config
 from hydra import compose, initialize_config_dir
-from lightning.pytorch.callbacks import Timer
+from lightning.pytorch.callbacks import ModelCheckpoint, Timer
 from omegaconf import DictConfig, OmegaConf, open_dict
 
+from autocast.callbacks.checkpoint import ProgressModelCheckpoint
 from autocast.encoders.base import EncoderWithCond
 from autocast.scripts.setup import (
     _infer_latent_spatial_resolution,
@@ -278,6 +280,86 @@ def test_attach_reset_timer_callback_inserts_before_timer():
     )
     timer_idx = next(idx for idx, cb in enumerate(callbacks) if isinstance(cb, Timer))
     assert reset_idx < timer_idx
+
+
+def _trainer_stub(**overrides) -> SimpleNamespace:
+    defaults = {
+        "estimated_stepping_batches": 100,
+        "max_steps": -1,
+        "max_epochs": 10,
+        "num_training_batches": 10,
+        "accumulate_grad_batches": 1,
+        "global_step": 0,
+        "current_epoch": 0,
+    }
+    defaults.update(overrides)
+    return SimpleNamespace(**defaults)
+
+
+def test_progress_model_checkpoint_resolves_fractional_train_steps():
+    callback = ProgressModelCheckpoint(
+        every_n_train_steps_fraction=0.05,
+        save_top_k=-1,
+        save_last=True,
+        filename="snapshot-{step:08d}",
+    )
+
+    trainer = _trainer_stub(estimated_stepping_batches=101)
+    callback.on_fit_start(cast(L.Trainer, trainer), cast(L.LightningModule, object()))
+
+    assert callback._every_n_train_steps == 6
+
+
+def test_progress_model_checkpoint_delays_monitored_topk(monkeypatch):
+    callback = ProgressModelCheckpoint(
+        monitor="val_multicoverage",
+        mode="min",
+        save_top_k=1,
+        start_after_fraction=0.5,
+        filename="best-{epoch:04d}",
+    )
+
+    calls: list[dict[str, torch.Tensor]] = []
+
+    def fake_super_save(self, trainer, monitor_candidates):
+        del self, trainer
+        calls.append(monitor_candidates)
+
+    monkeypatch.setattr(ModelCheckpoint, "_save_topk_checkpoint", fake_super_save)
+
+    trainer = _trainer_stub(global_step=40)
+    monitor_candidates = {"val_multicoverage": torch.tensor(0.2)}
+    callback._save_topk_checkpoint(cast(L.Trainer, trainer), monitor_candidates)
+    assert calls == []
+
+    trainer.global_step = 50
+    callback._save_topk_checkpoint(cast(L.Trainer, trainer), monitor_candidates)
+    assert len(calls) == 1
+
+
+def test_progress_model_checkpoint_skips_optional_missing_monitor(monkeypatch):
+    callback = ProgressModelCheckpoint(
+        monitor="val_multicoverage",
+        save_top_k=1,
+        monitor_optional=True,
+        filename="best-{epoch:04d}",
+    )
+
+    called = False
+
+    def fake_super_save(self, trainer, monitor_candidates):
+        del self, trainer, monitor_candidates
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(ModelCheckpoint, "_save_topk_checkpoint", fake_super_save)
+
+    trainer = _trainer_stub(global_step=80)
+    callback._save_topk_checkpoint(
+        cast(L.Trainer, trainer), {"val_loss": torch.tensor(0.1)}
+    )
+
+    assert not called
 
 
 def test_epd_config_forward_smoke(config_dir: str, toy_batch: Batch, dummy_datamodule):

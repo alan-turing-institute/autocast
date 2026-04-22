@@ -10,29 +10,38 @@ detect_anomaly: false
 default_root_dir: null
 gradient_clip_val: null
 
-# Save checkpoints mid-epoch (step-based), not only at epoch end.
-# Override at runtime, e.g.: trainer.callbacks.0.every_n_train_steps=500
+# Save snapshots throughout training based on optimizer-step progress.
+# Override at runtime, e.g.:
+#   trainer.callbacks.0.every_n_train_steps_fraction=0.1
+#   trainer.callbacks.0.every_n_train_steps=500
 callbacks:
-  # Rolling checkpoint. save_last: true ensures last.ckpt is a real file
-  # written on every validation/train end (not a lagging symlink), so the
-  # final-epoch state is always captured even if every_n_epochs doesn't
-  # land on max_epochs exactly.
-  - _target_: lightning.pytorch.callbacks.ModelCheckpoint
-    save_top_k: 1
-    every_n_epochs: 5
-    save_on_train_epoch_end: true
+  # Progress snapshots every ~5% of optimizer steps. Keeping all of them makes
+  # it practical to inspect how calibration evolves across the run.
+  - _target_: autocast.callbacks.checkpoint.ProgressModelCheckpoint
+    save_top_k: -1
+    every_n_train_steps_fraction: 0.05
     save_last: true
-    filename: "latest-5ep-{epoch:04d}"
+    filename: "snapshot-{epoch:04d}-{step:08d}"
     auto_insert_metric_name: false
-  # Added 2026-04-17. Drop with `~trainer.callbacks.1` to restore previous
-  # single-callback behaviour.
-  # TODO: refactor callbacks into composable groups so opt-out is index-free.
+  # Best checkpoint on the primary validation objective.
   - _target_: lightning.pytorch.callbacks.ModelCheckpoint
     monitor: val_loss
     mode: min
     save_top_k: 1
     save_last: false  # rolling callback above owns last.ckpt
     filename: "best-val-{epoch:04d}-{val_loss:.4f}"
+    auto_insert_metric_name: false
+  # Optional coverage-oriented checkpoint. This stays dormant unless the model
+  # logs `val_multicoverage`, and only starts tracking once training is half done
+  # to avoid anchoring on the noisy early phase.
+  - _target_: autocast.callbacks.checkpoint.ProgressModelCheckpoint
+    monitor: val_multicoverage
+    monitor_optional: true
+    start_after_fraction: 0.5
+    mode: min
+    save_top_k: 1
+    save_last: false
+    filename: "best-multicov-{epoch:04d}-{val_multicoverage:.4f}"
     auto_insert_metric_name: false
   # EMA of model weights. decay=0.999 gives a half-life of ~700 steps,
   # which is a sensible fraction of our shorter runs (FM-ambient ~12k
@@ -42,4 +51,3 @@ callbacks:
   # unaffected.
   - _target_: autocast.callbacks.ema.EMACallback
     decay: 0.999
-
