@@ -219,6 +219,48 @@ def _sorted_pairwise_abs_weighted_sum(y_pred: TensorBTSCM) -> TensorBTSC:
     return (y_sorted * weights).sum(dim=-1)
 
 
+def _require_pairwise_ensemble_size(n_ensemble: int, metric_name: str) -> None:
+    if n_ensemble <= 1:
+        raise ValueError(
+            f"{metric_name} requires at least 2 ensemble members "
+            f"to compute the pairwise spread term. Got {n_ensemble}."
+        )
+
+
+def _crps_mae_term(y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTSC:
+    """Return the mean absolute distance-to-truth term used by CRPS variants."""
+    return torch.mean(torch.abs(y_pred - y_true.unsqueeze(-1)), dim=-1)
+
+
+def _crps_pairwise_spread_term(
+    y_pred: TensorBTSCM, pairwise_coefficient: float
+) -> TensorBTSC:
+    """Return the pairwise ensemble-distance term used by CRPS variants."""
+    pairwise_weighted_sum = _sorted_pairwise_abs_weighted_sum(y_pred)
+    return pairwise_weighted_sum * pairwise_coefficient
+
+
+def _common_crps_terms(
+    y_pred: TensorBTSCM, y_true: TensorBTSC, adjustment_factor: float
+) -> tuple[TensorBTSC, TensorBTSC]:
+    """Return the MAE-like and pairwise spread terms for CRPS/fCRPS."""
+    n_ensemble = y_pred.shape[-1]
+    term1 = _crps_mae_term(y_pred, y_true)
+    term2 = _crps_pairwise_spread_term(
+        y_pred, pairwise_coefficient=adjustment_factor / (n_ensemble**2)
+    )
+    return term1, term2
+
+
+def _common_crps_spread_term(
+    y_pred: TensorBTSCM, adjustment_factor: float
+) -> TensorBTSC:
+    n_ensemble = y_pred.shape[-1]
+    return _crps_pairwise_spread_term(
+        y_pred, pairwise_coefficient=adjustment_factor / (n_ensemble**2)
+    )
+
+
 def _common_crps_score(
     y_pred: TensorBTSCM, y_true: TensorBTSC, adjustment_factor: float
 ) -> TensorBTSC:
@@ -241,15 +283,7 @@ def _common_crps_score(
     -------
         Tensor of shape (B, T, S, C) with CRPS scores
     """
-    n_ensemble = y_pred.shape[-1]
-
-    term1: TensorBTSC = torch.mean(torch.abs(y_pred - y_true.unsqueeze(-1)), dim=-1)
-
-    # 0.5 * mean_{j,k} |x_j - x_k| * adj
-    #   = (adj / M^2) * sum_k (2k - M - 1) x_{(k)}
-    pairwise_weighted_sum = _sorted_pairwise_abs_weighted_sum(y_pred)
-    term2: TensorBTSC = pairwise_weighted_sum * (adjustment_factor / (n_ensemble**2))
-
+    term1, term2 = _common_crps_terms(y_pred, y_true, adjustment_factor)
     return term1 - term2
 
 
@@ -284,6 +318,48 @@ class CRPS(BTSCMMetric):
         return _common_crps_score(y_pred, y_true, adjustment_factor=1.0)
 
 
+class CRPSMAETerm(BTSCMMetric):
+    r"""
+    Mean-absolute-error term in the CRPS decomposition.
+
+    Notes
+    -----
+    This is the first CRPS term,
+
+    .. math::
+        \frac{1}{M}\sum_{m=1}^{M} |x_m - y|,
+
+    so it is MAE-like, but it is **not** the deterministic MAE of the ensemble mean.
+    """
+
+    name: str = "crps_mae_term"
+
+    def _score(self, y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTSC:
+        term1, _ = _common_crps_terms(y_pred, y_true, adjustment_factor=1.0)
+        return term1
+
+
+class CRPSSpreadTerm(BTSCMMetric):
+    r"""
+    Pairwise spread term in the CRPS decomposition.
+
+    Notes
+    -----
+    This is the second CRPS term,
+
+    .. math::
+        \frac{1}{2M^2}\sum_{j=1}^{M}\sum_{k=1}^{M}|x_j - x_k|,
+
+    represented via the sort-based identity used elsewhere in this module.
+    """
+
+    name: str = "crps_spread_term"
+
+    def _score(self, y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTSC:
+        del y_true
+        return _common_crps_spread_term(y_pred, adjustment_factor=1.0)
+
+
 class FairCRPS(BTSCMMetric):
     """
     Fair Continuous Ranked Probability Score (fCRPS) for ensemble forecasts.
@@ -312,9 +388,64 @@ class FairCRPS(BTSCMMetric):
             Tensor of shape (B, T, S, C) with fCRPS scores
         """
         n_ensemble = y_pred.shape[-1]
+        _require_pairwise_ensemble_size(n_ensemble, "FairCRPS")
         return _common_crps_score(
             y_pred, y_true, adjustment_factor=n_ensemble / (n_ensemble - 1)
         )
+
+
+class FairCRPSMAETerm(BTSCMMetric):
+    """Mean-absolute-error term in the fCRPS decomposition."""
+
+    name: str = "fcrps_mae_term"
+
+    def _score(self, y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTSC:
+        n_ensemble = y_pred.shape[-1]
+        _require_pairwise_ensemble_size(n_ensemble, "FairCRPSMAETerm")
+        term1, _ = _common_crps_terms(
+            y_pred, y_true, adjustment_factor=n_ensemble / (n_ensemble - 1)
+        )
+        return term1
+
+
+class FairCRPSSpreadTerm(BTSCMMetric):
+    """Pairwise spread term in the fCRPS decomposition."""
+
+    name: str = "fcrps_spread_term"
+
+    def _score(self, y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTSC:
+        del y_true
+        n_ensemble = y_pred.shape[-1]
+        _require_pairwise_ensemble_size(n_ensemble, "FairCRPSSpreadTerm")
+        return _common_crps_spread_term(
+            y_pred, adjustment_factor=n_ensemble / (n_ensemble - 1)
+        )
+
+
+def _alpha_fair_crps_terms(
+    y_pred: TensorBTSCM, y_true: TensorBTSC, alpha: float
+) -> tuple[TensorBTSC, TensorBTSC]:
+    """Return the MAE-like and pairwise spread terms for afCRPS."""
+    n_ensemble = y_pred.shape[-1]
+    _require_pairwise_ensemble_size(n_ensemble, "AlphaFairCRPS")
+    eps = (1.0 - alpha) / n_ensemble
+
+    term1 = _crps_mae_term(y_pred, y_true)
+    term2 = _crps_pairwise_spread_term(
+        y_pred,
+        pairwise_coefficient=(1.0 - eps) / (n_ensemble * (n_ensemble - 1)),
+    )
+    return term1, term2
+
+
+def _alpha_fair_crps_spread_term(y_pred: TensorBTSCM, alpha: float) -> TensorBTSC:
+    n_ensemble = y_pred.shape[-1]
+    _require_pairwise_ensemble_size(n_ensemble, "AlphaFairCRPS")
+    eps = (1.0 - alpha) / n_ensemble
+    return _crps_pairwise_spread_term(
+        y_pred,
+        pairwise_coefficient=(1.0 - eps) / (n_ensemble * (n_ensemble - 1)),
+    )
 
 
 def _alpha_fair_crps_score(
@@ -342,22 +473,8 @@ def _alpha_fair_crps_score(
     -------
         afCRPS: (B, T, S, C)
     """
-    n_ensemble = y_pred.shape[-1]
-    eps = (1.0 - alpha) / n_ensemble
-
-    # (1/M) * sum_j |x_j - y|
-    mean_abs_diff_truth: TensorBTSC = torch.mean(
-        torch.abs(y_pred - y_true.unsqueeze(-1)), dim=-1
-    )
-
-    # sum_{j,k} |x_j - x_k| = 2 * sum_k (2k - M - 1) x_{(k)}; diagonal is zero so
-    # this equals sum_{j != k} |x_j - x_k|.
-    pairwise_weighted_sum = _sorted_pairwise_abs_weighted_sum(y_pred)
-    pairwise_term = (
-        (1.0 - eps) / (n_ensemble * (n_ensemble - 1))
-    ) * pairwise_weighted_sum
-
-    return mean_abs_diff_truth - pairwise_term
+    term1, term2 = _alpha_fair_crps_terms(y_pred, y_true, alpha)
+    return term1 - term2
 
 
 class AlphaFairCRPS(BTSCMMetric):
@@ -383,8 +500,19 @@ class AlphaFairCRPS(BTSCMMetric):
 
     name: str = "afcrps"
 
-    def __init__(self, alpha: float = 0.95):
-        super().__init__()
+    def __init__(
+        self,
+        alpha: float = 0.95,
+        *,
+        score_dims: Literal["spatial", "temporal"] | None = "spatial",
+        reduce_all: bool = True,
+        dist_sync_on_step: bool = False,
+    ):
+        super().__init__(
+            score_dims=score_dims,
+            reduce_all=reduce_all,
+            dist_sync_on_step=dist_sync_on_step,
+        )
         # alpha close to 1 is close to fair CRPS, lower values tend toward standard CRPS
         assert 0 < alpha <= 1, "alpha must be in (0,1]"
         self.alpha = alpha
@@ -402,6 +530,64 @@ class AlphaFairCRPS(BTSCMMetric):
             afCRPS: (B, T, S, C)
         """
         return _alpha_fair_crps_score(y_pred, y_true, self.alpha)
+
+
+class AlphaFairCRPSMAETerm(BTSCMMetric):
+    """
+    Mean-absolute-error term paired with afCRPS monitoring.
+
+    The MAE-like term itself does not depend on ``alpha``, but this class accepts
+    it so experiment configs can keep the afCRPS diagnostic bundle parameterized
+    consistently.
+    """
+
+    name: str = "afcrps_mae_term"
+
+    def __init__(
+        self,
+        alpha: float = 0.95,
+        *,
+        score_dims: Literal["spatial", "temporal"] | None = "spatial",
+        reduce_all: bool = True,
+        dist_sync_on_step: bool = False,
+    ):
+        super().__init__(
+            score_dims=score_dims,
+            reduce_all=reduce_all,
+            dist_sync_on_step=dist_sync_on_step,
+        )
+        assert 0 < alpha <= 1, "alpha must be in (0,1]"
+        self.alpha = alpha
+
+    def _score(self, y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTSC:
+        term1, _ = _alpha_fair_crps_terms(y_pred, y_true, self.alpha)
+        return term1
+
+
+class AlphaFairCRPSSpreadTerm(BTSCMMetric):
+    """Pairwise spread term in the afCRPS decomposition."""
+
+    name: str = "afcrps_spread_term"
+
+    def __init__(
+        self,
+        alpha: float = 0.95,
+        *,
+        score_dims: Literal["spatial", "temporal"] | None = "spatial",
+        reduce_all: bool = True,
+        dist_sync_on_step: bool = False,
+    ):
+        super().__init__(
+            score_dims=score_dims,
+            reduce_all=reduce_all,
+            dist_sync_on_step=dist_sync_on_step,
+        )
+        assert 0 < alpha <= 1, "alpha must be in (0,1]"
+        self.alpha = alpha
+
+    def _score(self, y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTSC:
+        del y_true
+        return _alpha_fair_crps_spread_term(y_pred, self.alpha)
 
 
 class EnergyScore(BTSCMMetric):

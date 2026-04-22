@@ -7,9 +7,16 @@ from autocast.metrics.base import BaseMetric
 from autocast.metrics.coverage import Coverage
 from autocast.metrics.deterministic import RMSE
 from autocast.metrics.ensemble import (
+    CRPS,
+    AlphaFairCRPS,
+    AlphaFairCRPSMAETerm,
+    AlphaFairCRPSSpreadTerm,
+    CRPSMAETerm,
+    CRPSSpreadTerm,
     EnergyScore,
     EnsembleSkill,
     EnsembleSpread,
+    FairCRPSSpreadTerm,
     SpreadSkillRatio,
     VariogramScore,
     WinklerScore,
@@ -28,7 +35,16 @@ ENSEMBLE_BASE_METRICS = tuple(
 ENSEMBLE_ERROR_METRICS = tuple(
     m
     for m in ENSEMBLE_BASE_METRICS
-    if m not in [Coverage, VariogramScore, SpreadSkillRatio, EnsembleSpread]
+    if m
+    not in [
+        Coverage,
+        VariogramScore,
+        SpreadSkillRatio,
+        EnsembleSpread,
+        CRPSSpreadTerm,
+        FairCRPSSpreadTerm,
+        AlphaFairCRPSSpreadTerm,
+    ]
 )
 
 
@@ -155,6 +171,40 @@ def test_variogram_score_invalid_parameters():
 
     with pytest.raises(ValueError):  # noqa: PT011
         metric.score(y_pred, y_true)
+
+
+def test_crps_component_metrics_match_manual_decomposition():
+    y_pred = torch.tensor([[[[[0.0, 2.0]]]]])  # (1, 1, 1, 1, 2)
+    y_true = torch.tensor([[[[1.0]]]])  # (1, 1, 1, 1)
+
+    crps = CRPS(reduce_all=False).score(y_pred, y_true)
+    mae_term = CRPSMAETerm(reduce_all=False).score(y_pred, y_true)
+    spread_term = CRPSSpreadTerm(reduce_all=False).score(y_pred, y_true)
+    ensemble_spread = EnsembleSpread(corrected=False, reduce_all=False).score(
+        y_pred, y_true
+    )
+
+    assert torch.allclose(mae_term, torch.tensor([[[1.0]]]))
+    assert torch.allclose(spread_term, torch.tensor([[[0.5]]]))
+    assert torch.allclose(crps, mae_term - spread_term)
+    assert torch.allclose(crps, torch.tensor([[[0.5]]]))
+    assert not torch.allclose(spread_term, ensemble_spread)
+
+
+def test_afcrps_component_metrics_match_manual_decomposition():
+    y_pred = torch.tensor([[[[[0.0, 2.0]]]]])  # (1, 1, 1, 1, 2)
+    y_true = torch.tensor([[[[1.0]]]])  # (1, 1, 1, 1)
+
+    afcrps = AlphaFairCRPS(alpha=0.75, reduce_all=False).score(y_pred, y_true)
+    mae_term = AlphaFairCRPSMAETerm(alpha=0.75, reduce_all=False).score(y_pred, y_true)
+    spread_term = AlphaFairCRPSSpreadTerm(alpha=0.75, reduce_all=False).score(
+        y_pred, y_true
+    )
+
+    assert torch.allclose(mae_term, torch.tensor([[[1.0]]]))
+    assert torch.allclose(spread_term, torch.tensor([[[0.875]]]))
+    assert torch.allclose(afcrps, mae_term - spread_term)
+    assert torch.allclose(afcrps, torch.tensor([[[0.125]]]))
 
 
 @pytest.mark.parametrize("MetricCls", [EnergyScore, VariogramScore])

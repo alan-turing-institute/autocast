@@ -20,6 +20,24 @@ model:
   n_members: 10
   loss_func:
     _target_: autocast.losses.ensemble.CRPSLoss
+  train_metrics:
+    crps:
+      _target_: autocast.metrics.ensemble.CRPS
+    crps_mae_term:
+      _target_: autocast.metrics.ensemble.CRPSMAETerm
+    crps_spread_term:
+      _target_: autocast.metrics.ensemble.CRPSSpreadTerm
+  val_metrics:
+    crps:
+      _target_: autocast.metrics.ensemble.CRPS
+    crps_mae_term:
+      _target_: autocast.metrics.ensemble.CRPSMAETerm
+    crps_spread_term:
+      _target_: autocast.metrics.ensemble.CRPSSpreadTerm
+    spread:
+      _target_: autocast.metrics.ensemble.EnsembleSpread
+    multicoverage:
+      _target_: autocast.metrics.MultiCoverage
   encoder:
     with_constants: true
   processor:

@@ -55,6 +55,20 @@ model:
   loss_func:
     _target_: autocast.losses.ensemble.AlphaFairCRPSLoss
   train_metrics:
-    crps:
+    afcrps:
       _target_: autocast.metrics.ensemble.AlphaFairCRPS
-  val_metrics: []
+    afcrps_mae_term:
+      _target_: autocast.metrics.ensemble.AlphaFairCRPSMAETerm
+    afcrps_spread_term:
+      _target_: autocast.metrics.ensemble.AlphaFairCRPSSpreadTerm
+  val_metrics:
+    afcrps:
+      _target_: autocast.metrics.ensemble.AlphaFairCRPS
+    afcrps_mae_term:
+      _target_: autocast.metrics.ensemble.AlphaFairCRPSMAETerm
+    afcrps_spread_term:
+      _target_: autocast.metrics.ensemble.AlphaFairCRPSSpreadTerm
+    spread:
+      _target_: autocast.metrics.ensemble.EnsembleSpread
+    multicoverage:
+      _target_: autocast.metrics.MultiCoverage
