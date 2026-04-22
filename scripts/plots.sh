@@ -1,6 +1,6 @@
 #!/bin/bash
 
-PLOTS_PATH=2026-04-20_plots_prelim_m16
+PLOTS_PATH=2026-04-20_plots_prelim_m16_best_val_loss
 
 
 # Comparison with previous CNS results
