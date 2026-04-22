@@ -51,10 +51,10 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 
 # Main comparison (with m=16 runs around 2/3 complete): CRPS ambient variants, CRPS processor-on-latents, FM ambient (EPD)
 autocast-plots --results-dir outputs/2026-04-20_collated \
-	--run crps_ad64_vit_azula_large_ac1bb06_ef6368d "CRPS (ambient, m=16)" 0 \
+	--run crps_ad64_vit_azula_large_ac1bb06_ef6368d "CRPS (ambient, m=16, 16hrs)" 0 \
 	--run crps_cns64_vit_azula_large_0db40e1_dcd79e4 "CRPS (ambient, m=16)" 0 \
-	--run crps_gpe64_vit_azula_large_ac1bb06_638585e "CRPS (ambient, m=16)" 0 \
-	--run crps_gs64_vit_azula_large_ac1bb06_639963f "CRPS (ambient, m=16) " 0 \
+	--run crps_gpe64_vit_azula_large_ac1bb06_638585e "CRPS (ambient, m=16, 16hrs)" 0 \
+	--run crps_gs64_vit_azula_large_ac1bb06_639963f "CRPS (ambient, m=16, 16hrs) " 0 \
 	--run diff_ad64_flow_matching_vit_0f89f06_725d44a "FM (ambient)" 1 \
 	--run diff_cns64_flow_matching_vit_0f89f06_483bb70 "FM (ambient)" 1 \
 	--run diff_gpe64_flow_matching_vit_0f89f06_3b3604d "FM (ambient)" 1 \
@@ -72,7 +72,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--training-yscale log \
 	--panel-figure \
 	--panel-figure-no-training \
-	--output-dir outputs/2026-04-20_collated/$PLOTS_PATH/main_comparison_m16
+	--output-dir outputs/2026-04-20_collated/$PLOTS_PATH/main_comparison_m16_part_complete
 
 # Ablation with CRPS ViT using global cond instead of permute_concat and channels last
 # --run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (ambient)" 0 \
@@ -131,8 +131,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--training-yscale log \
 	--panel-figure \
 	--panel-figure-no-training \
-	--output-dir outputs/2026-04-20_collated/$PLOTS_PATH/ablation_crps_ensemble_size
-
+	--output-dir outputs/2026-04-20_collated/$PLOTS_PATH/ablation_crps_ensemble_size_complete
 
 # ---
 
