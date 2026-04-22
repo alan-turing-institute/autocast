@@ -23,8 +23,8 @@ small edit.
 | crps_variants (AlphaFair / Fair / CRPS) | comparison | CNS | 3 | stub |
 | fm_vs_diffusion | comparison | CNS | 1 | stub |
 | arch_unet_fno_vit | comparison | CNS | 2 | stub |
-| model_size | sweep | CNS | 2 | ready |
-| cached_latent_crps | comparison | CNS | 1 (done, 2026-04-19) | stub |
+| model_size | sweep | CNS | 2 active (+2 staged) | in progress |
+| cached_latent_crps | comparison | CNS | 1 (done, 2026-04-20) | stub |
 | cond_global_vs_permute | comparison | CNS | 1 (done for CRPS-ViT, 2026-04-18) | stub |
 | eval_only/ode_steps | eval-only | FM runs | 0 | stub |
 | eval_only/ema | eval-only | EMA ckpts | 0 | stub |
