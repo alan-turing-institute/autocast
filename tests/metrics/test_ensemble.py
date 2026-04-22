@@ -5,6 +5,7 @@ from einops import rearrange, repeat
 from autocast.metrics import ALL_ENSEMBLE_METRICS
 from autocast.metrics.base import BaseMetric
 from autocast.metrics.coverage import Coverage
+from autocast.metrics.deterministic import RMSE
 from autocast.metrics.ensemble import (
     EnergyScore,
     EnsembleSkill,
@@ -381,6 +382,18 @@ def test_ensemble_spread_requires_multiple_ensemble_members():
         EnsembleSpread()(y_pred, y_true)
 
 
+def test_ensemble_spread_accepts_base_metric_kwargs():
+    y_pred = torch.tensor([[[[[0.0, 2.0]]], [[[0.0, 4.0]]]]])
+    y_true = torch.zeros((1, 2, 1, 1))
+
+    value = EnsembleSpread(score_dims="temporal", reduce_all=False).score(
+        y_pred, y_true
+    )
+
+    expected = torch.tensor([[[7.5**0.5]]])
+    assert torch.allclose(value, expected, atol=1e-6)
+
+
 def test_ensemble_skill_is_rmse_of_ensemble_mean():
     # Shape: (B=1, T=1, S=1, C=1, M=2)
     # Members: [0, 2], truth: [0]
@@ -390,6 +403,17 @@ def test_ensemble_skill_is_rmse_of_ensemble_mean():
 
     value = EnsembleSkill()(y_pred, y_true)
     assert torch.allclose(value, torch.tensor(1.0), atol=1e-6)
+
+
+def test_ensemble_skill_matches_deterministic_rmse_on_ensemble_predictions():
+    torch.manual_seed(0)
+    y_pred = torch.randn((2, 3, 4, 5, 2, 7))
+    y_true = torch.randn((2, 3, 4, 5, 2))
+
+    skill = EnsembleSkill()(y_pred, y_true)
+    rmse = RMSE()(y_pred, y_true)
+
+    assert torch.allclose(skill, rmse, atol=1e-6)
 
 
 def test_winkler_score_manual_value():

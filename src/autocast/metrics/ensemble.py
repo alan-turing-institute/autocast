@@ -672,8 +672,19 @@ class EnsembleSpread(BTSCMMetric):
 
     name: str = "spread"
 
-    def __init__(self, *, corrected: bool = True):
-        super().__init__()
+    def __init__(
+        self,
+        *,
+        corrected: bool = True,
+        score_dims: Literal["spatial", "temporal"] | None = "spatial",
+        reduce_all: bool = True,
+        dist_sync_on_step: bool = False,
+    ):
+        super().__init__(
+            score_dims=score_dims,
+            reduce_all=reduce_all,
+            dist_sync_on_step=dist_sync_on_step,
+        )
         self.corrected = corrected
 
     def _score(self, y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTSC:
@@ -728,6 +739,11 @@ class EnsembleSkill(BTSCMMetric):
     This metric reduces the squared error over spatial/temporal dimensions *before*
     taking the square root (macroscopic RMSE), as is commonly done in ensemble
     forecast evaluation (and in LoLA/paper appendices).
+
+    In the default spatial-reduction evaluation path, this is numerically
+    equivalent to the deterministic ``RMSE`` metric applied to an ensemble
+    prediction tensor, because ``RMSE`` first averages over the ensemble
+    dimension and then computes RMSE.
     """
 
     name: str = "skill"

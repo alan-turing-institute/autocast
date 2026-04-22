@@ -136,6 +136,8 @@ DEFAULT_EVAL_METRICS = [
     "fcrps",
     "afcrps",
     "energy",
+    "spread",
+    "skill",
     "ssr",
     "winkler",
 ]

@@ -51,8 +51,10 @@ All eval configs support these parameters:
   run. See [Evaluation modes](#evaluation-modes) below.
 - `metrics`: List of metrics to compute (default includes mse/mae/rmse/vrmse,
   power spectrum scores `psrmse*`, cross-correlation spectrum scores `pscc*`,
-  and ensemble scores `crps`, `fcrps`, `afcrps`, `energy`, `ssr`; `variogram`
-  remains available via explicit opt-in)
+  and ensemble scores `crps`, `fcrps`, `afcrps`, `energy`, `spread`, `skill`,
+  `ssr`; `variogram` remains available via explicit opt-in. Note that for
+  ensemble predictions, `skill` is the RMSE of the ensemble mean, so it matches
+  `rmse` numerically and is included for explicit spread/skill reporting.)
 - `csv_path`: Custom path for metrics CSV (default: work_dir/evaluation_metrics.csv)
 - `video_dir`: Custom directory for rollout videos (default: work_dir/videos)
 - `batch_indices`: List of rollout sample indices to visualize (resolved across
