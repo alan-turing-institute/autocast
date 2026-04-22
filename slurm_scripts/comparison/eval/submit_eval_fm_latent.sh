@@ -4,10 +4,10 @@ set -euo pipefail
 # Evaluate FM cached-latent processor runs from 2026-04-20 using the
 # default eval.mode=auto path.
 #
-# After PR #339, auto resolves to encode_once for processor-only cached-latent
-# runs when autoencoder_checkpoint is supplied. That preserves raw-space
-# metrics while avoiding the extra per-step decode->encode drift charged by
-# the ambient ablation.
+# eval.mode=auto resolves to encode_once for processor-only cached-latent runs
+# when autoencoder_checkpoint is supplied. That preserves raw-space metrics
+# while avoiding the extra per-step decode->encode drift charged by the
+# ambient ablation.
 #
 # Batch size: encode_once pays one upfront AE encode plus a decode each rollout
 # step, while FM still pays 50 ODE substeps through the processor. That keeps

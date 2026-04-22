@@ -4,10 +4,10 @@ set -euo pipefail
 # Evaluate CRPS cached-latent processor runs from 2026-04-20 using the
 # default eval.mode=auto path.
 #
-# After PR #339, auto resolves to encode_once for processor-only cached-latent
-# runs when autoencoder_checkpoint is supplied. That preserves raw-space
-# metrics while avoiding the extra per-step decode->encode drift charged by
-# the ambient ablation.
+# eval.mode=auto resolves to encode_once for processor-only cached-latent runs
+# when autoencoder_checkpoint is supplied. That preserves raw-space metrics
+# while avoiding the extra per-step decode->encode drift charged by the
+# ambient ablation.
 #
 # Batch size: encode_once pays one upfront AE encode and a decode each rollout
 # step while still scoring in raw data space. That is cheaper than the
