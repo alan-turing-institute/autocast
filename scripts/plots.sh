@@ -1,12 +1,14 @@
 #!/bin/bash
 
-PLOTS_PATH=2026-04-20_plots
+PLOTS_PATH=2026-04-20_plots_prelim_m16
 
 
 # Comparison with previous CNS results
+# m=8 
+# --run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (24hrs, update, n=1024, afCRPS, h=568, layers=12)" 0 \
 autocast-plots --results-dir outputs/2026-04-20_collated \
 	--run crps_cns64_vit_azula_large_1ed9013_ab31602 "CRPS (24hrs, prelim, n=1024, afCRPS, h=632, layers=10)" 0 \
-	--run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (24hrs, update, n=1024, afCRPS, h=568, layers=12)" 0 \
+	--run crps_cns64_vit_azula_large_0db40e1_dcd79e4 "CRPS (24hrs, update, n=1024, afCRPS, h=568, layers=12, m=16)" 0 \
 	--run diff_cns64_flow_matching_vit_1ed9013_893624d "FM (24hrs, prelim)" 1 \
 	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 1 \
 	--dataset-order CNS \
@@ -21,9 +23,10 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--output-dir outputs/2026-04-20_collated/$PLOTS_PATH/cns_comparison_with_exploratory_results
 
 # Main comparison: CRPS ambient variants, CRPS processor-on-latents, FM ambient (EPD)
+# --run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (ambient)" 0 \
 autocast-plots --results-dir outputs/2026-04-20_collated \
 	--run crps_ad64_vit_azula_large_0f89f06_4667606 "CRPS (ambient)" 0 \
-	--run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (ambient)" 0 \
+	--run crps_cns64_vit_azula_large_0db40e1_dcd79e4 "CRPS (ambient m=16)" 0 \
 	--run crps_gpe64_vit_azula_large_0f89f06_d337bd8 "CRPS (ambient)" 0 \
 	--run crps_gs64_vit_azula_large_0f89f06_779325a "CRPS (ambient) " 0 \
 	--run diff_ad64_flow_matching_vit_0f89f06_725d44a "FM (ambient)" 1 \
@@ -50,8 +53,8 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 
 # Ablation with CRPS latent and AE-ambient latents for CNS
 autocast-plots --results-dir outputs/2026-04-20_collated \
-	--run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (ambient)" 0 \
-	--run crps_cns64_vit_azula_large_0f89f06_e7e60d9 "CRPS (latent, AE-ambient)" 0 \
+	--run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (ambient, m=8)" 0 \
+	--run crps_cns64_vit_azula_large_0f89f06_e7e60d9 "CRPS (latent, AE-ambient, m=8)" 0 \
 	--run diff_cns64_flow_matching_vit_0f89f06_483bb70 "FM (ambient)" 1 \
 	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 2 \
 	--dataset-order CNS \
@@ -67,9 +70,10 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 
 
 # Ablation with CRPS ViT using global cond instead of permute_concat and channels last
+# --run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (ambient)" 0 \
 autocast-plots --results-dir outputs/2026-04-20_collated \
-	--run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (ambient)" 0 \
-	--run crps_cns64_vit_azula_large_0f89f06_cf53b48 "CRPS (ambient, identity+global-cond)" 0 \
+	--run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (ambient, m=8)" 0 \
+	--run crps_cns64_vit_azula_large_0f89f06_cf53b48 "CRPS (ambient, identity+global-cond, m=8)" 0 \
 	--run diff_cns64_flow_matching_vit_0f89f06_483bb70 "FM (ambient)" 1 \
 	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 2 \
 	--dataset-order CNS \
@@ -85,10 +89,11 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 
 
 # Usign cached latents for evaluation instead of AE-ambient latents for CRPS latent variant
+# --run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (ambient)" 0 \
 autocast-plots --results-dir outputs/2026-04-20_collated \
-	--run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (ambient)" 0 \
-	--run crps_cns64_vit_azula_large_0f89f06_e7e60d9 "CRPS (latent, CRPS in ambient)" 0 \
-	--run crps_cns64_vit_azula_large_09490da_8b7573d "CRPS (latent, CRPS in latent)" 0 \
+	--run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (ambient, m=8)" 0 \
+	--run crps_cns64_vit_azula_large_0f89f06_e7e60d9 "CRPS (latent, CRPS in ambient, m=8)" 0 \
+	--run crps_cns64_vit_azula_large_09490da_8b7573d "CRPS (latent, CRPS in latent, m=8)" 0 \
 	--run diff_cns64_flow_matching_vit_0f89f06_483bb70 "FM (ambient)" 1 \
 	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 2 \
 	--dataset-order CNS \
@@ -106,7 +111,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 # Ablation with CRPS ensemble size
 # TODO: update with final runs
 autocast-plots --results-dir outputs/2026-04-20_collated \
-	--run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (ambient)" 0 \
+	--run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (ambient, m=8)" 0 \
 	--run crps_cns64_vit_azula_large_0db40e1_5e157a5 "CRPS (ambient, m=16, bs=32)" 0 \
 	--run crps_cns64_vit_azula_large_0db40e1_dcd79e4 "CRPS (ambient, m=16, eff_bs=1024)" 0 \
 	--run diff_cns64_flow_matching_vit_0f89f06_483bb70 "FM (ambient)" 1 \
