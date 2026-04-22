@@ -1,28 +1,30 @@
 #!/bin/bash
 
 set -euo pipefail
-# Evaluate FM-in-ambient (flow matching, identity encoder) EPD runs from
-# 2026-04-18 across all 4 datasets. Eval reuses resolved_config.yaml so
-# flow_ode_steps (=50), hid_channels, and backbone match training.
+# Ambient eval submitter for the current FM model-size ablation runs.
 #
-# Batch size: diffusion rollout is ODE-integrated (flow_ode_steps=50) per
-# rollout step, so ambient 64x64 × n_members=10 × 50 ODE substeps is the
-# tightest of the three. 4/GPU fits; drop to 2 if OOM.
+# This stays under the ablation directory while the sweep remains CNS-only and
+# only the larger preliminary leg is in hand. If the resulting run set becomes
+# part of the canonical comparison study later, move the promoted run dirs into
+# slurm_scripts/comparison/eval/ and leave ablation-only evals local here.
 #
-# We also pin eval.n_members explicitly here so the comparison scripts do not
-# depend on the global eval default staying at 10.
+# We keep eval.n_members fixed at 10 to match the comparison-study eval regime.
+#
+# Batch size: baseline ambient FM eval fits 4/GPU at hid_channels=704,
+# hid_blocks=12, and flow_ode_steps=50. The current 2x run is substantially
+# larger (896/16), so start at 2/GPU for the preliminary pass and increase only
+# after confirming cluster headroom.
 
-EVAL_BATCH_SIZE=4
+EVAL_BATCH_SIZE=2
 EVAL_N_MEMBERS=10
-TIMEOUT_MIN=360
+TIMEOUT_MIN=480
 RUN_DRY_STATES=("true" "false")
 EVAL_METRICS="[mse,mae,nmse,nmae,rmse,nrmse,vmse,vrmse,linf,psrmse,psrmse_low,psrmse_mid,psrmse_high,psrmse_tail,pscc,pscc_low,pscc_mid,pscc_high,pscc_tail,crps,fcrps,afcrps,energy,ssr,winkler]"
 
 RUN_DIRS=(
-    "outputs/2026-04-18/diff_gs64_flow_matching_vit_0f89f06_6e3a299"
-    "outputs/2026-04-18/diff_gpe64_flow_matching_vit_0f89f06_3b3604d"
-    "outputs/2026-04-18/diff_cns64_flow_matching_vit_0f89f06_483bb70"
-    "outputs/2026-04-18/diff_ad64_flow_matching_vit_0f89f06_725d44a"
+    # Uncomment/add once the 0p4x production run exists.
+    # "outputs/2026-04-21/model_size/diff_cns64_flow_matching_vit_472_<git>_<uuid>"  # model_size_fm_0p4x
+    "outputs/2026-04-21/model_size/diff_cns64_flow_matching_vit_896_3a69487_e894c55"  # model_size_fm_2x
 )
 
 for run_dir in "${RUN_DIRS[@]}"; do
@@ -39,7 +41,7 @@ for run_dir in "${RUN_DIRS[@]}"; do
             run_label="slurm --dry-run"
         fi
 
-        echo "Submitting FM-ambient eval"
+        echo "Submitting model-size FM ambient eval"
         echo "  mode: ${run_label}"
         echo "  run_dir: ${run_dir}"
         echo "  eval.batch_size: ${EVAL_BATCH_SIZE}"
