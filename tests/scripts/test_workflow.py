@@ -707,6 +707,33 @@ def test_eval_command_quotes_inferred_checkpoint_with_equals(monkeypatch, tmp_pa
     assert f'eval.checkpoint="{ckpt.resolve()}"' in overrides
 
 
+def test_eval_command_uses_custom_output_subdir(monkeypatch, tmp_path):
+    (tmp_path / "resolved_config.yaml").write_text("x: 1\n", encoding="utf-8")
+    (tmp_path / "encoder_processor_decoder.ckpt").touch()
+    captured: dict[str, object] = {}
+
+    def _fake_run_module(_module, overrides, dry_run=False, mode="local", **_kwargs):
+        captured["overrides"] = overrides
+        del dry_run, mode, _kwargs  # accept run_module's keyword args
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.commands.run_module", _fake_run_module
+    )
+
+    eval_command(
+        mode="local",
+        dataset="reaction_diffusion",
+        work_dir=str(tmp_path),
+        overrides=[],
+        output_subdir="eval_0p75",
+        dry_run=True,
+    )
+
+    overrides = captured["overrides"]
+    assert isinstance(overrides, list)
+    assert f"hydra.run.dir={(tmp_path / 'eval_0p75').resolve()}" in overrides
+
+
 def test_benchmark_command_quotes_inferred_checkpoint_with_equals(
     monkeypatch, tmp_path
 ):
@@ -1057,6 +1084,7 @@ def test_build_parser_eval_basic(parser: argparse.ArgumentParser):
     args = parser.parse_args(["eval", "--workdir", "/tmp/w"])
     assert args.command == "eval"
     assert args.workdir == "/tmp/w"
+    assert args.output_subdir == "eval"
 
 
 def test_build_parser_benchmark_basic(parser: argparse.ArgumentParser):
@@ -1352,6 +1380,41 @@ def test_main_eval_does_not_infer_dataset_from_workdir(monkeypatch, tmp_path):
 
     assert captured["dataset"] is None
     assert captured["work_dir"] == str(tmp_path)
+    assert captured["output_subdir"] == "eval"
+
+
+def test_main_eval_forwards_output_subdir(monkeypatch, tmp_path):
+    (tmp_path / "resolved_config.yaml").write_text(
+        "datamodule:\n  data_path: /tmp/datasets/reaction_diffusion\n",
+        encoding="utf-8",
+    )
+
+    captured = {}
+
+    def _fake_eval_command(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.cli.eval_command",
+        _fake_eval_command,
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "autocast",
+            "eval",
+            "--workdir",
+            str(tmp_path),
+            "--output-subdir",
+            "eval_0p75",
+            "--dry-run",
+        ],
+    )
+
+    workflow_cli.main()
+
+    assert captured["output_subdir"] == "eval_0p75"
 
 
 def test_main_benchmark_does_not_infer_dataset_from_workdir(monkeypatch, tmp_path):

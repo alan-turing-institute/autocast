@@ -508,10 +508,11 @@ def build_eval_overrides(
     work_dir: str,
     overrides: list[str],
     using_resolved_config: bool = False,
+    output_subdir: str = "eval",
 ) -> tuple[Path, list[str]]:
     """Build evaluation overrides from CLI arguments."""
     base_work_dir = Path(work_dir).expanduser().resolve()
-    eval_dir = (base_work_dir / "eval").resolve()
+    eval_dir = (base_work_dir / output_subdir).resolve()
 
     command_overrides = [
         *build_common_launch_overrides(mode=mode, work_dir=eval_dir),
@@ -590,6 +591,7 @@ def eval_command(
     dataset: str | None,
     work_dir: str,
     overrides: list[str],
+    output_subdir: str = "eval",
     runtime_typechecking: bool = False,
     dry_run: bool = False,
 ) -> None:
@@ -609,6 +611,7 @@ def eval_command(
         work_dir=work_dir,
         overrides=effective_overrides,
         using_resolved_config=using_resolved_config,
+        output_subdir=output_subdir,
     )
 
     run_module(

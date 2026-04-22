@@ -96,6 +96,14 @@ def build_parser() -> argparse.ArgumentParser:
     # -- eval --------------------------------------------------------------
     eval_parser = subparsers.add_parser("eval")
     eval_parser.add_argument("--workdir", required=True)
+    eval_parser.add_argument(
+        "--output-subdir",
+        default="eval",
+        help=(
+            "Evaluation output subdirectory under --workdir "
+            "(default: eval)."
+        ),
+    )
     _add_common_args(eval_parser)
 
     # -- benchmark ---------------------------------------------------------
@@ -302,6 +310,7 @@ def main() -> None:
             dataset=dataset,
             work_dir=args.workdir,
             overrides=combined_overrides,
+            output_subdir=args.output_subdir,
             runtime_typechecking=args.runtime_typechecking,
             dry_run=args.dry_run,
         )
