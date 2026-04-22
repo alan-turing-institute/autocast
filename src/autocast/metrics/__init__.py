@@ -46,8 +46,6 @@ __all__ = [
     "Coverage",
     "EnergyScore",
     "EnsembleSkill",
-    "EnsembleSkill",
-    "EnsembleSpread",
     "EnsembleSpread",
     "FairCRPS",
     "LInfinity",
