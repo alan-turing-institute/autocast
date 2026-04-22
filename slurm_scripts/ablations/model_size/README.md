@@ -113,6 +113,8 @@ the scan-points table uses.
 | `local_hydra/local_experiment/ablations/model_size/conditioned_navier_stokes/fm_vit_2x.yaml` | FM ambient ~2.10x preset |
 | `slurm_scripts/ablations/model_size/submit_model_size_timing.sh` | 5-epoch timing runs for all variants |
 | `slurm_scripts/ablations/model_size/submit_model_size_large.sh` | 24h production runs after filling cosine epochs |
+| `slurm_scripts/ablations/model_size/eval/submit_eval_crps_ambient.sh` | preliminary ambient eval for the current CRPS `2x` run, with conservative `eval.batch_size=4` and explicit `eval.n_members=10` to match the comparison-study eval regime |
+| `slurm_scripts/ablations/model_size/eval/submit_eval_fm_ambient.sh` | preliminary ambient eval for the current FM `2x` run, with conservative `eval.batch_size=2` for the larger 896/16 backbone |
 
 ## Naming
 
@@ -133,6 +135,18 @@ Labels use the `0p4x` / `2x` convention (dot-free to avoid Hydra
 override parsing issues) and reflect the honest measured scale rather than
 a round number like `160M` or `40M`. Actual param counts are recorded in
 the scan-points table above.
+
+## Eval
+
+Model-size eval lives under `slurm_scripts/ablations/model_size/eval/` while
+the sweep remains CNS-only and only the `2x` production runs are in hand.
+The current preliminary submitters target:
+
+- `outputs/2026-04-21/model_size/crps_cns64_vit_azula_large_768_...`
+- `outputs/2026-04-21/model_size/diff_cns64_flow_matching_vit_896_...`
+
+Add the matching `376` / `472` run dirs to those scripts once the `0p4x`
+production runs exist.
 
 ## Workflow
 
