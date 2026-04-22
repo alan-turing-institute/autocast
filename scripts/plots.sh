@@ -9,8 +9,8 @@ PLOTS_PATH=2026-04-20_plots_prelim_m16
 autocast-plots --results-dir outputs/2026-04-20_collated \
 	--run crps_cns64_vit_azula_large_1ed9013_ab31602 "CRPS (24hrs, prelim, n=1024, afCRPS, h=632, layers=10)" 0 \
 	--run crps_cns64_vit_azula_large_0db40e1_dcd79e4 "CRPS (24hrs, update, n=1024, afCRPS, h=568, layers=12, m=16)" 0 \
-	--run diff_cns64_flow_matching_vit_1ed9013_893624d "FM (24hrs, prelim)" 1 \
-	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 1 \
+	--run diff_cns64_flow_matching_vit_1ed9013_893624d "FM (24hrs, prelim)" 2 \
+	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 2 \
 	--dataset-order CNS \
 	--error-ylim 1e-3 1 \
 	--lead-time-error-metrics vrmse rmse \
@@ -74,6 +74,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--run diff_cns64_flow_matching_vit_0f89f06_483bb70 "FM (ambient)" 1 \
 	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 2 \
 	--run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (ambient, m=8)" 0 \
+	--run crps_cns64_vit_azula_large_0db40e1_dcd79e4 "CRPS (ambient m=16)" 3 \
 	--run crps_cns64_vit_azula_large_0f89f06_e7e60d9 "CRPS (latent, CRPS in ambient, m=8)" 0 \
 	--run crps_cns64_vit_azula_large_09490da_8b7573d "CRPS (latent, CRPS in latent, m=8)" 0 \
 	--dataset-order CNS \
