@@ -37,7 +37,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 2 \
 	--run diff_gpe64_flow_matching_vit_09490da_47bf39a "FM (latent)" 2 \
 	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "FM (latent)" 2 \
-	--dataset-order AD CNS GPE GS \
+	--dataset-order AD CNS GS GPE \
 	--error-ylim 1e-5 1 \
 	--lead-time-error-metrics vrmse rmse \
 	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
@@ -63,7 +63,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 2 \
 	--run diff_gpe64_flow_matching_vit_09490da_47bf39a "FM (latent)" 2 \
 	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "FM (latent)" 2 \
-	--dataset-order AD CNS GPE GS \
+	--dataset-order AD CNS GS GPE\
 	--error-ylim 1e-5 1 \
 	--lead-time-error-metrics vrmse rmse \
 	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
