@@ -9,6 +9,7 @@ from omegaconf import OmegaConf
 
 from autocast.metrics.ensemble import CRPS, AlphaFairCRPS, SpreadSkillRatio
 from autocast.scripts.eval.encoder_processor_decoder import (
+    DEFAULT_EVAL_METRICS,
     DEFAULT_EVAL_MODE,
     EVAL_PATH_AMBIENT_EPD,
     EVAL_PATH_ENCODE_ONCE,
@@ -285,6 +286,12 @@ def test_build_per_timestep_metric_factory_sets_reduce_all_false_for_afcrps():
 def test_build_per_timestep_metric_factory_sets_reduce_all_false_for_ssr():
     metric = _build_per_timestep_metric_factory(SpreadSkillRatio)()
     assert getattr(metric, "reduce_all", None) is False
+
+
+def test_default_eval_metrics_include_spread_and_skill_for_lola_comparison():
+    assert "spread" in DEFAULT_EVAL_METRICS
+    assert "skill" in DEFAULT_EVAL_METRICS
+    assert "ssr" in DEFAULT_EVAL_METRICS
 
 
 def test_should_skip_metric_variogram_only():
