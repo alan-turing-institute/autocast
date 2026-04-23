@@ -15,6 +15,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--error-ylim 1e-3 1 \
 	--lead-time-error-metrics vrmse rmse \
 	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
+	--lead-time-coverage-delta \
 	--combined-lead-time \
 	--training-metrics val_loss train_loss \
 	--training-yscale log \
@@ -41,6 +42,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--error-ylim 1e-5 1 \
 	--lead-time-error-metrics vrmse rmse \
 	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
+	--lead-time-coverage-delta \
 	--combined-lead-time \
 	--training-metrics val_loss train_loss \
 	--training-yscale log \
@@ -67,6 +69,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--error-ylim 1e-5 1 \
 	--lead-time-error-metrics vrmse rmse \
 	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
+	--lead-time-coverage-delta \
 	--combined-lead-time \
 	--training-metrics val_loss train_loss \
 	--training-yscale log \
@@ -92,6 +95,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--error-ylim 1e-5 1 \
 	--lead-time-error-metrics vrmse rmse \
 	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
+	--lead-time-coverage-delta \
 	--combined-lead-time \
 	--training-metrics val_loss train_loss \
 	--training-yscale log \
@@ -110,6 +114,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--error-ylim 1e-5 1 \
 	--lead-time-error-metrics vrmse rmse \
 	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
+	--lead-time-coverage-delta \
 	--combined-lead-time \
 	--training-metrics val_loss train_loss \
 	--training-yscale log \
@@ -131,6 +136,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--error-ylim 1e-5 1 \
 	--lead-time-error-metrics vrmse rmse \
 	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
+	--lead-time-coverage-delta \
 	--combined-lead-time \
 	--training-metrics val_loss train_loss \
 	--training-yscale log \
@@ -151,6 +157,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--error-ylim 1e-5 1 \
 	--lead-time-error-metrics vrmse rmse \
 	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
+	--lead-time-coverage-delta \
 	--combined-lead-time \
 	--training-metrics val_loss train_loss \
 	--training-yscale log \
@@ -169,6 +176,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--error-ylim 1e-5 1 \
 	--lead-time-error-metrics vrmse rmse \
 	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
+	--lead-time-coverage-delta \
 	--combined-lead-time \
 	--training-metrics val_loss train_loss \
 	--training-yscale log \

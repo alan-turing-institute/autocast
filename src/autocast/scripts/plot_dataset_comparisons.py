@@ -1577,6 +1577,7 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
     show_legend: bool = True,
     yscale: str | None = None,
     ref_value: float | None = None,
+    coverage_delta: bool = False,
 ) -> FigureBase | None:
     """Plot per-metric, per-dataset lead-time curves as a panel figure.
 
@@ -1672,11 +1673,23 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
             ds = sub[sub["dataset_label"] == ds_label]
             is_cov = metric.startswith("coverage_")
             is_ssr = metric == "ssr"
+            is_cov_delta = bool(coverage_delta and is_cov)
+            cov_target: float | None = None
+            if is_cov_delta:
+                try:
+                    cov_target = float(metric.split("_", 1)[1])
+                except Exception:
+                    # If the metric name doesn't encode its nominal level,
+                    # fall back to the raw coverage series.
+                    is_cov_delta = False
+                    cov_target = None
             # Per-metric y treatment: SSR is a dimensionless reliability
             # diagnostic with ideal=1.0, so it renders on a linear axis with
             # a dashed reference line regardless of the panel-wide settings.
-            row_yscale = "linear" if is_ssr else yscale
+            row_yscale = "linear" if (is_ssr or is_cov_delta) else yscale
             row_ref = 1.0 if (is_ssr and ref_value is None) else ref_value
+            if is_cov_delta:
+                row_ref = 0.0
             vals: list[float] = []
             for fam in groups:
                 sf = cast(pd.DataFrame, ds[ds["plot_group"] == fam])
@@ -1694,8 +1707,16 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
                 mean = cast(pd.Series, agg["mean"])
                 std = cast(pd.Series, agg["std"]).fillna(0)
 
-                m = mean.clip(lower=0, upper=1) if is_cov else mean.clip(lower=1e-06)
-                if not is_cov:
+                if is_cov_delta and cov_target is not None:
+                    m = mean - cov_target
+                    vals.extend(m.dropna().tolist())
+                else:
+                    m = (
+                        mean.clip(lower=0, upper=1)
+                        if is_cov
+                        else mean.clip(lower=1e-06)
+                    )
+                if (not is_cov) and (not is_cov_delta):
                     vals.extend(m.dropna().tolist())
                 ax.plot(
                     agg["timestep"],
@@ -1705,13 +1726,18 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
                     linestyle=st.get("linestyle", "-"),
                 )
                 if (agg["count"] > 1).any():
-                    if is_cov:
+                    if is_cov_delta and cov_target is not None:
+                        y1 = (mean - std) - cov_target
+                        y2 = (mean + std) - cov_target
+                        vals.extend(y1.dropna().tolist())
+                        vals.extend(y2.dropna().tolist())
+                    elif is_cov:
                         y1 = (mean - std).clip(lower=0, upper=1)
                         y2 = (mean + std).clip(lower=0, upper=1)
                     else:
                         y1 = (mean - std).clip(lower=1e-6)
                         y2 = (mean + std).clip(lower=1e-6)
-                    if not is_cov:
+                    if (not is_cov) and (not is_cov_delta):
                         vals.extend(y1.dropna().tolist())
                         vals.extend(y2.dropna().tolist())
                     ax.fill_between(
@@ -1723,11 +1749,24 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
             if r == nrows - 1:
                 ax.set_xlabel("Lead time")
             if c == 0:
-                ax.set_ylabel(metric)
+                if is_cov_delta and cov_target is not None:
+                    ax.set_ylabel(f"{metric} - {cov_target:g}")
+                else:
+                    ax.set_ylabel(metric)
             ax.grid(alpha=0.25)
             use_log = (row_yscale or "log") == "log"
-            if is_cov:
+            if is_cov and not is_cov_delta:
                 ax.set_ylim(0, 1)
+            elif is_cov_delta:
+                finite = [v for v in vals if np.isfinite(v)]
+                if finite:
+                    max_abs = max(abs(v) for v in finite)
+                    pad = max(1e-6, 0.1 * max_abs)
+                    lim = max(0.02, max_abs + pad)
+                else:
+                    lim = 0.1
+                ax.set_yscale("linear")
+                ax.set_ylim(-lim, lim)
             elif vals:
                 if use_log:
                     ax.set_yscale("log")
@@ -1752,7 +1791,7 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
                     else:
                         ymin, ymax = 0.0, 1.0
                 ax.set_ylim(bottom=ymin, top=ymax)
-            if not is_cov and row_ref is not None:
+            if (not is_cov or is_cov_delta) and row_ref is not None:
                 ax.axhline(
                     row_ref,
                     color="black",
@@ -2514,6 +2553,16 @@ def main():  # noqa: PLR0912, PLR0915
         ),
     )
     parser.add_argument(
+        "--lead-time-coverage-delta",
+        action="store_true",
+        help=(
+            "Also render an additional lead-time coverage panel where each "
+            "coverage_<p> curve is transformed to (coverage - p), i.e. deviation "
+            "from the nominal coverage level. Output: "
+            "lead_time_panel_coverage_delta.png"
+        ),
+    )
+    parser.add_argument(
         "--combined-lead-time",
         action="store_true",
         help=(
@@ -3152,6 +3201,20 @@ def main():  # noqa: PLR0912, PLR0915
             dataset_order=ds_order,
             hue_order=hu_order,
         )
+        if args.lead_time_coverage_delta:
+            delta_metrics = [m for m in cov_metric if m.startswith("coverage_")]
+            if delta_metrics:
+                plot_lead_time_panel(
+                    df,
+                    delta_metrics,
+                    results_dir,
+                    out_dir,
+                    "lead_time_panel_coverage_delta.png",
+                    styles,
+                    dataset_order=ds_order,
+                    hue_order=hu_order,
+                    coverage_delta=True,
+                )
 
     # Combined lead-time panel (error rows on top, coverage rows below).
     if args.combined_lead_time and (err_metric or cov_metric):
