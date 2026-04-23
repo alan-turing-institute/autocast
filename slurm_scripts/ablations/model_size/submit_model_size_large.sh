@@ -97,7 +97,6 @@ for datamodule in "${!DATASETS[@]}"; do
             continue
         fi
 
-        quarter_epochs=$((cosine_epochs / 4))
         wandb_name="model_size_${variant}"
 
         for run_dry in "${RUN_DRY_STATES[@]}"; do
@@ -127,9 +126,10 @@ for datamodule in "${!DATASETS[@]}"; do
                 hydra.launcher.timeout_min="${TIMEOUT_MIN}" \
                 trainer.max_time="${BUDGET_MAX_TIME}" \
                 +trainer.max_epochs="${cosine_epochs}" \
-                trainer.callbacks.0.every_n_epochs="${quarter_epochs}" \
+                trainer.callbacks.0.every_n_train_steps_fraction=0.05 \
+                +trainer.callbacks.0.every_n_epochs=0 \
                 trainer.callbacks.0.save_top_k=-1 \
-                trainer.callbacks.0.filename=\"quarter-{epoch:04d}\"
+                trainer.callbacks.0.filename=\"snapshot-{progress_token}-{epoch:04d}-{step:08d}\"
         done
     done
 done

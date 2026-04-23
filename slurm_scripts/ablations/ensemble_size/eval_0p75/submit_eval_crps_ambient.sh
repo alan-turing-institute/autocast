@@ -1,19 +1,18 @@
 #!/bin/bash
 
 set -euo pipefail
-# Ambient eval submitter for the 75%-schedule checkpoints from the current
+# Ambient eval submitter for the 75%-progress checkpoints from the current
 # CRPS ensemble-size runs.
 #
 # This mirrors ../eval/submit_eval_crps_ambient.sh but keeps outputs under a
 # sibling eval_0p75/ folder so partial-schedule metrics, rollout videos, and
 # SLURM logs do not mix with the standard final-checkpoint evals.
 #
-# The large-run training scripts save checkpoints at 25/50/75/100% of the
-# cosine schedule via quarter-*.ckpt filenames. Rather than hard-coding epoch
-# numbers per dataset, we sort the available quarter checkpoints and pick the
-# third one (the 0.75 checkpoint) for each run.
+# Current large-run training scripts save checkpoints every 5% of training
+# progress via snapshot-<progress>-*.ckpt filenames. For older quarter-schedule
+# runs, fall back to the third sorted quarter-*.ckpt checkpoint.
 #
-# Force eval.mode=ambient here. These quarter checkpoints can look
+# Force eval.mode=ambient here. These intermediate checkpoints can look
 # processor-only to the early eval.mode=auto dispatcher because stateless
 # encoders/decoders (PermuteConcat / ChannelsLast) contribute no
 # encoder_decoder.* weights, even though the full raw-space ambient path is the
@@ -39,19 +38,32 @@ RUN_DIRS=(
     "outputs/2026-04-21/ensemble_size/crps_ad64_vit_azula_large_ac1bb06_ef6368d"
 )
 
-resolve_three_quarter_checkpoint() {
+resolve_progress_checkpoint() {
     local run_dir="$1"
+    local progress_token="$2"
+    local legacy_quarter_index="$3"
+    local -a snapshot_ckpts=()
     local -a quarter_ckpts=()
+
+    mapfile -t snapshot_ckpts < <(
+        find "${run_dir}" -type f -path "*/checkpoints/snapshot-${progress_token}-*.ckpt" | sort
+    )
+
+    if (( ${#snapshot_ckpts[@]} >= 1 )); then
+        printf '%s\n' "${snapshot_ckpts[$(( ${#snapshot_ckpts[@]} - 1 ))]}"
+        return 0
+    fi
 
     mapfile -t quarter_ckpts < <(
         find "${run_dir}" -type f -path '*/checkpoints/quarter-*.ckpt' | sort
     )
 
-    if (( ${#quarter_ckpts[@]} < 3 )); then
-        return 1
+    if (( ${#quarter_ckpts[@]} > legacy_quarter_index )); then
+        printf '%s\n' "${quarter_ckpts[$legacy_quarter_index]}"
+        return 0
     fi
 
-    printf '%s\n' "${quarter_ckpts[2]}"
+    return 1
 }
 
 for run_dir in "${RUN_DIRS[@]}"; do
@@ -61,8 +73,8 @@ for run_dir in "${RUN_DIRS[@]}"; do
         continue
     fi
 
-    if ! eval_ckpt="$(resolve_three_quarter_checkpoint "${run_dir_abs}")"; then
-        echo "Skipping ${run_dir}: fewer than three quarter-*.ckpt files found" >&2
+    if ! eval_ckpt="$(resolve_progress_checkpoint "${run_dir_abs}" "0p75" 2)"; then
+        echo "Skipping ${run_dir}: neither snapshot-0p75-*.ckpt nor legacy third quarter-*.ckpt found" >&2
         continue
     fi
     eval_ckpt_abs="$(realpath "${eval_ckpt}")"
