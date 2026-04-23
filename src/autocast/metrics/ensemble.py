@@ -993,6 +993,16 @@ class WinklerScore(BTSCMMetric):
 
     Lower values are better: narrow intervals are rewarded, and misses are
     penalized in proportion to their distance outside the interval.
+
+    References
+    ----------
+    Winkler, R. L. (1972). A Decision-Theoretic Approach to Interval Estimation.
+    Journal of the American Statistical Association, 67(337), 187-191.
+    https://doi.org/10.1080/01621459.1972.10481224
+
+    Gneiting, T., & Raftery, A. E. (2007). Strictly Proper Scoring Rules,
+    Prediction, and Estimation. Journal of the American Statistical Association,
+    102(477), 359-378. https://doi.org/10.1198/016214506000001437
     """
 
     name: str = "winkler"
@@ -1030,6 +1040,18 @@ class MultiWinkler(Metric):
     grid of nominal central prediction intervals and returns one scalar by
     averaging the Winkler score across interval levels, time, space, channels,
     and samples. Lower values are better.
+
+    Notes
+    -----
+    This is an unweighted average of central interval scores across the chosen
+    coverage grid. The weighted interval score (WIS) uses a related multi-level
+    interval-score construction with prescribed weights.
+
+    References
+    ----------
+    Bracher, J., Ray, E. L., Gneiting, T., & Reich, N. G. (2021). Evaluating
+    epidemic forecasts in an interval format. PLOS Computational Biology,
+    17(2), e1008618. https://doi.org/10.1371/journal.pcbi.1008618
     """
 
     name: str = "multiwinkler"

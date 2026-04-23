@@ -225,6 +225,27 @@ def test_multiwinkler_matches_mean_winkler_scores():
     assert torch.allclose(multiwinkler.compute(), torch.stack(expected_scores).mean())
 
 
+def test_multiwinkler_manual_interval_score_average():
+    members = torch.arange(5.0)
+    y_pred = members.view(1, 1, 1, 1, 5).expand(1, 2, 2, 1, 5)
+    y_true = torch.tensor([[[[2.0], [4.5]], [[-0.5], [1.5]]]])
+
+    metric = MultiWinkler(coverage_levels=[0.5, 0.8])
+    score = metric.score(y_pred, y_true)
+    metric.update(y_pred, y_true)
+
+    expected_by_level = torch.tensor(
+        [
+            [[[5.0], [5.0]]],
+            [[[7.7], [7.7]]],
+        ]
+    )
+    expected_scalar = expected_by_level.mean()
+
+    assert torch.allclose(score, expected_by_level)
+    assert torch.allclose(metric.compute(), expected_scalar)
+
+
 def test_multiwinkler_score_shape_includes_interval_levels():
     y_pred = torch.randn((2, 3, 4, 4, 5, 16))
     y_true = torch.randn((2, 3, 4, 4, 5))
