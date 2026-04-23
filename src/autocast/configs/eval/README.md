@@ -62,6 +62,11 @@ All eval configs support these parameters:
 - `video_format`: Video format (mp4 or gif)
 - `video_sample_index`: Sample index within batch to visualize
 - `fps`: Frames per second for videos
+- `save_rollout_snapshots`: Save still rollout panels from raw tensors
+- `rollout_snapshot_timesteps`: Timestep indices shown in each still panel
+- `rollout_snapshot_channels`: Channel indices to render (`null` means all)
+- `rollout_snapshot_dir`: Custom snapshot directory (default:
+  work_dir/videos/snapshots)
 - `accelerator`: Accelerator for evaluation (auto, cpu, cuda, mps)
 - `devices`: Number of GPUs for DDP evaluation (default: 1; set explicitly,
   e.g. 4, for multi-GPU runs)

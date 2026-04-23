@@ -54,6 +54,14 @@ video_format: mp4  # gif or mp4
 video_sample_index: 0
 fps: 5
 
+# Rollout snapshot settings. When enabled, eval saves still panels for the
+# requested rollout samples using raw tensors rather than extracting MP4 frames.
+save_rollout_snapshots: false
+rollout_snapshot_dir: null  # default: <video_dir>/snapshots
+rollout_snapshot_timesteps: [0, 4, 12, 30, 99]
+rollout_snapshot_channels: null  # null means all channels
+rollout_snapshot_format: png
+
 # Accelerator for evaluation (mirrors Lightning Fabric API)
 accelerator: auto  # auto, cpu, cuda, or mps
 devices: 1 # default single-GPU eval; override with int (e.g. 4) for multi-GPU DDP
