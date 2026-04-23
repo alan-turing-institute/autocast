@@ -109,6 +109,8 @@ MODEL_FAMILY_DISPLAY_LABELS = {
 ROLL_WINDOWS = ["0-1", "0-4", "6-12", "13-30", "31-99"]
 WINDOW_ROWS = ["all", *ROLL_WINDOWS]
 WINDOW_ROWS_OVERALL_AND_ROLLOUT = ["all", "0-4", "6-12", "13-30", "31-99"]
+WINDOW_ROWS_OVERALL_ONLY = ["all"]
+WINDOW_ROWS_ROLLOUT_ONLY = ["0-4", "6-12", "13-30", "31-99"]
 MODEL_SCALE_PARAM_COL = "params_processor_total"
 DEFAULT_EVAL_SUBDIR = "eval"
 
@@ -2651,9 +2653,9 @@ def main():  # noqa: PLR0912, PLR0915
         "--coverage-panel-overall-rollout-windows",
         action="store_true",
         help=(
-            "Also render a coverage calibration panel variant with rows: "
-            "all, 0-4, 6-12, 13-30, 31-99 "
-            "(excluding the 0-1 rollout window)."
+            "Also render coverage calibration panel variants for: "
+            "all plus rollout windows, all only, and rollout windows only "
+            "(using 0-4, 6-12, 13-30, 31-99; excluding the 0-1 rollout window)."
         ),
     )
     args = parser.parse_args()
@@ -3152,6 +3154,26 @@ def main():  # noqa: PLR0912, PLR0915
             hue_order=hu_order,
             window_rows=WINDOW_ROWS_OVERALL_AND_ROLLOUT,
             name="coverage_calibration_panel_overall_rollout_windows.png",
+        )
+        plot_coverage_calibration_panel(
+            df,
+            results_dir,
+            out_dir,
+            styles,
+            dataset_order=ds_order,
+            hue_order=hu_order,
+            window_rows=WINDOW_ROWS_OVERALL_ONLY,
+            name="coverage_calibration_panel_overall_only.png",
+        )
+        plot_coverage_calibration_panel(
+            df,
+            results_dir,
+            out_dir,
+            styles,
+            dataset_order=ds_order,
+            hue_order=hu_order,
+            window_rows=WINDOW_ROWS_ROLLOUT_ONLY,
+            name="coverage_calibration_panel_rollout_windows_only.png",
         )
 
     # Render efficiency bars (training/inference), if available.
