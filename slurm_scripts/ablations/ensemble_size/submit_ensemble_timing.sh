@@ -9,12 +9,13 @@ set -euo pipefail
 #   eff_bs1024: fixed global effective batch = 1024 (matches main budget).
 #
 # Each combo inherits the per-dataset CRPS-ambient baseline and overrides
-# model.n_members + datamodule.batch_size via CLI — no new experiment
+# model.n_members + datamodule.batch_size via CLI - no new experiment
 # configs. Timing runs disable wandb + skip_test; produce timing.ckpt.
 #
 # Current coverage:
-#   active now: gray_scott / gpe_laser_only_wake / advection_diffusion at eff_bs1024
-#   parked for later: conditioned_navier_stokes and fixed_bs32 combos
+#   active now: conditioned_navier_stokes / gray_scott /
+#               gpe_laser_only_wake / advection_diffusion at eff_bs1024
+#   parked for later: fixed_bs32 combos
 
 declare -A DATASETS=(
     ["gray_scott"]="epd/gray_scott/crps_vit_azula_large"

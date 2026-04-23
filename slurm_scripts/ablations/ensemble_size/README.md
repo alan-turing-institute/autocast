@@ -1,11 +1,12 @@
 # Ensemble size ablation
 
 First-pass defaults focus on `n_members=16` under two batch-size
-regimes. For the current submission pass, the active scripts are pared
-down to just three `eff_bs1024` runs on `gray_scott`,
-`gpe_laser_only_wake`, and `advection_diffusion`; the CNS entries and
-`fixed_bs32` combo are left commented for later reuse. All runs inherit
-from the matching per-dataset
+regimes. For the current production submission pass,
+`submit_ensemble_large.sh` is pared down to just three `eff_bs1024` runs
+on `gray_scott`, `gpe_laser_only_wake`, and `advection_diffusion`; the
+CNS production entries and `fixed_bs32` combo are left commented for
+later reuse. Timing-derived schedules are still cached for both CNS
+regimes. All runs inherit from the matching per-dataset
 `local_hydra/local_experiment/epd/<dataset>/crps_vit_azula_large.yaml`;
 the ablation is a pure CLI override on `model.n_members` +
 `datamodule.batch_size`, so no new experiment configs are needed.
@@ -50,7 +51,7 @@ batch) CRPS ablations on the other comparison datasets.
 
 | file | purpose |
 |---|---|
-| `submit_ensemble_timing.sh` | 5-epoch timing for the three active `eff_bs1024` runs (`gray_scott`, `gpe_laser_only_wake`, `advection_diffusion`) → `timing.ckpt` per run |
+| `submit_ensemble_timing.sh` | 5-epoch timing for the current `eff_bs1024` timing set (`conditioned_navier_stokes`, `gray_scott`, `gpe_laser_only_wake`, `advection_diffusion`) -> `timing.ckpt` per run |
 | `submit_ensemble_large.sh`  | 24h production runs for the same three active runs, using cached or timing-derived cosine schedules |
 | `eval/submit_eval_crps_ambient.sh` | ambient eval for the current `m=16` CRPS run set (CNS `fixed_bs32` pilot plus all available `eff_bs1024` runs), with conservative `eval.batch_size=4` and explicit `eval.n_members=10` to match the comparison-study eval regime |
 | `eval_0p75/submit_eval_crps_ambient.sh` | ambient eval for the same run set, but against each run's third `quarter-*.ckpt` (the 75% schedule checkpoint), with outputs isolated under `eval_0p75/` |
@@ -94,6 +95,17 @@ key is missing, it looks for the matching timing run
 
 `uv run autocast time-epochs --from-checkpoint <path>/timing.ckpt -b 24 -m 0.02`
 
-That means the added `gray_scott`, `gpe_laser_only_wake`, and
-`advection_diffusion` `eff_bs1024` runs become submit-ready as soon as
-their timing jobs finish, without another script edit.
+The current CRPS `m=16` timing-derived schedules are cached in
+`submit_ensemble_large.sh`:
+
+| dataset | regime | seconds/epoch | `trainer.max_epochs` |
+|---|---|---:|---:|
+| `conditioned_navier_stokes` | `fixed_bs32` | 334.6 | 253 |
+| `conditioned_navier_stokes` | `eff_bs1024` | 340.0 | 249 |
+| `advection_diffusion` | `eff_bs1024` | 346.6 | 244 |
+| `gpe_laser_only_wake` | `eff_bs1024` | 345.8 | 244 |
+| `gray_scott` | `eff_bs1024` | 414.1 | 204 |
+
+Those values come from the 2026-04-20/21 timing runs with a 24h budget and 2%
+margin. The separate `timing_model_size` CNS results belong to the model-size
+ablation and do not change this ensemble-size CRPS schedule.
