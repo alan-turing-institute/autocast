@@ -225,10 +225,10 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 # Model size ablation
 autocast-plots --results-dir outputs/2026-04-20_collated \
 	--run diff_cns64_flow_matching_vit_0f89f06_483bb70 "FM (ambient)" 1 \
-	--run diff_cns64_flow_matching_vit_896_3a69487_e894c55 "FM (ambient, 2x, 16hrs)" 1 \
+	--run diff_cns64_flow_matching_vit_896_3a69487_e894c55 "FM (ambient, 2x)" 1 \
 	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 2 \
 	--run crps_cns64_vit_azula_large_0db40e1_dcd79e4 "CRPS (ambient, m=16)" 0 \
-	--run crps_cns64_vit_azula_large_768_3a69487_1d7da5f "CRPS (ambient, m=16, 2x, 16hrs)" 0 \
+	--run crps_cns64_vit_azula_large_768_3a69487_1d7da5f "CRPS (ambient, m=16, 2x)" 0 \
 	--dataset-order CNS \
 	--error-ylim 1e-5 1 \
 	--lead-time-error-metrics vrmse rmse \
