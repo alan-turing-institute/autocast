@@ -16,7 +16,7 @@ set -euo pipefail
 # If a key is missing, the script falls back to the matching timing.ckpt under
 # outputs/*/<run_id>/timing.ckpt and derives trainer.max_epochs automatically.
 
-# Optional per-combo cosine_epochs cache from prior timing runs (2026-04-20) via:
+# Optional per-combo cosine_epochs cache from prior timing runs (2026-04-20/21) via:
 #   uv run autocast time-epochs --from-checkpoint <path>/timing.ckpt -b 24 -m 0.02
 declare -A COSINE_EPOCHS_BY_COMBO=(
     ["conditioned_navier_stokes:fixed_bs32:16"]=253   # 334.6 s/ep

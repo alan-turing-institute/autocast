@@ -7,9 +7,17 @@ from autocast.metrics.base import BaseMetric
 from autocast.metrics.coverage import Coverage
 from autocast.metrics.deterministic import RMSE
 from autocast.metrics.ensemble import (
+    CRPS,
+    AlphaFairCRPS,
+    AlphaFairCRPSMAETerm,
+    AlphaFairCRPSSpreadTerm,
+    CRPSMAETerm,
+    CRPSSpreadTerm,
     EnergyScore,
     EnsembleSkill,
     EnsembleSpread,
+    FairCRPSSpreadTerm,
+    MultiWinkler,
     SpreadSkillRatio,
     VariogramScore,
     WinklerScore,
@@ -28,7 +36,16 @@ ENSEMBLE_BASE_METRICS = tuple(
 ENSEMBLE_ERROR_METRICS = tuple(
     m
     for m in ENSEMBLE_BASE_METRICS
-    if m not in [Coverage, VariogramScore, SpreadSkillRatio, EnsembleSpread]
+    if m
+    not in [
+        Coverage,
+        VariogramScore,
+        SpreadSkillRatio,
+        EnsembleSpread,
+        CRPSSpreadTerm,
+        FairCRPSSpreadTerm,
+        AlphaFairCRPSSpreadTerm,
+    ]
 )
 
 
@@ -155,6 +172,101 @@ def test_variogram_score_invalid_parameters():
 
     with pytest.raises(ValueError):  # noqa: PT011
         metric.score(y_pred, y_true)
+
+
+def test_crps_component_metrics_match_manual_decomposition():
+    y_pred = torch.tensor([[[[[0.0, 2.0]]]]])  # (1, 1, 1, 1, 2)
+    y_true = torch.tensor([[[[1.0]]]])  # (1, 1, 1, 1)
+
+    crps = CRPS(reduce_all=False).score(y_pred, y_true)
+    mae_term = CRPSMAETerm(reduce_all=False).score(y_pred, y_true)
+    spread_term = CRPSSpreadTerm(reduce_all=False).score(y_pred, y_true)
+    ensemble_spread = EnsembleSpread(corrected=False, reduce_all=False).score(
+        y_pred, y_true
+    )
+
+    assert torch.allclose(mae_term, torch.tensor([[[1.0]]]))
+    assert torch.allclose(spread_term, torch.tensor([[[0.5]]]))
+    assert torch.allclose(crps, mae_term - spread_term)
+    assert torch.allclose(crps, torch.tensor([[[0.5]]]))
+    assert not torch.allclose(spread_term, ensemble_spread)
+
+
+def test_afcrps_component_metrics_match_manual_decomposition():
+    y_pred = torch.tensor([[[[[0.0, 2.0]]]]])  # (1, 1, 1, 1, 2)
+    y_true = torch.tensor([[[[1.0]]]])  # (1, 1, 1, 1)
+
+    afcrps = AlphaFairCRPS(alpha=0.75, reduce_all=False).score(y_pred, y_true)
+    mae_term = AlphaFairCRPSMAETerm(alpha=0.75, reduce_all=False).score(y_pred, y_true)
+    spread_term = AlphaFairCRPSSpreadTerm(alpha=0.75, reduce_all=False).score(
+        y_pred, y_true
+    )
+
+    assert torch.allclose(mae_term, torch.tensor([[[1.0]]]))
+    assert torch.allclose(spread_term, torch.tensor([[[0.875]]]))
+    assert torch.allclose(afcrps, mae_term - spread_term)
+    assert torch.allclose(afcrps, torch.tensor([[[0.125]]]))
+
+
+def test_multiwinkler_matches_mean_winkler_scores():
+    y_pred = torch.randn((2, 3, 4, 4, 1, 16))
+    y_true = torch.randn((2, 3, 4, 4, 1))
+    coverage_levels = [0.5, 0.9]
+
+    multiwinkler = MultiWinkler(coverage_levels=coverage_levels)
+    multiwinkler.update(y_pred, y_true)
+
+    expected_scores = []
+    for coverage_level in coverage_levels:
+        winkler = WinklerScore(alpha=1.0 - coverage_level)
+        winkler.update(y_pred, y_true)
+        expected_scores.append(winkler.compute())
+
+    assert torch.allclose(multiwinkler.compute(), torch.stack(expected_scores).mean())
+
+
+def test_multiwinkler_manual_interval_score_average():
+    members = torch.arange(5.0)
+    y_pred = members.view(1, 1, 1, 1, 5).expand(1, 2, 2, 1, 5)
+    y_true = torch.tensor([[[[2.0], [4.5]], [[-0.5], [1.5]]]])
+
+    metric = MultiWinkler(coverage_levels=[0.5, 0.8])
+    score = metric.score(y_pred, y_true)
+    metric.update(y_pred, y_true)
+
+    expected_by_level = torch.tensor(
+        [
+            [[[5.0], [5.0]]],
+            [[[7.7], [7.7]]],
+        ]
+    )
+    expected_scalar = expected_by_level.mean()
+
+    assert torch.allclose(score, expected_by_level)
+    assert torch.allclose(metric.compute(), expected_scalar)
+
+
+def test_multiwinkler_score_shape_includes_interval_levels():
+    y_pred = torch.randn((2, 3, 4, 4, 5, 16))
+    y_true = torch.randn((2, 3, 4, 4, 5))
+
+    score = MultiWinkler(coverage_levels=[0.5, 0.9]).score(y_pred, y_true)
+
+    assert score.shape == (2, 2, 3, 5)
+
+
+def test_multiwinkler_plot_saves_png_and_csv(tmp_path):
+    y_pred = torch.randn((2, 3, 4, 4, 1, 16))
+    y_true = torch.randn((2, 3, 4, 4, 1))
+    metric = MultiWinkler(coverage_levels=[0.5, 0.9])
+    metric.update(y_pred, y_true)
+
+    save_path = tmp_path / "multiwinkler.png"
+    fig = metric.plot(save_path=str(save_path))
+
+    assert fig is not None
+    assert save_path.exists()
+    assert save_path.with_suffix(".csv").exists()
 
 
 @pytest.mark.parametrize("MetricCls", [EnergyScore, VariogramScore])

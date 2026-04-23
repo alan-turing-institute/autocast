@@ -136,7 +136,8 @@ All `s/ep` values are the mean across the n=5 epoch durations recorded by
 it captures the final epoch — unlike `last.ckpt`, which is saved during
 `on_train_epoch_end` and only holds the first 4 durations).
 
-Each script saves quarter-schedule checkpoints (every `cosine_epochs / 4`)
-plus `last.ckpt` at train-end (guaranteed final state). Quarter boundaries
-differ per dataset, which is fine — within-dataset curves are what we
-compare, and absolute losses are only compared within a dataset.
+Each script saves progress checkpoints every ~5% of optimizer steps, named with
+progress tokens such as `snapshot-0p25-...`, plus `last.ckpt` at train-end
+(guaranteed final state). Progress boundaries differ per dataset, which is fine
+— within-dataset curves are what we compare, and absolute losses are only
+compared within a dataset.

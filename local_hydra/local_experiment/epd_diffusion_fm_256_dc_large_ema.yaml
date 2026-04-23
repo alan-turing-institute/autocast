@@ -38,12 +38,11 @@ optimizer:
 
 trainer:
   callbacks:
-    - _target_: lightning.pytorch.callbacks.ModelCheckpoint
-      save_top_k: 1
-      every_n_epochs: 5
-      save_on_train_epoch_end: true
-      filename: "latest-5ep-{epoch:04d}"
+    - _target_: autocast.callbacks.checkpoint.ProgressModelCheckpoint
+      save_top_k: -1
+      every_n_train_steps_fraction: 0.05
+      save_last: true
+      filename: "snapshot-{progress_token}-{epoch:04d}-{step:08d}"
       auto_insert_metric_name: false
     - _target_: autocast.callbacks.ema.EMACallback
       decay: 0.999
-
