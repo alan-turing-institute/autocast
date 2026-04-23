@@ -314,6 +314,17 @@ def test_progress_model_checkpoint_resolves_fractional_train_steps():
     assert callback._every_n_train_steps == 6
 
 
+def test_progress_model_checkpoint_disables_default_epoch_trigger():
+    callback = ProgressModelCheckpoint(
+        every_n_train_steps_fraction=0.05,
+        save_top_k=-1,
+        save_last=True,
+        filename="snapshot-{step:08d}",
+    )
+
+    assert callback._every_n_epochs == 0
+
+
 @pytest.mark.parametrize(
     ("progress_fraction", "expected"),
     [

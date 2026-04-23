@@ -31,6 +31,10 @@ class ProgressModelCheckpoint(ModelCheckpoint):
         monitor_optional: bool = False,
         **kwargs: Any,
     ) -> None:
+        if every_n_train_steps_fraction is not None:
+            # Lightning defaults to every_n_epochs=1 when no explicit trigger is
+            # set. Fractional step snapshots should not silently add epoch saves.
+            kwargs.setdefault("every_n_epochs", 0)
         super().__init__(**kwargs)
 
         if not 0.0 <= start_after_fraction <= 1.0:
