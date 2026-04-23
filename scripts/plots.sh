@@ -21,6 +21,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--training-yscale log \
 	--panel-figure \
 	--panel-figure-no-training \
+	--coverage-panel-overall-rollout-windows \
 	--output-dir outputs/2026-04-20_collated/$PLOTS_PATH/cns_comparison_with_exploratory_results
 
 # Main comparison: CRPS ambient variants, CRPS processor-on-latents, FM ambient (EPD)
@@ -48,6 +49,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--training-yscale log \
 	--panel-figure \
 	--panel-figure-no-training \
+	--coverage-panel-overall-rollout-windows \
 	--output-dir outputs/2026-04-20_collated/$PLOTS_PATH/main_comparison
 
 
@@ -75,6 +77,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--training-yscale log \
 	--panel-figure \
 	--panel-figure-no-training \
+	--coverage-panel-overall-rollout-windows \
 	--output-dir outputs/2026-04-20_collated/$PLOTS_PATH/main_comparison_m16_complete
 
 # Main comparison (with m=16 runs 100^ complete): CRPS ambient variants, CRPS processor-on-latents, FM ambient (EPD)
@@ -97,6 +100,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--training-yscale log \
 	--panel-figure \
 	--panel-figure-no-training \
+	--coverage-panel-overall-rollout-windows \
 	--output-dir outputs/2026-04-20_collated/$PLOTS_PATH/main_comparison_m16_complete_no_fm_amb
 
 # Main comparison (with m=16 runs at 75% checkpoint): CRPS ambient variants, CRPS processor-on-latents, FM ambient (EPD)
@@ -123,6 +127,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--training-yscale log \
 	--panel-figure \
 	--panel-figure-no-training \
+	--coverage-panel-overall-rollout-windows \
 	--output-dir outputs/2026-04-20_collated/$PLOTS_PATH/main_comparison_m16_complete_0p75
 
 # Main comparison (with m=16 runs at 50% checkpoint): CRPS ambient variants, CRPS processor-on-latents, FM ambient (EPD)
@@ -149,6 +154,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--training-yscale log \
 	--panel-figure \
 	--panel-figure-no-training \
+	--coverage-panel-overall-rollout-windows \
 	--output-dir outputs/2026-04-20_collated/$PLOTS_PATH/main_comparison_m16_complete_0p50
 
 # Ablation with CRPS ViT using global cond instead of permute_concat and channels last
@@ -168,6 +174,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--training-yscale log \
 	--panel-figure \
 	--panel-figure-no-training \
+	--coverage-panel-overall-rollout-windows \
 	--output-dir outputs/2026-04-20_collated/$PLOTS_PATH/ablation_crps_vit_global_cond
 
 
@@ -190,6 +197,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--training-yscale log \
 	--panel-figure \
 	--panel-figure-no-training \
+	--coverage-panel-overall-rollout-windows \
 	--output-dir outputs/2026-04-20_collated/$PLOTS_PATH/ablation_crps_vit_latent
 
 
@@ -211,6 +219,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--training-yscale log \
 	--panel-figure \
 	--panel-figure-no-training \
+	--coverage-panel-overall-rollout-windows \
 	--output-dir outputs/2026-04-20_collated/$PLOTS_PATH/ablation_crps_ensemble_size_complete
 
 # Model size ablation
@@ -230,6 +239,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--training-yscale log \
 	--panel-figure \
 	--panel-figure-no-training \
+	--coverage-panel-overall-rollout-windows \
 	--output-dir outputs/2026-04-20_collated/$PLOTS_PATH/ablation_crps_model_size
 
 # ---
