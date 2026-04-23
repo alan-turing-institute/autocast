@@ -108,6 +108,7 @@ MODEL_FAMILY_DISPLAY_LABELS = {
 
 ROLL_WINDOWS = ["0-1", "0-4", "6-12", "13-30", "31-99"]
 WINDOW_ROWS = ["all", *ROLL_WINDOWS]
+WINDOW_ROWS_OVERALL_AND_ROLLOUT = ["all", "0-4", "6-12", "13-30", "31-99"]
 MODEL_SCALE_PARAM_COL = "params_processor_total"
 DEFAULT_EVAL_SUBDIR = "eval"
 
@@ -1448,18 +1449,21 @@ def plot_coverage_calibration_panel(  # noqa: PLR0912
     fig: FigureBase | None = None,
     save: bool = True,
     show_legend: bool = True,
+    window_rows: list[str] | None = None,
+    name: str = "coverage_calibration_panel.png",
 ) -> FigureBase | None:
     """Plot the coverage calibration panel (rollout windows x datasets).
 
-    When ``axes`` (2D grid with shape (len(WINDOW_ROWS), n_datasets)) is given,
+    When ``axes`` (2D grid with shape (len(window_rows), n_datasets)) is given,
     draw into that grid instead of creating a new figure.
     """
+    rows = window_rows if window_rows is not None else WINDOW_ROWS
     curves = []
     base = df_in.dropna(
         subset=["run_path", "dataset_label", "plot_group"]
     ).drop_duplicates()
     for _, r in base.iterrows():
-        for w in WINDOW_ROWS:
+        for w in rows:
             fn = (
                 "test_coverage_window_all.csv"
                 if w == "all"
@@ -1488,7 +1492,7 @@ def plot_coverage_calibration_panel(  # noqa: PLR0912
         list(cur_panel["plot_group"].unique()), styles, hue_order
     )
 
-    nrows, ncols = len(WINDOW_ROWS), max(1, len(datasets))
+    nrows, ncols = len(rows), max(1, len(datasets))
     if axes is None:
         fig, axes = plt.subplots(
             nrows,
@@ -1507,7 +1511,7 @@ def plot_coverage_calibration_panel(  # noqa: PLR0912
     assert axes is not None
     assert fig is not None
 
-    for i, w in enumerate(WINDOW_ROWS):
+    for i, w in enumerate(rows):
         for j, ds_label in enumerate(datasets):
             ax = axes[i][j]
             ax.plot([0, 1], [0, 1], "--", color="k", alpha=0.6)
@@ -1556,7 +1560,7 @@ def plot_coverage_calibration_panel(  # noqa: PLR0912
         )
     if save:
         plt.tight_layout(rect=(0, 0, 1, 0.975))
-        save_fig(fig, out_dir, "coverage_calibration_panel.png")
+        save_fig(fig, out_dir, name)
         return None
     return fig
 
@@ -2643,6 +2647,15 @@ def main():  # noqa: PLR0912, PLR0915
             "Can be combined with --panel-figure to save both variants."
         ),
     )
+    parser.add_argument(
+        "--coverage-panel-overall-rollout-windows",
+        action="store_true",
+        help=(
+            "Also render a coverage calibration panel variant with rows: "
+            "all, 0-4, 6-12, 13-30, 31-99 "
+            "(excluding the 0-1 rollout window)."
+        ),
+    )
     args = parser.parse_args()
 
     def _parse_ylim(pair: list[str] | None) -> tuple[float | None, float | None] | None:
@@ -3129,6 +3142,17 @@ def main():  # noqa: PLR0912, PLR0915
         dataset_order=ds_order,
         hue_order=hu_order,
     )
+    if args.coverage_panel_overall_rollout_windows:
+        plot_coverage_calibration_panel(
+            df,
+            results_dir,
+            out_dir,
+            styles,
+            dataset_order=ds_order,
+            hue_order=hu_order,
+            window_rows=WINDOW_ROWS_OVERALL_AND_ROLLOUT,
+            name="coverage_calibration_panel_overall_rollout_windows.png",
+        )
 
     # Render efficiency bars (training/inference), if available.
     for metric, title, ylabel in [
