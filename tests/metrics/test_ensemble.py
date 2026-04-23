@@ -17,6 +17,7 @@ from autocast.metrics.ensemble import (
     EnsembleSkill,
     EnsembleSpread,
     FairCRPSSpreadTerm,
+    MultiWinkler,
     SpreadSkillRatio,
     VariogramScore,
     WinklerScore,
@@ -205,6 +206,46 @@ def test_afcrps_component_metrics_match_manual_decomposition():
     assert torch.allclose(spread_term, torch.tensor([[[0.875]]]))
     assert torch.allclose(afcrps, mae_term - spread_term)
     assert torch.allclose(afcrps, torch.tensor([[[0.125]]]))
+
+
+def test_multiwinkler_matches_mean_winkler_scores():
+    y_pred = torch.randn((2, 3, 4, 4, 1, 16))
+    y_true = torch.randn((2, 3, 4, 4, 1))
+    coverage_levels = [0.5, 0.9]
+
+    multiwinkler = MultiWinkler(coverage_levels=coverage_levels)
+    multiwinkler.update(y_pred, y_true)
+
+    expected_scores = []
+    for coverage_level in coverage_levels:
+        winkler = WinklerScore(alpha=1.0 - coverage_level)
+        winkler.update(y_pred, y_true)
+        expected_scores.append(winkler.compute())
+
+    assert torch.allclose(multiwinkler.compute(), torch.stack(expected_scores).mean())
+
+
+def test_multiwinkler_score_shape_includes_interval_levels():
+    y_pred = torch.randn((2, 3, 4, 4, 5, 16))
+    y_true = torch.randn((2, 3, 4, 4, 5))
+
+    score = MultiWinkler(coverage_levels=[0.5, 0.9]).score(y_pred, y_true)
+
+    assert score.shape == (2, 2, 3, 5)
+
+
+def test_multiwinkler_plot_saves_png_and_csv(tmp_path):
+    y_pred = torch.randn((2, 3, 4, 4, 1, 16))
+    y_true = torch.randn((2, 3, 4, 4, 1))
+    metric = MultiWinkler(coverage_levels=[0.5, 0.9])
+    metric.update(y_pred, y_true)
+
+    save_path = tmp_path / "multiwinkler.png"
+    fig = metric.plot(save_path=str(save_path))
+
+    assert fig is not None
+    assert save_path.exists()
+    assert save_path.with_suffix(".csv").exists()
 
 
 @pytest.mark.parametrize("MetricCls", [EnergyScore, VariogramScore])

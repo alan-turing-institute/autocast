@@ -59,3 +59,5 @@ model:
       _target_: autocast.metrics.ensemble.EnsembleSpread
     multicoverage:
       _target_: autocast.metrics.MultiCoverage
+    multiwinkler:
+      _target_: autocast.metrics.ensemble.MultiWinkler

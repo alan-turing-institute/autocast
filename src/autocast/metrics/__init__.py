@@ -33,6 +33,7 @@ from .ensemble import (
     FairCRPS,
     FairCRPSMAETerm,
     FairCRPSSpreadTerm,
+    MultiWinkler,
     SpreadSkillRatio,
     VariogramScore,
     WinklerScore,
@@ -62,6 +63,7 @@ __all__ = [
     "FairCRPSSpreadTerm",
     "LInfinity",
     "MultiCoverage",
+    "MultiWinkler",
     "PowerSpectrumCCRMSE",
     "PowerSpectrumCCRMSEHigh",
     "PowerSpectrumCCRMSELow",
@@ -114,6 +116,7 @@ ALL_ENSEMBLE_METRICS = (
     EnsembleSkill,
     SpreadSkillRatio,
     WinklerScore,
+    MultiWinkler,
     Coverage,
     MultiCoverage,
 )

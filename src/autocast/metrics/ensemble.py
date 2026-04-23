@@ -1,9 +1,13 @@
 import abc
+from pathlib import Path
 from typing import Literal
 
 import numpy as np
+import pandas as pd
 import torch
 from einops import rearrange
+from matplotlib import pyplot as plt
+from torchmetrics import Metric
 
 from autocast.metrics.base import BaseMetric
 from autocast.types import (
@@ -1019,3 +1023,220 @@ class WinklerScore(BTSCMMetric):
         above_penalty = (2.0 / self.alpha) * torch.clamp(y_true - upper, min=0.0)
 
         return width + below_penalty + above_penalty
+
+
+class MultiWinkler(Metric):
+    """
+    Average Winkler interval score across multiple central coverage levels.
+
+    This is the interval-score analogue of ``MultiCoverage``: it evaluates a
+    grid of nominal central prediction intervals and returns one scalar by
+    averaging the Winkler score across interval levels, time, space, channels,
+    and samples. Lower values are better.
+    """
+
+    name: str = "multiwinkler"
+
+    def __init__(
+        self,
+        coverage_levels: list[float] | None = None,
+        score_dims: Literal["spatial", "temporal"] | None = "spatial",
+        dist_sync_on_step: bool = False,
+    ) -> None:
+        super().__init__(dist_sync_on_step=dist_sync_on_step)
+        if coverage_levels is None:
+            coverage_levels = [
+                round(x, 2) for x in torch.linspace(0.05, 0.95, steps=19).tolist()
+            ]
+        if not coverage_levels:
+            msg = "coverage_levels must contain at least one level."
+            raise ValueError(msg)
+        for coverage_level in coverage_levels:
+            if not (0 < coverage_level < 1):
+                msg = (
+                    f"coverage_levels entries must be in (0, 1), got {coverage_level}."
+                )
+                raise ValueError(msg)
+        if score_dims not in ("spatial", "temporal", None):
+            msg = (
+                "score_dims must be 'spatial', 'temporal', or None, "
+                f"got {score_dims!r}."
+            )
+            raise ValueError(msg)
+
+        self.coverage_levels = coverage_levels
+        self.score_dims = score_dims
+        self.add_state("sum_score", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("total_samples", default=torch.tensor(0), dist_reduce_fx="sum")
+        self._initialized = False
+
+    def update(self, y_pred: ArrayLike, y_true: ArrayLike) -> None:
+        """Update metric state with one validation batch."""
+        score = self.score(y_pred, y_true)
+        batch_size = score.shape[1]
+        score_summed = score.sum(dim=1)
+
+        if not self._initialized:
+            self.sum_score = torch.zeros_like(score_summed)
+            self._initialized = True
+
+        self.sum_score += score_summed
+        self.total_samples += batch_size
+
+    def compute(self) -> Tensor:
+        """Return average Winkler score across levels and reduced dimensions."""
+        return self._mean_score_by_level().mean()
+
+    def reset(self) -> None:
+        """Reset metric state and dynamic state-shape flag."""
+        super().reset()
+        self._initialized = False
+
+    def score(self, y_pred: ArrayLike, y_true: ArrayLike) -> Tensor:
+        """Compute per-level Winkler scores before batch aggregation."""
+        y_pred_tensor, y_true_tensor = self._check_input(y_pred, y_true)
+
+        coverage = torch.tensor(
+            self.coverage_levels, device=y_pred_tensor.device, dtype=y_pred_tensor.dtype
+        )
+        alpha = 1.0 - coverage
+        q_low = alpha / 2.0
+        q_high = 1.0 - q_low
+        q_tensor = torch.cat([q_low, q_high])
+
+        quantiles = torch.quantile(y_pred_tensor, q_tensor, dim=-1)
+        n_levels = len(self.coverage_levels)
+        lower = quantiles[:n_levels]
+        upper = quantiles[n_levels:]
+        truth = y_true_tensor.unsqueeze(0)
+        alpha_view = alpha.view(n_levels, *([1] * y_true_tensor.ndim))
+
+        width = upper - lower
+        below_penalty = (2.0 / alpha_view) * torch.clamp(lower - truth, min=0.0)
+        above_penalty = (2.0 / alpha_view) * torch.clamp(truth - upper, min=0.0)
+        score = width + below_penalty + above_penalty
+
+        if self.score_dims == "spatial":
+            n_spatial_dims = y_true_tensor.ndim - 3
+            spatial_dims = tuple(range(3, 3 + n_spatial_dims))
+            return score.mean(dim=spatial_dims)
+        if self.score_dims == "temporal":
+            return score.mean(dim=2)
+        return score
+
+    def _mean_score_by_level(self) -> Tensor:
+        if self.total_samples == 0:
+            msg = "No samples were provided to the metric"
+            raise RuntimeError(msg)
+        return self.sum_score / self.total_samples
+
+    def _compute_levels_and_values(self) -> tuple[list[float], list[float], np.ndarray]:
+        """Return coverage levels, mean scores, and per-channel scores."""
+        score = self._mean_score_by_level()
+        mean_scores = score.reshape(score.shape[0], -1).mean(dim=1).detach().cpu()
+
+        if score.ndim == 1:
+            channel_scores = score[:, None]
+        elif score.ndim == 2:
+            channel_scores = score
+        else:
+            channel_scores = score.mean(dim=tuple(range(1, score.ndim - 1)))
+
+        return (
+            self.coverage_levels,
+            mean_scores.tolist(),
+            np.atleast_2d(channel_scores.detach().cpu().numpy()),
+        )
+
+    def plot(
+        self,
+        save_path: str | None = None,
+        title: str = "Winkler Interval Scores",
+        cmap_str: str = "viridis",
+        save_csv: bool = True,
+    ):
+        """Plot Winkler score against nominal interval coverage."""
+        if plt.get_backend().lower() != "agg":
+            plt.switch_backend("Agg")
+
+        levels, mean_scores, channel_scores = self._compute_levels_and_values()
+
+        if save_path and save_csv:
+            self._save_csv_data(save_path, levels, mean_scores, channel_scores)
+
+        fig, ax = plt.subplots(figsize=(8, 6))
+        cmap = plt.get_cmap(cmap_str)
+        n_channels = channel_scores.shape[1]
+        for channel_idx in range(n_channels):
+            color = cmap(channel_idx / n_channels) if n_channels > 1 else "blue"
+            label = f"Ch {channel_idx}" if n_channels <= 10 else None
+            ax.plot(
+                levels,
+                channel_scores[:, channel_idx],
+                color=color,
+                alpha=0.3,
+                linewidth=1,
+                label=label,
+            )
+
+        ax.plot(levels, mean_scores, "k-", linewidth=3, label="Mean")
+        ax.set_xlabel("Nominal interval coverage")
+        ax.set_ylabel("Winkler score (lower is better)")
+        ax.set_title(title)
+        ax.grid(True, linestyle=":", alpha=0.6)
+        ax.legend() if n_channels <= 10 else ax.legend(["Mean", "Channels"])
+
+        if save_path:
+            fig.savefig(save_path, bbox_inches="tight")
+
+        plt.close(fig)
+        return fig
+
+    def _save_csv_data(
+        self,
+        save_path: str,
+        levels: list[float],
+        mean_scores: list[float],
+        channel_scores: np.ndarray,
+    ) -> None:
+        csv_path = Path(str(save_path).removesuffix(".png") + ".csv")
+        csv_path.parent.mkdir(parents=True, exist_ok=True)
+        data = {
+            "coverage_level": levels,
+            "winkler_mean": mean_scores,
+        }
+        for channel_idx in range(channel_scores.shape[1]):
+            data[f"channel_{channel_idx}"] = channel_scores[:, channel_idx].tolist()
+
+        pd.DataFrame(data).to_csv(csv_path, index=False)
+
+    def _check_input(
+        self, y_pred: ArrayLike, y_true: ArrayLike
+    ) -> tuple[TensorBTSCM, TensorBTSC]:
+        if isinstance(y_pred, np.ndarray):
+            y_pred = torch.from_numpy(y_pred)
+        if isinstance(y_true, np.ndarray):
+            y_true = torch.from_numpy(y_true)
+
+        if not isinstance(y_pred, Tensor):
+            msg = f"y_pred must be a Tensor or np.ndarray, got {type(y_pred)}"
+            raise TypeError(msg)
+        if not isinstance(y_true, Tensor):
+            msg = f"y_true must be a Tensor or np.ndarray, got {type(y_true)}"
+            raise TypeError(msg)
+
+        if y_pred.ndim < 5:
+            msg = (
+                f"y_pred has {y_pred.ndim} dimensions, should be at least 5, "
+                "following the pattern (B, T, S, C, M)"
+            )
+            raise ValueError(msg)
+
+        if y_pred.shape[:-1] != y_true.shape:
+            msg = (
+                "y_pred and y_true must have the same shape except for the last "
+                f"dimension (ensemble members). Got {y_pred.shape} and {y_true.shape}"
+            )
+            raise ValueError(msg)
+
+        return y_pred, y_true
