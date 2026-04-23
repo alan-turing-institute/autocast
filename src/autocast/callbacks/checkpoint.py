@@ -3,6 +3,7 @@ import math
 from typing import Any
 
 import lightning as L
+import torch
 from lightning.pytorch.callbacks import ModelCheckpoint
 
 log = logging.getLogger(__name__)
@@ -129,6 +130,22 @@ class ProgressModelCheckpoint(ModelCheckpoint):
 
         global_step = max(0, int(getattr(trainer, "global_step", 0)))
         return min(1.0, float(global_step) / float(total_steps))
+
+    def _monitor_candidates(self, trainer: L.Trainer) -> dict[str, Any]:
+        monitor_candidates: dict[str, Any] = dict(super()._monitor_candidates(trainer))
+        progress_fraction = self._training_progress_fraction(trainer)
+        progress_pct = round(100.0 * progress_fraction)
+        monitor_candidates["progress_pct"] = torch.tensor(progress_pct)
+        monitor_candidates["progress_token"] = self._format_progress_token(
+            progress_fraction
+        )
+        return monitor_candidates
+
+    @staticmethod
+    def _format_progress_token(progress_fraction: float) -> str:
+        progress_hundredths = round(100.0 * progress_fraction)
+        progress_hundredths = max(0, min(100, progress_hundredths))
+        return f"{progress_hundredths // 100}p{progress_hundredths % 100:02d}"
 
     def _monitor_ready(self, trainer: L.Trainer) -> bool:
         if self.monitor is None or self.start_after_fraction <= 0.0:

@@ -294,6 +294,7 @@ def _trainer_stub(**overrides) -> SimpleNamespace:
         "accumulate_grad_batches": 1,
         "global_step": 0,
         "current_epoch": 0,
+        "callback_metrics": {},
     }
     defaults.update(overrides)
     return SimpleNamespace(**defaults)
@@ -311,6 +312,38 @@ def test_progress_model_checkpoint_resolves_fractional_train_steps():
     callback.on_fit_start(cast(L.Trainer, trainer), cast(L.LightningModule, object()))
 
     assert callback._every_n_train_steps == 6
+
+
+@pytest.mark.parametrize(
+    ("progress_fraction", "expected"),
+    [
+        (0.0, "0p00"),
+        (0.05, "0p05"),
+        (0.25, "0p25"),
+        (1.0, "1p00"),
+    ],
+)
+def test_progress_model_checkpoint_formats_progress_token(
+    progress_fraction: float, expected: str
+):
+    assert ProgressModelCheckpoint._format_progress_token(progress_fraction) == expected
+
+
+def test_progress_model_checkpoint_adds_progress_filename_fields():
+    callback = ProgressModelCheckpoint(
+        every_n_train_steps_fraction=0.05,
+        save_top_k=-1,
+        filename="snapshot-{progress_token}-{progress_pct:03d}-{step:08d}",
+        auto_insert_metric_name=False,
+    )
+    trainer = _trainer_stub(estimated_stepping_batches=100, global_step=25)
+
+    monitor_candidates = callback._monitor_candidates(cast(L.Trainer, trainer))
+    filename = callback.format_checkpoint_name(monitor_candidates)
+
+    assert monitor_candidates["progress_token"] == "0p25"
+    assert monitor_candidates["progress_pct"].item() == 25
+    assert filename == "snapshot-0p25-025-00000025.ckpt"
 
 
 def test_progress_model_checkpoint_delays_monitored_topk(monkeypatch):

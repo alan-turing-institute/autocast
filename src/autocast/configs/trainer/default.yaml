@@ -21,7 +21,7 @@ callbacks:
     save_top_k: -1
     every_n_train_steps_fraction: 0.05
     save_last: true
-    filename: "snapshot-{epoch:04d}-{step:08d}"
+    filename: "snapshot-{progress_token}-{epoch:04d}-{step:08d}"
     auto_insert_metric_name: false
   # Best checkpoint on the primary validation objective.
   - _target_: lightning.pytorch.callbacks.ModelCheckpoint
