@@ -31,9 +31,41 @@ callbacks:
     save_last: false  # rolling callback above owns last.ckpt
     filename: "best-val-{epoch:04d}-{val_loss:.4f}"
     auto_insert_metric_name: false
+  # Optional coverage checkpoint for early phase (<= 0.25). Stops updating after
+  # the burn-in cutoff.
+  - _target_: autocast.callbacks.checkpoint.ProgressModelCheckpoint
+    monitor: val_multicoverage
+    monitor_optional: true
+    stop_after_fraction: 0.25
+    mode: min
+    save_top_k: 1
+    save_last: false
+    filename: "best-multicov-pre0p25-{epoch:04d}-{val_multicoverage:.4f}"
+    auto_insert_metric_name: false
+  # Optional interval-score checkpoint for early phase (<= 0.25). Stops updating
+  # after the burn-in cutoff.
+  - _target_: autocast.callbacks.checkpoint.ProgressModelCheckpoint
+    monitor: val_multiwinkler
+    monitor_optional: true
+    stop_after_fraction: 0.25
+    mode: min
+    save_top_k: 1
+    save_last: false
+    filename: "best-multiwinkler-pre0p25-{epoch:04d}-{val_multiwinkler:.4f}"
+    auto_insert_metric_name: false
   # Optional coverage-oriented checkpoint. This stays dormant unless the model
   # logs `val_multicoverage`, and only starts tracking once training is half done
   # to avoid anchoring on the noisy early phase.
+  - _target_: autocast.callbacks.checkpoint.ProgressModelCheckpoint
+    monitor: val_multicoverage
+    monitor_optional: true
+    start_after_fraction: 0.25
+    mode: min
+    save_top_k: 1
+    save_last: false
+    filename: "best-multicov-from0p25-{epoch:04d}-{val_multicoverage:.4f}"
+    auto_insert_metric_name: false
+  # Optional coverage checkpoint for later phase (>= 0.50).
   - _target_: autocast.callbacks.checkpoint.ProgressModelCheckpoint
     monitor: val_multicoverage
     monitor_optional: true
@@ -41,7 +73,17 @@ callbacks:
     mode: min
     save_top_k: 1
     save_last: false
-    filename: "best-multicov-{epoch:04d}-{val_multicoverage:.4f}"
+    filename: "best-multicov-from0p50-{epoch:04d}-{val_multicoverage:.4f}"
+    auto_insert_metric_name: false
+  # Optional coverage checkpoint for very-late phase (>= 0.75).
+  - _target_: autocast.callbacks.checkpoint.ProgressModelCheckpoint
+    monitor: val_multicoverage
+    monitor_optional: true
+    start_after_fraction: 0.75
+    mode: min
+    save_top_k: 1
+    save_last: false
+    filename: "best-multicov-from0p75-{epoch:04d}-{val_multicoverage:.4f}"
     auto_insert_metric_name: false
   # Optional interval-score checkpoint. MultiWinkler rewards sharper intervals
   # but penalizes misses across a grid of central coverage levels, so it is a
@@ -49,11 +91,31 @@ callbacks:
   - _target_: autocast.callbacks.checkpoint.ProgressModelCheckpoint
     monitor: val_multiwinkler
     monitor_optional: true
+    start_after_fraction: 0.25
+    mode: min
+    save_top_k: 1
+    save_last: false
+    filename: "best-multiwinkler-from0p25-{epoch:04d}-{val_multiwinkler:.4f}"
+    auto_insert_metric_name: false
+  # Optional interval-score checkpoint for later phase (>= 0.50).
+  - _target_: autocast.callbacks.checkpoint.ProgressModelCheckpoint
+    monitor: val_multiwinkler
+    monitor_optional: true
     start_after_fraction: 0.5
     mode: min
     save_top_k: 1
     save_last: false
-    filename: "best-multiwinkler-{epoch:04d}-{val_multiwinkler:.4f}"
+    filename: "best-multiwinkler-from0p50-{epoch:04d}-{val_multiwinkler:.4f}"
+    auto_insert_metric_name: false
+  # Optional interval-score checkpoint for very-late phase (>= 0.75).
+  - _target_: autocast.callbacks.checkpoint.ProgressModelCheckpoint
+    monitor: val_multiwinkler
+    monitor_optional: true
+    start_after_fraction: 0.75
+    mode: min
+    save_top_k: 1
+    save_last: false
+    filename: "best-multiwinkler-from0p75-{epoch:04d}-{val_multiwinkler:.4f}"
     auto_insert_metric_name: false
   # Plot scalar validation metric histories and custom metric diagnostics
   # such as the MultiCoverage reliability curve at each validation end.

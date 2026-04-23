@@ -120,7 +120,7 @@ resolve_cosine_epochs() {
 declare -A DATASETS=(
     ["gray_scott"]="epd/gray_scott/crps_vit_azula_large"
     ["gpe_laser_only_wake"]="epd/gpe_laser_wake_only/crps_vit_azula_large"
-    # ["conditioned_navier_stokes"]="epd/conditioned_navier_stokes/crps_vit_azula_large"
+    ["conditioned_navier_stokes"]="epd/conditioned_navier_stokes/crps_vit_azula_large"
     ["advection_diffusion"]="epd/advection_diffusion/crps_vit_azula_large"
 )
 
@@ -128,6 +128,7 @@ declare -A REGIMES_BY_DATASET=(
     ["gray_scott"]="eff_bs1024"
     ["gpe_laser_only_wake"]="eff_bs1024"
     # ["conditioned_navier_stokes"]="fixed_bs32 eff_bs1024"
+    ["conditioned_navier_stokes"]="eff_bs1024"
     ["advection_diffusion"]="eff_bs1024"
 )
 
