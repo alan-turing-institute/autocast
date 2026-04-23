@@ -1,6 +1,7 @@
 import logging
 import math
 from collections.abc import Mapping, Sequence
+from importlib import import_module
 from pathlib import Path
 from typing import Any
 
@@ -232,7 +233,35 @@ class ValidationMetricPlotCallback(Callback):
                 experiment.add_figure(key, fig, global_step=step)
                 continue
             if hasattr(experiment, "log"):
-                experiment.log({key: fig}, step=step)
+                payload: dict[str, Any] = {}
+                if self._is_wandb_experiment(experiment):
+                    wandb_image = self._try_make_wandb_image(fig)
+                    if wandb_image is not None:
+                        payload[key] = wandb_image
+                if not payload:
+                    payload[key] = fig
+                experiment.log(payload, step=step)
+
+    @staticmethod
+    def _is_wandb_experiment(experiment: Any) -> bool:
+        module = getattr(type(experiment), "__module__", "") or ""
+        if module.startswith("wandb."):
+            return True
+        return hasattr(experiment, "project") and hasattr(experiment, "entity")
+
+    @staticmethod
+    def _try_make_wandb_image(fig: Figure) -> Any | None:
+        try:
+            wandb = import_module("wandb")
+        except Exception:
+            return None
+        image_cls = getattr(wandb, "Image", None)
+        if image_cls is None:
+            return None
+        try:
+            return image_cls(fig)
+        except Exception:
+            return None
 
     @staticmethod
     def _iter_loggers(trainer: L.Trainer) -> list[Any]:
