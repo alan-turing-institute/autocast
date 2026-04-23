@@ -11,9 +11,12 @@ import torch
 from conftest import get_optimizer_config
 from hydra import compose, initialize_config_dir
 from lightning.pytorch.callbacks import ModelCheckpoint, Timer
+from matplotlib import pyplot as plt
 from omegaconf import DictConfig, OmegaConf, open_dict
+from torchmetrics import Metric, MetricCollection
 
 from autocast.callbacks.checkpoint import ProgressModelCheckpoint
+from autocast.callbacks.metrics import ValidationMetricPlotCallback
 from autocast.encoders.base import EncoderWithCond
 from autocast.scripts.setup import (
     _infer_latent_spatial_resolution,
@@ -360,6 +363,92 @@ def test_progress_model_checkpoint_skips_optional_missing_monitor(monkeypatch):
     )
 
     assert not called
+
+
+def test_validation_metric_plot_callback_saves_val_metric_history(tmp_path: Path):
+    callback = ValidationMetricPlotCallback(
+        save_local=True,
+        log_to_logger=False,
+        plot_metric_objects=False,
+    )
+    trainer = SimpleNamespace(
+        callback_metrics={
+            "val_loss": torch.tensor(1.5),
+            "val_vector": torch.ones(2),
+            "train_loss": torch.tensor(2.0),
+        },
+        default_root_dir=tmp_path,
+        global_step=12,
+        is_global_zero=True,
+        sanity_checking=False,
+        loggers=[],
+    )
+    pl_module = SimpleNamespace(val_metrics=None)
+
+    callback.on_validation_end(
+        cast(L.Trainer, trainer), cast(L.LightningModule, pl_module)
+    )
+
+    assert callback._history == {"val_loss": [(12, 1.5)]}
+    assert (tmp_path / "validation_metrics" / "validation_metrics.png").exists()
+
+
+def test_validation_metric_plot_callback_saves_custom_metric_plot(tmp_path: Path):
+    class PlotMetric(Metric):
+        def update(self) -> None:
+            pass
+
+        def compute(self) -> torch.Tensor:
+            return torch.tensor(0.0)
+
+        def plot(self, save_path=None, title=None):
+            fig, ax = plt.subplots()
+            ax.set_title(title or "")
+            ax.plot([0, 1], [0, 1])
+            if save_path is not None:
+                save_path = Path(save_path)
+                save_path.parent.mkdir(parents=True, exist_ok=True)
+                fig.savefig(save_path)
+            return fig
+
+    callback = ValidationMetricPlotCallback(
+        save_local=True,
+        log_to_logger=False,
+        plot_metric_objects=True,
+    )
+    trainer = SimpleNamespace(
+        callback_metrics={},
+        default_root_dir=tmp_path,
+        global_step=12,
+        is_global_zero=True,
+        sanity_checking=False,
+        loggers=[],
+    )
+    pl_module = SimpleNamespace(
+        val_metrics=MetricCollection({"diagnostic": PlotMetric()}).clone(prefix="val_")
+    )
+
+    callback.on_validation_end(
+        cast(L.Trainer, trainer), cast(L.LightningModule, pl_module)
+    )
+
+    assert (
+        tmp_path / "validation_metrics" / "metric_plots" / "val_diagnostic.png"
+    ).exists()
+
+
+def test_default_trainer_config_tracks_coverage_winkler_and_plots(config_dir: str):
+    trainer_cfg = OmegaConf.load(Path(config_dir) / "trainer" / "default.yaml")
+    callbacks = list(trainer_cfg.callbacks)
+    monitors = [callback.get("monitor") for callback in callbacks]
+
+    assert "val_multicoverage" in monitors
+    assert "val_multiwinkler" in monitors
+    assert any(
+        callback.get("_target_")
+        == "autocast.callbacks.metrics.ValidationMetricPlotCallback"
+        for callback in callbacks
+    )
 
 
 def test_epd_config_forward_smoke(config_dir: str, toy_batch: Batch, dummy_datamodule):

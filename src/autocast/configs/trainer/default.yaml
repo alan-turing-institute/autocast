@@ -43,6 +43,28 @@ callbacks:
     save_last: false
     filename: "best-multicov-{epoch:04d}-{val_multicoverage:.4f}"
     auto_insert_metric_name: false
+  # Optional interval-score checkpoint. MultiWinkler rewards sharper intervals
+  # but penalizes misses across a grid of central coverage levels, so it is a
+  # calibration-aware alternative to raw coverage error for checkpoint selection.
+  - _target_: autocast.callbacks.checkpoint.ProgressModelCheckpoint
+    monitor: val_multiwinkler
+    monitor_optional: true
+    start_after_fraction: 0.5
+    mode: min
+    save_top_k: 1
+    save_last: false
+    filename: "best-multiwinkler-{epoch:04d}-{val_multiwinkler:.4f}"
+    auto_insert_metric_name: false
+  # Plot scalar validation metric histories and custom metric diagnostics
+  # such as the MultiCoverage reliability curve at each validation end.
+  - _target_: autocast.callbacks.metrics.ValidationMetricPlotCallback
+    metric_prefixes: ["val_"]
+    dirname: "validation_metrics"
+    filename: "validation_metrics.png"
+    max_cols: 3
+    save_local: true
+    log_to_logger: true
+    plot_metric_objects: true
   # EMA of model weights. decay=0.999 gives a half-life of ~700 steps,
   # which is a sensible fraction of our shorter runs (FM-ambient ~12k
   # steps) without being wildly reactive on the longest (CRPS-latent
