@@ -20,8 +20,10 @@ but trains without the ensemble path:
 | file | purpose |
 |---|---|
 | `local_hydra/local_experiment/ablations/vit_mae_pretrain/conditioned_navier_stokes/vit_azula_large_mae_no_ensemble.yaml` | CNS deterministic MAE preset |
-| `submit_vit_mae_pretrain_timing.sh` | 5-epoch timing run -> `timing.ckpt` |
-| `submit_vit_mae_pretrain_large.sh` | 24h production run, keeping and W&B-logging all progress checkpoints |
+| `submit_vit_mae_pretrain_timing.sh` | 5-epoch MAE timing run -> `timing.ckpt` |
+| `submit_vit_mae_pretrain_large.sh` | 24h MAE production run, keeping and W&B-logging all progress checkpoints |
+| `submit_vit_mae_to_crps_timing.sh` | 5-epoch timing for MAE-initialized CRPS fine-tuning with `n_members=16` |
+| `submit_vit_mae_to_crps_large.sh` | short MAE-initialized CRPS fine-tune, defaulting to a 4h budget |
 
 ## Workflow
 
@@ -57,7 +59,22 @@ progress with `save_top_k=-1`, keeps `last.ckpt`, and sets
 `logging.wandb.log_model=all` so W&B logs every checkpoint artifact emitted by
 the checkpoint callbacks.
 
-For the follow-up shortened CRPS fine-tune, start from one of these checkpoints
-with `resume_weights_only=true` rather than full-state resume. That loads the
-deterministic MAE weights into the CRPS ensemble model while starting a fresh
-optimizer, scheduler, and time budget.
+For the follow-up shortened CRPS fine-tune, use the `vit_mae_to_crps` scripts
+and point `MAE_CHECKPOINT` at one of the MAE checkpoints:
+
+```bash
+MAE_CHECKPOINT=/path/to/mae/encoder_processor_decoder.ckpt \
+  bash slurm_scripts/ablations/vit_mae_pretrain/submit_vit_mae_to_crps_timing.sh
+
+MAE_CHECKPOINT=/path/to/mae/encoder_processor_decoder.ckpt \
+  bash slurm_scripts/ablations/vit_mae_pretrain/submit_vit_mae_to_crps_large.sh
+```
+
+The CRPS fine-tune uses `n_members=16` with `datamodule.batch_size=16`, keeping
+the effective global batch at `16 x 16 x 4 GPUs = 1024`. It also uses
+`resume_weights_only=true` rather than full-state resume, so the deterministic
+MAE weights initialize the CRPS ensemble model while the optimizer, scheduler,
+and time budget start fresh.
+
+The default CRPS fine-tune budget is 4h. Override it for both timing and large
+runs with, for example, `CRPS_BUDGET_HOURS=6`.
