@@ -1,19 +1,18 @@
 #!/bin/bash
 
 set -euo pipefail
-# Ambient eval submitter for the 50%-schedule checkpoints from the current
+# Ambient eval submitter for the 50%-progress checkpoints from the current
 # CRPS ensemble-size runs.
 #
 # This mirrors ../eval/submit_eval_crps_ambient.sh but keeps outputs under a
 # sibling eval_0p50/ folder so partial-schedule metrics, rollout videos, and
 # SLURM logs do not mix with the standard final-checkpoint evals.
 #
-# The large-run training scripts save checkpoints at 25/50/75/100% of the
-# cosine schedule via quarter-*.ckpt filenames. Rather than hard-coding epoch
-# numbers per dataset, we sort the available quarter checkpoints and pick the
-# second one (the 0.50 checkpoint) for each run.
+# Current large-run training scripts save checkpoints every 5% of training
+# progress via snapshot-<progress>-*.ckpt filenames. For older quarter-schedule
+# runs, fall back to the second sorted quarter-*.ckpt checkpoint.
 #
-# Force eval.mode=ambient here. These quarter checkpoints can look
+# Force eval.mode=ambient here. These intermediate checkpoints can look
 # processor-only to the early eval.mode=auto dispatcher because stateless
 # encoders/decoders (PermuteConcat / ChannelsLast) contribute no
 # encoder_decoder.* weights, even though the full raw-space ambient path is the
@@ -41,17 +40,28 @@ RUN_DIRS=(
 
 resolve_half_checkpoint() {
     local run_dir="$1"
+    local -a snapshot_ckpts=()
     local -a quarter_ckpts=()
+
+    mapfile -t snapshot_ckpts < <(
+        find "${run_dir}" -type f -path '*/checkpoints/snapshot-0p50-*.ckpt' | sort
+    )
+
+    if (( ${#snapshot_ckpts[@]} >= 1 )); then
+        printf '%s\n' "${snapshot_ckpts[$(( ${#snapshot_ckpts[@]} - 1 ))]}"
+        return 0
+    fi
 
     mapfile -t quarter_ckpts < <(
         find "${run_dir}" -type f -path '*/checkpoints/quarter-*.ckpt' | sort
     )
 
-    if (( ${#quarter_ckpts[@]} < 2 )); then
-        return 1
+    if (( ${#quarter_ckpts[@]} > 1 )); then
+        printf '%s\n' "${quarter_ckpts[1]}"
+        return 0
     fi
 
-    printf '%s\n' "${quarter_ckpts[1]}"
+    return 1
 }
 
 for run_dir in "${RUN_DIRS[@]}"; do
@@ -62,7 +72,7 @@ for run_dir in "${RUN_DIRS[@]}"; do
     fi
 
     if ! eval_ckpt="$(resolve_half_checkpoint "${run_dir_abs}")"; then
-        echo "Skipping ${run_dir}: fewer than two quarter-*.ckpt files found" >&2
+        echo "Skipping ${run_dir}: neither snapshot-0p50-*.ckpt nor legacy second quarter-*.ckpt found" >&2
         continue
     fi
     eval_ckpt_abs="$(realpath "${eval_ckpt}")"
