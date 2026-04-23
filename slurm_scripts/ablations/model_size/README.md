@@ -5,7 +5,9 @@ baseline comparison design, submission order, and the ~80M processor matrix.
 This folder records the CNS-only delta for the follow-up model-size sweep
 around the ~80M baselines.
 
-**Status:** ready — timing and 24h submit scripts cover the full scan.
+**Status:** in progress — timing covers the full 4-variant scan, while the
+current 24h submitter has the `2x` legs enabled and keeps the `0p4x` legs
+staged behind commented `COSINE_EPOCHS_BY_VARIANT` entries.
 
 ## Goal
 

@@ -1,9 +1,13 @@
 import abc
+from pathlib import Path
 from typing import Literal
 
 import numpy as np
+import pandas as pd
 import torch
 from einops import rearrange
+from matplotlib import pyplot as plt
+from torchmetrics import Metric
 
 from autocast.metrics.base import BaseMetric
 from autocast.types import (
@@ -219,6 +223,48 @@ def _sorted_pairwise_abs_weighted_sum(y_pred: TensorBTSCM) -> TensorBTSC:
     return (y_sorted * weights).sum(dim=-1)
 
 
+def _require_pairwise_ensemble_size(n_ensemble: int, metric_name: str) -> None:
+    if n_ensemble <= 1:
+        raise ValueError(
+            f"{metric_name} requires at least 2 ensemble members "
+            f"to compute the pairwise spread term. Got {n_ensemble}."
+        )
+
+
+def _crps_mae_term(y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTSC:
+    """Return the mean absolute distance-to-truth term used by CRPS variants."""
+    return torch.mean(torch.abs(y_pred - y_true.unsqueeze(-1)), dim=-1)
+
+
+def _crps_pairwise_spread_term(
+    y_pred: TensorBTSCM, pairwise_coefficient: float
+) -> TensorBTSC:
+    """Return the pairwise ensemble-distance term used by CRPS variants."""
+    pairwise_weighted_sum = _sorted_pairwise_abs_weighted_sum(y_pred)
+    return pairwise_weighted_sum * pairwise_coefficient
+
+
+def _common_crps_terms(
+    y_pred: TensorBTSCM, y_true: TensorBTSC, adjustment_factor: float
+) -> tuple[TensorBTSC, TensorBTSC]:
+    """Return the MAE-like and pairwise spread terms for CRPS/fCRPS."""
+    n_ensemble = y_pred.shape[-1]
+    term1 = _crps_mae_term(y_pred, y_true)
+    term2 = _crps_pairwise_spread_term(
+        y_pred, pairwise_coefficient=adjustment_factor / (n_ensemble**2)
+    )
+    return term1, term2
+
+
+def _common_crps_spread_term(
+    y_pred: TensorBTSCM, adjustment_factor: float
+) -> TensorBTSC:
+    n_ensemble = y_pred.shape[-1]
+    return _crps_pairwise_spread_term(
+        y_pred, pairwise_coefficient=adjustment_factor / (n_ensemble**2)
+    )
+
+
 def _common_crps_score(
     y_pred: TensorBTSCM, y_true: TensorBTSC, adjustment_factor: float
 ) -> TensorBTSC:
@@ -241,15 +287,7 @@ def _common_crps_score(
     -------
         Tensor of shape (B, T, S, C) with CRPS scores
     """
-    n_ensemble = y_pred.shape[-1]
-
-    term1: TensorBTSC = torch.mean(torch.abs(y_pred - y_true.unsqueeze(-1)), dim=-1)
-
-    # 0.5 * mean_{j,k} |x_j - x_k| * adj
-    #   = (adj / M^2) * sum_k (2k - M - 1) x_{(k)}
-    pairwise_weighted_sum = _sorted_pairwise_abs_weighted_sum(y_pred)
-    term2: TensorBTSC = pairwise_weighted_sum * (adjustment_factor / (n_ensemble**2))
-
+    term1, term2 = _common_crps_terms(y_pred, y_true, adjustment_factor)
     return term1 - term2
 
 
@@ -284,6 +322,47 @@ class CRPS(BTSCMMetric):
         return _common_crps_score(y_pred, y_true, adjustment_factor=1.0)
 
 
+class CRPSMAETerm(BTSCMMetric):
+    r"""
+    Mean-absolute-error term in the CRPS decomposition.
+
+    Notes
+    -----
+    This is the first CRPS term,
+
+    .. math::
+        \frac{1}{M}\sum_{m=1}^{M} |x_m - y|,
+
+    so it is MAE-like, but it is **not** the deterministic MAE of the ensemble mean.
+    """
+
+    name: str = "crps_mae_term"
+
+    def _score(self, y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTSC:
+        return _crps_mae_term(y_pred, y_true)
+
+
+class CRPSSpreadTerm(BTSCMMetric):
+    r"""
+    Pairwise spread term in the CRPS decomposition.
+
+    Notes
+    -----
+    This is the second CRPS term,
+
+    .. math::
+        \frac{1}{2M^2}\sum_{j=1}^{M}\sum_{k=1}^{M}|x_j - x_k|,
+
+    represented via the sort-based identity used elsewhere in this module.
+    """
+
+    name: str = "crps_spread_term"
+
+    def _score(self, y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTSC:
+        del y_true
+        return _common_crps_spread_term(y_pred, adjustment_factor=1.0)
+
+
 class FairCRPS(BTSCMMetric):
     """
     Fair Continuous Ranked Probability Score (fCRPS) for ensemble forecasts.
@@ -312,9 +391,61 @@ class FairCRPS(BTSCMMetric):
             Tensor of shape (B, T, S, C) with fCRPS scores
         """
         n_ensemble = y_pred.shape[-1]
+        _require_pairwise_ensemble_size(n_ensemble, "FairCRPS")
         return _common_crps_score(
             y_pred, y_true, adjustment_factor=n_ensemble / (n_ensemble - 1)
         )
+
+
+class FairCRPSMAETerm(BTSCMMetric):
+    """Mean-absolute-error term in the fCRPS decomposition."""
+
+    name: str = "fcrps_mae_term"
+
+    def _score(self, y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTSC:
+        n_ensemble = y_pred.shape[-1]
+        _require_pairwise_ensemble_size(n_ensemble, "FairCRPSMAETerm")
+        return _crps_mae_term(y_pred, y_true)
+
+
+class FairCRPSSpreadTerm(BTSCMMetric):
+    """Pairwise spread term in the fCRPS decomposition."""
+
+    name: str = "fcrps_spread_term"
+
+    def _score(self, y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTSC:
+        del y_true
+        n_ensemble = y_pred.shape[-1]
+        _require_pairwise_ensemble_size(n_ensemble, "FairCRPSSpreadTerm")
+        return _common_crps_spread_term(
+            y_pred, adjustment_factor=n_ensemble / (n_ensemble - 1)
+        )
+
+
+def _alpha_fair_crps_terms(
+    y_pred: TensorBTSCM, y_true: TensorBTSC, alpha: float
+) -> tuple[TensorBTSC, TensorBTSC]:
+    """Return the MAE-like and pairwise spread terms for afCRPS."""
+    n_ensemble = y_pred.shape[-1]
+    _require_pairwise_ensemble_size(n_ensemble, "AlphaFairCRPS")
+    eps = (1.0 - alpha) / n_ensemble
+
+    term1 = _crps_mae_term(y_pred, y_true)
+    term2 = _crps_pairwise_spread_term(
+        y_pred,
+        pairwise_coefficient=(1.0 - eps) / (n_ensemble * (n_ensemble - 1)),
+    )
+    return term1, term2
+
+
+def _alpha_fair_crps_spread_term(y_pred: TensorBTSCM, alpha: float) -> TensorBTSC:
+    n_ensemble = y_pred.shape[-1]
+    _require_pairwise_ensemble_size(n_ensemble, "AlphaFairCRPS")
+    eps = (1.0 - alpha) / n_ensemble
+    return _crps_pairwise_spread_term(
+        y_pred,
+        pairwise_coefficient=(1.0 - eps) / (n_ensemble * (n_ensemble - 1)),
+    )
 
 
 def _alpha_fair_crps_score(
@@ -342,22 +473,8 @@ def _alpha_fair_crps_score(
     -------
         afCRPS: (B, T, S, C)
     """
-    n_ensemble = y_pred.shape[-1]
-    eps = (1.0 - alpha) / n_ensemble
-
-    # (1/M) * sum_j |x_j - y|
-    mean_abs_diff_truth: TensorBTSC = torch.mean(
-        torch.abs(y_pred - y_true.unsqueeze(-1)), dim=-1
-    )
-
-    # sum_{j,k} |x_j - x_k| = 2 * sum_k (2k - M - 1) x_{(k)}; diagonal is zero so
-    # this equals sum_{j != k} |x_j - x_k|.
-    pairwise_weighted_sum = _sorted_pairwise_abs_weighted_sum(y_pred)
-    pairwise_term = (
-        (1.0 - eps) / (n_ensemble * (n_ensemble - 1))
-    ) * pairwise_weighted_sum
-
-    return mean_abs_diff_truth - pairwise_term
+    term1, term2 = _alpha_fair_crps_terms(y_pred, y_true, alpha)
+    return term1 - term2
 
 
 class AlphaFairCRPS(BTSCMMetric):
@@ -383,8 +500,19 @@ class AlphaFairCRPS(BTSCMMetric):
 
     name: str = "afcrps"
 
-    def __init__(self, alpha: float = 0.95):
-        super().__init__()
+    def __init__(
+        self,
+        alpha: float = 0.95,
+        *,
+        score_dims: Literal["spatial", "temporal"] | None = "spatial",
+        reduce_all: bool = True,
+        dist_sync_on_step: bool = False,
+    ):
+        super().__init__(
+            score_dims=score_dims,
+            reduce_all=reduce_all,
+            dist_sync_on_step=dist_sync_on_step,
+        )
         # alpha close to 1 is close to fair CRPS, lower values tend toward standard CRPS
         assert 0 < alpha <= 1, "alpha must be in (0,1]"
         self.alpha = alpha
@@ -402,6 +530,65 @@ class AlphaFairCRPS(BTSCMMetric):
             afCRPS: (B, T, S, C)
         """
         return _alpha_fair_crps_score(y_pred, y_true, self.alpha)
+
+
+class AlphaFairCRPSMAETerm(BTSCMMetric):
+    """
+    Mean-absolute-error term paired with afCRPS monitoring.
+
+    The MAE-like term itself does not depend on ``alpha``, but this class accepts
+    it so experiment configs can keep the afCRPS diagnostic bundle parameterized
+    consistently.
+    """
+
+    name: str = "afcrps_mae_term"
+
+    def __init__(
+        self,
+        alpha: float = 0.95,
+        *,
+        score_dims: Literal["spatial", "temporal"] | None = "spatial",
+        reduce_all: bool = True,
+        dist_sync_on_step: bool = False,
+    ):
+        super().__init__(
+            score_dims=score_dims,
+            reduce_all=reduce_all,
+            dist_sync_on_step=dist_sync_on_step,
+        )
+        assert 0 < alpha <= 1, "alpha must be in (0,1]"
+        self.alpha = alpha
+
+    def _score(self, y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTSC:
+        n_ensemble = y_pred.shape[-1]
+        _require_pairwise_ensemble_size(n_ensemble, "AlphaFairCRPSMAETerm")
+        return _crps_mae_term(y_pred, y_true)
+
+
+class AlphaFairCRPSSpreadTerm(BTSCMMetric):
+    """Pairwise spread term in the afCRPS decomposition."""
+
+    name: str = "afcrps_spread_term"
+
+    def __init__(
+        self,
+        alpha: float = 0.95,
+        *,
+        score_dims: Literal["spatial", "temporal"] | None = "spatial",
+        reduce_all: bool = True,
+        dist_sync_on_step: bool = False,
+    ):
+        super().__init__(
+            score_dims=score_dims,
+            reduce_all=reduce_all,
+            dist_sync_on_step=dist_sync_on_step,
+        )
+        assert 0 < alpha <= 1, "alpha must be in (0,1]"
+        self.alpha = alpha
+
+    def _score(self, y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTSC:
+        del y_true
+        return _alpha_fair_crps_spread_term(y_pred, self.alpha)
 
 
 class EnergyScore(BTSCMMetric):
@@ -644,6 +831,134 @@ class SpreadSkillRatio(BTSCMMetric):
         return ssr
 
 
+class EnsembleSpread(BTSCMMetric):
+    r"""
+    Ensemble spread for probabilistic forecasts.
+
+    Notes
+    -----
+    By default, returns a **finite-ensemble corrected spread**:
+
+    .. math::
+        \text{Spread}_{\text{corr}} =
+            \sqrt{\left\langle \mathrm{Var}_{m,\text{unbiased}}(x_m)\right\rangle}
+            \sqrt{\frac{M + 1}{M}}.
+
+    This correction is commonly used so that spread and skill are comparable for
+    finite ensemble sizes when using unbiased sample variance. It matches the
+    form used in LoLA/paper evaluations (Appendix "Spread / Skill") where:
+    ``spread = sqrt((M+1)/(M-1) * mean((x_m - mean_m)^2))``, since
+    ``Var_unbiased = (M/(M-1)) * mean((x_m - mean_m)^2)``.
+
+    If ``corrected=False``, returns the uncorrected macroscopic ensemble standard
+    deviation computed from the unbiased variance estimator:
+
+    .. math::
+        \sqrt{\left\langle \mathrm{Var}_{m,\text{unbiased}}(x_m)\right\rangle}.
+    """
+
+    name: str = "spread"
+
+    def __init__(
+        self,
+        *,
+        corrected: bool = True,
+        score_dims: Literal["spatial", "temporal"] | None = "spatial",
+        reduce_all: bool = True,
+        dist_sync_on_step: bool = False,
+    ):
+        super().__init__(
+            score_dims=score_dims,
+            reduce_all=reduce_all,
+            dist_sync_on_step=dist_sync_on_step,
+        )
+        self.corrected = corrected
+
+    def _score(self, y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTSC:
+        """Not used directly; we override score() to change reduction order."""
+        msg = "EnsembleSpread overrides score() directly."
+        raise NotImplementedError(msg)
+
+    def score(
+        self, y_pred: ArrayLike, y_true: ArrayLike
+    ) -> TensorBTC | TensorBSC | TensorBTSC:
+        y_pred_tensor, y_true_tensor = self._check_input(y_pred, y_true)
+
+        n_ensemble = y_pred_tensor.shape[-1]
+        if n_ensemble < 2:
+            raise ValueError(
+                "EnsembleSpread requires at least 2 ensemble members "
+                f"(got {n_ensemble})."
+            )
+
+        spread_var = y_pred_tensor.var(dim=-1, unbiased=True)  # (B, T, S..., C)
+
+        # Reduce variance before sqrt (macroscopic approach)
+        if self.score_dims == "spatial":
+            n_spatial_dims = self._infer_n_spatial_dims(y_true_tensor)
+            spatial_dims = tuple(range(2, 2 + n_spatial_dims))
+            spread_var = spread_var.mean(dim=spatial_dims)
+        elif self.score_dims == "temporal":
+            spread_var = spread_var.mean(dim=1)
+
+        spread = torch.sqrt(spread_var)
+
+        if self.corrected:
+            correction = float(np.sqrt((n_ensemble + 1) / n_ensemble))
+            spread = spread * correction
+
+        return spread
+
+
+class EnsembleSkill(BTSCMMetric):
+    r"""
+    Ensemble skill defined as RMSE of the ensemble mean.
+
+    Notes
+    -----
+    Skill is defined as the RMSE of the ensemble mean:
+
+    .. math::
+        \text{Skill} = \sqrt{\left\langle (\bar{x} - y)^2 \right\rangle},
+
+    where :math:`\langle \cdot \rangle` denotes the spatial mean.
+
+    This metric reduces the squared error over spatial/temporal dimensions *before*
+    taking the square root (macroscopic RMSE), as is commonly done in ensemble
+    forecast evaluation (and in LoLA/paper appendices).
+
+    In the default spatial-reduction evaluation path, this is numerically
+    equivalent to the deterministic ``RMSE`` metric applied to an ensemble
+    prediction tensor, because ``RMSE`` first averages over the ensemble
+    dimension and then computes RMSE.
+    """
+
+    name: str = "skill"
+
+    def _score(self, y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTSC:
+        """Not used directly; we override score() to change reduction order."""
+        msg = "EnsembleSkill overrides score() directly."
+        raise NotImplementedError(msg)
+
+    def score(
+        self, y_pred: ArrayLike, y_true: ArrayLike
+    ) -> TensorBTC | TensorBSC | TensorBTSC:
+        y_pred_tensor, y_true_tensor = self._check_input(y_pred, y_true)
+
+        ensemble_mean = y_pred_tensor.mean(dim=-1)
+        skill_sq = (ensemble_mean - y_true_tensor) ** 2
+
+        # Reduce MSE before sqrt (macroscopic approach)
+        if self.score_dims == "spatial":
+            n_spatial_dims = self._infer_n_spatial_dims(y_true_tensor)
+            spatial_dims = tuple(range(2, 2 + n_spatial_dims))
+            skill_sq = skill_sq.mean(dim=spatial_dims)
+        elif self.score_dims == "temporal":
+            skill_sq = skill_sq.mean(dim=1)
+
+        return torch.sqrt(skill_sq)
+
+
 class WinklerScore(BTSCMMetric):
     r"""
     Winkler interval score for central prediction intervals.
@@ -678,6 +993,16 @@ class WinklerScore(BTSCMMetric):
 
     Lower values are better: narrow intervals are rewarded, and misses are
     penalized in proportion to their distance outside the interval.
+
+    References
+    ----------
+    Winkler, R. L. (1972). A Decision-Theoretic Approach to Interval Estimation.
+    Journal of the American Statistical Association, 67(337), 187-191.
+    https://doi.org/10.1080/01621459.1972.10481224
+
+    Gneiting, T., & Raftery, A. E. (2007). Strictly Proper Scoring Rules,
+    Prediction, and Estimation. Journal of the American Statistical Association,
+    102(477), 359-378. https://doi.org/10.1198/016214506000001437
     """
 
     name: str = "winkler"
@@ -705,3 +1030,232 @@ class WinklerScore(BTSCMMetric):
         above_penalty = (2.0 / self.alpha) * torch.clamp(y_true - upper, min=0.0)
 
         return width + below_penalty + above_penalty
+
+
+class MultiWinkler(Metric):
+    """
+    Average Winkler interval score across multiple central coverage levels.
+
+    This is the interval-score analogue of ``MultiCoverage``: it evaluates a
+    grid of nominal central prediction intervals and returns one scalar by
+    averaging the Winkler score across interval levels, time, space, channels,
+    and samples. Lower values are better.
+
+    Notes
+    -----
+    This is an unweighted average of central interval scores across the chosen
+    coverage grid. The weighted interval score (WIS) uses a related multi-level
+    interval-score construction with prescribed weights.
+
+    References
+    ----------
+    Bracher, J., Ray, E. L., Gneiting, T., & Reich, N. G. (2021). Evaluating
+    epidemic forecasts in an interval format. PLOS Computational Biology,
+    17(2), e1008618. https://doi.org/10.1371/journal.pcbi.1008618
+    """
+
+    name: str = "multiwinkler"
+
+    def __init__(
+        self,
+        coverage_levels: list[float] | None = None,
+        score_dims: Literal["spatial", "temporal"] | None = "spatial",
+        dist_sync_on_step: bool = False,
+    ) -> None:
+        super().__init__(dist_sync_on_step=dist_sync_on_step)
+        if coverage_levels is None:
+            coverage_levels = [
+                round(x, 2) for x in torch.linspace(0.05, 0.95, steps=19).tolist()
+            ]
+        if not coverage_levels:
+            msg = "coverage_levels must contain at least one level."
+            raise ValueError(msg)
+        for coverage_level in coverage_levels:
+            if not (0 < coverage_level < 1):
+                msg = (
+                    f"coverage_levels entries must be in (0, 1), got {coverage_level}."
+                )
+                raise ValueError(msg)
+        if score_dims not in ("spatial", "temporal", None):
+            msg = (
+                "score_dims must be 'spatial', 'temporal', or None, "
+                f"got {score_dims!r}."
+            )
+            raise ValueError(msg)
+
+        self.coverage_levels = coverage_levels
+        self.score_dims = score_dims
+        self.add_state("sum_score", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("total_samples", default=torch.tensor(0), dist_reduce_fx="sum")
+        self._initialized = False
+
+    def update(self, y_pred: ArrayLike, y_true: ArrayLike) -> None:
+        """Update metric state with one validation batch."""
+        score = self.score(y_pred, y_true)
+        batch_size = score.shape[1]
+        score_summed = score.sum(dim=1)
+
+        if not self._initialized:
+            self.sum_score = torch.zeros_like(score_summed)
+            self._initialized = True
+
+        self.sum_score += score_summed
+        self.total_samples += batch_size
+
+    def compute(self) -> Tensor:
+        """Return average Winkler score across levels and reduced dimensions."""
+        return self._mean_score_by_level().mean()
+
+    def reset(self) -> None:
+        """Reset metric state and dynamic state-shape flag."""
+        super().reset()
+        self._initialized = False
+
+    def score(self, y_pred: ArrayLike, y_true: ArrayLike) -> Tensor:
+        """Compute per-level Winkler scores before batch aggregation."""
+        y_pred_tensor, y_true_tensor = self._check_input(y_pred, y_true)
+
+        coverage = torch.tensor(
+            self.coverage_levels, device=y_pred_tensor.device, dtype=y_pred_tensor.dtype
+        )
+        alpha = 1.0 - coverage
+        q_low = alpha / 2.0
+        q_high = 1.0 - q_low
+        q_tensor = torch.cat([q_low, q_high])
+
+        quantiles = torch.quantile(y_pred_tensor, q_tensor, dim=-1)
+        n_levels = len(self.coverage_levels)
+        lower = quantiles[:n_levels]
+        upper = quantiles[n_levels:]
+        truth = y_true_tensor.unsqueeze(0)
+        alpha_view = alpha.view(n_levels, *([1] * y_true_tensor.ndim))
+
+        width = upper - lower
+        below_penalty = (2.0 / alpha_view) * torch.clamp(lower - truth, min=0.0)
+        above_penalty = (2.0 / alpha_view) * torch.clamp(truth - upper, min=0.0)
+        score = width + below_penalty + above_penalty
+
+        if self.score_dims == "spatial":
+            n_spatial_dims = y_true_tensor.ndim - 3
+            spatial_dims = tuple(range(3, 3 + n_spatial_dims))
+            return score.mean(dim=spatial_dims)
+        if self.score_dims == "temporal":
+            return score.mean(dim=2)
+        return score
+
+    def _mean_score_by_level(self) -> Tensor:
+        if self.total_samples == 0:
+            msg = "No samples were provided to the metric"
+            raise RuntimeError(msg)
+        return self.sum_score / self.total_samples
+
+    def _compute_levels_and_values(self) -> tuple[list[float], list[float], np.ndarray]:
+        """Return coverage levels, mean scores, and per-channel scores."""
+        score = self._mean_score_by_level()
+        mean_scores = score.reshape(score.shape[0], -1).mean(dim=1).detach().cpu()
+
+        if score.ndim == 1:
+            channel_scores = score[:, None]
+        elif score.ndim == 2:
+            channel_scores = score
+        else:
+            channel_scores = score.mean(dim=tuple(range(1, score.ndim - 1)))
+
+        return (
+            self.coverage_levels,
+            mean_scores.tolist(),
+            np.atleast_2d(channel_scores.detach().cpu().numpy()),
+        )
+
+    def plot(
+        self,
+        save_path: str | None = None,
+        title: str = "Winkler Interval Scores",
+        cmap_str: str = "viridis",
+        save_csv: bool = True,
+    ):
+        """Plot Winkler score against nominal interval coverage."""
+        if plt.get_backend().lower() != "agg":
+            plt.switch_backend("Agg")
+
+        levels, mean_scores, channel_scores = self._compute_levels_and_values()
+
+        if save_path and save_csv:
+            self._save_csv_data(save_path, levels, mean_scores, channel_scores)
+
+        fig, ax = plt.subplots(figsize=(8, 6))
+        cmap = plt.get_cmap(cmap_str)
+        n_channels = channel_scores.shape[1]
+        for channel_idx in range(n_channels):
+            color = cmap(channel_idx / n_channels) if n_channels > 1 else "blue"
+            label = f"Ch {channel_idx}" if n_channels <= 10 else None
+            ax.plot(
+                levels,
+                channel_scores[:, channel_idx],
+                color=color,
+                alpha=0.3,
+                linewidth=1,
+                label=label,
+            )
+
+        ax.plot(levels, mean_scores, "k-", linewidth=3, label="Mean")
+        ax.set_xlabel("Nominal interval coverage")
+        ax.set_ylabel("Winkler score (lower is better)")
+        ax.set_title(title)
+        ax.grid(True, linestyle=":", alpha=0.6)
+        ax.legend() if n_channels <= 10 else ax.legend(["Mean", "Channels"])
+
+        if save_path:
+            fig.savefig(save_path, bbox_inches="tight")
+
+        plt.close(fig)
+        return fig
+
+    def _save_csv_data(
+        self,
+        save_path: str,
+        levels: list[float],
+        mean_scores: list[float],
+        channel_scores: np.ndarray,
+    ) -> None:
+        csv_path = Path(str(save_path).removesuffix(".png") + ".csv")
+        csv_path.parent.mkdir(parents=True, exist_ok=True)
+        data = {
+            "coverage_level": levels,
+            "winkler_mean": mean_scores,
+        }
+        for channel_idx in range(channel_scores.shape[1]):
+            data[f"channel_{channel_idx}"] = channel_scores[:, channel_idx].tolist()
+
+        pd.DataFrame(data).to_csv(csv_path, index=False)
+
+    def _check_input(
+        self, y_pred: ArrayLike, y_true: ArrayLike
+    ) -> tuple[TensorBTSCM, TensorBTSC]:
+        if isinstance(y_pred, np.ndarray):
+            y_pred = torch.from_numpy(y_pred)
+        if isinstance(y_true, np.ndarray):
+            y_true = torch.from_numpy(y_true)
+
+        if not isinstance(y_pred, Tensor):
+            msg = f"y_pred must be a Tensor or np.ndarray, got {type(y_pred)}"
+            raise TypeError(msg)
+        if not isinstance(y_true, Tensor):
+            msg = f"y_true must be a Tensor or np.ndarray, got {type(y_true)}"
+            raise TypeError(msg)
+
+        if y_pred.ndim < 5:
+            msg = (
+                f"y_pred has {y_pred.ndim} dimensions, should be at least 5, "
+                "following the pattern (B, T, S, C, M)"
+            )
+            raise ValueError(msg)
+
+        if y_pred.shape[:-1] != y_true.shape:
+            msg = (
+                "y_pred and y_true must have the same shape except for the last "
+                f"dimension (ensemble members). Got {y_pred.shape} and {y_true.shape}"
+            )
+            raise ValueError(msg)
+
+        return y_pred, y_true

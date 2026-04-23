@@ -49,10 +49,9 @@ for datamodule in "${!EXPERIMENTS[@]}"; do
     ae_run_dir="${AE_RUN_DIRS[$datamodule]}"
     cache_dir="${ae_run_dir}/cached_latents"
     cosine_epochs="${COSINE_EPOCHS_BY_DATASET[$datamodule]}"
-    # Save checkpoints at 25/50/75/100% of the schedule (top_k=-1 keeps all).
+    # Save checkpoints every ~5% of optimizer-step progress (top_k=-1 keeps all).
     # save_last: true (set in trainer/default.yaml) ensures last.ckpt captures
-    # the final epoch even if it doesn't land on a quarter boundary.
-    quarter_epochs=$((cosine_epochs / 4))
+    # the final state even if it doesn't land exactly on a progress boundary.
 
     if [[ ! -d "${cache_dir}/train" ]] || [[ ! -d "${cache_dir}/valid" ]] || [[ ! -d "${cache_dir}/test" ]]; then
         echo "Skipping ${datamodule}: cache missing train/valid/test under ${cache_dir}" >&2
@@ -86,8 +85,9 @@ for datamodule in "${!EXPERIMENTS[@]}"; do
             hydra.launcher.timeout_min="${TIMEOUT_MIN}" \
             trainer.max_time="${BUDGET_MAX_TIME}" \
             +trainer.max_epochs="${cosine_epochs}" \
-            trainer.callbacks.0.every_n_epochs="${quarter_epochs}" \
+            trainer.callbacks.0.every_n_train_steps_fraction=0.05 \
+            trainer.callbacks.0.every_n_epochs=0 \
             trainer.callbacks.0.save_top_k=-1 \
-            trainer.callbacks.0.filename=\"quarter-{epoch:04d}\"
+            trainer.callbacks.0.filename=\"snapshot-{progress_token}-{epoch:04d}-{step:08d}\"
     done
 done

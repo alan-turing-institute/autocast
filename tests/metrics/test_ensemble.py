@@ -5,8 +5,19 @@ from einops import rearrange, repeat
 from autocast.metrics import ALL_ENSEMBLE_METRICS
 from autocast.metrics.base import BaseMetric
 from autocast.metrics.coverage import Coverage
+from autocast.metrics.deterministic import RMSE
 from autocast.metrics.ensemble import (
+    CRPS,
+    AlphaFairCRPS,
+    AlphaFairCRPSMAETerm,
+    AlphaFairCRPSSpreadTerm,
+    CRPSMAETerm,
+    CRPSSpreadTerm,
     EnergyScore,
+    EnsembleSkill,
+    EnsembleSpread,
+    FairCRPSSpreadTerm,
+    MultiWinkler,
     SpreadSkillRatio,
     VariogramScore,
     WinklerScore,
@@ -25,7 +36,16 @@ ENSEMBLE_BASE_METRICS = tuple(
 ENSEMBLE_ERROR_METRICS = tuple(
     m
     for m in ENSEMBLE_BASE_METRICS
-    if m not in [Coverage, VariogramScore, SpreadSkillRatio]
+    if m
+    not in [
+        Coverage,
+        VariogramScore,
+        SpreadSkillRatio,
+        EnsembleSpread,
+        CRPSSpreadTerm,
+        FairCRPSSpreadTerm,
+        AlphaFairCRPSSpreadTerm,
+    ]
 )
 
 
@@ -152,6 +172,101 @@ def test_variogram_score_invalid_parameters():
 
     with pytest.raises(ValueError):  # noqa: PT011
         metric.score(y_pred, y_true)
+
+
+def test_crps_component_metrics_match_manual_decomposition():
+    y_pred = torch.tensor([[[[[0.0, 2.0]]]]])  # (1, 1, 1, 1, 2)
+    y_true = torch.tensor([[[[1.0]]]])  # (1, 1, 1, 1)
+
+    crps = CRPS(reduce_all=False).score(y_pred, y_true)
+    mae_term = CRPSMAETerm(reduce_all=False).score(y_pred, y_true)
+    spread_term = CRPSSpreadTerm(reduce_all=False).score(y_pred, y_true)
+    ensemble_spread = EnsembleSpread(corrected=False, reduce_all=False).score(
+        y_pred, y_true
+    )
+
+    assert torch.allclose(mae_term, torch.tensor([[[1.0]]]))
+    assert torch.allclose(spread_term, torch.tensor([[[0.5]]]))
+    assert torch.allclose(crps, mae_term - spread_term)
+    assert torch.allclose(crps, torch.tensor([[[0.5]]]))
+    assert not torch.allclose(spread_term, ensemble_spread)
+
+
+def test_afcrps_component_metrics_match_manual_decomposition():
+    y_pred = torch.tensor([[[[[0.0, 2.0]]]]])  # (1, 1, 1, 1, 2)
+    y_true = torch.tensor([[[[1.0]]]])  # (1, 1, 1, 1)
+
+    afcrps = AlphaFairCRPS(alpha=0.75, reduce_all=False).score(y_pred, y_true)
+    mae_term = AlphaFairCRPSMAETerm(alpha=0.75, reduce_all=False).score(y_pred, y_true)
+    spread_term = AlphaFairCRPSSpreadTerm(alpha=0.75, reduce_all=False).score(
+        y_pred, y_true
+    )
+
+    assert torch.allclose(mae_term, torch.tensor([[[1.0]]]))
+    assert torch.allclose(spread_term, torch.tensor([[[0.875]]]))
+    assert torch.allclose(afcrps, mae_term - spread_term)
+    assert torch.allclose(afcrps, torch.tensor([[[0.125]]]))
+
+
+def test_multiwinkler_matches_mean_winkler_scores():
+    y_pred = torch.randn((2, 3, 4, 4, 1, 16))
+    y_true = torch.randn((2, 3, 4, 4, 1))
+    coverage_levels = [0.5, 0.9]
+
+    multiwinkler = MultiWinkler(coverage_levels=coverage_levels)
+    multiwinkler.update(y_pred, y_true)
+
+    expected_scores = []
+    for coverage_level in coverage_levels:
+        winkler = WinklerScore(alpha=1.0 - coverage_level)
+        winkler.update(y_pred, y_true)
+        expected_scores.append(winkler.compute())
+
+    assert torch.allclose(multiwinkler.compute(), torch.stack(expected_scores).mean())
+
+
+def test_multiwinkler_manual_interval_score_average():
+    members = torch.arange(5.0)
+    y_pred = members.view(1, 1, 1, 1, 5).expand(1, 2, 2, 1, 5)
+    y_true = torch.tensor([[[[2.0], [4.5]], [[-0.5], [1.5]]]])
+
+    metric = MultiWinkler(coverage_levels=[0.5, 0.8])
+    score = metric.score(y_pred, y_true)
+    metric.update(y_pred, y_true)
+
+    expected_by_level = torch.tensor(
+        [
+            [[[5.0], [5.0]]],
+            [[[7.7], [7.7]]],
+        ]
+    )
+    expected_scalar = expected_by_level.mean()
+
+    assert torch.allclose(score, expected_by_level)
+    assert torch.allclose(metric.compute(), expected_scalar)
+
+
+def test_multiwinkler_score_shape_includes_interval_levels():
+    y_pred = torch.randn((2, 3, 4, 4, 5, 16))
+    y_true = torch.randn((2, 3, 4, 4, 5))
+
+    score = MultiWinkler(coverage_levels=[0.5, 0.9]).score(y_pred, y_true)
+
+    assert score.shape == (2, 2, 3, 5)
+
+
+def test_multiwinkler_plot_saves_png_and_csv(tmp_path):
+    y_pred = torch.randn((2, 3, 4, 4, 1, 16))
+    y_true = torch.randn((2, 3, 4, 4, 1))
+    metric = MultiWinkler(coverage_levels=[0.5, 0.9])
+    metric.update(y_pred, y_true)
+
+    save_path = tmp_path / "multiwinkler.png"
+    fig = metric.plot(save_path=str(save_path))
+
+    assert fig is not None
+    assert save_path.exists()
+    assert save_path.with_suffix(".csv").exists()
 
 
 @pytest.mark.parametrize("MetricCls", [EnergyScore, VariogramScore])
@@ -349,6 +464,68 @@ def test_spread_skill_ratio_stateful_returns_per_lead_time_and_is_mean_of_ratios
     assert not torch.allclose(
         value, torch.full_like(value, float(expected_macroscopic)), rtol=2e-1
     ), value
+
+
+def test_ensemble_spread_matches_lola_correction():
+    # Shape: (B=1, T=1, S=1, C=1, M=2)
+    # Members: [0, 2]
+    # unbiased var = 2, sqrt(var)=sqrt(2)
+    # corrected spread = sqrt(2) * sqrt((M+1)/M) = sqrt(3)
+    y_pred = torch.tensor([[[[[0.0, 2.0]]]]])
+    y_true = torch.tensor([[[[0.0]]]])
+
+    value = EnsembleSpread()(y_pred, y_true)
+    assert torch.allclose(value, torch.tensor(3.0**0.5), atol=1e-6)
+
+
+def test_ensemble_spread_can_be_uncorrected():
+    y_pred = torch.tensor([[[[[0.0, 2.0]]]]])
+    y_true = torch.tensor([[[[0.0]]]])
+
+    value = EnsembleSpread(corrected=False)(y_pred, y_true)
+    assert torch.allclose(value, torch.tensor(2.0**0.5), atol=1e-6)
+
+
+def test_ensemble_spread_requires_multiple_ensemble_members():
+    y_pred = torch.ones((1, 1, 1, 1, 1))
+    y_true = torch.ones((1, 1, 1, 1))
+
+    with pytest.raises(ValueError, match="at least 2 ensemble members"):
+        EnsembleSpread()(y_pred, y_true)
+
+
+def test_ensemble_spread_accepts_base_metric_kwargs():
+    y_pred = torch.tensor([[[[[0.0, 2.0]]], [[[0.0, 4.0]]]]])
+    y_true = torch.zeros((1, 2, 1, 1))
+
+    value = EnsembleSpread(score_dims="temporal", reduce_all=False).score(
+        y_pred, y_true
+    )
+
+    expected = torch.tensor([[[7.5**0.5]]])
+    assert torch.allclose(value, expected, atol=1e-6)
+
+
+def test_ensemble_skill_is_rmse_of_ensemble_mean():
+    # Shape: (B=1, T=1, S=1, C=1, M=2)
+    # Members: [0, 2], truth: [0]
+    # mean=1 -> rmse = 1
+    y_pred = torch.tensor([[[[[0.0, 2.0]]]]])
+    y_true = torch.tensor([[[[0.0]]]])
+
+    value = EnsembleSkill()(y_pred, y_true)
+    assert torch.allclose(value, torch.tensor(1.0), atol=1e-6)
+
+
+def test_ensemble_skill_matches_deterministic_rmse_on_ensemble_predictions():
+    torch.manual_seed(0)
+    y_pred = torch.randn((2, 3, 4, 5, 2, 7))
+    y_true = torch.randn((2, 3, 4, 5, 2))
+
+    skill = EnsembleSkill()(y_pred, y_true)
+    rmse = RMSE()(y_pred, y_true)
+
+    assert torch.allclose(skill, rmse, atol=1e-6)
 
 
 def test_winkler_score_manual_value():

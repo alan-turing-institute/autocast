@@ -382,7 +382,7 @@ Defines the data source.
 
 #### `eval` (Evaluation Script Only)
 *   **`checkpoint`**: Path to the trained model checkpoint to load.
-*   **`metrics`**: List of metrics to compute (e.g., `["mse", "rmse"]`).
+*   **`metrics`**: List of metrics to compute (e.g., `["mse", "rmse", "spread", "skill"]` for ensemble evaluation). For ensemble predictions, `skill` is the RMSE of the ensemble mean, so it matches `rmse` numerically and is mainly kept as explicit spread/skill terminology.
 *   **`video_dir`**: Where to save rollout visualizations.
 
 ## Workflow Examples
