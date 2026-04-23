@@ -51,7 +51,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--output-dir outputs/2026-04-20_collated/$PLOTS_PATH/main_comparison
 
 
-# Main comparison (with m=16 runs around 2/3 complete): CRPS ambient variants, CRPS processor-on-latents, FM ambient (EPD)
+# Main comparison (with m=16 runs 100^ complete): CRPS ambient variants, CRPS processor-on-latents, FM ambient (EPD)
 autocast-plots --results-dir outputs/2026-04-20_collated \
 	--run crps_ad64_vit_azula_large_ac1bb06_ef6368d "CRPS (ambient, m=16)" 0 \
 	--run crps_cns64_vit_azula_large_0db40e1_dcd79e4 "CRPS (ambient, m=16)" 0 \
