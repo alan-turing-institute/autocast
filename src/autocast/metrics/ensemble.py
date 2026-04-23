@@ -339,8 +339,7 @@ class CRPSMAETerm(BTSCMMetric):
     name: str = "crps_mae_term"
 
     def _score(self, y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTSC:
-        term1, _ = _common_crps_terms(y_pred, y_true, adjustment_factor=1.0)
-        return term1
+        return _crps_mae_term(y_pred, y_true)
 
 
 class CRPSSpreadTerm(BTSCMMetric):
@@ -406,10 +405,7 @@ class FairCRPSMAETerm(BTSCMMetric):
     def _score(self, y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTSC:
         n_ensemble = y_pred.shape[-1]
         _require_pairwise_ensemble_size(n_ensemble, "FairCRPSMAETerm")
-        term1, _ = _common_crps_terms(
-            y_pred, y_true, adjustment_factor=n_ensemble / (n_ensemble - 1)
-        )
-        return term1
+        return _crps_mae_term(y_pred, y_true)
 
 
 class FairCRPSSpreadTerm(BTSCMMetric):
@@ -564,8 +560,9 @@ class AlphaFairCRPSMAETerm(BTSCMMetric):
         self.alpha = alpha
 
     def _score(self, y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTSC:
-        term1, _ = _alpha_fair_crps_terms(y_pred, y_true, self.alpha)
-        return term1
+        n_ensemble = y_pred.shape[-1]
+        _require_pairwise_ensemble_size(n_ensemble, "AlphaFairCRPSMAETerm")
+        return _crps_mae_term(y_pred, y_true)
 
 
 class AlphaFairCRPSSpreadTerm(BTSCMMetric):

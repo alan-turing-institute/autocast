@@ -1,5 +1,6 @@
 """Tests that exercise real configs end-to-end."""
 
+from datetime import timedelta
 from pathlib import Path
 from time import perf_counter
 from types import SimpleNamespace
@@ -323,6 +324,26 @@ def test_progress_model_checkpoint_disables_default_epoch_trigger():
     )
 
     assert callback._every_n_epochs == 0
+
+
+@pytest.mark.parametrize(
+    "trigger_kwargs",
+    [
+        {"every_n_train_steps": 10},
+        {"every_n_epochs": 1},
+        {"train_time_interval": timedelta(minutes=30)},
+    ],
+)
+def test_progress_model_checkpoint_rejects_fraction_with_other_triggers(
+    trigger_kwargs: dict,
+):
+    with pytest.raises(ValueError, match="every_n_train_steps_fraction"):
+        ProgressModelCheckpoint(
+            every_n_train_steps_fraction=0.05,
+            save_top_k=-1,
+            filename="snapshot-{step:08d}",
+            **trigger_kwargs,
+        )
 
 
 @pytest.mark.parametrize(

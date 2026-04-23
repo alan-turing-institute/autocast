@@ -48,12 +48,25 @@ class ProgressModelCheckpoint(ModelCheckpoint):
                 "every_n_train_steps_fraction must be in (0, 1], "
                 f"got {every_n_train_steps_fraction}."
             )
-        if every_n_train_steps_fraction is not None and self._every_n_train_steps >= 1:
-            msg = (
-                "Specify either every_n_train_steps or "
-                "every_n_train_steps_fraction, not both."
-            )
-            raise ValueError(msg)
+        if every_n_train_steps_fraction is not None:
+            if self._every_n_train_steps >= 1:
+                msg = (
+                    "Specify either every_n_train_steps or "
+                    "every_n_train_steps_fraction, not both."
+                )
+                raise ValueError(msg)
+            if self._every_n_epochs >= 1:
+                msg = (
+                    "Specify either every_n_epochs or "
+                    "every_n_train_steps_fraction, not both."
+                )
+                raise ValueError(msg)
+            if self._train_time_interval is not None:
+                msg = (
+                    "Specify either train_time_interval or "
+                    "every_n_train_steps_fraction, not both."
+                )
+                raise ValueError(msg)
 
         self.start_after_fraction = start_after_fraction
         self.every_n_train_steps_fraction = every_n_train_steps_fraction
