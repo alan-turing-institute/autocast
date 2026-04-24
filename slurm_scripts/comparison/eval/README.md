@@ -18,6 +18,12 @@ comparison numbers do not silently drift if the global eval default changes.
 | `submit_eval_fm_ambient.sh` | `outputs/2026-04-18/diff_*` ambient (4 datasets) | default (auto → ambient) | 4 |
 | `submit_eval_crps_latent.sh` | `outputs/2026-04-20/crps_*` cached-latent (CNS so far) | default (`auto -> encode_once`) | 8 |
 | `submit_eval_fm_latent.sh` | `outputs/2026-04-20/diff_*` cached-latent (4 datasets) | default (`auto -> encode_once`) | 4 |
+| `submit_eval_fm_latent_0p25.sh` | same 2026-04-20 FM cached-latent runs at 25% progress | explicit `auto -> encode_once` | 4 |
+| `submit_eval_fm_latent_0p50.sh` | same 2026-04-20 FM cached-latent runs at 50% progress | explicit `auto -> encode_once` | 4 |
+| `submit_eval_fm_latent_0p75.sh` | same 2026-04-20 FM cached-latent runs at 75% progress | explicit `auto -> encode_once` | 4 |
+| `submit_eval_fm_ambient_0p25.sh` | same 2026-04-20 FM cached-latent runs at 25% progress | explicit `ambient` | 4 |
+| `submit_eval_fm_ambient_0p50.sh` | same 2026-04-20 FM cached-latent runs at 50% progress | explicit `ambient` | 4 |
+| `submit_eval_fm_ambient_0p75.sh` | same 2026-04-20 FM cached-latent runs at 75% progress | explicit `ambient` | 4 |
 
 ## Batch-size rationale
 
@@ -52,3 +58,12 @@ checkpoint. There are no branch prerequisites for the cached-latent scripts.
 Dry-run everything first, review the printed sbatch commands, then re-run
 without `RUN_DRY_STATES` edits to submit. Outputs land under each run's
 `eval/` subdirectory (`evaluation_metrics.csv`, rollout videos, etc.).
+
+The FM progress-checkpoint submitters prefer `snapshot-0p25-*.ckpt`,
+`snapshot-0p50-*.ckpt`, or `snapshot-0p75-*.ckpt` when present, and fall
+back to the legacy first, second, or third sorted `quarter-*.ckpt` checkpoint
+saved by the 2026-04-20 runs. The default cached-latent progress evals write
+to `eval_0p25/`, `eval_0p50/`, and `eval_0p75/`. The explicit ambient
+variants write to `eval_0p25_ambient/`, `eval_0p50_ambient/`, and
+`eval_0p75_ambient/` so they do not overwrite the `auto -> encode_once`
+outputs.
