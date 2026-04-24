@@ -5,8 +5,7 @@ set -euo pipefail
 #
 # This starts from the CRPS ViT ambient architecture but disables the ensemble
 # path (n_members=1) and trains with torch.nn.L1Loss. Run this first, then
-# derive the 24h cosine schedule from timing.ckpt:
-#   uv run autocast time-epochs --from-checkpoint <path>/timing.ckpt -b 24
+# derive the 24h cosine schedule via the generated retrieve.sh script.
 
 declare -A EXPERIMENTS=(
     ["conditioned_navier_stokes"]="ablations/vit_mae_pretrain/conditioned_navier_stokes/vit_azula_large_mae_no_ensemble"

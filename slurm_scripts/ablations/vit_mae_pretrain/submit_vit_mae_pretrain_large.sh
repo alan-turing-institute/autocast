@@ -4,8 +4,7 @@ set -euo pipefail
 # 24h deterministic ViT MAE pretraining on CNS.
 #
 # Populate COSINE_EPOCHS_BY_DATASET after running
-# submit_vit_mae_pretrain_timing.sh and extracting timing.ckpt with:
-#   uv run autocast time-epochs --from-checkpoint <path>/timing.ckpt -b 24
+# submit_vit_mae_pretrain_timing.sh and collecting its generated retrieve.sh.
 # If left blank, the script falls back to the newest matching timing.ckpt
 # under outputs/*/timing_vit_mae_pretrain/.
 
@@ -14,7 +13,7 @@ declare -A EXPERIMENTS=(
 )
 
 declare -A COSINE_EPOCHS_BY_DATASET=(
-    # ["conditioned_navier_stokes"]=...
+    ["conditioned_navier_stokes"]=2533  # 33.4 s/ep, 2026-04-24 timing run
 )
 
 BUDGET_MAX_TIME="00:23:59:00"
