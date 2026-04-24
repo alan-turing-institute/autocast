@@ -95,6 +95,20 @@ class ProgressModelCheckpoint(ModelCheckpoint):
         super().on_fit_start(trainer, pl_module)
         self._maybe_resolve_fractional_train_steps(trainer)
 
+    @property
+    def state_key(self) -> str:
+        return self._generate_state_key(
+            monitor=self.monitor,
+            mode=self.mode,
+            every_n_train_steps=self._every_n_train_steps,
+            every_n_epochs=self._every_n_epochs,
+            train_time_interval=self._train_time_interval,
+            start_after_fraction=self.start_after_fraction,
+            stop_after_fraction=self.stop_after_fraction,
+            every_n_train_steps_fraction=self.every_n_train_steps_fraction,
+            monitor_optional=self.monitor_optional,
+        )
+
     def _maybe_resolve_fractional_train_steps(self, trainer: L.Trainer) -> None:
         if self.every_n_train_steps_fraction is None or self._resolved_fractional_steps:
             return
