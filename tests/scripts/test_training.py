@@ -11,6 +11,7 @@ import pytest
 import torch
 from conftest import get_optimizer_config
 from hydra import compose, initialize_config_dir
+from hydra.utils import instantiate
 from lightning.pytorch.callbacks import ModelCheckpoint, Timer
 from matplotlib import pyplot as plt
 from omegaconf import DictConfig, OmegaConf, open_dict
@@ -326,6 +327,38 @@ def test_progress_model_checkpoint_disables_default_epoch_trigger():
     assert callback._every_n_epochs == 0
 
 
+def test_progress_model_checkpoint_state_key_includes_progress_window():
+    callbacks = [
+        ProgressModelCheckpoint(
+            monitor="val_multicoverage",
+            monitor_optional=True,
+            stop_after_fraction=0.25,
+            mode="min",
+            save_top_k=1,
+            filename="best-pre-{epoch:04d}",
+        ),
+        ProgressModelCheckpoint(
+            monitor="val_multicoverage",
+            monitor_optional=True,
+            start_after_fraction=0.25,
+            mode="min",
+            save_top_k=1,
+            filename="best-from0p25-{epoch:04d}",
+        ),
+        ProgressModelCheckpoint(
+            monitor="val_multicoverage",
+            monitor_optional=True,
+            start_after_fraction=0.5,
+            mode="min",
+            save_top_k=1,
+            filename="best-from0p50-{epoch:04d}",
+        ),
+    ]
+
+    state_keys = [callback.state_key for callback in callbacks]
+    assert len(state_keys) == len(set(state_keys))
+
+
 @pytest.mark.parametrize(
     "trigger_kwargs",
     [
@@ -556,6 +589,19 @@ def test_default_trainer_config_tracks_coverage_winkler_and_plots(config_dir: st
         == "autocast.callbacks.metrics.ValidationMetricPlotCallback"
         for callback in callbacks
     )
+
+
+def test_default_trainer_config_instantiates_callbacks(config_dir: str):
+    trainer_cfg = OmegaConf.load(Path(config_dir) / "trainer" / "default.yaml")
+
+    trainer = instantiate(trainer_cfg)
+    progress_state_keys = [
+        callback.state_key
+        for callback in trainer.callbacks
+        if isinstance(callback, ProgressModelCheckpoint)
+    ]
+
+    assert len(progress_state_keys) == len(set(progress_state_keys))
 
 
 def test_epd_config_forward_smoke(config_dir: str, toy_batch: Batch, dummy_datamodule):
