@@ -7,6 +7,7 @@ import torch
 from einops import rearrange
 from matplotlib import animation
 from matplotlib.colors import Normalize, TwoSlopeNorm
+from matplotlib.figure import Figure
 from matplotlib.gridspec import GridSpec
 from torchmetrics import Metric
 
@@ -299,6 +300,152 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
 
     plt.close()
     return anim
+
+
+def plot_spatiotemporal_snapshots(  # noqa: PLR0912, PLR0915
+    true: TensorBTSC,
+    pred: TensorBTSC | None = None,
+    pred_uq: TensorBTSC | None = None,
+    *,
+    timesteps: Iterable[int],
+    channel: int = 0,
+    batch_idx: int = 0,
+    vmin: float | None = None,
+    vmax: float | None = None,
+    cmap: str = "viridis",
+    save_path: str | None = None,
+    title: str = "Ground Truth vs Prediction",
+    pred_uq_label: str = "Ensemble Std Dev",
+    channel_names: list[str] | None = None,
+    preserve_aspect: bool = False,
+) -> Figure:
+    """Create a still panel at selected timesteps for one spatial channel."""
+    true_batch = true[batch_idx]
+    pred_batch = pred[batch_idx] if pred is not None else None
+    pred_uq_batch = pred_uq[batch_idx] if pred_uq is not None else None
+
+    T, *spatial, C = true_batch.shape
+    if len(spatial) != 2:
+        msg = (
+            "plot_spatiotemporal_snapshots expects exactly two spatial "
+            f"dimensions, got shape {tuple(true_batch.shape)}."
+        )
+        raise ValueError(msg)
+    if not 0 <= channel < C:
+        msg = f"channel must be in [0, {C - 1}], got {channel}."
+        raise ValueError(msg)
+
+    selected_timesteps = [int(t) for t in timesteps]
+    invalid_timesteps = [t for t in selected_timesteps if t < 0 or t >= T]
+    if invalid_timesteps:
+        msg = (
+            f"timesteps must be in [0, {T - 1}], got invalid values "
+            f"{invalid_timesteps}."
+        )
+        raise ValueError(msg)
+    if not selected_timesteps:
+        msg = "At least one timestep is required for snapshot plotting."
+        raise ValueError(msg)
+
+    true_np = true_batch.detach().cpu().numpy()
+    pred_np = pred_batch.detach().cpu().numpy() if pred_batch is not None else None
+    pred_uq_np = (
+        pred_uq_batch.detach().cpu().numpy() if pred_uq_batch is not None else None
+    )
+    true_channel = true_np[:, :, :, channel]
+    pred_channel = pred_np[:, :, :, channel] if pred_np is not None else None
+    pred_uq_channel = pred_uq_np[:, :, :, channel] if pred_uq_np is not None else None
+
+    primary_arrays = [true_channel]
+    if pred_channel is not None:
+        primary_arrays.append(pred_channel)
+
+    min_val = (
+        vmin if vmin is not None else min(float(arr.min()) for arr in primary_arrays)
+    )
+    max_val = (
+        vmax if vmax is not None else max(float(arr.max()) for arr in primary_arrays)
+    )
+    primary_norm = Normalize(vmin=min_val, vmax=max_val)
+
+    diff_channel = None
+    diff_norm = None
+    if pred_channel is not None:
+        diff_channel = true_channel - pred_channel
+        diff_max = float(np.abs(diff_channel).max())
+        diff_span = diff_max if diff_max > 0 else 1e-9
+        diff_norm = TwoSlopeNorm(vmin=-diff_span, vcenter=0, vmax=diff_span)
+
+    rows_to_plot: list[tuple[np.ndarray, str, str, Normalize | TwoSlopeNorm | None]] = [
+        (true_channel, "Ground Truth", cmap, primary_norm),
+    ]
+    if pred_channel is not None:
+        rows_to_plot.append((pred_channel, "Prediction", cmap, primary_norm))
+        assert diff_channel is not None
+        rows_to_plot.append(
+            (diff_channel, "Difference (True - Pred)", "RdBu", diff_norm)
+        )
+    if pred_uq_channel is not None:
+        uq_norm = Normalize(
+            vmin=float(pred_uq_channel.min()),
+            vmax=float(pred_uq_channel.max()),
+        )
+        rows_to_plot.append((pred_uq_channel, pred_uq_label, "inferno", uq_norm))
+
+    nrows = len(rows_to_plot)
+    ncols = len(selected_timesteps)
+    width, height = spatial
+    base = 3.0
+    if preserve_aspect and height > 0 and width > 0:
+        ratio = width / height
+        panel_width = base if ratio >= 1 else min(base / ratio, 3 * base)
+        panel_height = min(base * ratio, 3 * base) if ratio >= 1 else base
+    else:
+        panel_width = base
+        panel_height = base
+
+    fig, axes = plt.subplots(
+        nrows,
+        ncols,
+        figsize=(ncols * panel_width, nrows * panel_height),
+        squeeze=False,
+        constrained_layout=True,
+    )
+    image_rows = []
+    for row_idx, (data, row_label, row_cmap, norm) in enumerate(rows_to_plot):
+        row_images = []
+        for col_idx, timestep in enumerate(selected_timesteps):
+            ax = axes[row_idx][col_idx]
+            im = ax.imshow(data[timestep], cmap=row_cmap, aspect="auto", norm=norm)
+            row_images.append(im)
+            ax.set_xticks([])
+            ax.set_yticks([])
+            if row_idx == 0:
+                ax.set_title(f"t={timestep}")
+            if col_idx == 0:
+                ax.set_ylabel(row_label)
+        image_rows.append(row_images)
+
+    for row_idx, row_images in enumerate(image_rows):
+        fig.colorbar(
+            row_images[-1],
+            ax=axes[row_idx, :].tolist(),
+            fraction=0.025,
+            pad=0.02,
+        )
+
+    channel_label = (
+        f"channel {channel}"
+        if channel_names is None
+        else f"{channel_names[channel]} (channel {channel})"
+    )
+    fig.suptitle(f"{title} - {channel_label}", fontsize=14, fontweight="bold")
+
+    if save_path:
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+
+    return fig
 
 
 def compute_metrics_from_dataloader(
