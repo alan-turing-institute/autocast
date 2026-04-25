@@ -33,12 +33,14 @@ model:
   encoder:
     with_constants: true
   processor:
-    # CNS ambient shapes give ~80.9M processor params, matching the
-    # 80.8M CRPS ViT baseline as closely as the U-Net channel ladder allows.
-    hid_channels: [47, 94, 188, 376]
+    # Both backbones at their Azula-canonical FFN ratios (UNet ffn_factor=1,
+    # ViT ffn_factor=4). hid_channels follows the canonical 1:2:4:8 doubling;
+    # base=62 lands at ~81.3M processor params, matching the 81.0M CRPS ViT
+    # baseline within 0.3%. periodic=false matches CNS Neumann BCs.
+    hid_channels: [62, 124, 248, 496]
     hid_blocks: [3, 3, 3, 3]
     norm: layer
-    ffn_factor: 2
+    ffn_factor: 1
     dropout: 0.0
     periodic: false
     gradient_checkpointing: false
