@@ -113,6 +113,53 @@ WINDOW_ROWS_OVERALL_ONLY = ["all"]
 WINDOW_ROWS_ROLLOUT_ONLY = ["0-4", "6-12", "13-30", "31-99"]
 MODEL_SCALE_PARAM_COL = "params_processor_total"
 DEFAULT_EVAL_SUBDIR = "eval"
+DEFAULT_PLOT_METRICS: tuple[str, ...] = ("vrmse", "coverage", "crps", "ssr")
+DISPERSION_METRICS: set[str] = {"ssr"}
+
+
+def _is_dispersion_metric(metric: str) -> bool:
+    """Return True for ratio-style dispersion diagnostics."""
+    return metric in DISPERSION_METRICS
+
+
+def _overall_or_window_bar_ylim(
+    metric: str,
+    error_ylim: tuple[float | None, float | None] | None,
+) -> tuple[float | None, float | None] | None:
+    """Apply error y-limits only to error-like scalar metrics."""
+    if "coverage" in metric or _is_dispersion_metric(metric):
+        return None
+    return error_ylim
+
+
+def _overall_or_window_bar_yscale(metric: str) -> str:
+    """Choose a y-scale for scalar overall/window bar charts."""
+    if _is_dispersion_metric(metric):
+        return "linear"
+    return "auto"
+
+
+def _overall_or_window_bar_ref_value(metric: str) -> float | None:
+    """Return the expected reference value for scalar bar charts."""
+    if metric == "ssr":
+        return 1.0
+    return None
+
+
+def _derive_lead_time_metrics(metrics: list[str]) -> tuple[list[str], list[str]]:
+    """Split scalar plot metrics into error and coverage lead-time rows."""
+    err_metric = [
+        m for m in metrics if "coverage" not in m and not _is_dispersion_metric(m)
+    ]
+    cov_metric = [m for m in metrics if "coverage" in m]
+    dispersion_metric = [m for m in metrics if _is_dispersion_metric(m)]
+
+    # Add common rollout variants if we only provided generic 'coverage'.
+    if "coverage" in metrics and "coverage_0.9" not in cov_metric:
+        cov_metric.extend(["coverage_0.9", "coverage_0.5"])
+        err_metric.append("rmse")
+
+    return err_metric, [*cov_metric, *dispersion_metric]
 
 
 # ---------------------------------------------------------------------------
@@ -1311,12 +1358,14 @@ def grouped_bar(  # noqa: PLR0912, PLR0915
     save: bool = True,
     ylim: tuple[float | None, float | None] | None = None,
     show_legend: bool = True,
+    ref_value: float | None = None,
 ) -> FigureBase | None:
     """Render a grouped bar chart of a metric across datasets and model families.
 
     When ``ax`` is provided, draw into it and skip figure creation/saving.
     ``ylim`` (low, high) overrides automatic y-axis limits; either bound may be
     ``None`` to keep the auto-computed value on that side.
+    ``ref_value`` draws a dotted horizontal reference line at that value.
     """
     if metric not in df_in.columns:
         return None
@@ -1413,6 +1462,14 @@ def grouped_bar(  # noqa: PLR0912, PLR0915
     ax.set_ylabel(ylabel)
     ax.set_title(title)
     ax.grid(axis="y", alpha=0.25)
+    if ref_value is not None:
+        ax.axhline(
+            ref_value,
+            color="black",
+            linestyle=":",
+            linewidth=1.0,
+            alpha=0.65,
+        )
 
     if ylim is not None:
         lo, hi = ylim
@@ -2170,7 +2227,7 @@ def plot_panel_figure(  # noqa: PLR0915
     styles: dict,
     dataset_order: list[str] | None = None,
     hue_order: list[str] | None = None,
-    overall_metrics: tuple[str, str] = ("vrmse", "coverage"),
+    overall_metrics: tuple[str, ...] = DEFAULT_PLOT_METRICS,
     error_metrics: list[str] | None = None,
     coverage_metrics: list[str] | None = None,
     training_metrics: list[str] | None = None,
@@ -2193,6 +2250,7 @@ def plot_panel_figure(  # noqa: PLR0915
         │ (far left) │                 │ panel         │ panel         │
         └────────────┴─────────────────┴───────────────┴───────────────┘
     """
+    overall_metrics = tuple(overall_metrics or DEFAULT_PLOT_METRICS)
     error_metrics = error_metrics or ["vrmse"]
     coverage_metrics = coverage_metrics or ["coverage_0.9", "coverage_0.5"]
     if training_metrics is None:
@@ -2263,11 +2321,11 @@ def plot_panel_figure(  # noqa: PLR0915
             force_refresh=training_refresh,
         )
 
-    # --- Left-middle: two stacked overall-metric bar charts -------------
+    # --- Left-middle: stacked overall-metric bar charts -----------------
     left = fig.add_subfigure(left_spec)
-    left_axes = left.subplots(2, 1)
+    n_overall = max(1, len(overall_metrics))
+    left_axes = np.asarray(left.subplots(n_overall, 1, squeeze=False)).reshape(-1)
     for i, m in enumerate(overall_metrics):
-        is_cov = "coverage" in m
         grouped_bar(
             df_in,
             f"overall_{m}",
@@ -2275,12 +2333,14 @@ def plot_panel_figure(  # noqa: PLR0915
             m.upper(),
             out_dir,
             styles,
+            y_scale=_overall_or_window_bar_yscale(m),
             dataset_order=dataset_order,
             hue_order=hue_order,
             ax=left_axes[i],
             save=False,
-            ylim=None if is_cov else error_ylim,
+            ylim=_overall_or_window_bar_ylim(m, error_ylim),
             show_legend=False,
+            ref_value=_overall_or_window_bar_ref_value(m),
         )
     left.suptitle("")
 
@@ -2442,8 +2502,11 @@ def main():  # noqa: PLR0912, PLR0915
     parser.add_argument(
         "--metrics",
         nargs="+",
-        default=["vrmse", "coverage"],
-        help="Metrics to plot for rollouts and overall (default: vrmse coverage)",
+        default=list(DEFAULT_PLOT_METRICS),
+        help=(
+            "Metrics to plot for rollouts and overall "
+            f"(default: {' '.join(DEFAULT_PLOT_METRICS)})"
+        ),
     )
     parser.add_argument(
         "--list",
@@ -2582,7 +2645,7 @@ def main():  # noqa: PLR0912, PLR0915
         action="store_false",
         default=True,
         help=(
-            "Suppress the default behavior of appending 'ssr' as a row to "
+            "Suppress the default inclusion of 'ssr' as a row in "
             "the lead-time coverage panel (ssr renders with a linear axis "
             "and a reference line at 1.0)."
         ),
@@ -3106,7 +3169,6 @@ def main():  # noqa: PLR0912, PLR0915
 
     # Render overall bars
     for m in args.metrics:
-        is_cov = "coverage" in m
         grouped_bar(
             df,
             f"overall_{m}",
@@ -3114,14 +3176,15 @@ def main():  # noqa: PLR0912, PLR0915
             m.upper(),
             out_dir,
             styles,
+            y_scale=_overall_or_window_bar_yscale(m),
             dataset_order=ds_order,
             hue_order=hu_order,
-            ylim=None if is_cov else error_ylim,
+            ylim=_overall_or_window_bar_ylim(m, error_ylim),
+            ref_value=_overall_or_window_bar_ref_value(m),
         )
 
     # Render window bars
     for m in args.metrics:
-        is_cov = "coverage" in m
         for w in ROLL_WINDOWS:
             grouped_bar(
                 df,
@@ -3130,9 +3193,11 @@ def main():  # noqa: PLR0912, PLR0915
                 m.upper(),
                 out_dir,
                 styles,
+                y_scale=_overall_or_window_bar_yscale(m),
                 dataset_order=ds_order,
                 hue_order=hu_order,
-                ylim=None if is_cov else error_ylim,
+                ylim=_overall_or_window_bar_ylim(m, error_ylim),
+                ref_value=_overall_or_window_bar_ref_value(m),
             )
 
     # Render Calibration panel
@@ -3205,12 +3270,7 @@ def main():  # noqa: PLR0912, PLR0915
         )
 
     # Render lead-time panels
-    err_metric = [m for m in args.metrics if "coverage" not in m]
-    cov_metric = [m for m in args.metrics if "coverage" in m]
-    # Add common rollout variants if we only provided generic 'coverage'
-    if "coverage" in args.metrics and "coverage_0.9" not in cov_metric:
-        cov_metric.extend(["coverage_0.9", "coverage_0.5"])
-        err_metric.append("rmse")
+    err_metric, cov_metric = _derive_lead_time_metrics(list(args.metrics))
 
     # Explicit overrides
     if args.lead_time_error_metrics:
@@ -3219,10 +3279,11 @@ def main():  # noqa: PLR0912, PLR0915
         cov_metric = list(args.lead_time_coverage_metrics)
 
     # SSR is a dimensionless dispersion diagnostic (ideal=1.0) that belongs
-    # alongside the coverage rows in the lead-time coverage panel. Append
-    # once unless the user has already included it via --lead-time-coverage-metrics.
+    # alongside the coverage rows in the lead-time coverage panel by default.
     if args.include_ssr_in_coverage and "ssr" not in cov_metric:
         cov_metric = [*cov_metric, "ssr"]
+    elif not args.include_ssr_in_coverage:
+        cov_metric = [m for m in cov_metric if m != "ssr"]
 
     if err_metric:
         plot_lead_time_panel(
@@ -3330,9 +3391,7 @@ def main():  # noqa: PLR0912, PLR0915
     panel_kwargs = {
         "dataset_order": ds_order,
         "hue_order": hu_order,
-        "overall_metrics": (
-            tuple(args.metrics[:2]) if len(args.metrics) >= 2 else ("vrmse", "coverage")
-        ),
+        "overall_metrics": tuple(args.metrics or DEFAULT_PLOT_METRICS),
         "error_metrics": err_metric or ["vrmse"],
         "coverage_metrics": cov_metric
         or ["coverage_0.9", "coverage_0.5", "coverage_0.1"],
