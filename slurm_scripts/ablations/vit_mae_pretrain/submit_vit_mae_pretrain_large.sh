@@ -96,7 +96,7 @@ for datamodule in "${!EXPERIMENTS[@]}"; do
             local_experiment="${experiment}" \
             logging.wandb.enabled=true \
             logging.wandb.name="${wandb_name}" \
-            logging.wandb.log_model=all \
+            logging.wandb.log_model=false \
             optimizer.cosine_epochs="${cosine_epochs}" \
             hydra.launcher.timeout_min="${TIMEOUT_MIN}" \
             trainer.max_time="${BUDGET_MAX_TIME}" \
