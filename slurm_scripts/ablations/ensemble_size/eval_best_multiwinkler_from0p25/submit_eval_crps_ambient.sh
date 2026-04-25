@@ -18,6 +18,7 @@ EVAL_BATCH_SIZE=4
 EVAL_N_MEMBERS=10
 TIMEOUT_MIN=240
 EVAL_SUBDIR="eval_best_multiwinkler_from0p25"
+ROLLOUT_SNAPSHOT_TIMESTEPS="[0,4,12,30,99]"
 RUN_DRY_STATES=("true" "false")
 EVAL_METRICS="[mse,mae,nmse,nmae,rmse,nrmse,vmse,vrmse,linf,psrmse,psrmse_low,psrmse_mid,psrmse_high,psrmse_tail,pscc,pscc_low,pscc_mid,pscc_high,pscc_tail,crps,fcrps,afcrps,energy,ssr,winkler]"
 
@@ -72,6 +73,7 @@ for run_dir in "${RUN_DIRS[@]}"; do
         echo "  eval.checkpoint: ${eval_ckpt_abs}"
         echo "  eval.mode: ambient"
         echo "  output_subdir: ${EVAL_SUBDIR}"
+        echo "  eval.rollout_snapshot_timesteps: ${ROLLOUT_SNAPSHOT_TIMESTEPS}"
         echo "  eval.batch_size: ${EVAL_BATCH_SIZE}"
         echo "  eval.n_members: ${EVAL_N_MEMBERS}"
         echo "  eval.metrics: ${EVAL_METRICS}"
@@ -83,6 +85,10 @@ for run_dir in "${RUN_DIRS[@]}"; do
             eval.mode=ambient \
             eval.csv_path="${eval_output_dir}/evaluation_metrics.csv" \
             eval.video_dir="${eval_output_dir}/videos" \
+            eval.save_rollout_snapshots=true \
+            eval.rollout_snapshot_dir="${eval_output_dir}/videos/snapshots" \
+            eval.rollout_snapshot_timesteps="${ROLLOUT_SNAPSHOT_TIMESTEPS}" \
+            eval.rollout_snapshot_format=png \
             eval.metrics="${EVAL_METRICS}" \
             eval.batch_size="${EVAL_BATCH_SIZE}" \
             eval.n_members="${EVAL_N_MEMBERS}" \
