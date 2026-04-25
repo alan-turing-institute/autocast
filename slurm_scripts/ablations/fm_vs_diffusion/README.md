@@ -3,7 +3,7 @@
 Compare flow matching (baseline) against DDPM/EDM-style diffusion on the
 same ambient ViT backbone.
 
-**Status:** stub — no scripts yet.
+**Status:** CNS diffusion config added; timing is part of the planned CNS batch.
 
 ## Baseline
 
@@ -12,15 +12,19 @@ same ambient ViT backbone.
 
 ## Knob
 
-Swap `model.processor` from `flow_matching_vit` to the diffusion
-equivalent. Existing configs to crib from:
+Swap `model.processor` from `flow_matching_vit` to `diffusion_vit` while
+keeping the FM ambient backbone and conditioning path:
 
-- `local_hydra/local_experiment/epd_diffusion_dm_256_dc_large.yaml`
-  (DDPM-style with DC large AE — note: ambient baseline in the ablation
-  table uses identity encoder, not DC AE, so we need a matching
-  `epd_diffusion_dm_256_identity.yaml`-style config.)
-- `local_hydra/local_experiment/epd_diffusion_fm_256_identity.yaml` —
-  FM ambient equivalent.
+- identity encoder/decoder
+- ViT backbone `hid_channels=704`, `hid_blocks=12`, `attention_heads=8`,
+  `patch_size=4`
+- `datamodule.batch_size=256`
+- AdamW-half LR `1e-4`
+- 50 Euler sampler steps, matching FM's `flow_ode_steps=50` as the closest
+  equal-NFE comparison
+
+Config:
+`local_hydra/local_experiment/ablations/fm_vs_diffusion/conditioned_navier_stokes/diffusion_vit_large.yaml`.
 
 ## Datasets
 
@@ -29,9 +33,5 @@ gives 1).
 
 ## Outstanding decisions
 
-- DDPM vs EDM vs something else. Table just says "diffusion" — need to
-  pick a specific processor.
-- Sampler / step count for the diffusion side (FM uses 50 ODE steps;
-  diffusion would typically use more).
-- Whether the comparison should hold n_function_evaluations fixed at
-  inference for fairness.
+- Whether a second diffusion eval should also report a higher-step sampler for
+  quality, separate from the equal-50-step fairness run.

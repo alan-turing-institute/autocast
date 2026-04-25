@@ -3,7 +3,8 @@
 Sweep `model.processor.n_noise_channels` (the AdaLN-modulation noise
 dimensionality) for the CRPS ambient baseline.
 
-**Status:** stub — no scripts yet.
+**Status:** CNS `n_noise_channels=256` config added; timing is part of the
+planned CNS batch.
 
 ## Baseline
 
@@ -12,8 +13,13 @@ dimensionality) for the CRPS ambient baseline.
 
 ## Knob
 
-- `model.processor.n_noise_channels` — e.g. `{256, 1024, 4096}` or a
-  finer grid. Values TBD.
+- `model.processor.n_noise_channels=256`, compared against the 1024-channel
+  2026-04-24 CRPS baseline. To keep the processor near 80M params, this run
+  holds depth/heads fixed and uses `hidden_dim=704` as the single balancing
+  knob (~79.9M params for CNS ambient shapes).
+
+Config:
+`local_hydra/local_experiment/ablations/noise_channels/conditioned_navier_stokes/crps_vit_noise256.yaml`.
 
 ## Datasets
 
@@ -21,9 +27,7 @@ CNS only for now.
 
 ## Outstanding decisions
 
-- Exact sweep values. Existing config
-  `epd_crps_vit_azula_n_noise_1024.yaml` and
-  `epd_crps_vit_azula_noise4096_mod1024.yaml` hint at historical values.
+- Whether to add a wider value such as 4096 after the 256-vs-1024 contrast.
 - Whether to include the Concat-noise variant (see table notes
   "Concat vs with...") — currently red/skipped in the provisional table,
   so leave out.
