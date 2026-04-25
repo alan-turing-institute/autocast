@@ -11,8 +11,16 @@ source "$(dirname "${BASH_SOURCE[0]}")/../comparison/cached_latents/validate_cac
 # timing.ckpt under outputs/*/timing_planned_cns/<run_id>/timing.ckpt.
 
 declare -A COSINE_EPOCHS_BY_RUN=(
-    # Fill with timing-derived values if you want to pin exact schedules:
-    # ["unet_m8_crps_cns"]=123
+    # Pinned from outputs/2026-04-25/timing_planned_cns/*/timing.ckpt at
+    # 24h budget, 2% margin (uv run autocast time-epochs -b 24 -m 0.02).
+    ["unet_m8_crps_cns"]=611
+    ["diffusion_cns"]=2248
+    ["fair_crps_m8_cns"]=439
+    ["plain_crps_m8_cns"]=439
+    ["vit_noise256_m8_cns"]=427
+    ["vit_m4_cns"]=803
+    ["latent_crps_m8_cns"]=327
+    ["vit_global_cond_m8_cns"]=432
 )
 
 BUDGET_MAX_TIME="00:23:59:00"
