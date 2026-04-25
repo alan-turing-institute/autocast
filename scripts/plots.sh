@@ -103,20 +103,44 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--coverage-panel-overall-rollout-windows \
 	--output-dir outputs/2026-04-20_collated/$PLOTS_PATH/main_comparison_m16_complete_no_fm_amb
 
+
+# # Main comparison (with m=16 runs at 75% checkpoint): CRPS ambient variants, CRPS processor-on-latents, FM ambient (EPD)
+# autocast-plots --results-dir outputs/2026-04-20_collated \
+# 	--run crps_ad64_vit_azula_large_ac1bb06_ef6368d "CRPS (ambient, m=16)" 0 eval=eval_0p75 \
+# 	--run crps_cns64_vit_azula_large_0db40e1_dcd79e4 "CRPS (ambient, m=16)" 0 eval=eval_0p75 \
+# 	--run crps_gpe64_vit_azula_large_ac1bb06_638585e "CRPS (ambient, m=16)" 0 eval=eval_0p75 \
+# 	--run crps_gs64_vit_azula_large_ac1bb06_639963f "CRPS (ambient, m=16) " 0 eval=eval_0p75 \
+# 	--run diff_ad64_flow_matching_vit_0f89f06_725d44a "FM (ambient)" 1 \
+# 	--run diff_cns64_flow_matching_vit_0f89f06_483bb70 "FM (ambient)" 1 \
+# 	--run diff_gpe64_flow_matching_vit_0f89f06_3b3604d "FM (ambient)" 1 \
+# 	--run diff_gs64_flow_matching_vit_0f89f06_6e3a299 "FM (ambient)" 1 \
+# 	--run diff_ad64_flow_matching_vit_09490da_dae1382 "FM (latent)" 2 \
+# 	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 2 \
+# 	--run diff_gpe64_flow_matching_vit_09490da_47bf39a "FM (latent)" 2 \
+# 	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "FM (latent)" 2 \
+# 	--dataset-order AD CNS GS GPE\
+# 	--error-ylim 1e-5 1 \
+# 	--lead-time-error-metrics vrmse rmse \
+# 	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
+# 	--lead-time-coverage-delta \
+# 	--combined-lead-time \
+# 	--training-metrics val_loss train_loss \
+# 	--training-yscale log \
+# 	--panel-figure \
+# 	--panel-figure-no-training \
+# 	--coverage-panel-overall-rollout-windows \
+# 	--output-dir outputs/2026-04-20_collated/$PLOTS_PATH/main_comparison_m16_complete_0p75
+
 # Main comparison (with m=16 runs at 75% checkpoint): CRPS ambient variants, CRPS processor-on-latents, FM ambient (EPD)
 autocast-plots --results-dir outputs/2026-04-20_collated \
 	--run crps_ad64_vit_azula_large_ac1bb06_ef6368d "CRPS (ambient, m=16)" 0 eval=eval_0p75 \
 	--run crps_cns64_vit_azula_large_0db40e1_dcd79e4 "CRPS (ambient, m=16)" 0 eval=eval_0p75 \
 	--run crps_gpe64_vit_azula_large_ac1bb06_638585e "CRPS (ambient, m=16)" 0 eval=eval_0p75 \
 	--run crps_gs64_vit_azula_large_ac1bb06_639963f "CRPS (ambient, m=16) " 0 eval=eval_0p75 \
-	--run diff_ad64_flow_matching_vit_0f89f06_725d44a "FM (ambient)" 1 \
-	--run diff_cns64_flow_matching_vit_0f89f06_483bb70 "FM (ambient)" 1 \
-	--run diff_gpe64_flow_matching_vit_0f89f06_3b3604d "FM (ambient)" 1 \
-	--run diff_gs64_flow_matching_vit_0f89f06_6e3a299 "FM (ambient)" 1 \
-	--run diff_ad64_flow_matching_vit_09490da_dae1382 "FM (latent)" 2 \
-	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 2 \
-	--run diff_gpe64_flow_matching_vit_09490da_47bf39a "FM (latent)" 2 \
-	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "FM (latent)" 2 \
+	--run diff_ad64_flow_matching_vit_09490da_dae1382 "FM (latent)" 2 eval=eval_0p75\
+	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 2 eval=eval_0p75\
+	--run diff_gpe64_flow_matching_vit_09490da_47bf39a "FM (latent)" 2 eval=eval_0p75\
+	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "FM (latent)" 2 eval=eval_0p75\
 	--dataset-order AD CNS GS GPE\
 	--error-ylim 1e-5 1 \
 	--lead-time-error-metrics vrmse rmse \
@@ -128,7 +152,34 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--panel-figure \
 	--panel-figure-no-training \
 	--coverage-panel-overall-rollout-windows \
-	--output-dir outputs/2026-04-20_collated/$PLOTS_PATH/main_comparison_m16_complete_0p75
+	--output-dir outputs/2026-04-20_collated/$PLOTS_PATH/main_comparison_m16_complete_0p75_fm_too
+
+# # Main comparison (with m=16 runs at 50% checkpoint): CRPS ambient variants, CRPS processor-on-latents, FM ambient (EPD)
+# autocast-plots --results-dir outputs/2026-04-20_collated \
+# 	--run crps_ad64_vit_azula_large_ac1bb06_ef6368d "CRPS (ambient, m=16)" 0 eval=eval_0p50 \
+# 	--run crps_cns64_vit_azula_large_0db40e1_dcd79e4 "CRPS (ambient, m=16)" 0 eval=eval_0p50 \
+# 	--run crps_gpe64_vit_azula_large_ac1bb06_638585e "CRPS (ambient, m=16)" 0 eval=eval_0p50 \
+# 	--run crps_gs64_vit_azula_large_ac1bb06_639963f "CRPS (ambient, m=16) " 0 eval=eval_0p50 \
+# 	--run diff_ad64_flow_matching_vit_0f89f06_725d44a "FM (ambient)" 1 \
+# 	--run diff_cns64_flow_matching_vit_0f89f06_483bb70 "FM (ambient)" 1 \
+# 	--run diff_gpe64_flow_matching_vit_0f89f06_3b3604d "FM (ambient)" 1 \
+# 	--run diff_gs64_flow_matching_vit_0f89f06_6e3a299 "FM (ambient)" 1 \
+# 	--run diff_ad64_flow_matching_vit_09490da_dae1382 "FM (latent)" 2 \
+# 	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 2 \
+# 	--run diff_gpe64_flow_matching_vit_09490da_47bf39a "FM (latent)" 2 \
+# 	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "FM (latent)" 2 \
+# 	--dataset-order AD CNS GS GPE\
+# 	--error-ylim 1e-5 1 \
+# 	--lead-time-error-metrics vrmse rmse \
+# 	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
+# 	--lead-time-coverage-delta \
+# 	--combined-lead-time \
+# 	--training-metrics val_loss train_loss \
+# 	--training-yscale log \
+# 	--panel-figure \
+# 	--panel-figure-no-training \
+# 	--coverage-panel-overall-rollout-windows \
+# 	--output-dir outputs/2026-04-20_collated/$PLOTS_PATH/main_comparison_m16_complete_0p50
 
 # Main comparison (with m=16 runs at 50% checkpoint): CRPS ambient variants, CRPS processor-on-latents, FM ambient (EPD)
 autocast-plots --results-dir outputs/2026-04-20_collated \
@@ -136,14 +187,10 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--run crps_cns64_vit_azula_large_0db40e1_dcd79e4 "CRPS (ambient, m=16)" 0 eval=eval_0p50 \
 	--run crps_gpe64_vit_azula_large_ac1bb06_638585e "CRPS (ambient, m=16)" 0 eval=eval_0p50 \
 	--run crps_gs64_vit_azula_large_ac1bb06_639963f "CRPS (ambient, m=16) " 0 eval=eval_0p50 \
-	--run diff_ad64_flow_matching_vit_0f89f06_725d44a "FM (ambient)" 1 \
-	--run diff_cns64_flow_matching_vit_0f89f06_483bb70 "FM (ambient)" 1 \
-	--run diff_gpe64_flow_matching_vit_0f89f06_3b3604d "FM (ambient)" 1 \
-	--run diff_gs64_flow_matching_vit_0f89f06_6e3a299 "FM (ambient)" 1 \
-	--run diff_ad64_flow_matching_vit_09490da_dae1382 "FM (latent)" 2 \
-	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 2 \
-	--run diff_gpe64_flow_matching_vit_09490da_47bf39a "FM (latent)" 2 \
-	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "FM (latent)" 2 \
+	--run diff_ad64_flow_matching_vit_09490da_dae1382 "FM (latent)" 2 eval=eval_0p50\
+	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 2 eval=eval_0p50\
+	--run diff_gpe64_flow_matching_vit_09490da_47bf39a "FM (latent)" 2 eval=eval_0p50\
+	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "FM (latent)" 2 eval=eval_0p50\
 	--dataset-order AD CNS GS GPE\
 	--error-ylim 1e-5 1 \
 	--lead-time-error-metrics vrmse rmse \
@@ -155,7 +202,8 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--panel-figure \
 	--panel-figure-no-training \
 	--coverage-panel-overall-rollout-windows \
-	--output-dir outputs/2026-04-20_collated/$PLOTS_PATH/main_comparison_m16_complete_0p50
+	--output-dir outputs/2026-04-20_collated/$PLOTS_PATH/main_comparison_m16_complete_0p50_fm_too
+
 
 # Ablation with CRPS ViT using global cond instead of permute_concat and channels last
 # --run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (ambient)" 0 \
