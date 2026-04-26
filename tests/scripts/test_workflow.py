@@ -560,6 +560,40 @@ def test_eval_command_auto_infers_hydra_config(monkeypatch, tmp_path):
     assert any(o.startswith("eval.checkpoint=") for o in overrides)
 
 
+def test_eval_command_adds_snapshot_defaults_for_stale_resolved_config(
+    monkeypatch, tmp_path
+):
+    (tmp_path / "resolved_config.yaml").write_text(
+        "eval:\n  checkpoint: encoder_processor_decoder.ckpt\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "encoder_processor_decoder.ckpt").touch()
+    captured: dict[str, object] = {}
+
+    def _fake_run_module(_module, overrides, dry_run=False, mode="local", **_kwargs):
+        captured["overrides"] = overrides
+        del dry_run, mode, _kwargs  # accept run_module's keyword args
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.commands.run_module", _fake_run_module
+    )
+
+    user_override = "eval.rollout_snapshot_dir=/tmp/snapshots"
+    eval_command(
+        mode="local",
+        dataset=None,
+        work_dir=str(tmp_path),
+        overrides=[user_override],
+        dry_run=True,
+    )
+
+    overrides = captured["overrides"]
+    assert isinstance(overrides, list)
+    default_override = "+eval.rollout_snapshot_dir=null"
+    assert default_override in overrides
+    assert overrides.index(default_override) < overrides.index(user_override)
+
+
 def test_eval_command_includes_defaults_without_resolved_config(monkeypatch, tmp_path):
     # No resolved_config.yaml in workdir
     (tmp_path / "encoder_processor_decoder.ckpt").touch()

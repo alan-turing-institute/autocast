@@ -129,13 +129,21 @@ def _struct_safe_overrides(
 
 def _resolved_eval_default_overrides() -> list[str]:
     """Return eval.* overrides from the live eval config for stale resolved configs."""
-    cfg_path = (
-        Path(get_default_config_path()) / "eval" / "encoder_processor_decoder.yaml"
-    )
-    if not cfg_path.exists():
+    eval_config_dir = Path(get_default_config_path()) / "eval"
+    default_cfg_path = eval_config_dir / "default.yaml"
+    epd_cfg_path = eval_config_dir / "encoder_processor_decoder.yaml"
+    if not epd_cfg_path.exists():
         return []
 
-    loaded = OmegaConf.to_container(OmegaConf.load(cfg_path), resolve=True)
+    if default_cfg_path.exists():
+        cfg = OmegaConf.merge(
+            OmegaConf.load(default_cfg_path),
+            OmegaConf.load(epd_cfg_path),
+        )
+    else:
+        cfg = OmegaConf.load(epd_cfg_path)
+
+    loaded = OmegaConf.to_container(cfg, resolve=True)
     if not isinstance(loaded, dict):
         return []
 
