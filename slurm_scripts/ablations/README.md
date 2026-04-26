@@ -20,6 +20,7 @@ small edit.
 | ensemble_size (m=16, fixed bs=32) | sweep | CNS | 1 | ready |
 | ensemble_size (m=16, fixed global eff. bs=1024) | sweep | GS / GPE / CNS / AD | 4 | timing ready |
 | planned_01 batch | mixed | CNS | 8 | timing scripted |
+| planned_02 batch | mixed | GS / GPE / AD | 4 | timing scripted |
 | noise_channels | sweep | CNS | 1 | config + planned |
 | crps_variants (AlphaFair / Fair / CRPS) | comparison | CNS | 2 new (+baseline) | config + planned |
 | fm_vs_diffusion | comparison | CNS | 1 | config + planned |
@@ -57,6 +58,19 @@ Use the 2026-04-24 CRPS ambient runs for current CRPS comparison numbers and
 the 2026-04-20 `diff_*` cached-latent runs as the FM/diff basis. The comparison
 eval scripts have those dates wired in.
 
+## Planned Batch 02
+
+The follow-up batch lives in `submit_planned_02_timing.sh` and
+`submit_planned_02_large.sh` so planned batches can keep extending without
+repurposing earlier scripts. It covers:
+
+| planned run | study folder | implementation |
+|---|---|---|
+| GS m=8 latent CRPS | `cached_latent_crps` | `processor/gray_scott/crps_vit_azula_large` with cached GS latents |
+| GPE m=8 latent CRPS | `cached_latent_crps` | `processor/gpe_laser_wake_only/crps_vit_azula_large` with cached GPE latents |
+| AD m=8 latent CRPS | `cached_latent_crps` | `processor/advection_diffusion/crps_vit_azula_large` with cached AD latents |
+| GS m=4 ViT | `ensemble_size` | canonical GS CRPS ViT plus `n_members=4`, `batch_size=64` |
+
 ## Design notes
 
 - **Flexible by construction.** Each ablation is a self-contained
@@ -81,7 +95,8 @@ eval scripts have those dates wired in.
 1. `submit_*_timing.sh` — 5-epoch timing runs, producing `timing.ckpt`.
 2. Extract per-combo `cosine_epochs` via
    `uv run autocast time-epochs --from-checkpoint <path>/timing.ckpt -b 24`
-   and paste into `submit_*_large.sh` (matches `comparison/` flow).
+   and paste into `submit_*_large.sh`, or use a large script that derives
+   them from matching timing checkpoints.
 3. `submit_*_large.sh` — 24h production runs, dry-run first.
 4. Eval from the script local to the study:
    `slurm_scripts/comparison/eval/` for the canonical comparison suite, and
