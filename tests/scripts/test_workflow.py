@@ -216,6 +216,43 @@ def test_load_preset_launcher_cfg_ignores_unrelated_interpolation(
     assert launcher_cfg.get("timeout_min") == 120
 
 
+def test_load_preset_launcher_cfg_walks_local_experiment_parent_chain(
+    tmp_path: Path, monkeypatch
+):
+    # Child references a parent local_experiment that declares /distributed:
+    # — the loader must walk the chain so SLURM allocates the right resources.
+    local_root = tmp_path / "local_hydra" / "local_experiment"
+    parent_cfg = local_root / "parent.yaml"
+    parent_cfg.parent.mkdir(parents=True, exist_ok=True)
+    parent_cfg.write_text(
+        "\n".join(
+            [
+                "defaults:",
+                "  - /distributed: ddp_4gpu_slurm",
+                "  - _self_",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    child_cfg = local_root / "child.yaml"
+    child_cfg.write_text(
+        "\n".join(
+            [
+                "defaults:",
+                "  - /local_experiment/parent",
+                "  - _self_",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(tmp_path)
+    launcher_cfg = _load_preset_launcher_cfg(["local_experiment=child"])
+
+    assert launcher_cfg.get("gpus_per_node") == 4
+    assert launcher_cfg.get("tasks_per_node") == 4
+
+
 # ---------------------------------------------------------------------------
 # naming
 # ---------------------------------------------------------------------------
