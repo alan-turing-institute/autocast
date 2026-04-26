@@ -1,0 +1,18 @@
+# @package _global_
+defaults:
+  - /local_experiment/ae/conditioned_navier_stokes/ae_dc_large
+  - _self_
+
+experiment_name: ablation_ae_compression_dc_large_f8_conditioned_navier_stokes
+
+# 4-level encoder/decoder: 64 -> 32 -> 16 -> 8 spatial.
+# Widths scaled down (64,128,256,512) so total params stay ~constant vs the
+# 3-level baseline (128,256,512). Latent channels held at 8 to isolate
+# spatial compression as the only delta vs the main-study AE.
+model:
+  encoder:
+    hid_channels: [64, 128, 256, 512]
+    hid_blocks: [3, 3, 3, 3]
+  decoder:
+    hid_channels: [512, 256, 128, 64]
+    hid_blocks: [3, 3, 3, 3]
