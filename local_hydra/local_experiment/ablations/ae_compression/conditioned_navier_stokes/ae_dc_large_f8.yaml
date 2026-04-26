@@ -1,5 +1,6 @@
 # @package _global_
 defaults:
+  - /distributed: ddp_4gpu_slurm
   - /local_experiment/ae/conditioned_navier_stokes/ae_dc_large
   - _self_
 
