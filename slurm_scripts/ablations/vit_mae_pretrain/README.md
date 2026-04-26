@@ -22,8 +22,8 @@ but trains without the ensemble path:
 | `local_hydra/local_experiment/ablations/vit_mae_pretrain/conditioned_navier_stokes/vit_azula_large_mae_no_ensemble.yaml` | CNS deterministic MAE preset |
 | `submit_vit_mae_pretrain_timing.sh` | 5-epoch MAE timing run -> `timing.ckpt` |
 | `submit_vit_mae_pretrain_large.sh` | 24h MAE production run, keeping and W&B-logging all progress checkpoints |
-| `submit_vit_mae_to_crps_timing.sh` | 5-epoch timing for MAE-initialized CRPS fine-tuning with `n_members=16` |
-| `submit_vit_mae_to_crps_large.sh` | short MAE-initialized CRPS fine-tune, defaulting to a 4h budget |
+| `submit_vit_mae_to_crps_timing.sh` | 5-epoch timing for MAE-initialized CRPS fine-tuning with `n_members=8` |
+| `submit_vit_mae_to_crps_large.sh` | short MAE-initialized CRPS fine-tune, defaulting to a 6h budget |
 
 ## Workflow
 
@@ -60,21 +60,34 @@ checkpoint artifact uploads stay disabled with `logging.wandb.log_model=false`
 so a transient W&B artifact/auth failure cannot kill the Slurm job.
 
 For the follow-up shortened CRPS fine-tune, use the `vit_mae_to_crps` scripts
-and point `MAE_CHECKPOINT` at one of the MAE checkpoints:
+with no checkpoint argument to auto-detect the best local production MAE
+`best-val-*.ckpt`. You can also point `MAE_CHECKPOINT` at a MAE run directory;
+the scripts resolve that directory to the best-validation checkpoint, which is
+preferred over the final or exported end checkpoint for fine-tuning. Passing an
+explicit checkpoint file still overrides auto-detection.
 
 ```bash
-MAE_CHECKPOINT=/path/to/mae/encoder_processor_decoder.ckpt \
-  bash slurm_scripts/ablations/vit_mae_pretrain/submit_vit_mae_to_crps_timing.sh
+bash slurm_scripts/ablations/vit_mae_pretrain/submit_vit_mae_to_crps_timing.sh
 
-MAE_CHECKPOINT=/path/to/mae/encoder_processor_decoder.ckpt \
-  bash slurm_scripts/ablations/vit_mae_pretrain/submit_vit_mae_to_crps_large.sh
+bash slurm_scripts/ablations/vit_mae_pretrain/submit_vit_mae_to_crps_large.sh
 ```
 
-The CRPS fine-tune uses `n_members=16` with `datamodule.batch_size=16`, keeping
-the effective global batch at `16 x 16 x 4 GPUs = 1024`. It also uses
+The CRPS fine-tune uses `n_members=8` with `datamodule.batch_size=32`, matching
+the baseline effective global batch at `32 x 8 x 4 GPUs = 1024`. It also uses
 `resume_weights_only=true` rather than full-state resume, so the deterministic
 MAE weights initialize the CRPS ensemble model while the optimizer, scheduler,
 and time budget start fresh.
 
-The default CRPS fine-tune budget is 4h. Override it for both timing and large
-runs with, for example, `CRPS_BUDGET_HOURS=6`.
+The default CRPS fine-tune budget is 6h. Override it for both timing and large
+runs with, for example, `CRPS_BUDGET_HOURS=4`. The default fine-tune learning
+rate is `1e-4`, below the scratch CRPS baseline's `2e-4` but high enough to
+adapt the stochastic conditioning path; override it with
+`CRPS_LEARNING_RATE=5e-5` for a more conservative run.
+
+This follows the probabilistic-retrofitting recipe from Diaconu et al.
+(`arXiv:2603.01949`): initialize from deterministic weights, switch to an
+ensemble CRPS objective, and shrink the data batch by the ensemble expansion so
+the effective batch stays comparable. Their paper uses modest training ensemble
+sizes, reduced learning rates for CRPS retrofitting, and reports diminishing
+returns from increasing the training ensemble size, so the baseline `m=8`
+setting is the intended fine-tune point here.

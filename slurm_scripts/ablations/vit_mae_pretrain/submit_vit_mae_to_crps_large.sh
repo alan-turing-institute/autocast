@@ -4,20 +4,73 @@ set -euo pipefail
 # Short MAE-initialized CRPS fine-tuning run on CNS.
 #
 # Usage:
-#   MAE_CHECKPOINT=/path/to/mae/encoder_processor_decoder.ckpt \
+#   bash slurm_scripts/ablations/vit_mae_pretrain/submit_vit_mae_to_crps_large.sh
+#   # or explicitly:
+#   MAE_CHECKPOINT=/path/to/mae/run_dir \
 #     bash slurm_scripts/ablations/vit_mae_pretrain/submit_vit_mae_to_crps_large.sh
 #
 # Run submit_vit_mae_to_crps_timing.sh first. If COSINE_EPOCHS_BY_DATASET is
 # left blank, this script derives max_epochs from the newest matching timing.ckpt.
 
-MAE_CHECKPOINT="${MAE_CHECKPOINT:-${1:-}}"
-if [[ -z "${MAE_CHECKPOINT}" ]]; then
-    echo "FATAL: set MAE_CHECKPOINT or pass the MAE checkpoint path as argv[1]" >&2
+MAE_SOURCE="${MAE_CHECKPOINT:-${MAE_RUN_DIR:-${1:-}}}"
+
+select_best_val_checkpoint() {
+    awk '
+        {
+            base = $0
+            sub(/^.*\//, "", base)
+            sub(/\.ckpt$/, "", base)
+            n = split(base, parts, "-")
+            val_loss = parts[n] + 0
+            if (!seen || val_loss < best_val_loss) {
+                seen = 1
+                best_val_loss = val_loss
+                best_path = $0
+            }
+        }
+        END {
+            if (seen) {
+                print best_path
+            }
+        }
+    '
+}
+
+resolve_mae_checkpoint() {
+    local source="$1"
+
+    if [[ -f "${source}" ]]; then
+        printf '%s\n' "${source}"
+        return 0
+    fi
+
+    if [[ ! -d "${source}" ]]; then
+        return 1
+    fi
+
+    find "${source}" -type f -name 'best-val-*.ckpt' | select_best_val_checkpoint
+}
+
+find_default_mae_checkpoint() {
+    if [[ ! -d outputs ]]; then
+        return 0
+    fi
+
+    find outputs/ \
+        -path '*/vit_mae_pretrain/*/autocast/*/checkpoints/best-val-*.ckpt' \
+        | select_best_val_checkpoint
+}
+
+if [[ -z "${MAE_SOURCE}" ]]; then
+    MAE_SOURCE="auto:outputs/*/vit_mae_pretrain/*/autocast/*/checkpoints/best-val-*.ckpt"
+    MAE_CHECKPOINT="$(find_default_mae_checkpoint)"
+elif ! MAE_CHECKPOINT="$(resolve_mae_checkpoint "${MAE_SOURCE}")"; then
+    echo "FATAL: MAE source does not exist: ${MAE_SOURCE}" >&2
     exit 1
 fi
 
-if [[ ! -f "${MAE_CHECKPOINT}" ]]; then
-    echo "FATAL: MAE_CHECKPOINT does not exist: ${MAE_CHECKPOINT}" >&2
+if [[ -z "${MAE_CHECKPOINT}" ]]; then
+    echo "FATAL: no best-val-*.ckpt found for MAE source: ${MAE_SOURCE}" >&2
     exit 1
 fi
 
@@ -29,7 +82,8 @@ declare -A COSINE_EPOCHS_BY_DATASET=(
     # ["conditioned_navier_stokes"]=...
 )
 
-CRPS_BUDGET_HOURS="${CRPS_BUDGET_HOURS:-4}"
+CRPS_BUDGET_HOURS="${CRPS_BUDGET_HOURS:-6}"
+CRPS_LEARNING_RATE="${CRPS_LEARNING_RATE:-1e-4}"
 if ! [[ "${CRPS_BUDGET_HOURS}" =~ ^[1-9][0-9]*$ ]]; then
     echo "FATAL: CRPS_BUDGET_HOURS must be a positive integer number of hours" >&2
     exit 1
@@ -39,8 +93,8 @@ BUDGET_MAX_TIME="$(printf "00:%02d:59:00" "$((CRPS_BUDGET_HOURS - 1))")"
 TIMEOUT_MIN=$((CRPS_BUDGET_HOURS * 60 - 1))
 RUN_DRY_STATES=("true" "false")
 RUN_GROUP="$(date +%Y-%m-%d)/vit_mae_to_crps"
-N_MEMBERS=16
-BS_PER_GPU=16
+N_MEMBERS=8
+BS_PER_GPU=32
 
 find_timing_checkpoint() {
     local run_id="$1"
@@ -49,7 +103,7 @@ find_timing_checkpoint() {
         return 0
     fi
 
-    find outputs -path "*/timing_vit_mae_to_crps/${run_id}/timing.ckpt" | sort | tail -n 1
+    find outputs/ -path "*/timing_vit_mae_to_crps/${run_id}/timing.ckpt" | sort | tail -n 1
 }
 
 derive_cosine_epochs_from_timing() {
@@ -111,9 +165,11 @@ for datamodule in "${!EXPERIMENTS[@]}"; do
         echo "  mode: ${run_label}"
         echo "  datamodule: ${datamodule}"
         echo "  local_experiment: ${experiment}"
+        echo "  mae source: ${MAE_SOURCE}"
         echo "  mae checkpoint: ${MAE_CHECKPOINT}"
         echo "  n_members: ${N_MEMBERS}"
         echo "  bs_per_gpu: ${BS_PER_GPU}"
+        echo "  learning_rate: ${CRPS_LEARNING_RATE}"
         echo "  budget: ${CRPS_BUDGET_HOURS}h"
         echo "  cosine_epochs: ${cosine_epochs}"
         echo "  wandb.name: ${wandb_name}"
@@ -124,6 +180,7 @@ for datamodule in "${!EXPERIMENTS[@]}"; do
             local_experiment="${experiment}" \
             model.n_members="${N_MEMBERS}" \
             datamodule.batch_size="${BS_PER_GPU}" \
+            optimizer.learning_rate="${CRPS_LEARNING_RATE}" \
             +resume_from_checkpoint="${MAE_CHECKPOINT}" \
             +resume_weights_only=true \
             logging.wandb.enabled=true \
