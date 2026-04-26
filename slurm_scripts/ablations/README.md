@@ -19,7 +19,7 @@ small edit.
 |---|---|---|---|---|
 | ensemble_size (m=16, fixed bs=32) | sweep | CNS | 1 | ready |
 | ensemble_size (m=16, fixed global eff. bs=1024) | sweep | GS / GPE / CNS / AD | 4 | timing ready |
-| planned_cns batch | mixed | CNS | 8 | timing scripted |
+| planned_01 batch | mixed | CNS | 8 | timing scripted |
 | noise_channels | sweep | CNS | 1 | config + planned |
 | crps_variants (AlphaFair / Fair / CRPS) | comparison | CNS | 2 new (+baseline) | config + planned |
 | fm_vs_diffusion | comparison | CNS | 1 | config + planned |
@@ -36,10 +36,10 @@ small edit.
 ablation — no new training required, but they should be eval'd through
 the same pipeline.
 
-## Planned CNS batch
+## Planned Batch 01
 
 The current planned CNS batch is centralized in
-`submit_planned_cns_timing.sh` and `submit_planned_cns_large.sh` so the
+`submit_planned_01_timing.sh` and `submit_planned_01_large.sh` so the
 cross-ablation run list can be submitted consistently after timing. It covers:
 
 | planned run | study folder | implementation |

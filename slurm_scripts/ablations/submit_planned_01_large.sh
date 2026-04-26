@@ -4,11 +4,13 @@ set -euo pipefail
 
 source "$(dirname "${BASH_SOURCE[0]}")/../comparison/cached_latents/validate_cached_latents_against_ae.sh"
 
-# 24h production jobs for the planned CNS ablation batch.
+# 24h production jobs for planned ablation batch 01.
 #
-# Run submit_planned_cns_timing.sh first. This script resolves each
+# Run submit_planned_01_timing.sh first. This script resolves each
 # trainer.max_epochs from either COSINE_EPOCHS_BY_RUN or the latest matching
-# timing.ckpt under outputs/*/timing_planned_cns/<run_id>/timing.ckpt.
+# timing.ckpt under outputs/*/timing_planned_01/<run_id>/timing.ckpt. It also
+# checks the legacy timing_planned_cns path for already-collected batch-01
+# timing outputs.
 
 declare -A COSINE_EPOCHS_BY_RUN=(
     # Pinned from outputs/2026-04-25/timing_planned_cns/*/timing.ckpt at
@@ -26,7 +28,7 @@ declare -A COSINE_EPOCHS_BY_RUN=(
 BUDGET_MAX_TIME="00:23:59:00"
 TIMEOUT_MIN=1439
 SOURCE_DATASET="conditioned_navier_stokes"
-RUN_GROUP="$(date +%Y-%m-%d)/planned_cns"
+RUN_GROUP="$(date +%Y-%m-%d)/planned_01"
 RUN_DRY_STATES=("true" "false")
 AE_RUN_DIR="$HOME/autocast/outputs/2026-04-17/ae_cns64_3a7999b_b9c29f8"
 CACHE_DIR="${AE_RUN_DIR}/cached_latents"
@@ -88,7 +90,10 @@ find_timing_checkpoint() {
         return 0
     fi
 
-    find outputs -path "*/timing_planned_cns/${run_id}/timing.ckpt" | sort | tail -n 1
+    find outputs \
+        \( -path "*/timing_planned_01/${run_id}/timing.ckpt" \
+        -o -path "*/timing_planned_cns/${run_id}/timing.ckpt" \) \
+        | sort | tail -n 1
 }
 
 derive_cosine_epochs_from_timing() {
@@ -145,7 +150,7 @@ for run_spec in "${RUNS[@]}"; do
             run_label="slurm --dry-run"
         fi
 
-        echo "Submitting planned CNS production run"
+        echo "Submitting planned batch 01 production run"
         echo "  mode: ${run_label}"
         echo "  run_id: ${run_id}"
         echo "  kind: ${kind}"

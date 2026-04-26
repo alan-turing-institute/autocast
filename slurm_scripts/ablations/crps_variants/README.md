@@ -34,5 +34,5 @@ CNS only for now. The planned batch adds the two non-baseline loss variants:
 ## Implementation sketch
 
 The cross-cutting submitter is
-`slurm_scripts/ablations/submit_planned_cns_{timing,large}.sh`; it keeps the
+`slurm_scripts/ablations/submit_planned_01_{timing,large}.sh`; it keeps the
 loss-variant runs alongside the other planned CNS ablations.

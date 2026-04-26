@@ -4,7 +4,7 @@ set -euo pipefail
 
 source "$(dirname "${BASH_SOURCE[0]}")/../comparison/cached_latents/validate_cached_latents_against_ae.sh"
 
-# Timing jobs for the planned CNS ablation batch.
+# Timing jobs for planned ablation batch 01.
 #
 # This is intentionally CNS-only and cross-cuts the study-specific ablation
 # folders. Architecture-changing variants use local_experiment configs under
@@ -13,7 +13,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/../comparison/cached_latents/validate_cac
 
 BUDGET_HOURS=24
 NUM_TIMING_EPOCHS=5
-RUN_GROUP="$(date +%Y-%m-%d)/timing_planned_cns"
+RUN_GROUP="$(date +%Y-%m-%d)/timing_planned_01"
 SOURCE_DATASET="conditioned_navier_stokes"
 AE_RUN_DIR="$HOME/autocast/outputs/2026-04-17/ae_cns64_3a7999b_b9c29f8"
 CACHE_DIR="${AE_RUN_DIR}/cached_latents"
@@ -76,7 +76,7 @@ for run_spec in "${RUNS[@]}"; do
 
     mapfile -t overrides < <(run_overrides "${run_id}")
 
-    echo "Submitting planned CNS timing run"
+    echo "Submitting planned batch 01 timing run"
     echo "  run_id: ${run_id}"
     echo "  kind: ${kind}"
     echo "  source_dataset: ${SOURCE_DATASET}"
@@ -98,7 +98,7 @@ for run_spec in "${RUNS[@]}"; do
     echo ""
 done
 
-echo "All planned CNS timing jobs submitted."
+echo "All planned batch 01 timing jobs submitted."
 echo ""
 echo "Once SLURM jobs complete, collect all results with:"
 echo "  for f in outputs/${RUN_GROUP}/*/retrieve.sh; do bash \"\$f\"; done"

@@ -107,7 +107,7 @@ and isolate the encoder effect. The config already lives at
 ## Planned CNS ablation batch
 
 The cross-cutting CNS batch is scripted in
-`slurm_scripts/ablations/submit_planned_cns_{timing,large}.sh`. It keeps
+`slurm_scripts/ablations/submit_planned_01_{timing,large}.sh`. It keeps
 the main CRPS comparison anchored to the 2026-04-24 CRPS runs and the FM/diff
 reference anchored to the 2026-04-20 diff basis.
 
