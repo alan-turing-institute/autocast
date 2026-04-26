@@ -9,8 +9,10 @@ set -euo pipefail
 # timing.ckpt under outputs/*/timing_planned_02_m4_followup/<run_id>/timing.ckpt.
 
 declare -A COSINE_EPOCHS_BY_RUN=(
-    # Optional pinned values from:
-    #   uv run autocast time-epochs --from-checkpoint <path>/timing.ckpt -b 24 -m 0.02
+    # Pinned from outputs/2026-04-26/timing_planned_02_m4_followup/*/retrieve.sh
+    # at 24h budget, 2% margin.
+    ["vit_m4_gpe"]=827
+    ["vit_m4_ad"]=846
 )
 
 BUDGET_MAX_TIME="00:23:59:00"
