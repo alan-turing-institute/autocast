@@ -36,7 +36,7 @@ but trains without the ensemble path:
 2. After the timing job finishes, collect the schedule:
 
    ```bash
-   uv run autocast time-epochs --from-checkpoint <path>/timing.ckpt -b 24
+   bash outputs/<date>/timing_vit_mae_pretrain/vit_mae_pretrain_conditioned_navier_stokes/retrieve.sh
    ```
 
 3. Paste the emitted `trainer.max_epochs` value into
@@ -55,9 +55,9 @@ job, following the other ablation submitters.
 ## Checkpoints and CRPS fine-tuning
 
 The 24h script saves local progress checkpoints every ~5% of optimizer-step
-progress with `save_top_k=-1`, keeps `last.ckpt`, and sets
-`logging.wandb.log_model=all` so W&B logs every checkpoint artifact emitted by
-the checkpoint callbacks.
+progress with `save_top_k=-1` and keeps `last.ckpt`. W&B logs metrics, but
+checkpoint artifact uploads stay disabled with `logging.wandb.log_model=false`
+so a transient W&B artifact/auth failure cannot kill the Slurm job.
 
 For the follow-up shortened CRPS fine-tune, use the `vit_mae_to_crps` scripts
 and point `MAE_CHECKPOINT` at one of the MAE checkpoints:

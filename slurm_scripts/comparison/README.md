@@ -38,6 +38,11 @@ All latent submit scripts now fail fast if
    `epd/submit_fm_ambient_*.sh`, and `cached_latents/submit_fm_*.sh`.
 5. `cached_latents/submit_crps_latent_*.sh` is kept as an ablation.
 
+For eval comparisons, use the most recent CRPS ambient basis under
+`outputs/2026-04-24/crps_*` and the 2026-04-20 FM/diff cached-latent basis
+under `outputs/2026-04-20/diff_*`. The eval submitters in
+`comparison/eval/` encode that split explicitly.
+
 ## Model-size matrix (~80M params, DiT-aligned)
 
 All 4 processor variants target ~80M trainable parameters (AE params excluded)
@@ -94,9 +99,28 @@ is hard-coded false in `vit_azula_large.yaml`, so the auto-detected value is
 ignored — conditioning flows only through `permute_concat`'s spatial
 concatenation.
 
-Planned ablation (not in this submission round): CRPS ambient with
-`identity` encoder + `include_global_cond: true` to match FM ambient's
-conditioning path exactly and isolate the encoder effect.
+Planned CNS ablation: CRPS ambient with `identity` encoder +
+`include_global_cond: true` to match FM ambient's conditioning path exactly
+and isolate the encoder effect. The config already lives at
+`epd/conditioned_navier_stokes/crps_vit_azula_large_identity_global_cond.yaml`.
+
+## Planned CNS ablation batch
+
+The cross-cutting CNS batch is scripted in
+`slurm_scripts/ablations/submit_planned_cns_{timing,large}.sh`. It keeps
+the main CRPS comparison anchored to the 2026-04-24 CRPS runs and the FM/diff
+reference anchored to the 2026-04-20 diff basis.
+
+| run | local experiment / basis | fairness note |
+|---|---|---|
+| U-Net m=8 CRPS CNS | `ablations/arch_unet_fno_vit/.../crps_unet_azula_80m` | Azula U-Net channel ladder `[47,94,188,376]` gives ~80.9M params |
+| Diffusion CNS | `ablations/fm_vs_diffusion/.../diffusion_vit_large` | same 704/12/8 ViT backbone, identity conditioning, batch 256, 50 sampler steps as FM |
+| CNS m=8 fair CRPS | `ablations/crps_variants/.../crps_vit_fair` | same ViT/backbone/batch as CRPS, only FairCRPS loss changes |
+| CNS m=8 CRPS | `ablations/crps_variants/.../crps_vit_plain` | same ViT/backbone/batch as CRPS, only plain CRPS loss changes |
+| CNS ViT noise channels=256 | `ablations/noise_channels/.../crps_vit_noise256` | `n_noise_channels` 1024 -> 256, `hidden_dim=704` for ~79.9M params |
+| CNS m=4 ViT | canonical `epd/.../crps_vit_azula_large` + CLI overrides | `n_members=4`, `batch_size=64` keeps 256 effective per GPU |
+| CNS m=8 latent CRPS | `processor/.../crps_vit_azula_large` / 2026-04-20 run | cached-latent CRPS basis, eval via `auto -> encode_once` |
+| CNS m=8 CRPS ViT global cond | `epd/.../crps_vit_azula_large_identity_global_cond` | matches FM's AdaLN/global-cond path |
 
 ## Cosine schedule (per-dataset, 24h budget)
 

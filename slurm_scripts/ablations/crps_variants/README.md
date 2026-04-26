@@ -2,7 +2,8 @@
 
 Compare `AlphaFairCRPS` (baseline) vs `FairCRPS` vs `CRPS`.
 
-**Status:** stub — no scripts yet.
+**Status:** FairCRPS and plain CRPS CNS configs added; AlphaFairCRPS is the
+2026-04-24 CRPS baseline.
 
 ## Baseline
 
@@ -20,16 +21,18 @@ target:
 | FairCRPS | `autocast.losses.ensemble.FairCRPSLoss` | `autocast.metrics.ensemble.FairCRPS` |
 | CRPS | `autocast.losses.ensemble.CRPSLoss` | `autocast.metrics.ensemble.CRPS` |
 
-Exact class paths to be verified against
-`src/autocast/losses/ensemble.py` and `metrics/ensemble.py` before
-scripting.
+Class paths were verified against `src/autocast/losses/ensemble.py` and
+`src/autocast/metrics/ensemble.py`.
 
 ## Datasets
 
-CNS only for now. Table spec'd 2 datasets × 3 losses = 6 runs — CNS
-gives us 3 runs for this pass.
+CNS only for now. The planned batch adds the two non-baseline loss variants:
+
+- `local_hydra/local_experiment/ablations/crps_variants/conditioned_navier_stokes/crps_vit_fair.yaml`
+- `local_hydra/local_experiment/ablations/crps_variants/conditioned_navier_stokes/crps_vit_plain.yaml`
 
 ## Implementation sketch
 
-Single-file sweep via CLI overrides in `submit_crps_variants_*.sh` with
-a `LOSSES` array of `(name, loss_target, metric_target)` triples.
+The cross-cutting submitter is
+`slurm_scripts/ablations/submit_planned_cns_{timing,large}.sh`; it keeps the
+loss-variant runs alongside the other planned CNS ablations.

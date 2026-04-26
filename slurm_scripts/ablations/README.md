@@ -19,14 +19,15 @@ small edit.
 |---|---|---|---|---|
 | ensemble_size (m=16, fixed bs=32) | sweep | CNS | 1 | ready |
 | ensemble_size (m=16, fixed global eff. bs=1024) | sweep | GS / GPE / CNS / AD | 4 | timing ready |
-| noise_channels | sweep | CNS | 1+ | stub |
-| crps_variants (AlphaFair / Fair / CRPS) | comparison | CNS | 3 | stub |
-| fm_vs_diffusion | comparison | CNS | 1 | stub |
-| arch_unet_fno_vit | comparison | CNS | 2 | stub |
+| planned_cns batch | mixed | CNS | 8 | timing scripted |
+| noise_channels | sweep | CNS | 1 | config + planned |
+| crps_variants (AlphaFair / Fair / CRPS) | comparison | CNS | 2 new (+baseline) | config + planned |
+| fm_vs_diffusion | comparison | CNS | 1 | config + planned |
+| arch_unet_fno_vit | comparison | CNS | 1 U-Net (+ViT baseline) | config + planned |
 | model_size | sweep | CNS | 2 active (+2 staged) | in progress |
 | vit_mae_pretrain | pretrain | CNS | 1 | staged |
-| cached_latent_crps | comparison | CNS | 1 (done, 2026-04-20) | stub |
-| cond_global_vs_permute | comparison | CNS | 1 (done for CRPS-ViT, 2026-04-18) | stub |
+| cached_latent_crps | comparison | CNS | 1 (basis: 2026-04-20) | eval ready |
+| cond_global_vs_permute | comparison | CNS | 1 planned rerun (+old 2026-04-18 point) | config ready |
 | eval_only/ode_steps | eval-only | FM runs | 0 | stub |
 | eval_only/ema | eval-only | EMA ckpts | 0 | stub |
 
@@ -34,6 +35,27 @@ small edit.
 `slurm_scripts/comparison/` that double as the CNS data point for this
 ablation — no new training required, but they should be eval'd through
 the same pipeline.
+
+## Planned CNS batch
+
+The current planned CNS batch is centralized in
+`submit_planned_cns_timing.sh` and `submit_planned_cns_large.sh` so the
+cross-ablation run list can be submitted consistently after timing. It covers:
+
+| planned run | study folder | implementation |
+|---|---|---|
+| U-Net m=8 CRPS CNS | `arch_unet_fno_vit` | `crps_unet_azula_80m`, ~80.9M params |
+| Diffusion CNS | `fm_vs_diffusion` | diffusion processor with the FM 704/12/8 ViT backbone |
+| CNS m=8 fair CRPS | `crps_variants` | FairCRPS loss on the 80M CRPS ViT |
+| CNS m=8 CRPS | `crps_variants` | plain CRPS loss on the 80M CRPS ViT |
+| CNS ViT noise channels=256 | `noise_channels` | CRPS ViT with `n_noise_channels=256`, `hidden_dim=704` (~79.9M params) |
+| CNS m=4 ViT | `ensemble_size` | canonical CRPS ViT plus `n_members=4`, `batch_size=64` |
+| CNS m=8 latent CRPS | `cached_latent_crps` | 2026-04-20 cached-latent CRPS basis |
+| CNS m=8 CRPS ViT global cond | `cond_global_vs_permute` | identity encoder + `include_global_cond=true` |
+
+Use the 2026-04-24 CRPS ambient runs for current CRPS comparison numbers and
+the 2026-04-20 `diff_*` cached-latent runs as the FM/diff basis. The comparison
+eval scripts have those dates wired in.
 
 ## Design notes
 

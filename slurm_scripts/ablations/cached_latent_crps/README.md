@@ -3,7 +3,7 @@
 CRPS loss trained in cached-latent space (processor-only training on
 pre-encoded latents, decoded only at eval time).
 
-**Status:** CNS data point exists —
+**Status:** CNS data point exists as the current latent CRPS basis —
 `outputs/2026-04-20/crps_cns64_vit_azula_large_09490da_8b7573d`.
 No new training script needed for this pass; comparison eval is handled by
 `slurm_scripts/comparison/eval/submit_eval_crps_latent.sh` via the default

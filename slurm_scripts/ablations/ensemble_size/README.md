@@ -1,7 +1,12 @@
 # Ensemble size ablation
 
 First-pass defaults focus on `n_members=16` under two batch-size
-regimes. For the current production submission pass,
+regimes. The planned CNS batch also includes a compute-matched
+`n_members=4` ViT point via the root-level planned submitter:
+`model.n_members=4` and `datamodule.batch_size=64`, preserving the baseline
+effective per-GPU batch of 256.
+
+For the current production submission pass,
 `submit_ensemble_large.sh` is pared down to just three `eff_bs1024` runs
 on `gray_scott`, `gpe_laser_only_wake`, and `advection_diffusion`; the
 CNS production entries and `fixed_bs32` combo are left commented for
@@ -32,6 +37,7 @@ Keep `bs_crps × n_members × 4 GPUs = 1024`. With `n_members=16`,
 
 | n_members | bs_per_gpu | effective per-GPU | effective global |
 |---:|---:|---:|---:|
+| 4 | 64 | 256 | 1024 |
 | 16 | 16 | 256 | 1024 |
 
 ## Dataset coverage

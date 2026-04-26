@@ -1,22 +1,24 @@
 #!/bin/bash
 
 set -euo pipefail
-# Evaluate the 2026-04-20 FM/diff cached-latent processor basis with explicit
-# eval.mode=ambient across all 4 datasets. Eval reuses resolved_config.yaml so
-# flow_ode_steps (=50), hid_channels, and backbone match training, and the
-# autoencoder checkpoint enables ambient-space rollout through decode->encode.
+# Evaluate FM cached-latent processor runs from 2026-04-20 at the
+# 50%-progress checkpoint with explicit eval.mode=ambient.
 #
-# Batch size: diffusion rollout is ODE-integrated (flow_ode_steps=50) per
-# rollout step, so ambient 64x64 × n_members=10 × 50 ODE substeps is the
-# tightest of the three. 4/GPU fits; drop to 2 if OOM.
+# This charges the autoencoder decode->encode drift at every rollout step.
+# Outputs are kept under eval_0p50_ambient/ so they do not overwrite the
+# default auto->encode_once 50%-checkpoint evals.
 #
-# We also pin eval.n_members explicitly here so the comparison scripts do not
-# depend on the global eval default staying at 10.
+# Current 2026-04-20 FM runs saved legacy quarter-*.ckpt files, so this uses
+# the second sorted quarter checkpoint as the 50% fallback. Future runs with
+# snapshot-0p50-*.ckpt files are preferred automatically.
 
 EVAL_BATCH_SIZE=4
 EVAL_N_MEMBERS=10
 TIMEOUT_MIN=360
-EVAL_SUBDIR="eval_ambient"
+EVAL_SUBDIR="eval_0p50_ambient"
+PROGRESS_TOKEN="0p50"
+PROGRESS_LABEL="0.50"
+LEGACY_QUARTER_INDEX=1
 RUN_DRY_STATES=("true" "false")
 EVAL_METRICS="[mse,mae,nmse,nmae,rmse,nrmse,vmse,vrmse,linf,psrmse,psrmse_low,psrmse_mid,psrmse_high,psrmse_tail,pscc,pscc_low,pscc_mid,pscc_high,pscc_tail,crps,fcrps,afcrps,energy,ssr,winkler]"
 
@@ -33,6 +35,34 @@ declare -A AE_CKPT=(
     ["outputs/2026-04-20/diff_ad64_flow_matching_vit_09490da_dae1382"]="$HOME/autocast/outputs/2026-04-17/ae_ad64_3a7999b_1a1e300/autoencoder.ckpt"
 )
 
+resolve_progress_checkpoint() {
+    local run_dir="$1"
+    local progress_token="$2"
+    local legacy_quarter_index="$3"
+    local -a snapshot_ckpts=()
+    local -a quarter_ckpts=()
+
+    mapfile -t snapshot_ckpts < <(
+        find "${run_dir}" -type f -path "*/checkpoints/snapshot-${progress_token}-*.ckpt" | sort
+    )
+
+    if (( ${#snapshot_ckpts[@]} >= 1 )); then
+        printf '%s\n' "${snapshot_ckpts[$(( ${#snapshot_ckpts[@]} - 1 ))]}"
+        return 0
+    fi
+
+    mapfile -t quarter_ckpts < <(
+        find "${run_dir}" -type f -path '*/checkpoints/quarter-*.ckpt' | sort
+    )
+
+    if (( ${#quarter_ckpts[@]} > legacy_quarter_index )); then
+        printf '%s\n' "${quarter_ckpts[$legacy_quarter_index]}"
+        return 0
+    fi
+
+    return 1
+}
+
 for run_dir in "${RUN_DIRS[@]}"; do
     ae_ckpt="${AE_CKPT[$run_dir]:-}"
     if [[ -z "${ae_ckpt}" ]]; then
@@ -45,16 +75,17 @@ for run_dir in "${RUN_DIRS[@]}"; do
         echo "Skipping ${run_dir}: resolved_config.yaml missing" >&2
         continue
     fi
-    eval_ckpt="${run_dir_abs}/processor.ckpt"
-    if [[ ! -f "${eval_ckpt}" ]]; then
-        echo "Skipping ${run_dir}: processor.ckpt missing" >&2
-        continue
-    fi
     if [[ ! -f "${ae_ckpt}" ]]; then
         echo "Skipping ${run_dir}: AE checkpoint missing at ${ae_ckpt}" >&2
         continue
     fi
     ae_ckpt_abs="$(realpath "${ae_ckpt}")"
+
+    if ! eval_ckpt="$(resolve_progress_checkpoint "${run_dir_abs}" "${PROGRESS_TOKEN}" "${LEGACY_QUARTER_INDEX}")"; then
+        echo "Skipping ${run_dir}: neither snapshot-${PROGRESS_TOKEN}-*.ckpt nor legacy quarter checkpoint index ${LEGACY_QUARTER_INDEX} found" >&2
+        continue
+    fi
+    eval_ckpt_abs="$(realpath "${eval_ckpt}")"
     eval_output_dir="${run_dir_abs}/${EVAL_SUBDIR}"
 
     for run_dry in "${RUN_DRY_STATES[@]}"; do
@@ -65,10 +96,10 @@ for run_dir in "${RUN_DIRS[@]}"; do
             run_label="slurm --dry-run"
         fi
 
-        echo "Submitting FM-ambient eval"
+        echo "Submitting FM ambient eval (${PROGRESS_LABEL} checkpoint)"
         echo "  mode: ${run_label}"
         echo "  run_dir: ${run_dir_abs}"
-        echo "  eval.checkpoint: ${eval_ckpt}"
+        echo "  eval.checkpoint: ${eval_ckpt_abs}"
         echo "  autoencoder_checkpoint: ${ae_ckpt_abs}"
         echo "  eval.mode: ambient"
         echo "  output_subdir: ${EVAL_SUBDIR}"
@@ -79,7 +110,7 @@ for run_dir in "${RUN_DIRS[@]}"; do
         uv run autocast eval --mode slurm "${dry_run_arg[@]}" \
             --workdir "${run_dir_abs}" \
             --output-subdir "${EVAL_SUBDIR}" \
-            eval.checkpoint="${eval_ckpt}" \
+            eval.checkpoint="${eval_ckpt_abs}" \
             eval.mode=ambient \
             +autoencoder_checkpoint="${ae_ckpt_abs}" \
             eval.csv_path="${eval_output_dir}/evaluation_metrics.csv" \

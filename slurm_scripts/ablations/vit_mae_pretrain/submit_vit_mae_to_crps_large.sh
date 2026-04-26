@@ -128,13 +128,13 @@ for datamodule in "${!EXPERIMENTS[@]}"; do
             +resume_weights_only=true \
             logging.wandb.enabled=true \
             logging.wandb.name="${wandb_name}" \
-            logging.wandb.log_model=all \
+            logging.wandb.log_model=false \
             optimizer.cosine_epochs="${cosine_epochs}" \
             hydra.launcher.timeout_min="${TIMEOUT_MIN}" \
             trainer.max_time="${BUDGET_MAX_TIME}" \
             +trainer.max_epochs="${cosine_epochs}" \
             trainer.callbacks.0.every_n_train_steps_fraction=0.05 \
-            trainer.callbacks.0.every_n_epochs=0 \
+            +trainer.callbacks.0.every_n_epochs=0 \
             trainer.callbacks.0.save_top_k=-1 \
             trainer.callbacks.0.filename=\"snapshot-{progress_token}-{epoch:04d}-{step:08d}\"
     done
