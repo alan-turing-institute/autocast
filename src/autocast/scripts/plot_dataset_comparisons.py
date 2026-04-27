@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 import argparse
+import math
 import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import cast
+from typing import SupportsIndex, cast
 
 import matplotlib as mpl
 import yaml
-from matplotlib.axes import Axes
+from matplotlib.axes import Axes as MplAxes
 from matplotlib.figure import FigureBase
 from matplotlib.lines import Line2D
 
@@ -199,7 +200,7 @@ def _resolve_font_size(
     return float(base_size) * float(font_scale)
 
 
-def _apply_tick_label_style(ax: Axes, tick_label_scale: float = 1.0) -> None:
+def _apply_tick_label_style(ax: MplAxes, tick_label_scale: float = 1.0) -> None:
     """Apply optional tick-label scaling to an axis."""
     if tick_label_scale == 1.0:
         return
@@ -210,13 +211,13 @@ def _apply_tick_label_style(ax: Axes, tick_label_scale: float = 1.0) -> None:
     )
 
 
-def _apply_axis_label_style(ax: Axes, axis_label_scale: float = 1.0) -> None:
+def _apply_axis_label_style(ax: MplAxes, axis_label_scale: float = 1.0) -> None:
     """Apply optional axis-label scaling to an axis."""
     if axis_label_scale == 1.0:
         return
     font_size = _resolve_font_size(DEFAULT_AXIS_LABEL_FONT_SIZE, axis_label_scale)
-    ax.xaxis.label.set_size(font_size)
-    ax.yaxis.label.set_size(font_size)
+    ax.xaxis.label.set_fontsize(font_size)
+    ax.yaxis.label.set_fontsize(font_size)
 
 
 def _set_shared_ylabel(
@@ -1489,10 +1490,13 @@ def build_single_step_results_table(
             hue_order,
         )
         for group in groups:
-            row_match = ds_rows[ds_rows["plot_group"].astype(str) == str(group)]
+            row_match = cast(
+                pd.DataFrame,
+                ds_rows[ds_rows["plot_group"].astype(str) == str(group)],
+            )
             if row_match.empty:
                 continue
-            raw = row_match.iloc[0]
+            raw = cast(pd.Series, row_match.iloc[0])
             style = styles.get(group, {"label": group})
             table_row: dict[str, object] = {
                 "Dataset": ds_label,
@@ -1507,7 +1511,7 @@ def build_single_step_results_table(
         "Model",
         *[label for _, label in SINGLE_STEP_RESULTS_TABLE_METRICS],
     ]
-    return pd.DataFrame(rows, columns=columns)
+    return pd.DataFrame(rows, columns=pd.Index(columns))
 
 
 def _latex_escape(value: object) -> str:
@@ -1528,17 +1532,25 @@ def _latex_escape(value: object) -> str:
     return "".join(replacements.get(ch, ch) for ch in text)
 
 
-def _format_latex_table_value(value: object) -> str:
+def _format_latex_table_value(value: object) -> str:  # noqa: PLR0911
     """Format table cells for the compact LaTeX output."""
     if isinstance(value, str):
         return _latex_escape(value)
-    if value is None or pd.isna(value):
+    if value is None:
         return ""
-    try:
+    if isinstance(value, (pd.Series, pd.DataFrame, np.ndarray)):
+        return ""
+    if isinstance(value, (int, float, np.integer, np.floating)):
         numeric = float(value)
-    except (TypeError, ValueError):
+    elif isinstance(value, (bytes, bytearray)):
+        try:
+            numeric = float(value.decode("utf-8", errors="ignore"))
+        except ValueError:
+            return _latex_escape(value)
+    else:
+        # Fallback: treat as non-numeric text.
         return _latex_escape(value)
-    if not np.isfinite(numeric):
+    if not np.isfinite(numeric) or math.isnan(numeric):
         return ""
     return f"{numeric:.1e}"
 
@@ -1553,22 +1565,25 @@ def _best_latex_cells_by_dataset(table: pd.DataFrame) -> set[tuple[int, str]]:
         for metric in [label for _, label in SINGLE_STEP_RESULTS_TABLE_METRICS]:
             if metric not in dataset_rows.columns:
                 continue
-            values = pd.to_numeric(dataset_rows[metric], errors="coerce")
-            values = cast(pd.Series, values.dropna())
-            if values.empty:
+            metric_col = cast(pd.Series, dataset_rows[metric])
+            values_ser = cast(pd.Series, pd.to_numeric(metric_col, errors="coerce"))
+            values_ser = cast(pd.Series, values_ser.dropna())
+            if values_ser.empty:
                 continue
             if metric in SINGLE_STEP_RESULTS_TARGET_METRICS:
                 target = SINGLE_STEP_RESULTS_TARGET_METRICS[metric]
-                scores = (values - target).abs()
-                best_score = scores.min()
-                winners = scores[scores == best_score].index
+                scores = (values_ser - target).abs()
+                best_score = float(scores.min())
+                mask = cast(pd.Series, scores == best_score)
+                winners = cast(pd.Index, values_ser.index[mask])
             elif metric in SINGLE_STEP_RESULTS_LOWER_IS_BETTER:
-                best_value = values.min()
-                winners = values[values == best_value].index
+                best_value = float(values_ser.min())
+                mask = cast(pd.Series, values_ser == best_value)
+                winners = cast(pd.Index, values_ser.index[mask])
             else:
                 continue
             for idx in winners:
-                best_cells.add((int(idx), metric))
+                best_cells.add((int(cast(SupportsIndex, idx)), metric))
     return best_cells
 
 
@@ -1585,10 +1600,11 @@ def render_single_step_results_latex(table: pd.DataFrame) -> str:
     best_cells = _best_latex_cells_by_dataset(table)
     body = []
     for idx, row in table.iterrows():
+        idx_i = int(cast(SupportsIndex, idx))
         cells = []
         for col in columns:
             cell = _format_latex_table_value(row[col])
-            if cell and (int(idx), col) in best_cells:
+            if cell and (idx_i, col) in best_cells:
                 cell = rf"\textbf{{{cell}}}"
             cells.append(cell)
         body.append(" & ".join(cells) + r" \\")
@@ -1644,7 +1660,7 @@ def grouped_bar(  # noqa: PLR0912, PLR0915
     y_scale: str = "auto",
     dataset_order: list[str] | None = None,
     hue_order: list[str] | None = None,
-    ax: Axes | None = None,
+    ax: MplAxes | None = None,
     save: bool = True,
     ylim: tuple[float | None, float | None] | None = None,
     show_legend: bool = True,
@@ -3646,6 +3662,10 @@ def main():  # noqa: PLR0912, PLR0915
     }
     coverage_plot_style_kwargs = {
         **plot_style_kwargs,
+        "height_scale": 1.0,
+    }
+    coverage_overall_plot_style_kwargs = {
+        **plot_style_kwargs,
         "height_scale": args.coverage_panel_height_scale,
     }
     write_single_step_results_table(
@@ -3722,7 +3742,7 @@ def main():  # noqa: PLR0912, PLR0915
             hue_order=hu_order,
             window_rows=WINDOW_ROWS_OVERALL_ONLY,
             name="coverage_calibration_panel_overall_only.png",
-            **coverage_plot_style_kwargs,
+            **coverage_overall_plot_style_kwargs,
         )
         plot_coverage_calibration_panel(
             df,
