@@ -18,11 +18,14 @@ set -euo pipefail
 #   diffusion_ambient EPD diffusion (identity encoder/decoder), eval.mode=ambient,
 #                     best-val ckpt resolver. Output: <run>/eval_ambient/.
 #
-# The two-step multi-Winkler resolver:
+# The multi-Winkler resolver tries, in order:
 #   1. <run>/autocast/<id>/checkpoints/best-multiwinkler.ckpt — a hand-picked
 #      symlink for runs where best-multiwinkler-pre0p25-*.ckpt beats the
 #      from-0.25 selection.
-#   2. otherwise, the latest best-multiwinkler-from0p25-*.ckpt as the default.
+#   2. best-multiwinkler-overall-*.ckpt — the no-window overall-best ckpt added
+#      by the trainer default callbacks. Only present for runs trained after
+#      that callback was added.
+#   3. otherwise, the latest best-multiwinkler-from0p25-*.ckpt as the default.
 
 EVAL_BATCH_SIZE_CRPS=8
 EVAL_BATCH_SIZE_DIFF=4
@@ -55,6 +58,15 @@ resolve_multiwinkler_checkpoint() {
 
     mapfile -t ckpts < <(
         find "${run_dir}" -path '*/checkpoints/best-multiwinkler.ckpt' | sort
+    )
+
+    if (( ${#ckpts[@]} >= 1 )); then
+        printf '%s\n' "${ckpts[$(( ${#ckpts[@]} - 1 ))]}"
+        return 0
+    fi
+
+    mapfile -t ckpts < <(
+        find "${run_dir}" -type f -path '*/checkpoints/best-multiwinkler-overall-*.ckpt' | sort
     )
 
     if (( ${#ckpts[@]} >= 1 )); then
