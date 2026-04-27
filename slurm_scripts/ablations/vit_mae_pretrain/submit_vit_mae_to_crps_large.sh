@@ -74,6 +74,8 @@ if [[ -z "${MAE_CHECKPOINT}" ]]; then
     exit 1
 fi
 
+MAE_CHECKPOINT="$(realpath "${MAE_CHECKPOINT}")"
+
 declare -A EXPERIMENTS=(
     ["conditioned_navier_stokes"]="epd/conditioned_navier_stokes/crps_vit_azula_large"
 )
