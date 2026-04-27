@@ -101,10 +101,39 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_ambient_fm_latent_crps_m8"
 
 autocast-plots --results-dir "$RESULTS_DIR" \
+	--run crps_ad64_vit_azula_large_0f89f06_4667606 "CRPS (best val loss)" "$HUE_ABLATION_ALT_2" eval=eval \
+	--run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (best val loss)" "$HUE_ABLATION_ALT_2" eval=eval \
+	--run crps_gpe64_vit_azula_large_0f89f06_d337bd8 "CRPS (best val loss)" "$HUE_ABLATION_ALT_2" eval=eval \
+	--run crps_gs64_vit_azula_large_0f89f06_779325a "CRPS (best val loss)" "$HUE_ABLATION_ALT_2" eval=eval \
+	--run crps_ad64_vit_azula_large_bed4611_da01a04 "CRPS (multiwinkler)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+	--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS (multiwinkler)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+	--run crps_gpe64_vit_azula_large_bed4611_e0a6df5 "CRPS (multiwinkler)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+	--run crps_gs64_vit_azula_large_bed4611_828a161 "CRPS (multiwinkler)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+	--dataset-order AD CNS GS GPE \
+	--error-ylim 1e-5 1 \
+	--lead-time-error-metrics vrmse rmse \
+	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
+	--lead-time-coverage-delta \
+	--combined-lead-time \
+	--training-metrics val_loss train_loss \
+	--training-yscale log \
+	--panel-figure \
+	--panel-figure-no-training \
+	--coverage-panel-overall-rollout-windows \
+	--uniform-run-hue-color \
+	--tick-label-scale 1.5 \
+	--axis-label-scale 1.3 \
+	--legend-font-scale 1.5 \
+	--short-axis-labels \
+	--shared-axis-labels \
+	--coverage-panel-height-scale 1.5 \
+	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_crps_multiwinkler_eval_m8"
+
+autocast-plots --results-dir "$RESULTS_DIR" \
 	--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM" "$HUE_FM_LATENT" \
 	--run diff_cns64_flow_matching_vit_0f89f06_483bb70 "FM (ambient)" "$HUE_FM_AMBIENT" \
-	--run diff_cns64_diffusion_vit_9c98db0_e9bc460 "DM" "$HUE_DM" eval=eval_ambient \
+	--run diff_cns64_diffusion_vit_9c98db0_e9bc460 "DM (ambient)" "$HUE_DM" eval=eval_ambient \
 	"${COMMON_ARGS[@]}" \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_cns_dm"
 
