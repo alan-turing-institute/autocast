@@ -138,15 +138,15 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_cns_dm"
 
 autocast-plots --results-dir "$RESULTS_DIR" \
-	--run crps_cns64_vit_azula_large_9c98db0_2fa67c5 "ViT" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+	--run crps_cns64_vit_azula_large_bed4611_c99f534 "ViT" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_cns64_unet_azula_large_9c98db0_65f8f71 "U-Net" "$HUE_ABLATION_ALT_2" eval=eval_best_multiwinkler_from0p25 \
 	"${COMMON_ARGS[@]}" \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_cns_vit_unet_m8"
 
 autocast-plots --results-dir "$RESULTS_DIR" \
-	--run crps_cns64_vit_azula_large_9c98db0_6a91c49 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
-	--run crps_cns64_vit_azula_large_9c98db0_d2a0496 "fCRPS" "$HUE_ABLATION_ALT_1" eval=eval_best_multiwinkler_from0p25 \
-	--run crps_cns64_vit_azula_large_9c98db0_2fa67c5 "afCRPS" "$HUE_ABLATION_ALT_3" eval=eval_best_multiwinkler_from0p25 \
+	--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+	--run crps_cns64_vit_azula_large_9c98db0_6a91c49 "CRPS (CRPS loss)" "$HUE_ABLATION_ALT_1" eval=eval_best_multiwinkler_from0p25 \
+	--run crps_cns64_vit_azula_large_9c98db0_d2a0496 "CRPS (fCRPS loss)" "$HUE_ABLATION_ALT_2" eval=eval_best_multiwinkler_from0p25 \
 	"${COMMON_ARGS[@]}" \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_cns_crps_variants"
 
@@ -181,7 +181,7 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_ensemble_size"
 
 autocast-plots --results-dir "$RESULTS_DIR" \
-	--run crps_cns64_vit_azula_large_9c98db0_2fa67c5 "noise=1024" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
-	--run crps_cns64_vit_azula_large_9c98db0_86e355d "noise=256" "$HUE_ABLATION_ALT_2" eval=eval_best_multiwinkler_from0p25 \
+	--run crps_cns64_vit_azula_large_bed4611_c99f534 "noise=1024, h=568" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+	--run crps_cns64_vit_azula_large_9c98db0_86e355d "noise=256, h=704" "$HUE_ABLATION_ALT_2" eval=eval_best_multiwinkler_from0p25 \
 	"${COMMON_ARGS[@]}" \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_cns_noise_channels"
