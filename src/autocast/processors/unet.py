@@ -3,10 +3,11 @@ from collections.abc import Callable, Sequence
 from typing import Any, cast
 
 import torch
-from azula.nn.unet import UNet
+from einops import rearrange
 from torch import nn
 from torch.utils.checkpoint import checkpoint
 
+from autocast.nn.unet import TemporalUNetBackbone
 from autocast.processors.base import Processor
 from autocast.types import EncodedBatch, Tensor
 
@@ -319,8 +320,7 @@ class UNetProcessor(Processor[EncodedBatch]):
 class AzulaUNetProcessor(Processor[EncodedBatch]):
     """UNet Processor using Azula's modern UNet architecture.
 
-    This processor wraps the Azula UNet implementation which includes
-    additional features like residual connections and flexible normalization.
+    This processor wraps TemporalUNetBackbone with an Azula UNet backbone.
 
     Parameters
     ----------
@@ -352,6 +352,12 @@ class AzulaUNetProcessor(Processor[EncodedBatch]):
     n_noise_channels: int | None = None
         Number of noise channels for conditional normalization. If None, no
         noise conditioning is used. Default is None.
+    global_cond_channels: int | None, optional
+        Width of the optional global conditioning vector.
+    include_global_cond: bool, optional
+        Whether to inject global conditioning into modulation.
+        Uses the same two-layer embedding pattern as ViT temporal backbones.
+        Default is False.
     """
 
     def __init__(
@@ -368,34 +374,48 @@ class AzulaUNetProcessor(Processor[EncodedBatch]):
         gradient_checkpointing: bool = False,
         loss_func: nn.Module | None = None,
         n_noise_channels: int | None = None,
+        global_cond_channels: int | None = None,
+        include_global_cond: bool = False,
     ):
         super().__init__()
 
         # the default is 0 for no noise conditioning
         self.n_noise_channels = n_noise_channels or 0
+        self.global_cond_channels = global_cond_channels
+        self.include_global_cond = include_global_cond
 
-        # instantiate Azula UNet
-        self.model = UNet(
+        self.model = TemporalUNetBackbone(
             in_channels=in_channels,
             out_channels=out_channels,
+            cond_channels=0,
+            n_steps_output=1,
+            n_steps_input=1,
+            global_cond_channels=global_cond_channels,
+            include_global_cond=include_global_cond,
+            mod_features=n_noise_channels or 256,
             hid_channels=hid_channels,
             hid_blocks=hid_blocks,
+            spatial=2,
+            periodic=periodic,
+            temporal_method="none",
             norm=norm,
             groups=groups,
-            ffn_factor=ffn_factor,
             dropout=dropout,
-            periodic=periodic,
-            # adaptive layer norm modulation based on noise channels
-            mod_features=self.n_noise_channels,
-            cond_channels=0,  # the default
+            ffn_factor=ffn_factor,
             checkpointing=gradient_checkpointing,
+            use_precomputed_modulation=True,
         )
 
         # Azula saves this as self.checkpointing
         self.gradient_checkpointing = gradient_checkpointing
         self.loss_func = loss_func or nn.MSELoss()
 
-    def forward(self, x: Tensor, x_noise: Tensor | None = None) -> Tensor:
+    def forward(
+        self,
+        x: Tensor,
+        x_noise: Tensor | None = None,
+        global_cond: Tensor | None = None,
+    ) -> Tensor:
         """Forward pass through the Azula UNet.
 
         Parameters
@@ -404,13 +424,64 @@ class AzulaUNetProcessor(Processor[EncodedBatch]):
             Input tensor of shape (B, C_in, *spatial_dims).
         x_noise : Tensor | None
             Optional noise conditioning tensor of shape (B, n_noise_channels).
+        global_cond : Tensor | None
+            Optional global conditioning tensor of shape (B, C_global).
+            Used only when include_global_cond=True.
 
         Returns
         -------
         Tensor
             Output tensor of shape (B, C_out, *spatial_dims).
         """
-        return self.model(x, mod=x_noise)
+        if x.ndim != 4:
+            msg = "AzulaUNetProcessor expects input shape (B, C, H, W)."
+            raise ValueError(msg)
+
+        if (
+            self.n_noise_channels
+            and x_noise is not None
+            and x_noise.shape[-1] != self.n_noise_channels
+        ):
+            msg = (
+                f"Expected x_noise with last dim {self.n_noise_channels}, "
+                f"got {x_noise.shape[-1]}."
+            )
+            raise ValueError(msg)
+
+        if (
+            not self.n_noise_channels
+            and x_noise is not None
+            and x_noise.shape[-1] != self.model.mod_features
+        ):
+            msg = (
+                f"Expected x_noise with last dim {self.model.mod_features}, "
+                f"got {x_noise.shape[-1]}."
+            )
+            raise ValueError(msg)
+
+        if x_noise is None:
+            model_mod = torch.zeros(
+                x.shape[0], self.model.mod_features, dtype=x.dtype, device=x.device
+            )
+        else:
+            model_mod = x_noise
+        model_global_cond = None
+        if self.include_global_cond:
+            if global_cond is None:
+                msg = "global_cond must be provided when include_global_cond=True."
+                raise ValueError(msg)
+            if global_cond.shape[-1] != self.global_cond_channels:
+                msg = (
+                    f"Expected global_cond with last dim "
+                    f"{self.global_cond_channels}, got "
+                    f"{global_cond.shape[-1]}."
+                )
+                raise ValueError(msg)
+            model_global_cond = global_cond
+
+        x_in = rearrange(x, "b c h w -> b 1 h w c").contiguous()
+        y = self.model(x_in, t=model_mod, cond=None, global_cond=model_global_cond)
+        return rearrange(y, "b 1 h w c -> b c h w").contiguous()
 
     def map(self, x: Tensor, global_cond: Tensor | None) -> Tensor:
         """Map input states to output states.
@@ -420,21 +491,22 @@ class AzulaUNetProcessor(Processor[EncodedBatch]):
         x : Tensor
             Input tensor of shape (B, C_in, *spatial_dims).
         global_cond : Tensor | None
-            Optional conditioning tensor, currently not used.
+            Optional conditioning vector. Used when include_global_cond=True.
 
         Returns
         -------
         Tensor
             Output tensor of shape (B, C_out, *spatial_dims).
         """
-        _ = global_cond
         if self.n_noise_channels > 0:
             noise = torch.randn(
                 x.shape[0], self.n_noise_channels, dtype=x.dtype, device=x.device
             )
         else:
-            noise = None
-        return self(x, x_noise=noise)
+            noise = torch.zeros(
+                x.shape[0], self.model.mod_features, dtype=x.dtype, device=x.device
+            )
+        return self(x, x_noise=noise, global_cond=global_cond)
 
     def loss(self, batch: EncodedBatch) -> Tensor:
         """Compute loss between output and target.
