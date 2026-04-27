@@ -115,6 +115,32 @@ MODEL_SCALE_PARAM_COL = "params_processor_total"
 DEFAULT_EVAL_SUBDIR = "eval"
 DEFAULT_PLOT_METRICS: tuple[str, ...] = ("vrmse", "coverage", "crps", "ssr")
 DISPERSION_METRICS: set[str] = {"ssr"}
+DEFAULT_TICK_LABEL_FONT_SIZE = 10.0
+DEFAULT_AXIS_LABEL_FONT_SIZE = 10.0
+DEFAULT_LEGEND_FONT_SIZE = 8.0
+SINGLE_STEP_RESULTS_TABLE_METRICS: tuple[tuple[str, str], ...] = (
+    ("overall_vrmse", "VRMSE"),
+    ("overall_crps", "CRPS"),
+    ("overall_ssr", "SSR"),
+    ("model_latency_ms_per_sample", "Inference latency (ms/sample)"),
+    ("train_mean_epoch_s", "Training time (s/epoch)"),
+)
+SINGLE_STEP_RESULTS_LATEX_HEADERS: dict[str, str] = {
+    "Dataset": "Dataset",
+    "Model": "Model",
+    "VRMSE": "VRMSE",
+    "CRPS": "CRPS",
+    "SSR": "SSR",
+    "Inference latency (ms/sample)": r"\shortstack{Inference\\latency\\(ms/sample)}",
+    "Training time (s/epoch)": r"\shortstack{Training\\time\\(s/epoch)}",
+}
+SINGLE_STEP_RESULTS_LOWER_IS_BETTER = {
+    "VRMSE",
+    "CRPS",
+    "Inference latency (ms/sample)",
+    "Training time (s/epoch)",
+}
+SINGLE_STEP_RESULTS_TARGET_METRICS = {"SSR": 1.0}
 
 
 def _is_dispersion_metric(metric: str) -> bool:
@@ -160,6 +186,88 @@ def _derive_lead_time_metrics(metrics: list[str]) -> tuple[list[str], list[str]]
         err_metric.append("rmse")
 
     return err_metric, [*cov_metric, *dispersion_metric]
+
+
+def _resolve_font_size(
+    base_size: float,
+    font_scale: float = 1.0,
+    explicit_font_size: float | None = None,
+) -> float:
+    """Resolve configurable plot font sizes without changing defaults."""
+    if explicit_font_size is not None:
+        return float(explicit_font_size)
+    return float(base_size) * float(font_scale)
+
+
+def _apply_tick_label_style(ax: Axes, tick_label_scale: float = 1.0) -> None:
+    """Apply optional tick-label scaling to an axis."""
+    if tick_label_scale == 1.0:
+        return
+    ax.tick_params(
+        axis="both",
+        which="both",
+        labelsize=_resolve_font_size(DEFAULT_TICK_LABEL_FONT_SIZE, tick_label_scale),
+    )
+
+
+def _apply_axis_label_style(ax: Axes, axis_label_scale: float = 1.0) -> None:
+    """Apply optional axis-label scaling to an axis."""
+    if axis_label_scale == 1.0:
+        return
+    font_size = _resolve_font_size(DEFAULT_AXIS_LABEL_FONT_SIZE, axis_label_scale)
+    ax.xaxis.label.set_size(font_size)
+    ax.yaxis.label.set_size(font_size)
+
+
+def _set_shared_ylabel(
+    fig: FigureBase,
+    label: str,
+    axis_label_scale: float = 1.0,
+) -> None:
+    """Set a panel-level y label when repeated row labels would be noisy."""
+    if not hasattr(fig, "supylabel"):
+        return
+    text = fig.supylabel(label)
+    if axis_label_scale != 1.0:
+        text.set_fontsize(
+            _resolve_font_size(DEFAULT_AXIS_LABEL_FONT_SIZE, axis_label_scale)
+        )
+
+
+def _set_shared_xlabel(
+    fig: FigureBase,
+    label: str,
+    axis_label_scale: float = 1.0,
+) -> None:
+    """Set a panel-level x label when repeated labels would be noisy."""
+    if not hasattr(fig, "supxlabel"):
+        return
+    text = fig.supxlabel(label)
+    if axis_label_scale != 1.0:
+        text.set_fontsize(
+            _resolve_font_size(DEFAULT_AXIS_LABEL_FONT_SIZE, axis_label_scale)
+        )
+
+
+def _scaled_figsize(width: float, height: float, figure_scale: float = 1.0):
+    return (width * figure_scale, height * figure_scale)
+
+
+def _metric_axis_label(metric: str) -> str:
+    """Format metric keys as publication-facing axis labels."""
+    if metric.startswith("coverage_"):
+        level = metric.split("_", 1)[1]
+        return f"COVERAGE {level}"
+    return metric.upper()
+
+
+def _coverage_window_axis_label(window: str, short: bool = False) -> str:
+    """Format coverage calibration y labels from rollout window values."""
+    prefix = "Emp. cov." if short else "Empirical coverage"
+    if window == "all":
+        return prefix
+    window_label = str(window).replace("-", ":")
+    return f"{prefix} ({window_label})"
 
 
 # ---------------------------------------------------------------------------
@@ -1344,6 +1452,188 @@ def _dedup_legend_handles(groups: list, styles: dict) -> list[Line2D]:
     return handles
 
 
+def build_single_step_results_table(
+    df_in: pd.DataFrame,
+    styles: dict,
+    dataset_order: list[str] | None = None,
+    hue_order: list[str] | None = None,
+) -> pd.DataFrame:
+    """Build the CSV/LaTeX table from the same grouped means as bar plots."""
+    if "dataset_label" not in df_in.columns or "plot_group" not in df_in.columns:
+        return pd.DataFrame()
+
+    data = df_in.copy()
+    metric_cols = [src for src, _ in SINGLE_STEP_RESULTS_TABLE_METRICS]
+    available = [c for c in metric_cols if c in data.columns]
+    if not available:
+        return pd.DataFrame()
+
+    for col in available:
+        data[col] = pd.to_numeric(data[col], errors="coerce")
+
+    grouped = (
+        data.groupby(["dataset_label", "plot_group"], dropna=False)[available]
+        .mean()
+        .reset_index()
+    )
+    datasets = _apply_explicit_order(
+        list(grouped["dataset_label"].dropna().unique()), dataset_order
+    )
+
+    rows: list[dict[str, object]] = []
+    for ds_label in datasets:
+        ds_rows = grouped[grouped["dataset_label"] == ds_label]
+        groups = _order_groups_by_label(
+            cast(pd.Series, ds_rows["plot_group"].astype(str)).dropna().tolist(),
+            styles,
+            hue_order,
+        )
+        for group in groups:
+            row_match = ds_rows[ds_rows["plot_group"].astype(str) == str(group)]
+            if row_match.empty:
+                continue
+            raw = row_match.iloc[0]
+            style = styles.get(group, {"label": group})
+            table_row: dict[str, object] = {
+                "Dataset": ds_label,
+                "Model": str(style.get("label", group)),
+            }
+            for src, label in SINGLE_STEP_RESULTS_TABLE_METRICS:
+                table_row[label] = raw[src] if src in raw.index else np.nan
+            rows.append(table_row)
+
+    columns = [
+        "Dataset",
+        "Model",
+        *[label for _, label in SINGLE_STEP_RESULTS_TABLE_METRICS],
+    ]
+    return pd.DataFrame(rows, columns=columns)
+
+
+def _latex_escape(value: object) -> str:
+    """Escape plain text for insertion into a LaTeX table."""
+    text = "" if value is None else str(value)
+    replacements = {
+        "\\": r"\textbackslash{}",
+        "&": r"\&",
+        "%": r"\%",
+        "$": r"\$",
+        "#": r"\#",
+        "_": r"\_",
+        "{": r"\{",
+        "}": r"\}",
+        "~": r"\textasciitilde{}",
+        "^": r"\textasciicircum{}",
+    }
+    return "".join(replacements.get(ch, ch) for ch in text)
+
+
+def _format_latex_table_value(value: object) -> str:
+    """Format table cells for the compact LaTeX output."""
+    if isinstance(value, str):
+        return _latex_escape(value)
+    if value is None or pd.isna(value):
+        return ""
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return _latex_escape(value)
+    if not np.isfinite(numeric):
+        return ""
+    return f"{numeric:.1e}"
+
+
+def _best_latex_cells_by_dataset(table: pd.DataFrame) -> set[tuple[int, str]]:
+    """Return table cells that should be highlighted as best-in-dataset."""
+    best_cells: set[tuple[int, str]] = set()
+    if "Dataset" not in table.columns:
+        return best_cells
+
+    for _, dataset_rows in table.groupby("Dataset", sort=False):
+        for metric in [label for _, label in SINGLE_STEP_RESULTS_TABLE_METRICS]:
+            if metric not in dataset_rows.columns:
+                continue
+            values = pd.to_numeric(dataset_rows[metric], errors="coerce")
+            values = cast(pd.Series, values.dropna())
+            if values.empty:
+                continue
+            if metric in SINGLE_STEP_RESULTS_TARGET_METRICS:
+                target = SINGLE_STEP_RESULTS_TARGET_METRICS[metric]
+                scores = (values - target).abs()
+                best_score = scores.min()
+                winners = scores[scores == best_score].index
+            elif metric in SINGLE_STEP_RESULTS_LOWER_IS_BETTER:
+                best_value = values.min()
+                winners = values[values == best_value].index
+            else:
+                continue
+            for idx in winners:
+                best_cells.add((int(idx), metric))
+    return best_cells
+
+
+def render_single_step_results_latex(table: pd.DataFrame) -> str:
+    """Render the results table as a linewidth-bounded tabularx fragment."""
+    columns = table.columns.tolist()
+    align = (
+        "@{}" + ("l" * min(2, len(columns))) + ("X" * max(0, len(columns) - 2)) + "@{}"
+    )
+    header = " & ".join(
+        SINGLE_STEP_RESULTS_LATEX_HEADERS.get(col, _latex_escape(col))
+        for col in columns
+    )
+    best_cells = _best_latex_cells_by_dataset(table)
+    body = []
+    for idx, row in table.iterrows():
+        cells = []
+        for col in columns:
+            cell = _format_latex_table_value(row[col])
+            if cell and (int(idx), col) in best_cells:
+                cell = rf"\textbf{{{cell}}}"
+            cells.append(cell)
+        body.append(" & ".join(cells) + r" \\")
+    lines = [
+        r"% Requires \usepackage{booktabs,tabularx}",
+        rf"\begin{{tabularx}}{{\linewidth}}{{{align}}}",
+        r"\toprule",
+        header + r" \\",
+        r"\midrule",
+        *body,
+        r"\bottomrule",
+        r"\end{tabularx}",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def write_single_step_results_table(
+    df_in: pd.DataFrame,
+    out_dir: Path,
+    styles: dict,
+    dataset_order: list[str] | None = None,
+    hue_order: list[str] | None = None,
+    stem: str = "single_step_overall_results",
+) -> pd.DataFrame:
+    """Write single-step overall results as CSV and LaTeX."""
+    table = build_single_step_results_table(
+        df_in,
+        styles,
+        dataset_order=dataset_order,
+        hue_order=hue_order,
+    )
+    if table.empty:
+        print("No single-step overall results table available.")
+        return table
+
+    csv_path = out_dir / f"{stem}.csv"
+    tex_path = out_dir / f"{stem}.tex"
+    table.to_csv(csv_path, index=False, float_format="%.6g")
+    tex_path.write_text(render_single_step_results_latex(table), encoding="utf-8")
+    print(f"Saved: {csv_path}")
+    print(f"Saved: {tex_path}")
+    return table
+
+
 def grouped_bar(  # noqa: PLR0912, PLR0915
     df_in: pd.DataFrame,
     metric: str,
@@ -1359,6 +1649,14 @@ def grouped_bar(  # noqa: PLR0912, PLR0915
     ylim: tuple[float | None, float | None] | None = None,
     show_legend: bool = True,
     ref_value: float | None = None,
+    tick_label_scale: float = 1.0,
+    axis_label_scale: float = 1.0,
+    legend_font_scale: float = 1.0,
+    legend_font_size: float | None = None,
+    figure_scale: float = 1.0,
+    short_axis_labels: bool = False,
+    shared_axis_labels: bool = False,
+    height_scale: float = 1.0,
 ) -> FigureBase | None:
     """Render a grouped bar chart of a metric across datasets and model families.
 
@@ -1367,6 +1665,7 @@ def grouped_bar(  # noqa: PLR0912, PLR0915
     ``None`` to keep the auto-computed value on that side.
     ``ref_value`` draws a dotted horizontal reference line at that value.
     """
+    _ = (short_axis_labels, shared_axis_labels, height_scale)
     if metric not in df_in.columns:
         return None
     d = df_in.dropna(subset=[metric]).copy()
@@ -1406,7 +1705,13 @@ def grouped_bar(  # noqa: PLR0912, PLR0915
     width = 0.8 / max(1, max_present)
 
     if ax is None:
-        fig, ax = plt.subplots(figsize=(max(8.0, 0.9 * len(datasets) + 2.0), 3.8))
+        fig, ax = plt.subplots(
+            figsize=_scaled_figsize(
+                max(8.0, 0.9 * len(datasets) + 2.0),
+                3.8,
+                figure_scale,
+            )
+        )
     else:
         fig = ax.figure
     all_positive = []
@@ -1462,6 +1767,8 @@ def grouped_bar(  # noqa: PLR0912, PLR0915
     ax.set_ylabel(ylabel)
     ax.set_title(title)
     ax.grid(axis="y", alpha=0.25)
+    _apply_tick_label_style(ax, tick_label_scale)
+    _apply_axis_label_style(ax, axis_label_scale)
     if ref_value is not None:
         ax.axhline(
             ref_value,
@@ -1487,7 +1794,11 @@ def grouped_bar(  # noqa: PLR0912, PLR0915
                 labels,
                 loc="upper left",
                 bbox_to_anchor=(1.01, 1.0),
-                fontsize=8,
+                fontsize=_resolve_font_size(
+                    DEFAULT_LEGEND_FONT_SIZE,
+                    legend_font_scale,
+                    legend_font_size,
+                ),
                 frameon=False,
             )
 
@@ -1497,7 +1808,7 @@ def grouped_bar(  # noqa: PLR0912, PLR0915
     return fig
 
 
-def plot_coverage_calibration_panel(  # noqa: PLR0912
+def plot_coverage_calibration_panel(  # noqa: PLR0912, PLR0915
     df_in: pd.DataFrame,
     results_root: Path,
     out_dir: Path,
@@ -1510,6 +1821,14 @@ def plot_coverage_calibration_panel(  # noqa: PLR0912
     show_legend: bool = True,
     window_rows: list[str] | None = None,
     name: str = "coverage_calibration_panel.png",
+    tick_label_scale: float = 1.0,
+    axis_label_scale: float = 1.0,
+    legend_font_scale: float = 1.0,
+    legend_font_size: float | None = None,
+    figure_scale: float = 1.0,
+    short_axis_labels: bool = False,
+    shared_axis_labels: bool = False,
+    height_scale: float = 1.0,
 ) -> FigureBase | None:
     """Plot the coverage calibration panel (rollout windows x datasets).
 
@@ -1556,7 +1875,11 @@ def plot_coverage_calibration_panel(  # noqa: PLR0912
         fig, axes = plt.subplots(
             nrows,
             ncols,
-            figsize=(4.0 * ncols, 2.3 * nrows),
+            figsize=_scaled_figsize(
+                4.0 * ncols,
+                2.3 * nrows * height_scale,
+                figure_scale,
+            ),
             sharex=True,
             sharey=True,
             squeeze=False,
@@ -1602,10 +1925,20 @@ def plot_coverage_calibration_panel(  # noqa: PLR0912
                 )
             if i == 0:
                 ax.set_title(ds_label)
+            if i == nrows - 1:
+                ax.set_xlabel(
+                    "" if shared_axis_labels else r"Expected coverage (1 - $\alpha$)"
+                )
             if j == 0:
-                ax.set_ylabel(w)
+                ax.set_ylabel(
+                    _coverage_window_axis_label(str(w), short=short_axis_labels)
+                )
             ax.grid(alpha=0.2)
+            _apply_tick_label_style(ax, tick_label_scale)
+            _apply_axis_label_style(ax, axis_label_scale)
 
+    if shared_axis_labels:
+        _set_shared_xlabel(fig, r"Expected coverage (1 - $\alpha$)", axis_label_scale)
     if show_legend:
         legend_handles = _dedup_legend_handles(groups, styles)
         fig.legend(
@@ -1614,7 +1947,11 @@ def plot_coverage_calibration_panel(  # noqa: PLR0912
             loc="upper center",
             bbox_to_anchor=(0.5, 0.995),
             ncol=4,
-            fontsize=8,
+            fontsize=_resolve_font_size(
+                DEFAULT_LEGEND_FONT_SIZE,
+                legend_font_scale,
+                legend_font_size,
+            ),
             frameon=False,
         )
     if save:
@@ -1641,6 +1978,14 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
     yscale: str | None = None,
     ref_value: float | None = None,
     coverage_delta: bool = False,
+    tick_label_scale: float = 1.0,
+    axis_label_scale: float = 1.0,
+    legend_font_scale: float = 1.0,
+    legend_font_size: float | None = None,
+    figure_scale: float = 1.0,
+    short_axis_labels: bool = False,
+    shared_axis_labels: bool = False,
+    height_scale: float = 1.0,
 ) -> FigureBase | None:
     """Plot per-metric, per-dataset lead-time curves as a panel figure.
 
@@ -1712,11 +2057,22 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
     )
 
     nrows, ncols = len(metrics_to_plot), len(datasets)
+    shared_ylabel = (
+        r"Rel. $\Delta$ empirical coverage"
+        if coverage_delta and short_axis_labels
+        else r"$\Delta$ empirical coverage (proportional)"
+        if coverage_delta
+        else None
+    )
     if axes is None:
         fig, axes = plt.subplots(
             nrows,
             ncols,
-            figsize=(3.6 * ncols, 2.7 * nrows),
+            figsize=_scaled_figsize(
+                3.6 * ncols,
+                2.7 * nrows * height_scale,
+                figure_scale,
+            ),
             sharex=True,
             sharey=False,
             squeeze=False,
@@ -1771,7 +2127,7 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
                 std = cast(pd.Series, agg["std"]).fillna(0)
 
                 if is_cov_delta and cov_target is not None:
-                    m = mean - cov_target
+                    m = (mean / cov_target) - 1.0
                     vals.extend(m.dropna().tolist())
                 else:
                     m = (
@@ -1790,8 +2146,8 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
                 )
                 if (agg["count"] > 1).any():
                     if is_cov_delta and cov_target is not None:
-                        y1 = (mean - std) - cov_target
-                        y2 = (mean + std) - cov_target
+                        y1 = ((mean - std) / cov_target) - 1.0
+                        y2 = ((mean + std) / cov_target) - 1.0
                         vals.extend(y1.dropna().tolist())
                         vals.extend(y2.dropna().tolist())
                     elif is_cov:
@@ -1810,13 +2166,15 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
             if r == 0:
                 ax.set_title(ds_label)
             if r == nrows - 1:
-                ax.set_xlabel("Lead time")
+                ax.set_xlabel("" if shared_axis_labels else "Lead time")
             if c == 0:
                 if is_cov_delta and cov_target is not None:
-                    ax.set_ylabel(f"{metric} - {cov_target:g}")
+                    ax.set_ylabel("")
                 else:
-                    ax.set_ylabel(metric)
+                    ax.set_ylabel(_metric_axis_label(metric))
             ax.grid(alpha=0.25)
+            _apply_tick_label_style(ax, tick_label_scale)
+            _apply_axis_label_style(ax, axis_label_scale)
             use_log = (row_yscale or "log") == "log"
             if is_cov and not is_cov_delta:
                 ax.set_ylim(0, 1)
@@ -1870,6 +2228,10 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
                     bottom=lo if lo is not None else cur_lo,
                     top=hi if hi is not None else cur_hi,
                 )
+    if shared_ylabel is not None:
+        _set_shared_ylabel(fig, shared_ylabel, axis_label_scale)
+    if shared_axis_labels:
+        _set_shared_xlabel(fig, "Lead time", axis_label_scale)
     if show_legend:
         handles = _dedup_legend_handles(groups, styles)
         fig.legend(
@@ -1878,7 +2240,11 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
             loc="upper center",
             bbox_to_anchor=(0.5, 0.98),
             ncol=4,
-            fontsize=8,
+            fontsize=_resolve_font_size(
+                DEFAULT_LEGEND_FONT_SIZE,
+                legend_font_scale,
+                legend_font_size,
+            ),
             frameon=False,
         )
     if save:
@@ -2078,12 +2444,21 @@ def plot_training_curves(  # noqa: PLR0912, PLR0915
     save: bool = True,
     show_legend: bool = True,
     force_refresh: bool = False,
+    tick_label_scale: float = 1.0,
+    axis_label_scale: float = 1.0,
+    legend_font_scale: float = 1.0,
+    legend_font_size: float | None = None,
+    figure_scale: float = 1.0,
+    short_axis_labels: bool = False,
+    shared_axis_labels: bool = False,
+    height_scale: float = 1.0,
 ) -> FigureBase | None:
     """Plot per-metric, per-dataset training curves (epoch vs metric value).
 
     Training metrics are loaded via :func:`load_training_metrics` from wandb.
     ``metrics`` names should match logged keys, e.g. ``val_loss``, ``val_vrmse``.
     """
+    _ = short_axis_labels
     rows: list[pd.DataFrame] = []
     base = df_in.dropna(
         subset=["run_path", "dataset_label", "plot_group"]
@@ -2137,7 +2512,11 @@ def plot_training_curves(  # noqa: PLR0912, PLR0915
         fig, axes = plt.subplots(
             nrows,
             ncols,
-            figsize=(3.6 * ncols, 2.7 * nrows),
+            figsize=_scaled_figsize(
+                3.6 * ncols,
+                2.7 * nrows * height_scale,
+                figure_scale,
+            ),
             sharex=False,
             sharey=False,
             squeeze=False,
@@ -2178,10 +2557,12 @@ def plot_training_curves(  # noqa: PLR0912, PLR0915
             if r_idx == 0:
                 ax.set_title(ds_label)
             if r_idx == nrows - 1:
-                ax.set_xlabel("Epoch")
+                ax.set_xlabel("" if shared_axis_labels else "Epoch")
             if c_idx == 0:
                 ax.set_ylabel(metric)
             ax.grid(alpha=0.25)
+            _apply_tick_label_style(ax, tick_label_scale)
+            _apply_axis_label_style(ax, axis_label_scale)
 
             positive = [v for v in vals if np.isfinite(v) and v > 0]
             if y_scale == "log" and positive:
@@ -2197,6 +2578,8 @@ def plot_training_curves(  # noqa: PLR0912, PLR0915
                     top=hi if hi is not None else cur_hi,
                 )
 
+    if shared_axis_labels:
+        _set_shared_xlabel(fig, "Epoch", axis_label_scale)
     if show_legend:
         handles = _dedup_legend_handles(groups, styles)
         fig.legend(
@@ -2205,7 +2588,11 @@ def plot_training_curves(  # noqa: PLR0912, PLR0915
             loc="upper center",
             bbox_to_anchor=(0.5, 0.98),
             ncol=4,
-            fontsize=8,
+            fontsize=_resolve_font_size(
+                DEFAULT_LEGEND_FONT_SIZE,
+                legend_font_scale,
+                legend_font_size,
+            ),
             frameon=False,
         )
     if save:
@@ -2237,6 +2624,13 @@ def plot_panel_figure(  # noqa: PLR0915
     error_ylim: tuple[float | None, float | None] | None = None,
     coverage_ylim: tuple[float | None, float | None] | None = None,
     name: str = "panel_figure.png",
+    tick_label_scale: float = 1.0,
+    axis_label_scale: float = 1.0,
+    legend_font_scale: float = 1.0,
+    legend_font_size: float | None = None,
+    figure_scale: float = 1.0,
+    short_axis_labels: bool = False,
+    shared_axis_labels: bool = False,
 ) -> None:
     """Render a panel composite figure with a reserved notes area.
 
@@ -2266,7 +2660,18 @@ def plot_panel_figure(  # noqa: PLR0915
     # Keep output shape approximately 16:10 and avoid over-compact single-dataset
     # renders by using a fixed minimum canvas with gentle dataset-driven scaling.
     panel_scale = max(1.0, np.sqrt(n_ds / 2.0))
-    fig = plt.figure(figsize=(16.0 * panel_scale, 10.0 * panel_scale))
+    fig = plt.figure(
+        figsize=_scaled_figsize(16.0 * panel_scale, 10.0 * panel_scale, figure_scale)
+    )
+    plot_style_kwargs = {
+        "tick_label_scale": tick_label_scale,
+        "axis_label_scale": axis_label_scale,
+        "legend_font_scale": legend_font_scale,
+        "legend_font_size": legend_font_size,
+        "figure_scale": figure_scale,
+        "short_axis_labels": short_axis_labels,
+        "shared_axis_labels": shared_axis_labels,
+    }
     if include_training_panel:
         outer = fig.add_gridspec(
             5,
@@ -2319,6 +2724,7 @@ def plot_panel_figure(  # noqa: PLR0915
             save=False,
             show_legend=False,
             force_refresh=training_refresh,
+            **plot_style_kwargs,
         )
 
     # --- Left-middle: stacked overall-metric bar charts -----------------
@@ -2341,6 +2747,7 @@ def plot_panel_figure(  # noqa: PLR0915
             ylim=_overall_or_window_bar_ylim(m, error_ylim),
             show_legend=False,
             ref_value=_overall_or_window_bar_ref_value(m),
+            **plot_style_kwargs,
         )
     left.suptitle("")
 
@@ -2359,6 +2766,7 @@ def plot_panel_figure(  # noqa: PLR0915
         fig=middle,
         save=False,
         show_legend=False,
+        **plot_style_kwargs,
     )
 
     # --- Right: lead-time error (top) + coverage (bottom) ---------------
@@ -2386,6 +2794,7 @@ def plot_panel_figure(  # noqa: PLR0915
         save=False,
         error_ylim=error_ylim,
         show_legend=False,
+        **plot_style_kwargs,
     )
     rb_axes = right_bot.subplots(n_cov, n_ds, sharex=True, sharey=False, squeeze=False)
     plot_lead_time_panel(
@@ -2402,6 +2811,7 @@ def plot_panel_figure(  # noqa: PLR0915
         save=False,
         error_ylim=None,
         show_legend=False,
+        **plot_style_kwargs,
     )
     if coverage_ylim is not None:
         lo, hi = coverage_ylim
@@ -2430,7 +2840,7 @@ def plot_panel_figure(  # noqa: PLR0915
             loc="upper center",
             bbox_to_anchor=(0.5, 0.995),
             ncol=min(6, len(handles)),
-            fontsize=9,
+            fontsize=_resolve_font_size(9.0, legend_font_scale, legend_font_size),
             frameon=False,
         )
 
@@ -2626,8 +3036,8 @@ def main():  # noqa: PLR0912, PLR0915
         action="store_true",
         help=(
             "Also render an additional lead-time coverage panel where each "
-            "coverage_<p> curve is transformed to (coverage - p), i.e. deviation "
-            "from the nominal coverage level. Output: "
+            "coverage_<p> curve is transformed to coverage / p - 1, i.e. "
+            "proportional deviation from the nominal coverage level. Output: "
             "lead_time_panel_coverage_delta.png"
         ),
     )
@@ -2721,7 +3131,65 @@ def main():  # noqa: PLR0912, PLR0915
             "(using 0-4, 6-12, 13-30, 31-99; excluding the 0-1 rollout window)."
         ),
     )
+    parser.add_argument(
+        "--tick-label-scale",
+        type=float,
+        default=1.0,
+        help="Scale tick label font sizes for publication plots (default: 1.0).",
+    )
+    parser.add_argument(
+        "--axis-label-scale",
+        type=float,
+        default=1.0,
+        help="Scale axis label font sizes for publication plots (default: 1.0).",
+    )
+    parser.add_argument(
+        "--legend-font-scale",
+        type=float,
+        default=1.0,
+        help="Scale legend font sizes for publication plots (default: 1.0).",
+    )
+    parser.add_argument(
+        "--legend-font-size",
+        type=float,
+        help="Explicit legend font size; overrides --legend-font-scale.",
+    )
+    parser.add_argument(
+        "--figure-scale",
+        type=float,
+        default=1.0,
+        help="Scale generated figure sizes without changing layout (default: 1.0).",
+    )
+    parser.add_argument(
+        "--short-axis-labels",
+        action="store_true",
+        help="Use compact axis labels for dense publication grid plots.",
+    )
+    parser.add_argument(
+        "--shared-axis-labels",
+        action="store_true",
+        help="Use panel-level shared x/y labels where repeated labels are redundant.",
+    )
+    parser.add_argument(
+        "--coverage-panel-height-scale",
+        type=float,
+        default=1.0,
+        help="Scale standalone coverage-calibration panel height (default: 1.0).",
+    )
     args = parser.parse_args()
+    for style_arg in (
+        "tick_label_scale",
+        "axis_label_scale",
+        "legend_font_scale",
+        "figure_scale",
+        "coverage_panel_height_scale",
+    ):
+        if getattr(args, style_arg) <= 0:
+            msg = f"--{style_arg.replace('_', '-')} must be positive"
+            raise SystemExit(msg)
+    if args.legend_font_size is not None and args.legend_font_size <= 0:
+        msg = "--legend-font-size must be positive"
+        raise SystemExit(msg)
 
     def _parse_ylim(pair: list[str] | None) -> tuple[float | None, float | None] | None:
         if not pair:
@@ -3167,6 +3635,27 @@ def main():  # noqa: PLR0912, PLR0915
         if seen:
             hu_order = seen
 
+    plot_style_kwargs = {
+        "tick_label_scale": args.tick_label_scale,
+        "axis_label_scale": args.axis_label_scale,
+        "legend_font_scale": args.legend_font_scale,
+        "legend_font_size": args.legend_font_size,
+        "figure_scale": args.figure_scale,
+        "short_axis_labels": args.short_axis_labels,
+        "shared_axis_labels": args.shared_axis_labels,
+    }
+    coverage_plot_style_kwargs = {
+        **plot_style_kwargs,
+        "height_scale": args.coverage_panel_height_scale,
+    }
+    write_single_step_results_table(
+        df,
+        out_dir,
+        styles,
+        dataset_order=ds_order,
+        hue_order=hu_order,
+    )
+
     # Render overall bars
     for m in args.metrics:
         grouped_bar(
@@ -3181,6 +3670,7 @@ def main():  # noqa: PLR0912, PLR0915
             hue_order=hu_order,
             ylim=_overall_or_window_bar_ylim(m, error_ylim),
             ref_value=_overall_or_window_bar_ref_value(m),
+            **plot_style_kwargs,
         )
 
     # Render window bars
@@ -3198,6 +3688,7 @@ def main():  # noqa: PLR0912, PLR0915
                 hue_order=hu_order,
                 ylim=_overall_or_window_bar_ylim(m, error_ylim),
                 ref_value=_overall_or_window_bar_ref_value(m),
+                **plot_style_kwargs,
             )
 
     # Render Calibration panel
@@ -3208,6 +3699,7 @@ def main():  # noqa: PLR0912, PLR0915
         styles,
         dataset_order=ds_order,
         hue_order=hu_order,
+        **coverage_plot_style_kwargs,
     )
     if args.coverage_panel_overall_rollout_windows:
         plot_coverage_calibration_panel(
@@ -3219,6 +3711,7 @@ def main():  # noqa: PLR0912, PLR0915
             hue_order=hu_order,
             window_rows=WINDOW_ROWS_OVERALL_AND_ROLLOUT,
             name="coverage_calibration_panel_overall_rollout_windows.png",
+            **coverage_plot_style_kwargs,
         )
         plot_coverage_calibration_panel(
             df,
@@ -3229,6 +3722,7 @@ def main():  # noqa: PLR0912, PLR0915
             hue_order=hu_order,
             window_rows=WINDOW_ROWS_OVERALL_ONLY,
             name="coverage_calibration_panel_overall_only.png",
+            **coverage_plot_style_kwargs,
         )
         plot_coverage_calibration_panel(
             df,
@@ -3239,6 +3733,7 @@ def main():  # noqa: PLR0912, PLR0915
             hue_order=hu_order,
             window_rows=WINDOW_ROWS_ROLLOUT_ONLY,
             name="coverage_calibration_panel_rollout_windows_only.png",
+            **coverage_plot_style_kwargs,
         )
 
     # Render efficiency bars (training/inference), if available.
@@ -3267,6 +3762,7 @@ def main():  # noqa: PLR0912, PLR0915
             y_scale="linear" if is_train_metric else "auto",
             dataset_order=ds_order,
             hue_order=hu_order,
+            **plot_style_kwargs,
         )
 
     # Render lead-time panels
@@ -3296,6 +3792,7 @@ def main():  # noqa: PLR0912, PLR0915
             dataset_order=ds_order,
             hue_order=hu_order,
             error_ylim=error_ylim,
+            **plot_style_kwargs,
         )
     if cov_metric:
         plot_lead_time_panel(
@@ -3307,6 +3804,7 @@ def main():  # noqa: PLR0912, PLR0915
             styles,
             dataset_order=ds_order,
             hue_order=hu_order,
+            **plot_style_kwargs,
         )
         if args.lead_time_coverage_delta:
             delta_metrics = [m for m in cov_metric if m.startswith("coverage_")]
@@ -3321,6 +3819,7 @@ def main():  # noqa: PLR0912, PLR0915
                     dataset_order=ds_order,
                     hue_order=hu_order,
                     coverage_delta=True,
+                    **plot_style_kwargs,
                 )
 
     # Combined lead-time panel (error rows on top, coverage rows below).
@@ -3336,6 +3835,7 @@ def main():  # noqa: PLR0912, PLR0915
             dataset_order=ds_order,
             hue_order=hu_order,
             error_ylim=error_ylim,
+            **plot_style_kwargs,
         )
 
     # Per-group lead-time panels (SSR, coherence, balancing coverage, physics)
@@ -3369,6 +3869,7 @@ def main():  # noqa: PLR0912, PLR0915
             error_ylim=None,
             yscale=group_yscale,
             ref_value=group_ref,
+            **plot_style_kwargs,
         )
 
     # Training curves
@@ -3385,6 +3886,7 @@ def main():  # noqa: PLR0912, PLR0915
             y_scale=args.training_yscale,
             ylim=training_ylim,
             force_refresh=args.training_refresh,
+            **plot_style_kwargs,
         )
 
     # Composite panel figure(s)
@@ -3400,6 +3902,7 @@ def main():  # noqa: PLR0912, PLR0915
         "training_refresh": args.training_refresh,
         "error_ylim": error_ylim,
         "coverage_ylim": coverage_ylim,
+        **plot_style_kwargs,
     }
     if args.panel_figure:
         plot_panel_figure(
