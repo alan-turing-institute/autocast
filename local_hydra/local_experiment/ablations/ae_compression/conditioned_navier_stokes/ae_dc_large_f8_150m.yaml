@@ -1,0 +1,17 @@
+# @package _global_
+defaults:
+  - /distributed: ddp_4gpu_slurm
+  - /local_experiment/ae/conditioned_navier_stokes/ae_dc_large
+  - _self_
+
+experiment_name: ablation_ae_compression_dc_large_f8_150m_conditioned_navier_stokes
+
+# Capacity sweep on top of the f8 ablation: widths sized to land at ~150M
+# total params (153M, +2% of target), keeping the strict 1:2:4:8 ratio.
+model:
+  encoder:
+    hid_channels: [112, 224, 448, 896]
+    hid_blocks: [3, 3, 3, 3]
+  decoder:
+    hid_channels: [896, 448, 224, 112]
+    hid_blocks: [3, 3, 3, 3]

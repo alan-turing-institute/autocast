@@ -1,0 +1,18 @@
+# @package _global_
+defaults:
+  - /distributed: ddp_4gpu_slurm
+  - /local_experiment/ae/conditioned_navier_stokes/ae_dc_large
+  - _self_
+
+experiment_name: ablation_ae_compression_dc_large_f8_100m_conditioned_navier_stokes
+
+# Capacity sweep on top of the f8 ablation: widths sized to land at ~100M
+# total params (encoder + decoder), keeping the strict 1:2:4:8 ratio.
+# Tests whether the f8 en/decoder is under-provisioned at 24x compression.
+model:
+  encoder:
+    hid_channels: [90, 180, 360, 720]
+    hid_blocks: [3, 3, 3, 3]
+  decoder:
+    hid_channels: [720, 360, 180, 90]
+    hid_blocks: [3, 3, 3, 3]
