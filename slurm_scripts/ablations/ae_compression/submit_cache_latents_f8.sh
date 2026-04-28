@@ -8,13 +8,12 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 # but targets the single ae_dc_large_f8 run rather than the 4-dataset
 # main-study AEs.
 #
-# The cache_latents experiment yaml supplies the encoder/decoder shape via
-# the dc_large overrides — those load defaults that the AE checkpoint then
-# overrides at load time, so the same yaml works for both 3-level and
-# 4-level AEs without modification.
+# The cache_latents experiment yaml must instantiate the same encoder/decoder
+# architecture as the AE checkpoint; Lightning loads weights into the existing
+# module shape and does not reconstruct a wider/deeper DC stack from the ckpt.
 
 DATAMODULE="conditioned_navier_stokes"
-EXPERIMENT="cache_latents/conditioned_navier_stokes/cache_latents"
+EXPERIMENT="cache_latents/conditioned_navier_stokes/cache_latents_f8"
 AE_RUN_DIR="$HOME/autocast/outputs/2026-04-26/ae_cns64_de1b4b7_e1059d7"
 
 ckpt="${AE_RUN_DIR}/autoencoder.ckpt"

@@ -1,0 +1,16 @@
+# @package _global_
+defaults:
+  - /local_experiment/cache_latents/conditioned_navier_stokes/cache_latents
+  - _self_
+
+experiment_name: cache_latents_conditioned_navier_stokes_f8
+
+# Must match the f8 AE training config so encoder/decoder architectures align
+# with the checkpoint weights during cache_latents setup.
+model:
+  encoder:
+    hid_channels: [64, 128, 256, 512]
+    hid_blocks: [3, 3, 3, 3]
+  decoder:
+    hid_channels: [512, 256, 128, 64]
+    hid_blocks: [3, 3, 3, 3]
