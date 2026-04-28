@@ -81,7 +81,9 @@ declare -A EXPERIMENTS=(
 )
 
 declare -A COSINE_EPOCHS_BY_DATASET=(
-    # ["conditioned_navier_stokes"]=...
+    # Pinned from outputs/2026-04-27/timing_vit_mae_to_crps/*/retrieve.sh at
+    # 6h budget, 2% margin (uv run autocast time-epochs -b 6 -m 0.02).
+    ["conditioned_navier_stokes"]=114
 )
 
 CRPS_BUDGET_HOURS="${CRPS_BUDGET_HOURS:-6}"

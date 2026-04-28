@@ -10,12 +10,14 @@ source "$(dirname "${BASH_SOURCE[0]}")/../comparison/cached_latents/validate_cac
 # trainer.max_epochs from either COSINE_EPOCHS_BY_RUN or the latest matching
 # timing.ckpt under outputs/*/timing_planned_03/<run_id>/timing.ckpt.
 
-declare -A COSINE_EPOCHS_BY_RUN=()
-# Pin once timing has been retrieved, e.g.
-#     ["latent_diffusion_cns"]=NNN
-# from `uv run autocast time-epochs -b 24 -m 0.02`. Until any entry is
-# pinned, resolve_cosine_epochs falls back to the latest matching
-# outputs/*/timing_planned_03/<run_id>/timing.ckpt.
+declare -A COSINE_EPOCHS_BY_RUN=(
+    # Pinned from outputs/2026-04-27/timing_planned_03/*/retrieve.sh at
+    # 24h budget, 2% margin (uv run autocast time-epochs -b 24 -m 0.02).
+    ["latent_diffusion_cns"]=2639
+    ["latent_diffusion_gs"]=2249
+    ["latent_diffusion_gpe"]=2674
+    ["latent_diffusion_ad"]=2601
+)
 
 BUDGET_MAX_TIME="00:23:59:00"
 TIMEOUT_MIN=1439
