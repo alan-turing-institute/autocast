@@ -80,6 +80,8 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	--run diff_gpe64_flow_matching_vit_0f89f06_3b3604d "FM (ambient)" "$HUE_FM_AMBIENT" \
 	--run diff_gs64_flow_matching_vit_0f89f06_6e3a299 "FM (ambient)" "$HUE_FM_AMBIENT" \
 	--run crps_cns64_vit_azula_large_9c98db0_4b2a1a5 "CRPS (latent)" "$HUE_CRPS_LATENT" eval=eval_best_multiwinkler_from0p25 \
+	--run crps_ad64_vit_azula_large_3b47441_3ad3562 "CRPS (latent)" "$HUE_CRPS_LATENT" eval=eval_best_multiwinkler_from0p25 \
+	--run crps_gs64_vit_azula_large_3b47441_1c8e446 "CRPS (latent)" "$HUE_CRPS_LATENT" eval=eval_best_multiwinkler_from0p25 \
 	--dataset-order AD CNS GS GPE \
 	--error-ylim 1e-5 1 \
 	--lead-time-error-metrics vrmse rmse \
@@ -152,6 +154,9 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 
 autocast-plots --results-dir "$RESULTS_DIR" \
 	--run crps_cns64_vit_azula_large_9c98db0_957ff88 "m=4" "$HUE_ABLATION_ALT_1" eval=eval_best_multiwinkler_from0p25 \
+	--run crps_ad64_vit_azula_large_189c141_bbb0bc8 "m=4" "$HUE_ABLATION_ALT_1" eval=eval_best_multiwinkler_from0p25 \
+	--run crps_gs64_vit_azula_large_3b47441_4944cce "m=4" "$HUE_ABLATION_ALT_1" eval=eval_best_multiwinkler_from0p25 \
+	--run crps_gpe64_vit_azula_large_189c141_ce8db86 "m=4" "$HUE_ABLATION_ALT_1" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_ad64_vit_azula_large_bed4611_da01a04 "m=8" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_cns64_vit_azula_large_bed4611_c99f534 "m=8" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_gpe64_vit_azula_large_bed4611_e0a6df5 "m=8" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
