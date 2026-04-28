@@ -1,0 +1,19 @@
+# @package _global_
+defaults:
+  - /distributed: ddp_4gpu_slurm
+  - /local_experiment/ae/conditioned_navier_stokes/ae_dc_large
+  - _self_
+
+experiment_name: ablation_ae_compression_dc_large_c2_conditioned_navier_stokes
+
+# Latent-channel sweep on the main-study AE (3-level, widths [128,256,512]):
+# latent channels reduced 8 -> 2 with all other config preserved. Param
+# count is unchanged to within ~0.1% (only the final encoder/initial
+# decoder projections scale with C), so the ~49M budget is preserved and
+# the latent-channel axis is isolated. Latent geometry: 16x16x2 (24x
+# channel-volume compression for CNS at 64x64x3 ambient).
+model:
+  encoder:
+    out_channels: 2
+  decoder:
+    in_channels: 2
