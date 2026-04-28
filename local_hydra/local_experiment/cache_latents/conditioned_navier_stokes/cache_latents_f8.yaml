@@ -6,7 +6,12 @@ defaults:
 experiment_name: cache_latents_conditioned_navier_stokes_f8
 
 # Must match the f8 AE training config so encoder/decoder architectures align
-# with the checkpoint weights during cache_latents setup.
+# with the checkpoint weights during cache_latents setup. The validator in
+# validate_cached_latents_against_ae.sh parses this file directly (does not
+# follow Hydra defaults), so use_normalization must be declared here.
+datamodule:
+  use_normalization: true
+
 model:
   encoder:
     hid_channels: [64, 128, 256, 512]
