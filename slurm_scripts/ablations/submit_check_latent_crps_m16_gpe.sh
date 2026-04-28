@@ -52,6 +52,7 @@ for run_dry in "${RUN_DRY_STATES[@]}"; do
         local_experiment="${LOCAL_EXPERIMENT}" \
         datamodule=cached_latents \
         datamodule.data_path="${CACHE_DIR}" \
+        datamodule.batch_size=16 \
         model.n_members=16 \
         logging.wandb.enabled=true \
         logging.wandb.name="${RUN_ID}" \
