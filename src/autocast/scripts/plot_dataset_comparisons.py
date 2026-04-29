@@ -129,11 +129,15 @@ SINGLE_STEP_RESULTS_TABLE_METRICS: tuple[tuple[str, str], ...] = (
 SINGLE_STEP_RESULTS_LATEX_HEADERS: dict[str, str] = {
     "Dataset": "Dataset",
     "Model": "Model",
-    "VRMSE": "VRMSE",
-    "CRPS": "CRPS",
-    "SSR": "SSR",
-    "Inference latency (ms/sample)": r"\shortstack{Inference\\latency\\(ms/sample)}",
-    "Training time (s/epoch)": r"\shortstack{Training\\time\\(s/epoch)}",
+    "VRMSE": "{VRMSE}",
+    "CRPS": "{CRPS}",
+    "SSR": "{SSR}",
+    "Inference latency (ms/sample)": (
+        r"{\begin{tabular}[c]{@{}c@{}}Inference\\latency\\(ms/sample)\end{tabular}}"
+    ),
+    "Training time (s/epoch)": (
+        r"{\begin{tabular}[c]{@{}c@{}}Training\\time\\(s/epoch)\end{tabular}}"
+    ),
 }
 SINGLE_STEP_RESULTS_LOWER_IS_BETTER = {
     "VRMSE",
@@ -1532,8 +1536,8 @@ def _latex_escape(value: object) -> str:
     return "".join(replacements.get(ch, ch) for ch in text)
 
 
-def _format_latex_table_value(value: object) -> str:  # noqa: PLR0911
-    """Format table cells for the compact LaTeX output."""
+def _format_latex_table_value(value: object, column: str | None = None) -> str:  # noqa: PLR0911
+    """Format table cells for publication-ready LaTeX output."""
     if isinstance(value, str):
         return _latex_escape(value)
     if value is None:
@@ -1552,7 +1556,13 @@ def _format_latex_table_value(value: object) -> str:  # noqa: PLR0911
         return _latex_escape(value)
     if not np.isfinite(numeric) or math.isnan(numeric):
         return ""
-    return f"{numeric:.1e}"
+    if column in {"VRMSE", "CRPS"}:
+        return f"{numeric:.1e}"
+    if column == "SSR":
+        return f"{numeric:.2f}"
+    if column in {"Inference latency (ms/sample)", "Training time (s/epoch)"}:
+        return f"{numeric:.0f}"
+    return f"{numeric:.3g}"
 
 
 def _best_latex_cells_by_dataset(table: pd.DataFrame) -> set[tuple[int, str]]:
@@ -1588,10 +1598,17 @@ def _best_latex_cells_by_dataset(table: pd.DataFrame) -> set[tuple[int, str]]:
 
 
 def render_single_step_results_latex(table: pd.DataFrame) -> str:
-    """Render the results table as a linewidth-bounded tabularx fragment."""
+    """Render the results table using booktabs + siunitx styling."""
     columns = table.columns.tolist()
-    align = (
-        "@{}" + ("l" * min(2, len(columns))) + ("X" * max(0, len(columns) - 2)) + "@{}"
+    align = "\n  ".join(
+        [
+            "ll",
+            "S[table-format=1.1e-1, detect-weight=true]",
+            "S[table-format=1.1e-1, detect-weight=true]",
+            "S[table-format=1.2, detect-weight=true]",
+            "S[table-format=3.0, detect-weight=true]",
+            "S[table-format=3.0, detect-weight=true]",
+        ]
     )
     header = " & ".join(
         SINGLE_STEP_RESULTS_LATEX_HEADERS.get(col, _latex_escape(col))
@@ -1599,24 +1616,50 @@ def render_single_step_results_latex(table: pd.DataFrame) -> str:
     )
     best_cells = _best_latex_cells_by_dataset(table)
     body = []
-    for idx, row in table.iterrows():
+    table_rows = list(table.iterrows())
+    last_dataset: str | None = None
+    for row_pos, (idx, row) in enumerate(table_rows):
         idx_i = int(cast(SupportsIndex, idx))
         cells = []
         for col in columns:
-            cell = _format_latex_table_value(row[col])
+            if col == "Dataset":
+                current_dataset = str(row[col])
+                if current_dataset == "nan":
+                    current_dataset = ""
+                cell = (
+                    _latex_escape(current_dataset)
+                    if current_dataset != last_dataset
+                    else ""
+                )
+                last_dataset = current_dataset
+            else:
+                cell = _format_latex_table_value(row[col], column=col)
             if cell and (idx_i, col) in best_cells:
-                cell = rf"\textbf{{{cell}}}"
+                cell = rf"\bfseries {cell}"
             cells.append(cell)
         body.append(" & ".join(cells) + r" \\")
+        is_last_row = row_pos == (len(table_rows) - 1)
+        if not is_last_row and "Dataset" in table.columns:
+            next_dataset = str(table_rows[row_pos + 1][1]["Dataset"])
+            if next_dataset != str(row["Dataset"]):
+                body.append(r"\midrule")
     lines = [
-        r"% Requires \usepackage{booktabs,tabularx}",
-        rf"\begin{{tabularx}}{{\linewidth}}{{{align}}}",
+        r"% Requires \usepackage{booktabs,siunitx}",
+        r"\begin{table}[t]",
+        r"\centering",
+        r"\caption{Overall results for single-step prediction across datasets. "
+        r"We report predictive accuracy (\gls{vrmse}), probabilistic accuracy "
+        r"(\gls{crps}), uncertainty calibration (\gls{ssr}), and compute metrics "
+        r"(inference latency and training time).}",
+        r"\label{tab:overall_results_table}",
+        rf"\begin{{tabular}}{{{align}}}",
         r"\toprule",
         header + r" \\",
         r"\midrule",
         *body,
         r"\bottomrule",
-        r"\end{tabularx}",
+        r"\end{tabular}",
+        r"\end{table}",
         "",
     ]
     return "\n".join(lines)
