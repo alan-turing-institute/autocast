@@ -2647,6 +2647,7 @@ def plot_panel_figure(  # noqa: PLR0915
     figure_scale: float = 1.0,
     short_axis_labels: bool = False,
     shared_axis_labels: bool = False,
+    lead_time_coverage_delta: bool = False,
 ) -> None:
     """Render a panel composite figure with a reserved notes area.
 
@@ -2826,6 +2827,7 @@ def plot_panel_figure(  # noqa: PLR0915
         fig=right_bot,
         save=False,
         error_ylim=None,
+        coverage_delta=lead_time_coverage_delta,
         show_legend=False,
         **plot_style_kwargs,
     )
@@ -3917,6 +3919,7 @@ def main():  # noqa: PLR0912, PLR0915
         "error_metrics": err_metric or ["vrmse"],
         "coverage_metrics": cov_metric
         or ["coverage_0.9", "coverage_0.5", "coverage_0.1"],
+        "lead_time_coverage_delta": args.lead_time_coverage_delta,
         "training_yscale": args.training_yscale,
         "training_ylim": training_ylim,
         "training_refresh": args.training_refresh,
