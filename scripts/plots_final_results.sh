@@ -140,6 +140,12 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_cns_dm"
 
 autocast-plots --results-dir "$RESULTS_DIR" \
+	--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+	--run crps_cns64_vit_azula_large_9c98db0_2fa67c5 "CRPS (global conditioning)" "$HUE_ABLATION_ALT_2" eval=eval_best_multiwinkler_from0p25 \
+	"${COMMON_ARGS[@]}" \
+	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_cns_global_conditioning_m8"
+
+autocast-plots --results-dir "$RESULTS_DIR" \
 	--run crps_cns64_vit_azula_large_bed4611_c99f534 "ViT" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_cns64_unet_azula_large_9c98db0_65f8f71 "U-Net" "$HUE_ABLATION_ALT_2" eval=eval_best_multiwinkler_from0p25 \
 	"${COMMON_ARGS[@]}" \
