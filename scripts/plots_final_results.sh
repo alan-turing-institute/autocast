@@ -19,7 +19,7 @@ HUE_ABLATION_ALT_3=3
 COMMON_ARGS=(
 	--dataset-order CNS
 	--error-ylim 1e-5 1
-	--lead-time-error-metrics vrmse rmse
+	--lead-time-error-metrics vrmse
 	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1
 	--lead-time-coverage-delta
 	--combined-lead-time
@@ -48,7 +48,7 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "FM" "$HUE_FM_LATENT" \
 	--dataset-order AD CNS GS GPE \
 	--error-ylim 1e-5 1 \
-	--lead-time-error-metrics vrmse rmse \
+	--lead-time-error-metrics vrmse \
 	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
 	--lead-time-coverage-delta \
 	--combined-lead-time \
@@ -79,7 +79,7 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "FM" "$HUE_FM_LATENT" \
 	--dataset-order AD CNS GS GPE \
 	--error-ylim 1e-5 1 \
-	--lead-time-error-metrics vrmse rmse \
+	--lead-time-error-metrics vrmse \
 	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
 	--lead-time-coverage-delta \
 	--combined-lead-time \
@@ -116,7 +116,7 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	--run crps_gs64_vit_azula_large_3b47441_1c8e446 "CRPS (latent)" "$HUE_CRPS_LATENT" eval=eval_best_multiwinkler_from0p25 \
 	--dataset-order AD CNS GS GPE \
 	--error-ylim 1e-5 1 \
-	--lead-time-error-metrics vrmse rmse \
+	--lead-time-error-metrics vrmse \
 	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
 	--lead-time-coverage-delta \
 	--combined-lead-time \
@@ -145,7 +145,7 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	--run crps_gs64_vit_azula_large_bed4611_828a161 "CRPS (multiwinkler)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 	--dataset-order AD CNS GS GPE \
 	--error-ylim 1e-5 1 \
-	--lead-time-error-metrics vrmse rmse \
+	--lead-time-error-metrics vrmse \
 	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
 	--lead-time-coverage-delta \
 	--combined-lead-time \
@@ -205,7 +205,7 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	--run crps_gs64_vit_azula_large_bed4611_4d04729 "m=16" "$HUE_ABLATION_ALT_3" eval=eval_best_multiwinkler_from0p25 \
 	--dataset-order AD CNS GS GPE \
 	--error-ylim 1e-5 1 \
-	--lead-time-error-metrics vrmse rmse \
+	--lead-time-error-metrics vrmse \
 	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
 	--lead-time-coverage-delta \
 	--combined-lead-time \
