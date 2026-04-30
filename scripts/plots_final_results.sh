@@ -66,6 +66,38 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	--coverage-panel-height-scale 1.5 \
 	--output-dir "$OUTPUT_DIR"
 
+# Same as above but rendered smaller so the two coverage panels read well when
+# paired side-by-side in LaTeX (each at ~0.5\textwidth).
+autocast-plots --results-dir "$RESULTS_DIR" \
+	--run crps_ad64_vit_azula_large_bed4611_da01a04 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+	--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+	--run crps_gpe64_vit_azula_large_bed4611_e0a6df5 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+	--run crps_gs64_vit_azula_large_bed4611_828a161 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+	--run diff_ad64_flow_matching_vit_09490da_dae1382 "FM" "$HUE_FM_LATENT" \
+	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM" "$HUE_FM_LATENT" \
+	--run diff_gpe64_flow_matching_vit_09490da_47bf39a "FM" "$HUE_FM_LATENT" \
+	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "FM" "$HUE_FM_LATENT" \
+	--dataset-order AD CNS GS GPE \
+	--error-ylim 1e-5 1 \
+	--lead-time-error-metrics vrmse rmse \
+	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
+	--lead-time-coverage-delta \
+	--combined-lead-time \
+	--training-metrics val_loss train_loss \
+	--training-yscale log \
+	--panel-figure \
+	--panel-figure-no-training \
+	--coverage-panel-overall-rollout-windows \
+	--uniform-run-hue-color \
+	--tick-label-scale 1.5 \
+	--axis-label-scale 1.3 \
+	--legend-font-scale 1.5 \
+	--short-axis-labels \
+	--shared-axis-labels \
+	--coverage-panel-height-scale 1.5 \
+	--figure-scale 0.6 \
+	--output-dir "${OUTPUT_DIR}_pairfig"
+
 autocast-plots --results-dir "$RESULTS_DIR" \
 	--run crps_ad64_vit_azula_large_bed4611_da01a04 "CRPS (ambient)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS (ambient)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
