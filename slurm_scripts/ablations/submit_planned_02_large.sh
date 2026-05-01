@@ -4,78 +4,89 @@ set -euo pipefail
 
 source "$(dirname "${BASH_SOURCE[0]}")/../comparison/cached_latents/validate_cached_latents_against_ae.sh"
 
-# 24h production jobs for the planned CNS ablation batch.
+# 24h production jobs for planned ablation batch 02.
 #
-# Run submit_planned_cns_timing.sh first. This script resolves each
+# Run submit_planned_02_timing.sh first. This script resolves each
 # trainer.max_epochs from either COSINE_EPOCHS_BY_RUN or the latest matching
-# timing.ckpt under outputs/*/timing_planned_cns/<run_id>/timing.ckpt.
+# timing.ckpt under outputs/*/timing_planned_02/<run_id>/timing.ckpt.
 
 declare -A COSINE_EPOCHS_BY_RUN=(
-    # Pinned from outputs/2026-04-25/timing_planned_cns/*/timing.ckpt at
+    # Pinned from outputs/2026-04-26/timing_planned_02/*/retrieve.sh at
     # 24h budget, 2% margin (uv run autocast time-epochs -b 24 -m 0.02).
-    ["unet_m8_crps_cns"]=611
-    ["diffusion_cns"]=2248
-    ["fair_crps_m8_cns"]=439
-    ["plain_crps_m8_cns"]=439
-    ["vit_noise256_m8_cns"]=427
-    ["vit_m4_cns"]=803
-    ["latent_crps_m8_cns"]=327
-    ["vit_global_cond_m8_cns"]=432
+    ["latent_crps_m8_gs"]=273
+    ["latent_crps_m8_gpe"]=326
+    ["latent_crps_m8_ad"]=318
+    ["vit_m4_gs"]=706
 )
 
 BUDGET_MAX_TIME="00:23:59:00"
 TIMEOUT_MIN=1439
-SOURCE_DATASET="conditioned_navier_stokes"
-RUN_GROUP="$(date +%Y-%m-%d)/planned_cns"
+RUN_GROUP="$(date +%Y-%m-%d)/planned_02"
 RUN_DRY_STATES=("true" "false")
-AE_RUN_DIR="$HOME/autocast/outputs/2026-04-17/ae_cns64_3a7999b_b9c29f8"
-CACHE_DIR="${AE_RUN_DIR}/cached_latents"
 
-# run_id|kind|local_experiment
+declare -A AE_RUN_DIRS=(
+    ["gray_scott"]="$HOME/autocast/outputs/2026-04-17/ae_gs64_3a7999b_ed36b8e"
+    ["gpe_laser_only_wake"]="$HOME/autocast/outputs/2026-04-17/ae_gpe64_3a7999b_31e1c9f"
+    ["advection_diffusion"]="$HOME/autocast/outputs/2026-04-17/ae_ad64_3a7999b_1a1e300"
+)
+
+# run_id|kind|datamodule|local_experiment
 RUNS=(
-    "unet_m8_crps_cns|epd|ablations/arch_unet_fno_vit/conditioned_navier_stokes/crps_unet_azula_80m"
-    "diffusion_cns|epd|ablations/fm_vs_diffusion/conditioned_navier_stokes/diffusion_vit_large"
-    "fair_crps_m8_cns|epd|ablations/crps_variants/conditioned_navier_stokes/crps_vit_fair"
-    "plain_crps_m8_cns|epd|ablations/crps_variants/conditioned_navier_stokes/crps_vit_plain"
-    "vit_noise256_m8_cns|epd|ablations/noise_channels/conditioned_navier_stokes/crps_vit_noise256"
-    "vit_m4_cns|epd|epd/conditioned_navier_stokes/crps_vit_azula_large"
-    "latent_crps_m8_cns|processor|processor/conditioned_navier_stokes/crps_vit_azula_large"
-    "vit_global_cond_m8_cns|epd|epd/conditioned_navier_stokes/crps_vit_azula_large_identity_global_cond"
+    "latent_crps_m8_gs|processor|gray_scott|processor/gray_scott/crps_vit_azula_large"
+    "latent_crps_m8_gpe|processor|gpe_laser_only_wake|processor/gpe_laser_wake_only/crps_vit_azula_large"
+    "latent_crps_m8_ad|processor|advection_diffusion|processor/advection_diffusion/crps_vit_azula_large"
+    "vit_m4_gs|epd|gray_scott|epd/gray_scott/crps_vit_azula_large"
 )
 
 run_overrides() {
     local run_id="$1"
+    local kind="$2"
+    local datamodule="$3"
 
-    case "${run_id}" in
-        latent_crps_m8_cns)
-            # Keep the local_experiment's cached_latents datamodule. Passing
-            # datamodule=conditioned_navier_stokes here would switch training
-            # back to raw fields. Pair datamodule=cached_latents with the cache
-            # path so the workflow infers the source cns64 token from
-            # autoencoder_config.yaml.
-            printf '%s\n' "datamodule=cached_latents" "datamodule.data_path=${CACHE_DIR}"
+    case "${kind}" in
+        processor)
+            local ae_run_dir="${AE_RUN_DIRS[$datamodule]}"
+            local cache_dir="${ae_run_dir}/cached_latents"
+            printf '%s\n' "datamodule=cached_latents" "datamodule.data_path=${cache_dir}"
             ;;
-        vit_m4_cns)
-            printf '%s\n' "datamodule=${SOURCE_DATASET}" "model.n_members=4" "datamodule.batch_size=64"
+        epd)
+            case "${run_id}" in
+                vit_m4_gs)
+                    printf '%s\n' "datamodule=${datamodule}" "model.n_members=4" "datamodule.batch_size=64"
+                    ;;
+                *)
+                    printf '%s\n' "datamodule=${datamodule}"
+                    ;;
+            esac
             ;;
         *)
-            printf '%s\n' "datamodule=${SOURCE_DATASET}"
+            echo "FATAL: unknown kind '${kind}' for ${run_id}" >&2
+            exit 1
             ;;
     esac
 }
 
 validate_run_inputs() {
     local run_id="$1"
+    local kind="$2"
+    local datamodule="$3"
 
-    if [[ "${run_id}" != "latent_crps_m8_cns" ]]; then
+    if [[ "${kind}" != "processor" ]]; then
         return 0
     fi
 
-    if [[ ! -d "${CACHE_DIR}/train" ]] || [[ ! -d "${CACHE_DIR}/valid" ]] || [[ ! -d "${CACHE_DIR}/test" ]]; then
-        echo "Skipping ${run_id}: cache missing train/valid/test under ${CACHE_DIR}" >&2
+    local ae_run_dir="${AE_RUN_DIRS[$datamodule]:-}"
+    if [[ -z "${ae_run_dir}" ]]; then
+        echo "Skipping ${run_id}: no AE run dir configured for ${datamodule}" >&2
         return 1
     fi
-    if ! validate_cached_latents_against_ae "${AE_RUN_DIR}"; then
+
+    local cache_dir="${ae_run_dir}/cached_latents"
+    if [[ ! -d "${cache_dir}/train" ]] || [[ ! -d "${cache_dir}/valid" ]] || [[ ! -d "${cache_dir}/test" ]]; then
+        echo "Skipping ${run_id}: cache missing train/valid/test under ${cache_dir}" >&2
+        return 1
+    fi
+    if ! validate_cached_latents_against_ae "${ae_run_dir}"; then
         echo "Skipping ${run_id}: cached-latents config mismatch vs AE training config" >&2
         return 1
     fi
@@ -88,7 +99,7 @@ find_timing_checkpoint() {
         return 0
     fi
 
-    find outputs -path "*/timing_planned_cns/${run_id}/timing.ckpt" | sort | tail -n 1
+    find outputs -path "*/timing_planned_02/${run_id}/timing.ckpt" | sort | tail -n 1
 }
 
 derive_cosine_epochs_from_timing() {
@@ -121,8 +132,8 @@ resolve_cosine_epochs() {
 }
 
 for run_spec in "${RUNS[@]}"; do
-    IFS="|" read -r run_id kind experiment <<< "${run_spec}"
-    if ! validate_run_inputs "${run_id}"; then
+    IFS="|" read -r run_id kind datamodule experiment <<< "${run_spec}"
+    if ! validate_run_inputs "${run_id}" "${kind}" "${datamodule}"; then
         continue
     fi
 
@@ -135,7 +146,7 @@ for run_spec in "${RUNS[@]}"; do
         continue
     fi
 
-    mapfile -t overrides < <(run_overrides "${run_id}")
+    mapfile -t overrides < <(run_overrides "${run_id}" "${kind}" "${datamodule}")
 
     for run_dry in "${RUN_DRY_STATES[@]}"; do
         dry_run_arg=()
@@ -145,11 +156,11 @@ for run_spec in "${RUNS[@]}"; do
             run_label="slurm --dry-run"
         fi
 
-        echo "Submitting planned CNS production run"
+        echo "Submitting planned batch 02 production run"
         echo "  mode: ${run_label}"
         echo "  run_id: ${run_id}"
         echo "  kind: ${kind}"
-        echo "  source_dataset: ${SOURCE_DATASET}"
+        echo "  datamodule: ${datamodule}"
         echo "  local_experiment: ${experiment}"
         echo "  cosine_epochs: ${cosine_epochs}"
 
