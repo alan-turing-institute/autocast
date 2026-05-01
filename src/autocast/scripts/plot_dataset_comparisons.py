@@ -275,6 +275,13 @@ def _coverage_window_axis_label(window: str, short: bool = False) -> str:
     return f"{prefix} ({window_label})"
 
 
+def _coverage_window_row_tag(window: str) -> str:
+    """Short row identifier used when a shared y label carries the metric name."""
+    if window == "all":
+        return "all"
+    return f"({str(window).replace('-', ':')})"
+
+
 # ---------------------------------------------------------------------------
 # Lead-time panel group presets
 # ---------------------------------------------------------------------------
@@ -1989,15 +1996,23 @@ def plot_coverage_calibration_panel(  # noqa: PLR0912, PLR0915
                     "" if shared_axis_labels else r"Expected coverage (1 - $\alpha$)"
                 )
             if j == 0:
-                ax.set_ylabel(
-                    _coverage_window_axis_label(str(w), short=short_axis_labels)
-                )
+                if shared_axis_labels:
+                    ax.set_ylabel(_coverage_window_row_tag(str(w)))
+                else:
+                    ax.set_ylabel(
+                        _coverage_window_axis_label(str(w), short=short_axis_labels)
+                    )
             ax.grid(alpha=0.2)
             _apply_tick_label_style(ax, tick_label_scale)
             _apply_axis_label_style(ax, axis_label_scale)
 
     if shared_axis_labels:
         _set_shared_xlabel(fig, r"Expected coverage (1 - $\alpha$)", axis_label_scale)
+        _set_shared_ylabel(
+            fig,
+            "Emp. cov." if short_axis_labels else "Empirical coverage",
+            axis_label_scale,
+        )
     if show_legend:
         legend_handles = _dedup_legend_handles(groups, styles)
         fig.legend(
