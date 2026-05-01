@@ -346,12 +346,31 @@ METRIC_GROUP_PRESETS: dict[str, dict[str, object]] = {
         "yscale": "log",
         "ref": None,
     },
+    "summary": {
+        "metrics": [
+            "crps",
+            "ssr",
+            "energy",
+            "winkler",
+            "psrmse_high",
+            "psrmse_mid",
+            "psrmse_low",
+        ],
+        "name": "lead_time_panel_summary.png",
+        "title": (
+            "Summary: CRPS, SSR, Energy Score, Winkler, "
+            "Power-spectrum RMSE (high/mid/low)"
+        ),
+        "yscale": "log",
+        "ref": None,
+    },
 }
 
 DEFAULT_METRIC_GROUPS: tuple[str, ...] = (
     "probabilistic_scores",
     "coherence",
     "physics_ps",
+    "summary",
 )
 
 
