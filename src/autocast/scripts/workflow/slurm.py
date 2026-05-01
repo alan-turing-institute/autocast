@@ -85,58 +85,84 @@ def _extract_local_experiment_name(overrides: list[str]) -> str | None:
     return None
 
 
+def _resolve_local_experiment_parent(item: object) -> Path | None:
+    # Map a defaults-list entry of the form
+    # ``- /local_experiment/<rel/path>`` to its YAML file, so we can
+    # follow the inheritance chain when looking up ``/distributed``.
+    if isinstance(item, str) and item.startswith("/local_experiment/"):
+        rel = item[len("/local_experiment/") :]
+        return Path.cwd() / "local_hydra" / "local_experiment" / f"{rel}.yaml"
+    return None
+
+
+def _extract_distributed_preset_name(
+    cfg: dict, seen: set[Path] | None = None
+) -> str | None:
+    if seen is None:
+        seen = set()
+    defaults = cfg.get("defaults")
+    if not isinstance(defaults, list):
+        return None
+    for item in defaults:
+        if not isinstance(item, dict):
+            continue
+        val = item.get("/distributed") or item.get("distributed")
+        if isinstance(val, str) and val:
+            return val
+    for item in defaults:
+        parent_path = _resolve_local_experiment_parent(item)
+        if parent_path is None or parent_path in seen or not parent_path.exists():
+            continue
+        seen.add(parent_path)
+        parent_raw = OmegaConf.to_container(OmegaConf.load(parent_path), resolve=False)
+        if not isinstance(parent_raw, dict):
+            continue
+        result = _extract_distributed_preset_name(parent_raw, seen)
+        if result:
+            return result
+    return None
+
+
+def _load_distributed_cfg(name: str) -> dict:
+    cfg_root = Path(__file__).resolve().parents[2] / "configs"
+    path = cfg_root / "distributed" / f"{name}.yaml"
+    if not path.exists():
+        return {}
+    loaded = OmegaConf.to_container(OmegaConf.load(path), resolve=False)
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def _load_launcher_from_file(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    # Do not resolve the whole experiment config here; it may contain
+    # interpolations that are valid only during full Hydra composition
+    # (e.g. model.processor.n_steps_input -> datamodule.n_steps_input).
+    # We only need the hydra.launcher subtree for submission defaults.
+    raw = OmegaConf.to_container(OmegaConf.load(path), resolve=False)
+    if not isinstance(raw, dict):
+        return {}
+    distributed = _extract_distributed_preset_name(raw)
+    if distributed:
+        merged = OmegaConf.merge(_load_distributed_cfg(distributed), raw)
+        cfg = OmegaConf.to_container(merged, resolve=False)
+    else:
+        cfg = raw
+    if not isinstance(cfg, dict):
+        return {}
+    hydra_cfg = cfg.get("hydra")
+    if not isinstance(hydra_cfg, dict):
+        return {}
+    launcher_cfg = hydra_cfg.get("launcher")
+    return launcher_cfg if isinstance(launcher_cfg, dict) else {}
+
+
 def _load_preset_launcher_cfg(overrides: list[str]) -> dict:
     """Load ``hydra.launcher`` mapping from selected experiment preset.
 
     Supports both ``local_experiment=<name>`` and ``experiment=<name>``.
     ``local_experiment`` has precedence if both are provided.
     """
-
-    def _extract_distributed_preset_name(cfg: dict) -> str | None:
-        defaults = cfg.get("defaults")
-        if not isinstance(defaults, list):
-            return None
-        for item in defaults:
-            if not isinstance(item, dict):
-                continue
-            val = item.get("/distributed") or item.get("distributed")
-            if isinstance(val, str) and val:
-                return val
-        return None
-
-    def _load_distributed_cfg(name: str) -> dict:
-        cfg_root = Path(__file__).resolve().parents[2] / "configs"
-        path = cfg_root / "distributed" / f"{name}.yaml"
-        if not path.exists():
-            return {}
-        loaded = OmegaConf.to_container(OmegaConf.load(path), resolve=False)
-        return loaded if isinstance(loaded, dict) else {}
-
-    def _load_launcher_from_file(path: Path) -> dict:
-        if not path.exists():
-            return {}
-        # Do not resolve the whole experiment config here; it may contain
-        # interpolations that are valid only during full Hydra composition
-        # (e.g. model.processor.n_steps_input -> datamodule.n_steps_input).
-        # We only need the hydra.launcher subtree for submission defaults.
-        raw = OmegaConf.to_container(OmegaConf.load(path), resolve=False)
-        if not isinstance(raw, dict):
-            return {}
-        distributed = _extract_distributed_preset_name(raw)
-        merged = (
-            OmegaConf.merge(_load_distributed_cfg(distributed), raw)
-            if distributed
-            else raw
-        )
-        cfg = OmegaConf.to_container(merged, resolve=False)
-        if not isinstance(cfg, dict):
-            return {}
-        hydra_cfg = cfg.get("hydra")
-        if not isinstance(hydra_cfg, dict):
-            return {}
-        launcher_cfg = hydra_cfg.get("launcher")
-        return launcher_cfg if isinstance(launcher_cfg, dict) else {}
-
     local_experiment = _extract_local_experiment_name(overrides)
     if local_experiment:
         local_cfg_path = (
