@@ -1,32 +1,34 @@
-# ODE steps / solver (eval-only)
+# ODE Steps / Solver
 
-Eval-only ablation: re-evaluate an already-trained FM run with
-different `model.processor.flow_ode_steps` and/or a different ODE
-solver, without retraining.
+Eval-only ablation: re-evaluate already-trained FM runs with different
+`model.processor.flow_ode_steps`, without retraining.
 
-**Status:** stub — no scripts yet.
+## Script
 
-## Source runs
+- `submit_eval_fm_encode_once_ode_steps.sh`
 
-FM ambient and FM cached-latent runs under `outputs/2026-04-18/diff_*`.
+## Source Runs
 
-## Knob
+Main 2026-04-20 FM cached-latent runs:
 
-- `model.processor.flow_ode_steps` — e.g. `{10, 25, 50, 100}` (baseline
-  trained with 50).
-- Solver family if more than one is supported (check
-  `src/autocast/processors/flow_matching.py`).
+- `outputs/2026-04-20/diff_gs64_flow_matching_vit_09490da_7e9e331`
+- `outputs/2026-04-20/diff_gpe64_flow_matching_vit_09490da_47bf39a`
+- `outputs/2026-04-20/diff_cns64_flow_matching_vit_09490da_636fcc3`
+- `outputs/2026-04-20/diff_ad64_flow_matching_vit_09490da_dae1382`
 
-## Implementation sketch
+## Sweep
 
-Copy `slurm_scripts/comparison/eval/submit_eval_fm_ambient.sh` and sweep
-an extra dimension (ODE steps) inside the run-dir loop. Each sweep step
-gets its own `eval/` subdir suffix (e.g. `eval/ode50`, `eval/ode25`) via
-a non-default `hydra.sweep.dir` override — need to verify how
-`autocast eval` names output dirs when the same workdir is reused.
+- `model.processor.flow_ode_steps={1,5,10,25}`
+- Baseline training and canonical eval used `flow_ode_steps=50`.
+- `eval.mode=encode_once`, so metrics are computed in raw data space after
+  decoding while avoiding the ambient path's per-step decode/encode loop.
 
-## Outstanding decisions
+Each step value writes to a separate output subdir:
 
-- Step values.
-- How to prevent the 4 eval runs from clobbering each other's
-  `evaluation_metrics.csv` (likely via a csv_path override per sweep).
+- `eval_encode_once_ode001/`
+- `eval_encode_once_ode005/`
+- `eval_encode_once_ode010/`
+- `eval_encode_once_ode025/`
+
+The submitter also overrides `eval.csv_path` and `eval.video_dir` inside each
+subdir so repeated workdir evals do not clobber each other.

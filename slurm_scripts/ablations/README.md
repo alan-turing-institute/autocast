@@ -29,7 +29,7 @@ small edit.
 | vit_mae_pretrain | pretrain | CNS | 1 | staged |
 | cached_latent_crps | comparison | CNS | 1 (basis: 2026-04-20) | eval ready |
 | cond_global_vs_permute | comparison | CNS | 1 planned rerun (+old 2026-04-18 point) | config ready |
-| eval_only/ode_steps | eval-only | FM runs | 0 | stub |
+| eval_only/ode_steps | eval-only | GS / GPE / CNS / AD | 4 | ready |
 | eval_only/ema | eval-only | EMA ckpts | 0 | stub |
 
 "Done" entries refer to runs already produced by
