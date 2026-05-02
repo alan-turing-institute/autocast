@@ -15,6 +15,10 @@ HUE_DM=4
 HUE_ABLATION_ALT_1=1
 HUE_ABLATION_ALT_2=2
 HUE_ABLATION_ALT_3=3
+HUE_ODE_ABLATION_STEPS=$HUE_ABLATION_ALT_1
+HUE_ODE_MAIN=$HUE_FM_LATENT
+HUE_EMA_OFF=$HUE_FM_LATENT
+HUE_EMA_ON=$HUE_ABLATION_ALT_1
 
 COMMON_ARGS=(
 	--dataset-order CNS
@@ -29,6 +33,26 @@ COMMON_ARGS=(
 	--panel-figure-no-training
 	--coverage-panel-overall-rollout-windows
 	--uniform-run-hue-color
+	--tick-label-scale 1.5
+	--axis-label-scale 1.3
+	--legend-font-scale 1.5
+	--short-axis-labels
+	--shared-axis-labels
+	--coverage-panel-height-scale 1.5
+)
+
+ALL_DATASET_COMMON_ARGS=(
+	--dataset-order AD CNS GS GPE
+	--error-ylim 1e-5 1
+	--lead-time-error-metrics vrmse
+	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1
+	--lead-time-coverage-delta
+	--combined-lead-time
+	--training-metrics val_loss train_loss
+	--training-yscale log
+	--panel-figure
+	--panel-figure-no-training
+	--coverage-panel-overall-rollout-windows
 	--tick-label-scale 1.5
 	--axis-label-scale 1.3
 	--legend-font-scale 1.5
@@ -97,6 +121,43 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	--coverage-panel-height-scale 1.5 \
 	--figure-scale 0.6 \
 	--output-dir "${OUTPUT_DIR}_pairfig"
+
+autocast-plots --results-dir "$RESULTS_DIR" \
+	--run diff_ad64_flow_matching_vit_09490da_dae1382 "ODE=1" "$HUE_ODE_ABLATION_STEPS" eval=eval_encode_once_ode001 \
+	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "ODE=1" "$HUE_ODE_ABLATION_STEPS" eval=eval_encode_once_ode001 \
+	--run diff_gpe64_flow_matching_vit_09490da_47bf39a "ODE=1" "$HUE_ODE_ABLATION_STEPS" eval=eval_encode_once_ode001 \
+	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "ODE=1" "$HUE_ODE_ABLATION_STEPS" eval=eval_encode_once_ode001 \
+	--run diff_ad64_flow_matching_vit_09490da_dae1382 "ODE=5" "$HUE_ODE_ABLATION_STEPS" eval=eval_encode_once_ode005 \
+	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "ODE=5" "$HUE_ODE_ABLATION_STEPS" eval=eval_encode_once_ode005 \
+	--run diff_gpe64_flow_matching_vit_09490da_47bf39a "ODE=5" "$HUE_ODE_ABLATION_STEPS" eval=eval_encode_once_ode005 \
+	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "ODE=5" "$HUE_ODE_ABLATION_STEPS" eval=eval_encode_once_ode005 \
+	--run diff_ad64_flow_matching_vit_09490da_dae1382 "ODE=10" "$HUE_ODE_ABLATION_STEPS" eval=eval_encode_once_ode010 \
+	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "ODE=10" "$HUE_ODE_ABLATION_STEPS" eval=eval_encode_once_ode010 \
+	--run diff_gpe64_flow_matching_vit_09490da_47bf39a "ODE=10" "$HUE_ODE_ABLATION_STEPS" eval=eval_encode_once_ode010 \
+	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "ODE=10" "$HUE_ODE_ABLATION_STEPS" eval=eval_encode_once_ode010 \
+	--run diff_ad64_flow_matching_vit_09490da_dae1382 "ODE=25" "$HUE_ODE_ABLATION_STEPS" eval=eval_encode_once_ode025 \
+	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "ODE=25" "$HUE_ODE_ABLATION_STEPS" eval=eval_encode_once_ode025 \
+	--run diff_gpe64_flow_matching_vit_09490da_47bf39a "ODE=25" "$HUE_ODE_ABLATION_STEPS" eval=eval_encode_once_ode025 \
+	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "ODE=25" "$HUE_ODE_ABLATION_STEPS" eval=eval_encode_once_ode025 \
+	--run diff_ad64_flow_matching_vit_09490da_dae1382 "ODE=50" "$HUE_ODE_MAIN" eval=eval \
+	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "ODE=50" "$HUE_ODE_MAIN" eval=eval \
+	--run diff_gpe64_flow_matching_vit_09490da_47bf39a "ODE=50" "$HUE_ODE_MAIN" eval=eval \
+	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "ODE=50" "$HUE_ODE_MAIN" eval=eval \
+	"${ALL_DATASET_COMMON_ARGS[@]}" \
+	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_fm_ode_steps"
+
+autocast-plots --results-dir "$RESULTS_DIR" \
+	--run diff_ad64_flow_matching_vit_09490da_dae1382 "No EMA" "$HUE_EMA_OFF" eval=eval \
+	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "No EMA" "$HUE_EMA_OFF" eval=eval \
+	--run diff_gpe64_flow_matching_vit_09490da_47bf39a "No EMA" "$HUE_EMA_OFF" eval=eval \
+	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "No EMA" "$HUE_EMA_OFF" eval=eval \
+	--run diff_ad64_flow_matching_vit_09490da_dae1382 "EMA" "$HUE_EMA_ON" eval=eval_encode_once_ema \
+	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "EMA" "$HUE_EMA_ON" eval=eval_encode_once_ema \
+	--run diff_gpe64_flow_matching_vit_09490da_47bf39a "EMA" "$HUE_EMA_ON" eval=eval_encode_once_ema \
+	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "EMA" "$HUE_EMA_ON" eval=eval_encode_once_ema \
+	"${ALL_DATASET_COMMON_ARGS[@]}" \
+	--uniform-run-hue-color \
+	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_fm_ema"
 
 autocast-plots --results-dir "$RESULTS_DIR" \
 	--run crps_ad64_vit_azula_large_bed4611_da01a04 "CRPS (ambient)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
