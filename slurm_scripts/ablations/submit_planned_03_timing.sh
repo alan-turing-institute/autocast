@@ -26,9 +26,9 @@ declare -A AE_RUN_DIRS=(
 # run_id|kind|datamodule|local_experiment
 RUNS=(
     "latent_diffusion_cns|processor|conditioned_navier_stokes|processor/conditioned_navier_stokes/diffusion_vit_large"
-    "latent_diffusion_gs|processor|gray_scott|processor/gray_scott/diffusion_vit_large"
-    "latent_diffusion_gpe|processor|gpe_laser_only_wake|processor/gpe_laser_wake_only/diffusion_vit_large"
-    "latent_diffusion_ad|processor|advection_diffusion|processor/advection_diffusion/diffusion_vit_large"
+    # "latent_diffusion_gs|processor|gray_scott|processor/gray_scott/diffusion_vit_large"
+    # "latent_diffusion_gpe|processor|gpe_laser_only_wake|processor/gpe_laser_wake_only/diffusion_vit_large"
+    # "latent_diffusion_ad|processor|advection_diffusion|processor/advection_diffusion/diffusion_vit_large"
 )
 
 run_overrides() {
