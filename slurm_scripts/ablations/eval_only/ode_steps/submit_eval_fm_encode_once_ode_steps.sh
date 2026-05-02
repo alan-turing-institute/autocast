@@ -14,7 +14,12 @@ set -euo pipefail
 EVAL_BATCH_SIZE=4
 EVAL_N_MEMBERS=10
 TIMEOUT_MIN=360
-ODE_STEPS=(1 5 10 25)
+ODE_STEPS_DEFAULT=(1 5 10 25 100)
+if [[ -n "${ODE_STEPS_OVERRIDE:-}" ]]; then
+    read -r -a ODE_STEPS <<< "${ODE_STEPS_OVERRIDE}"
+else
+    ODE_STEPS=("${ODE_STEPS_DEFAULT[@]}")
+fi
 RUN_DRY_STATES=("true" "false")
 EVAL_METRICS="[mse,mae,nmse,nmae,rmse,nrmse,vmse,vrmse,linf,psrmse,psrmse_low,psrmse_mid,psrmse_high,psrmse_tail,pscc,pscc_low,pscc_mid,pscc_high,pscc_tail,crps,fcrps,afcrps,energy,ssr,winkler]"
 

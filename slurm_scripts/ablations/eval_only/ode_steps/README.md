@@ -18,7 +18,7 @@ Main 2026-04-20 FM cached-latent runs:
 
 ## Sweep
 
-- `model.processor.flow_ode_steps={1,5,10,25}`
+- `model.processor.flow_ode_steps={1,5,10,25,100}`
 - Baseline training and canonical eval used `flow_ode_steps=50`.
 - `eval.mode=encode_once`, so metrics are computed in raw data space after
   decoding while avoiding the ambient path's per-step decode/encode loop.
@@ -29,6 +29,10 @@ Each step value writes to a separate output subdir:
 - `eval_encode_once_ode005/`
 - `eval_encode_once_ode010/`
 - `eval_encode_once_ode025/`
+- `eval_encode_once_ode100/`
 
 The submitter also overrides `eval.csv_path` and `eval.video_dir` inside each
 subdir so repeated workdir evals do not clobber each other.
+
+To queue only a subset, set `ODE_STEPS_OVERRIDE` as a space-separated list, e.g.
+`ODE_STEPS_OVERRIDE="100" bash submit_eval_fm_encode_once_ode_steps.sh`.
