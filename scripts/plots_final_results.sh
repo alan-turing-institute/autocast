@@ -233,6 +233,18 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_cns_dm"
 
 autocast-plots --results-dir "$RESULTS_DIR" \
+	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" "$HUE_FM_LATENT" \
+	--run diff_cns64_diffusion_vit_0c75022_80967c4 "DM (latent)" "$HUE_DM" eval=eval_encode_once \
+	"${COMMON_ARGS[@]}" \
+	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_cns_dm_latent"
+
+autocast-plots --results-dir "$RESULTS_DIR" \
+	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (6x)" "$HUE_FM_LATENT" \
+	--run diff_cns64_flow_matching_vit_43cbdde_bb55197 "FM (24x)" "$HUE_ABLATION_ALT_1" eval=eval_encode_once \
+	"${COMMON_ARGS[@]}" \
+	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_cns_fm_autoencoder"
+
+autocast-plots --results-dir "$RESULTS_DIR" \
 	--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_cns64_vit_azula_large_9c98db0_2fa67c5 "CRPS (global conditioning)" "$HUE_ABLATION_ALT_2" eval=eval_best_multiwinkler_from0p25 \
 	"${COMMON_ARGS[@]}" \
