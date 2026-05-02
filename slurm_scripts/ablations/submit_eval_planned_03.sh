@@ -27,9 +27,8 @@ declare -A AE_CKPT=(
 )
 
 # run_id|datamodule|run_dir
-# Fill in run_dir paths once submit_planned_03_large.sh has produced runs.
 RUNS=(
-    "latent_diffusion_cns|conditioned_navier_stokes|outputs/REPLACE_ME/planned_03/diff_cns64_diffusion_vit_REPLACE_ME"
+    "latent_diffusion_cns|conditioned_navier_stokes|outputs/2026-05-01/planned_03/diff_cns64_diffusion_vit_0c75022_80967c4"
     # "latent_diffusion_gs|gray_scott|outputs/REPLACE_ME/planned_03/diff_gs64_diffusion_vit_REPLACE_ME"
     # "latent_diffusion_gpe|gpe_laser_only_wake|outputs/REPLACE_ME/planned_03/diff_gpe64_diffusion_vit_REPLACE_ME"
     # "latent_diffusion_ad|advection_diffusion|outputs/REPLACE_ME/planned_03/diff_ad64_diffusion_vit_REPLACE_ME"
