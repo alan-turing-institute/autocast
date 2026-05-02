@@ -1,31 +1,34 @@
-# EMA ablation (eval-only)
+# EMA
 
-Eval-only ablation: evaluate an already-trained run using the EMA
-shadow weights vs the online weights, to measure the EMA contribution.
+Eval-only ablation: evaluate already-trained runs using the EMA shadow
+weights stored in each checkpoint, without retraining.
 
-**Status:** stub — no scripts yet.
+## Script
 
-## Source runs
+- `submit_eval_fm_encode_once_ema.sh`
 
-Any run trained with `EMACallback` (all main comparison runs under
-`outputs/2026-04-18/`). Both the live weights and the EMA shadow are
-saved inside the same `.ckpt` — the knob is which to load at eval.
+## Source Runs
+
+Main 2026-04-20 FM cached-latent runs:
+
+- `outputs/2026-04-20/diff_gs64_flow_matching_vit_09490da_7e9e331`
+- `outputs/2026-04-20/diff_gpe64_flow_matching_vit_09490da_47bf39a`
+- `outputs/2026-04-20/diff_cns64_flow_matching_vit_09490da_636fcc3`
+- `outputs/2026-04-20/diff_ad64_flow_matching_vit_09490da_dae1382`
+
+All four `processor.ckpt` files have an `ema_state_dict` key.
 
 ## Knob
 
-Whatever the eval-side flag is for EMA loading. Candidates (need to
-verify against the eval script):
+- `+eval.use_ema=true`
+- `eval.mode=encode_once`, so metrics are computed in raw data space after
+  decoding while avoiding the ambient path's per-step decode/encode loop.
+- Baseline online-weight comparison evals use the same checkpoints without
+  `eval.use_ema`.
 
-- `eval.use_ema=true|false`
-- `model.load_ema=true|false`
-- callback-state override
+Outputs write to:
 
-Check `src/autocast/callbacks/ema.py` for the state dict layout, then
-grep eval code for how it's surfaced.
+- `eval_encode_once_ema/`
 
-## Implementation sketch
-
-Copy `slurm_scripts/comparison/eval/submit_eval_crps_ambient.sh`, set
-`eval.use_ema=false` (or equivalent), and write to a
-`eval_no_ema/evaluation_metrics.csv` output so the EMA-on numbers from
-the main eval pass aren't overwritten.
+The submitter also overrides `eval.csv_path` and `eval.video_dir` inside that
+subdir so EMA evals do not clobber online-weight evals.
