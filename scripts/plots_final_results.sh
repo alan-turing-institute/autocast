@@ -4,6 +4,7 @@ set -euo pipefail
 PLOTS_PATH=${PLOTS_PATH:-2026-05-03_final_plots}
 RESULTS_DIR=${RESULTS_DIR:-outputs/2026-04-20_collated}
 OUTPUT_DIR=${OUTPUT_DIR:-$RESULTS_DIR/$PLOTS_PATH/main_comparison_m8_complete_no_fm_amb_best_winkler}
+FIGURE_FORMATS=${FIGURE_FORMATS:-png}
 
 # Keep colours stable across all final plots. These are indices into matplotlib's
 # tab10 palette as used by the explicit hue argument.
@@ -15,7 +16,7 @@ HUE_DM=4
 HUE_ABLATION_ALT_1=1
 HUE_ABLATION_ALT_2=2
 HUE_ABLATION_ALT_3=3
-HUE_ODE_ABLATION_STEPS=$HUE_ABLATION_ALT_1
+HUE_ODE_ABLATION_STEPS=5
 HUE_ODE_MAIN=$HUE_FM_LATENT
 HUE_EMA_OFF=$HUE_FM_LATENT
 HUE_EMA_ON=$HUE_ABLATION_ALT_1
@@ -33,6 +34,9 @@ Options:
   --four-ds-ablation    Add four-dataset ablation figures to multi-dataset ablations.
   --one-ds-ablation     Add one-dataset ablation variants to one-dataset ablations.
   --paper-figures       Add all optional paper-width figures above.
+  --pdf                 Write both PNG and PDF figures.
+  --figure-formats FMT  Write selected formats, comma-separated or quoted.
+                        Example: --figure-formats png,pdf
   -h, --help            Show this help.
 
 By default the script preserves the standard output set and does not write
@@ -56,6 +60,17 @@ while [[ $# -gt 0 ]]; do
 			FOUR_DS_ABLATION=true
 			ONE_DS_ABLATION=true
 			;;
+		--pdf)
+			FIGURE_FORMATS="png pdf"
+			;;
+		--figure-formats)
+			if [[ $# -lt 2 ]]; then
+				echo "--figure-formats requires a value" >&2
+				exit 2
+			fi
+			FIGURE_FORMATS=${2//,/ }
+			shift
+			;;
 		-h | --help)
 			usage
 			exit 0
@@ -69,7 +84,12 @@ while [[ $# -gt 0 ]]; do
 	shift
 done
 
+FIGURE_FORMAT_ARRAY=()
+read -r -a FIGURE_FORMAT_ARRAY <<< "$FIGURE_FORMATS"
+FIGURE_FORMAT_ARGS=(--figure-formats "${FIGURE_FORMAT_ARRAY[@]}")
+
 COMMON_ARGS=(
+	"${FIGURE_FORMAT_ARGS[@]}"
 	--dataset-order CNS
 	--error-ylim 1e-5 1
 	--lead-time-error-metrics vrmse
@@ -105,6 +125,7 @@ if [[ "$FOUR_DS_ABLATION" == true ]]; then
 fi
 
 ALL_DATASET_COMMON_ARGS=(
+	"${FIGURE_FORMAT_ARGS[@]}"
 	--dataset-order AD CNS GS GPE
 	--error-ylim 1e-5 1
 	--lead-time-error-metrics vrmse
@@ -129,11 +150,13 @@ if [[ "$FOUR_DS_ABLATION" == true ]]; then
 fi
 
 echo "Writing plots under: $RESULTS_DIR/$PLOTS_PATH"
+echo "Writing figure formats: ${FIGURE_FORMAT_ARRAY[*]}"
 if [[ "$PAPER_MAIN_FIGURES" != true && "$FOUR_DS_ABLATION" != true && "$ONE_DS_ABLATION" != true ]]; then
 	echo "Paper-ready outputs are disabled. Run with --paper-figures to write paper_*.png files."
 fi
 
 autocast-plots --results-dir "$RESULTS_DIR" \
+	"${FIGURE_FORMAT_ARGS[@]}" \
 	--run crps_ad64_vit_azula_large_bed4611_da01a04 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_gpe64_vit_azula_large_bed4611_e0a6df5 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
@@ -166,6 +189,7 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 # Same as above but rendered smaller so the two coverage panels read well when
 # paired side-by-side in LaTeX (each at ~0.5\textwidth).
 autocast-plots --results-dir "$RESULTS_DIR" \
+	"${FIGURE_FORMAT_ARGS[@]}" \
 	--run crps_ad64_vit_azula_large_bed4611_da01a04 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_gpe64_vit_azula_large_bed4611_e0a6df5 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
@@ -319,7 +343,7 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 
 autocast-plots --results-dir "$RESULTS_DIR" \
 	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (6x)" "$HUE_FM_LATENT" \
-	--run diff_cns64_flow_matching_vit_43cbdde_bb55197 "FM (24x)" "$HUE_ABLATION_ALT_1" eval=eval_encode_once \
+	--run diff_cns64_flow_matching_vit_43cbdde_bb55197 "FM (24x)" "$HUE_ABLATION_ALT_2" eval=eval_encode_once \
 	"${COMMON_ARGS[@]}" \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_cns_fm_autoencoder"
 

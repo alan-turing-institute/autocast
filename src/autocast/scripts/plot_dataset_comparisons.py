@@ -123,10 +123,23 @@ PAPER_FIGURE_WIDTH_IN = 6.9
 PAPER_FONT_SIZE = 8.0
 PAPER_TICK_FONT_SIZE = 7.0
 PAPER_LEGEND_FONT_SIZE = 7.5
+PAPER_LINE_WIDTH = 1.0
+PAPER_REF_LINE_WIDTH = 0.8
+PAPER_LEGEND_LINE_WIDTH = 1.2
+PAPER_AXES_LINE_WIDTH = 0.55
+PAPER_TICK_LINE_WIDTH = 0.55
+PAPER_GRID_LINE_WIDTH = 0.45
+FIGURE_FORMATS: list[str] = ["png"]
 PAPER_RC_PARAMS = {
     "font.size": PAPER_FONT_SIZE,
     "axes.labelsize": PAPER_FONT_SIZE,
     "axes.titlesize": PAPER_FONT_SIZE,
+    "axes.linewidth": PAPER_AXES_LINE_WIDTH,
+    "grid.linewidth": PAPER_GRID_LINE_WIDTH,
+    "xtick.major.width": PAPER_TICK_LINE_WIDTH,
+    "ytick.major.width": PAPER_TICK_LINE_WIDTH,
+    "xtick.minor.width": PAPER_TICK_LINE_WIDTH,
+    "ytick.minor.width": PAPER_TICK_LINE_WIDTH,
     "xtick.labelsize": PAPER_TICK_FONT_SIZE,
     "ytick.labelsize": PAPER_TICK_FONT_SIZE,
     "legend.fontsize": PAPER_LEGEND_FONT_SIZE,
@@ -266,6 +279,21 @@ def _set_shared_xlabel(
         )
 
 
+def _set_figure_text_style(
+    text,
+    axis_label_scale: float = 1.0,
+    x: float | None = None,
+    y: float | None = None,
+) -> None:
+    """Apply label sizing and optional position to a figure-level text artist."""
+    text.set_fontsize(
+        _resolve_font_size(DEFAULT_AXIS_LABEL_FONT_SIZE, axis_label_scale)
+    )
+    if x is not None or y is not None:
+        cur_x, cur_y = text.get_position()
+        text.set_position((cur_x if x is None else x, cur_y if y is None else y))
+
+
 def _scaled_figsize(width: float, height: float, figure_scale: float = 1.0):
     return (width * figure_scale, height * figure_scale)
 
@@ -298,6 +326,13 @@ def _coverage_level_label(metric: str) -> str:
     """Format a coverage_<level> metric as a compact interval label."""
     level = metric.split("_", 1)[1]
     return rf"$1-\alpha={level}$"
+
+
+def _empirical_coverage_label(short: bool = False) -> str:
+    """Return a coverage axis label with the measured empirical symbol."""
+    if short:
+        return r"Emp. Cov. ($1-\hat{\alpha}$)"
+    return r"Empirical coverage ($1-\hat{\alpha}$)"
 
 
 # ---------------------------------------------------------------------------
@@ -1472,8 +1507,17 @@ def build_custom_label_map(
 def save_fig(fig, out_dir: Path, name: str):
     """Save a matplotlib figure to disk and close it."""
     p = out_dir / name
-    fig.savefig(p, dpi=120, bbox_inches="tight")
-    print(f"Saved: {p}")
+    base = p.with_suffix("") if p.suffix else p
+    original_format = p.suffix.lower().lstrip(".")
+    formats = FIGURE_FORMATS or (original_format or "png",)
+    for figure_format in formats:
+        fmt = figure_format.lower().lstrip(".")
+        target = p if fmt == original_format else base.with_suffix(f".{fmt}")
+        save_kwargs = {"bbox_inches": "tight", "format": fmt}
+        if fmt == "png":
+            save_kwargs["dpi"] = 120
+        fig.savefig(target, **save_kwargs)
+        print(f"Saved: {target}")
     plt.close(fig)
 
 
@@ -1932,6 +1976,8 @@ def plot_coverage_calibration_panel(  # noqa: PLR0912, PLR0915
     short_axis_labels: bool = False,
     shared_axis_labels: bool = False,
     height_scale: float = 1.0,
+    line_width: float = 2.0,
+    ref_line_width: float = 1.0,
 ) -> FigureBase | None:
     """Plot the coverage calibration panel (rollout windows x datasets).
 
@@ -1999,7 +2045,14 @@ def plot_coverage_calibration_panel(  # noqa: PLR0912, PLR0915
     for i, w in enumerate(rows):
         for j, ds_label in enumerate(datasets):
             ax = axes[i][j]
-            ax.plot([0, 1], [0, 1], "--", color="k", alpha=0.6)
+            ax.plot(
+                [0, 1],
+                [0, 1],
+                ":",
+                color="k",
+                alpha=0.6,
+                lw=ref_line_width,
+            )
             sub = cur_panel[
                 (cur_panel["window"] == w) & (cur_panel["dataset_label"] == ds_label)
             ]
@@ -2023,7 +2076,7 @@ def plot_coverage_calibration_panel(  # noqa: PLR0912, PLR0915
                     mean_curve["coverage_level"],
                     mean_curve["observed_mean"],
                     color=st["color"],
-                    lw=2,
+                    lw=line_width,
                     linestyle=st.get("linestyle", "-"),
                 )
             if i == 0:
@@ -2047,7 +2100,7 @@ def plot_coverage_calibration_panel(  # noqa: PLR0912, PLR0915
         _set_shared_xlabel(fig, r"Expected coverage (1 - $\alpha$)", axis_label_scale)
         _set_shared_ylabel(
             fig,
-            "Emp. cov." if short_axis_labels else "Empirical coverage",
+            _empirical_coverage_label(short=short_axis_labels),
             axis_label_scale,
         )
     if show_legend:
@@ -2099,6 +2152,8 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
     height_scale: float = 1.0,
     sharey: bool = False,
     coverage_delta_row_labels: bool = False,
+    line_width: float = 2.0,
+    ref_line_width: float = 1.0,
 ) -> FigureBase | None:
     """Plot per-metric, per-dataset lead-time curves as a panel figure.
 
@@ -2254,7 +2309,7 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
                     agg["timestep"],
                     m,
                     color=st["color"],
-                    lw=2,
+                    lw=line_width,
                     linestyle=st.get("linestyle", "-"),
                 )
                 if (agg["count"] > 1).any():
@@ -2335,7 +2390,7 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
                     row_ref,
                     color="black",
                     linestyle=":",
-                    linewidth=1.0,
+                    linewidth=ref_line_width,
                     alpha=0.6,
                 )
             # Apply user override for error rows (skip SSR: ratio diagnostic)
@@ -3006,6 +3061,8 @@ def _paper_legend(
     handles = _dedup_legend_handles(groups, styles)
     if not handles:
         return
+    for handle in handles:
+        handle.set_linewidth(PAPER_LEGEND_LINE_WIDTH)
     fig.legend(
         handles,
         [str(h.get_label()) for h in handles],
@@ -3036,11 +3093,13 @@ def _paper_coverage_metrics(metrics: list[str]) -> list[str]:
 def _paper_style_kwargs(shared_axis_labels: bool = True) -> dict[str, object]:
     """Use rcParams-driven font sizes for paper figures."""
     return {
-        "tick_label_scale": 1.0,
-        "axis_label_scale": 1.0,
+        "tick_label_scale": PAPER_TICK_FONT_SIZE / DEFAULT_TICK_LABEL_FONT_SIZE,
+        "axis_label_scale": PAPER_FONT_SIZE / DEFAULT_AXIS_LABEL_FONT_SIZE,
         "legend_font_size": PAPER_LEGEND_FONT_SIZE,
         "short_axis_labels": True,
         "shared_axis_labels": shared_axis_labels,
+        "line_width": PAPER_LINE_WIDTH,
+        "ref_line_width": PAPER_REF_LINE_WIDTH,
     }
 
 
@@ -3049,6 +3108,116 @@ def _remove_figure_text(fig: FigureBase, labels: set[str]) -> None:
     for text in list(fig.texts):
         if text.get_text() in labels:
             text.remove()
+
+
+def _replace_figure_text(
+    fig: FigureBase,
+    old_label: str,
+    new_label: str,
+    *,
+    axis_label_scale: float = PAPER_FONT_SIZE / DEFAULT_AXIS_LABEL_FONT_SIZE,
+    x: float | None = None,
+    y: float | None = None,
+) -> None:
+    """Replace and restyle a selected figure-level label."""
+    for text in fig.texts:
+        if text.get_text() == old_label:
+            text.set_text(new_label)
+            _set_figure_text_style(text, axis_label_scale, x=x, y=y)
+
+
+def _set_paper_lead_time_xlabel(fig: FigureBase, y: float = 0.105) -> None:
+    """Set a paper-sized shared lead-time x label."""
+    xlabel = fig.text(0.5, y, "Lead time", ha="center", va="center")
+    _set_figure_text_style(
+        xlabel,
+        PAPER_FONT_SIZE / DEFAULT_AXIS_LABEL_FONT_SIZE,
+    )
+
+
+def _plot_paper_combined_lead_time_panel(
+    df_in: pd.DataFrame,
+    results_root: Path,
+    out_dir: Path,
+    styles: dict,
+    error_metrics: list[str],
+    delta_metrics: list[str],
+    fig: FigureBase,
+    dataset_order: list[str] | None = None,
+    hue_order: list[str] | None = None,
+    error_ylim: tuple[float | None, float | None] | None = None,
+    name_stem: str = "paper_combined_lead_time",
+) -> None:
+    """Draw coverage-delta rows and VRMSE rows in one shared lead-time grid."""
+    datasets = _paper_datasets(df_in, dataset_order)
+    n_ds = max(1, len(datasets))
+    n_delta = len(delta_metrics)
+    n_error = len(error_metrics)
+    axes = fig.subplots(
+        n_delta + n_error,
+        n_ds,
+        sharex=True,
+        sharey="row",
+        squeeze=False,
+    )
+
+    if n_delta:
+        delta_axes = axes[:n_delta, :]
+        plot_lead_time_panel(
+            df_in,
+            delta_metrics,
+            results_root,
+            out_dir,
+            f"{name_stem}_coverage_delta_inner.png",
+            styles,
+            dataset_order=dataset_order,
+            hue_order=hue_order,
+            axes=delta_axes,
+            fig=fig,
+            save=False,
+            show_legend=False,
+            coverage_delta=True,
+            sharey=True,
+            coverage_delta_row_labels=True,
+            **_paper_style_kwargs(),
+        )
+        _replace_figure_text(
+            fig,
+            r"Rel. $\Delta$ empirical coverage",
+            r"Rel. $\Delta$ Emp. Cov.",
+            x=-0.055,
+            y=0.62,
+        )
+        for ax in delta_axes[:, 0]:
+            ax.yaxis.labelpad = 0.0
+
+    if n_error:
+        error_axes = axes[n_delta:, :]
+        plot_lead_time_panel(
+            df_in,
+            error_metrics,
+            results_root,
+            out_dir,
+            f"{name_stem}_error_inner.png",
+            styles,
+            dataset_order=dataset_order,
+            hue_order=hue_order,
+            axes=error_axes,
+            fig=fig,
+            save=False,
+            show_legend=False,
+            error_ylim=error_ylim,
+            sharey=True,
+            **_paper_style_kwargs(),
+        )
+        for ax in error_axes.flat:
+            ax.set_title("")
+
+    for ax in axes.flat:
+        ax.label_outer()
+
+    _remove_figure_text(fig, {"Lead time"})
+    _set_paper_lead_time_xlabel(fig)
 
 
 def plot_paper_overall_coverage_figure(
@@ -3086,10 +3255,12 @@ def plot_paper_overall_coverage_figure(
             window_rows=WINDOW_ROWS_OVERALL_ONLY,
             short_axis_labels=True,
             shared_axis_labels=False,
+            line_width=PAPER_LINE_WIDTH,
+            ref_line_width=PAPER_REF_LINE_WIDTH,
         )
         for ax in axes.flat:
             ax.set_xlabel("")
-        axes[0][0].set_ylabel("Emp. cov.")
+        axes[0][0].set_ylabel(_empirical_coverage_label(short=True))
         xlabel = fig.supxlabel(r"Expected coverage (1 - $\alpha$)", y=0.03)
         xlabel.set_fontsize(PAPER_FONT_SIZE)
         _paper_legend(
@@ -3097,8 +3268,8 @@ def plot_paper_overall_coverage_figure(
             df_in,
             styles,
             hue_order,
-            loc="upper center",
-            bbox_to_anchor=(0.5, 0.995),
+            loc="upper left",
+            bbox_to_anchor=(0.06, 0.995),
         )
         fig.subplots_adjust(
             left=0.075,
@@ -3137,7 +3308,7 @@ def plot_paper_uq_reliability_figure(
             right=0.995,
             bottom=0.13,
             top=0.84,
-            wspace=0.18,
+            wspace=0.24,
         )
         left = fig.add_subfigure(outer[0, 0])
         right = fig.add_subfigure(outer[0, 1])
@@ -3163,7 +3334,12 @@ def plot_paper_uq_reliability_figure(
             window_rows=WINDOW_ROWS_ROLLOUT_ONLY,
             **_paper_style_kwargs(),
         )
-        _remove_figure_text(left, {"Emp. cov."})
+        _replace_figure_text(
+            left,
+            _empirical_coverage_label(short=True),
+            _empirical_coverage_label(short=True),
+            x=-0.055,
+        )
 
         right_axes = right.subplots(
             len(delta_metrics),
@@ -3190,7 +3366,14 @@ def plot_paper_uq_reliability_figure(
             coverage_delta_row_labels=True,
             **_paper_style_kwargs(),
         )
-        _remove_figure_text(right, {r"Rel. $\Delta$ empirical coverage"})
+        _replace_figure_text(
+            right,
+            r"Rel. $\Delta$ empirical coverage",
+            r"Rel. $\Delta$ Emp. Cov.",
+            x=-0.055,
+        )
+        for ax in right_axes[:, 0]:
+            ax.yaxis.labelpad = 0.0
 
         _paper_legend(fig, df_in, styles, hue_order)
         save_fig(fig, out_dir, name)
@@ -3279,13 +3462,13 @@ def plot_four_ds_ablation_figure(
             right=0.995,
             bottom=0.08,
             top=0.84,
-            wspace=0.18,
+            wspace=0.36,
         )
         left = fig.add_subfigure(outer[0, 0])
         right = fig.add_subfigure(outer[0, 1])
 
         coverage_axes = left.subplots(
-            len(WINDOW_ROWS_OVERALL_AND_ROLLOUT),
+            len(WINDOW_ROWS_ROLLOUT_ONLY),
             n_ds,
             sharex=True,
             sharey=True,
@@ -3302,76 +3485,36 @@ def plot_four_ds_ablation_figure(
             fig=left,
             save=False,
             show_legend=False,
-            window_rows=WINDOW_ROWS_OVERALL_AND_ROLLOUT,
+            window_rows=WINDOW_ROWS_ROLLOUT_ONLY,
             **_paper_style_kwargs(),
         )
-        _remove_figure_text(left, {"Emp. cov."})
+        _replace_figure_text(
+            left,
+            _empirical_coverage_label(short=True),
+            _empirical_coverage_label(short=True),
+            x=-0.055,
+        )
 
-        right_top, right_bottom = right.subfigures(
-            2,
-            1,
-            height_ratios=[3.0, 1.0],
-            hspace=0.08,
-        )
-        delta_axes = right_top.subplots(
-            len(delta_metrics),
-            n_ds,
-            sharex=True,
-            sharey=True,
-            squeeze=False,
-        )
-        plot_lead_time_panel(
+        _plot_paper_combined_lead_time_panel(
             df_in,
-            delta_metrics,
             results_root,
             out_dir,
-            "four_ds_ablation_coverage_delta_inner.png",
             styles,
-            dataset_order=dataset_order,
-            hue_order=hue_order,
-            axes=delta_axes,
-            fig=right_top,
-            save=False,
-            show_legend=False,
-            coverage_delta=True,
-            sharey=True,
-            coverage_delta_row_labels=True,
-            **_paper_style_kwargs(),
-        )
-        _remove_figure_text(right_top, {r"Rel. $\Delta$ empirical coverage"})
-
-        error_axes = right_bottom.subplots(
-            len(error_metrics),
-            n_ds,
-            sharex=True,
-            sharey=True,
-            squeeze=False,
-        )
-        plot_lead_time_panel(
-            df_in,
             error_metrics,
-            results_root,
-            out_dir,
-            "four_ds_ablation_error_inner.png",
-            styles,
+            delta_metrics,
+            right,
             dataset_order=dataset_order,
             hue_order=hue_order,
-            axes=error_axes,
-            fig=right_bottom,
-            save=False,
-            show_legend=False,
             error_ylim=error_ylim,
-            sharey=True,
-            **_paper_style_kwargs(),
+            name_stem="four_ds_ablation",
         )
-        _remove_figure_text(right_bottom, {"Lead time"})
 
         _paper_legend(
             fig,
             df_in,
             styles,
             hue_order,
-            bbox_to_anchor=(0.06, 1.08),
+            bbox_to_anchor=(0.06, 0.995),
         )
         save_fig(fig, out_dir, name)
 
@@ -3405,7 +3548,7 @@ def plot_one_ds_ablation_figure_a(
             right=0.99,
             bottom=0.08,
             top=0.84,
-            wspace=0.22,
+            wspace=0.38,
         )
         left = fig.add_subfigure(outer[0, 0])
         right = fig.add_subfigure(outer[0, 1])
@@ -3431,73 +3574,33 @@ def plot_one_ds_ablation_figure_a(
             window_rows=WINDOW_ROWS_ROLLOUT_ONLY,
             **_paper_style_kwargs(),
         )
-        _remove_figure_text(left, {"Emp. cov."})
+        _replace_figure_text(
+            left,
+            _empirical_coverage_label(short=True),
+            _empirical_coverage_label(short=True),
+            x=-0.055,
+        )
 
-        right_top, right_bottom = right.subfigures(
-            2,
-            1,
-            height_ratios=[3.0, 1.0],
-            hspace=0.1,
-        )
-        delta_axes = right_top.subplots(
-            len(delta_metrics),
-            n_ds,
-            sharex=True,
-            sharey=True,
-            squeeze=False,
-        )
-        plot_lead_time_panel(
+        _plot_paper_combined_lead_time_panel(
             df_in,
-            delta_metrics,
             results_root,
             out_dir,
-            "one_ds_ablation_a_coverage_delta_inner.png",
             styles,
-            dataset_order=dataset_order,
-            hue_order=hue_order,
-            axes=delta_axes,
-            fig=right_top,
-            save=False,
-            show_legend=False,
-            coverage_delta=True,
-            sharey=True,
-            coverage_delta_row_labels=True,
-            **_paper_style_kwargs(),
-        )
-        _remove_figure_text(right_top, {r"Rel. $\Delta$ empirical coverage"})
-
-        error_axes = right_bottom.subplots(
-            len(error_metrics),
-            n_ds,
-            sharex=True,
-            sharey=True,
-            squeeze=False,
-        )
-        plot_lead_time_panel(
-            df_in,
             error_metrics,
-            results_root,
-            out_dir,
-            "one_ds_ablation_a_error_inner.png",
-            styles,
+            delta_metrics,
+            right,
             dataset_order=dataset_order,
             hue_order=hue_order,
-            axes=error_axes,
-            fig=right_bottom,
-            save=False,
-            show_legend=False,
             error_ylim=error_ylim,
-            sharey=True,
-            **_paper_style_kwargs(),
+            name_stem="one_ds_ablation_a",
         )
-        _remove_figure_text(right_bottom, {"Lead time"})
 
         _paper_legend(
             fig,
             df_in,
             styles,
             hue_order,
-            bbox_to_anchor=(0.06, 1.08),
+            bbox_to_anchor=(0.06, 0.995),
         )
         save_fig(fig, out_dir, name)
 
@@ -3528,8 +3631,8 @@ def plot_one_ds_ablation_figure_b(
             left=0.075,
             right=0.99,
             bottom=0.15,
-            top=0.68,
-            hspace=0.7,
+            top=0.77,
+            hspace=0.55,
         )
         top = fig.add_subfigure(outer[0, 0])
         bottom = fig.add_subfigure(outer[1, 0])
@@ -3555,12 +3658,14 @@ def plot_one_ds_ablation_figure_b(
             window_rows=WINDOW_ROWS_ROLLOUT_ONLY,
             short_axis_labels=True,
             shared_axis_labels=False,
+            line_width=PAPER_LINE_WIDTH,
+            ref_line_width=PAPER_REF_LINE_WIDTH,
         )
         for i, window in enumerate(WINDOW_ROWS_ROLLOUT_ONLY):
             ax = coverage_axes_visual[0][i]
             ax.set_title(_coverage_window_row_tag(window))
             ax.set_xlabel("")
-            ax.set_ylabel("Emp. cov." if i == 0 else "")
+            ax.set_ylabel(_empirical_coverage_label(short=True) if i == 0 else "")
         bottom_grid = bottom.add_gridspec(
             1,
             len(delta_metrics) + len(error_metrics),
@@ -3584,15 +3689,14 @@ def plot_one_ds_ablation_figure_b(
             show_legend=False,
             coverage_delta=True,
             sharey=True,
-            short_axis_labels=True,
-            shared_axis_labels=False,
+            **_paper_style_kwargs(shared_axis_labels=False),
         )
         _remove_figure_text(bottom, {r"Rel. $\Delta$ empirical coverage"})
         for i, metric in enumerate(delta_metrics):
             ax = delta_axes_visual[0][i]
             ax.set_title(_coverage_level_label(metric))
             ax.set_xlabel("Lead time")
-            ax.set_ylabel(r"Rel. $\Delta$ cov." if i == 0 else "")
+            ax.set_ylabel(r"Rel. $\Delta$ Emp. Cov." if i == 0 else "")
 
         error_axes = np.asarray(
             [
@@ -3619,12 +3723,11 @@ def plot_one_ds_ablation_figure_b(
             show_legend=False,
             error_ylim=error_ylim,
             sharey=True,
-            short_axis_labels=True,
-            shared_axis_labels=False,
+            **_paper_style_kwargs(shared_axis_labels=False),
         )
-        for i, metric in enumerate(error_metrics):
+        for i, _metric in enumerate(error_metrics):
             ax = error_axes[0][i]
-            ax.set_title(_metric_axis_label(metric))
+            ax.set_title("")
             ax.set_xlabel("Lead time")
 
         _paper_legend(
@@ -3632,7 +3735,7 @@ def plot_one_ds_ablation_figure_b(
             df_in,
             styles,
             hue_order,
-            bbox_to_anchor=(0.06, 1.08),
+            bbox_to_anchor=(0.06, 0.995),
         )
         save_fig(fig, out_dir, name)
 
@@ -3688,7 +3791,14 @@ def main():  # noqa: PLR0912, PLR0915
     )
     parser.add_argument(
         "--output-dir",
-        help="Directory to save PNG plots (defaults to <results-dir>/plots/<name>)",
+        help="Directory to save plots (defaults to <results-dir>/plots/<name>)",
+    )
+    parser.add_argument(
+        "--figure-formats",
+        nargs="+",
+        default=["png"],
+        choices=["png", "pdf"],
+        help="Figure file formats to write (default: png). Use: png pdf",
     )
     parser.add_argument(
         "--name",
@@ -4024,6 +4134,7 @@ def main():  # noqa: PLR0912, PLR0915
         ),
     )
     args = parser.parse_args()
+    FIGURE_FORMATS[:] = list(dict.fromkeys(args.figure_formats))
     for style_arg in (
         "tick_label_scale",
         "axis_label_scale",
