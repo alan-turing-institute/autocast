@@ -1,16 +1,16 @@
 #!/bin/bash
 set -euo pipefail
 
-PLOTS_PATH=${PLOTS_PATH:-2026-04-27_final_plots}
+PLOTS_PATH=${PLOTS_PATH:-2026-05-03_final_plots}
 RESULTS_DIR=${RESULTS_DIR:-outputs/2026-04-20_collated}
 OUTPUT_DIR=${OUTPUT_DIR:-$RESULTS_DIR/$PLOTS_PATH/main_comparison_m8_complete_no_fm_amb_best_winkler}
 
 # Keep colours stable across all final plots. These are indices into matplotlib's
 # tab10 palette as used by the explicit hue argument.
 HUE_CRPS=0
-HUE_FM_AMBIENT=1
+HUE_FM_LATENT=1
 HUE_CRPS_LATENT=2
-HUE_FM_LATENT=3
+HUE_FM_AMBIENT=3
 HUE_DM=4
 HUE_ABLATION_ALT_1=1
 HUE_ABLATION_ALT_2=2
@@ -19,6 +19,55 @@ HUE_ODE_ABLATION_STEPS=$HUE_ABLATION_ALT_1
 HUE_ODE_MAIN=$HUE_FM_LATENT
 HUE_EMA_OFF=$HUE_FM_LATENT
 HUE_EMA_ON=$HUE_ABLATION_ALT_1
+
+PAPER_MAIN_FIGURES=false
+FOUR_DS_ABLATION=false
+ONE_DS_ABLATION=false
+
+usage() {
+	cat <<'EOF'
+Usage: scripts/plots_final_results.sh [OPTIONS]
+
+Options:
+  --paper-main-figures  Add paper-width main-result figures to OUTPUT_DIR.
+  --four-ds-ablation    Add four-dataset ablation figures to multi-dataset ablations.
+  --one-ds-ablation     Add one-dataset ablation variants to one-dataset ablations.
+  --paper-figures       Add all optional paper-width figures above.
+  -h, --help            Show this help.
+
+By default the script preserves the standard output set and does not write
+paper_*.png files. Pass --paper-figures to generate the paper-ready variants.
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+		--paper-main-figures)
+			PAPER_MAIN_FIGURES=true
+			;;
+		--four-ds-ablation)
+			FOUR_DS_ABLATION=true
+			;;
+		--one-ds-ablation)
+			ONE_DS_ABLATION=true
+			;;
+		--paper-figures)
+			PAPER_MAIN_FIGURES=true
+			FOUR_DS_ABLATION=true
+			ONE_DS_ABLATION=true
+			;;
+		-h | --help)
+			usage
+			exit 0
+			;;
+		*)
+			echo "Unknown option: $1" >&2
+			usage >&2
+			exit 2
+			;;
+	esac
+	shift
+done
 
 COMMON_ARGS=(
 	--dataset-order CNS
@@ -41,6 +90,20 @@ COMMON_ARGS=(
 	--coverage-panel-height-scale 1.5
 )
 
+if [[ "$ONE_DS_ABLATION" == true ]]; then
+	COMMON_ARGS+=(--one-ds-ablation)
+fi
+
+PAPER_MAIN_ARG=
+if [[ "$PAPER_MAIN_FIGURES" == true ]]; then
+	PAPER_MAIN_ARG=--paper-main-figures
+fi
+
+FOUR_DS_ABLATION_ARG=
+if [[ "$FOUR_DS_ABLATION" == true ]]; then
+	FOUR_DS_ABLATION_ARG=--four-ds-ablation
+fi
+
 ALL_DATASET_COMMON_ARGS=(
 	--dataset-order AD CNS GS GPE
 	--error-ylim 1e-5 1
@@ -60,6 +123,15 @@ ALL_DATASET_COMMON_ARGS=(
 	--shared-axis-labels
 	--coverage-panel-height-scale 1.5
 )
+
+if [[ "$FOUR_DS_ABLATION" == true ]]; then
+	ALL_DATASET_COMMON_ARGS+=(--four-ds-ablation)
+fi
+
+echo "Writing plots under: $RESULTS_DIR/$PLOTS_PATH"
+if [[ "$PAPER_MAIN_FIGURES" != true && "$FOUR_DS_ABLATION" != true && "$ONE_DS_ABLATION" != true ]]; then
+	echo "Paper-ready outputs are disabled. Run with --paper-figures to write paper_*.png files."
+fi
 
 autocast-plots --results-dir "$RESULTS_DIR" \
 	--run crps_ad64_vit_azula_large_bed4611_da01a04 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
@@ -88,6 +160,7 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	--short-axis-labels \
 	--shared-axis-labels \
 	--coverage-panel-height-scale 1.5 \
+	${PAPER_MAIN_ARG:+$PAPER_MAIN_ARG} \
 	--output-dir "$OUTPUT_DIR"
 
 # Same as above but rendered smaller so the two coverage panels read well when
@@ -168,17 +241,17 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS (ambient)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_gpe64_vit_azula_large_bed4611_e0a6df5 "CRPS (ambient)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_gs64_vit_azula_large_bed4611_828a161 "CRPS (ambient)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
-	--run diff_ad64_flow_matching_vit_09490da_dae1382 "FM (latent)" "$HUE_FM_LATENT" \
-	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" "$HUE_FM_LATENT" \
-	--run diff_gpe64_flow_matching_vit_09490da_47bf39a "FM (latent)" "$HUE_FM_LATENT" \
-	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "FM (latent)" "$HUE_FM_LATENT" \
+	--run crps_cns64_vit_azula_large_9c98db0_4b2a1a5 "CRPS (latent)" "$HUE_CRPS_LATENT" eval=eval_best_multiwinkler_from0p25 \
+	--run crps_ad64_vit_azula_large_3b47441_3ad3562 "CRPS (latent)" "$HUE_CRPS_LATENT" eval=eval_best_multiwinkler_from0p25 \
+	--run crps_gs64_vit_azula_large_3b47441_1c8e446 "CRPS (latent)" "$HUE_CRPS_LATENT" eval=eval_best_multiwinkler_from0p25 \
 	--run diff_ad64_flow_matching_vit_0f89f06_725d44a "FM (ambient)" "$HUE_FM_AMBIENT" \
 	--run diff_cns64_flow_matching_vit_0f89f06_483bb70 "FM (ambient)" "$HUE_FM_AMBIENT" \
 	--run diff_gpe64_flow_matching_vit_0f89f06_3b3604d "FM (ambient)" "$HUE_FM_AMBIENT" \
 	--run diff_gs64_flow_matching_vit_0f89f06_6e3a299 "FM (ambient)" "$HUE_FM_AMBIENT" \
-	--run crps_cns64_vit_azula_large_9c98db0_4b2a1a5 "CRPS (latent)" "$HUE_CRPS_LATENT" eval=eval_best_multiwinkler_from0p25 \
-	--run crps_ad64_vit_azula_large_3b47441_3ad3562 "CRPS (latent)" "$HUE_CRPS_LATENT" eval=eval_best_multiwinkler_from0p25 \
-	--run crps_gs64_vit_azula_large_3b47441_1c8e446 "CRPS (latent)" "$HUE_CRPS_LATENT" eval=eval_best_multiwinkler_from0p25 \
+	--run diff_ad64_flow_matching_vit_09490da_dae1382 "FM (latent)" "$HUE_FM_LATENT" \
+	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" "$HUE_FM_LATENT" \
+	--run diff_gpe64_flow_matching_vit_09490da_47bf39a "FM (latent)" "$HUE_FM_LATENT" \
+	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "FM (latent)" "$HUE_FM_LATENT" \
 	--dataset-order AD CNS GS GPE \
 	--error-ylim 1e-5 1 \
 	--lead-time-error-metrics vrmse \
@@ -197,6 +270,7 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	--short-axis-labels \
 	--shared-axis-labels \
 	--coverage-panel-height-scale 1.5 \
+	${FOUR_DS_ABLATION_ARG:+$FOUR_DS_ABLATION_ARG} \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_ambient_fm_latent_crps_m8"
 
 autocast-plots --results-dir "$RESULTS_DIR" \
@@ -226,6 +300,7 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	--short-axis-labels \
 	--shared-axis-labels \
 	--coverage-panel-height-scale 1.5 \
+	${FOUR_DS_ABLATION_ARG:+$FOUR_DS_ABLATION_ARG} \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_crps_multiwinkler_eval_m8"
 
 autocast-plots --results-dir "$RESULTS_DIR" \
@@ -298,6 +373,7 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	--short-axis-labels \
 	--shared-axis-labels \
 	--coverage-panel-height-scale 1.5 \
+	${FOUR_DS_ABLATION_ARG:+$FOUR_DS_ABLATION_ARG} \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_ensemble_size"
 
 autocast-plots --results-dir "$RESULTS_DIR" \
