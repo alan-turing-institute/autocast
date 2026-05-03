@@ -448,12 +448,13 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_cns_noise_channels"
 
 if [[ "$PAPER_MAIN_FIGURES" == true || "$FOUR_DS_ABLATION" == true || "$ONE_DS_ABLATION" == true ]]; then
-	mkdir -p "$PAPER_OUTPUT_DIR"
+	mkdir -p "$PAPER_OUTPUT_DIR/png" "$PAPER_OUTPUT_DIR/pdf"
 	copied=0
 	while IFS= read -r fig; do
 		src_dir=$(basename "$(dirname "$fig")")
+		ext=${fig##*.}
 		dest_name="${src_dir}_$(basename "$fig")"
-		cp "$fig" "$PAPER_OUTPUT_DIR/$dest_name"
+		cp "$fig" "$PAPER_OUTPUT_DIR/$ext/$dest_name"
 		copied=$((copied + 1))
 	done < <(
 		find "$RESULTS_DIR/$PLOTS_PATH" \
@@ -461,5 +462,5 @@ if [[ "$PAPER_MAIN_FIGURES" == true || "$FOUR_DS_ABLATION" == true || "$ONE_DS_A
 			-type f \( -name 'paper_*.png' -o -name 'paper_*.pdf' \) \
 			-print
 	)
-	echo "Copied $copied paper figure files to: $PAPER_OUTPUT_DIR"
+	echo "Copied $copied paper figure files to: $PAPER_OUTPUT_DIR/{png,pdf}"
 fi

@@ -346,6 +346,16 @@ def _empirical_coverage_label(short: bool = False) -> str:
     return r"Empirical coverage ($1-\hat{\alpha}$)"
 
 
+def _paper_empirical_coverage_label() -> str:
+    """Return the full empirical coverage label for paper figures."""
+    return r"Empirical Coverage ($1-\hat{\alpha}$)"
+
+
+def _paper_relative_coverage_label() -> str:
+    """Return the full relative coverage label for paper figures."""
+    return r"Relative $\Delta$ Empirical Coverage"
+
+
 # ---------------------------------------------------------------------------
 # Lead-time panel group presets
 # ---------------------------------------------------------------------------
@@ -3197,7 +3207,7 @@ def _plot_paper_combined_lead_time_panel(
         _replace_figure_text(
             fig,
             r"Rel. $\Delta$ empirical coverage",
-            r"Rel. $\Delta$ Emp. Cov.",
+            _paper_relative_coverage_label(),
             x=delta_ylabel_x,
             y=0.62,
         )
@@ -3273,7 +3283,7 @@ def plot_paper_overall_coverage_figure(
         )
         for ax in axes.flat:
             ax.set_xlabel("")
-        axes[0][0].set_ylabel(_empirical_coverage_label(short=True))
+        axes[0][0].set_ylabel(_paper_empirical_coverage_label())
         xlabel = fig.supxlabel(r"Expected coverage (1 - $\alpha$)", y=0.03)
         xlabel.set_fontsize(PAPER_FONT_SIZE)
         _paper_legend(
@@ -3350,7 +3360,7 @@ def plot_paper_uq_reliability_figure(
         _replace_figure_text(
             left,
             _empirical_coverage_label(short=True),
-            _empirical_coverage_label(short=True),
+            _paper_empirical_coverage_label(),
             x=-0.04,
         )
 
@@ -3382,7 +3392,7 @@ def plot_paper_uq_reliability_figure(
         _replace_figure_text(
             right,
             r"Rel. $\Delta$ empirical coverage",
-            r"Rel. $\Delta$ Emp. Cov.",
+            _paper_relative_coverage_label(),
             x=-0.075,
         )
         for ax in right_axes[:, 0]:
@@ -3504,7 +3514,7 @@ def plot_four_ds_ablation_figure(
         _replace_figure_text(
             left,
             _empirical_coverage_label(short=True),
-            _empirical_coverage_label(short=True),
+            _paper_empirical_coverage_label(),
             x=-0.055,
         )
         _replace_figure_text(
@@ -3597,7 +3607,7 @@ def plot_one_ds_ablation_figure_a(
         _replace_figure_text(
             left,
             _empirical_coverage_label(short=True),
-            _empirical_coverage_label(short=True),
+            _paper_empirical_coverage_label(),
             x=-0.055,
         )
 
@@ -3687,7 +3697,7 @@ def plot_one_ds_ablation_figure_b(
             ax = coverage_axes_visual[0][i]
             ax.set_title(_coverage_window_row_tag(window))
             ax.set_xlabel("")
-            ax.set_ylabel(_empirical_coverage_label(short=True) if i == 0 else "")
+            ax.set_ylabel(_paper_empirical_coverage_label() if i == 0 else "")
         bottom_grid = bottom.add_gridspec(
             1,
             len(delta_metrics) + len(error_metrics),
@@ -3718,7 +3728,7 @@ def plot_one_ds_ablation_figure_b(
             ax = delta_axes_visual[0][i]
             ax.set_title(_coverage_level_label(metric))
             ax.set_xlabel("Lead time")
-            ax.set_ylabel(r"Rel. $\Delta$ Emp. Cov." if i == 0 else "")
+            ax.set_ylabel(_paper_relative_coverage_label() if i == 0 else "")
 
         error_axes = np.asarray(
             [
