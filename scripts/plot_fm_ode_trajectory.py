@@ -10,17 +10,22 @@ in Inkscape into something like the mock-up in methods_sketch_00.pdf.
 Example:
     python scripts/plot_fm_ode_trajectory.py \
         --run-dir outputs/2026-04-20/diff_cns64_flow_matching_vit_09490da_636fcc3 \
-        --batch-index 0 --sample-index 0 --use-ema \
+        --batch-index 0 --sample-index 0 \
         --intermediate-stride 5 --channel 0
 
-Deeper rollout (visualise FM ODE at the 12th 4-step window, i.e. after 48 steps):
+Multiple rollout depths (windows are 0-indexed, n_steps_output frames each):
 
     python scripts/plot_fm_ode_trajectory.py \
-        --rollout-window 12 --use-ema --intermediate-stride 10 --channel 0
+        --rollout-windows 0,12,24 --intermediate-stride 10 --channel 0
+
+Multiple noise seeds — different ensemble members (saved with s{seed} tags):
+
+    python scripts/plot_fm_ode_trajectory.py \
+        --rollout-windows 0,12 --seeds 0,1,2
 
 Per-channel colormaps (smoke=viridis, u/v=RdBu_r):
 
-    python scripts/plot_fm_ode_trajectory.py --use-ema --all-channels \
+    python scripts/plot_fm_ode_trajectory.py --all-channels \
         --cmap viridis,RdBu_r,RdBu_r --symmetric-cmaps RdBu_r
 """
 
@@ -28,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+from datetime import datetime
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -73,7 +79,17 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=None,
         help=(
-            "Output directory for tiles. Defaults to <run-dir>/figures/fm_ode_traj."
+            "Output directory for tiles. If omitted, defaults to "
+            "<run-dir>/figures/fm_ode_traj_<timestamp>[_<label>] so re-runs "
+            "do not overwrite previous outputs."
+        ),
+    )
+    p.add_argument(
+        "--label",
+        default="",
+        help=(
+            "Optional label folded into the auto-generated output directory "
+            "name, e.g. --label cns64_w0-12-24."
         ),
     )
     p.add_argument("--batch-index", type=int, default=0, help="Test batch to draw.")
@@ -105,8 +121,22 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Force device, e.g. 'cuda' or 'cpu' (default: auto).",
     )
-    p.add_argument("--use-ema", action="store_true", help="Use EMA processor weights.")
-    p.add_argument("--seed", type=int, default=0, help="Seed for the noise z0.")
+    p.add_argument(
+        "--use-ema",
+        action="store_true",
+        help=(
+            "Use EMA processor weights. Off by default — main eval comparisons "
+            "do not use EMA, so this script matches that."
+        ),
+    )
+    p.add_argument(
+        "--seeds",
+        default="0",
+        help=(
+            "Comma-separated list of noise seeds. Each seed produces an "
+            "independent ensemble member. Output filenames are tagged s{seed}."
+        ),
+    )
     p.add_argument(
         "--format",
         default="pdf",
@@ -131,16 +161,70 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     p.add_argument(
-        "--rollout-window",
-        type=int,
-        default=0,
+        "--rollout-windows",
+        default="0",
         help=(
-            "Output window (0-indexed, length n_steps_output frames each) at "
-            "which to capture the FM ODE intermediates. 0 = the first window "
-            "(uses the test_dataloader). >0 = autoregressive rollout to that "
-            "window first; uses the rollout_test_dataloader so ground truth "
-            "is available for the deeper window too."
+            "Comma-separated list of output windows (0-indexed, n_steps_output "
+            "frames each) at which to capture the FM ODE intermediates. 0 is "
+            "the first window. For any window >0 we use the rollout test "
+            "dataloader (full-trajectory mode) so ground truth is available "
+            "at any depth."
         ),
+    )
+    p.add_argument(
+        "--latent-channels",
+        default="all",
+        help=(
+            "Comma-separated list of latent channels to render in latent-space "
+            "plots, or 'all' for every channel (typically 8). 'none' disables "
+            "latent-space output."
+        ),
+    )
+    p.add_argument(
+        "--latent-cmap",
+        default="RdBu_r",
+        help=(
+            "Colormap for latent-space tiles. Single name or comma-separated "
+            "list aligned with --latent-channels."
+        ),
+    )
+    p.add_argument(
+        "--latent-symmetric",
+        action="store_true",
+        default=True,
+        help=(
+            "Use symmetric color limits around zero for latent-space tiles "
+            "(latents are roughly zero-centred). On by default."
+        ),
+    )
+    p.add_argument(
+        "--no-latent-symmetric",
+        dest="latent_symmetric",
+        action="store_false",
+        help="Disable symmetric latent color limits.",
+    )
+    p.add_argument(
+        "--const-names",
+        default="buoyancy_y,smoothness,noise_scale,smoke_diffusivity",
+        help=(
+            "Comma-separated names for the global-cond constant scalars, "
+            "used in filenames for the constants heatmap tiles."
+        ),
+    )
+    p.add_argument(
+        "--const-cmap",
+        default="cividis",
+        help="Matplotlib colormap for constant-scalar heatmap tiles.",
+    )
+    p.add_argument(
+        "--no-constants",
+        action="store_true",
+        help="Skip the constant-scalars heatmap output.",
+    )
+    p.add_argument(
+        "--no-latent",
+        action="store_true",
+        help="Skip the latent-space ODE intermediate output.",
     )
     p.add_argument(
         "--dpi",
@@ -331,12 +415,19 @@ def main() -> None:
     if not ckpt_path.exists():
         raise FileNotFoundError(ckpt_path)
 
-    out_dir = (
-        args.out_dir.resolve()
-        if args.out_dir is not None
-        else run_dir / "figures" / "fm_ode_traj"
-    )
+    if args.out_dir is not None:
+        out_dir = args.out_dir.resolve()
+    else:
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        suffix = f"fm_ode_traj_{timestamp}"
+        if args.label:
+            sanitized = "".join(
+                ch if ch.isalnum() or ch in "-_." else "_" for ch in args.label
+            )
+            suffix = f"{suffix}_{sanitized}"
+        out_dir = run_dir / "figures" / suffix
     out_dir.mkdir(parents=True, exist_ok=True)
+    log.info("Output directory: %s", out_dir)
 
     log.info("Loading config from %s", cfg_path)
     cfg = OmegaConf.load(cfg_path)
@@ -415,18 +506,26 @@ def main() -> None:
     model.to(device)
     model.eval()
 
-    # Choose the dataloader. Window 0 is fine on the standard test loader
-    # (n_steps_output frames of GT). Deeper windows need the rollout loader,
-    # which yields a single window per trajectory in full_trajectory_mode so
-    # we get GT for every output frame in the trajectory.
+    # Parse plan: which windows × which seeds.
+    seeds = [int(s) for s in args.seeds.split(",") if s.strip()]
+    if not seeds:
+        raise ValueError("--seeds is empty.")
+    windows = sorted({int(w) for w in args.rollout_windows.split(",") if w.strip()})
+    if not windows:
+        raise ValueError("--rollout-windows is empty.")
+    log.info("Plan: windows=%s, seeds=%s", windows, seeds)
+
+    # Choose the dataloader. Window 0 only is fine on the standard test
+    # loader; any deeper window needs full trajectories, so we always use
+    # the rollout loader when max(windows) > 0.
     datamodule.setup(stage="test")
-    if args.rollout_window <= 0:
+    if max(windows) <= 0:
         loader = datamodule.test_dataloader()
         loader_name = "test_dataloader"
     else:
         loader = datamodule.rollout_test_dataloader()
         loader_name = "rollout_test_dataloader"
-    log.info("Using %s for window=%s", loader_name, args.rollout_window)
+    log.info("Using %s", loader_name)
 
     batch = None
     seen = 0
@@ -450,109 +549,46 @@ def main() -> None:
         )
         raise IndexError(msg)
 
-    sample = select_sample(batch, args.sample_index)
-    sample = to_device(sample, device)
+    base_sample = select_sample(batch, args.sample_index)
+    base_sample = to_device(base_sample, device)
 
     n_t_out = int(model.processor.n_steps_output)
-    n_t_in = sample.input_fields.shape[1]
-    if args.rollout_window > 0:
-        # In full-trajectory mode `output_fields` holds the entire GT
-        # trajectory after the initial input, so we can slice the GT for
-        # any output window. For the visualised window we also need the
-        # *predicted* input frame at that point — produce it via free-
-        # running rollout for the preceding (rollout_window) windows.
-        gt_start = args.rollout_window * n_t_out
-        gt_end = gt_start + n_t_out
-        if gt_end > sample.output_fields.shape[1]:
-            msg = (
-                f"--rollout-window={args.rollout_window} requires GT frames "
-                f"up to index {gt_end - 1}, but the trajectory only has "
-                f"{sample.output_fields.shape[1]} output frames."
-            )
-            raise IndexError(msg)
-        target_fields_window = sample.output_fields[:, gt_start:gt_end, ...]
 
-        torch.manual_seed(args.seed)
-        if device.type == "cuda":
-            torch.cuda.manual_seed_all(args.seed)
-        log.info(
-            "Free-running rollout for %s windows before capture...",
-            args.rollout_window,
+    # Sanity-check trajectory length covers the deepest window's GT slice.
+    gt_end = (max(windows) + 1) * n_t_out
+    if gt_end > base_sample.output_fields.shape[1]:
+        msg = (
+            f"Deepest window {max(windows)} requires GT frames up to "
+            f"{gt_end - 1}, but the trajectory only has "
+            f"{base_sample.output_fields.shape[1]} output frames."
         )
-        current = sample
-        for _ in range(args.rollout_window):
-            current = advance_batch_free_running(model, current)
-        capture_sample = current
-    else:
-        target_fields_window = sample.output_fields
-        capture_sample = sample
-        torch.manual_seed(args.seed)
-        if device.type == "cuda":
-            torch.cuda.manual_seed_all(args.seed)
+        raise IndexError(msg)
 
-    # Encode → latent input + global conditioning at the chosen window.
-    with torch.no_grad():
-        z_input, global_cond = model.encoder_decoder.encoder.encode_with_cond(
-            capture_sample
-        )
-    log.info(
-        "Encoded latent shape: %s; global_cond shape: %s",
-        tuple(z_input.shape),
-        tuple(global_cond.shape) if global_cond is not None else None,
-    )
-
-    capture_every = max(args.intermediate_stride, 1)
-    log.info(
-        "Rolling out flow ODE with %s steps; capturing every %s.",
-        model.processor.flow_ode_steps,
-        capture_every,
-    )
-    _, snapshots = run_fm_with_intermediates(
-        model.processor, z_input, global_cond, capture_every=capture_every
-    )
-
-    # Decode + denormalise each snapshot, plus the input & ground truth output.
-    decoded_snapshots: list[tuple[int, np.ndarray]] = []
-    with torch.no_grad():
-        for step, z_snap in snapshots:
-            ambient = latents_to_ambient(model, z_snap, denormalise=True)
-            decoded_snapshots.append((step, ambient.detach().cpu().numpy()))
-
-        input_ambient = (
-            model.denormalize_tensor(capture_sample.input_fields).detach().cpu().numpy()
-        )
-        target_ambient = (
-            model.denormalize_tensor(target_fields_window).detach().cpu().numpy()
-        )
-
-    # decoded shapes: (1, T_out, H, W, C). Pull channel(s).
-    n_t_out_pred = decoded_snapshots[0][1].shape[1]
-    n_channels = decoded_snapshots[0][1].shape[-1]
+    # Channel selection + colormap setup.
+    n_channels = base_sample.input_fields.shape[-1]
     chans = channel_indices(args, n_channels)
     cmap_for = parse_cmap_list(args.cmap, chans)
     symmetric_cmaps = parse_symmetric_set(args.symmetric_cmaps)
-    log.info(
-        "Snapshots: %d; T_out=%d; rendering channels: %s; cmaps: %s",
-        len(decoded_snapshots),
-        n_t_out_pred,
-        chans,
-        cmap_for,
-    )
 
-    # Determine shared color limits per channel from the *target/final* output
-    # so the input, ground truth, and final prediction share a scale. Earlier
-    # noisy intermediates will inevitably land outside this range — that's
-    # part of the visual story. Channels whose colormap is in the symmetric
-    # set get limits centered on zero.
-    final_pred = decoded_snapshots[-1][1]
+    # Compute global ambient color limits per channel from the union of all
+    # visualised-window GTs + the input frame, so the same scale applies
+    # across windows/seeds. Noisy intermediates will saturate against this.
+    target_slices_per_window: dict[int, np.ndarray] = {}
+    with torch.no_grad():
+        input_ambient_np = (
+            model.denormalize_tensor(base_sample.input_fields).detach().cpu().numpy()
+        )
+        for w in windows:
+            tgt = base_sample.output_fields[:, w * n_t_out : (w + 1) * n_t_out]
+            target_slices_per_window[w] = (
+                model.denormalize_tensor(tgt).detach().cpu().numpy()
+            )
+
     color_limits: dict[int, tuple[float, float]] = {}
     for c in chans:
         all_vals = np.concatenate(
-            [
-                final_pred[..., c].ravel(),
-                target_ambient[..., c].ravel(),
-                input_ambient[..., c].ravel(),
-            ]
+            [input_ambient_np[..., c].ravel()]
+            + [arr[..., c].ravel() for arr in target_slices_per_window.values()]
         )
         vmin = float(np.percentile(all_vals, 2))
         vmax = float(np.percentile(all_vals, 98))
@@ -563,36 +599,281 @@ def main() -> None:
             vmax = vmin + 1.0
         color_limits[c] = (vmin, vmax)
 
-    suffix = args.format
-    win_tag = f"w{args.rollout_window:02d}"
+    # Latent setup.
+    n_latent_channels = int(model.processor.n_channels_out)
+    latent_chans = parse_latent_channel_spec(args.latent_channels, n_latent_channels)
+    latent_cmap_for: dict[int, str] = {}
+    if latent_chans and not args.no_latent:
+        latent_cmap_for = parse_cmap_list(args.latent_cmap, latent_chans)
+    log.info(
+        "Channels: ambient=%s (cmaps=%s), latent=%s (cmaps=%s)",
+        chans,
+        cmap_for,
+        latent_chans,
+        latent_cmap_for,
+    )
 
-    # 1. Input field tiles for the visualised window.
+    # Compute global latent color limits per latent channel from each
+    # window's encoded GT (this is the destination of the FM trajectory).
+    latent_targets_per_window: dict[int, np.ndarray] = {}
+    if latent_chans and not args.no_latent:
+        with torch.no_grad():
+            for w in windows:
+                tgt = base_sample.output_fields[
+                    :, w * n_t_out : (w + 1) * n_t_out
+                ]
+                # Encoder consumes Batch.input_fields, so masquerade the
+                # target window as the input.
+                fake_batch = Batch(
+                    input_fields=tgt,
+                    output_fields=tgt,
+                    constant_scalars=base_sample.constant_scalars,
+                    constant_fields=base_sample.constant_fields,
+                    boundary_conditions=base_sample.boundary_conditions,
+                )
+                z_tgt = model.encoder_decoder.encoder.encode(fake_batch)
+                if isinstance(z_tgt, tuple):
+                    z_tgt = z_tgt[0]
+                latent_targets_per_window[w] = z_tgt.detach().cpu().numpy()
+
+    latent_color_limits: dict[int, tuple[float, float]] = {}
+    for lc in latent_chans:
+        all_vals = np.concatenate(
+            [arr[..., lc].ravel() for arr in latent_targets_per_window.values()]
+        ) if latent_targets_per_window else np.array([0.0, 1.0])
+        vmin = float(np.percentile(all_vals, 2))
+        vmax = float(np.percentile(all_vals, 98))
+        if args.latent_symmetric:
+            extent = max(abs(vmin), abs(vmax))
+            vmin, vmax = -extent, extent
+        if vmin == vmax:
+            vmax = vmin + 1.0
+        latent_color_limits[lc] = (vmin, vmax)
+
+    # Constants: render once (sample-invariant across seeds/windows).
+    if not args.no_constants and base_sample.constant_scalars is not None:
+        write_constants_tiles(
+            base_sample=base_sample,
+            full_batch_constants=batch.constant_scalars,
+            ambient_spatial_shape=tuple(base_sample.input_fields.shape[2:-1]),
+            const_names=[s.strip() for s in args.const_names.split(",") if s.strip()],
+            cmap=args.const_cmap,
+            out_dir=out_dir,
+            suffix=args.format,
+            dpi=args.dpi,
+        )
+    elif base_sample.constant_scalars is None:
+        log.info("No constant_scalars on this sample — skipping constants tiles.")
+
+    capture_every = max(args.intermediate_stride, 1)
+    log.info(
+        "FM ODE: %s steps total; capturing every %s.",
+        model.processor.flow_ode_steps,
+        capture_every,
+    )
+
+    # Outer loop: seeds (independent ensemble members).
+    # Inner loop: windows in ascending order (incremental advance).
+    for seed in seeds:
+        torch.manual_seed(seed)
+        if device.type == "cuda":
+            torch.cuda.manual_seed_all(seed)
+        log.info("=== seed=%s ===", seed)
+
+        current = base_sample
+        last_window = 0
+        for window in windows:
+            for _ in range(window - last_window):
+                current = advance_batch_free_running(model, current)
+            last_window = window
+
+            visualise_window(
+                model=model,
+                capture_sample=current,
+                target_window_ambient=target_slices_per_window[window],
+                target_window_latent=latent_targets_per_window.get(window),
+                window=window,
+                seed=seed,
+                chans=chans,
+                cmap_for=cmap_for,
+                color_limits=color_limits,
+                latent_chans=latent_chans,
+                latent_cmap_for=latent_cmap_for,
+                latent_color_limits=latent_color_limits,
+                capture_every=capture_every,
+                out_dir=out_dir,
+                suffix=args.format,
+                dpi=args.dpi,
+                batch_index=args.batch_index,
+                sample_index=args.sample_index,
+                emit_latent=not args.no_latent,
+            )
+
+    log.info("All tiles written to %s", out_dir)
+
+
+def parse_latent_channel_spec(spec: str, n_latent: int) -> list[int]:
+    s = spec.strip().lower()
+    if s == "none" or s == "":
+        return []
+    if s == "all":
+        return list(range(n_latent))
+    out = []
+    for part in spec.split(","):
+        if not part.strip():
+            continue
+        idx = int(part)
+        if not (0 <= idx < n_latent):
+            msg = f"--latent-channels={spec!r} contains out-of-range index {idx} (n_latent={n_latent})."
+            raise ValueError(msg)
+        out.append(idx)
+    return out
+
+
+def write_constants_tiles(
+    *,
+    base_sample: Batch,
+    full_batch_constants: torch.Tensor | None,
+    ambient_spatial_shape: tuple[int, ...],
+    const_names: list[str],
+    cmap: str,
+    out_dir: Path,
+    suffix: str,
+    dpi: int,
+) -> None:
+    """Render each global-cond constant as a uniform-color square tile.
+
+    Color limits per constant are taken from the min/max across the loaded
+    batch (so e.g. a buoyancy of 0.72 sits sensibly between 0.2 and 0.8 if
+    the batch covers that range). Constants whose batch has no spread fall
+    back to ±0.5 around the value so the tile is still visible.
+    """
+    cs = base_sample.constant_scalars
+    if cs is None:
+        return
+    values = cs.detach().cpu().numpy().reshape(-1)  # (n_const,)
+    n_const = values.shape[0]
+
+    if full_batch_constants is not None and full_batch_constants.dim() == 2:
+        batch_cs = full_batch_constants.detach().cpu().numpy()  # (B, n_const)
+    else:
+        batch_cs = None
+
+    if len(const_names) < n_const:
+        const_names = const_names + [f"c{i}" for i in range(len(const_names), n_const)]
+    elif len(const_names) > n_const:
+        const_names = const_names[:n_const]
+
+    h, w = ambient_spatial_shape[:2]
+    fig, axes = plt.subplots(1, n_const, figsize=(2.0 * n_const, 2.4), squeeze=False)
+    for i in range(n_const):
+        val = float(values[i])
+        if batch_cs is not None and batch_cs.shape[0] > 1:
+            vmin = float(batch_cs[:, i].min())
+            vmax = float(batch_cs[:, i].max())
+        else:
+            vmin, vmax = val, val
+        if vmin == vmax:
+            vmin = val - 0.5
+            vmax = val + 0.5
+        tile = np.full((h, w), val, dtype=np.float32)
+        save_tile(
+            tile,
+            out_dir / f"const_{i}_{const_names[i]}.{suffix}",
+            vmin=vmin,
+            vmax=vmax,
+            cmap=cmap,
+            dpi=dpi,
+        )
+        ax = axes[0, i]
+        ax.imshow(tile, vmin=vmin, vmax=vmax, cmap=cmap, origin="lower")
+        ax.set_axis_off()
+        ax.set_title(f"{const_names[i]}\n{val:.4g}", fontsize=9)
+    fig.suptitle("Constant scalars (global conditioning)", fontsize=10)
+    fig.tight_layout()
+    summary_path = out_dir / f"const_summary.{suffix}"
+    fig.savefig(summary_path, dpi=dpi, bbox_inches="tight")
+    plt.close(fig)
+    log.info("Wrote constant scalars summary: %s", summary_path)
+
+
+def visualise_window(
+    *,
+    model,
+    capture_sample: Batch,
+    target_window_ambient: np.ndarray,
+    target_window_latent: np.ndarray | None,
+    window: int,
+    seed: int,
+    chans: list[int],
+    cmap_for: dict[int, str],
+    color_limits: dict[int, tuple[float, float]],
+    latent_chans: list[int],
+    latent_cmap_for: dict[int, str],
+    latent_color_limits: dict[int, tuple[float, float]],
+    capture_every: int,
+    out_dir: Path,
+    suffix: str,
+    dpi: int,
+    batch_index: int,
+    sample_index: int,
+    emit_latent: bool,
+) -> None:
+    """Capture FM ODE intermediates at the current window and write tiles."""
+    log.info("Capturing seed=%s window=%s", seed, window)
+
+    with torch.no_grad():
+        z_input, global_cond = model.encoder_decoder.encoder.encode_with_cond(
+            capture_sample
+        )
+
+    _, snapshots = run_fm_with_intermediates(
+        model.processor, z_input, global_cond, capture_every=capture_every
+    )
+
+    decoded_snapshots: list[tuple[int, np.ndarray]] = []
+    latent_snapshots: list[tuple[int, np.ndarray]] = []
+    with torch.no_grad():
+        for step, z_snap in snapshots:
+            ambient = latents_to_ambient(model, z_snap, denormalise=True)
+            decoded_snapshots.append((step, ambient.detach().cpu().numpy()))
+            if emit_latent and latent_chans:
+                latent_snapshots.append((step, z_snap.detach().cpu().numpy()))
+
+        input_ambient = (
+            model.denormalize_tensor(capture_sample.input_fields).detach().cpu().numpy()
+        )
+        z_input_np = z_input.detach().cpu().numpy()
+
+    tag = f"s{seed:03d}_w{window:02d}"
+
+    # 1. Ambient input frame (the visualised window's input).
     for t_idx in range(input_ambient.shape[1]):
         for c in chans:
             vmin, vmax = color_limits[c]
             save_tile(
                 input_ambient[0, t_idx, ..., c],
-                out_dir / f"{win_tag}_input_t{t_idx:02d}_c{c}.{suffix}",
+                out_dir / f"{tag}_ambient_input_t{t_idx:02d}_c{c}.{suffix}",
                 vmin=vmin,
                 vmax=vmax,
                 cmap=cmap_for[c],
-                dpi=args.dpi,
+                dpi=dpi,
             )
 
-    # 2. Ground truth output tiles for the visualised window.
-    for t_idx in range(target_ambient.shape[1]):
+    # 2. Ambient ground-truth output for this window.
+    for t_idx in range(target_window_ambient.shape[1]):
         for c in chans:
             vmin, vmax = color_limits[c]
             save_tile(
-                target_ambient[0, t_idx, ..., c],
-                out_dir / f"{win_tag}_truth_t{t_idx:02d}_c{c}.{suffix}",
+                target_window_ambient[0, t_idx, ..., c],
+                out_dir / f"{tag}_ambient_truth_t{t_idx:02d}_c{c}.{suffix}",
                 vmin=vmin,
                 vmax=vmax,
                 cmap=cmap_for[c],
-                dpi=args.dpi,
+                dpi=dpi,
             )
 
-    # 3. ODE intermediates: one tile per (ode_step, output timestep, channel).
+    # 3. Ambient ODE intermediates.
     for step, decoded in decoded_snapshots:
         for t_idx in range(decoded.shape[1]):
             for c in chans:
@@ -600,48 +881,125 @@ def main() -> None:
                 save_tile(
                     decoded[0, t_idx, ..., c],
                     out_dir
-                    / f"{win_tag}_ode_step{step:03d}_t{t_idx:02d}_c{c}.{suffix}",
+                    / f"{tag}_ambient_ode_step{step:03d}_t{t_idx:02d}_c{c}.{suffix}",
                     vmin=vmin,
                     vmax=vmax,
                     cmap=cmap_for[c],
-                    dpi=args.dpi,
+                    dpi=dpi,
                 )
 
-    # 4. Contact sheet, one per rendered channel.
+    # 4. Ambient contact sheet, one per channel.
     for contact_c in chans:
-        n_cols = decoded_snapshots[0][1].shape[1]  # T_out
-        n_rows = len(decoded_snapshots)
-        fig, axes = plt.subplots(
-            n_rows, n_cols, figsize=(2.0 * n_cols, 2.0 * n_rows), squeeze=False
+        write_contact_sheet(
+            decoded_snapshots,
+            channel=contact_c,
+            cmap=cmap_for[contact_c],
+            color_limits=color_limits[contact_c],
+            title=(
+                f"FM ODE (ambient) — c{contact_c}, batch {batch_index}, "
+                f"sample {sample_index}, window {window}, seed {seed}"
+            ),
+            out_path=out_dir / f"{tag}_ambient_contact_c{contact_c}.{suffix}",
+            dpi=dpi,
         )
-        vmin, vmax = color_limits[contact_c]
-        for row, (step, decoded) in enumerate(decoded_snapshots):
-            for col in range(n_cols):
-                ax = axes[row, col]
-                ax.imshow(
-                    decoded[0, col, ..., contact_c],
+
+    if not emit_latent or not latent_chans:
+        return
+
+    # 5. Latent input (encoder output for the visualised window's input).
+    for t_idx in range(z_input_np.shape[1]):
+        for lc in latent_chans:
+            vmin, vmax = latent_color_limits[lc]
+            save_tile(
+                z_input_np[0, t_idx, ..., lc],
+                out_dir / f"{tag}_latent_input_t{t_idx:02d}_lc{lc}.{suffix}",
+                vmin=vmin,
+                vmax=vmax,
+                cmap=latent_cmap_for[lc],
+                dpi=dpi,
+            )
+
+    # 6. Latent ground truth (encoder output for the GT window).
+    if target_window_latent is not None:
+        for t_idx in range(target_window_latent.shape[1]):
+            for lc in latent_chans:
+                vmin, vmax = latent_color_limits[lc]
+                save_tile(
+                    target_window_latent[0, t_idx, ..., lc],
+                    out_dir
+                    / f"{tag}_latent_truth_t{t_idx:02d}_lc{lc}.{suffix}",
                     vmin=vmin,
                     vmax=vmax,
-                    cmap=cmap_for[contact_c],
-                    origin="lower",
+                    cmap=latent_cmap_for[lc],
+                    dpi=dpi,
                 )
-                ax.set_axis_off()
-                if col == 0:
-                    ax.set_title(f"k={step}", fontsize=8, loc="left")
-        fig.suptitle(
-            (
-                f"FM ODE trajectory — channel {contact_c}, "
-                f"batch {args.batch_index}, sample {args.sample_index}, "
-                f"rollout-window {args.rollout_window}"
+
+    # 7. Latent ODE intermediates (this is where the ODE actually runs).
+    for step, z_snap_np in latent_snapshots:
+        for t_idx in range(z_snap_np.shape[1]):
+            for lc in latent_chans:
+                vmin, vmax = latent_color_limits[lc]
+                save_tile(
+                    z_snap_np[0, t_idx, ..., lc],
+                    out_dir
+                    / f"{tag}_latent_ode_step{step:03d}_t{t_idx:02d}_lc{lc}.{suffix}",
+                    vmin=vmin,
+                    vmax=vmax,
+                    cmap=latent_cmap_for[lc],
+                    dpi=dpi,
+                )
+
+    # 8. Latent contact sheet, one per latent channel.
+    for contact_lc in latent_chans:
+        write_contact_sheet(
+            latent_snapshots,
+            channel=contact_lc,
+            cmap=latent_cmap_for[contact_lc],
+            color_limits=latent_color_limits[contact_lc],
+            title=(
+                f"FM ODE (latent) — lc{contact_lc}, batch {batch_index}, "
+                f"sample {sample_index}, window {window}, seed {seed}"
             ),
-            fontsize=10,
+            out_path=out_dir / f"{tag}_latent_contact_lc{contact_lc}.{suffix}",
+            dpi=dpi,
         )
-        fig.tight_layout()
-        contact_path = out_dir / f"{win_tag}_contact_sheet_c{contact_c}.{suffix}"
-        fig.savefig(contact_path, dpi=args.dpi, bbox_inches="tight")
-        plt.close(fig)
-        log.info("Wrote contact sheet: %s", contact_path)
-    log.info("All tiles written to %s", out_dir)
+
+
+def write_contact_sheet(
+    snapshots: list[tuple[int, np.ndarray]],
+    *,
+    channel: int,
+    cmap: str,
+    color_limits: tuple[float, float],
+    title: str,
+    out_path: Path,
+    dpi: int,
+) -> None:
+    n_cols = snapshots[0][1].shape[1]  # T_out
+    n_rows = len(snapshots)
+    fig, axes = plt.subplots(
+        n_rows, n_cols, figsize=(2.0 * n_cols, 2.0 * n_rows), squeeze=False
+    )
+    vmin, vmax = color_limits
+    for row, (step, arr) in enumerate(snapshots):
+        for col in range(n_cols):
+            ax = axes[row, col]
+            ax.imshow(
+                arr[0, col, ..., channel],
+                vmin=vmin,
+                vmax=vmax,
+                cmap=cmap,
+                origin="lower",
+            )
+            ax.set_axis_off()
+            if col == 0:
+                ax.set_title(f"k={step}", fontsize=8, loc="left")
+    fig.suptitle(title, fontsize=10)
+    fig.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=dpi, bbox_inches="tight")
+    plt.close(fig)
+    log.info("Wrote contact sheet: %s", out_path)
 
 
 if __name__ == "__main__":
