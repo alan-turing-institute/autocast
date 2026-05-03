@@ -2048,8 +2048,8 @@ def plot_coverage_calibration_panel(  # noqa: PLR0912, PLR0915
             ax.plot(
                 [0, 1],
                 [0, 1],
-                ":",
-                color="k",
+                linestyle=":",
+                color="0.45",
                 alpha=0.6,
                 lw=ref_line_width,
             )
@@ -3148,6 +3148,7 @@ def _plot_paper_combined_lead_time_panel(
     error_ylim: tuple[float | None, float | None] | None = None,
     name_stem: str = "paper_combined_lead_time",
     delta_ylabel_x: float = -0.065,
+    lead_time_y: float = 0.07,
 ) -> None:
     """Draw coverage-delta rows and VRMSE rows in one shared lead-time grid."""
     datasets = _paper_datasets(df_in, dataset_order)
@@ -3218,7 +3219,7 @@ def _plot_paper_combined_lead_time_panel(
         ax.label_outer()
 
     _remove_figure_text(fig, {"Lead time"})
-    _set_paper_lead_time_xlabel(fig)
+    _set_paper_lead_time_xlabel(fig, y=lead_time_y)
 
 
 def plot_paper_overall_coverage_figure(
@@ -3495,6 +3496,12 @@ def plot_four_ds_ablation_figure(
             _empirical_coverage_label(short=True),
             x=-0.055,
         )
+        _replace_figure_text(
+            left,
+            r"Expected coverage (1 - $\alpha$)",
+            r"Expected coverage (1 - $\alpha$)",
+            y=0.04,
+        )
 
         _plot_paper_combined_lead_time_panel(
             df_in,
@@ -3508,6 +3515,7 @@ def plot_four_ds_ablation_figure(
             hue_order=hue_order,
             error_ylim=error_ylim,
             name_stem="four_ds_ablation",
+            lead_time_y=0.04,
         )
 
         _paper_legend(
