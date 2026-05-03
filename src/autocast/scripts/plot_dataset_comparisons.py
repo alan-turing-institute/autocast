@@ -3126,7 +3126,7 @@ def _replace_figure_text(
             _set_figure_text_style(text, axis_label_scale, x=x, y=y)
 
 
-def _set_paper_lead_time_xlabel(fig: FigureBase, y: float = 0.105) -> None:
+def _set_paper_lead_time_xlabel(fig: FigureBase, y: float = 0.07) -> None:
     """Set a paper-sized shared lead-time x label."""
     xlabel = fig.text(0.5, y, "Lead time", ha="center", va="center")
     _set_figure_text_style(
@@ -3147,6 +3147,7 @@ def _plot_paper_combined_lead_time_panel(
     hue_order: list[str] | None = None,
     error_ylim: tuple[float | None, float | None] | None = None,
     name_stem: str = "paper_combined_lead_time",
+    delta_ylabel_x: float = -0.065,
 ) -> None:
     """Draw coverage-delta rows and VRMSE rows in one shared lead-time grid."""
     datasets = _paper_datasets(df_in, dataset_order)
@@ -3185,7 +3186,7 @@ def _plot_paper_combined_lead_time_panel(
             fig,
             r"Rel. $\Delta$ empirical coverage",
             r"Rel. $\Delta$ Emp. Cov.",
-            x=-0.055,
+            x=delta_ylabel_x,
             y=0.62,
         )
         for ax in delta_axes[:, 0]:
@@ -3338,7 +3339,7 @@ def plot_paper_uq_reliability_figure(
             left,
             _empirical_coverage_label(short=True),
             _empirical_coverage_label(short=True),
-            x=-0.055,
+            x=-0.04,
         )
 
         right_axes = right.subplots(
@@ -3370,7 +3371,7 @@ def plot_paper_uq_reliability_figure(
             right,
             r"Rel. $\Delta$ empirical coverage",
             r"Rel. $\Delta$ Emp. Cov.",
-            x=-0.055,
+            x=-0.075,
         )
         for ax in right_axes[:, 0]:
             ax.yaxis.labelpad = 0.0
@@ -3593,6 +3594,7 @@ def plot_one_ds_ablation_figure_a(
             hue_order=hue_order,
             error_ylim=error_ylim,
             name_stem="one_ds_ablation_a",
+            delta_ylabel_x=-0.055,
         )
 
         _paper_legend(
