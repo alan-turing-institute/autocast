@@ -117,6 +117,20 @@ callbacks:
     save_last: false
     filename: "best-multiwinkler-from0p75-{epoch:04d}-{val_multiwinkler:.4f}"
     auto_insert_metric_name: false
+  # Overall-best interval-score checkpoint with no upper window. The windowed
+  # callbacks above can disagree on the global minimum (e.g. pre0p25 wins when
+  # multiwinkler peaks early), and 4-decimal filename rounding hides ties — so
+  # this one tracks the absolute best across the run for the eval resolver.
+  # A small start_after_fraction floor avoids latching onto noisy first epochs.
+  - _target_: autocast.callbacks.checkpoint.ProgressModelCheckpoint
+    monitor: val_multiwinkler
+    monitor_optional: true
+    start_after_fraction: 0.05
+    mode: min
+    save_top_k: 1
+    save_last: false
+    filename: "best-multiwinkler-overall-{epoch:04d}-{val_multiwinkler:.4f}"
+    auto_insert_metric_name: false
   # Plot scalar validation metric histories and custom metric diagnostics
   # such as the MultiCoverage reliability curve at each validation end.
   - _target_: autocast.callbacks.metrics.ValidationMetricPlotCallback

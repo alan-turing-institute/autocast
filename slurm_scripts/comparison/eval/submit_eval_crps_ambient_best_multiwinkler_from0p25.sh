@@ -3,9 +3,12 @@
 set -euo pipefail
 # Evaluate CRPS-in-ambient EPD runs trained on 2026-04-24.
 #
-# This variant selects the best multi-Winkler checkpoint after the 0.25
-# progress cutoff: best-multiwinkler-from0p25-*.ckpt. The default CRPS ambient
-# eval submitter is left unchanged.
+# Picks the multi-Winkler checkpoint per run with a two-step resolver:
+#   1. <run>/autocast/<id>/checkpoints/best-multiwinkler.ckpt — a hand-picked
+#      symlink, used for runs where best-multiwinkler-pre0p25-*.ckpt beats the
+#      from-0.25 selection.
+#   2. otherwise, the latest best-multiwinkler-from0p25-*.ckpt as the default.
+# The default CRPS ambient eval submitter is left unchanged.
 #
 # Force eval.mode=ambient. These stateless EPD checkpoints can look
 # processor-only to eval.mode=auto because PermuteConcat / ChannelsLast add no
@@ -31,6 +34,15 @@ resolve_multiwinkler_checkpoint() {
     local -a ckpts=()
 
     mapfile -t ckpts < <(
+        find "${run_dir}" -path '*/checkpoints/best-multiwinkler.ckpt' | sort
+    )
+
+    if (( ${#ckpts[@]} >= 1 )); then
+        printf '%s\n' "${ckpts[$(( ${#ckpts[@]} - 1 ))]}"
+        return 0
+    fi
+
+    mapfile -t ckpts < <(
         find "${run_dir}" -type f -path '*/checkpoints/best-multiwinkler-from0p25-*.ckpt' | sort
     )
 
@@ -50,7 +62,7 @@ for run_dir in "${RUN_DIRS[@]}"; do
     fi
 
     if ! eval_ckpt="$(resolve_multiwinkler_checkpoint "${run_dir_abs}")"; then
-        echo "Skipping ${run_dir}: best-multiwinkler-from0p25-*.ckpt missing" >&2
+        echo "Skipping ${run_dir}: no best-multiwinkler.ckpt symlink and no best-multiwinkler-from0p25-*.ckpt" >&2
         continue
     fi
     eval_ckpt_abs="$(realpath "${eval_ckpt}")"

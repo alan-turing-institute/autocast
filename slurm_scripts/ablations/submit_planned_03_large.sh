@@ -4,27 +4,28 @@ set -euo pipefail
 
 source "$(dirname "${BASH_SOURCE[0]}")/../comparison/cached_latents/validate_cached_latents_against_ae.sh"
 
-# 24h production jobs for planned ablation batch 02.
+# 24h production jobs for planned ablation batch 03.
 #
-# Run submit_planned_02_timing.sh first. This script resolves each
+# Run submit_planned_03_timing.sh first. This script resolves each
 # trainer.max_epochs from either COSINE_EPOCHS_BY_RUN or the latest matching
-# timing.ckpt under outputs/*/timing_planned_02/<run_id>/timing.ckpt.
+# timing.ckpt under outputs/*/timing_planned_03/<run_id>/timing.ckpt.
 
 declare -A COSINE_EPOCHS_BY_RUN=(
-    # Pinned from outputs/2026-04-26/timing_planned_02/*/retrieve.sh at
+    # Pinned from outputs/2026-04-27/timing_planned_03/*/retrieve.sh at
     # 24h budget, 2% margin (uv run autocast time-epochs -b 24 -m 0.02).
-    ["latent_crps_m8_gs"]=273
-    ["latent_crps_m8_gpe"]=326
-    ["latent_crps_m8_ad"]=318
-    ["vit_m4_gs"]=706
+    ["latent_diffusion_cns"]=2639
+    ["latent_diffusion_gs"]=2249
+    ["latent_diffusion_gpe"]=2674
+    ["latent_diffusion_ad"]=2601
 )
 
 BUDGET_MAX_TIME="00:23:59:00"
 TIMEOUT_MIN=1439
-RUN_GROUP="$(date +%Y-%m-%d)/planned_02"
+RUN_GROUP="$(date +%Y-%m-%d)/planned_03"
 RUN_DRY_STATES=("true" "false")
 
 declare -A AE_RUN_DIRS=(
+    ["conditioned_navier_stokes"]="$HOME/autocast/outputs/2026-04-17/ae_cns64_3a7999b_b9c29f8"
     ["gray_scott"]="$HOME/autocast/outputs/2026-04-17/ae_gs64_3a7999b_ed36b8e"
     ["gpe_laser_only_wake"]="$HOME/autocast/outputs/2026-04-17/ae_gpe64_3a7999b_31e1c9f"
     ["advection_diffusion"]="$HOME/autocast/outputs/2026-04-17/ae_ad64_3a7999b_1a1e300"
@@ -32,10 +33,10 @@ declare -A AE_RUN_DIRS=(
 
 # run_id|kind|datamodule|local_experiment
 RUNS=(
-    "latent_crps_m8_gs|processor|gray_scott|processor/gray_scott/crps_vit_azula_large"
-    "latent_crps_m8_gpe|processor|gpe_laser_only_wake|processor/gpe_laser_wake_only/crps_vit_azula_large"
-    "latent_crps_m8_ad|processor|advection_diffusion|processor/advection_diffusion/crps_vit_azula_large"
-    "vit_m4_gs|epd|gray_scott|epd/gray_scott/crps_vit_azula_large"
+    "latent_diffusion_cns|processor|conditioned_navier_stokes|processor/conditioned_navier_stokes/diffusion_vit_large"
+    "latent_diffusion_gs|processor|gray_scott|processor/gray_scott/diffusion_vit_large"
+    "latent_diffusion_gpe|processor|gpe_laser_only_wake|processor/gpe_laser_wake_only/diffusion_vit_large"
+    "latent_diffusion_ad|processor|advection_diffusion|processor/advection_diffusion/diffusion_vit_large"
 )
 
 run_overrides() {
@@ -48,16 +49,6 @@ run_overrides() {
             local ae_run_dir="${AE_RUN_DIRS[$datamodule]}"
             local cache_dir="${ae_run_dir}/cached_latents"
             printf '%s\n' "datamodule=cached_latents" "datamodule.data_path=${cache_dir}"
-            ;;
-        epd)
-            case "${run_id}" in
-                vit_m4_gs)
-                    printf '%s\n' "datamodule=${datamodule}" "model.n_members=4" "datamodule.batch_size=64"
-                    ;;
-                *)
-                    printf '%s\n' "datamodule=${datamodule}"
-                    ;;
-            esac
             ;;
         *)
             echo "FATAL: unknown kind '${kind}' for ${run_id}" >&2
@@ -99,7 +90,7 @@ find_timing_checkpoint() {
         return 0
     fi
 
-    find outputs -path "*/timing_planned_02/${run_id}/timing.ckpt" | sort | tail -n 1
+    find outputs -path "*/timing_planned_03/${run_id}/timing.ckpt" | sort | tail -n 1
 }
 
 derive_cosine_epochs_from_timing() {
@@ -156,7 +147,7 @@ for run_spec in "${RUNS[@]}"; do
             run_label="slurm --dry-run"
         fi
 
-        echo "Submitting planned batch 02 production run"
+        echo "Submitting planned batch 03 production run"
         echo "  mode: ${run_label}"
         echo "  run_id: ${run_id}"
         echo "  kind: ${kind}"
