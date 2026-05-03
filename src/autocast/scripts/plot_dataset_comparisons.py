@@ -4153,6 +4153,11 @@ def main():  # noqa: PLR0912, PLR0915
         ),
     )
     parser.add_argument(
+        "--paper-only",
+        action="store_true",
+        help="Only render requested paper_* figures; skip standard plot outputs.",
+    )
+    parser.add_argument(
         "--paper-use-tex",
         action="store_true",
         help=(
@@ -4657,6 +4662,74 @@ def main():  # noqa: PLR0912, PLR0915
         **plot_style_kwargs,
         "height_scale": args.coverage_panel_height_scale,
     }
+
+    err_metric, cov_metric = _derive_lead_time_metrics(list(args.metrics))
+    if args.lead_time_error_metrics:
+        err_metric = list(args.lead_time_error_metrics)
+    if args.lead_time_coverage_metrics:
+        cov_metric = list(args.lead_time_coverage_metrics)
+    if args.include_ssr_in_coverage and "ssr" not in cov_metric:
+        cov_metric = [*cov_metric, "ssr"]
+    elif not args.include_ssr_in_coverage:
+        cov_metric = [m for m in cov_metric if m != "ssr"]
+    paper_cov_metric = _paper_coverage_metrics(cov_metric)
+
+    if args.paper_only:
+        if args.paper_main_figures:
+            plot_paper_overall_coverage_figure(
+                df,
+                results_dir,
+                out_dir,
+                styles,
+                dataset_order=ds_order,
+                hue_order=hu_order,
+            )
+            plot_paper_uq_reliability_figure(
+                df,
+                results_dir,
+                out_dir,
+                styles,
+                paper_cov_metric,
+                dataset_order=ds_order,
+                hue_order=hu_order,
+            )
+            plot_paper_lead_time_error_figure(
+                df,
+                results_dir,
+                out_dir,
+                styles,
+                err_metric,
+                error_ylim=error_ylim,
+                dataset_order=ds_order,
+                hue_order=hu_order,
+            )
+        if args.four_ds_ablation:
+            plot_four_ds_ablation_figure(
+                df,
+                results_dir,
+                out_dir,
+                styles,
+                err_metric,
+                paper_cov_metric,
+                error_ylim=error_ylim,
+                dataset_order=ds_order,
+                hue_order=hu_order,
+            )
+        if args.one_ds_ablation:
+            plot_one_ds_ablation_figures(
+                df,
+                results_dir,
+                out_dir,
+                styles,
+                err_metric,
+                paper_cov_metric,
+                error_ylim=error_ylim,
+                dataset_order=ds_order,
+                hue_order=hu_order,
+            )
+        print("Finished generating paper plots.")
+        return
+
     write_single_step_results_table(
         df,
         out_dir,

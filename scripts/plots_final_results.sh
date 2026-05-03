@@ -26,6 +26,7 @@ HUE_EMA_ON=$HUE_ABLATION_ALT_1
 PAPER_MAIN_FIGURES=false
 FOUR_DS_ABLATION=false
 ONE_DS_ABLATION=false
+PAPER_ONLY=false
 
 usage() {
 	cat <<'EOF'
@@ -36,6 +37,7 @@ Options:
   --four-ds-ablation    Add four-dataset ablation figures to multi-dataset ablations.
   --one-ds-ablation     Add one-dataset ablation variants to one-dataset ablations.
   --paper-figures       Add all optional paper-width figures above.
+  --paper-only          Only run/copy paper figures, writing PNG and PDF.
   --paper-output-dir DIR
                         Copy all paper_*.png/pdf figures into DIR.
                         Default: <results-dir>/<plots-path>/paper_figures.
@@ -65,6 +67,12 @@ while [[ $# -gt 0 ]]; do
 			PAPER_MAIN_FIGURES=true
 			FOUR_DS_ABLATION=true
 			ONE_DS_ABLATION=true
+			;;
+		--paper-only)
+			PAPER_MAIN_FIGURES=true
+			FOUR_DS_ABLATION=true
+			ONE_DS_ABLATION=true
+			PAPER_ONLY=true
 			;;
 		--paper-output-dir)
 			if [[ $# -lt 2 ]]; then
@@ -118,10 +126,15 @@ PAPER_TEX_ARGS=()
 if [[ "$PAPER_USE_TEX" == true ]]; then
 	PAPER_TEX_ARGS=(--paper-use-tex)
 fi
+PAPER_ONLY_ARGS=()
+if [[ "$PAPER_ONLY" == true ]]; then
+	PAPER_ONLY_ARGS=(--paper-only)
+fi
 
 COMMON_ARGS=(
 	"${FIGURE_FORMAT_ARGS[@]}"
 	"${PAPER_TEX_ARGS[@]}"
+	"${PAPER_ONLY_ARGS[@]}"
 	--dataset-order CNS
 	--error-ylim 1e-5 1
 	--lead-time-error-metrics vrmse
@@ -159,6 +172,7 @@ fi
 ALL_DATASET_COMMON_ARGS=(
 	"${FIGURE_FORMAT_ARGS[@]}"
 	"${PAPER_TEX_ARGS[@]}"
+	"${PAPER_ONLY_ARGS[@]}"
 	--dataset-order AD CNS GS GPE
 	--error-ylim 1e-5 1
 	--lead-time-error-metrics vrmse
@@ -190,6 +204,9 @@ fi
 if [[ "$PAPER_USE_TEX" == true ]]; then
 	echo "Rendering plot text with LaTeX."
 fi
+if [[ "$PAPER_ONLY" == true ]]; then
+	echo "Paper-only mode enabled."
+fi
 if [[ "$PAPER_MAIN_FIGURES" != true && "$FOUR_DS_ABLATION" != true && "$ONE_DS_ABLATION" != true ]]; then
 	echo "Paper-ready outputs are disabled. Run with --paper-figures to write paper_*.png files."
 fi
@@ -197,6 +214,7 @@ fi
 autocast-plots --results-dir "$RESULTS_DIR" \
 	"${FIGURE_FORMAT_ARGS[@]}" \
 	"${PAPER_TEX_ARGS[@]}" \
+	"${PAPER_ONLY_ARGS[@]}" \
 	--run crps_ad64_vit_azula_large_bed4611_da01a04 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_gpe64_vit_azula_large_bed4611_e0a6df5 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
@@ -226,39 +244,41 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	${PAPER_MAIN_ARG:+$PAPER_MAIN_ARG} \
 	--output-dir "$OUTPUT_DIR"
 
-# Same as above but rendered smaller so the two coverage panels read well when
-# paired side-by-side in LaTeX (each at ~0.5\textwidth).
-autocast-plots --results-dir "$RESULTS_DIR" \
-	"${FIGURE_FORMAT_ARGS[@]}" \
-	"${PAPER_TEX_ARGS[@]}" \
-	--run crps_ad64_vit_azula_large_bed4611_da01a04 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
-	--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
-	--run crps_gpe64_vit_azula_large_bed4611_e0a6df5 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
-	--run crps_gs64_vit_azula_large_bed4611_828a161 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
-	--run diff_ad64_flow_matching_vit_09490da_dae1382 "FM" "$HUE_FM_LATENT" \
-	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM" "$HUE_FM_LATENT" \
-	--run diff_gpe64_flow_matching_vit_09490da_47bf39a "FM" "$HUE_FM_LATENT" \
-	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "FM" "$HUE_FM_LATENT" \
-	--dataset-order AD CNS GS GPE \
-	--error-ylim 1e-5 1 \
-	--lead-time-error-metrics vrmse \
-	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
-	--lead-time-coverage-delta \
-	--combined-lead-time \
-	--training-metrics val_loss train_loss \
-	--training-yscale log \
-	--panel-figure \
-	--panel-figure-no-training \
-	--coverage-panel-overall-rollout-windows \
-	--uniform-run-hue-color \
-	--tick-label-scale 1.5 \
-	--axis-label-scale 1.3 \
-	--legend-font-scale 1.5 \
-	--short-axis-labels \
-	--shared-axis-labels \
-	--coverage-panel-height-scale 1.5 \
-	--figure-scale 0.6 \
-	--output-dir "${OUTPUT_DIR}_pairfig"
+if [[ "$PAPER_ONLY" != true ]]; then
+	# Same as above but rendered smaller so the two coverage panels read well when
+	# paired side-by-side in LaTeX (each at ~0.5\textwidth).
+	autocast-plots --results-dir "$RESULTS_DIR" \
+		"${FIGURE_FORMAT_ARGS[@]}" \
+		"${PAPER_TEX_ARGS[@]}" \
+		--run crps_ad64_vit_azula_large_bed4611_da01a04 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+		--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+		--run crps_gpe64_vit_azula_large_bed4611_e0a6df5 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+		--run crps_gs64_vit_azula_large_bed4611_828a161 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+		--run diff_ad64_flow_matching_vit_09490da_dae1382 "FM" "$HUE_FM_LATENT" \
+		--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM" "$HUE_FM_LATENT" \
+		--run diff_gpe64_flow_matching_vit_09490da_47bf39a "FM" "$HUE_FM_LATENT" \
+		--run diff_gs64_flow_matching_vit_09490da_7e9e331 "FM" "$HUE_FM_LATENT" \
+		--dataset-order AD CNS GS GPE \
+		--error-ylim 1e-5 1 \
+		--lead-time-error-metrics vrmse \
+		--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
+		--lead-time-coverage-delta \
+		--combined-lead-time \
+		--training-metrics val_loss train_loss \
+		--training-yscale log \
+		--panel-figure \
+		--panel-figure-no-training \
+		--coverage-panel-overall-rollout-windows \
+		--uniform-run-hue-color \
+		--tick-label-scale 1.5 \
+		--axis-label-scale 1.3 \
+		--legend-font-scale 1.5 \
+		--short-axis-labels \
+		--shared-axis-labels \
+		--coverage-panel-height-scale 1.5 \
+		--figure-scale 0.6 \
+		--output-dir "${OUTPUT_DIR}_pairfig"
+fi
 
 autocast-plots --results-dir "$RESULTS_DIR" \
 	--run diff_ad64_flow_matching_vit_09490da_dae1382 "ODE=1" "$HUE_ODE_ABLATION_STEPS" eval=eval_encode_once_ode001 \
@@ -302,6 +322,9 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_fm_ema"
 
 autocast-plots --results-dir "$RESULTS_DIR" \
+	"${FIGURE_FORMAT_ARGS[@]}" \
+	"${PAPER_TEX_ARGS[@]}" \
+	"${PAPER_ONLY_ARGS[@]}" \
 	--run crps_ad64_vit_azula_large_bed4611_da01a04 "CRPS (ambient)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS (ambient)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_gpe64_vit_azula_large_bed4611_e0a6df5 "CRPS (ambient)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
@@ -339,6 +362,9 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_ambient_fm_latent_crps_m8"
 
 autocast-plots --results-dir "$RESULTS_DIR" \
+	"${FIGURE_FORMAT_ARGS[@]}" \
+	"${PAPER_TEX_ARGS[@]}" \
+	"${PAPER_ONLY_ARGS[@]}" \
 	--run crps_ad64_vit_azula_large_0f89f06_4667606 "CRPS (best val loss)" "$HUE_ABLATION_ALT_2" eval=eval \
 	--run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (best val loss)" "$HUE_ABLATION_ALT_2" eval=eval \
 	--run crps_gpe64_vit_azula_large_0f89f06_d337bd8 "CRPS (best val loss)" "$HUE_ABLATION_ALT_2" eval=eval \
@@ -408,6 +434,9 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_cns_crps_variants"
 
 autocast-plots --results-dir "$RESULTS_DIR" \
+	"${FIGURE_FORMAT_ARGS[@]}" \
+	"${PAPER_TEX_ARGS[@]}" \
+	"${PAPER_ONLY_ARGS[@]}" \
 	--run crps_cns64_vit_azula_large_9c98db0_957ff88 "m=4" "$HUE_ABLATION_ALT_1" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_ad64_vit_azula_large_189c141_bbb0bc8 "m=4" "$HUE_ABLATION_ALT_1" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_gs64_vit_azula_large_3b47441_4944cce "m=4" "$HUE_ABLATION_ALT_1" eval=eval_best_multiwinkler_from0p25 \
