@@ -5,6 +5,8 @@ PLOTS_PATH=${PLOTS_PATH:-2026-05-03_final_plots}
 RESULTS_DIR=${RESULTS_DIR:-outputs/2026-04-20_collated}
 OUTPUT_DIR=${OUTPUT_DIR:-$RESULTS_DIR/$PLOTS_PATH/main_comparison_m8_complete_no_fm_amb_best_winkler}
 FIGURE_FORMATS=${FIGURE_FORMATS:-png}
+PAPER_OUTPUT_DIR=${PAPER_OUTPUT_DIR:-$RESULTS_DIR/$PLOTS_PATH/paper_figures}
+PAPER_USE_TEX=${PAPER_USE_TEX:-false}
 
 # Keep colours stable across all final plots. These are indices into matplotlib's
 # tab10 palette as used by the explicit hue argument.
@@ -34,6 +36,10 @@ Options:
   --four-ds-ablation    Add four-dataset ablation figures to multi-dataset ablations.
   --one-ds-ablation     Add one-dataset ablation variants to one-dataset ablations.
   --paper-figures       Add all optional paper-width figures above.
+  --paper-output-dir DIR
+                        Copy all paper_*.png/pdf figures into DIR.
+                        Default: <results-dir>/<plots-path>/paper_figures.
+  --paper-use-tex       Render text/math with external LaTeX.
   --pdf                 Write both PNG and PDF figures.
   --figure-formats FMT  Write selected formats, comma-separated or quoted.
                         Example: --figure-formats png,pdf
@@ -59,6 +65,17 @@ while [[ $# -gt 0 ]]; do
 			PAPER_MAIN_FIGURES=true
 			FOUR_DS_ABLATION=true
 			ONE_DS_ABLATION=true
+			;;
+		--paper-output-dir)
+			if [[ $# -lt 2 ]]; then
+				echo "--paper-output-dir requires a value" >&2
+				exit 2
+			fi
+			PAPER_OUTPUT_DIR=$2
+			shift
+			;;
+		--paper-use-tex)
+			PAPER_USE_TEX=true
 			;;
 		--pdf)
 			FIGURE_FORMATS="png pdf"
@@ -86,10 +103,25 @@ done
 
 FIGURE_FORMAT_ARRAY=()
 read -r -a FIGURE_FORMAT_ARRAY <<< "$FIGURE_FORMATS"
+if [[ "$PAPER_MAIN_FIGURES" == true || "$FOUR_DS_ABLATION" == true || "$ONE_DS_ABLATION" == true ]]; then
+	case " ${FIGURE_FORMAT_ARRAY[*]} " in
+		*" png "*) ;;
+		*) FIGURE_FORMAT_ARRAY+=(png) ;;
+	esac
+	case " ${FIGURE_FORMAT_ARRAY[*]} " in
+		*" pdf "*) ;;
+		*) FIGURE_FORMAT_ARRAY+=(pdf) ;;
+	esac
+fi
 FIGURE_FORMAT_ARGS=(--figure-formats "${FIGURE_FORMAT_ARRAY[@]}")
+PAPER_TEX_ARGS=()
+if [[ "$PAPER_USE_TEX" == true ]]; then
+	PAPER_TEX_ARGS=(--paper-use-tex)
+fi
 
 COMMON_ARGS=(
 	"${FIGURE_FORMAT_ARGS[@]}"
+	"${PAPER_TEX_ARGS[@]}"
 	--dataset-order CNS
 	--error-ylim 1e-5 1
 	--lead-time-error-metrics vrmse
@@ -126,6 +158,7 @@ fi
 
 ALL_DATASET_COMMON_ARGS=(
 	"${FIGURE_FORMAT_ARGS[@]}"
+	"${PAPER_TEX_ARGS[@]}"
 	--dataset-order AD CNS GS GPE
 	--error-ylim 1e-5 1
 	--lead-time-error-metrics vrmse
@@ -151,12 +184,19 @@ fi
 
 echo "Writing plots under: $RESULTS_DIR/$PLOTS_PATH"
 echo "Writing figure formats: ${FIGURE_FORMAT_ARRAY[*]}"
+if [[ "$PAPER_MAIN_FIGURES" == true || "$FOUR_DS_ABLATION" == true || "$ONE_DS_ABLATION" == true ]]; then
+	echo "Collecting paper figures under: $PAPER_OUTPUT_DIR"
+fi
+if [[ "$PAPER_USE_TEX" == true ]]; then
+	echo "Rendering plot text with LaTeX."
+fi
 if [[ "$PAPER_MAIN_FIGURES" != true && "$FOUR_DS_ABLATION" != true && "$ONE_DS_ABLATION" != true ]]; then
 	echo "Paper-ready outputs are disabled. Run with --paper-figures to write paper_*.png files."
 fi
 
 autocast-plots --results-dir "$RESULTS_DIR" \
 	"${FIGURE_FORMAT_ARGS[@]}" \
+	"${PAPER_TEX_ARGS[@]}" \
 	--run crps_ad64_vit_azula_large_bed4611_da01a04 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_gpe64_vit_azula_large_bed4611_e0a6df5 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
@@ -190,6 +230,7 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 # paired side-by-side in LaTeX (each at ~0.5\textwidth).
 autocast-plots --results-dir "$RESULTS_DIR" \
 	"${FIGURE_FORMAT_ARGS[@]}" \
+	"${PAPER_TEX_ARGS[@]}" \
 	--run crps_ad64_vit_azula_large_bed4611_da01a04 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_gpe64_vit_azula_large_bed4611_e0a6df5 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
@@ -405,3 +446,20 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	--run crps_cns64_vit_azula_large_9c98db0_86e355d "noise=256, h=704" "$HUE_ABLATION_ALT_2" eval=eval_best_multiwinkler_from0p25 \
 	"${COMMON_ARGS[@]}" \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_cns_noise_channels"
+
+if [[ "$PAPER_MAIN_FIGURES" == true || "$FOUR_DS_ABLATION" == true || "$ONE_DS_ABLATION" == true ]]; then
+	mkdir -p "$PAPER_OUTPUT_DIR"
+	copied=0
+	while IFS= read -r fig; do
+		src_dir=$(basename "$(dirname "$fig")")
+		dest_name="${src_dir}_$(basename "$fig")"
+		cp "$fig" "$PAPER_OUTPUT_DIR/$dest_name"
+		copied=$((copied + 1))
+	done < <(
+		find "$RESULTS_DIR/$PLOTS_PATH" \
+			-path "$PAPER_OUTPUT_DIR" -prune -o \
+			-type f \( -name 'paper_*.png' -o -name 'paper_*.pdf' \) \
+			-print
+	)
+	echo "Copied $copied paper figure files to: $PAPER_OUTPUT_DIR"
+fi

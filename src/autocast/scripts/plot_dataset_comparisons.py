@@ -131,6 +131,14 @@ PAPER_TICK_LINE_WIDTH = 0.55
 PAPER_GRID_LINE_WIDTH = 0.45
 FIGURE_FORMATS: list[str] = ["png"]
 PAPER_RC_PARAMS = {
+    "font.family": "serif",
+    "font.serif": [
+        "Times New Roman",
+        "Times",
+        "TeX Gyre Termes",
+        "STIXGeneral",
+        "DejaVu Serif",
+    ],
     "font.size": PAPER_FONT_SIZE,
     "axes.labelsize": PAPER_FONT_SIZE,
     "axes.titlesize": PAPER_FONT_SIZE,
@@ -143,6 +151,9 @@ PAPER_RC_PARAMS = {
     "xtick.labelsize": PAPER_TICK_FONT_SIZE,
     "ytick.labelsize": PAPER_TICK_FONT_SIZE,
     "legend.fontsize": PAPER_LEGEND_FONT_SIZE,
+    "mathtext.fontset": "stix",
+    "pdf.fonttype": 42,
+    "ps.fonttype": 42,
 }
 SINGLE_STEP_RESULTS_TABLE_METRICS: tuple[tuple[str, str], ...] = (
     ("overall_vrmse", "VRMSE"),
@@ -3603,6 +3614,7 @@ def plot_one_ds_ablation_figure_a(
             error_ylim=error_ylim,
             name_stem="one_ds_ablation_a",
             delta_ylabel_x=-0.055,
+            lead_time_y=0.04,
         )
 
         _paper_legend(
@@ -4131,6 +4143,14 @@ def main():  # noqa: PLR0912, PLR0915
         ),
     )
     parser.add_argument(
+        "--paper-use-tex",
+        action="store_true",
+        help=(
+            "Render text and math with an external LaTeX installation for "
+            "paper figures. Requires latex to be available on PATH."
+        ),
+    )
+    parser.add_argument(
         "--four-ds-ablation",
         action="store_true",
         help="Also render the four-dataset ablation as one paper-width figure.",
@@ -4145,6 +4165,13 @@ def main():  # noqa: PLR0912, PLR0915
     )
     args = parser.parse_args()
     FIGURE_FORMATS[:] = list(dict.fromkeys(args.figure_formats))
+    if args.paper_use_tex:
+        PAPER_RC_PARAMS.update(
+            {
+                "text.usetex": True,
+                "text.latex.preamble": r"\usepackage{amsmath}",
+            }
+        )
     for style_arg in (
         "tick_label_scale",
         "axis_label_scale",
