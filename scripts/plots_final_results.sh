@@ -143,6 +143,10 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "ODE=50" "$HUE_ODE_MAIN" eval=eval \
 	--run diff_gpe64_flow_matching_vit_09490da_47bf39a "ODE=50" "$HUE_ODE_MAIN" eval=eval \
 	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "ODE=50" "$HUE_ODE_MAIN" eval=eval \
+	--run diff_ad64_flow_matching_vit_09490da_dae1382 "ODE=100" "$HUE_ODE_ABLATION_STEPS" eval=eval_encode_once_ode100 \
+	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "ODE=100" "$HUE_ODE_ABLATION_STEPS" eval=eval_encode_once_ode100 \
+	--run diff_gpe64_flow_matching_vit_09490da_47bf39a "ODE=100" "$HUE_ODE_ABLATION_STEPS" eval=eval_encode_once_ode100 \
+	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "ODE=100" "$HUE_ODE_ABLATION_STEPS" eval=eval_encode_once_ode100 \
 	"${ALL_DATASET_COMMON_ARGS[@]}" \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_fm_ode_steps"
 
