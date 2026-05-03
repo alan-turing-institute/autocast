@@ -182,10 +182,11 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--latent-cmap",
-        default="RdBu_r",
+        default="",
         help=(
             "Colormap for latent-space tiles. Single name or comma-separated "
-            "list aligned with --latent-channels."
+            "list aligned with --latent-channels. If empty (default), reuses "
+            "the ambient --cmap so latent and ambient panels match."
         ),
     )
     p.add_argument(
@@ -604,7 +605,8 @@ def main() -> None:
     latent_chans = parse_latent_channel_spec(args.latent_channels, n_latent_channels)
     latent_cmap_for: dict[int, str] = {}
     if latent_chans and not args.no_latent:
-        latent_cmap_for = parse_cmap_list(args.latent_cmap, latent_chans)
+        latent_cmap_spec = args.latent_cmap.strip() or args.cmap
+        latent_cmap_for = parse_cmap_list(latent_cmap_spec, latent_chans)
     log.info(
         "Channels: ambient=%s (cmaps=%s), latent=%s (cmaps=%s)",
         chans,
