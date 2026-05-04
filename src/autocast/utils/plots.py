@@ -1,4 +1,5 @@
 from collections.abc import Callable, Iterable
+from pathlib import Path
 from typing import Literal, cast
 
 import matplotlib.pyplot as plt
@@ -314,6 +315,7 @@ def plot_spatiotemporal_snapshots(  # noqa: PLR0912, PLR0915
     vmax: float | None = None,
     cmap: str = "viridis",
     save_path: str | None = None,
+    extra_formats: Iterable[str] | None = None,
     title: str = "Ground Truth vs Prediction",
     pred_uq_label: str = "Ensemble Std Dev",
     channel_names: list[str] | None = None,
@@ -443,6 +445,99 @@ def plot_spatiotemporal_snapshots(  # noqa: PLR0912, PLR0915
 
     if save_path:
         fig.savefig(save_path, dpi=150, bbox_inches="tight")
+        for ext in extra_formats or ():
+            ext_clean = ext.lstrip(".")
+            alt_path = str(Path(save_path).with_suffix(f".{ext_clean}"))
+            if alt_path != str(save_path):
+                fig.savefig(alt_path, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+
+    return fig
+
+
+def plot_spatiotemporal_snapshots_data_only(
+    true: TensorBTSC,
+    *,
+    timesteps: Iterable[int],
+    channel: int = 0,
+    batch_idx: int = 0,
+    vmin: float | None = None,
+    vmax: float | None = None,
+    cmap: str = "viridis",
+    save_path: str | None = None,
+    extra_formats: Iterable[str] | None = None,
+    ylabel: str | None = None,
+    preserve_aspect: bool = False,
+) -> Figure:
+    """Single-row snapshot panel of ground-truth data with no axis ticks.
+
+    Each panel is titled ``$i={t}$``. The leftmost panel carries ``ylabel`` if
+    provided (typically a dataset short label, e.g. ``AD``, ``CNS``, ``GS``,
+    ``GPE``).
+    """
+    true_batch = true[batch_idx]
+    T, *spatial, C = true_batch.shape
+    if len(spatial) != 2:
+        msg = (
+            "plot_spatiotemporal_snapshots_data_only expects exactly two "
+            f"spatial dimensions, got shape {tuple(true_batch.shape)}."
+        )
+        raise ValueError(msg)
+    if not 0 <= channel < C:
+        msg = f"channel must be in [0, {C - 1}], got {channel}."
+        raise ValueError(msg)
+
+    selected_timesteps = [int(t) for t in timesteps]
+    invalid_timesteps = [t for t in selected_timesteps if t < 0 or t >= T]
+    if invalid_timesteps:
+        msg = (
+            f"timesteps must be in [0, {T - 1}], got invalid values "
+            f"{invalid_timesteps}."
+        )
+        raise ValueError(msg)
+    if not selected_timesteps:
+        msg = "At least one timestep is required for snapshot plotting."
+        raise ValueError(msg)
+
+    true_np = true_batch.detach().cpu().numpy()[:, :, :, channel]
+    min_val = vmin if vmin is not None else float(true_np.min())
+    max_val = vmax if vmax is not None else float(true_np.max())
+    norm = Normalize(vmin=min_val, vmax=max_val)
+
+    width, height = spatial
+    base = 3.0
+    if preserve_aspect and height > 0 and width > 0:
+        ratio = width / height
+        panel_width = base if ratio >= 1 else min(base / ratio, 3 * base)
+        panel_height = min(base * ratio, 3 * base) if ratio >= 1 else base
+    else:
+        panel_width = base
+        panel_height = base
+
+    ncols = len(selected_timesteps)
+    fig, axes = plt.subplots(
+        1,
+        ncols,
+        figsize=(ncols * panel_width, panel_height),
+        squeeze=False,
+        constrained_layout=True,
+    )
+    for col_idx, timestep in enumerate(selected_timesteps):
+        ax = axes[0][col_idx]
+        ax.imshow(true_np[timestep], cmap=cmap, aspect="auto", norm=norm)
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.set_title(f"$i={timestep}$")
+        if col_idx == 0 and ylabel:
+            ax.set_ylabel(ylabel)
+
+    if save_path:
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
+        for ext in extra_formats or ():
+            ext_clean = ext.lstrip(".")
+            alt_path = str(Path(save_path).with_suffix(f".{ext_clean}"))
+            if alt_path != str(save_path):
+                fig.savefig(alt_path, dpi=150, bbox_inches="tight")
         plt.close(fig)
 
     return fig
