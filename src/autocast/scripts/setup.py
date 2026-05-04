@@ -7,7 +7,7 @@ from typing import Any
 
 import torch
 from hydra.utils import get_class, instantiate
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 from torch import nn
 
 from autocast.data.datamodule import SpatioTemporalDataModule, TheWellDataModule
@@ -21,7 +21,7 @@ from autocast.models.encoder_processor_decoder_ensemble import (
 )
 from autocast.models.processor import ProcessorModel
 from autocast.models.processor_ensemble import ProcessorModelEnsemble
-from autocast.scripts.data import build_datamodule
+from autocast.scripts.data import batch_to_device, build_datamodule
 from autocast.types.batch import Batch, EncodedBatch
 
 log = logging.getLogger(__name__)
@@ -459,23 +459,23 @@ def _build_processor(
             ):
                 instantiation_kwargs.pop(key, None)
 
-    target = processor_config.get("_target_") if processor_config else None
-    
+    target = processor_config.get("_target_") if processor_config is not None else None
+
     # Load mask if this is MaskedFlowMatchingProcessor
     mask = None
-    if "masked_flow_matching" in (target or ""):
+    if processor_config is not None and "masked_flow_matching" in (target or ""):
         mask_path = processor_config.get("mask_path")
         if mask_path:
             log.info("Loading mask from %s", mask_path)
             mask = torch.load(mask_path)
         # Remove mask_path from config (it's only for setup, not for processor init)
         # Temporarily disable struct mode to allow removal
-        from omegaconf import OmegaConf
         struct_mode = OmegaConf.is_struct(processor_config)
         OmegaConf.set_struct(processor_config, False)
-        processor_config.pop("mask_path", None)
+        if "mask_path" in processor_config:
+            del processor_config["mask_path"]
         OmegaConf.set_struct(processor_config, struct_mode)
-    
+
     filtered_kwargs = _filter_kwargs_for_target(target, instantiation_kwargs)
     if mask is not None:
         filtered_kwargs["mask"] = mask

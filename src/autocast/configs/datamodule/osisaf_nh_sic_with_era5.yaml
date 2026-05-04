@@ -1,0 +1,29 @@
+# Datamodule for OSISAF SIC + ERA5 reanalysis inputs.
+# Target output: 1 channel (SIC only), via output_channel_idxs=[0].
+# Channel layout in the data tensor is:
+#   [0]   SIC
+#   [1]   land_mask  (constant, broadcast per timestep by build script)
+#   [2]   u10   (10m u-wind)
+#   [3]   v10   (10m v-wind)
+#   [4]   d2m   (2m dewpoint temperature)
+#   [5]   t2m   (2m temperature)
+#   [6]   msl   (mean sea level pressure)
+#   [7]   mwd   (mean wave direction)
+#   [8]   sst   (sea surface temperature)
+#   [9]   swh   (significant wave height)
+#   [10]  sp    (surface pressure)
+#   [11]  tp    (total precipitation)
+#   [12]  uvb   (downward UV radiation)
+_target_: autocast.data.datamodule.SpatioTemporalDataModule
+data_path: /lus/lfs1aip2/projects/u6eo/qiencai/seaice/processed_osisaf_era5_2000_2020
+batch_size: 4
+n_steps_input: 5
+n_steps_output: 14
+stride: 1
+verbose: false
+use_normalization: true
+normalization_path: /lus/lfs1aip2/projects/u6eo/qiencai/seaice/processed_osisaf_era5_2000_2020/stats.yaml
+# Predict only the SIC channel (channel 0) to keep output compact
+output_channel_idxs: [0]
+num_workers: 4
+doy_offset: 1
