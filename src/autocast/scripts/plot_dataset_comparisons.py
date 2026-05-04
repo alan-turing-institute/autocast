@@ -6,7 +6,7 @@ import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import SupportsIndex, cast
+from typing import Any, SupportsIndex, cast
 
 import matplotlib as mpl
 import yaml
@@ -1534,7 +1534,7 @@ def save_fig(fig, out_dir: Path, name: str):
     for figure_format in formats:
         fmt = figure_format.lower().lstrip(".")
         target = p if fmt == original_format else base.with_suffix(f".{fmt}")
-        save_kwargs = {"bbox_inches": "tight", "format": fmt}
+        save_kwargs: dict[str, Any] = {"bbox_inches": "tight", "format": fmt}
         if fmt == "png":
             save_kwargs["dpi"] = 120
         fig.savefig(target, **save_kwargs)
@@ -3111,7 +3111,7 @@ def _paper_coverage_metrics(metrics: list[str]) -> list[str]:
     return [m for m in metrics if m.startswith("coverage_")]
 
 
-def _paper_style_kwargs(shared_axis_labels: bool = True) -> dict[str, object]:
+def _paper_style_kwargs(shared_axis_labels: bool = True) -> dict[str, Any]:
     """Use rcParams-driven font sizes for paper figures."""
     return {
         "tick_label_scale": PAPER_TICK_FONT_SIZE / DEFAULT_TICK_LABEL_FONT_SIZE,

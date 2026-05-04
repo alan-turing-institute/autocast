@@ -160,8 +160,8 @@ def test_grouped_bar_can_scale_axis_labels_with_ticks(tmp_path: Path):
         axis_label_scale=1.5,
     )
 
-    assert ax.yaxis.label.get_size() == 15.0
-    assert ax.xaxis.get_ticklabels()[0].get_size() == 15.0
+    assert ax.yaxis.label.get_fontsize() == 15.0
+    assert ax.xaxis.get_ticklabels()[0].get_fontsize() == 15.0
     plt.close(fig)
 
 
@@ -285,7 +285,7 @@ def test_coverage_calibration_panel_uses_publication_axis_labels(tmp_path: Path)
         save=False,
     )
 
-    assert fig is not None
+    assert isinstance(fig, Figure)
     axes = fig.axes
     assert axes[0].get_ylabel() == "Empirical coverage"
     assert axes[1].get_ylabel() == "Empirical coverage (0:4)"
@@ -327,7 +327,7 @@ def test_coverage_calibration_panel_can_use_shared_xlabel_and_taller_height(
         save=False,
     )
 
-    assert fig is not None
+    assert isinstance(fig, Figure)
     assert fig.get_size_inches()[1] == 2.3 * 2 * 1.5
     assert fig.axes[1].get_xlabel() == ""
     assert r"Expected coverage (1 - $\alpha$)" in [
@@ -342,7 +342,7 @@ def test_lead_time_coverage_delta_is_proportional(tmp_path: Path):
     pd.DataFrame(
         [[0.25, 0.75]],
         index=pd.Index(["coverage_0.5"], name="metric"),
-        columns=["0", "1"],
+        columns=pd.Index(["0", "1"]),
     ).to_csv(eval_dir / "rollout_metrics_per_timestep_channel_0.csv")
     df = pd.DataFrame(
         {
@@ -365,7 +365,7 @@ def test_lead_time_coverage_delta_is_proportional(tmp_path: Path):
         save=False,
     )
 
-    assert fig is not None
+    assert isinstance(fig, Figure)
     ax = fig.axes[0]
     assert ax.get_ylabel() == ""
     assert r"$\Delta$ empirical coverage (proportional)" in [
@@ -381,7 +381,7 @@ def test_short_axis_labels_use_compact_shared_coverage_delta(tmp_path: Path):
     pd.DataFrame(
         [[0.25, 0.75]],
         index=pd.Index(["coverage_0.5"], name="metric"),
-        columns=["0", "1"],
+        columns=pd.Index(["0", "1"]),
     ).to_csv(eval_dir / "rollout_metrics_per_timestep_channel_0.csv")
     df = pd.DataFrame(
         {
@@ -405,7 +405,7 @@ def test_short_axis_labels_use_compact_shared_coverage_delta(tmp_path: Path):
         save=False,
     )
 
-    assert fig is not None
+    assert isinstance(fig, Figure)
     assert r"Rel. $\Delta$ empirical coverage" in [
         text.get_text() for text in fig.texts
     ]
@@ -418,7 +418,7 @@ def test_lead_time_error_labels_are_uppercase(tmp_path: Path):
     pd.DataFrame(
         [[1.0, 2.0]],
         index=pd.Index(["vrmse"], name="metric"),
-        columns=["0", "1"],
+        columns=pd.Index(["0", "1"]),
     ).to_csv(eval_dir / "rollout_metrics_per_timestep_channel_0.csv")
     df = pd.DataFrame(
         {
@@ -440,6 +440,6 @@ def test_lead_time_error_labels_are_uppercase(tmp_path: Path):
         save=False,
     )
 
-    assert fig is not None
+    assert isinstance(fig, Figure)
     assert fig.axes[0].get_ylabel() == "VRMSE"
     plt.close(fig)
