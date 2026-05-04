@@ -7,6 +7,7 @@ OUTPUT_DIR=${OUTPUT_DIR:-$RESULTS_DIR/$PLOTS_PATH/main_comparison_m8_complete_no
 FIGURE_FORMATS=${FIGURE_FORMATS:-png}
 PAPER_OUTPUT_DIR=${PAPER_OUTPUT_DIR:-$RESULTS_DIR/$PLOTS_PATH/paper_figures}
 PAPER_USE_TEX=${PAPER_USE_TEX:-false}
+PAPER_PANEL_LABELS=${PAPER_PANEL_LABELS:-true}
 
 # Keep colours stable across all final plots. These are indices into matplotlib's
 # tab10 palette as used by the explicit hue argument.
@@ -41,6 +42,8 @@ Options:
                         Copy all paper_*.png/pdf figures into DIR.
                         Default: <results-dir>/<plots-path>/paper_figures.
   --paper-use-tex       Render text/math with external LaTeX.
+  --no-paper-panel-labels
+                        Disable a), b), c) labels on combined paper figures.
   --pdf                 Write both PNG and PDF figures.
   --figure-formats FMT  Write selected formats, comma-separated or quoted.
                         Example: --figure-formats png,pdf
@@ -83,6 +86,9 @@ while [[ $# -gt 0 ]]; do
 			;;
 		--paper-use-tex)
 			PAPER_USE_TEX=true
+			;;
+		--no-paper-panel-labels)
+			PAPER_PANEL_LABELS=false
 			;;
 		--pdf)
 			FIGURE_FORMATS="png pdf"
@@ -127,6 +133,9 @@ if [[ "$PAPER_USE_TEX" == true ]]; then
 fi
 if [[ "$PAPER_ONLY" == true ]]; then
 	BASE_PLOT_ARGS+=(--paper-only)
+fi
+if [[ "$PAPER_PANEL_LABELS" != true ]]; then
+	BASE_PLOT_ARGS+=(--no-paper-panel-labels)
 fi
 
 

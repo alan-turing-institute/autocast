@@ -3171,6 +3171,24 @@ def _set_paper_expected_coverage_xlabel(
     _set_paper_xlabel(fig, r"Expected coverage (1 - $\alpha$)", y=y)
 
 
+def _add_paper_panel_label(
+    fig: FigureBase,
+    label: str,
+    *,
+    x: float,
+    y: float,
+    ha: str = "left",
+) -> None:
+    """Add a small paper-style subplot label such as ``a)``."""
+    if plt.rcParams.get("text.usetex", False):
+        label = rf"\textbf{{{label}}}"
+    text = fig.text(x, y, label, ha=ha, va="top", fontweight="bold")
+    _set_figure_text_style(
+        text,
+        PAPER_FONT_SIZE / DEFAULT_AXIS_LABEL_FONT_SIZE,
+    )
+
+
 def _plot_paper_combined_lead_time_panel(
     df_in: pd.DataFrame,
     results_root: Path,
@@ -3328,6 +3346,7 @@ def plot_paper_uq_reliability_figure(
     dataset_order: list[str] | None = None,
     hue_order: list[str] | None = None,
     name: str = "paper_uq_reliability_by_lead_time.png",
+    panel_labels: bool = True,
 ) -> None:
     """Render rollout-window calibration and coverage-delta panels together."""
     datasets = _paper_datasets(df_in, dataset_order)
@@ -3419,6 +3438,10 @@ def plot_paper_uq_reliability_figure(
         for ax in right_axes[:, 0]:
             ax.yaxis.labelpad = 0.0
         _replace_figure_text(right, "Lead time", "Lead time", y=-0.02)
+
+        if panel_labels:
+            _add_paper_panel_label(left, "a)", x=-0.10, y=0.93)
+            _add_paper_panel_label(right, "b)", x=-0.088, y=0.93, ha="center")
 
         _paper_legend(
             fig,
@@ -3610,6 +3633,7 @@ def plot_four_ds_ablation_figure(
     dataset_order: list[str] | None = None,
     hue_order: list[str] | None = None,
     name: str = "paper_four_ds_ablation.png",
+    panel_labels: bool = True,
 ) -> None:
     """Render the four-dataset ablation as a single paper-width figure."""
     datasets = _paper_datasets(df_in, dataset_order)
@@ -3679,6 +3703,11 @@ def plot_four_ds_ablation_figure(
             lead_time_y=0.03,
         )
 
+        if panel_labels:
+            _add_paper_panel_label(left, "a)", x=-0.10, y=0.93)
+            _add_paper_panel_label(right, "b)", x=-0.083, y=0.93, ha="center")
+            _add_paper_panel_label(right, "c)", x=-0.083, y=0.275, ha="center")
+
         _paper_legend(
             fig,
             df_in,
@@ -3700,6 +3729,7 @@ def plot_one_ds_ablation_figure_a(
     dataset_order: list[str] | None = None,
     hue_order: list[str] | None = None,
     name: str = "paper_one_ds_ablation_a.png",
+    panel_labels: bool = True,
 ) -> None:
     """Render a vertical one-dataset ablation panel without the all row."""
     datasets = _paper_datasets(df_in, dataset_order)
@@ -3769,6 +3799,11 @@ def plot_one_ds_ablation_figure_a(
             lead_time_y=0.03,
         )
 
+        if panel_labels:
+            _add_paper_panel_label(left, "a)", x=-0.10, y=0.93)
+            _add_paper_panel_label(right, "b)", x=-0.068, y=0.93, ha="center")
+            _add_paper_panel_label(right, "c)", x=-0.068, y=0.275, ha="center")
+
         _paper_legend(
             fig,
             df_in,
@@ -3790,6 +3825,7 @@ def plot_one_ds_ablation_figure_b(
     dataset_order: list[str] | None = None,
     hue_order: list[str] | None = None,
     name: str = "paper_one_ds_ablation_b.png",
+    panel_labels: bool = True,
 ) -> None:
     """Render a transposed one-dataset ablation panel."""
     delta_metrics = _paper_coverage_metrics(coverage_metrics)
@@ -3904,6 +3940,11 @@ def plot_one_ds_ablation_figure_b(
             ax.set_title("")
             ax.set_xlabel("Lead time")
 
+        if panel_labels:
+            _add_paper_panel_label(top, "a)", x=-0.04, y=0.95)
+            _add_paper_panel_label(bottom, "b)", x=-0.04, y=0.95)
+            _add_paper_panel_label(bottom, "c)", x=0.73, y=0.95)
+
         _paper_legend(
             fig,
             df_in,
@@ -3924,6 +3965,7 @@ def plot_one_ds_ablation_figures(
     error_ylim: tuple[float | None, float | None] | None = None,
     dataset_order: list[str] | None = None,
     hue_order: list[str] | None = None,
+    panel_labels: bool = True,
 ) -> None:
     """Render both one-dataset ablation layout variants."""
     plot_one_ds_ablation_figure_a(
@@ -3936,6 +3978,7 @@ def plot_one_ds_ablation_figures(
         error_ylim=error_ylim,
         dataset_order=dataset_order,
         hue_order=hue_order,
+        panel_labels=panel_labels,
     )
     plot_one_ds_ablation_figure_b(
         df_in,
@@ -3947,6 +3990,7 @@ def plot_one_ds_ablation_figures(
         error_ylim=error_ylim,
         dataset_order=dataset_order,
         hue_order=hue_order,
+        panel_labels=panel_labels,
     )
 
 
@@ -4306,6 +4350,13 @@ def main():  # noqa: PLR0912, PLR0915
             "Render text and math with an external LaTeX installation for "
             "paper figures. Requires latex to be available on PATH."
         ),
+    )
+    parser.add_argument(
+        "--no-paper-panel-labels",
+        dest="paper_panel_labels",
+        action="store_false",
+        default=True,
+        help="Disable a), b), c) panel labels on combined paper figures.",
     )
     parser.add_argument(
         "--four-ds-ablation",
@@ -4834,6 +4885,7 @@ def main():  # noqa: PLR0912, PLR0915
                 paper_cov_metric,
                 dataset_order=ds_order,
                 hue_order=hu_order,
+                panel_labels=args.paper_panel_labels,
             )
             plot_paper_lead_time_error_figure(
                 df,
@@ -4864,6 +4916,7 @@ def main():  # noqa: PLR0912, PLR0915
                 error_ylim=error_ylim,
                 dataset_order=ds_order,
                 hue_order=hu_order,
+                panel_labels=args.paper_panel_labels,
             )
         if args.one_ds_ablation:
             plot_one_ds_ablation_figures(
@@ -4876,6 +4929,7 @@ def main():  # noqa: PLR0912, PLR0915
                 error_ylim=error_ylim,
                 dataset_order=ds_order,
                 hue_order=hu_order,
+                panel_labels=args.paper_panel_labels,
             )
         print("Finished generating paper plots.")
         return
@@ -5088,6 +5142,7 @@ def main():  # noqa: PLR0912, PLR0915
             paper_cov_metric,
             dataset_order=ds_order,
             hue_order=hu_order,
+            panel_labels=args.paper_panel_labels,
         )
         plot_paper_lead_time_error_figure(
             df,
@@ -5118,6 +5173,7 @@ def main():  # noqa: PLR0912, PLR0915
             error_ylim=error_ylim,
             dataset_order=ds_order,
             hue_order=hu_order,
+            panel_labels=args.paper_panel_labels,
         )
     if args.one_ds_ablation:
         plot_one_ds_ablation_figures(
@@ -5130,6 +5186,7 @@ def main():  # noqa: PLR0912, PLR0915
             error_ylim=error_ylim,
             dataset_order=ds_order,
             hue_order=hu_order,
+            panel_labels=args.paper_panel_labels,
         )
 
     # Per-group lead-time panels (SSR, coherence, balancing coverage, physics)
