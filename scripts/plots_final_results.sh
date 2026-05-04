@@ -20,8 +20,6 @@ HUE_ABLATION_ALT_2=2
 HUE_ABLATION_ALT_3=3
 HUE_ODE_ABLATION_STEPS=5
 HUE_ODE_MAIN=$HUE_FM_LATENT
-HUE_EMA_OFF=$HUE_FM_LATENT
-HUE_EMA_ON=$HUE_ABLATION_ALT_1
 
 PAPER_MAIN_FIGURES=false
 FOUR_DS_ABLATION=false
@@ -303,19 +301,6 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_fm_ode_steps"
 
 autocast-plots --results-dir "$RESULTS_DIR" \
-	--run diff_ad64_flow_matching_vit_09490da_dae1382 "No EMA" "$HUE_EMA_OFF" eval=eval \
-	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "No EMA" "$HUE_EMA_OFF" eval=eval \
-	--run diff_gpe64_flow_matching_vit_09490da_47bf39a "No EMA" "$HUE_EMA_OFF" eval=eval \
-	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "No EMA" "$HUE_EMA_OFF" eval=eval \
-	--run diff_ad64_flow_matching_vit_09490da_dae1382 "EMA" "$HUE_EMA_ON" eval=eval_encode_once_ema \
-	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "EMA" "$HUE_EMA_ON" eval=eval_encode_once_ema \
-	--run diff_gpe64_flow_matching_vit_09490da_47bf39a "EMA" "$HUE_EMA_ON" eval=eval_encode_once_ema \
-	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "EMA" "$HUE_EMA_ON" eval=eval_encode_once_ema \
-	"${ALL_DATASET_COMMON_ARGS[@]}" \
-	--uniform-run-hue-color \
-	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_fm_ema"
-
-autocast-plots --results-dir "$RESULTS_DIR" \
 	"${BASE_PLOT_ARGS[@]}" \
 	--run crps_ad64_vit_azula_large_bed4611_da01a04 "CRPS (ambient)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS (ambient)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
@@ -383,14 +368,6 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	--coverage-panel-height-scale 1.5 \
 	${FOUR_DS_ABLATION_ARG:+$FOUR_DS_ABLATION_ARG} \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_crps_multiwinkler_eval_m8"
-
-autocast-plots --results-dir "$RESULTS_DIR" \
-	--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
-	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM" "$HUE_FM_LATENT" \
-	--run diff_cns64_flow_matching_vit_0f89f06_483bb70 "FM (ambient)" "$HUE_FM_AMBIENT" \
-	--run diff_cns64_diffusion_vit_9c98db0_e9bc460 "DM (ambient)" "$HUE_DM" eval=eval_ambient \
-	"${COMMON_ARGS[@]}" \
-	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_cns_dm"
 
 autocast-plots --results-dir "$RESULTS_DIR" \
 	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" "$HUE_FM_LATENT" \
@@ -476,6 +453,8 @@ if [[ "$PAPER_MAIN_FIGURES" == true || "$FOUR_DS_ABLATION" == true || "$ONE_DS_A
 	done < <(
 		find "$RESULTS_DIR/$PLOTS_PATH" \
 			-path "$PAPER_OUTPUT_DIR" -prune -o \
+			-path "$RESULTS_DIR/$PLOTS_PATH/ablation_fm_ema" -prune -o \
+			-path "$RESULTS_DIR/$PLOTS_PATH/ablation_cns_dm" -prune -o \
 			-type f \( -name 'paper_*.png' -o -name 'paper_*.pdf' \) \
 			-print
 	)

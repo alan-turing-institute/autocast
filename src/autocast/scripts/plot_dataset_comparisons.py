@@ -3473,7 +3473,6 @@ def plot_paper_lead_time_error_figure(
             sharey=True,
             **_paper_style_kwargs(),
         )
-        _paper_legend(fig, df_in, styles, hue_order)
         _paper_legend(
             fig,
             df_in,
@@ -3659,7 +3658,7 @@ def plot_four_ds_ablation_figure(
             left,
             _empirical_coverage_label(short=True),
             _paper_empirical_coverage_label(),
-            x=-0.055,
+            x=-0.065,
         )
         _remove_figure_text(left, {r"Expected coverage (1 - $\alpha$)"})
         _set_paper_expected_coverage_xlabel(left, y=0.03)
@@ -3676,7 +3675,7 @@ def plot_four_ds_ablation_figure(
             hue_order=hue_order,
             error_ylim=error_ylim,
             name_stem="four_ds_ablation",
-            delta_ylabel_x=-0.058,
+            delta_ylabel_x=-0.068,
             lead_time_y=0.03,
         )
 
