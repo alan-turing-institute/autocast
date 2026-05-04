@@ -354,8 +354,8 @@ def plot_spatiotemporal_snapshots(  # noqa: PLR0912, PLR0915
     channel_names: list[str] | None = None,
     preserve_aspect: bool = False,
     target_width_in: float = A4_LINEWIDTH_IN,
-    diff_log: bool = True,
-    uq_log: bool = True,
+    diff_log: bool = False,
+    uq_log: bool = False,
 ) -> Figure:
     """Create a still panel at selected timesteps for one spatial channel."""
     true_batch = true[batch_idx]
