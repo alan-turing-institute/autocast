@@ -55,18 +55,27 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 OSISAF_DIR = Path("/projects/u6eo/qiencai/seaice/raw_osisaf")
-ERA5_DIR   = Path("/projects/u6eo/qiencai/seaice/ERA5")
+ERA5_DIR = Path("/projects/u6eo/qiencai/seaice/ERA5")
 LAND_MASK_PATH = OSISAF_DIR / "land_mask.pt"
 
 DEFAULT_OUT_DIR = Path("/projects/u6eo/qiencai/seaice/processed_osisaf_era5_2000_2020")
 
 TRAIN_YEARS = list(range(2000, 2017))
 VALID_YEARS = [2017, 2018]
-TEST_YEARS  = [2019, 2020]
+TEST_YEARS = [2019, 2020]
 
 ERA5_VARS = [
-    "u10", "v10", "d2m", "t2m", "msl",
-    "mwd", "sst", "swh", "sp", "tp", "uvb",
+    "u10",
+    "v10",
+    "d2m",
+    "t2m",
+    "msl",
+    "mwd",
+    "sst",
+    "swh",
+    "sp",
+    "tp",
+    "uvb",
 ]
 CHANNEL_NAMES = ["sic", "land_mask"] + ERA5_VARS
 
@@ -75,8 +84,10 @@ CHANNEL_NAMES = ["sic", "land_mask"] + ERA5_VARS
 # OSISAF helpers
 # ---------------------------------------------------------------------------
 
+
 def _drop_feb29(arr: np.ndarray, times) -> tuple[np.ndarray, np.ndarray]:
     import pandas as pd
+
     idx = pd.DatetimeIndex(times)
     mask = ~((idx.month == 2) & (idx.day == 29))
     return arr[mask], times[mask]
@@ -100,7 +111,7 @@ def load_osisaf_year(year: int) -> tuple[np.ndarray | None, np.ndarray | None]:
     if "%" in units or "percent" in units:
         da = da / 100.0
 
-    arr   = np.asarray(da.values, dtype=np.float32)
+    arr = np.asarray(da.values, dtype=np.float32)
     times = np.asarray(ds["time"].values)
     arr, times = _drop_feb29(arr, times)
 
@@ -135,8 +146,12 @@ def get_osisaf_grid(year: int = 2000) -> tuple[np.ndarray, np.ndarray]:
     ds.close()
     if lat_2d.ndim != 2 or lon_2d.ndim != 2:
         raise ValueError(f"Expected 2-D lat/lon, got lat.ndim={lat_2d.ndim}")
-    log.info("  OSISAF grid shape: %s, lat [%.1f, %.1f]",
-             lat_2d.shape, float(lat_2d.min()), float(lat_2d.max()))
+    log.info(
+        "  OSISAF grid shape: %s, lat [%.1f, %.1f]",
+        lat_2d.shape,
+        float(lat_2d.min()),
+        float(lat_2d.max()),
+    )
     return lat_2d, lon_2d  # (H, W) each
 
 
@@ -144,13 +159,14 @@ def get_osisaf_grid(year: int = 2000) -> tuple[np.ndarray, np.ndarray]:
 # ERA5 helpers
 # ---------------------------------------------------------------------------
 
+
 def _regrid_var(
-    era5_arr: np.ndarray,    # (T, H_era5, W_era5)  already lat-ascending, lon sorted
-    era5_lat: np.ndarray,    # (H_era5,) ascending
-    era5_lon: np.ndarray,    # (W_era5,) ascending [0,360)
+    era5_arr: np.ndarray,  # (T, H_era5, W_era5)  already lat-ascending, lon sorted
+    era5_lat: np.ndarray,  # (H_era5,) ascending
+    era5_lon: np.ndarray,  # (W_era5,) ascending [0,360)
     tgt_lat_2d: np.ndarray,  # (H, W)
     tgt_lon_2d: np.ndarray,  # (H, W)
-) -> np.ndarray:             # (T, H, W) float32
+) -> np.ndarray:  # (T, H, W) float32
     """Bilinear regrid with map_coordinates — vectorised over all T*H*W at once."""
     T = era5_arr.shape[0]
     H, W = tgt_lat_2d.shape
@@ -160,14 +176,14 @@ def _regrid_var(
     dlat = float(era5_lat[1] - era5_lat[0])
     dlon = float(era5_lon[1] - era5_lon[0])
 
-    lat_idx = (tgt_lat_2d   - era5_lat[0]) / dlat  # (H, W)
+    lat_idx = (tgt_lat_2d - era5_lat[0]) / dlat  # (H, W)
     lon_idx = (tgt_lon_norm - era5_lon[0]) / dlon  # (H, W)
 
     lat_flat = lat_idx.ravel().astype(np.float32)
     lon_flat = lon_idx.ravel().astype(np.float32)
 
     # Build coordinate arrays of shape (3, T*H*W)
-    t_coords   = np.repeat(np.arange(T, dtype=np.float32), H * W)
+    t_coords = np.repeat(np.arange(T, dtype=np.float32), H * W)
     lat_coords = np.tile(lat_flat, T)
     lon_coords = np.tile(lon_flat, T)
 
@@ -199,7 +215,7 @@ def load_era5_year(
     ds_list = cfgrib.open_datasets(str(grib_path))
 
     era5_arrays: dict[str, np.ndarray] = {}
-    era5_grids:  dict[str, tuple[np.ndarray, np.ndarray]] = {}
+    era5_grids: dict[str, tuple[np.ndarray, np.ndarray]] = {}
 
     for ds in ds_list:
         if "latitude" in ds.coords:
@@ -227,17 +243,22 @@ def load_era5_year(
         for var in ERA5_VARS:
             if var not in ds.data_vars or var in era5_arrays:
                 continue
-            arr   = np.asarray(ds[var].values, dtype=np.float32)
+            arr = np.asarray(ds[var].values, dtype=np.float32)
             times = np.asarray(ds["time"].values)
             arr, times = _drop_feb29(arr, times)
             if arr.shape[0] != 365:
-                log.warning("  ERA5 var %s year %d: %d steps (expected 365)", var, year, arr.shape[0])
+                log.warning(
+                    "  ERA5 var %s year %d: %d steps (expected 365)",
+                    var,
+                    year,
+                    arr.shape[0],
+                )
                 continue
             if flip_lat:
                 arr = arr[:, ::-1, :]
             arr = arr[:, :, sort_idx]
             era5_arrays[var] = arr
-            era5_grids[var]  = (lat_c, lon_sorted)
+            era5_grids[var] = (lat_c, lon_sorted)
 
         try:
             ds.close()
@@ -249,8 +270,8 @@ def load_era5_year(
         log.warning("  ERA5 %d: missing %s", year, missing)
         return None
 
-    H, W  = tgt_lat_2d.shape
-    out   = np.full((365, H, W, len(ERA5_VARS)), np.nan, dtype=np.float32)
+    H, W = tgt_lat_2d.shape
+    out = np.full((365, H, W, len(ERA5_VARS)), np.nan, dtype=np.float32)
 
     for vi, var in enumerate(ERA5_VARS):
         era5_lat, era5_lon = era5_grids[var]
@@ -266,6 +287,7 @@ def load_era5_year(
 # ---------------------------------------------------------------------------
 # Per-year caching
 # ---------------------------------------------------------------------------
+
 
 def process_year(
     year: int,
@@ -287,9 +309,11 @@ def process_year(
         return None
 
     H, W = sic.shape[1], sic.shape[2]
-    sic_ch  = sic[..., np.newaxis]                                                   # (365,H,W,1)
-    mask_ch = np.broadcast_to(land_mask[np.newaxis], (365, H, W, 1)).copy()         # (365,H,W,1)
-    combined = np.concatenate([sic_ch, mask_ch, era5], axis=-1)                     # (365,H,W,13)
+    sic_ch = sic[..., np.newaxis]  # (365,H,W,1)
+    mask_ch = np.broadcast_to(
+        land_mask[np.newaxis], (365, H, W, 1)
+    ).copy()  # (365,H,W,1)
+    combined = np.concatenate([sic_ch, mask_ch, era5], axis=-1)  # (365,H,W,13)
 
     torch.save(torch.from_numpy(combined), str(cache_path))
     log.info("  Year %d cached: %s", year, combined.shape)
@@ -299,6 +323,7 @@ def process_year(
 # ---------------------------------------------------------------------------
 # Split builder
 # ---------------------------------------------------------------------------
+
 
 def build_split(
     split_years: list[int],
@@ -324,14 +349,16 @@ def build_split(
     if not traj_list:
         raise RuntimeError(f"No usable trajectories for split={split_name}")
 
-    data = np.stack(traj_list, axis=0)   # (N, 365, H, W, 13)
+    data = np.stack(traj_list, axis=0)  # (N, 365, H, W, 13)
     log.info("[%s] shape=%s dtype=%s", split_name, data.shape, data.dtype)
     torch.save(torch.from_numpy(data), split_dir / "data.pt")
     log.info("[%s] saved data.pt", split_name)
 
     N, _, H, W, _ = data.shape
     cf = np.broadcast_to(land_mask[np.newaxis], (N, H, W, 1)).copy()
-    torch.save(torch.from_numpy(cf.astype(np.float32)), split_dir / "constant_fields.pt")
+    torch.save(
+        torch.from_numpy(cf.astype(np.float32)), split_dir / "constant_fields.pt"
+    )
     log.info("[%s] saved constant_fields.pt", split_name)
 
     return traj_list
@@ -341,22 +368,23 @@ def build_split(
 # Stats
 # ---------------------------------------------------------------------------
 
+
 def compute_and_save_stats(train_trajectories: list[np.ndarray], out_dir: Path) -> None:
     all_flat = np.concatenate(
         [t.reshape(-1, t.shape[-1]) for t in train_trajectories], axis=0
     )
     means = np.nanmean(all_flat, axis=0)
-    stds  = np.nanstd(all_flat, axis=0)
-    stds  = np.where(stds < 1e-8, 1.0, stds)
+    stds = np.nanstd(all_flat, axis=0)
+    stds = np.where(stds < 1e-8, 1.0, stds)
 
     yaml_data = {
         "stats": {
-            "mean":       {n: float(means[i]) for i, n in enumerate(CHANNEL_NAMES)},
-            "std":        {n: float(stds[i])  for i, n in enumerate(CHANNEL_NAMES)},
+            "mean": {n: float(means[i]) for i, n in enumerate(CHANNEL_NAMES)},
+            "std": {n: float(stds[i]) for i, n in enumerate(CHANNEL_NAMES)},
             "mean_delta": dict.fromkeys(CHANNEL_NAMES, 0.0),
-            "std_delta":  dict.fromkeys(CHANNEL_NAMES, 1.0),
+            "std_delta": dict.fromkeys(CHANNEL_NAMES, 1.0),
         },
-        "core_field_names":     CHANNEL_NAMES,
+        "core_field_names": CHANNEL_NAMES,
         "constant_field_names": [],
     }
 
@@ -368,6 +396,7 @@ def compute_and_save_stats(train_trajectories: list[np.ndarray], out_dir: Path) 
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
 
 def main(out_dir: Path) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -389,9 +418,15 @@ def main(out_dir: Path) -> None:
         land_mask = land_mask[0, :, :, np.newaxis]
     log.info("Land mask shape: %s", land_mask.shape)
 
-    train_trajs = build_split(TRAIN_YEARS, land_mask, tgt_lat_2d, tgt_lon_2d, out_dir, cache_dir, "train")
-    build_split(VALID_YEARS, land_mask, tgt_lat_2d, tgt_lon_2d, out_dir, cache_dir, "valid")
-    build_split(TEST_YEARS,  land_mask, tgt_lat_2d, tgt_lon_2d, out_dir, cache_dir, "test")
+    train_trajs = build_split(
+        TRAIN_YEARS, land_mask, tgt_lat_2d, tgt_lon_2d, out_dir, cache_dir, "train"
+    )
+    build_split(
+        VALID_YEARS, land_mask, tgt_lat_2d, tgt_lon_2d, out_dir, cache_dir, "valid"
+    )
+    build_split(
+        TEST_YEARS, land_mask, tgt_lat_2d, tgt_lon_2d, out_dir, cache_dir, "test"
+    )
 
     compute_and_save_stats(train_trajs, out_dir)
     log.info("Dataset build complete: %s", out_dir)

@@ -101,13 +101,20 @@ class SupervisedViTProcessor(Processor[EncodedBatch]):
             _, t, *spatial, _ = x.shape
             if self.n_spatial_dims == 2:
                 cond = repeat(
-                    global_cond, "b d -> b t w h d",
-                    t=t, w=spatial[0], h=spatial[1],
+                    global_cond,
+                    "b d -> b t w h d",
+                    t=t,
+                    w=spatial[0],
+                    h=spatial[1],
                 )
             elif self.n_spatial_dims == 3:
                 cond = repeat(
-                    global_cond, "b d -> b t w h depth d",
-                    t=t, w=spatial[0], h=spatial[1], depth=spatial[2],
+                    global_cond,
+                    "b d -> b t w h depth d",
+                    t=t,
+                    w=spatial[0],
+                    h=spatial[1],
+                    depth=spatial[2],
                 )
             else:
                 raise ValueError(f"Unsupported n_spatial_dims={self.n_spatial_dims}")
