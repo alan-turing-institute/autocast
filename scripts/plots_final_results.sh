@@ -35,7 +35,7 @@ Options:
   --paper-main-figures  Add paper-width main-result figures to OUTPUT_DIR,
                         including the multi-metric lead-time summary.
   --four-ds-ablation    Add four-dataset ablation figures to multi-dataset ablations.
-  --one-ds-ablation     Add one-dataset ablation variants to one-dataset ablations.
+  --one-ds-ablation     Add the one-dataset ablation paper figure.
   --paper-figures       Add all optional paper-width figures above.
   --paper-only          Only run/copy paper figures, writing PNG and PDF.
   --paper-output-dir DIR
@@ -311,44 +311,6 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 
 autocast-plots --results-dir "$RESULTS_DIR" \
 	"${BASE_PLOT_ARGS[@]}" \
-	--run crps_ad64_vit_azula_large_bed4611_da01a04 "CRPS (ambient)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
-	--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS (ambient)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
-	--run crps_gpe64_vit_azula_large_bed4611_e0a6df5 "CRPS (ambient)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
-	--run crps_gs64_vit_azula_large_bed4611_828a161 "CRPS (ambient)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
-	--run crps_cns64_vit_azula_large_9c98db0_4b2a1a5 "CRPS (latent)" "$HUE_CRPS_LATENT" eval=eval_best_multiwinkler_from0p25 \
-	--run crps_ad64_vit_azula_large_3b47441_3ad3562 "CRPS (latent)" "$HUE_CRPS_LATENT" eval=eval_best_multiwinkler_from0p25 \
-	--run crps_gs64_vit_azula_large_3b47441_1c8e446 "CRPS (latent)" "$HUE_CRPS_LATENT" eval=eval_best_multiwinkler_from0p25 \
-	--run diff_ad64_flow_matching_vit_0f89f06_725d44a "FM (ambient)" "$HUE_FM_AMBIENT" \
-	--run diff_cns64_flow_matching_vit_0f89f06_483bb70 "FM (ambient)" "$HUE_FM_AMBIENT" \
-	--run diff_gpe64_flow_matching_vit_0f89f06_3b3604d "FM (ambient)" "$HUE_FM_AMBIENT" \
-	--run diff_gs64_flow_matching_vit_0f89f06_6e3a299 "FM (ambient)" "$HUE_FM_AMBIENT" \
-	--run diff_ad64_flow_matching_vit_09490da_dae1382 "FM (latent)" "$HUE_FM_LATENT" \
-	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" "$HUE_FM_LATENT" \
-	--run diff_gpe64_flow_matching_vit_09490da_47bf39a "FM (latent)" "$HUE_FM_LATENT" \
-	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "FM (latent)" "$HUE_FM_LATENT" \
-	--dataset-order AD CNS GS GPE \
-	--error-ylim 1e-5 1 \
-	--lead-time-error-metrics vrmse \
-	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
-	--lead-time-coverage-delta \
-	--combined-lead-time \
-	--training-metrics val_loss train_loss \
-	--training-yscale log \
-	--panel-figure \
-	--panel-figure-no-training \
-	--coverage-panel-overall-rollout-windows \
-	--uniform-run-hue-color \
-	--tick-label-scale 1.5 \
-	--axis-label-scale 1.3 \
-	--legend-font-scale 1.5 \
-	--short-axis-labels \
-	--shared-axis-labels \
-	--coverage-panel-height-scale 1.5 \
-	${FOUR_DS_ABLATION_ARG:+$FOUR_DS_ABLATION_ARG} \
-	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_ambient_fm_latent_crps_m8"
-
-autocast-plots --results-dir "$RESULTS_DIR" \
-	"${BASE_PLOT_ARGS[@]}" \
 	--run crps_ad64_vit_azula_large_0f89f06_4667606 "CRPS (best val loss)" "$HUE_ABLATION_ALT_2" eval=eval \
 	--run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (best val loss)" "$HUE_ABLATION_ALT_2" eval=eval \
 	--run crps_gpe64_vit_azula_large_0f89f06_d337bd8 "CRPS (best val loss)" "$HUE_ABLATION_ALT_2" eval=eval \
@@ -377,12 +339,6 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	--coverage-panel-height-scale 1.5 \
 	${FOUR_DS_ABLATION_ARG:+$FOUR_DS_ABLATION_ARG} \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_crps_multiwinkler_eval_m8"
-
-autocast-plots --results-dir "$RESULTS_DIR" \
-	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" "$HUE_FM_LATENT" \
-	--run diff_cns64_diffusion_vit_0c75022_80967c4 "DM (latent)" "$HUE_DM" eval=eval_encode_once \
-	"${COMMON_ARGS[@]}" \
-	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_cns_dm_latent"
 
 autocast-plots --results-dir "$RESULTS_DIR" \
 	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (6x)" "$HUE_FM_LATENT" \
@@ -452,11 +408,34 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 
 if [[ "$PAPER_MAIN_FIGURES" == true || "$FOUR_DS_ABLATION" == true || "$ONE_DS_ABLATION" == true ]]; then
 	mkdir -p "$PAPER_OUTPUT_DIR/png" "$PAPER_OUTPUT_DIR/pdf"
+	SKIPPED_PAPER_DIRS=(
+		ablation_ambient_fm_latent_crps_m8
+		ablation_cns_dm
+		ablation_cns_dm_latent
+		ablation_fm_ema
+	)
+	for ext in png pdf; do
+		rm -f "$PAPER_OUTPUT_DIR/$ext/"*_paper_one_ds_ablation_b."$ext"
+		for skipped_dir in "${SKIPPED_PAPER_DIRS[@]}"; do
+			rm -f "$PAPER_OUTPUT_DIR/$ext/${skipped_dir}_"*."$ext"
+		done
+	done
 	copied=0
 	while IFS= read -r fig; do
 		src_dir=$(basename "$(dirname "$fig")")
+		fig_name=$(basename "$fig")
+		case "$fig_name" in
+			paper_one_ds_ablation_b.*)
+				continue
+				;;
+		esac
+		case "$src_dir" in
+			ablation_ambient_fm_latent_crps_m8 | ablation_cns_dm | ablation_cns_dm_latent | ablation_fm_ema)
+				continue
+				;;
+		esac
 		ext=${fig##*.}
-		dest_name="${src_dir}_$(basename "$fig")"
+		dest_name="${src_dir}_${fig_name}"
 		cp "$fig" "$PAPER_OUTPUT_DIR/$ext/$dest_name"
 		copied=$((copied + 1))
 	done < <(

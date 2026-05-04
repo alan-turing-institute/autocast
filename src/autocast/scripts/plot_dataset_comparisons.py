@@ -3359,16 +3359,16 @@ def plot_paper_uq_reliability_figure(
         fig = plt.figure(figsize=(PAPER_FIGURE_WIDTH_IN, 3.45))
         outer = fig.add_gridspec(
             1,
-            2,
-            width_ratios=[1.08, 1.0],
+            3,
+            width_ratios=[1.08, 0.12, 1.0],
             left=0.065,
             right=0.995,
             bottom=0.13,
             top=0.84,
-            wspace=0.24,
+            wspace=0.0,
         )
         left = fig.add_subfigure(outer[0, 0])
-        right = fig.add_subfigure(outer[0, 1])
+        right = fig.add_subfigure(outer[0, 2])
 
         left_axes = left.subplots(
             len(WINDOW_ROWS_ROLLOUT_ONLY),
@@ -3395,7 +3395,7 @@ def plot_paper_uq_reliability_figure(
             left,
             _empirical_coverage_label(short=True),
             _paper_empirical_coverage_label(),
-            x=-0.055,
+            x=-0.065,
         )
         _replace_figure_text(
             left,
@@ -3433,7 +3433,7 @@ def plot_paper_uq_reliability_figure(
             right,
             r"Rel. $\Delta$ empirical coverage",
             _paper_relative_coverage_label(),
-            x=-0.088,
+            x=-0.094,
         )
         for ax in right_axes[:, 0]:
             ax.yaxis.labelpad = 0.0
@@ -3441,7 +3441,7 @@ def plot_paper_uq_reliability_figure(
 
         if panel_labels:
             _add_paper_panel_label(left, "a)", x=-0.10, y=0.93)
-            _add_paper_panel_label(right, "b)", x=-0.088, y=0.93, ha="center")
+            _add_paper_panel_label(right, "b)", x=-0.094, y=0.93, ha="center")
 
         _paper_legend(
             fig,
@@ -3646,16 +3646,16 @@ def plot_four_ds_ablation_figure(
         fig = plt.figure(figsize=(PAPER_FIGURE_WIDTH_IN, 4.95))
         outer = fig.add_gridspec(
             1,
-            2,
-            width_ratios=[1.08, 1.0],
+            3,
+            width_ratios=[1.08, 0.12, 1.0],
             left=0.065,
             right=0.995,
             bottom=0.08,
             top=0.84,
-            wspace=0.36,
+            wspace=0.0,
         )
         left = fig.add_subfigure(outer[0, 0])
-        right = fig.add_subfigure(outer[0, 1])
+        right = fig.add_subfigure(outer[0, 2])
 
         coverage_axes = left.subplots(
             len(WINDOW_ROWS_ROLLOUT_ONLY),
@@ -3699,14 +3699,14 @@ def plot_four_ds_ablation_figure(
             hue_order=hue_order,
             error_ylim=error_ylim,
             name_stem="four_ds_ablation",
-            delta_ylabel_x=-0.083,
+            delta_ylabel_x=-0.090,
             lead_time_y=0.03,
         )
 
         if panel_labels:
             _add_paper_panel_label(left, "a)", x=-0.10, y=0.93)
-            _add_paper_panel_label(right, "b)", x=-0.083, y=0.93, ha="center")
-            _add_paper_panel_label(right, "c)", x=-0.083, y=0.275, ha="center")
+            _add_paper_panel_label(right, "b)", x=-0.090, y=0.93, ha="center")
+            _add_paper_panel_label(right, "c)", x=-0.090, y=0.275, ha="center")
 
         _paper_legend(
             fig,
@@ -3742,16 +3742,16 @@ def plot_one_ds_ablation_figure_a(
         fig = plt.figure(figsize=(PAPER_FIGURE_WIDTH_IN, 4.85))
         outer = fig.add_gridspec(
             1,
-            2,
-            width_ratios=[0.95, 1.05],
+            3,
+            width_ratios=[0.95, 0.12, 1.05],
             left=0.075,
             right=0.99,
             bottom=0.08,
             top=0.84,
-            wspace=0.38,
+            wspace=0.0,
         )
         left = fig.add_subfigure(outer[0, 0])
-        right = fig.add_subfigure(outer[0, 1])
+        right = fig.add_subfigure(outer[0, 2])
 
         coverage_axes = left.subplots(
             len(WINDOW_ROWS_ROLLOUT_ONLY),
@@ -3778,7 +3778,7 @@ def plot_one_ds_ablation_figure_a(
             left,
             _empirical_coverage_label(short=True),
             _paper_empirical_coverage_label(),
-            x=-0.075,
+            x=-0.085,
         )
         _remove_figure_text(left, {r"Expected coverage (1 - $\alpha$)"})
         _set_paper_expected_coverage_xlabel(left, y=0.03)
@@ -3795,14 +3795,14 @@ def plot_one_ds_ablation_figure_a(
             hue_order=hue_order,
             error_ylim=error_ylim,
             name_stem="one_ds_ablation_a",
-            delta_ylabel_x=-0.068,
+            delta_ylabel_x=-0.073,
             lead_time_y=0.03,
         )
 
         if panel_labels:
             _add_paper_panel_label(left, "a)", x=-0.10, y=0.93)
-            _add_paper_panel_label(right, "b)", x=-0.068, y=0.93, ha="center")
-            _add_paper_panel_label(right, "c)", x=-0.068, y=0.275, ha="center")
+            _add_paper_panel_label(right, "b)", x=-0.073, y=0.93, ha="center")
+            _add_paper_panel_label(right, "c)", x=-0.073, y=0.275, ha="center")
 
         _paper_legend(
             fig,
@@ -3967,20 +3967,8 @@ def plot_one_ds_ablation_figures(
     hue_order: list[str] | None = None,
     panel_labels: bool = True,
 ) -> None:
-    """Render both one-dataset ablation layout variants."""
+    """Render the selected one-dataset ablation layout."""
     plot_one_ds_ablation_figure_a(
-        df_in,
-        results_root,
-        out_dir,
-        styles,
-        error_metrics,
-        coverage_metrics,
-        error_ylim=error_ylim,
-        dataset_order=dataset_order,
-        hue_order=hue_order,
-        panel_labels=panel_labels,
-    )
-    plot_one_ds_ablation_figure_b(
         df_in,
         results_root,
         out_dir,
@@ -4366,10 +4354,7 @@ def main():  # noqa: PLR0912, PLR0915
     parser.add_argument(
         "--one-ds-ablation",
         action="store_true",
-        help=(
-            "Also render both one-dataset ablation layouts "
-            "(paper_one_ds_ablation_a.png and paper_one_ds_ablation_b.png)."
-        ),
+        help="Also render the one-dataset ablation paper layout.",
     )
     args = parser.parse_args()
     FIGURE_FORMATS[:] = list(dict.fromkeys(args.figure_formats))
