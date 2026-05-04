@@ -8,8 +8,12 @@ from autocast.encoders.base import Encoder
 from autocast.scripts.setup import (
     _apply_processor_channel_defaults,
     _build_loss_func,
+    _build_processor,
     _filter_kwargs_for_target,
     _get_latent_channels,
+    _get_module_device,
+    _resolve_module_device,
+    _resolve_processor_temporal_steps,
     _set_if_auto,
     resolve_auto_params,
     setup_autoencoder_components,
@@ -41,6 +45,34 @@ def test_set_if_auto_ignores_missing_key():
     cfg = OmegaConf.create({"other": "auto"})
     _set_if_auto(cfg, "key", 42)
     assert "key" not in cfg
+
+
+def test_get_module_device_prefers_parameter_device():
+    module = torch.nn.Linear(4, 2)
+    device = _get_module_device(module)
+    assert device == next(module.parameters()).device
+
+
+def test_get_module_device_uses_buffer_when_no_parameters():
+    class BufferOnly(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.register_buffer("state", torch.ones(1))
+
+    module = BufferOnly()
+    device = _get_module_device(module)
+    assert device == module.state.device
+
+
+def test_get_module_device_returns_none_for_parameterless_bufferless_module():
+    module = torch.nn.Identity()
+    assert _get_module_device(module) is None
+
+
+def test_resolve_module_device_defaults_to_cpu_for_parameterless_modules():
+    module_a = torch.nn.Identity()
+    module_b = torch.nn.Identity()
+    assert _resolve_module_device(module_a, module_b) == torch.device("cpu")
 
 
 # --- _filter_kwargs_for_target ---
@@ -109,6 +141,108 @@ def test_apply_processor_handles_none_config():
         n_steps_output=2,
         n_channels_out=16,
     )
+
+
+def test_build_processor_prefers_explicit_processor_step_counts():
+    model_cfg = OmegaConf.create(
+        {
+            "processor": {
+                "_target_": "autocast.processors.vit_latent.AViTLatentProcessor",
+                "global_cond_channels": 0,
+                "include_global_cond": False,
+                "n_steps_input": 7,
+                "n_steps_output": 9,
+                "hidden_dim": 8,
+                "num_heads": 2,
+                "n_layers": 1,
+            }
+        }
+    )
+    proc_kwargs = {
+        "in_channels": 3,
+        "out_channels": 3,
+        "n_steps_input": 2,
+        "n_steps_output": 4,
+        "n_channels_out": 3,
+        "spatial_resolution": (8, 8),
+    }
+
+    processor = _build_processor(model_cfg, proc_kwargs)
+
+    assert processor.n_steps_input == 7
+    assert processor.n_steps_output == 9
+
+
+def test_build_processor_uses_inferred_steps_when_processor_steps_not_explicit():
+    model_cfg = OmegaConf.create(
+        {
+            "processor": {
+                "_target_": "autocast.processors.vit_latent.AViTLatentProcessor",
+                "global_cond_channels": 0,
+                "include_global_cond": False,
+                "n_steps_input": "auto",
+                "n_steps_output": None,
+                "hidden_dim": 8,
+                "num_heads": 2,
+                "n_layers": 1,
+            }
+        }
+    )
+    proc_kwargs = {
+        "in_channels": 3,
+        "out_channels": 3,
+        "n_steps_input": 2,
+        "n_steps_output": 4,
+        "n_channels_out": 3,
+        "spatial_resolution": (8, 8),
+    }
+
+    processor = _build_processor(model_cfg, proc_kwargs)
+
+    assert processor.n_steps_input == 2
+    assert processor.n_steps_output == 4
+
+
+def test_resolve_processor_temporal_steps_for_time_concatenating_encoder():
+    class TimeConcatEncoder:
+        outputs_time_channel_concat = True
+
+    steps_in, steps_out = _resolve_processor_temporal_steps(
+        TimeConcatEncoder(),  # type: ignore - just testing resolution logic, not actual encoder behavior
+        n_steps_input=4,
+        n_steps_output=2,
+    )
+
+    assert steps_in == 1
+    assert steps_out == 1
+
+
+def test_resolve_processor_temporal_steps_for_regular_encoder():
+    class RegularEncoder:
+        outputs_time_channel_concat = False
+
+    steps_in, steps_out = _resolve_processor_temporal_steps(
+        RegularEncoder(),  # type: ignore - just testing resolution logic, not actual encoder behavior
+        n_steps_input=4,
+        n_steps_output=2,
+    )
+
+    assert steps_in == 4
+    assert steps_out == 2
+
+
+def test_resolve_processor_temporal_steps_defaults_to_non_concat_when_missing_attr():
+    class EncoderWithoutFlag:
+        pass
+
+    steps_in, steps_out = _resolve_processor_temporal_steps(
+        EncoderWithoutFlag(),  # type: ignore - just testing resolution logic, not actual encoder behavior
+        n_steps_input=4,
+        n_steps_output=2,
+    )
+
+    assert steps_in == 4
+    assert steps_out == 2
 
 
 # --- resolve_auto_params ---

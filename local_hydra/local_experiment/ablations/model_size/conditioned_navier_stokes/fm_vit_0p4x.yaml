@@ -1,0 +1,16 @@
+# @package _global_
+defaults:
+  - /local_experiment/epd/conditioned_navier_stokes/fm_vit_large
+  - _self_
+
+experiment_name: ablation_model_size_fm_vit_0p4x_conditioned_navier_stokes
+
+model:
+  processor:
+    backbone:
+      # Aspect-preserving ~0.32x variant (depth 8, width aspect-matched to
+      # baseline 704/12 = 58.7). Measured at ~25.6M processor params versus
+      # ~80.0M for the baseline 704/12/8 backbone.
+      hid_channels: 472
+      hid_blocks: 8
+      attention_heads: 8

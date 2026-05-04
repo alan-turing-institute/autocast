@@ -1,0 +1,252 @@
+"""Reusable inference benchmarking utilities."""
+
+from __future__ import annotations
+
+import contextlib
+import os
+from collections.abc import Callable
+from time import perf_counter
+
+import lightning as L
+import torch
+
+from autocast.types.batch import Batch
+
+try:
+    from torch.utils.flop_counter import FlopCounterMode
+except ImportError:
+    FlopCounterMode = None
+
+
+def _slice_optional_first(value: torch.Tensor | None) -> torch.Tensor | None:
+    if value is None:
+        return None
+    if value.ndim == 0:
+        return value
+    return value[:1]
+
+
+def make_synthetic_batch(example_batch: Batch, batch_size: int) -> Batch:
+    """Create a synthetic batch with matching tensor shapes for benchmarking."""
+    single = Batch(
+        input_fields=example_batch.input_fields[:1],
+        output_fields=example_batch.output_fields[:1],
+        constant_scalars=_slice_optional_first(example_batch.constant_scalars),
+        constant_fields=_slice_optional_first(example_batch.constant_fields),
+        boundary_conditions=_slice_optional_first(example_batch.boundary_conditions),
+    )
+    return single.repeat(batch_size) if batch_size > 1 else single
+
+
+def _predict_once(model: torch.nn.Module, batch: Batch) -> None:
+    with torch.no_grad():
+        if isinstance(model, L.LightningModule):
+            try:
+                model.predict_step(batch, 0)
+            except NotImplementedError:
+                model(batch)
+        else:
+            model(batch)
+
+
+def measure_flops(
+    model: torch.nn.Module,
+    example_batch: Batch,
+) -> dict[str, float]:
+    """Measure FLOPs for one forward pass and report GFLOPs/sample."""
+    if FlopCounterMode is None:
+        return {}
+
+    device = next(model.parameters()).device
+    single = make_synthetic_batch(example_batch, batch_size=1).to(device)
+
+    model.eval()
+    with torch.no_grad(), FlopCounterMode(display=False) as flop_counter:
+        _predict_once(model, single)
+
+    flops_per_sample = float(flop_counter.get_total_flops())
+    return {
+        "gflops_per_sample": round(flops_per_sample / 1e9, 4),
+    }
+
+
+def _time_calls(
+    fn: Callable[[], None],
+    device: torch.device,
+    n_warmup: int,
+    n_benchmark: int,
+) -> list[float]:
+    """Return n_benchmark wall-clock timings after n_warmup discarded warmup calls."""
+    times_s: list[float] = []
+    for step in range(n_warmup + n_benchmark):
+        if device.type == "cuda" and torch.cuda.is_available():
+            torch.cuda.synchronize(device)
+        start_s = perf_counter()
+        fn()
+        if device.type == "cuda" and torch.cuda.is_available():
+            torch.cuda.synchronize(device)
+        elapsed_s = perf_counter() - start_s
+        if step >= n_warmup:
+            times_s.append(elapsed_s)
+    return times_s
+
+
+def benchmark_model(
+    model: torch.nn.Module,
+    example_batch: Batch,
+    *,
+    n_warmup: int,
+    n_benchmark: int,
+    batch_size: int,
+) -> dict[str, float]:
+    """Benchmark model throughput and latency using synthetic batches."""
+    if n_benchmark <= 0:
+        msg = "n_benchmark must be > 0"
+        raise ValueError(msg)
+
+    device = next(model.parameters()).device
+    synthetic_batch = make_synthetic_batch(example_batch, batch_size=batch_size).to(
+        device
+    )
+
+    model.eval()
+    if device.type == "cuda" and torch.cuda.is_available():
+        torch.cuda.reset_peak_memory_stats(device)
+
+    batch_times_s = _time_calls(
+        lambda: _predict_once(model, synthetic_batch), device, n_warmup, n_benchmark
+    )
+
+    total_s = sum(batch_times_s)
+    if total_s <= 0:
+        msg = "Measured benchmark duration is zero; cannot compute throughput."
+        raise RuntimeError(msg)
+
+    n_measured = len(batch_times_s)
+    latency_batch_ms = (total_s / n_measured) * 1000.0
+
+    metrics: dict[str, float] = {
+        "throughput_samples_per_sec": (n_measured * batch_size) / total_s,
+        "latency_ms_per_batch": latency_batch_ms,
+        "latency_ms_per_sample": latency_batch_ms / batch_size,
+    }
+
+    if device.type == "cuda" and torch.cuda.is_available():
+        peak_bytes = int(torch.cuda.max_memory_allocated(device))
+        metrics["peak_gpu_memory_mb"] = round(peak_bytes / 1024**2, 1)
+
+    metrics.update(measure_flops(model, example_batch))
+    return metrics
+
+
+@contextlib.contextmanager
+def _tqdm_disabled():
+    """Temporarily suppress tqdm output via the TQDM_DISABLE env var."""
+    prev = os.environ.get("TQDM_DISABLE")
+    os.environ["TQDM_DISABLE"] = "1"
+    try:
+        yield
+    finally:
+        if prev is None:
+            os.environ.pop("TQDM_DISABLE", None)
+        else:
+            os.environ["TQDM_DISABLE"] = prev
+
+
+def _rollout_once(
+    model: torch.nn.Module,
+    batch: Batch,
+    stride: int,
+    max_rollout_steps: int,
+    free_running_only: bool,
+) -> None:
+    """Run one full rollout, suppressing tqdm progress bars."""
+    with torch.no_grad(), _tqdm_disabled():
+        model.rollout(  # type: ignore[operator]
+            batch,
+            stride=stride,
+            max_rollout_steps=max_rollout_steps,
+            free_running_only=free_running_only,
+        )
+
+
+def benchmark_rollout(
+    model: torch.nn.Module,
+    example_batch: Batch,
+    *,
+    stride: int,
+    max_rollout_steps: int,
+    n_warmup: int,
+    n_benchmark: int,
+    batch_size: int,
+    free_running_only: bool = True,
+) -> dict[str, float]:
+    """Benchmark model rollout throughput and latency using synthetic batches.
+
+    Uses the same methodology as :func:`benchmark_model`: warmup runs are
+    discarded and CUDA synchronisation is applied on GPU for accurate
+    wall-clock timings.  tqdm progress output is suppressed during the run.
+
+    Returns
+    -------
+    dict[str, float]
+        throughput_samples_per_sec
+            Batch elements (samples) processed per second: ``n * batch_size / t``.
+            One "sample" is one batch element completing the full rollout.
+            Use ``latency_ms_per_step`` to compare per-step cost against
+            :func:`benchmark_model`.
+        latency_ms_per_batch
+            Mean wall-clock time in ms for one full rollout call (analogous to
+            ``latency_ms_per_batch`` in :func:`benchmark_model`).
+        latency_ms_per_sample
+            ``latency_ms_per_batch / batch_size``.
+        latency_ms_per_step
+            Mean time in ms per autoregressive step.
+        peak_gpu_memory_mb
+            Peak GPU memory allocated in MB (CUDA only).
+    """
+    if n_benchmark <= 0:
+        msg = "n_benchmark must be > 0"
+        raise ValueError(msg)
+
+    device = next(model.parameters()).device
+    synthetic_batch = make_synthetic_batch(example_batch, batch_size=batch_size).to(
+        device
+    )
+
+    model.eval()
+    if device.type == "cuda" and torch.cuda.is_available():
+        torch.cuda.reset_peak_memory_stats(device)
+
+    rollout_times_s = _time_calls(
+        lambda: _rollout_once(
+            model, synthetic_batch, stride, max_rollout_steps, free_running_only
+        ),
+        device,
+        n_warmup,
+        n_benchmark,
+    )
+
+    total_s = sum(rollout_times_s)
+    if total_s <= 0:
+        msg = "Measured rollout benchmark duration is zero; cannot compute throughput."
+        raise RuntimeError(msg)
+
+    n_measured = len(rollout_times_s)
+    latency_batch_ms = (total_s / n_measured) * 1000.0
+
+    throughput_samples_per_sec = (n_measured * batch_size) / total_s
+    latency_ms_per_step = latency_batch_ms / max_rollout_steps
+
+    metrics: dict[str, float] = {
+        "throughput_samples_per_sec": throughput_samples_per_sec,
+        "latency_ms_per_batch": latency_batch_ms,
+        "latency_ms_per_sample": latency_batch_ms / batch_size,
+        "latency_ms_per_step": latency_ms_per_step,
+    }
+
+    if device.type == "cuda" and torch.cuda.is_available():
+        peak_bytes = int(torch.cuda.max_memory_allocated(device))
+        metrics["peak_gpu_memory_mb"] = round(peak_bytes / 1024**2, 1)
+
+    return metrics

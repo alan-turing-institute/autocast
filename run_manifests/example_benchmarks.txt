@@ -1,0 +1,74 @@
+# Benchmark manifest — one run per line, passed after: uv run autocast benchmark --workdir
+#
+# ── Option A: run all as SEPARATE SLURM jobs (parallel, one job per line) ──
+#   Each line must include --mode slurm, then submit via launch_from_manifest.sh:
+#   bash scripts/launch_from_manifest.sh run_manifests/example_benchmarks.txt
+#
+# ── Option B: run all in a SINGLE SLURM job (sequential, one allocation) ──
+#   Lines must NOT include --mode slurm (they run locally inside the node).
+#   Pass SLURM allocation settings as hydra.launcher.* overrides:
+#
+#   autocast benchmark --manifest run_manifests/example_benchmarks.txt \
+#       --mode slurm \
+#       hydra.launcher.partition=gpu \
+#       hydra.launcher.timeout_min=60 \
+#       hydra.launcher.gpus_per_node=1
+#
+#   Dry-run (prints sbatch script without submitting):
+#   autocast benchmark --manifest run_manifests/example_benchmarks.txt \
+#       --mode slurm --dry-run hydra.launcher.partition=gpu
+#
+# ── Option C: run locally (no SLURM) ─────────────────────────────────────
+#   autocast benchmark --manifest run_manifests/example_benchmarks.txt
+#
+#   Or via the manifest runner:
+#   bash scripts/launch_from_manifest.sh run_manifests/example_benchmarks.txt
+#
+# When to use each:
+#   Option A — many runs, want them to run in parallel on the cluster
+#   Option B — want one queue slot; benchmarks run back-to-back on one node
+#   Option C — benchmarking locally
+#
+# Each entry uses `benchmark --workdir <dir>`.  The command will:
+#   - auto-detect the dataset and checkpoint from the workdir
+#   - always run the single-step forward-pass benchmark (benchmark_model)
+#   - run the rollout benchmark if eval.benchmark_rollout.enabled=true
+#   - write results to <workdir>/eval/benchmark_metrics.csv
+#
+# Benchmark config knobs (all have defaults, override as needed):
+#   eval.benchmark.batch_size=1        single-step synthetic batch size
+#   eval.benchmark.n_warmup=5         warmup iterations (discarded)
+#   eval.benchmark.n_benchmark=50     measured iterations
+#
+#   eval.benchmark_rollout.enabled=true        enable rollout benchmark
+#   eval.benchmark_rollout.batch_size=1        rollout synthetic batch size
+#   eval.benchmark_rollout.n_warmup=5
+#   eval.benchmark_rollout.n_benchmark=20
+#   eval.benchmark_rollout.max_rollout_steps=10   overrides eval.max_rollout_steps
+#   eval.benchmark_rollout.stride=null            auto-inferred from datamodule
+#
+# --------------------------------------------------------------------------
+
+# Single-step inference benchmark only
+benchmark --workdir outputs/2026-02-19/epd_demo
+
+# Single-step + rollout benchmark
+benchmark --workdir outputs/2026-02-19/epd_demo eval.benchmark_rollout.enabled=true
+
+# Larger batch size for throughput measurement (batch_size=8, rollout enabled)
+benchmark --workdir outputs/2026-02-19/epd_demo eval.benchmark.batch_size=8 eval.benchmark_rollout.enabled=true eval.benchmark_rollout.batch_size=8
+
+# Multiple runs across different experiments — one benchmark per line
+# benchmark --workdir outputs/2026-02-19/run_a eval.benchmark_rollout.enabled=true
+# benchmark --workdir outputs/2026-02-19/run_b eval.benchmark_rollout.enabled=true
+# benchmark --workdir outputs/2026-02-19/run_c eval.benchmark_rollout.enabled=true
+
+# SLURM Option A — one separate SLURM job per line (parallel):
+# Add --mode slurm to each line, then submit via launch_from_manifest.sh
+# benchmark --mode slurm --workdir outputs/2026-02-19/run_a eval.benchmark_rollout.enabled=true
+# benchmark --mode slurm --workdir outputs/2026-02-19/run_b eval.benchmark_rollout.enabled=true
+# benchmark --mode slurm --workdir outputs/2026-02-19/run_c eval.benchmark_rollout.enabled=true
+
+# SLURM Option B — all runs in ONE SLURM job (sequential, lines without --mode slurm):
+# autocast benchmark --manifest run_manifests/example_benchmarks.txt \
+#     --mode slurm hydra.launcher.partition=gpu hydra.launcher.timeout_min=60

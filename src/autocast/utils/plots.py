@@ -1,5 +1,5 @@
 from collections.abc import Callable, Iterable
-from typing import Literal
+from typing import Literal, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -7,10 +7,11 @@ import torch
 from einops import rearrange
 from matplotlib import animation
 from matplotlib.colors import Normalize, TwoSlopeNorm
+from matplotlib.figure import Figure
 from matplotlib.gridspec import GridSpec
 from torchmetrics import Metric
 
-from autocast.metrics.coverage import MultiCoverage
+from autocast.metrics.coverage import Coverage, MultiCoverage
 from autocast.types import Tensor, TensorBTSC, TensorBTSCM
 
 
@@ -18,6 +19,7 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     true: TensorBTSC,
     pred: TensorBTSC | None = None,
     pred_uq: TensorBTSC | None = None,
+    coverage: TensorBTSC | None = None,
     batch_idx: int = 0,
     fps: int = 5,
     vmin: float | None = None,
@@ -26,9 +28,11 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     save_path: str | None = None,
     title: str = "Ground Truth vs Prediction",
     pred_uq_label: str = "Prediction UQ",
+    coverage_label: str = "Coverage",
     colorbar_mode: Literal["none", "row", "column", "all"] = "none",
     colorbar_mode_uq: Literal["none", "row"] = "none",
     channel_names: list[str] | None = None,
+    preserve_aspect: bool = False,
 ):
     """Create a video comparing ground truth and predicted spatiotemporal time series.
 
@@ -61,6 +65,10 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
         - "all": one colorbar shared across the first two rows.
     channel_names: list[str] | None
         Optional list of channel names for titles.
+    preserve_aspect: bool
+        If True, resize each subplot panel to match the spatial WxH ratio of the
+        data so the image fills the panel without distortion. If False (default),
+        panels are square and the image is stretched to fill via ``aspect='auto'``.
 
     Returns
     -------
@@ -78,14 +86,17 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     true_batch = true[batch_idx]
     pred_batch = pred[batch_idx] if pred is not None else None
     pred_uq_batch = pred_uq[batch_idx] if pred_uq is not None else None
+    coverage_batch = coverage[batch_idx] if coverage is not None else None
 
     # Extract dims and move to CPU
-    T, *_, C = true_batch.shape
+    T, *spatial, C = true_batch.shape
     true_batch = true_batch.detach().cpu().numpy()
     if pred_batch is not None:
         pred_batch = pred_batch.detach().cpu().numpy()
     if pred_uq_batch is not None:
         pred_uq_batch = pred_uq_batch.detach().cpu().numpy()
+    if coverage_batch is not None:
+        coverage_batch = coverage_batch.detach().cpu().numpy()
 
     primary_rows = [true_batch]
 
@@ -144,13 +155,45 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
         rows_to_plot.append((diff_batch, "Difference (True - Pred)", "RdBu"))
     if pred_uq is not None:
         rows_to_plot.append((pred_uq_batch, pred_uq_label, "inferno"))
+    if coverage is not None:
+        rows_to_plot.append((coverage_batch, coverage_label, "gray"))
+
     total_rows = len(rows_to_plot)
 
-    fig = plt.figure(figsize=(C * 4, total_rows * 4))
+    _base = 4.0
+    if preserve_aspect and len(spatial) == 2:
+        W, H = spatial
+        # _to_imshow_frame does NOT transpose by default, so imshow receives (W, H):
+        # rows = W (figure height), cols = H (figure width).
+        # Scale the smaller base dimension and cap to avoid excessively large figures.
+        if H > 0 and W > 0:
+            ratio = W / H  # rows / cols
+            if ratio >= 1:  # taller than wide
+                panel_width = _base
+                panel_height = min(_base * ratio, 3 * _base)
+            else:  # wider than tall
+                panel_height = _base
+                panel_width = min(_base / ratio, 3 * _base)
+        else:
+            panel_width = _base
+            panel_height = _base
+    else:
+        panel_width = _base
+        panel_height = _base
+
+    fig = plt.figure(figsize=(C * panel_width, total_rows * panel_height))
     gs = GridSpec(total_rows, C, figure=fig, hspace=0.3, wspace=0.3)
 
     axes = []
     images = []
+
+    def _to_imshow_frame(
+        frame: np.ndarray | Tensor, transpose: bool = False
+    ) -> np.ndarray:
+        frame = np.asarray(frame)
+        if transpose:
+            frame = np.asarray(rearrange(frame, "s1 s2 -> s2 s1"))
+        return frame
 
     for row_idx, (data, row_label, row_cmap) in enumerate(rows_to_plot):
         row_axes = []
@@ -162,11 +205,20 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
             if data is None:
                 msg = "Data for plotting cannot be None."
                 raise ValueError(msg)
-            frame0 = rearrange(data[0, :, :, ch], "w h -> h w")
+            frame0 = _to_imshow_frame(data[0, :, :, ch])
+
+            # Row indices: 0=true, 1=pred, 2=diff, 3=pred_uq (if present),
+            # 4=coverage (if both present) or 3=coverage (if only coverage)
+            pred_uq_row_idx = 3 if pred_uq_batch is not None else None
+            coverage_row_idx = (
+                (4 if pred_uq_batch is not None else 3)
+                if coverage_batch is not None
+                else None
+            )
 
             if row_idx < n_primary_rows:
                 norm = norms[row_idx][ch]
-            elif row_idx == len(rows_to_plot) - 1 and pred_uq_batch is not None:
+            elif row_idx == pred_uq_row_idx and pred_uq_batch is not None:
                 uq_min = (
                     float(pred_uq_batch[..., ch].min())
                     if colorbar_mode_uq == "none"
@@ -177,8 +229,9 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
                     if colorbar_mode_uq == "none"
                     else float(pred_uq_batch.max())
                 )
-                uq_norm = Normalize(vmin=uq_min, vmax=uq_max)
-                norm = uq_norm
+                norm = Normalize(vmin=uq_min, vmax=uq_max)
+            elif row_idx == coverage_row_idx:
+                norm = Normalize(vmin=0, vmax=1)
             else:
                 norm = diff_norm
             im = ax.imshow(frame0, cmap=row_cmap, aspect="auto", norm=norm)
@@ -214,13 +267,18 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
 
     def update(frame):
         for ch in range(C):
-            images[0][ch].set_array(true_batch[frame, :, :, ch])
+            images[0][ch].set_array(_to_imshow_frame(true_batch[frame, :, :, ch]))
             if pred_batch is not None:
-                images[1][ch].set_array(pred_batch[frame, :, :, ch])
+                images[1][ch].set_array(_to_imshow_frame(pred_batch[frame, :, :, ch]))
             if diff_batch is not None:
-                images[2][ch].set_array(diff_batch[frame, :, :, ch])
+                images[2][ch].set_array(_to_imshow_frame(diff_batch[frame, :, :, ch]))
             if pred_uq_batch is not None:
-                images[3][ch].set_array(pred_uq_batch[frame, :, :, ch])
+                images[3][ch].set_array(
+                    _to_imshow_frame(pred_uq_batch[frame, :, :, ch])
+                )
+            if coverage_batch is not None:
+                coverage_row = 4 if pred_uq_batch is not None else 3
+                images[coverage_row][ch].set_array(coverage_batch[frame, :, :, ch])
         suptitle_text.set_text(
             f"{title} - Batch {batch_idx} - Time Step: {frame}/{T - 1}"
         )
@@ -244,6 +302,152 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     return anim
 
 
+def plot_spatiotemporal_snapshots(  # noqa: PLR0912, PLR0915
+    true: TensorBTSC,
+    pred: TensorBTSC | None = None,
+    pred_uq: TensorBTSC | None = None,
+    *,
+    timesteps: Iterable[int],
+    channel: int = 0,
+    batch_idx: int = 0,
+    vmin: float | None = None,
+    vmax: float | None = None,
+    cmap: str = "viridis",
+    save_path: str | None = None,
+    title: str = "Ground Truth vs Prediction",
+    pred_uq_label: str = "Ensemble Std Dev",
+    channel_names: list[str] | None = None,
+    preserve_aspect: bool = False,
+) -> Figure:
+    """Create a still panel at selected timesteps for one spatial channel."""
+    true_batch = true[batch_idx]
+    pred_batch = pred[batch_idx] if pred is not None else None
+    pred_uq_batch = pred_uq[batch_idx] if pred_uq is not None else None
+
+    T, *spatial, C = true_batch.shape
+    if len(spatial) != 2:
+        msg = (
+            "plot_spatiotemporal_snapshots expects exactly two spatial "
+            f"dimensions, got shape {tuple(true_batch.shape)}."
+        )
+        raise ValueError(msg)
+    if not 0 <= channel < C:
+        msg = f"channel must be in [0, {C - 1}], got {channel}."
+        raise ValueError(msg)
+
+    selected_timesteps = [int(t) for t in timesteps]
+    invalid_timesteps = [t for t in selected_timesteps if t < 0 or t >= T]
+    if invalid_timesteps:
+        msg = (
+            f"timesteps must be in [0, {T - 1}], got invalid values "
+            f"{invalid_timesteps}."
+        )
+        raise ValueError(msg)
+    if not selected_timesteps:
+        msg = "At least one timestep is required for snapshot plotting."
+        raise ValueError(msg)
+
+    true_np = true_batch.detach().cpu().numpy()
+    pred_np = pred_batch.detach().cpu().numpy() if pred_batch is not None else None
+    pred_uq_np = (
+        pred_uq_batch.detach().cpu().numpy() if pred_uq_batch is not None else None
+    )
+    true_channel = true_np[:, :, :, channel]
+    pred_channel = pred_np[:, :, :, channel] if pred_np is not None else None
+    pred_uq_channel = pred_uq_np[:, :, :, channel] if pred_uq_np is not None else None
+
+    primary_arrays = [true_channel]
+    if pred_channel is not None:
+        primary_arrays.append(pred_channel)
+
+    min_val = (
+        vmin if vmin is not None else min(float(arr.min()) for arr in primary_arrays)
+    )
+    max_val = (
+        vmax if vmax is not None else max(float(arr.max()) for arr in primary_arrays)
+    )
+    primary_norm = Normalize(vmin=min_val, vmax=max_val)
+
+    diff_channel = None
+    diff_norm = None
+    if pred_channel is not None:
+        diff_channel = true_channel - pred_channel
+        diff_max = float(np.abs(diff_channel).max())
+        diff_span = diff_max if diff_max > 0 else 1e-9
+        diff_norm = TwoSlopeNorm(vmin=-diff_span, vcenter=0, vmax=diff_span)
+
+    rows_to_plot: list[tuple[np.ndarray, str, str, Normalize | TwoSlopeNorm | None]] = [
+        (true_channel, "Ground Truth", cmap, primary_norm),
+    ]
+    if pred_channel is not None:
+        rows_to_plot.append((pred_channel, "Prediction", cmap, primary_norm))
+        assert diff_channel is not None
+        rows_to_plot.append(
+            (diff_channel, "Difference (True - Pred)", "RdBu", diff_norm)
+        )
+    if pred_uq_channel is not None:
+        uq_norm = Normalize(
+            vmin=float(pred_uq_channel.min()),
+            vmax=float(pred_uq_channel.max()),
+        )
+        rows_to_plot.append((pred_uq_channel, pred_uq_label, "inferno", uq_norm))
+
+    nrows = len(rows_to_plot)
+    ncols = len(selected_timesteps)
+    width, height = spatial
+    base = 3.0
+    if preserve_aspect and height > 0 and width > 0:
+        ratio = width / height
+        panel_width = base if ratio >= 1 else min(base / ratio, 3 * base)
+        panel_height = min(base * ratio, 3 * base) if ratio >= 1 else base
+    else:
+        panel_width = base
+        panel_height = base
+
+    fig, axes = plt.subplots(
+        nrows,
+        ncols,
+        figsize=(ncols * panel_width, nrows * panel_height),
+        squeeze=False,
+        constrained_layout=True,
+    )
+    image_rows = []
+    for row_idx, (data, row_label, row_cmap, norm) in enumerate(rows_to_plot):
+        row_images = []
+        for col_idx, timestep in enumerate(selected_timesteps):
+            ax = axes[row_idx][col_idx]
+            im = ax.imshow(data[timestep], cmap=row_cmap, aspect="auto", norm=norm)
+            row_images.append(im)
+            ax.set_xticks([])
+            ax.set_yticks([])
+            if row_idx == 0:
+                ax.set_title(f"t={timestep}")
+            if col_idx == 0:
+                ax.set_ylabel(row_label)
+        image_rows.append(row_images)
+
+    for row_idx, row_images in enumerate(image_rows):
+        fig.colorbar(
+            row_images[-1],
+            ax=axes[row_idx, :].tolist(),
+            fraction=0.025,
+            pad=0.02,
+        )
+
+    channel_label = (
+        f"channel {channel}"
+        if channel_names is None
+        else f"{channel_names[channel]} (channel {channel})"
+    )
+    fig.suptitle(f"{title} - {channel_label}", fontsize=14, fontweight="bold")
+
+    if save_path:
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+
+    return fig
+
+
 def compute_metrics_from_dataloader(
     dataloader: Iterable,
     metric_fns: dict[str, Callable[[], Metric]],
@@ -251,6 +455,7 @@ def compute_metrics_from_dataloader(
     windows: list[tuple[int, int] | None] | None = None,
     return_tensors: bool = False,
     return_per_batch: bool = False,
+    device: str | torch.device | None = None,
 ) -> tuple[
     dict[None | tuple[int, int], dict[str, Metric]],
     tuple[TensorBTSCM, TensorBTSC] | None,
@@ -288,7 +493,10 @@ def compute_metrics_from_dataloader(
         The populated metrics, optionally the tensors, and optionally per-batch metrics.
     """
     metrics_per_window = {
-        window: {name: fn() for name, fn in metric_fns.items()}
+        window: {
+            name: fn().to(device) if device is not None else fn()
+            for name, fn in metric_fns.items()
+        }
         for window in (windows or [None])
     }
     all_preds = [] if return_tensors else None
@@ -323,8 +531,8 @@ def compute_metrics_from_dataloader(
             if not (isinstance(preds, Tensor) and isinstance(trues, Tensor)):
                 continue
 
-            # Move to CPU for metric computation
-            preds, trues = preds.cpu(), trues.cpu()
+            # Do not move to CPU for metric computation so DDP can sync
+            # preds, trues = preds.cpu(), trues.cpu()
 
             # Get metrics for each window
             for window, metrics_dict in metrics_per_window.items():
@@ -356,7 +564,7 @@ def compute_metrics_from_dataloader(
                         "batch_idx": batch_idx,
                     }
                     for name, fn in metric_fns.items():
-                        m = fn()
+                        m = fn().to(device) if device is not None else fn()
                         m.update(p, t)
                         if (val := _get_val(m)) is not None:
                             row[name] = val
@@ -368,6 +576,127 @@ def compute_metrics_from_dataloader(
         tensors = (torch.cat(all_preds, dim=0), torch.cat(all_trues, dim=0))
 
     return metrics_per_window, tensors, per_batch_rows
+
+
+def compute_metrics_per_timestep_from_dataloader(  # noqa: PLR0912, PLR0915
+    dataloader: Iterable,
+    metric_fns: dict[str, Callable[[], Metric]],
+    predict_fn: Callable,
+    max_timesteps: int | None = None,
+    device: str | torch.device | None = None,
+) -> dict[str, np.ndarray]:
+    """
+    Compute metrics at each rollout timestep, batch-averaged, with per-channel values.
+
+    For each timestep t, metrics are computed on the slice (B, t:t+1, ...) and
+    averaged over batches. Returns one (T, C) array per metric (T = timesteps,
+    C = channels). MultiCoverage is expanded to one (T, C) per coverage level
+    (e.g. coverage_0.05, coverage_0.10, ...) so reliability curves can be built
+    per timestep.
+
+    Parameters
+    ----------
+    dataloader: Iterable
+        DataLoader that yields batches (e.g. rollout test dataloader).
+    metric_fns: dict[str, Callable[[], Metric]]
+        Metric factory functions. Metrics should return (1, C) when updated with
+        (B, 1, S, C) and reduce_all=False (deterministic metrics) or be
+        MultiCoverage (expanded to one key per alpha).
+    predict_fn: Callable
+        (batch) -> (preds, trues) returning tensors of shape (B, T, S, C) or
+        (B, T, S, C, M). Returns None, None to skip a batch.
+    max_timesteps: int | None, optional
+        Cap the number of timesteps (uses min over batches otherwise).
+
+    Returns
+    -------
+    dict[str, np.ndarray]
+        Keys are metric names (and coverage_0.05, coverage_0.10, ... for
+        MultiCoverage). Values are arrays of shape (T, C), batch-averaged.
+    """
+    with torch.no_grad():
+        T_min: int | None = None
+        n_channels: int | None = None
+        metrics_per_t: list[dict[str, Metric]] = []
+        for batch in dataloader:
+            result = predict_fn(batch)
+            if result is None:
+                continue
+            preds, trues = (
+                result
+                if isinstance(result, tuple) and len(result) == 2
+                else (result, getattr(batch, "output_fields", None))
+            )
+            if not (
+                isinstance(preds, torch.Tensor) and isinstance(trues, torch.Tensor)
+            ):
+                continue
+            if device is None:
+                preds, trues = preds.cpu(), trues.cpu()
+            T_batch = min(preds.shape[1], trues.shape[1])
+            if max_timesteps is not None:
+                T_batch = min(T_batch, max_timesteps)
+
+            if T_min is None:
+                T_min = T_batch
+                n_channels = int(trues.shape[-1])
+                metrics_per_t = [
+                    {
+                        name: fn().to(device) if device is not None else fn()
+                        for name, fn in metric_fns.items()
+                    }
+                    for _ in range(T_min)
+                ]
+            else:
+                T_min = min(T_min, T_batch)
+
+            for t in range(T_min):
+                p = preds[:, t : t + 1]
+                t_slice = trues[:, t : t + 1]
+                if p.numel() == 0 or t_slice.numel() == 0:
+                    continue
+                for metric in metrics_per_t[t].values():
+                    metric.update(p, t_slice)
+
+        if T_min is None or n_channels is None or T_min == 0:
+            return {}
+
+        metrics_per_t = metrics_per_t[:T_min]
+
+    # Build result: dict[str, (T, C)]
+    out: dict[str, np.ndarray] = {}
+    for name in metric_fns:
+        first_metric = metrics_per_t[0][name]
+        if isinstance(first_metric, MultiCoverage):
+            levels = first_metric.coverage_levels
+            for i, level in enumerate(levels):
+                key = f"coverage_{level}"
+                rows = []
+                for t in range(T_min):
+                    metric_t = cast(MultiCoverage, metrics_per_t[t][name])
+                    coverage_metric = cast(Coverage, metric_t.metrics[i])
+                    val = coverage_metric.compute()
+                    if val.dim() == 0:
+                        val = val.unsqueeze(0).unsqueeze(0).expand(1, n_channels)
+                    elif val.dim() == 1:
+                        val = val.unsqueeze(0)
+                    rows.append(val.cpu().numpy())
+                out[key] = np.concatenate(rows, axis=0)
+        else:
+            rows = []
+            for t in range(T_min):
+                val = metrics_per_t[t][name].compute()
+                if isinstance(val, torch.Tensor):
+                    if val.dim() == 0:
+                        val = val.unsqueeze(0).unsqueeze(0).expand(1, n_channels)
+                    elif val.dim() == 1:
+                        val = val.unsqueeze(0)
+                    val = val.cpu().numpy()
+                else:
+                    val = np.full((1, n_channels), float(val))
+                rows.append(val)
+            out[name] = np.concatenate(rows, axis=0)
+    return out
 
 
 def compute_coverage_scores_from_dataloader(

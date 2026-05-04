@@ -1,0 +1,24 @@
+_target_: autocast.processors.unet.AzulaUNetProcessor
+in_channels: null
+out_channels: null
+
+# UNet architecture configuration
+hid_channels: [64, 128, 256, 512]  # Hidden channels at each level
+hid_blocks: [3, 3, 3, 3]  # Number of blocks at each level
+
+# Normalization and regularization
+norm: layer  # Options: 'batch', 'group', 'layer', 'rms'
+ffn_factor: 2  # Feed-forward network expansion factor
+dropout: 0.0  # Dropout probability
+
+# Boundary conditions
+periodic: false  # Use periodic boundary conditions
+
+# Training optimization
+gradient_checkpointing: false  # Enable gradient checkpointing to save memory
+
+# Noise injection
+n_noise_channels: 256
+
+# Loss function (defaults to MSELoss if not specified)
+loss_func: null

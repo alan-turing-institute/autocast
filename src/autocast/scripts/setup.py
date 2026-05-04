@@ -82,6 +82,89 @@ def _set_if_auto(cfg: DictConfig, key: str, value: Any) -> None:
         cfg[key] = value
 
 
+def _get_module_device(module: nn.Module) -> torch.device | None:
+    """Return a module's device from its first parameter or buffer.
+
+    Returns None if the module has neither parameters nor buffers.
+    """
+    first_param = next(module.parameters(), None)
+    if first_param is not None:
+        return first_param.device
+
+    first_buffer = next(module.buffers(), None)
+    if first_buffer is not None:
+        return first_buffer.device
+
+    return None
+
+
+def _resolve_module_device(*modules: nn.Module) -> torch.device:
+    """Resolve a device from modules, defaulting to CPU when all are parameterless."""
+    for module in modules:
+        module_device = _get_module_device(module)
+        if module_device is not None:
+            return module_device
+    return torch.device("cpu")
+
+
+def _infer_latent_spatial_resolution(
+    encoded_example: torch.Tensor,
+    encoder: EncoderWithCond,
+) -> tuple[int, ...]:
+    """Infer latent spatial resolution from encoder output layout.
+
+    Encoders can output either channels-last latents (e.g. DC: B,T,...,C)
+    or channels-first/time-concatenated latents (e.g. PermuteConcat: B,C,...).
+    """
+    channel_axis = int(getattr(encoder, "channel_axis", -1))
+    n_dims = encoded_example.ndim
+    if channel_axis < 0:
+        channel_axis += n_dims
+    if channel_axis < 0 or channel_axis >= n_dims:
+        msg = (
+            f"Invalid channel_axis={channel_axis} for encoded tensor "
+            f"shape={tuple(encoded_example.shape)}"
+        )
+        raise ValueError(msg)
+
+    has_time_concat = bool(getattr(encoder, "outputs_time_channel_concat", False))
+    excluded_axes = {0, channel_axis}  # batch and channels
+    if not has_time_concat:
+        time_axis = 2 if channel_axis == 1 else 1
+        if time_axis < n_dims and time_axis != channel_axis:
+            excluded_axes.add(time_axis)
+
+    spatial = tuple(
+        int(size)
+        for axis, size in enumerate(encoded_example.shape)
+        if axis not in excluded_axes
+    )
+    if not spatial:
+        msg = (
+            "Could not infer spatial resolution from encoded tensor "
+            f"shape={tuple(encoded_example.shape)} and channel_axis={channel_axis}."
+        )
+        raise ValueError(msg)
+    return spatial
+
+
+def _resolve_processor_temporal_steps(
+    encoder: EncoderWithCond,
+    *,
+    n_steps_input: int,
+    n_steps_output: int,
+) -> tuple[int, int]:
+    """Resolve processor temporal-step defaults for the given encoder.
+
+    Encoders like PermuteConcat expose ``outputs_time_channel_concat=True``
+    and already fold time into channels. For these, processors should run with
+    a single effective time token and let decoders handle unfolding.
+    """
+    if bool(getattr(encoder, "outputs_time_channel_concat", False)):
+        return 1, 1
+    return n_steps_input, n_steps_output
+
+
 def _apply_processor_channel_defaults(
     processor_config: DictConfig | None,
     *,
@@ -121,6 +204,10 @@ def _apply_processor_channel_defaults(
     _set_if_auto(backbone_config, "n_steps_output", n_steps_output)
     if global_cond_channels is not None:
         _set_if_auto(backbone_config, "global_cond_channels", global_cond_channels)
+    else:
+        _set_if_auto(backbone_config, "global_cond_channels", 0)
+        if "include_global_cond" in backbone_config:
+            backbone_config.include_global_cond = False
 
 
 def setup_datamodule(
@@ -129,8 +216,42 @@ def setup_datamodule(
     """Create the datamodule and infer data shapes."""
     datamodule = build_datamodule(config)
 
-    datamodule.setup(stage="fit")
-    batch = next(iter(datamodule.train_dataloader()))
+    # Prefer inferring shapes from train split, but gracefully fall back to
+    # val/test when train is unavailable (e.g. eval-only datasets).
+    batch = None
+    split_name = None
+    split_attempts: list[tuple[str, str]] = []
+
+    for candidate_split, setup_stage, loader_name in [
+        ("train", "fit", "train_dataloader"),
+        ("val", "fit", "val_dataloader"),
+        ("test", "test", "test_dataloader"),
+    ]:
+        try:
+            datamodule.setup(stage=setup_stage)
+            loader_fn = getattr(datamodule, loader_name)
+            batch = next(iter(loader_fn()))
+            split_name = candidate_split
+            break
+        except Exception as exc:
+            split_attempts.append((candidate_split, str(exc)))
+
+    if batch is None:
+        data_path = None
+        datamodule_cfg = config.get("datamodule")
+        if datamodule_cfg is not None:
+            data_path = datamodule_cfg.get("data_path")
+
+        attempts_text = "; ".join(f"{name}={error}" for name, error in split_attempts)
+        msg = (
+            "Unable to infer data shapes: no readable train/val/test split was "
+            f"found for datamodule.data_path={data_path}. "
+            "Check that the path exists and contains data for at least one split. "
+            f"Attempts: {attempts_text}"
+        )
+        raise RuntimeError(msg)
+
+    log.info("Inferred data shapes from %s split", split_name)
 
     if isinstance(batch, Batch):
         train_inputs = batch.input_fields
@@ -327,6 +448,17 @@ def _build_processor(
         global_cond_channels=global_cond_channels,
         spatial_resolution=proc_kwargs.get("spatial_resolution"),
     )
+
+    # Keep explicit processor temporal-step settings canonical.
+    instantiation_kwargs = dict(proc_kwargs)
+    if processor_config is not None:
+        for key in ("n_steps_input", "n_steps_output"):
+            if key in processor_config and processor_config.get(key) not in (
+                None,
+                "auto",
+            ):
+                instantiation_kwargs.pop(key, None)
+
     target = processor_config.get("_target_") if processor_config else None
     
     # Load mask if this is MaskedFlowMatchingProcessor
@@ -344,9 +476,10 @@ def _build_processor(
         processor_config.pop("mask_path", None)
         OmegaConf.set_struct(processor_config, struct_mode)
     
-    filtered_kwargs = _filter_kwargs_for_target(target, proc_kwargs)
+    filtered_kwargs = _filter_kwargs_for_target(target, instantiation_kwargs)
     if mask is not None:
         filtered_kwargs["mask"] = mask
+
     return instantiate(processor_config, **filtered_kwargs)
 
 
@@ -358,6 +491,47 @@ def _build_loss_func(model_config: DictConfig) -> nn.Module:
     return instantiate(loss_func_config)
 
 
+def _resolve_metric_overrides(metric_cfg: Any) -> Any:
+    """Instantiate metric config overrides into a metric list.
+
+    Hydra metric configs are often provided as keyed mappings, e.g.
+    train_metrics:
+      crps:
+        _target_: ...CRPS
+    The model expects a sequence of metric objects, so we normalise both
+    mapping and sequence styles here.
+    """
+    if metric_cfg is None:
+        return None
+
+    if isinstance(metric_cfg, DictConfig):
+        if "_target_" in metric_cfg:
+            return [instantiate(metric_cfg)]
+        return [
+            instantiate(metric) if isinstance(metric, DictConfig) else metric
+            for metric in metric_cfg.values()
+        ]
+
+    if isinstance(metric_cfg, list | tuple):
+        return [
+            instantiate(metric)
+            if isinstance(metric, DictConfig) and "_target_" in metric
+            else metric
+            for metric in metric_cfg
+        ]
+
+    return metric_cfg
+
+
+def _maybe_add_metric_overrides(
+    kwargs: dict[str, Any], model_config: DictConfig
+) -> None:
+    """Forward explicit metric overrides from model config when present."""
+    for key in ("train_metrics", "val_metrics", "test_metrics"):
+        if key in model_config:
+            kwargs[key] = _resolve_metric_overrides(model_config.get(key))
+
+
 def setup_processor_model(
     config: DictConfig,
     stats: dict,
@@ -367,6 +541,11 @@ def setup_processor_model(
     model_config = config.get("model", {})
     noise_injector, extra_input_channels = _resolve_input_noise_injector(model_config)
 
+    example_batch = stats["example_batch"]
+    global_cond_channels = None
+    if hasattr(example_batch, "global_cond") and example_batch.global_cond is not None:
+        global_cond_channels = example_batch.global_cond.shape[-1]
+
     proc_kwargs = {
         "in_channels": stats["channel_count"] + extra_input_channels,
         "out_channels": stats["channel_count"],
@@ -375,7 +554,7 @@ def setup_processor_model(
         "n_channels_out": stats["channel_count"],
         "spatial_resolution": tuple(stats["input_shape"][2:-1]),
     }
-    processor = _build_processor(model_config, proc_kwargs)
+    processor = _build_processor(model_config, proc_kwargs, global_cond_channels)
     loss_func = _build_loss_func(model_config)
 
     is_ensemble = model_config.get("n_members", 1) > 1
@@ -392,6 +571,7 @@ def setup_processor_model(
         "noise_injector": noise_injector,
         "norm": norm,
     }
+    _maybe_add_metric_overrides(kwargs, model_config)
     if is_ensemble:
         kwargs["n_members"] = model_config.get("n_members")
 
@@ -429,6 +609,11 @@ def setup_epd_model(
     log.info("Latent channel in count: %s", latent_channels)
     log.info("Latent channel out count: %s", latent_channels_out)
 
+    example_batch = stats["example_batch"]
+    if isinstance(example_batch, Batch):
+        module_device = _resolve_module_device(encoder, decoder)
+        example_batch = batch_to_device(example_batch, module_device)
+
     global_cond_channels = None
     if hasattr(encoder, "encode_cond"):
         cond = encoder.encode_cond(stats["example_batch"])
@@ -456,8 +641,16 @@ def setup_epd_model(
     steps_in = stats["n_steps_input"]
     steps_out = stats["n_steps_output"]
     with torch.no_grad():
-        encoded_example, _ = encoder.encode_with_cond(stats["example_batch"])
-    latent_spatial_resolution = tuple(encoded_example.shape[2:-1])
+        encoded_example, _ = encoder.encode_with_cond(example_batch)
+    latent_spatial_resolution = _infer_latent_spatial_resolution(
+        encoded_example, encoder
+    )
+
+    proc_n_steps_input, proc_n_steps_output = _resolve_processor_temporal_steps(
+        encoder,
+        n_steps_input=steps_in,
+        n_steps_output=steps_out,
+    )
 
     # TODO: currently "out_channels" and "in_channels" are only used in the config for
     # ViT and FNO, while "n_channels_out" is used in flow_matching and diffusions
@@ -465,8 +658,8 @@ def setup_epd_model(
         "in_channels": latent_channels,
         "out_channels": latent_channels_out,
         "n_channels_out": latent_channels_out,
-        "n_steps_input": steps_in,
-        "n_steps_output": steps_out,
+        "n_steps_input": proc_n_steps_input,
+        "n_steps_output": proc_n_steps_output,
         "spatial_resolution": latent_spatial_resolution,
     }
     processor = _build_processor(model_config, proc_kwargs, global_cond_channels)
@@ -492,6 +685,7 @@ def setup_epd_model(
         "input_noise_injector": noise_injector,
         "norm": norm,
     }
+    _maybe_add_metric_overrides(kwargs, model_config)
     if is_ensemble:
         kwargs["n_members"] = model_config.get("n_members")
 

@@ -4,7 +4,7 @@ from typing import cast
 
 from azula.nn.layers import ConvNd, Patchify
 from einops import rearrange
-from torch import nn
+from torch import Tensor, nn
 
 from autocast.encoders.base import EncoderWithCond
 from autocast.nn import ResBlock
@@ -52,6 +52,13 @@ class DCEncoder(EncoderWithCond):
         Whether to use gradient checkpointing.
     identity_init: bool
         Initialize down/upsampling convolutions as identity.
+    ffn_out_scale: float | None
+        Optional multiplicative scale applied to each ResBlock FFN output conv.
+    saturation: str | None
+        Optional latent saturation mode. Supported: {"softclip2", "softclip",
+        "tanh", "arcsinh", "rmsnorm"}.
+    saturation_scale: float
+        Saturation scale B used by soft clipping/tanh variants.
 
     Notes
     -----
@@ -84,6 +91,9 @@ class DCEncoder(EncoderWithCond):
         dropout: float | None = None,
         checkpointing: bool = False,
         identity_init: bool = True,
+        ffn_out_scale: float | None = None,
+        saturation: str | None = None,
+        saturation_scale: float = 5.0,
     ) -> None:
         super().__init__()
 
@@ -108,6 +118,8 @@ class DCEncoder(EncoderWithCond):
         self.patch = Patchify(patch_shape=tuple(patch_size))
         self.latent_channels = out_channels
         self.input_channels = in_channels
+        self.saturation = saturation
+        self.saturation_scale = saturation_scale
 
         # Build encoder from shallowest to deepest
         self.descent = nn.ModuleList()
@@ -150,6 +162,7 @@ class DCEncoder(EncoderWithCond):
                         spatial=spatial,
                         dropout=dropout,
                         checkpointing=checkpointing,
+                        ffn_out_scale=ffn_out_scale,
                         **kwargs,
                     )
                 )
@@ -169,6 +182,27 @@ class DCEncoder(EncoderWithCond):
             self.descent.append(blocks)
 
         self.encoder_model = self.descent
+
+    def _saturate(self, z: Tensor) -> Tensor:
+        if self.saturation is None:
+            return z
+
+        mode = self.saturation.lower()
+        b = self.saturation_scale
+
+        if mode == "softclip2":
+            return z * (1 + (z / b).pow(2)).rsqrt()
+        if mode == "softclip":
+            return z / (1 + z.abs() / b)
+        if mode == "tanh":
+            return (z / b).tanh() * b
+        if mode == "arcsinh":
+            return z.arcsinh()
+        if mode == "rmsnorm":
+            return z * (z.square().mean(dim=1, keepdim=True) + 1e-5).rsqrt()
+
+        msg = f"Unknown saturation mode: {self.saturation}"
+        raise ValueError(msg)
 
     def encode(self, batch: Batch) -> TensorBTSC:
         """Encode input batch to latent representation.
@@ -207,6 +241,7 @@ class DCEncoder(EncoderWithCond):
         for blocks in self.descent:
             for block in cast(nn.ModuleList, blocks):  # ModuleList in construction
                 x = block(x)
+        x = self._saturate(x)
         return rearrange(
             x, "(B T) C ... -> B T ... C", B=b, T=t, C=self.latent_channels
         )

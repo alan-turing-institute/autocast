@@ -1,0 +1,10 @@
+_target_: autocast.data.encoded_dataset.EncodedDataModule
+dataset_cls:
+  _target_: hydra.utils.get_class
+  path: autocast.data.encoded_dataset.CachedLatentDataset
+data_path: ???  # required: path to cached latent directory (with train/valid/test subdirs)
+n_steps_input: 1
+n_steps_output: 4
+stride: 1
+batch_size: 16
+num_workers: 0

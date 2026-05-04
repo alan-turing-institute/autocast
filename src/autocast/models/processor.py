@@ -84,10 +84,14 @@ class ProcessorModel(
     ) -> Tensor:
         loss = self.loss(batch)
         self.log(
-            "train_loss", loss, prog_bar=True, batch_size=batch.encoded_inputs.shape[0]
+            "train_loss",
+            loss,
+            prog_bar=True,
+            sync_dist=True,
+            batch_size=batch.encoded_inputs.shape[0],
         )
         if self.train_metrics is not None:
-            y_pred = self._predict(batch)
+            y_pred = self._predict_for_metrics(batch)
             y_true = batch.encoded_output_fields
             self._update_and_log_metrics(
                 self, self.train_metrics, y_pred, y_true, batch.encoded_inputs.shape[0]
@@ -101,10 +105,14 @@ class ProcessorModel(
     ) -> Tensor:
         loss = self.loss(batch)
         self.log(
-            "val_loss", loss, prog_bar=True, batch_size=batch.encoded_inputs.shape[0]
+            "val_loss",
+            loss,
+            prog_bar=True,
+            sync_dist=True,
+            batch_size=batch.encoded_inputs.shape[0],
         )
         if self.val_metrics is not None:
-            y_pred = self._predict(batch)
+            y_pred = self._predict_for_metrics(batch)
             y_true = batch.encoded_output_fields
             y_pred = self.denormalize_tensor(y_pred)
             y_true = self.denormalize_tensor(y_true)
@@ -116,10 +124,14 @@ class ProcessorModel(
     def test_step(self, batch: EncodedBatch, batch_idx: int) -> Tensor:  # noqa: ARG002
         loss = self.loss(batch)
         self.log(
-            "test_loss", loss, prog_bar=True, batch_size=batch.encoded_inputs.shape[0]
+            "test_loss",
+            loss,
+            prog_bar=True,
+            sync_dist=True,
+            batch_size=batch.encoded_inputs.shape[0],
         )
         if self.test_metrics is not None:
-            y_pred = self._predict(batch)
+            y_pred = self._predict_for_metrics(batch)
             y_true = batch.encoded_output_fields
             y_pred = self.denormalize_tensor(y_pred)
             y_true = self.denormalize_tensor(y_true)
@@ -143,6 +155,10 @@ class ProcessorModel(
 
     def _predict(self, batch: EncodedBatch) -> Tensor:
         return self.processor.map(batch.encoded_inputs, batch.global_cond)
+
+    def _predict_for_metrics(self, batch: EncodedBatch) -> Tensor:
+        """Prediction path used by training/validation/test metric updates."""
+        return self._predict(batch)
 
     def map(self, x: Tensor, global_cond: Tensor | None) -> Tensor:
         """Map input tensor through the processor."""

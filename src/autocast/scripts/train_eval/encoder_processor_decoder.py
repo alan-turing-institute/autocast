@@ -5,13 +5,26 @@ from pathlib import Path
 from typing import cast
 
 import hydra
+import torch.distributed as dist
 from omegaconf import DictConfig, OmegaConf, open_dict
 
 from autocast.scripts.eval.encoder_processor_decoder import run_evaluation
+from autocast.scripts.execution import resolve_hydra_work_dir
 from autocast.scripts.train.encoder_processor_decoder import run_epd_training
 from autocast.scripts.utils import get_default_config_path
 
 log = logging.getLogger(__name__)
+
+
+def _is_global_zero_process() -> bool:
+    if dist.is_available() and dist.is_initialized():
+        return dist.get_rank() == 0
+    return True
+
+
+def _distributed_barrier() -> None:
+    if dist.is_available() and dist.is_initialized():
+        dist.barrier()
 
 
 def _resolve_train_checkpoint(cfg: DictConfig, work_dir: Path) -> Path:
@@ -70,7 +83,7 @@ def main(cfg: DictConfig) -> None:
     """Hydra entrypoint for single-job train→eval flow."""
     logging.basicConfig(level=logging.INFO)
 
-    work_dir = Path.cwd()
+    work_dir = resolve_hydra_work_dir(None)
     resume_checkpoint = cfg.get("resume_from_checkpoint")
     if resume_checkpoint is not None:
         resolved_resume_checkpoint = Path(resume_checkpoint).expanduser().resolve()
@@ -82,6 +95,11 @@ def main(cfg: DictConfig) -> None:
         log.info("Train-eval: starting training phase from scratch.")
 
     cfg = run_epd_training(cfg, work_dir=work_dir)
+    _distributed_barrier()
+
+    # In DDP, only global rank 0 should run the evaluation phase and write outputs.
+    if not _is_global_zero_process():
+        return
 
     checkpoint_path = _resolve_train_checkpoint(cfg, work_dir)
     log.info("Train-eval: using checkpoint for eval phase: %s", checkpoint_path)

@@ -53,6 +53,8 @@ class ResBlock(nn.Module):
         Dropout rate.
     checkpointing: bool
         Whether to use gradient checkpointing.
+    ffn_out_scale: float | None
+        Optional multiplicative scale applied to the final FFN conv weights.
     **kwargs: Any
         Additional arguments for convolution layers.
 
@@ -68,6 +70,7 @@ class ResBlock(nn.Module):
         spatial: int = 2,
         dropout: float | None = None,
         checkpointing: bool = False,
+        ffn_out_scale: float | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__()
@@ -104,10 +107,11 @@ class ResBlock(nn.Module):
             ConvNd(ffn_factor * channels, channels, spatial=spatial, **kwargs),
         )
 
-        # TODO: check if required
-        # # Initialize last layer with small weights for stability
-        # if hasattr(self.ffn[-1], "weight"):
-        #     self.ffn[-1].weight.data *= 1e-2
+        if ffn_out_scale is not None:
+            last = self.ffn[-1]
+            weight = getattr(last, "weight", None)
+            if isinstance(weight, Tensor):
+                weight.data.mul_(ffn_out_scale)
 
     def _forward(self, x: Tensor) -> Tensor:
         """Forward pass with residual connection.

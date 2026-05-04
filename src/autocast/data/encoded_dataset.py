@@ -7,7 +7,8 @@ from einops import rearrange
 from lightning.pytorch import LightningDataModule
 from torch.utils.data import ConcatDataset, DataLoader, Dataset
 
-from autocast.types.batch import EncodedSample, collate_encoded_samples
+from autocast.types.batch import EncodedSample
+from autocast.types.collation import collate_encoded_samples
 from autocast.types.types import Tensor, TensorNC
 
 
@@ -126,6 +127,84 @@ class MiniWellInputOutput(EncodedDataset, EncodedBatchMixin):
         )
 
 
+class CachedLatentDataset(EncodedDataset):
+    """Dataset that reads pre-encoded latent trajectories from a cache directory.
+
+    Each ``.pt`` file contains a dict with key ``encoded_fields`` holding the
+    full encoded trajectory and optionally ``global_cond``.  Windowing
+    (``n_steps_input``, ``n_steps_output``, ``stride``) is applied at load
+    time, allowing runtime configuration without re-encoding.
+
+    These files are produced by :func:`autocast.scripts.cache_latents.cache_latents`.
+    """
+
+    def __init__(
+        self,
+        cache_dir: str | Path,
+        n_steps_input: int = 1,
+        n_steps_output: int = 1,
+        stride: int = 1,
+        in_memory: bool = True,
+        **kwargs,
+    ) -> None:
+        super().__init__()
+        self.cache_dir = Path(cache_dir)
+        if not self.cache_dir.exists():
+            msg = f"Cache directory does not exist: {self.cache_dir}"
+            raise FileNotFoundError(msg)
+
+        self.n_steps_input = n_steps_input
+        self.n_steps_output = n_steps_output
+        self.stride = stride
+        self.in_memory = in_memory
+        window_size = n_steps_input + n_steps_output
+
+        # Discover trajectory files
+        self._traj_files = sorted(self.cache_dir.glob("traj_*.pt"))
+        if not self._traj_files:
+            msg = f"No traj_*.pt files found in {self.cache_dir}"
+            raise FileNotFoundError(msg)
+
+        # Optionally hold all trajectories in RAM to avoid per-getitem IO.
+        self._trajectories: list[dict] | None = [] if in_memory else None
+
+        # Build a flat index: (traj_file_idx, window_idx)
+        self._index: list[tuple[int, int]] = []
+        for file_idx, traj_file in enumerate(self._traj_files):
+            traj = torch.load(traj_file, weights_only=False)
+            n_timesteps = traj["encoded_fields"].shape[0]
+            n_windows = max(0, (n_timesteps - window_size) // stride + 1)
+            for win_idx in range(n_windows):
+                self._index.append((file_idx, win_idx))
+            if self._trajectories is not None:
+                self._trajectories.append(traj)
+
+    def __len__(self) -> int:  # noqa: D105
+        return len(self._index)
+
+    def _load_traj(self, file_idx: int) -> dict:
+        if self._trajectories is not None:
+            return self._trajectories[file_idx]
+        return torch.load(self._traj_files[file_idx], weights_only=False)
+
+    def __getitem__(self, index: int) -> EncodedSample:  # noqa: D105
+        file_idx, win_idx = self._index[index]
+        traj = self._load_traj(file_idx)
+        fields = traj["encoded_fields"]  # (T, *spatial, C_latent)
+
+        start = win_idx * self.stride
+        end_input = start + self.n_steps_input
+        encoded_inputs = fields[start:end_input]
+        encoded_outputs = fields[end_input : end_input + self.n_steps_output]
+
+        return EncodedSample(
+            encoded_inputs=encoded_inputs,
+            encoded_output_fields=encoded_outputs,
+            global_cond=traj.get("global_cond"),
+            encoded_info=traj.get("encoded_info", {}),
+        )
+
+
 class EncodedDataModule(LightningDataModule):
     """DataModule for encoded datasets that produce EncodedBatch objects.
 
@@ -143,6 +222,7 @@ class EncodedDataModule(LightningDataModule):
         batch_size: int = 16,
         num_workers: int = 0,
         dataset_cls: type[EncodedDataset] | None = None,
+        in_memory: bool = True,
         **dataset_kwargs,
     ):
         """Initialize the EncodedDataModule.
@@ -167,6 +247,7 @@ class EncodedDataModule(LightningDataModule):
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.dataset_cls = dataset_cls or MiniWellInputOutput
+        self.in_memory = in_memory
         self.dataset_kwargs = dataset_kwargs
 
         self.train_dataset: EncodedDataset | None = None
@@ -178,6 +259,11 @@ class EncodedDataModule(LightningDataModule):
         if self.data_path is None:
             msg = "data_path must be provided"
             raise ValueError(msg)
+
+        # Route to directory-based constructor for CachedLatentDataset
+        if self.dataset_cls is CachedLatentDataset:
+            self._setup_cached(stage)
+            return
 
         # Compute total steps needed for the MiniWell dataset
         total_steps = self.n_steps_input + self.n_steps_output
@@ -213,6 +299,41 @@ class EncodedDataModule(LightningDataModule):
                     **common_kwargs,
                 )
 
+    def _setup_cached(self, stage: str | None = None) -> None:
+        """Set up datasets from cached latent directories."""
+        assert self.data_path is not None  # checked in setup()
+        if stage == "fit" or stage is None:
+            train_dir = self.data_path / "train"
+            if train_dir.exists():
+                self.train_dataset = CachedLatentDataset(
+                    cache_dir=train_dir,
+                    n_steps_input=self.n_steps_input,
+                    n_steps_output=self.n_steps_output,
+                    stride=self.stride,
+                    in_memory=self.in_memory,
+                )
+
+            valid_dir = self.data_path / "valid"
+            if valid_dir.exists():
+                self.val_dataset = CachedLatentDataset(
+                    cache_dir=valid_dir,
+                    n_steps_input=self.n_steps_input,
+                    n_steps_output=self.n_steps_output,
+                    stride=self.stride,
+                    in_memory=self.in_memory,
+                )
+
+        if stage == "test" or stage is None:
+            test_dir = self.data_path / "test"
+            if test_dir.exists():
+                self.test_dataset = CachedLatentDataset(
+                    cache_dir=test_dir,
+                    n_steps_input=self.n_steps_input,
+                    n_steps_output=self.n_steps_output,
+                    stride=self.stride,
+                    in_memory=self.in_memory,
+                )
+
     def train_dataloader(self) -> DataLoader:
         """Return training dataloader."""
         if self.train_dataset is None:
@@ -244,6 +365,41 @@ class EncodedDataModule(LightningDataModule):
         return DataLoader(
             self.test_dataset,  # type: ignore[arg-type]
             batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=self.num_workers,
+            collate_fn=collate_encoded_samples,
+        )
+
+    def rollout_test_dataloader(self, batch_size: int | None = None) -> DataLoader:
+        """DataLoader for rollout evaluation on test data.
+
+        For cached latent datasets, creates a full-trajectory dataset so that
+        ground truth is available for the entire rollout horizon (analogous to
+        ``full_trajectory_mode=True`` in the non-cached datamodules).
+        """
+        if self.test_dataset is None:
+            self.setup(stage="test")
+
+        rollout_dataset: EncodedDataset = self.test_dataset  # type: ignore[assignment]
+
+        if isinstance(self.test_dataset, CachedLatentDataset):
+            test_dir = self.data_path / "test"  # type: ignore[operator]
+            # Infer full trajectory length from the first cached trajectory.
+            traj = self.test_dataset._load_traj(0)
+            traj_len = traj["encoded_fields"].shape[0]
+            full_n_output = traj_len - self.n_steps_input
+            if full_n_output > self.n_steps_output:
+                rollout_dataset = CachedLatentDataset(
+                    cache_dir=test_dir,
+                    n_steps_input=self.n_steps_input,
+                    n_steps_output=full_n_output,
+                    stride=full_n_output,  # one window per trajectory
+                    in_memory=self.in_memory,
+                )
+
+        return DataLoader(
+            rollout_dataset,
+            batch_size=batch_size or self.batch_size,
             shuffle=False,
             num_workers=self.num_workers,
             collate_fn=collate_encoded_samples,

@@ -7,7 +7,6 @@ import shlex
 import subprocess
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 from omegaconf import OmegaConf
 
@@ -65,15 +64,159 @@ def load_launcher_defaults(launcher_name: str) -> dict:
         Path.cwd() / "local_hydra" / "hydra" / "launcher" / f"{launcher_name}.yaml",
     ]
     for path in candidate_paths:
-        if path.exists():
-            cfg = OmegaConf.load(path)
-            loaded = OmegaConf.to_container(cfg, resolve=True)
-            if isinstance(loaded, dict):
-                loaded.pop("defaults", None)
-                return loaded
+        if not path.exists():
+            continue
+        cfg = OmegaConf.load(path)
+        loaded = OmegaConf.to_container(cfg, resolve=False)
+        if isinstance(loaded, dict):
+            loaded.pop("defaults", None)
+            return loaded
     if launcher_name != "slurm":
         raise ValueError(f"Unable to resolve hydra launcher preset '{launcher_name}'.")
     return {}
+
+
+def _extract_local_experiment_name(overrides: list[str]) -> str | None:
+    """Return selected local_experiment name from CLI overrides, if any."""
+    for override in overrides:
+        norm = normalized_override(override)
+        if norm.startswith("local_experiment="):
+            return norm.split("=", 1)[1]
+    return None
+
+
+def _resolve_local_experiment_parent(item: object) -> Path | None:
+    # Map a defaults-list entry of the form
+    # ``- /local_experiment/<rel/path>`` to its YAML file, so we can
+    # follow the inheritance chain when looking up ``/distributed``.
+    if isinstance(item, str) and item.startswith("/local_experiment/"):
+        rel = item[len("/local_experiment/") :]
+        return Path.cwd() / "local_hydra" / "local_experiment" / f"{rel}.yaml"
+    return None
+
+
+def _extract_distributed_preset_name(
+    cfg: dict, seen: set[Path] | None = None
+) -> str | None:
+    if seen is None:
+        seen = set()
+    defaults = cfg.get("defaults")
+    if not isinstance(defaults, list):
+        return None
+    for item in defaults:
+        if not isinstance(item, dict):
+            continue
+        val = item.get("/distributed") or item.get("distributed")
+        if isinstance(val, str) and val:
+            return val
+    for item in defaults:
+        parent_path = _resolve_local_experiment_parent(item)
+        if parent_path is None or parent_path in seen or not parent_path.exists():
+            continue
+        seen.add(parent_path)
+        parent_raw = OmegaConf.to_container(OmegaConf.load(parent_path), resolve=False)
+        if not isinstance(parent_raw, dict):
+            continue
+        result = _extract_distributed_preset_name(parent_raw, seen)
+        if result:
+            return result
+    return None
+
+
+def _load_distributed_cfg(name: str) -> dict:
+    cfg_root = Path(__file__).resolve().parents[2] / "configs"
+    path = cfg_root / "distributed" / f"{name}.yaml"
+    if not path.exists():
+        return {}
+    loaded = OmegaConf.to_container(OmegaConf.load(path), resolve=False)
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def _load_launcher_from_file(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    # Do not resolve the whole experiment config here; it may contain
+    # interpolations that are valid only during full Hydra composition
+    # (e.g. model.processor.n_steps_input -> datamodule.n_steps_input).
+    # We only need the hydra.launcher subtree for submission defaults.
+    raw = OmegaConf.to_container(OmegaConf.load(path), resolve=False)
+    if not isinstance(raw, dict):
+        return {}
+    distributed = _extract_distributed_preset_name(raw)
+    if distributed:
+        merged = OmegaConf.merge(_load_distributed_cfg(distributed), raw)
+        cfg = OmegaConf.to_container(merged, resolve=False)
+    else:
+        cfg = raw
+    if not isinstance(cfg, dict):
+        return {}
+    hydra_cfg = cfg.get("hydra")
+    if not isinstance(hydra_cfg, dict):
+        return {}
+    launcher_cfg = hydra_cfg.get("launcher")
+    return launcher_cfg if isinstance(launcher_cfg, dict) else {}
+
+
+def _load_preset_launcher_cfg(overrides: list[str]) -> dict:
+    """Load ``hydra.launcher`` mapping from selected experiment preset.
+
+    Supports both ``local_experiment=<name>`` and ``experiment=<name>``.
+    ``local_experiment`` has precedence if both are provided.
+    """
+    local_experiment = _extract_local_experiment_name(overrides)
+    if local_experiment:
+        local_cfg_path = (
+            Path.cwd() / "local_hydra" / "local_experiment" / f"{local_experiment}.yaml"
+        )
+        local_launcher_cfg = _load_launcher_from_file(local_cfg_path)
+        if local_launcher_cfg:
+            return local_launcher_cfg
+
+    experiment_name = extract_override_value(overrides, "experiment")
+    if isinstance(experiment_name, str) and experiment_name:
+        experiment_cfg_path = (
+            Path(__file__).resolve().parents[2]
+            / "configs"
+            / "experiment"
+            / f"{experiment_name}.yaml"
+        )
+        experiment_launcher_cfg = _load_launcher_from_file(experiment_cfg_path)
+        if experiment_launcher_cfg:
+            return experiment_launcher_cfg
+
+        external_config_root = os.environ.get("AUTOCAST_CONFIG_PATH")
+        if external_config_root:
+            external_experiment_cfg_path = (
+                Path(external_config_root) / "experiment" / f"{experiment_name}.yaml"
+            )
+            external_experiment_launcher_cfg = _load_launcher_from_file(
+                external_experiment_cfg_path
+            )
+            if external_experiment_launcher_cfg:
+                return external_experiment_launcher_cfg
+
+    return {}
+
+
+def _resolve_launcher_submission_context(
+    overrides: list[str],
+) -> tuple[dict, list[str]]:
+    launcher_name, launcher_override_cfg, module_overrides = extract_launcher_overrides(
+        overrides
+    )
+    preset_launcher_cfg = _load_preset_launcher_cfg(overrides)
+    launcher_cfg = load_launcher_defaults(launcher_name)
+    merged_launcher_cfg = OmegaConf.to_container(
+        OmegaConf.merge(
+            launcher_cfg,
+            preset_launcher_cfg,
+            launcher_override_cfg,
+        ),
+        resolve=True,
+    )
+    if not isinstance(merged_launcher_cfg, dict):
+        merged_launcher_cfg = {}
+    return merged_launcher_cfg, module_overrides
 
 
 def extract_launcher_overrides(
@@ -140,17 +283,6 @@ def _submission_timestamp() -> str:
     return datetime.now().strftime("%Y%m%d_%H%M%S_%f")
 
 
-def _coerce_positive_int(value: Any) -> int:
-    if isinstance(value, bool):
-        return 1 if value else 0
-    if isinstance(value, int):
-        return value if value > 0 else 0
-    if isinstance(value, str) and value.isdigit():
-        parsed = int(value)
-        return parsed if parsed > 0 else 0
-    return 0
-
-
 def _should_use_srun(launcher_cfg: dict) -> bool:
     explicit = launcher_cfg.get("use_srun")
     if isinstance(explicit, bool):
@@ -162,9 +294,57 @@ def _should_use_srun(launcher_cfg: dict) -> bool:
         if lowered in {"false", "0", "no", "off"}:
             return False
 
-    tasks_per_node = _coerce_positive_int(launcher_cfg.get("tasks_per_node"))
-    gpus_per_node = _coerce_positive_int(launcher_cfg.get("gpus_per_node"))
+    def _as_positive_int(value: object) -> int:
+        if isinstance(value, bool):
+            return int(value)
+        try:
+            parsed = int(str(value).strip())
+        except (TypeError, ValueError):
+            return 0
+        return parsed if parsed > 0 else 0
+
+    tasks_per_node = _as_positive_int(launcher_cfg.get("tasks_per_node"))
+    gpus_per_node = _as_positive_int(launcher_cfg.get("gpus_per_node"))
     return tasks_per_node > 1 or gpus_per_node > 1
+
+
+def _build_sbatch_command(
+    *,
+    job_name: str,
+    log_dir: Path,
+    launcher_cfg: dict,
+    batch_script_path: Path,
+) -> list[str]:
+    """Build the sbatch command for a generated batch script."""
+    sbatch_cmd = [
+        "sbatch",
+        "--parsable",
+        f"--job-name={job_name}",
+        f"--output={log_dir / 'slurm-%j.out'}",
+        f"--error={log_dir / 'slurm-%j.err'}",
+    ]
+
+    formatted_time = _format_sbatch_time(launcher_cfg.get("timeout_min"))
+    if formatted_time is not None:
+        sbatch_cmd.append(f"--time={formatted_time}")
+
+    for cfg_key, sbatch_flag in [
+        ("cpus_per_task", "cpus-per-task"),
+        ("gpus_per_node", "gpus-per-node"),
+        ("tasks_per_node", "ntasks-per-node"),
+        ("partition", "partition"),
+    ]:
+        val = launcher_cfg.get(cfg_key)
+        if val is not None:
+            sbatch_cmd.append(f"--{sbatch_flag}={val}")
+
+    additional_parameters = launcher_cfg.get("additional_parameters", {})
+    if isinstance(additional_parameters, dict):
+        for key, value in additional_parameters.items():
+            sbatch_cmd.append(f"--{key}={value}")
+
+    sbatch_cmd.append(str(batch_script_path))
+    return sbatch_cmd
 
 
 def _submit_one_sbatch_job(
@@ -177,6 +357,7 @@ def _submit_one_sbatch_job(
     batch_script_path: Path,
     job_name_suffix: str | None = None,
     umask_value: int,
+    runtime_typechecking: bool,
 ) -> tuple[str, str]:
     job_name = derive_sbatch_job_name(module, output_dir, job_overrides)
     if job_name_suffix:
@@ -194,6 +375,7 @@ def _submit_one_sbatch_job(
         "#!/bin/bash",
         "set -euo pipefail",
         f"cd {shlex.quote(str(Path.cwd().resolve()))}",
+        f"export RUNTIME_TYPECHECKING={str(runtime_typechecking).lower()}",
     ]
     script_lines.extend(str(line) for line in setup_commands)
     script_lines.append(launch_command)
@@ -206,34 +388,12 @@ def _submit_one_sbatch_job(
     script_mode = 0o777 & (~umask_value)
     os.chmod(batch_script_path, script_mode)
 
-    sbatch_cmd = [
-        "sbatch",
-        "--parsable",
-        f"--job-name={job_name}",
-        f"--output={output_dir / 'slurm-%j.out'}",
-        f"--error={output_dir / 'slurm-%j.err'}",
-    ]
-
-    formatted_time = _format_sbatch_time(merged_launcher_cfg.get("timeout_min"))
-    if formatted_time is not None:
-        sbatch_cmd.append(f"--time={formatted_time}")
-
-    for cfg_key, sbatch_flag in [
-        ("cpus_per_task", "cpus-per-task"),
-        ("gpus_per_node", "gpus-per-node"),
-        ("tasks_per_node", "ntasks-per-node"),
-        ("partition", "partition"),
-    ]:
-        val = merged_launcher_cfg.get(cfg_key)
-        if val is not None:
-            sbatch_cmd.append(f"--{sbatch_flag}={val}")
-
-    additional_parameters = merged_launcher_cfg.get("additional_parameters", {})
-    if isinstance(additional_parameters, dict):
-        for key, value in additional_parameters.items():
-            sbatch_cmd.append(f"--{key}={value}")
-
-    sbatch_cmd.append(str(batch_script_path))
+    sbatch_cmd = _build_sbatch_command(
+        job_name=job_name,
+        log_dir=output_dir,
+        launcher_cfg=merged_launcher_cfg,
+        batch_script_path=batch_script_path,
+    )
 
     result = subprocess.run(sbatch_cmd, check=True, capture_output=True, text=True)
     raw_job_id = result.stdout.strip().splitlines()[-1] if result.stdout else ""
@@ -241,14 +401,60 @@ def _submit_one_sbatch_job(
     return job_id, job_name
 
 
-def submit_via_sbatch(
+def submit_via_sbatch(  # noqa: PLR0915
     module: str,
     overrides: list[str],
+    runtime_typechecking: bool = False,
     dry_run: bool = False,
 ) -> None:
     """Submit *module* as one or more SLURM jobs via ``sbatch``."""
+    merged_launcher_cfg, module_overrides = _resolve_launcher_submission_context(
+        overrides
+    )
+
     if dry_run:
-        print(f"DRY-RUN: {format_command(run_module_command(module, overrides))}")
+        sweep_dir = extract_override_value(overrides, "hydra.sweep.dir")
+        run_dir_override = extract_override_value(overrides, "hydra.run.dir")
+        output_dir_raw = sweep_dir or run_dir_override
+        output_dir = (
+            Path(output_dir_raw).expanduser().resolve()
+            if output_dir_raw is not None
+            else Path.cwd().resolve()
+        )
+
+        module_run_overrides = [
+            *(o for o in module_overrides if not o.startswith("hydra.run.dir=")),
+            f"hydra.run.dir={output_dir}",
+        ]
+        module_run_overrides = strip_hydra_sweep_controls(module_run_overrides)
+        expanded_jobs = expand_sweep_overrides(module_run_overrides)
+
+        if len(expanded_jobs) == 1:
+            print(
+                "DRY-RUN: "
+                f"{format_command(run_module_command(module, expanded_jobs[0]))}"
+            )
+            return
+
+        print(f"DRY-RUN: would submit {len(expanded_jobs)} SLURM jobs for sweep")
+        for index, base_job_overrides in enumerate(expanded_jobs):
+            case_dir = (output_dir / f"sweep_{index:04d}").resolve()
+            case_overrides = set_override(
+                base_job_overrides, "hydra.run.dir", str(case_dir)
+            )
+
+            wandb_name = extract_override_value(case_overrides, "logging.wandb.name")
+            if wandb_name:
+                case_overrides = set_override(
+                    case_overrides,
+                    "logging.wandb.name",
+                    f"{wandb_name}_s{index:04d}",
+                )
+
+            print(
+                f"  - [{index:04d}] "
+                f"{format_command(run_module_command(module, case_overrides))}"
+            )
         return
 
     umask_value = resolve_umask_from_overrides(overrides)
@@ -265,26 +471,15 @@ def submit_via_sbatch(
         output_dir.mkdir(parents=True, exist_ok=True)
     ensure_group_writable_parents(output_dir)
 
-    launcher_name, launcher_override_cfg, module_overrides = extract_launcher_overrides(
-        overrides
-    )
-    launcher_cfg = load_launcher_defaults(launcher_name)
-    merged_launcher_cfg = OmegaConf.to_container(
-        OmegaConf.merge(launcher_cfg, launcher_override_cfg), resolve=True
-    )
-    if not isinstance(merged_launcher_cfg, dict):
-        merged_launcher_cfg = {}
+    setup_commands = merged_launcher_cfg.get("setup", [])
+    if not isinstance(setup_commands, list):
+        setup_commands = []
 
     module_run_overrides = [
         *(o for o in module_overrides if not o.startswith("hydra.run.dir=")),
         f"hydra.run.dir={output_dir}",
     ]
     module_run_overrides = strip_hydra_sweep_controls(module_run_overrides)
-
-    setup_commands = merged_launcher_cfg.get("setup", [])
-    if not isinstance(setup_commands, list):
-        setup_commands = []
-
     expanded_jobs = expand_sweep_overrides(module_run_overrides)
     submission_ts = _submission_timestamp()
 
@@ -298,6 +493,7 @@ def submit_via_sbatch(
             merged_launcher_cfg=merged_launcher_cfg,
             batch_script_path=batch_script_path,
             umask_value=umask_value,
+            runtime_typechecking=runtime_typechecking,
         )
         print(f"Submitted SLURM job {job_id} via {batch_script_path}")
         print(f"SLURM job name: {job_name}")
@@ -331,6 +527,7 @@ def submit_via_sbatch(
             merged_launcher_cfg=merged_launcher_cfg,
             batch_script_path=batch_script_path,
             umask_value=umask_value,
+            runtime_typechecking=runtime_typechecking,
         )
         submitted.append((job_id, batch_script_path, job_name))
 
@@ -340,3 +537,113 @@ def submit_via_sbatch(
         print(f"  - {job_id}: {job_name} via {script_path}")
     if len(submitted) > len(preview):
         print(f"  ... and {len(submitted) - len(preview)} more")
+
+
+def submit_manifest_via_sbatch(
+    manifest: Path,
+    lines: list[str],
+    work_dirs: list[str],
+    overrides: list[str],
+    runtime_typechecking: bool = False,
+    dry_run: bool = False,
+) -> None:
+    r"""Submit all *lines* from *manifest* as a **single** SLURM job.
+
+    Runs are executed sequentially inside one SLURM allocation.  A combine
+    step is appended that concatenates per-run ``eval/benchmark_metrics.csv``
+    files into ``<manifest_stem>_combined.csv`` next to the manifest.
+
+    SLURM allocation is configured via ``hydra.launcher.*`` overrides, e.g.::
+
+        autocast benchmark --manifest benchmarks.txt \\
+            hydra.launcher.partition=gpu \\
+            hydra.launcher.timeout_min=60 \\
+            hydra.launcher.gpus_per_node=1
+    """
+    umask_value = resolve_umask_from_overrides(overrides)
+
+    launcher_name, launcher_override_cfg, _ = extract_launcher_overrides(overrides)
+    preset_launcher_cfg = _load_preset_launcher_cfg(overrides)
+    launcher_cfg = load_launcher_defaults(launcher_name)
+    merged_launcher_cfg = OmegaConf.to_container(
+        OmegaConf.merge(launcher_cfg, preset_launcher_cfg, launcher_override_cfg),
+        resolve=True,
+    )
+    if not isinstance(merged_launcher_cfg, dict):
+        merged_launcher_cfg = {}
+
+    setup_commands: list[str] = merged_launcher_cfg.get("setup", [])  # type: ignore[assignment]
+    if not isinstance(setup_commands, list):
+        setup_commands = []
+
+    cwd = Path.cwd().resolve()
+    submission_ts = _submission_timestamp()
+    log_dir = cwd / "slurm_logs" / f"benchmark_manifest_{submission_ts}"
+    job_name = f"autocast_benchmark_manifest_{manifest.stem}"[:120]
+
+    # Build batch script body
+    script_lines = [
+        "#!/bin/bash",
+        "set -euo pipefail",
+        f"cd {shlex.quote(str(cwd))}",
+        f"export RUNTIME_TYPECHECKING={str(runtime_typechecking).lower()}",
+        f"echo '=== autocast benchmark manifest: {manifest.name} ==='",
+        f"echo 'Runs     : {len(lines)}'",
+        "echo 'Node     : '$(hostname)",
+        "echo 'Started  : '$(date)",
+        "echo '=============================='",
+    ]
+    for cmd in setup_commands:
+        script_lines.append(str(cmd))
+    for line in lines:
+        # Each manifest line is a full `benchmark --workdir X ...` invocation.
+        # Run it locally (no --mode slurm) inside the allocated node.
+        script_lines.append(f"uv run autocast {line}")
+    # Combine step: concatenate per-run eval/benchmark_metrics.csv files.
+    csv_paths_repr = repr(
+        [str(Path(wd) / "eval" / "benchmark_metrics.csv") for wd in work_dirs]
+    )
+    combined_path_repr = repr(
+        str(manifest.parent.resolve() / f"{manifest.stem}_combined.csv")
+    )
+    combine_snippet = (
+        "import pandas as pd, pathlib; "
+        f"_ps=[p for p in {csv_paths_repr} if pathlib.Path(p).exists()]; "
+        f"pd.concat([pd.read_csv(p) for p in _ps], ignore_index=True)"
+        f".to_csv({combined_path_repr}, index=False) if _ps else None; "
+        f"print('Combined benchmark CSV:', {combined_path_repr})"
+    )
+    script_lines.append(f"uv run python -c {shlex.quote(combine_snippet)}")
+    script_lines.append("echo '=== Completed '$(date) '==='")
+
+    script_text = "\n".join(script_lines) + "\n"
+
+    if dry_run:
+        print(f"DRY-RUN: single SLURM job for manifest {manifest} ({len(lines)} runs)")
+        print("--- sbatch script ---")
+        print(script_text)
+        return
+
+    with temporary_umask(umask_value):
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+    batch_script_path = log_dir / f"submit_{submission_ts}.sh"
+    script_mode = 0o777 & (~umask_value)
+    batch_script_path.write_text(script_text, encoding="utf-8")
+    os.chmod(batch_script_path, script_mode)
+
+    sbatch_cmd = _build_sbatch_command(
+        job_name=job_name,
+        log_dir=log_dir,
+        launcher_cfg=merged_launcher_cfg,
+        batch_script_path=batch_script_path,
+    )
+
+    result = subprocess.run(sbatch_cmd, check=True, capture_output=True, text=True)
+    raw_job_id = result.stdout.strip().splitlines()[-1] if result.stdout else ""
+    job_id = raw_job_id.split(";", 1)[0]
+
+    print(f"Submitted SLURM job {job_id} ({len(lines)} benchmarks, sequential)")
+    print(f"Manifest : {manifest}")
+    print(f"Script   : {batch_script_path}")
+    print(f"Logs     : {log_dir / 'slurm-%j.out'}")

@@ -1,0 +1,32 @@
+# @package _global_
+defaults:
+  - override /datamodule: advection_diffusion
+  - override /model: autoencoder_dc_large
+  - override /optimizer: psgd
+  - _self_
+
+experiment_name: ae_dc_large
+
+datamodule:
+  # use_normalization: false
+  # batch_size: 64
+  use_normalization: true
+  batch_size: 256
+
+logging:
+  wandb:
+    enabled: false
+
+optimizer:
+  learning_rate: 1e-5
+  weight_decay: 0.0
+  scheduler: cosine
+
+trainer:
+  accelerator: gpu
+  # devices: 8
+  # max_epochs: 1024
+  # limit_train_batches: 256
+  devices: 1
+  max_time: "00:12:00:00"
+  gradient_clip_val: 1.0

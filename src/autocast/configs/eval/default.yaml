@@ -2,16 +2,51 @@
 # Path to checkpoint for evaluation (required for eval)
 checkpoint: null
 
+# Evaluation mode selector; controls rollout space, not just metrics space.
+# Values: auto (default dispatcher) | encode_once | ambient | latent.
+# See `autocast/configs/eval/README.md` for the full comparison and the
+# auto-dispatch rules; the resolved mode is logged at INFO.
+mode: auto
+
+# Dev sense-check: compute metrics directly in raw latent space. Only
+# honored with an explicit `eval.mode=latent` and skips the decoder
+# entirely. Numbers are not comparable across runs and physics-aware
+# metrics are not meaningful -- leave as `false` for real evals.
+latent_space_metrics: false
+
 # Evaluation metrics to compute
 metrics:
   - mse
+  - mae
+  - nmse
+  - nmae
   - rmse
+  - nrmse
+  - vmse
+  - vrmse
+  - linf
+  - psrmse
+  - psrmse_low
+  - psrmse_mid
+  - psrmse_high
+  - psrmse_tail
+  - pscc
+  - pscc_low
+  - pscc_mid
+  - pscc_high
+  - pscc_tail
+  - crps
+  - fcrps
+  - afcrps
+  - energy
+  - ssr
+  - winkler
 
 # Output paths (default to work_dir if not specified)
 csv_path: null
 video_dir: null
 
-# Batch indices to visualize
+# Rollout sample indices to visualize
 batch_indices: []
 
 # Video generation settings
@@ -19,9 +54,35 @@ video_format: mp4  # gif or mp4
 video_sample_index: 0
 fps: 5
 
-# Device for evaluation
-device: auto  # auto, cpu, cuda, or mps
+# Rollout snapshot settings. When enabled, eval saves still panels for the
+# requested rollout samples using raw tensors rather than extracting MP4 frames.
+save_rollout_snapshots: false
+rollout_snapshot_dir: null  # default: <video_dir>/snapshots
+rollout_snapshot_timesteps: [0, 4, 12, 30, 99]
+rollout_snapshot_channels: null  # null means all channels
+rollout_snapshot_format: png
+
+# Accelerator for evaluation (mirrors Lightning Fabric API)
+accelerator: auto  # auto, cpu, cuda, or mps
+devices: 1 # default single-GPU eval; override with int (e.g. 4) for multi-GPU DDP
 
 # Rollout settings
 max_rollout_steps: 10
 free_running_only: true
+
+# Inference benchmark settings (synthetic batch with matching tensor shapes)
+benchmark:
+  enabled: false
+  batch_size: 1
+  n_warmup: 5
+  n_benchmark: 50
+
+# Rollout benchmark settings (synthetic batch, multi-step autoregressive)
+# stride and max_rollout_steps default to the eval-level settings when not set.
+benchmark_rollout:
+  enabled: false
+  batch_size: 1
+  n_warmup: 5
+  n_benchmark: 20
+  stride: null
+  max_rollout_steps: null

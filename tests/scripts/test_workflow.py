@@ -4,13 +4,17 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 from unittest.mock import patch
 
+import pandas as pd
 import pytest
 
 from autocast.scripts.workflow import cli as workflow_cli
 from autocast.scripts.workflow.cli import build_parser
 from autocast.scripts.workflow.commands import (
+    benchmark_command,
+    benchmark_manifest_command,
     build_effective_eval_overrides,
     build_train_overrides,
     eval_command,
@@ -18,6 +22,8 @@ from autocast.scripts.workflow.commands import (
     infer_eval_checkpoint,
     infer_hydra_config_from_workdir,
     infer_resume_checkpoint,
+    run_module,
+    train_eval_single_job_command,
 )
 from autocast.scripts.workflow.helpers import run_module_command
 from autocast.scripts.workflow.naming import (
@@ -35,7 +41,12 @@ from autocast.scripts.workflow.overrides import (
     split_top_level_csv,
     strip_hydra_sweep_controls,
 )
-from autocast.scripts.workflow.slurm import _parse_override_scalar, _should_use_srun
+from autocast.scripts.workflow.slurm import (
+    _load_preset_launcher_cfg,
+    _parse_override_scalar,
+    _should_use_srun,
+    submit_manifest_via_sbatch,
+)
 
 
 @pytest.fixture
@@ -176,6 +187,72 @@ def test_should_use_srun_respects_explicit_override():
     )
 
 
+def test_load_preset_launcher_cfg_ignores_unrelated_interpolation(
+    tmp_path: Path, monkeypatch
+):
+    local_cfg = tmp_path / "local_hydra" / "local_experiment" / "repro.yaml"
+    local_cfg.parent.mkdir(parents=True, exist_ok=True)
+    local_cfg.write_text(
+        "\n".join(
+            [
+                "defaults:",
+                "  - /distributed: ddp_4gpu_slurm",
+                "model:",
+                "  processor:",
+                "    n_steps_input: ${datamodule.n_steps_input}",
+                "hydra:",
+                "  launcher:",
+                "    partition: gpu",
+                "    timeout_min: 120",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(tmp_path)
+    launcher_cfg = _load_preset_launcher_cfg(["local_experiment=repro"])
+
+    assert launcher_cfg.get("partition") == "gpu"
+    assert launcher_cfg.get("timeout_min") == 120
+
+
+def test_load_preset_launcher_cfg_walks_local_experiment_parent_chain(
+    tmp_path: Path, monkeypatch
+):
+    # Child references a parent local_experiment that declares /distributed:
+    # — the loader must walk the chain so SLURM allocates the right resources.
+    local_root = tmp_path / "local_hydra" / "local_experiment"
+    parent_cfg = local_root / "parent.yaml"
+    parent_cfg.parent.mkdir(parents=True, exist_ok=True)
+    parent_cfg.write_text(
+        "\n".join(
+            [
+                "defaults:",
+                "  - /distributed: ddp_4gpu_slurm",
+                "  - _self_",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    child_cfg = local_root / "child.yaml"
+    child_cfg.write_text(
+        "\n".join(
+            [
+                "defaults:",
+                "  - /local_experiment/parent",
+                "  - _self_",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(tmp_path)
+    launcher_cfg = _load_preset_launcher_cfg(["local_experiment=child"])
+
+    assert launcher_cfg.get("gpus_per_node") == 4
+    assert launcher_cfg.get("tasks_per_node") == 4
+
+
 # ---------------------------------------------------------------------------
 # naming
 # ---------------------------------------------------------------------------
@@ -207,7 +284,30 @@ def test_dataset_name_token_unknown_passthrough():
 
 def test_dataset_name_token_datamodule_override_takes_precedence():
     overrides = ["datamodule=reaction_diffusion"]
-    assert dataset_name_token("something_else", overrides) == "rd32"
+    assert dataset_name_token("something_else", overrides) == "rd64"
+
+
+def test_dataset_name_token_handles_gpe_laser_only_wake_alias():
+    assert dataset_name_token("gpe_laser_only_wake", []) == "gpe64"
+
+
+def test_dataset_name_token_ignores_data_path_when_not_cached_latents():
+    overrides = ["datamodule.data_path=/tmp/datasets/reaction_diffusion_e3e8515"]
+    assert dataset_name_token("something_else", overrides) == "something_else"
+
+
+def test_dataset_name_token_cached_latents_uses_saved_autoencoder_dataset(tmp_path):
+    cached_dir = tmp_path / "cached"
+    cached_dir.mkdir(parents=True)
+    (cached_dir / "autoencoder_config.yaml").write_text(
+        "datamodule:\n  data_path: /tmp/datasets/reaction_diffusion_e3e8515\n",
+        encoding="utf-8",
+    )
+    overrides = [
+        "datamodule=cached_latents",
+        f"datamodule.data_path={cached_dir}",
+    ]
+    assert dataset_name_token("cached_latents", overrides) == "rd64"
 
 
 def test_auto_run_name_ae():
@@ -227,7 +327,7 @@ def test_auto_run_name_epd():
         patch("autocast.scripts.workflow.naming._short_uuid", return_value="xyz7890"),
     ):
         name = auto_run_name("epd", "reaction_diffusion", [])
-    assert name.startswith("epd_rd32_")
+    assert name.startswith("epd_rd64_")
 
 
 def test_auto_run_name_diff_prefix():
@@ -269,6 +369,40 @@ def test_auto_run_name_hidden_dim_included():
     assert "256" in name
 
 
+def test_auto_run_name_local_experiment_ignores_unresolved_interpolation(
+    tmp_path: Path, monkeypatch
+):
+    local_cfg = tmp_path / "local_hydra" / "local_experiment" / "repro.yaml"
+    local_cfg.parent.mkdir(parents=True, exist_ok=True)
+    local_cfg.write_text(
+        "\n".join(
+            [
+                "model:",
+                "  processor:",
+                "    _target_: autocast.nn.vit.TemporalViTBackbone",
+                "    n_steps_input: ${datamodule.n_steps_input}",
+                "  loss_func:",
+                "    _target_: autocast.losses.ensemble.CRPSLoss",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(tmp_path)
+
+    with (
+        patch("autocast.scripts.workflow.naming._git_hash", return_value="abc1234"),
+        patch("autocast.scripts.workflow.naming._short_uuid", return_value="xyz7890"),
+    ):
+        name = auto_run_name(
+            "epd",
+            "reaction_diffusion",
+            ["local_experiment=repro"],
+        )
+
+    assert name == "crps_rd64_vit_abc1234_xyz7890"
+
+
 # ---------------------------------------------------------------------------
 # commands
 # ---------------------------------------------------------------------------
@@ -293,12 +427,78 @@ def test_build_effective_eval_overrides_order_preserved():
     assert result == ["model.a=1", "model.b=2"]
 
 
+def test_run_module_local_sets_runtime_typechecking_env(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def _fake_subprocess_run(cmd, check, env):
+        captured["cmd"] = cmd
+        captured["check"] = check
+        captured["env"] = env
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.commands.subprocess.run", _fake_subprocess_run
+    )
+
+    run_module(
+        "autocast.scripts.train.autoencoder",
+        ["trainer.max_epochs=1"],
+        mode="local",
+        runtime_typechecking=True,
+    )
+
+    assert captured["check"] is True
+    assert isinstance(captured["env"], dict)
+    assert captured["env"]["RUNTIME_TYPECHECKING"] == "true"
+
+
+def test_run_module_slurm_forwards_runtime_typechecking(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def _fake_submit_via_sbatch(
+        module,
+        overrides,
+        dry_run=False,
+        runtime_typechecking=False,
+    ):
+        captured["module"] = module
+        captured["overrides"] = overrides
+        captured["dry_run"] = dry_run
+        captured["runtime_typechecking"] = runtime_typechecking
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.commands.submit_via_sbatch",
+        _fake_submit_via_sbatch,
+    )
+
+    run_module(
+        "autocast.scripts.train.autoencoder",
+        ["trainer.max_epochs=1"],
+        mode="slurm",
+        runtime_typechecking=True,
+    )
+
+    assert captured["module"] == "autocast.scripts.train.autoencoder"
+    assert captured["runtime_typechecking"] is True
+
+
 def test_infer_dataset_from_workdir_from_datamodule_data_path(tmp_path):
     (tmp_path / "resolved_config.yaml").write_text(
         "datamodule:\n  data_path: /tmp/datasets/reaction_diffusion\n",
         encoding="utf-8",
     )
     assert infer_dataset_from_workdir(tmp_path) == "reaction_diffusion"
+
+
+def test_infer_dataset_from_workdir_preserves_nested_dataset_subpath(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("AUTOCAST_DATASETS", "/autocast/datasets")
+    (tmp_path / "resolved_config.yaml").write_text(
+        "datamodule:\n  data_path: /autocast/datasets/gpe/laser_only_wake_e40d7eb\n",
+        encoding="utf-8",
+    )
+
+    assert infer_dataset_from_workdir(tmp_path) == "gpe/laser_only_wake_e40d7eb"
 
 
 def test_infer_dataset_from_workdir_from_datamodule_string(tmp_path):
@@ -363,11 +563,12 @@ def test_eval_command_auto_infers_hydra_config(monkeypatch, tmp_path):
     (tmp_path / "encoder_processor_decoder.ckpt").touch()
     captured: dict[str, object] = {}
 
-    def _fake_run_module(module, overrides, dry_run=False, mode="local"):
-        captured["module"] = module
+    def _fake_run_module(_module, overrides, dry_run=False, mode="local", **_kwargs):
+        captured["module"] = _module
         captured["overrides"] = overrides
         captured["dry_run"] = dry_run
         captured["mode"] = mode
+        del _kwargs  # accept run_module's keyword args
 
     monkeypatch.setattr(
         "autocast.scripts.workflow.commands.run_module", _fake_run_module
@@ -396,13 +597,48 @@ def test_eval_command_auto_infers_hydra_config(monkeypatch, tmp_path):
     assert any(o.startswith("eval.checkpoint=") for o in overrides)
 
 
+def test_eval_command_adds_snapshot_defaults_for_stale_resolved_config(
+    monkeypatch, tmp_path
+):
+    (tmp_path / "resolved_config.yaml").write_text(
+        "eval:\n  checkpoint: encoder_processor_decoder.ckpt\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "encoder_processor_decoder.ckpt").touch()
+    captured: dict[str, object] = {}
+
+    def _fake_run_module(_module, overrides, dry_run=False, mode="local", **_kwargs):
+        captured["overrides"] = overrides
+        del dry_run, mode, _kwargs  # accept run_module's keyword args
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.commands.run_module", _fake_run_module
+    )
+
+    user_override = "eval.rollout_snapshot_dir=/tmp/snapshots"
+    eval_command(
+        mode="local",
+        dataset=None,
+        work_dir=str(tmp_path),
+        overrides=[user_override],
+        dry_run=True,
+    )
+
+    overrides = captured["overrides"]
+    assert isinstance(overrides, list)
+    default_override = "+eval.rollout_snapshot_dir=null"
+    assert default_override in overrides
+    assert overrides.index(default_override) < overrides.index(user_override)
+
+
 def test_eval_command_includes_defaults_without_resolved_config(monkeypatch, tmp_path):
     # No resolved_config.yaml in workdir
     (tmp_path / "encoder_processor_decoder.ckpt").touch()
     captured: dict[str, object] = {}
 
-    def _fake_run_module(module, overrides, dry_run=False, mode="local"):  # noqa: ARG001 unused but included for clarity
+    def _fake_run_module(_module, overrides, dry_run=False, mode="local", **_kwargs):
         captured["overrides"] = overrides
+        del dry_run, mode, _kwargs  # accept run_module's keyword args
 
     monkeypatch.setattr(
         "autocast.scripts.workflow.commands.run_module", _fake_run_module
@@ -428,8 +664,9 @@ def test_eval_command_keeps_explicit_hydra_config(monkeypatch, tmp_path):
     (tmp_path / "encoder_processor_decoder.ckpt").touch()
     captured: dict[str, object] = {}
 
-    def _fake_run_module(module, overrides, dry_run=False, mode="local"):  # noqa: ARG001 unused but included for clarity
+    def _fake_run_module(_module, overrides, dry_run=False, mode="local", **_kwargs):
         captured["overrides"] = overrides
+        del dry_run, mode, _kwargs  # accept run_module's keyword args
 
     monkeypatch.setattr(
         "autocast.scripts.workflow.commands.run_module", _fake_run_module
@@ -456,8 +693,9 @@ def test_eval_command_explicit_resolved_config_skips_defaults(monkeypatch, tmp_p
     (tmp_path / "encoder_processor_decoder.ckpt").touch()
     captured: dict[str, object] = {}
 
-    def _fake_run_module(module, overrides, dry_run=False, mode="local"):  # noqa: ARG001 unused but included for clarity
+    def _fake_run_module(_module, overrides, dry_run=False, mode="local", **_kwargs):
         captured["overrides"] = overrides
+        del dry_run, mode, _kwargs  # accept run_module's keyword args
 
     monkeypatch.setattr(
         "autocast.scripts.workflow.commands.run_module", _fake_run_module
@@ -488,8 +726,9 @@ def test_eval_command_preserves_explicit_checkpoint_override(monkeypatch, tmp_pa
     (tmp_path / "encoder_processor_decoder.ckpt").touch()
     captured: dict[str, object] = {}
 
-    def _fake_run_module(module, overrides, dry_run=False, mode="local"):  # noqa: ARG001 unused but included for clarity
+    def _fake_run_module(_module, overrides, dry_run=False, mode="local", **_kwargs):
         captured["overrides"] = overrides
+        del dry_run, mode, _kwargs  # accept run_module's keyword args
 
     monkeypatch.setattr(
         "autocast.scripts.workflow.commands.run_module", _fake_run_module
@@ -518,14 +757,73 @@ def test_eval_command_quotes_inferred_checkpoint_with_equals(monkeypatch, tmp_pa
     )
     captured: dict[str, object] = {}
 
-    def _fake_run_module(module, overrides, dry_run=False, mode="local"):  # noqa: ARG001 unused but included for clarity
+    def _fake_run_module(_module, overrides, dry_run=False, mode="local", **_kwargs):
         captured["overrides"] = overrides
+        del dry_run, mode, _kwargs  # accept run_module's keyword args
 
     monkeypatch.setattr(
         "autocast.scripts.workflow.commands.run_module", _fake_run_module
     )
 
     eval_command(
+        mode="local",
+        dataset="reaction_diffusion",
+        work_dir=str(tmp_path),
+        overrides=[],
+        dry_run=True,
+    )
+
+    overrides = captured["overrides"]
+    assert isinstance(overrides, list)
+    assert f'eval.checkpoint="{ckpt.resolve()}"' in overrides
+
+
+def test_eval_command_uses_custom_output_subdir(monkeypatch, tmp_path):
+    (tmp_path / "resolved_config.yaml").write_text("x: 1\n", encoding="utf-8")
+    (tmp_path / "encoder_processor_decoder.ckpt").touch()
+    captured: dict[str, object] = {}
+
+    def _fake_run_module(_module, overrides, dry_run=False, mode="local", **_kwargs):
+        captured["overrides"] = overrides
+        del dry_run, mode, _kwargs  # accept run_module's keyword args
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.commands.run_module", _fake_run_module
+    )
+
+    eval_command(
+        mode="local",
+        dataset="reaction_diffusion",
+        work_dir=str(tmp_path),
+        overrides=[],
+        output_subdir="eval_0p75",
+        dry_run=True,
+    )
+
+    overrides = captured["overrides"]
+    assert isinstance(overrides, list)
+    assert f"hydra.run.dir={(tmp_path / 'eval_0p75').resolve()}" in overrides
+
+
+def test_benchmark_command_quotes_inferred_checkpoint_with_equals(
+    monkeypatch, tmp_path
+):
+    ckpt = tmp_path / "step-step=10000.ckpt"
+    ckpt.touch()
+    (tmp_path / "resolved_config.yaml").write_text(
+        "output:\n  checkpoint_name: step-step=10000.ckpt\n", encoding="utf-8"
+    )
+    captured: dict[str, object] = {}
+
+    def _fake_run_module(_module, overrides, dry_run=False, mode="local", **_kwargs):
+        captured["overrides"] = overrides
+        del dry_run, mode, _kwargs  # accept run_module's keyword args
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.commands.run_module", _fake_run_module
+    )
+
+    benchmark_command(
         mode="local",
         dataset="reaction_diffusion",
         work_dir=str(tmp_path),
@@ -575,6 +873,23 @@ def test_build_train_overrides_default_wandb_name_uses_run_id():
     assert "logging.wandb.name=explicit_run" in command_overrides
 
 
+def test_build_train_overrides_does_not_duplicate_explicit_datamodule_override():
+    _work_dir, _resolved_run_id, command_overrides = build_train_overrides(
+        kind="epd",
+        mode="local",
+        dataset="reaction_diffusion",
+        output_base="outputs",
+        run_group="2026-02-23",
+        run_id="explicit_run",
+        work_dir=None,
+        resume_from=None,
+        overrides=["datamodule=reaction_diffusion"],
+    )
+
+    datamodule_entries = [o for o in command_overrides if o.startswith("datamodule=")]
+    assert datamodule_entries == ["datamodule=reaction_diffusion"]
+
+
 def test_build_train_overrides_explicit_logging_override_wins_default():
     _work_dir, _resolved_run_id, command_overrides = build_train_overrides(
         kind="epd",
@@ -611,7 +926,190 @@ def test_build_train_overrides_explicit_logging_override_only_once():
     assert wandb_entries == ["logging.wandb.name=from_override"]
 
 
-def test_run_module_command_places_config_flags_before_overrides():
+def test_train_eval_single_job_command_auto_infers_hydra_config(monkeypatch, tmp_path):
+    (tmp_path / "resolved_config.yaml").write_text("x: 1\n", encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    def _fake_run_module(_module, overrides, dry_run=False, mode="local", **_kwargs):
+        captured["module"] = _module
+        captured["overrides"] = overrides
+        captured["dry_run"] = dry_run
+        captured["mode"] = mode
+        del _kwargs  # accept run_module's keyword args
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.commands.run_module", _fake_run_module
+    )
+
+    train_eval_single_job_command(
+        mode="local",
+        dataset="reaction_diffusion",
+        output_base="outputs",
+        run_group="rg",
+        run_id="rid",
+        work_dir=str(tmp_path),
+        resume_from=None,
+        train_overrides=["trainer.max_epochs=1"],
+        eval_overrides=[],
+        dry_run=True,
+    )
+
+    overrides = captured["overrides"]
+    assert isinstance(overrides, list)
+    assert "--config-name" in overrides
+    assert "--config-path" in overrides
+    assert "resolved_config" in overrides
+    assert str(tmp_path.resolve()) in overrides
+    assert not any(o.startswith("datamodule=") for o in overrides)
+    assert any(o.startswith("datamodule.data_path=") for o in overrides)
+
+
+def test_train_eval_single_job_command_keeps_defaults_without_resolved_config(
+    monkeypatch, tmp_path
+):
+    captured: dict[str, object] = {}
+
+    def _fake_run_module(_module, overrides, dry_run=False, mode="local", **_kwargs):
+        captured["overrides"] = overrides
+        del dry_run, mode, _kwargs  # accept run_module's keyword args
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.commands.run_module", _fake_run_module
+    )
+
+    train_eval_single_job_command(
+        mode="local",
+        dataset="reaction_diffusion",
+        output_base="outputs",
+        run_group="rg",
+        run_id="rid",
+        work_dir=str(tmp_path),
+        resume_from=None,
+        train_overrides=["trainer.max_epochs=1"],
+        eval_overrides=[],
+        dry_run=True,
+    )
+
+    overrides = captured["overrides"]
+    assert isinstance(overrides, list)
+    assert "--config-name" not in overrides
+    assert "--config-path" not in overrides
+    assert any(o.startswith("datamodule=") for o in overrides)
+
+
+def test_train_eval_single_job_command_resolved_config_normalizes_resume_override(
+    monkeypatch, tmp_path
+):
+    (tmp_path / "resolved_config.yaml").write_text(
+        "resume_from_checkpoint: old.ckpt\n", encoding="utf-8"
+    )
+    resume_ckpt = tmp_path / "new.ckpt"
+    resume_ckpt.touch()
+    captured: dict[str, object] = {}
+
+    def _fake_run_module(_module, overrides, dry_run=False, mode="local", **_kwargs):
+        captured["overrides"] = overrides
+        del dry_run, mode, _kwargs  # accept run_module's keyword args
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.commands.run_module", _fake_run_module
+    )
+
+    train_eval_single_job_command(
+        mode="local",
+        dataset="reaction_diffusion",
+        output_base="outputs",
+        run_group="rg",
+        run_id="rid",
+        work_dir=str(tmp_path),
+        resume_from=str(resume_ckpt),
+        train_overrides=[],
+        eval_overrides=[],
+        dry_run=True,
+    )
+
+    overrides = captured["overrides"]
+    assert isinstance(overrides, list)
+    assert not any(o.startswith("+resume_from_checkpoint=") for o in overrides)
+    assert f"resume_from_checkpoint={resume_ckpt.resolve()}" in overrides
+
+
+def test_train_eval_single_job_command_resolved_config_drops_duplicate_resume_override(
+    monkeypatch, tmp_path
+):
+    resume_ckpt = (tmp_path / "same.ckpt").resolve()
+    resume_ckpt.touch()
+    (tmp_path / "resolved_config.yaml").write_text(
+        f"resume_from_checkpoint: {resume_ckpt}\n", encoding="utf-8"
+    )
+    captured: dict[str, object] = {}
+
+    def _fake_run_module(_module, overrides, dry_run=False, mode="local", **_kwargs):
+        captured["overrides"] = overrides
+        del dry_run, mode, _kwargs  # accept run_module's keyword args
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.commands.run_module", _fake_run_module
+    )
+
+    train_eval_single_job_command(
+        mode="local",
+        dataset="reaction_diffusion",
+        output_base="outputs",
+        run_group="rg",
+        run_id="rid",
+        work_dir=str(tmp_path),
+        resume_from=str(resume_ckpt),
+        train_overrides=[],
+        eval_overrides=[],
+        dry_run=True,
+    )
+
+    overrides = captured["overrides"]
+    assert isinstance(overrides, list)
+    assert not any(o.startswith("+resume_from_checkpoint=") for o in overrides)
+    assert not any(o.startswith("resume_from_checkpoint=") for o in overrides)
+
+
+def test_train_eval_single_job_command_resolved_config_keeps_plus_when_key_absent(
+    monkeypatch, tmp_path
+):
+    """When resolved config exists but does NOT have resume_from_checkpoint,
+    the +resume_from_checkpoint= override must be preserved (Hydra needs + to
+    append a key that isn't in the struct)."""
+    # resolved_config.yaml with no resume_from_checkpoint key
+    (tmp_path / "resolved_config.yaml").write_text(
+        "trainer:\n  max_epochs: 10\n", encoding="utf-8"
+    )
+    resume_ckpt = tmp_path / "new.ckpt"
+    resume_ckpt.touch()
+    captured: dict[str, object] = {}
+
+    def _fake_run_module(_module, overrides, dry_run=False, mode="local", **_kwargs):
+        captured["overrides"] = overrides
+        del dry_run, mode, _kwargs  # accept run_module's keyword args
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.commands.run_module", _fake_run_module
+    )
+
+    train_eval_single_job_command(
+        mode="local",
+        dataset="reaction_diffusion",
+        output_base="outputs",
+        run_group="rg",
+        run_id="rid",
+        work_dir=str(tmp_path),
+        resume_from=str(resume_ckpt),
+        train_overrides=[],
+        eval_overrides=[],
+        dry_run=True,
+    )
+
+    overrides = captured["overrides"]
+    assert isinstance(overrides, list)
+    # + must be preserved — key absent from struct
+    assert f"+resume_from_checkpoint={resume_ckpt.resolve()}" in overrides
     command = run_module_command(
         "autocast.scripts.eval.encoder_processor_decoder",
         [
@@ -656,6 +1154,13 @@ def test_build_parser_processor_subcommand(parser: argparse.ArgumentParser):
 def test_build_parser_eval_basic(parser: argparse.ArgumentParser):
     args = parser.parse_args(["eval", "--workdir", "/tmp/w"])
     assert args.command == "eval"
+    assert args.workdir == "/tmp/w"
+    assert args.output_subdir == "eval"
+
+
+def test_build_parser_benchmark_basic(parser: argparse.ArgumentParser):
+    args = parser.parse_args(["benchmark", "--workdir", "/tmp/w"])
+    assert args.command == "benchmark"
     assert args.workdir == "/tmp/w"
 
 
@@ -727,6 +1232,20 @@ def test_build_parser_dry_run(parser: argparse.ArgumentParser):
     assert args.dry_run is True
 
 
+def test_build_parser_runtime_typechecking_default_off(
+    parser: argparse.ArgumentParser,
+):
+    args = parser.parse_args(["ae"])
+    assert args.runtime_typechecking is False
+
+
+def test_build_parser_runtime_typechecking_flag(
+    parser: argparse.ArgumentParser,
+):
+    args = parser.parse_args(["ae", "--runtime-typechecking"])
+    assert args.runtime_typechecking is True
+
+
 def test_build_parser_resume_from(parser: argparse.ArgumentParser):
     args = parser.parse_args(["epd", "--resume-from", "/ckpt"])
     assert args.resume_from == "/ckpt"
@@ -792,6 +1311,34 @@ def test_main_train_eval_dispatches_combined_overrides(monkeypatch):
         "eval.batch_indices=[0,1]",
         "eval.n_members=10",
     ]
+    assert captured["runtime_typechecking"] is False
+
+
+def test_main_train_dispatches_runtime_typechecking_flag(monkeypatch):
+    captured = {}
+
+    def _fake_train_command(**kwargs):
+        captured.update(kwargs)
+        return None, "dummy"
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.cli.train_command",
+        _fake_train_command,
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "autocast",
+            "ae",
+            "--runtime-typechecking",
+            "--dry-run",
+        ],
+    )
+
+    workflow_cli.main()
+
+    assert captured["runtime_typechecking"] is True
 
 
 def test_main_ae_dispatches_hydra_config_passthrough(monkeypatch):
@@ -879,7 +1426,7 @@ def test_main_unknown_dashed_flag_still_errors(monkeypatch):
         workflow_cli.main()
 
 
-def test_main_eval_dispatches_inferred_dataset_from_workdir(monkeypatch, tmp_path):
+def test_main_eval_does_not_infer_dataset_from_workdir(monkeypatch, tmp_path):
     (tmp_path / "resolved_config.yaml").write_text(
         "datamodule:\n  data_path: /tmp/datasets/reaction_diffusion\n",
         encoding="utf-8",
@@ -902,8 +1449,208 @@ def test_main_eval_dispatches_inferred_dataset_from_workdir(monkeypatch, tmp_pat
 
     workflow_cli.main()
 
-    assert captured["dataset"] == "reaction_diffusion"
+    assert captured["dataset"] is None
     assert captured["work_dir"] == str(tmp_path)
+    assert captured["output_subdir"] == "eval"
+
+
+def test_main_eval_forwards_output_subdir(monkeypatch, tmp_path):
+    (tmp_path / "resolved_config.yaml").write_text(
+        "datamodule:\n  data_path: /tmp/datasets/reaction_diffusion\n",
+        encoding="utf-8",
+    )
+
+    captured = {}
+
+    def _fake_eval_command(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.cli.eval_command",
+        _fake_eval_command,
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "autocast",
+            "eval",
+            "--workdir",
+            str(tmp_path),
+            "--output-subdir",
+            "eval_0p75",
+            "--dry-run",
+        ],
+    )
+
+    workflow_cli.main()
+
+    assert captured["output_subdir"] == "eval_0p75"
+
+
+def test_main_benchmark_does_not_infer_dataset_from_workdir(monkeypatch, tmp_path):
+    (tmp_path / "resolved_config.yaml").write_text(
+        "datamodule:\n  data_path: /tmp/datasets/reaction_diffusion\n",
+        encoding="utf-8",
+    )
+
+    captured = {}
+
+    def _fake_benchmark_command(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.cli.benchmark_command",
+        _fake_benchmark_command,
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["autocast", "benchmark", "--workdir", str(tmp_path), "--dry-run"],
+    )
+
+    workflow_cli.main()
+
+    assert captured["dataset"] is None
+    assert captured["work_dir"] == str(tmp_path)
+
+
+def test_benchmark_manifest_command_local_writes_combined_csv(monkeypatch, tmp_path):
+    work_a = tmp_path / "run_a"
+    work_b = tmp_path / "run_b"
+    work_a.mkdir()
+    work_b.mkdir()
+
+    manifest = tmp_path / "benchmarks.txt"
+    manifest.write_text(
+        "\n".join(
+            [
+                f"benchmark --workdir {work_a}",
+                f"benchmark --workdir {work_b}",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    def _fake_infer_dataset(_work_dir):
+        return "reaction_diffusion"
+
+    def _fake_benchmark_command(**kwargs):
+        wd = kwargs["work_dir"]
+        value = 1.0 if wd == str(work_a) else 2.0
+        csv_path = Path(wd) / "eval" / "benchmark_metrics.csv"
+        csv_path.parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame([{"work_dir": wd, "metric": value}]).to_csv(csv_path, index=False)
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.commands.infer_dataset_from_workdir",
+        _fake_infer_dataset,
+    )
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.commands.benchmark_command",
+        _fake_benchmark_command,
+    )
+
+    benchmark_manifest_command(
+        mode="local",
+        manifest=manifest,
+        overrides=[],
+        dry_run=False,
+    )
+
+    combined_path = tmp_path / "benchmarks_combined.csv"
+    assert combined_path.exists()
+    combined = pd.read_csv(combined_path)
+    assert len(combined) == 2
+    assert set(combined["work_dir"].tolist()) == {str(work_a), str(work_b)}
+
+
+def test_benchmark_manifest_command_slurm_passes_work_dirs(monkeypatch, tmp_path):
+    work_a = tmp_path / "run_a"
+    work_b = tmp_path / "run_b"
+    manifest = tmp_path / "benchmarks.txt"
+    manifest.write_text(
+        "\n".join(
+            [
+                f"benchmark --workdir {work_a} eval.benchmark.batch_size=2",
+                f"benchmark --workdir={work_b} eval.benchmark.batch_size=4",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    captured = {}
+
+    def _fake_submit_manifest_via_sbatch(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.commands.submit_manifest_via_sbatch",
+        _fake_submit_manifest_via_sbatch,
+    )
+
+    benchmark_manifest_command(
+        mode="slurm",
+        manifest=manifest,
+        overrides=["hydra.launcher.partition=gpu"],
+        dry_run=True,
+    )
+
+    assert captured["manifest"] == manifest
+    assert captured["work_dirs"] == [str(work_a), str(work_b)]
+    assert captured["overrides"] == ["hydra.launcher.partition=gpu"]
+    assert captured["runtime_typechecking"] is False
+    assert captured["dry_run"] is True
+
+
+def test_benchmark_manifest_command_slurm_passes_runtime_typechecking(
+    monkeypatch, tmp_path
+):
+    manifest = tmp_path / "benchmarks.txt"
+    manifest.write_text(
+        "benchmark --workdir outputs/run_a\n",
+        encoding="utf-8",
+    )
+
+    captured = {}
+
+    def _fake_submit_manifest_via_sbatch(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.commands.submit_manifest_via_sbatch",
+        _fake_submit_manifest_via_sbatch,
+    )
+
+    benchmark_manifest_command(
+        mode="slurm",
+        manifest=manifest,
+        overrides=[],
+        runtime_typechecking=True,
+        dry_run=True,
+    )
+
+    assert captured["runtime_typechecking"] is True
+
+
+def test_submit_manifest_via_sbatch_dry_run_includes_combine_step(capsys, tmp_path):
+    manifest = tmp_path / "benchmarks.txt"
+    manifest.write_text("# test\n", encoding="utf-8")
+
+    submit_manifest_via_sbatch(
+        manifest=manifest,
+        lines=["benchmark --workdir outputs/2026-02-19/run_a"],
+        work_dirs=["outputs/2026-02-19/run_a"],
+        overrides=[],
+        dry_run=True,
+    )
+
+    out = capsys.readouterr().out
+    assert "uv run python -c" in out
+    assert "Combined benchmark CSV:" in out
+    assert f"{manifest.stem}_combined.csv" in out
 
 
 def test_resolve_dataset_from_datamodule_override():

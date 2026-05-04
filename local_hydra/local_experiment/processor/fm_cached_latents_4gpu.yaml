@@ -1,0 +1,6 @@
+# @package _global_
+defaults:
+  - /distributed: ddp_4gpu_slurm
+  - _self_
+
+experiment_name: processor_fm_cached_latents_4gpu

@@ -40,3 +40,10 @@ uv run train_encoder_processor_decoder local_experiment=my_private_run
 ```
 
 Because `hydra.searchpath` includes `${hydra:runtime.cwd}/local_hydra`, this repo-level folder is discoverable automatically when running from the repository root.
+
+## Comparison study configs
+
+Per-dataset Hydra presets for the CRPS/FM × ambient/latent comparison study live
+under `{ae,cache_latents,epd,processor}/<dataset>/`. See
+`slurm_scripts/comparison/README.md` for the full study design, model-size
+rationale, and submission guide.

@@ -52,6 +52,8 @@ class DCDecoder(Decoder):
         Whether to use gradient checkpointing.
     identity_init: bool
         Initialize up/downsampling convolutions as identity.
+    ffn_out_scale: float | None
+        Optional multiplicative scale applied to each ResBlock FFN output conv.
 
     Notes
     -----
@@ -84,6 +86,7 @@ class DCDecoder(Decoder):
         dropout: float | None = None,
         checkpointing: bool = False,
         identity_init: bool = True,
+        ffn_out_scale: float | None = None,
     ) -> None:
         super().__init__()
         self.latent_channels = in_channels
@@ -136,6 +139,7 @@ class DCDecoder(Decoder):
                         spatial=spatial,
                         dropout=dropout,
                         checkpointing=checkpointing,
+                        ffn_out_scale=ffn_out_scale,
                         **kwargs,
                     )
                 )

@@ -168,14 +168,13 @@ class SpatioTemporalDataModule(LightningDataModule):
         n_steps_input: int = 1,
         n_steps_output: int = 1,
         stride: int = 1,
-        # TODO: support for passing data from dict
-        input_channel_idxs: tuple[int, ...] | None = None,
-        output_channel_idxs: tuple[int, ...] | None = None,
+        channel_idxs: tuple[int, ...] | None = None,
         batch_size: int = 4,
         dtype: torch.dtype = torch.float32,
         ftype: str = "torch",
         verbose: bool = False,
         autoencoder_mode: bool = False,
+        full_trajectory_mode: bool = False,
         use_normalization: bool = False,
         normalization_type: type[ZScoreNormalization] | None = ZScoreNormalization,
         normalization_path: None | str = None,
@@ -204,9 +203,9 @@ class SpatioTemporalDataModule(LightningDataModule):
             n_steps_input=n_steps_input,
             n_steps_output=n_steps_output,
             stride=stride,
-            input_channel_idxs=input_channel_idxs,
-            output_channel_idxs=output_channel_idxs,
+            channel_idxs=channel_idxs,
             autoencoder_mode=self.autoencoder_mode,
+            full_trajectory_mode=full_trajectory_mode,
             dtype=dtype,
             verbose=self.verbose,
             use_normalization=use_normalization,
@@ -235,9 +234,9 @@ class SpatioTemporalDataModule(LightningDataModule):
             n_steps_input=n_steps_input,
             n_steps_output=n_steps_output,
             stride=stride,
-            input_channel_idxs=input_channel_idxs,
-            output_channel_idxs=output_channel_idxs,
+            channel_idxs=channel_idxs,
             autoencoder_mode=self.autoencoder_mode,
+            full_trajectory_mode=full_trajectory_mode,
             dtype=dtype,
             verbose=self.verbose,
             use_normalization=use_normalization,
@@ -251,9 +250,9 @@ class SpatioTemporalDataModule(LightningDataModule):
             n_steps_input=n_steps_input,
             n_steps_output=n_steps_output,
             stride=stride,
-            input_channel_idxs=input_channel_idxs,
-            output_channel_idxs=output_channel_idxs,
+            channel_idxs=channel_idxs,
             autoencoder_mode=self.autoencoder_mode,
+            full_trajectory_mode=full_trajectory_mode,
             dtype=dtype,
             verbose=self.verbose,
             use_normalization=use_normalization,
@@ -271,8 +270,7 @@ class SpatioTemporalDataModule(LightningDataModule):
                 n_steps_input=n_steps_input,
                 n_steps_output=n_steps_output,
                 stride=stride,
-                input_channel_idxs=input_channel_idxs,
-                output_channel_idxs=output_channel_idxs,
+                channel_idxs=channel_idxs,
                 full_trajectory_mode=True,
                 dtype=dtype,
                 verbose=self.verbose,
@@ -287,8 +285,7 @@ class SpatioTemporalDataModule(LightningDataModule):
                 n_steps_input=n_steps_input,
                 n_steps_output=n_steps_output,
                 stride=stride,
-                input_channel_idxs=input_channel_idxs,
-                output_channel_idxs=output_channel_idxs,
+                channel_idxs=channel_idxs,
                 full_trajectory_mode=True,
                 dtype=dtype,
                 verbose=self.verbose,
@@ -306,6 +303,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             shuffle=True,
             num_workers=self.num_workers,
             collate_fn=collate_batches,
+            pin_memory=True,
         )
 
     def val_dataloader(self) -> DataLoader:
@@ -316,6 +314,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             shuffle=False,
             num_workers=self.num_workers,
             collate_fn=collate_batches,
+            pin_memory=True,
         )
 
     def rollout_val_dataloader(self, batch_size: int | None = None) -> DataLoader:
@@ -332,6 +331,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             shuffle=False,
             num_workers=self.num_workers,
             collate_fn=collate_batches,
+            pin_memory=True,
         )
 
     def test_dataloader(self) -> DataLoader:
@@ -342,6 +342,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             shuffle=False,
             num_workers=self.num_workers,
             collate_fn=collate_batches,
+            pin_memory=True,
         )
 
     def rollout_test_dataloader(self, batch_size: int | None = None) -> DataLoader:
@@ -358,4 +359,5 @@ class SpatioTemporalDataModule(LightningDataModule):
             shuffle=False,
             num_workers=self.num_workers,
             collate_fn=collate_batches,
+            pin_memory=True,
         )

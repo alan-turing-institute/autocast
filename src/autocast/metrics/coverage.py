@@ -9,7 +9,7 @@ from torch.nn import ModuleList
 from torchmetrics import Metric
 
 from autocast.metrics.ensemble import BTSCMMetric
-from autocast.types import Tensor, TensorBTC, TensorBTSC, TensorBTSCM
+from autocast.types import Tensor, TensorBTSC, TensorBTSCM
 
 
 class Coverage(BTSCMMetric):
@@ -35,9 +35,9 @@ class Coverage(BTSCMMetric):
             raise ValueError(f"coverage_level must be in (0, 1), got {coverage_level}")
         self.coverage_level = coverage_level
 
-    def _score(self, y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTC:
+    def _score(self, y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTSC:
         """
-        Compute coverage reduced over spatial dims.
+        Compute per-gridpoint coverage indicator.
 
         Args:
             y_pred: (B, T, S, C, M)
@@ -45,31 +45,20 @@ class Coverage(BTSCMMetric):
 
         Returns
         -------
-            coverage: (B, T, C)
+            coverage: (B, T, S, C) — 1.0 where y_true falls inside the interval,
+                else 0.0
         """
-        # Calculate quantiles of the ensemble distribution
         # e.g. coverage_level=0.95 -> 0.025 and 0.975 quantiles
         q_low = 0.5 - self.coverage_level / 2
         q_high = 0.5 + self.coverage_level / 2
 
-        # Calculate quantiles
         q_tensor = torch.tensor(
             [q_low, q_high], device=y_pred.device, dtype=y_pred.dtype
         )
         quantiles = torch.quantile(y_pred, q_tensor, dim=-1)  # (2, B, T, S, C)
 
-        lower_q = quantiles[0]
-        upper_q = quantiles[1]
-
-        # Calculate coverage (1 if inside, 0 otherwise)
-        is_covered = ((y_true >= lower_q) & (y_true <= upper_q)).float()
-
-        # Reduce over spatial dimensions: (B, T, S, C) -> (B, T, C)
-        n_spatial_dims = self._infer_n_spatial_dims(is_covered)
-        spatial_dims = tuple(range(2, 2 + n_spatial_dims))
-        coverage_reduced = is_covered.mean(dim=spatial_dims)
-
-        return coverage_reduced
+        is_covered = ((y_true >= quantiles[0]) & (y_true <= quantiles[1])).float()
+        return is_covered
 
 
 class MultiCoverage(Metric):
@@ -160,7 +149,9 @@ class MultiCoverage(Metric):
         for metric in self.metrics:
             assert isinstance(metric, Coverage)
             val = metric.compute()
-            val_c = val.mean(dim=0).cpu().numpy()  # (C,)
+            # Ensure channel coverage is always represented as 1D, even if a
+            # degenerate shape collapses to a scalar.
+            val_c = np.atleast_1d(val.mean(dim=0).cpu().numpy())  # (C,)
             observed_channels.append(val_c)
             observed_means.append(val_c.mean().item())
 
@@ -183,7 +174,7 @@ class MultiCoverage(Metric):
             )
 
         cmap = plt.get_cmap(cmap_str)  # cmap for each channel
-        n_channels = observed_channels[0].shape[0]
+        n_channels = observed_arr.shape[1]
         for c in range(n_channels):
             color = cmap(c / n_channels) if n_channels > 1 else "blue"
             label = f"Ch {c}" if n_channels <= 10 else None
@@ -252,6 +243,9 @@ class MultiCoverage(Metric):
             "coverage_level": levels,
             "observed_mean": observed_means,
         }
+
+        if observed_channels.ndim == 1:
+            observed_channels = observed_channels[:, None]
 
         # Add per-channel columns
         n_channels = observed_channels.shape[1]

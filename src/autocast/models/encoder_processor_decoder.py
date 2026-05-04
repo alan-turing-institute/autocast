@@ -85,6 +85,14 @@ class EncoderProcessorDecoder(
             )
         return batch
 
+    def on_load_checkpoint(self, checkpoint: dict[str, Any]) -> None:
+        # PyTorch can serialise _metadata as a real key in the state_dict rather
+        # than as an OrderedDict private attribute.  Strict load_state_dict then
+        # rejects it as an unexpected key.  Remove it before Lightning loads.
+        state_dict = checkpoint.get("state_dict", checkpoint)
+        if isinstance(state_dict, dict):
+            state_dict.pop("_metadata", None)
+
     def forward(self, batch: Batch) -> TensorBTSC | TensorBTSCM:
         batch = self._apply_input_noise(batch)
         encoded, global_cond = self.encoder_decoder.encoder.encode_with_cond(batch)
@@ -111,7 +119,11 @@ class EncoderProcessorDecoder(
     def training_step(self, batch: Batch, batch_idx: int) -> Tensor:  # noqa: ARG002
         loss, y_pred = self.loss(batch)
         self.log(
-            "train_loss", loss, prog_bar=True, batch_size=batch.input_fields.shape[0]
+            "train_loss",
+            loss,
+            prog_bar=True,
+            sync_dist=True,
+            batch_size=batch.input_fields.shape[0],
         )
         if self.train_metrics is not None:
             if y_pred is None:
@@ -125,7 +137,11 @@ class EncoderProcessorDecoder(
     def validation_step(self, batch: Batch, batch_idx: int) -> Tensor:  # noqa: ARG002
         loss, y_pred = self.loss(batch)
         self.log(
-            "val_loss", loss, prog_bar=True, batch_size=batch.input_fields.shape[0]
+            "val_loss",
+            loss,
+            prog_bar=True,
+            sync_dist=True,
+            batch_size=batch.input_fields.shape[0],
         )
         if self.val_metrics is not None:
             if y_pred is None:
@@ -141,7 +157,11 @@ class EncoderProcessorDecoder(
     def test_step(self, batch: Batch, batch_idx: int) -> Tensor:  # noqa: ARG002
         loss, y_pred = self.loss(batch)
         self.log(
-            "test_loss", loss, prog_bar=True, batch_size=batch.input_fields.shape[0]
+            "test_loss",
+            loss,
+            prog_bar=True,
+            sync_dist=True,
+            batch_size=batch.input_fields.shape[0],
         )
         if self.test_metrics is not None:
             if y_pred is None:

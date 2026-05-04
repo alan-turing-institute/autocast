@@ -5,4 +5,15 @@ learning_rate: 1e-4
 weight_decay: 0.0
 warmup: 0
 scheduler: "cosine"
+# Optional scheduler controls:
+# scheduler_interval: "epoch"     # "epoch" or "step"
+# cosine_epochs: null              # Used when scheduler_interval="epoch"
+# cosine_steps: null               # Used when scheduler_interval="step"
+# cosine_t_max: 1                  # Fallback horizon if trainer values are unavailable
+# Horizon precedence (highest to lowest):
+# 1) cosine_epochs/cosine_steps (based on scheduler_interval)
+# 2) trainer max value (max_epochs or estimated_stepping_batches)
+# 3) cosine_t_max
+# min_lr_ratio: 0.0                # Final LR ratio in [0, 1]
+# scheduler: "cosine_with_restarts"
 grad_clip: 1

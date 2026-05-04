@@ -177,6 +177,10 @@ class VAE(EncoderDecoder):
         assert self.loss_func is not None
         loss = self.loss_func(self, batch)
         self.log(
-            "train_loss", loss, prog_bar=True, batch_size=batch.input_fields.shape[0]
+            "train_loss",
+            loss,
+            prog_bar=True,
+            sync_dist=True,
+            batch_size=batch.input_fields.shape[0],
         )
         return loss

@@ -1,0 +1,33 @@
+# @package _global_
+defaults:
+  - /distributed: ddp_4gpu_slurm
+  - override /datamodule: advection_diffusion
+  - override /model: autoencoder_dc_large
+  - override /optimizer: psgd
+  - _self_
+
+experiment_name: ae_dc_large_advection_diffusion
+
+datamodule:
+  use_normalization: true
+  batch_size: 16
+
+model:
+  encoder:
+    periodic: true
+    pixel_shuffle: true
+  decoder:
+    periodic: true
+    pixel_shuffle: true
+
+logging:
+  wandb:
+    enabled: true
+
+optimizer:
+  learning_rate: 1e-5
+  weight_decay: 0.0
+  scheduler: cosine
+
+trainer:
+  gradient_clip_val: 1.0

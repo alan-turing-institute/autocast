@@ -1,0 +1,21 @@
+# @package _global_
+defaults:
+  - /local_experiment/epd/conditioned_navier_stokes/crps_vit_azula_large
+  - _self_
+
+experiment_name: ablation_model_size_crps_vit_azula_0p4x_conditioned_navier_stokes
+
+datamodule:
+  # Keep effective per-GPU batch at 256 after increasing n_members 8 -> 16.
+  batch_size: 16
+
+model:
+  n_members: 16
+  processor:
+    # Aspect-preserving ~0.39x variant (depth 8, width aspect-matched to
+    # baseline 568/12 = 47.3). Measured at ~31.6M processor params versus
+    # ~80.8M for the baseline 568/12/8 model.
+    hidden_dim: 376
+    n_layers: 8
+    num_heads: 8
+    n_noise_channels: 1024

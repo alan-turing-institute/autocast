@@ -8,3 +8,7 @@ train-eval --mode slurm datamodule=advection_diffusion_multichannel_64_64 --run-
 
 # Re-run eval from an existing run directory
 eval --mode slurm --workdir outputs/2026-02-19/epd_demo datamodule=advection_diffusion_multichannel_64_64 eval.batch_indices=[0,1]
+
+# Benchmark inference and rollout speed from an existing run directory
+# (for batch benchmarking across multiple runs see run_manifests/example_benchmarks.txt)
+benchmark --workdir outputs/2026-02-19/epd_demo eval.benchmark_rollout.enabled=true

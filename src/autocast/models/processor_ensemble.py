@@ -42,6 +42,17 @@ class ProcessorModelEnsemble(ProcessorModel):
         """Prediction for rollout (retains flattened batch dim)."""
         return super()._predict(batch)
 
+    def _predict_for_metrics(self, batch: EncodedBatch) -> Tensor:
+        """Prediction for metric updates.
+
+        Match EPD ensemble semantics: metrics should see predictions with an
+        explicit ensemble-member axis when n_members > 1, while rollout keeps
+        using the flattened _predict path for autoregressive compatibility.
+        """
+        if self.n_members > 1:
+            return self(batch.encoded_inputs, batch.global_cond)
+        return self._predict(batch)
+
     def loss(self, batch: EncodedBatch) -> Tensor:
         """Compute ensemble-aware loss.
 

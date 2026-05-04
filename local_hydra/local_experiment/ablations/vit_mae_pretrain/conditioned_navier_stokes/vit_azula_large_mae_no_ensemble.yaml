@@ -1,0 +1,54 @@
+# @package _global_
+defaults:
+  - /distributed: ddp_4gpu_slurm
+  - override /datamodule: conditioned_navier_stokes
+  - override /encoder@model.encoder: permute_concat
+  - override /decoder@model.decoder: channels_last
+  - override /processor@model.processor: vit_azula_large
+  - override /optimizer: adamw_half
+  - _self_
+
+experiment_name: ablation_vit_mae_pretrain_conditioned_navier_stokes
+
+datamodule:
+  use_normalization: true
+  # Match the CRPS ViT effective per-GPU batch:
+  # baseline CRPS uses batch_size=32 x n_members=8 = 256 examples.
+  batch_size: 256
+
+float32_matmul_precision: high
+
+logging:
+  wandb:
+    enabled: true
+
+output:
+  skip_test: true
+
+optimizer:
+  learning_rate: 2e-4
+  warmup: 0
+
+model:
+  train_in_latent_space: false
+  # n_members=1 keeps setup on deterministic EncoderProcessorDecoder.
+  n_members: 1
+  encoder:
+    with_constants: true
+  processor:
+    hidden_dim: 568
+    num_heads: 8
+    n_layers: 12
+    n_noise_channels: 1024
+  loss_func:
+    _target_: torch.nn.L1Loss
+  train_metrics:
+    mae:
+      _target_: autocast.metrics.MAE
+    rmse:
+      _target_: autocast.metrics.RMSE
+  val_metrics:
+    mae:
+      _target_: autocast.metrics.MAE
+    rmse:
+      _target_: autocast.metrics.RMSE

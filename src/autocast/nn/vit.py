@@ -40,6 +40,7 @@ class TemporalViTBackbone(TemporalBackboneBase):
         dropout: float = 0.0,
         ffn_factor: int = 4,
         checkpointing: bool = False,
+        use_precomputed_modulation: bool = False,
     ):
         """Initialize Temporal ViT Backbone.
 
@@ -84,6 +85,7 @@ class TemporalViTBackbone(TemporalBackboneBase):
             temporal_attention_hidden_dim=temporal_attention_hidden_dim,
             tcn_kernel_size=tcn_kernel_size,
             tcn_num_layers=tcn_num_layers,
+            use_precomputed_modulation=use_precomputed_modulation,
         )
 
         self.patch_size = patch_size

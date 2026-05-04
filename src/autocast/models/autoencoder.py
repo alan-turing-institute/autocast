@@ -40,6 +40,22 @@ class AELoss(nn.Module):
         return total_loss
 
 
+class VMSELoss(nn.Module):
+    """Variance-scaled MSE loss reduced over batch/time/channels."""
+
+    def __init__(self, eps: float = 1e-2) -> None:
+        super().__init__()
+        self.eps = eps
+
+    def forward(self, y_pred: TensorBTSC, y_true: TensorBTSC) -> Tensor:
+        n_spatial_dims = y_pred.ndim - 3
+        spatial_dims = tuple(range(-n_spatial_dims - 1, -1))
+        mse = (y_pred - y_true).pow(2).mean(dim=spatial_dims)
+        variance = y_true.std(dim=spatial_dims).pow(2)
+        vmse = mse / (variance + self.eps)
+        return vmse.mean()
+
+
 class AE(EncoderDecoder):
     """Autoencoder Model."""
 
@@ -83,7 +99,11 @@ class AE(EncoderDecoder):
     def training_step(self, batch: Batch, batch_idx: int) -> Tensor:  # noqa: ARG002
         loss = self._compute_loss(batch)
         self.log(
-            "train_loss", loss, prog_bar=True, batch_size=batch.input_fields.shape[0]
+            "train_loss",
+            loss,
+            prog_bar=True,
+            sync_dist=True,
+            batch_size=batch.input_fields.shape[0],
         )
         if self.train_metrics is not None:
             y_pred = self(batch)
@@ -96,7 +116,11 @@ class AE(EncoderDecoder):
     def validation_step(self, batch: Batch, batch_idx: int) -> Tensor:  # noqa: ARG002
         loss = self._compute_loss(batch)
         self.log(
-            "val_loss", loss, prog_bar=True, batch_size=batch.input_fields.shape[0]
+            "val_loss",
+            loss,
+            prog_bar=True,
+            sync_dist=True,
+            batch_size=batch.input_fields.shape[0],
         )
         if self.val_metrics is not None:
             y_pred = self(batch)
@@ -109,7 +133,11 @@ class AE(EncoderDecoder):
     def test_step(self, batch: Batch, batch_idx: int) -> Tensor:  # noqa: ARG002
         loss = self._compute_loss(batch)
         self.log(
-            "test_loss", loss, prog_bar=True, batch_size=batch.input_fields.shape[0]
+            "test_loss",
+            loss,
+            prog_bar=True,
+            sync_dist=True,
+            batch_size=batch.input_fields.shape[0],
         )
         if self.test_metrics is not None:
             y_pred = self(batch)

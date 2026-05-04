@@ -1,0 +1,45 @@
+# @package _global_
+defaults:
+  - /distributed: ddp_4gpu_slurm
+  - override /datamodule: gpe_laser_only_wake
+  - override /encoder@model.encoder: identity
+  - override /decoder@model.decoder: identity
+  - override /processor@model.processor: flow_matching_vit
+  - override /backbone@model.processor.backbone: vit
+  - override /optimizer: adamw_half
+  - _self_
+
+experiment_name: epd_fm_vit_large_gpe_laser_only_wake
+
+# batch_size=256 targets parity with CRPS *effective* batch
+# (ambient CRPS bs=32 x n_members=8 = 256 per GPU): FM/diffusion benefit
+# from large batches. If this OOMs at 64x64 x patch_size=4, step down to
+# 128 then 64 — document the reason if lowered.
+datamodule:
+  use_normalization: true
+  batch_size: 256
+
+float32_matmul_precision: high
+
+logging:
+  wandb:
+    enabled: true
+
+output:
+  skip_test: true
+
+optimizer:
+  learning_rate: 1e-4
+  warmup: 0
+
+model:
+  train_in_latent_space: true
+  processor:
+    backbone:
+      hid_channels: 704
+      hid_blocks: 12
+      attention_heads: 8
+      # patch_size=4 keeps token count at 16x16 = 256 on 64x64 grids.
+      patch_size: 4
+    flow_ode_steps: 50
+  val_metrics: []
