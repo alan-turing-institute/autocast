@@ -2113,6 +2113,8 @@ def plot_coverage_calibration_panel(  # noqa: PLR0912, PLR0915
                     ax.set_ylabel(
                         _coverage_window_axis_label(str(w), short=short_axis_labels)
                     )
+            ax.set_xlim(0, 1)
+            ax.set_ylim(0, 1)
             ax.grid(alpha=0.2)
             _apply_tick_label_style(ax, tick_label_scale)
             _apply_axis_label_style(ax, axis_label_scale)
@@ -3147,13 +3149,26 @@ def _replace_figure_text(
             _set_figure_text_style(text, axis_label_scale, x=x, y=y)
 
 
-def _set_paper_lead_time_xlabel(fig: FigureBase, y: float = 0.07) -> None:
-    """Set a paper-sized shared lead-time x label."""
-    xlabel = fig.text(0.5, y, "Lead time", ha="center", va="center")
+def _set_paper_xlabel(fig: FigureBase, label: str, y: float = 0.07) -> None:
+    """Set a paper-sized shared x label with stable vertical alignment."""
+    xlabel = fig.text(0.5, y, label, ha="center", va="center")
     _set_figure_text_style(
         xlabel,
         PAPER_FONT_SIZE / DEFAULT_AXIS_LABEL_FONT_SIZE,
     )
+
+
+def _set_paper_lead_time_xlabel(fig: FigureBase, y: float = 0.07) -> None:
+    """Set a paper-sized shared lead-time x label."""
+    _set_paper_xlabel(fig, "Lead time", y=y)
+
+
+def _set_paper_expected_coverage_xlabel(
+    fig: FigureBase,
+    y: float = 0.07,
+) -> None:
+    """Set a paper-sized shared expected-coverage x label."""
+    _set_paper_xlabel(fig, r"Expected coverage (1 - $\alpha$)", y=y)
 
 
 def _plot_paper_combined_lead_time_panel(
@@ -3292,7 +3307,7 @@ def plot_paper_overall_coverage_figure(
             styles,
             hue_order,
             loc="upper left",
-            bbox_to_anchor=(0.06, 0.995),
+            bbox_to_anchor=(0.06, 1.03),
         )
         fig.subplots_adjust(
             left=0.075,
@@ -3459,6 +3474,13 @@ def plot_paper_lead_time_error_figure(
             **_paper_style_kwargs(),
         )
         _paper_legend(fig, df_in, styles, hue_order)
+        _paper_legend(
+            fig,
+            df_in,
+            styles,
+            hue_order,
+            bbox_to_anchor=(0.06, 1.03),
+        )
         fig.subplots_adjust(
             left=0.075,
             right=0.995,
@@ -3639,12 +3661,8 @@ def plot_four_ds_ablation_figure(
             _paper_empirical_coverage_label(),
             x=-0.055,
         )
-        _replace_figure_text(
-            left,
-            r"Expected coverage (1 - $\alpha$)",
-            r"Expected coverage (1 - $\alpha$)",
-            y=0.04,
-        )
+        _remove_figure_text(left, {r"Expected coverage (1 - $\alpha$)"})
+        _set_paper_expected_coverage_xlabel(left, y=0.03)
 
         _plot_paper_combined_lead_time_panel(
             df_in,
@@ -3658,7 +3676,8 @@ def plot_four_ds_ablation_figure(
             hue_order=hue_order,
             error_ylim=error_ylim,
             name_stem="four_ds_ablation",
-            lead_time_y=0.04,
+            delta_ylabel_x=-0.058,
+            lead_time_y=0.03,
         )
 
         _paper_legend(
@@ -3730,8 +3749,10 @@ def plot_one_ds_ablation_figure_a(
             left,
             _empirical_coverage_label(short=True),
             _paper_empirical_coverage_label(),
-            x=-0.055,
+            x=-0.075,
         )
+        _remove_figure_text(left, {r"Expected coverage (1 - $\alpha$)"})
+        _set_paper_expected_coverage_xlabel(left, y=0.03)
 
         _plot_paper_combined_lead_time_panel(
             df_in,
@@ -3745,8 +3766,8 @@ def plot_one_ds_ablation_figure_a(
             hue_order=hue_order,
             error_ylim=error_ylim,
             name_stem="one_ds_ablation_a",
-            delta_ylabel_x=-0.055,
-            lead_time_y=0.04,
+            delta_ylabel_x=-0.068,
+            lead_time_y=0.03,
         )
 
         _paper_legend(
