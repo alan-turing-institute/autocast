@@ -3376,7 +3376,7 @@ def plot_paper_uq_reliability_figure(
             left,
             _empirical_coverage_label(short=True),
             _paper_empirical_coverage_label(),
-            x=-0.04,
+            x=-0.055,
         )
         _replace_figure_text(
             left,
@@ -3414,7 +3414,7 @@ def plot_paper_uq_reliability_figure(
             right,
             r"Rel. $\Delta$ empirical coverage",
             _paper_relative_coverage_label(),
-            x=-0.075,
+            x=-0.088,
         )
         for ax in right_axes[:, 0]:
             ax.yaxis.labelpad = 0.0
@@ -3658,7 +3658,7 @@ def plot_four_ds_ablation_figure(
             left,
             _empirical_coverage_label(short=True),
             _paper_empirical_coverage_label(),
-            x=-0.065,
+            x=-0.078,
         )
         _remove_figure_text(left, {r"Expected coverage (1 - $\alpha$)"})
         _set_paper_expected_coverage_xlabel(left, y=0.03)
@@ -3675,7 +3675,7 @@ def plot_four_ds_ablation_figure(
             hue_order=hue_order,
             error_ylim=error_ylim,
             name_stem="four_ds_ablation",
-            delta_ylabel_x=-0.068,
+            delta_ylabel_x=-0.083,
             lead_time_y=0.03,
         )
 
