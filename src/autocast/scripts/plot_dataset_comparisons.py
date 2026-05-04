@@ -3456,6 +3456,85 @@ def plot_paper_lead_time_error_figure(
         save_fig(fig, out_dir, name)
 
 
+def _paper_summary_metric_label(metric: str) -> str:
+    """Return concise row labels for the paper summary rollout panel."""
+    labels = {
+        "crps": "CRPS",
+        "ssr": "SSR",
+        "energy": "Energy",
+        "winkler": "Winkler",
+        "psrmse_high": "PS RMSE (high)",
+        "psrmse_mid": "PS RMSE (mid)",
+        "psrmse_low": "PS RMSE (low)",
+    }
+    return labels.get(metric, _metric_axis_label(metric))
+
+
+def plot_paper_lead_time_summary_figure(
+    df_in: pd.DataFrame,
+    results_root: Path,
+    out_dir: Path,
+    styles: dict,
+    dataset_order: list[str] | None = None,
+    hue_order: list[str] | None = None,
+    name: str = "paper_lead_time_panel_summary.png",
+) -> None:
+    """Render the multi-metric lead-time summary at paper linewidth."""
+    preset = METRIC_GROUP_PRESETS["summary"]
+    metrics = cast(list[str], preset["metrics"])
+    datasets = _paper_datasets(df_in, dataset_order)
+    n_ds = max(1, len(datasets))
+    if not metrics:
+        return
+
+    with mpl.rc_context(PAPER_RC_PARAMS):
+        fig, axes = plt.subplots(
+            len(metrics),
+            n_ds,
+            figsize=(PAPER_FIGURE_WIDTH_IN, 8.35),
+            sharex=True,
+            squeeze=False,
+        )
+        plot_lead_time_panel(
+            df_in,
+            metrics,
+            results_root,
+            out_dir,
+            "paper_lead_time_summary_inner.png",
+            styles,
+            dataset_order=dataset_order,
+            hue_order=hue_order,
+            axes=axes,
+            fig=fig,
+            save=False,
+            show_legend=False,
+            yscale=cast(str, preset.get("yscale", "log")),
+            ref_value=cast("float | None", preset.get("ref")),
+            **_paper_style_kwargs(),
+        )
+        for metric, ax in zip(metrics, axes[:, 0], strict=False):
+            ax.set_ylabel(_paper_summary_metric_label(metric))
+
+        _remove_figure_text(fig, {"Lead time"})
+        _set_paper_lead_time_xlabel(fig, y=0.035)
+        _paper_legend(
+            fig,
+            df_in,
+            styles,
+            hue_order,
+            bbox_to_anchor=(0.06, 0.995),
+        )
+        fig.subplots_adjust(
+            left=0.11,
+            right=0.995,
+            bottom=0.065,
+            top=0.93,
+            wspace=0.32,
+            hspace=0.34,
+        )
+        save_fig(fig, out_dir, name)
+
+
 def plot_four_ds_ablation_figure(
     df_in: pd.DataFrame,
     results_root: Path,
@@ -4149,7 +4228,7 @@ def main():  # noqa: PLR0912, PLR0915
         action="store_true",
         help=(
             "Also render paper-width main-result figures: single-step coverage, "
-            "rollout UQ reliability, and lead-time error."
+            "rollout UQ reliability, lead-time error, and summary metrics."
         ),
     )
     parser.add_argument(
@@ -4703,6 +4782,14 @@ def main():  # noqa: PLR0912, PLR0915
                 dataset_order=ds_order,
                 hue_order=hu_order,
             )
+            plot_paper_lead_time_summary_figure(
+                df,
+                results_dir,
+                out_dir,
+                styles,
+                dataset_order=ds_order,
+                hue_order=hu_order,
+            )
         if args.four_ds_ablation:
             plot_four_ds_ablation_figure(
                 df,
@@ -4946,6 +5033,14 @@ def main():  # noqa: PLR0912, PLR0915
             styles,
             err_metric,
             error_ylim=error_ylim,
+            dataset_order=ds_order,
+            hue_order=hu_order,
+        )
+        plot_paper_lead_time_summary_figure(
+            df,
+            results_dir,
+            out_dir,
+            styles,
             dataset_order=ds_order,
             hue_order=hu_order,
         )

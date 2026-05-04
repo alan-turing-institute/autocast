@@ -33,7 +33,8 @@ usage() {
 Usage: scripts/plots_final_results.sh [OPTIONS]
 
 Options:
-  --paper-main-figures  Add paper-width main-result figures to OUTPUT_DIR.
+  --paper-main-figures  Add paper-width main-result figures to OUTPUT_DIR,
+                        including the multi-metric lead-time summary.
   --four-ds-ablation    Add four-dataset ablation figures to multi-dataset ablations.
   --one-ds-ablation     Add one-dataset ablation variants to one-dataset ablations.
   --paper-figures       Add all optional paper-width figures above.
@@ -122,19 +123,17 @@ if [[ "$PAPER_MAIN_FIGURES" == true || "$FOUR_DS_ABLATION" == true || "$ONE_DS_A
 	esac
 fi
 FIGURE_FORMAT_ARGS=(--figure-formats "${FIGURE_FORMAT_ARRAY[@]}")
-PAPER_TEX_ARGS=()
+BASE_PLOT_ARGS=("${FIGURE_FORMAT_ARGS[@]}")
 if [[ "$PAPER_USE_TEX" == true ]]; then
-	PAPER_TEX_ARGS=(--paper-use-tex)
+	BASE_PLOT_ARGS+=(--paper-use-tex)
 fi
-PAPER_ONLY_ARGS=()
 if [[ "$PAPER_ONLY" == true ]]; then
-	PAPER_ONLY_ARGS=(--paper-only)
+	BASE_PLOT_ARGS+=(--paper-only)
 fi
 
+
 COMMON_ARGS=(
-	"${FIGURE_FORMAT_ARGS[@]}"
-	"${PAPER_TEX_ARGS[@]}"
-	"${PAPER_ONLY_ARGS[@]}"
+	"${BASE_PLOT_ARGS[@]}"
 	--dataset-order CNS
 	--error-ylim 1e-5 1
 	--lead-time-error-metrics vrmse
@@ -170,9 +169,7 @@ if [[ "$FOUR_DS_ABLATION" == true ]]; then
 fi
 
 ALL_DATASET_COMMON_ARGS=(
-	"${FIGURE_FORMAT_ARGS[@]}"
-	"${PAPER_TEX_ARGS[@]}"
-	"${PAPER_ONLY_ARGS[@]}"
+	"${BASE_PLOT_ARGS[@]}"
 	--dataset-order AD CNS GS GPE
 	--error-ylim 1e-5 1
 	--lead-time-error-metrics vrmse
@@ -212,9 +209,7 @@ if [[ "$PAPER_MAIN_FIGURES" != true && "$FOUR_DS_ABLATION" != true && "$ONE_DS_A
 fi
 
 autocast-plots --results-dir "$RESULTS_DIR" \
-	"${FIGURE_FORMAT_ARGS[@]}" \
-	"${PAPER_TEX_ARGS[@]}" \
-	"${PAPER_ONLY_ARGS[@]}" \
+	"${BASE_PLOT_ARGS[@]}" \
 	--run crps_ad64_vit_azula_large_bed4611_da01a04 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_gpe64_vit_azula_large_bed4611_e0a6df5 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
@@ -248,8 +243,7 @@ if [[ "$PAPER_ONLY" != true ]]; then
 	# Same as above but rendered smaller so the two coverage panels read well when
 	# paired side-by-side in LaTeX (each at ~0.5\textwidth).
 	autocast-plots --results-dir "$RESULTS_DIR" \
-		"${FIGURE_FORMAT_ARGS[@]}" \
-		"${PAPER_TEX_ARGS[@]}" \
+		"${BASE_PLOT_ARGS[@]}" \
 		--run crps_ad64_vit_azula_large_bed4611_da01a04 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 		--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 		--run crps_gpe64_vit_azula_large_bed4611_e0a6df5 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
@@ -322,9 +316,7 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_fm_ema"
 
 autocast-plots --results-dir "$RESULTS_DIR" \
-	"${FIGURE_FORMAT_ARGS[@]}" \
-	"${PAPER_TEX_ARGS[@]}" \
-	"${PAPER_ONLY_ARGS[@]}" \
+	"${BASE_PLOT_ARGS[@]}" \
 	--run crps_ad64_vit_azula_large_bed4611_da01a04 "CRPS (ambient)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS (ambient)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_gpe64_vit_azula_large_bed4611_e0a6df5 "CRPS (ambient)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
@@ -362,9 +354,7 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_ambient_fm_latent_crps_m8"
 
 autocast-plots --results-dir "$RESULTS_DIR" \
-	"${FIGURE_FORMAT_ARGS[@]}" \
-	"${PAPER_TEX_ARGS[@]}" \
-	"${PAPER_ONLY_ARGS[@]}" \
+	"${BASE_PLOT_ARGS[@]}" \
 	--run crps_ad64_vit_azula_large_0f89f06_4667606 "CRPS (best val loss)" "$HUE_ABLATION_ALT_2" eval=eval \
 	--run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (best val loss)" "$HUE_ABLATION_ALT_2" eval=eval \
 	--run crps_gpe64_vit_azula_large_0f89f06_d337bd8 "CRPS (best val loss)" "$HUE_ABLATION_ALT_2" eval=eval \
@@ -434,9 +424,7 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_cns_crps_variants"
 
 autocast-plots --results-dir "$RESULTS_DIR" \
-	"${FIGURE_FORMAT_ARGS[@]}" \
-	"${PAPER_TEX_ARGS[@]}" \
-	"${PAPER_ONLY_ARGS[@]}" \
+	"${BASE_PLOT_ARGS[@]}" \
 	--run crps_cns64_vit_azula_large_9c98db0_957ff88 "m=4" "$HUE_ABLATION_ALT_1" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_ad64_vit_azula_large_189c141_bbb0bc8 "m=4" "$HUE_ABLATION_ALT_1" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_gs64_vit_azula_large_3b47441_4944cce "m=4" "$HUE_ABLATION_ALT_1" eval=eval_best_multiwinkler_from0p25 \
