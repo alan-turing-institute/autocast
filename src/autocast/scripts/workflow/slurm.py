@@ -143,11 +143,12 @@ def _load_launcher_from_file(path: Path) -> dict:
     if not isinstance(raw, dict):
         return {}
     distributed = _extract_distributed_preset_name(raw)
-    if distributed:
-        merged = OmegaConf.merge(_load_distributed_cfg(distributed), raw)
-        cfg = OmegaConf.to_container(merged, resolve=False)
-    else:
-        cfg = raw
+    merged = (
+        OmegaConf.merge(_load_distributed_cfg(distributed), OmegaConf.create(raw))
+        if distributed
+        else OmegaConf.create(raw)
+    )
+    cfg = OmegaConf.to_container(merged, resolve=False)
     if not isinstance(cfg, dict):
         return {}
     hydra_cfg = cfg.get("hydra")
