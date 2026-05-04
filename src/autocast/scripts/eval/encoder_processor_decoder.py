@@ -834,7 +834,7 @@ def _render_rollouts(  # noqa: PLR0912
                     fps=fps,
                     save_path=str(filename),
                     colorbar_mode="column",
-                    pred_uq_label="Ensemble Std Dev",
+                    pred_uq_label="Std Dev",
                     channel_names=names_for_plot,
                     preserve_aspect=preserve_aspect,
                 )
