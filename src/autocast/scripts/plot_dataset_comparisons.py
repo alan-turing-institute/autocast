@@ -3363,6 +3363,12 @@ def plot_paper_uq_reliability_figure(
             _paper_empirical_coverage_label(),
             x=-0.04,
         )
+        _replace_figure_text(
+            left,
+            r"Expected coverage (1 - $\alpha$)",
+            r"Expected coverage (1 - $\alpha$)",
+            y=-0.02,
+        )
 
         right_axes = right.subplots(
             len(delta_metrics),
@@ -3397,8 +3403,15 @@ def plot_paper_uq_reliability_figure(
         )
         for ax in right_axes[:, 0]:
             ax.yaxis.labelpad = 0.0
+        _replace_figure_text(right, "Lead time", "Lead time", y=-0.02)
 
-        _paper_legend(fig, df_in, styles, hue_order)
+        _paper_legend(
+            fig,
+            df_in,
+            styles,
+            hue_order,
+            bbox_to_anchor=(0.06, 1.03),
+        )
         save_fig(fig, out_dir, name)
 
 
@@ -3459,15 +3472,34 @@ def plot_paper_lead_time_error_figure(
 def _paper_summary_metric_label(metric: str) -> str:
     """Return concise row labels for the paper summary rollout panel."""
     labels = {
+        "vrmse": "VRMSE",
         "crps": "CRPS",
         "ssr": "SSR",
         "energy": "Energy",
         "winkler": "Winkler",
-        "psrmse_high": "PS RMSE (high)",
-        "psrmse_mid": "PS RMSE (mid)",
-        "psrmse_low": "PS RMSE (low)",
+        "psrmse_high": "PSRMSE-H",
+        "psrmse_mid": "PSRMSE-M",
+        "psrmse_low": "PSRMSE-L",
     }
     return labels.get(metric, _metric_axis_label(metric))
+
+
+def _share_y_limits_by_row(axes: np.ndarray) -> None:
+    """Apply common y-limits across columns within each subplot row."""
+    for row_axes in np.atleast_2d(axes):
+        finite_limits = [
+            ax.get_ylim()
+            for ax in row_axes
+            if np.isfinite(ax.get_ylim()[0]) and np.isfinite(ax.get_ylim()[1])
+        ]
+        if not finite_limits:
+            continue
+        ymin = min(lo for lo, _ in finite_limits)
+        ymax = max(hi for _, hi in finite_limits)
+        if any(ax.get_yscale() == "log" for ax in row_axes):
+            ymin = max(ymin, 1e-12)
+        for ax in row_axes:
+            ax.set_ylim(ymin, ymax)
 
 
 def plot_paper_lead_time_summary_figure(
@@ -3481,7 +3513,15 @@ def plot_paper_lead_time_summary_figure(
 ) -> None:
     """Render the multi-metric lead-time summary at paper linewidth."""
     preset = METRIC_GROUP_PRESETS["summary"]
-    metrics = cast(list[str], preset["metrics"])
+    metrics = [
+        "vrmse",
+        "crps",
+        "ssr",
+        "energy",
+        "psrmse_high",
+        "psrmse_mid",
+        "psrmse_low",
+    ]
     datasets = _paper_datasets(df_in, dataset_order)
     n_ds = max(1, len(datasets))
     if not metrics:
@@ -3491,7 +3531,7 @@ def plot_paper_lead_time_summary_figure(
         fig, axes = plt.subplots(
             len(metrics),
             n_ds,
-            figsize=(PAPER_FIGURE_WIDTH_IN, 8.35),
+            figsize=(PAPER_FIGURE_WIDTH_IN, 6.68),
             sharex=True,
             squeeze=False,
         )
@@ -3514,9 +3554,12 @@ def plot_paper_lead_time_summary_figure(
         )
         for metric, ax in zip(metrics, axes[:, 0], strict=False):
             ax.set_ylabel(_paper_summary_metric_label(metric))
+        _share_y_limits_by_row(axes)
+        for ax in axes[:, 1:].flat:
+            ax.tick_params(labelleft=False)
 
         _remove_figure_text(fig, {"Lead time"})
-        _set_paper_lead_time_xlabel(fig, y=0.035)
+        _set_paper_lead_time_xlabel(fig, y=0.02)
         _paper_legend(
             fig,
             df_in,
@@ -3527,10 +3570,10 @@ def plot_paper_lead_time_summary_figure(
         fig.subplots_adjust(
             left=0.11,
             right=0.995,
-            bottom=0.065,
+            bottom=0.08,
             top=0.93,
-            wspace=0.32,
-            hspace=0.34,
+            wspace=0.22,
+            hspace=0.22,
         )
         save_fig(fig, out_dir, name)
 
