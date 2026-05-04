@@ -6,8 +6,7 @@ __all__ = [
     "get_autoencoder",
 ]
 
-from collections.abc import Sequence
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Sequence, Tuple
 
 import torch
 from einops import rearrange
@@ -50,19 +49,20 @@ class AutoEncoder(nn.Module):
     def saturate(self, x: Tensor) -> Tensor:
         if self.saturation is None:
             return x
-        if self.saturation == "softclip":
+        elif self.saturation == "softclip":
             return x / (1 + abs(x) / 5)
-        if self.saturation == "softclip2":
+        elif self.saturation == "softclip2":
             return x * torch.rsqrt(1 + torch.square(x / 5))
-        if self.saturation == "tanh":
+        elif self.saturation == "tanh":
             return torch.tanh(x / 5) * 5
-        if self.saturation == "arcsinh":
+        elif self.saturation == "arcsinh":
             return torch.arcsinh(x)
-        if self.saturation == "rmsnorm":
+        elif self.saturation == "rmsnorm":
             return x * torch.rsqrt(
                 torch.mean(torch.square(x), dim=1, keepdim=True) + 1e-5
             )
-        raise ValueError(f"unknown saturation '{self.saturation}'")
+        else:
+            raise ValueError(f"unknown saturation '{self.saturation}'")
 
     def encode(self, x: Tensor) -> Tensor:
         z = self.encoder(x)
@@ -75,7 +75,7 @@ class AutoEncoder(nn.Module):
 
         return self.decoder(z)
 
-    def forward(self, x: Tensor) -> tuple[Tensor, Tensor]:
+    def forward(self, x: Tensor) -> Tuple[Tensor, Tensor]:
         z = self.encode(x)
         y = self.decode(z)
         return y, z
@@ -86,8 +86,8 @@ class AutoEncoderLoss(nn.Module):
 
     def __init__(
         self,
-        losses: Sequence[str] = ["mse"],
-        weights: Sequence[float] = [1.0],
+        losses: Sequence[str] = ["mse"],  # noqa: B006
+        weights: Sequence[float] = [1.0],  # noqa: B006
     ):
         super().__init__()
 
@@ -102,10 +102,10 @@ class AutoEncoderLoss(nn.Module):
             x: A clean tensor :math:`x`, with shape :math:`(B, C, ...)`.
             kwargs: Optional keyword arguments.
 
-        Returns
-        -------
+        Returns:
             The weighted loss.
         """
+
         y, z = autoencoder(x, **kwargs)
 
         values = []
@@ -145,20 +145,21 @@ def get_autoencoder(
     lat_channels: int,
     spatial: int = 2,
     # Arch
-    arch: str | None = None,
+    arch: Optional[str] = None,
     saturation: str = "softclip2",
     # Asymmetry
-    encoder_only: dict[str, Any] = {},  # noqa: B006
-    decoder_only: dict[str, Any] = {},  # noqa: B006
+    encoder_only: Dict[str, Any] = {},  # noqa: B006
+    decoder_only: Dict[str, Any] = {},  # noqa: B006
     # Noise
     latent_noise: float = 0.0,
     # Ignore
-    name: str | None = None,
-    loss: DictConfig | None = None,
+    name: Optional[str] = None,
+    loss: Optional[DictConfig] = None,
     # Passthrough
     **kwargs,
 ) -> AutoEncoder:
     r"""Instantiates an auto-encoder."""
+
     if arch in (None, "dcae"):
         encoder = DCEncoder(
             in_channels=pix_channels,

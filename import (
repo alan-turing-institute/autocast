@@ -1,8 +1,0 @@
-.gitignore
-src/autocast/configs/eval/default.yaml
-src/autocast/configs/eval/encoder_processor_decoder.yaml
-src/autocast/configs/hydra/launcher/slurm.yaml
-src/autocast/scripts/eval/encoder_processor_decoder.py
-src/autocast/scripts/setup.py
-src/autocast/utils/__init__.py
-src/autocast/utils/plots.py

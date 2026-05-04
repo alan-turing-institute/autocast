@@ -42,25 +42,6 @@ class DenormMixin(L.LightningModule):
         if self.norm is None:
             return tensor
 
-        output_channel_idxs = getattr(self, "output_channel_idxs", None)
-        if output_channel_idxs is not None:
-            idxs = list(output_channel_idxs)
-            if delta:
-                mean_values = self.norm.flattened_means_delta["variable"][idxs].to(
-                    tensor.device
-                )
-                std_values = self.norm.flattened_stds_delta["variable"][idxs].to(
-                    tensor.device
-                )
-            else:
-                mean_values = self.norm.flattened_means["variable"][idxs].to(
-                    tensor.device
-                )
-                std_values = self.norm.flattened_stds["variable"][idxs].to(
-                    tensor.device
-                )
-            return tensor * std_values + mean_values
-
         if delta:
             denorm_tensor = self.norm.delta_denormalize_flattened(tensor, "variable")
         else:

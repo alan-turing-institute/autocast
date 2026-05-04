@@ -1,32 +1,31 @@
 r"""Deep Compressed Auto-Encoder (DCAE) building blocks.
 
-References
-----------
+References:
     | Deep Compression Autoencoder for Efficient High-Resolution Diffusion Models (Chen et al., 2024)
     | https://arxiv.org/abs/2410.10733v1
 """
 
 __all__ = [
-    "DCDecoder",
     "DCEncoder",
+    "DCDecoder",
 ]
 
 import math
-from collections.abc import Sequence
-from typing import Dict, Optional, Union
+from typing import Dict, Optional, Sequence, Union
 
-from torch import Tensor, nn
+import torch.nn as nn
+from torch import Tensor
 from torch.utils.checkpoint import checkpoint
 
+from autocast.nn.dc_utils import (
+    ConvNd,
+)
 from autocast.external.lola.lola_layers import (
     ConvNd,
     LayerNorm,
     Patchify,
     SelfAttentionNd,
     Unpatchify,
-)
-from autocast.nn.dc_utils import (
-    ConvNd,
 )
 
 
@@ -55,10 +54,10 @@ class ResBlock(nn.Module):
         channels: int,
         norm: str = "layer",
         groups: int = 16,
-        attention_heads: int | None = None,
+        attention_heads: Optional[int] = None,
         ffn_factor: int = 1,
         spatial: int = 2,
-        dropout: float | None = None,
+        dropout: Optional[float] = None,
         checkpointing: bool = False,
         **kwargs,
     ):
@@ -103,10 +102,10 @@ class ResBlock(nn.Module):
         Arguments:
             x: The input tensor, with shape :math:`(B, C, L_1, ..., L_N)`.
 
-        Returns
-        -------
+        Returns:
             The output tensor, with shape :math:`(B, C, L_1, ..., L_N)`.
         """
+
         y = self.norm(x)
         y = self.attn(y)
         y = self.ffn(y)
@@ -149,16 +148,16 @@ class DCEncoder(nn.Module):
         out_channels: int,
         hid_channels: Sequence[int] = (64, 128, 256),
         hid_blocks: Sequence[int] = (3, 3, 3),
-        kernel_size: int | Sequence[int] = 3,
-        stride: int | Sequence[int] = 2,
+        kernel_size: Union[int, Sequence[int]] = 3,
+        stride: Union[int, Sequence[int]] = 2,
         pixel_shuffle: bool = True,
         norm: str = "layer",
-        attention_heads: dict[int, int] = {},  # noqa: B006
+        attention_heads: Dict[int, int] = {},  # noqa: B006
         ffn_factor: int = 1,
         spatial: int = 2,
-        patch_size: int | Sequence[int] = 1,
+        patch_size: Union[int, Sequence[int]] = 1,
         periodic: bool = False,
-        dropout: float | None = None,
+        dropout: Optional[float] = None,
         checkpointing: bool = False,
         identity_init: bool = True,
     ):
@@ -227,7 +226,7 @@ class DCEncoder(nn.Module):
                     ResBlock(
                         hid_channels[i],
                         norm=norm,
-                        attention_heads=attention_heads.get(i),
+                        attention_heads=attention_heads.get(i, None),
                         ffn_factor=ffn_factor,
                         spatial=spatial,
                         dropout=dropout,
@@ -254,10 +253,10 @@ class DCEncoder(nn.Module):
         Arguments:
             x: The input tensor, with shape :math:`(B, C_i, L_1, ..., L_N)`.
 
-        Returns
-        -------
+        Returns:
             The output tensor, with shape :math:`(B, C_o, L_1 / 2^D, ..., L_N  / 2^D)`.
         """
+
         x = self.patch(x)
 
         for blocks in self.descent:
