@@ -3546,6 +3546,14 @@ def _share_y_limits_by_row(axes: np.ndarray) -> None:
             ax.set_ylim(ymin, ymax)
 
 
+def _align_left_column_ylabels(fig: FigureBase, axes: np.ndarray) -> None:
+    """Align y-axis labels across rows in the left subplot column."""
+    if not hasattr(fig, "align_ylabels"):
+        return
+    left_axes = np.atleast_2d(axes)[:, 0].tolist()
+    fig.align_ylabels(left_axes)
+
+
 def plot_paper_lead_time_summary_figure(
     df_in: pd.DataFrame,
     results_root: Path,
@@ -3619,6 +3627,7 @@ def plot_paper_lead_time_summary_figure(
             wspace=0.22,
             hspace=0.22,
         )
+        _align_left_column_ylabels(fig, axes)
         save_fig(fig, out_dir, name)
 
 
