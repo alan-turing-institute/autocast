@@ -407,7 +407,7 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_cns_noise_channels"
 
 if [[ "$PAPER_MAIN_FIGURES" == true || "$FOUR_DS_ABLATION" == true || "$ONE_DS_ABLATION" == true ]]; then
-	mkdir -p "$PAPER_OUTPUT_DIR/png" "$PAPER_OUTPUT_DIR/pdf"
+	mkdir -p "$PAPER_OUTPUT_DIR/png" "$PAPER_OUTPUT_DIR/pdf" "$PAPER_OUTPUT_DIR/tables"
 	SKIPPED_PAPER_DIRS=(
 		ablation_ambient_fm_latent_crps_m8
 		ablation_cns_dm
@@ -420,6 +420,7 @@ if [[ "$PAPER_MAIN_FIGURES" == true || "$FOUR_DS_ABLATION" == true || "$ONE_DS_A
 			rm -f "$PAPER_OUTPUT_DIR/$ext/${skipped_dir}_"*."$ext"
 		done
 	done
+	rm -f "$PAPER_OUTPUT_DIR/tables/"*.csv "$PAPER_OUTPUT_DIR/tables/"*.tex
 	copied=0
 	while IFS= read -r fig; do
 		src_dir=$(basename "$(dirname "$fig")")
@@ -447,4 +448,23 @@ if [[ "$PAPER_MAIN_FIGURES" == true || "$FOUR_DS_ABLATION" == true || "$ONE_DS_A
 			-print
 	)
 	echo "Copied $copied paper figure files to: $PAPER_OUTPUT_DIR/{png,pdf}"
+	copied_tables=0
+	while IFS= read -r table; do
+		src_dir=$(basename "$(dirname "$table")")
+		case "$src_dir" in
+			ablation_ambient_fm_latent_crps_m8 | ablation_cns_dm | ablation_cns_dm_latent | ablation_fm_ema)
+				continue
+				;;
+		esac
+		cp "$table" "$PAPER_OUTPUT_DIR/tables/${src_dir}_$(basename "$table")"
+		copied_tables=$((copied_tables + 1))
+	done < <(
+		find "$RESULTS_DIR/$PLOTS_PATH" \
+			-path "$PAPER_OUTPUT_DIR" -prune -o \
+			-path "$RESULTS_DIR/$PLOTS_PATH/ablation_fm_ema" -prune -o \
+			-path "$RESULTS_DIR/$PLOTS_PATH/ablation_cns_dm" -prune -o \
+			-type f \( -name 'single_step_overall_results.csv' -o -name 'single_step_overall_results.tex' \) \
+			-print
+	)
+	echo "Copied $copied_tables table result files to: $PAPER_OUTPUT_DIR/tables"
 fi

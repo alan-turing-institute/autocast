@@ -4,6 +4,7 @@ import argparse
 import math
 import re
 import sys
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, SupportsIndex, cast
@@ -157,27 +158,36 @@ PAPER_RC_PARAMS = {
 }
 SINGLE_STEP_RESULTS_TABLE_METRICS: tuple[tuple[str, str], ...] = (
     ("overall_vrmse", "VRMSE"),
+    ("overall_coverage", "Coverage MAE"),
     ("overall_crps", "CRPS"),
     ("overall_ssr", "SSR"),
     ("model_latency_ms_per_sample", "Inference latency (ms/sample)"),
     ("train_mean_epoch_s", "Training time (s/epoch)"),
+    ("single_step_epochs_trained", "Training epochs"),
 )
 SINGLE_STEP_RESULTS_LATEX_HEADERS: dict[str, str] = {
     "Dataset": "Dataset",
     "Model": "Model",
-    "VRMSE": "{VRMSE}",
-    "CRPS": "{CRPS}",
-    "SSR": "{SSR}",
+    "VRMSE": r"{VRMSE} {$\downarrow$}",
+    "CRPS": r"{CRPS} {$\downarrow$}",
+    "Coverage MAE": (
+        r"{\begin{tabular}[c]{@{}c@{}}Coverage\\MAE {$\downarrow$}\end{tabular}}"
+    ),
+    "SSR": r"{SSR} {$\to 1$}",
+    "Training epochs": (r"{\begin{tabular}[c]{@{}c@{}}Training\\epochs\end{tabular}}"),
     "Inference latency (ms/sample)": (
-        r"{\begin{tabular}[c]{@{}c@{}}Inference\\latency\\(ms/sample)\end{tabular}}"
+        r"{\begin{tabular}[c]{@{}c@{}}Inference\\latency\\"
+        r"(ms/sample) {$\downarrow$}\end{tabular}}"
     ),
     "Training time (s/epoch)": (
-        r"{\begin{tabular}[c]{@{}c@{}}Training\\time\\(s/epoch)\end{tabular}}"
+        r"{\begin{tabular}[c]{@{}c@{}}Training\\time\\"
+        r"(s/epoch) {$\downarrow$}\end{tabular}}"
     ),
 }
 SINGLE_STEP_RESULTS_LOWER_IS_BETTER = {
     "VRMSE",
     "CRPS",
+    "Coverage MAE",
     "Inference latency (ms/sample)",
     "Training time (s/epoch)",
 }
@@ -793,10 +803,151 @@ def dataset_grid_resolution(
 # ---------------------------------------------------------------------------
 
 
+def _as_finite_float(value: object) -> float | None:
+    """Convert scalar-like values to finite floats."""
+    try:
+        numeric_series = cast(
+            pd.Series,
+            pd.to_numeric(pd.Series([value]), errors="coerce"),
+        )
+        numeric = numeric_series.iloc[0]
+    except Exception:
+        return None
+    try:
+        out = float(numeric)
+    except (TypeError, ValueError):
+        return None
+    return out if np.isfinite(out) else None
+
+
+def _as_nonnegative_int(value: object) -> int | None:
+    """Convert scalar-like values to non-negative integer counts."""
+    numeric = _as_finite_float(value)
+    if numeric is None or numeric < 0:
+        return None
+    return round(numeric)
+
+
+def _read_yaml_mapping(path: Path) -> dict[str, Any]:
+    """Read a YAML mapping, returning an empty mapping on missing/invalid files."""
+    if not path.exists():
+        return {}
+    try:
+        with open(path) as f:
+            value = yaml.safe_load(f)
+    except Exception:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _trainer_max_epochs_from_config(cfg: Mapping[str, Any]) -> int | None:
+    """Extract configured trainer.max_epochs from a resolved config."""
+    trainer = cfg.get("trainer")
+    if not isinstance(trainer, Mapping):
+        return None
+    return _as_nonnegative_int(trainer.get("max_epochs"))
+
+
+def _best_winkler_epoch_from_history(history: pd.DataFrame) -> int | None:
+    """Return the epoch with the lowest validation Winkler score."""
+    if history.empty or not {"epoch", "metric", "value"}.issubset(history.columns):
+        return None
+
+    hist = history.copy()
+    hist["metric"] = hist["metric"].astype(str)
+    exact_metric_order = [
+        "val_multiwinkler",
+        "val_winkler",
+        "multiwinkler",
+        "winkler",
+    ]
+    metric_name = next(
+        (name for name in exact_metric_order if (hist["metric"] == name).any()),
+        None,
+    )
+    if metric_name is None:
+        metric_names = hist["metric"].dropna().unique().tolist()
+        metric_name = next(
+            (
+                str(name)
+                for name in metric_names
+                if str(name).startswith("val_") and "winkler" in str(name)
+            ),
+            None,
+        )
+    if metric_name is None:
+        return None
+
+    sub = cast(pd.DataFrame, hist[hist["metric"] == metric_name].copy())
+    sub["epoch"] = pd.to_numeric(sub["epoch"], errors="coerce")
+    sub["value"] = pd.to_numeric(sub["value"], errors="coerce")
+    sub = cast(pd.DataFrame, sub.dropna(subset=["epoch", "value"]))
+    if sub.empty:
+        return None
+    best_idx = cast(pd.Series, sub["value"]).idxmin()
+    return _as_nonnegative_int(cast(pd.Series, sub.loc[best_idx]).get("epoch"))
+
+
+def _best_winkler_epoch_from_cache(
+    run_dir: Path,
+    eval_subdir: str = DEFAULT_EVAL_SUBDIR,
+) -> int | None:
+    """Return the cached epoch with the lowest validation Winkler score."""
+    candidates = list(dict.fromkeys([eval_subdir, DEFAULT_EVAL_SUBDIR]))
+    for subdir in candidates:
+        history = _load_training_history_cache(run_dir, eval_subdir=subdir)
+        if history is None:
+            continue
+        best_epoch = _best_winkler_epoch_from_history(history)
+        if best_epoch is not None:
+            return best_epoch
+    return None
+
+
+def _best_winkler_epoch_from_wandb(
+    run_dir: Path,
+    eval_subdir: str = DEFAULT_EVAL_SUBDIR,
+    force_refresh: bool = False,
+) -> int | None:
+    """Fetch W&B history and return the epoch with the lowest Winkler score."""
+    history = parse_training_metrics_from_wandb(
+        run_dir,
+        eval_subdir=eval_subdir,
+        force_refresh=force_refresh,
+    )
+    return _best_winkler_epoch_from_history(history)
+
+
+def _coverage_diagonal_mae_from_csv(path: Path) -> float | None:
+    """Compute mean |observed coverage - nominal coverage| from a curve CSV."""
+    if not path.exists():
+        return None
+    try:
+        df = pd.read_csv(path)
+    except Exception:
+        return None
+    if df.empty or not {"coverage_level", "observed_mean"}.issubset(df.columns):
+        return None
+    expected = cast(
+        pd.Series,
+        pd.to_numeric(df["coverage_level"], errors="coerce"),
+    ).to_numpy(dtype=float)
+    observed = cast(
+        pd.Series,
+        pd.to_numeric(df["observed_mean"], errors="coerce"),
+    ).to_numpy(dtype=float)
+    finite = np.isfinite(expected) & np.isfinite(observed)
+    if not finite.any():
+        return None
+    value = float(np.mean(np.abs(observed[finite] - expected[finite])))
+    return value if np.isfinite(value) else None
+
+
 def load_single_run_metrics(  # noqa: PLR0912, PLR0915
     run_dir: Path,
     eval_subdir: str = DEFAULT_EVAL_SUBDIR,
     run_ref: str | None = None,
+    force_training_refresh: bool = False,
 ) -> dict:
     """Load evaluation metrics and rollout metrics from a single run directory."""
     resolved_eval_subdir = normalize_eval_subdir(eval_subdir)
@@ -828,6 +979,13 @@ def load_single_run_metrics(  # noqa: PLR0912, PLR0915
                     if col in {"window", "batch_idx"}:
                         continue
                     row[f"overall_{col}"] = pd.to_numeric(rr[col], errors="coerce")
+
+    if "overall_coverage" not in row:
+        coverage_mae = _coverage_diagonal_mae_from_csv(
+            eval_dir / "test_coverage_window_all.csv"
+        )
+        if coverage_mae is not None:
+            row["overall_coverage"] = coverage_mae
 
     # Rollout metrics
     p_roll = eval_dir / "rollout_metrics.csv"
@@ -884,18 +1042,31 @@ def load_single_run_metrics(  # noqa: PLR0912, PLR0915
 
     # Training metadata (dataset hints for cached latents)
     p_config = run_dir / "resolved_config.yaml"
-    if p_config.exists():
-        try:
-            with open(p_config) as f:
-                cfg = yaml.safe_load(f)
-            if cfg:
-                data_path = cfg.get("datamodule", {}).get("data_path", "")
-                row["dataset"] = (
-                    Path(data_path).name if data_path else row.get("dataset")
-                )
-                row["dataset_from_data_path"] = dataset_module_from_data_path(data_path)
-        except Exception:
-            pass
+    cfg = _read_yaml_mapping(p_config)
+    if cfg:
+        datamodule = cfg.get("datamodule", {})
+        if isinstance(datamodule, Mapping):
+            data_path = datamodule.get("data_path", "")
+            row["dataset"] = Path(data_path).name if data_path else row.get("dataset")
+            row["dataset_from_data_path"] = dataset_module_from_data_path(data_path)
+        trainer_max_epochs = _trainer_max_epochs_from_config(cfg)
+        if trainer_max_epochs is not None:
+            row["trainer_max_epochs"] = trainer_max_epochs
+
+    loss_family, _, _ = parse_loss_dataset_arch(run_dir.name)
+    if loss_family == "crps":
+        best_winkler_epoch = _best_winkler_epoch_from_wandb(
+            run_dir,
+            eval_subdir=resolved_eval_subdir,
+            force_refresh=force_training_refresh,
+        )
+        if best_winkler_epoch is None:
+            best_winkler_epoch = _best_winkler_epoch_from_cache(
+                run_dir,
+                eval_subdir=resolved_eval_subdir,
+            )
+        if best_winkler_epoch is not None:
+            row["best_winkler_epoch"] = best_winkler_epoch
     return row
 
 
@@ -1566,6 +1737,21 @@ def _dedup_legend_handles(groups: list, styles: dict) -> list[Line2D]:
     return handles
 
 
+def _single_step_epochs_trained(row: pd.Series) -> float:
+    """Resolve the epoch count shown in the single-step results table."""
+    loss_family = str(row.get("loss_family", "")).lower()
+    if loss_family == "crps":
+        candidates = ("best_winkler_epoch",)
+    else:
+        candidates = ("trainer_max_epochs",)
+
+    for column in candidates:
+        value = _as_nonnegative_int(row.get(column))
+        if value is not None:
+            return float(value)
+    return float("nan")
+
+
 def build_single_step_results_table(
     df_in: pd.DataFrame,
     styles: dict,
@@ -1577,6 +1763,11 @@ def build_single_step_results_table(
         return pd.DataFrame()
 
     data = df_in.copy()
+    if "single_step_epochs_trained" not in data.columns:
+        data["single_step_epochs_trained"] = data.apply(
+            _single_step_epochs_trained,
+            axis=1,
+        )
     metric_cols = [src for src, _ in SINGLE_STEP_RESULTS_TABLE_METRICS]
     available = [c for c in metric_cols if c in data.columns]
     if not available:
@@ -1667,9 +1858,15 @@ def _format_latex_table_value(value: object, column: str | None = None) -> str: 
         return ""
     if column in {"VRMSE", "CRPS"}:
         return f"{numeric:.1e}"
+    if column == "Coverage MAE":
+        return f"{numeric:.2f}"
     if column == "SSR":
         return f"{numeric:.2f}"
-    if column in {"Inference latency (ms/sample)", "Training time (s/epoch)"}:
+    if column in {
+        "Training epochs",
+        "Inference latency (ms/sample)",
+        "Training time (s/epoch)",
+    }:
         return f"{numeric:.0f}"
     return f"{numeric:.3g}"
 
@@ -1706,18 +1903,27 @@ def _best_latex_cells_by_dataset(table: pd.DataFrame) -> set[tuple[int, str]]:
     return best_cells
 
 
+def _single_step_results_latex_column_spec(column: str) -> str:
+    """Return a LaTeX tabular column spec for a single table column."""
+    specs = {
+        "Dataset": "l",
+        "Model": "l",
+        "VRMSE": "S[table-format=1.1e-1, detect-weight=true]",
+        "CRPS": "S[table-format=1.1e-1, detect-weight=true]",
+        "Coverage MAE": "S[table-format=1.2, detect-weight=true]",
+        "SSR": "S[table-format=1.2, detect-weight=true]",
+        "Inference latency (ms/sample)": "S[table-format=3.0, detect-weight=true]",
+        "Training time (s/epoch)": "S[table-format=3.0, detect-weight=true]",
+        "Training epochs": "S[table-format=4.0, detect-weight=true]",
+    }
+    return specs.get(column, "l")
+
+
 def render_single_step_results_latex(table: pd.DataFrame) -> str:
     """Render the results table using booktabs + siunitx styling."""
     columns = table.columns.tolist()
     align = "\n  ".join(
-        [
-            "ll",
-            "S[table-format=1.1e-1, detect-weight=true]",
-            "S[table-format=1.1e-1, detect-weight=true]",
-            "S[table-format=1.2, detect-weight=true]",
-            "S[table-format=3.0, detect-weight=true]",
-            "S[table-format=3.0, detect-weight=true]",
-        ]
+        [_single_step_results_latex_column_spec(col) for col in columns]
     )
     header = " & ".join(
         SINGLE_STEP_RESULTS_LATEX_HEADERS.get(col, _latex_escape(col))
@@ -1758,8 +1964,10 @@ def render_single_step_results_latex(table: pd.DataFrame) -> str:
         r"\centering",
         r"\caption{Overall results for single-step prediction across datasets. "
         r"We report predictive accuracy (\gls{vrmse}), probabilistic accuracy "
-        r"(\gls{crps}), uncertainty calibration (\gls{ssr}), and compute metrics "
-        r"(inference latency and training time).}",
+        r"(\gls{crps}), coverage calibration error, uncertainty calibration "
+        r"(\gls{ssr}), training epoch count for FM or best validation Winkler "
+        r"epoch for CRPS, and compute metrics "
+        r"(inference latency and epoch time).}",
         r"\label{tab:overall_results_table}",
         rf"\begin{{tabular}}{{{align}}}",
         r"\toprule",
@@ -4739,6 +4947,7 @@ def main():  # noqa: PLR0912, PLR0915
                 d,
                 eval_subdir=run_eval_subdir,
                 run_ref=run_ref,
+                force_training_refresh=args.training_refresh,
             )
         except Exception as e:
             print(f"Error loading {d}: {e}")
@@ -4861,6 +5070,14 @@ def main():  # noqa: PLR0912, PLR0915
         cov_metric = [m for m in cov_metric if m != "ssr"]
     paper_cov_metric = _paper_coverage_metrics(cov_metric)
 
+    write_single_step_results_table(
+        df,
+        out_dir,
+        styles,
+        dataset_order=ds_order,
+        hue_order=hu_order,
+    )
+
     if args.paper_only:
         if args.paper_main_figures:
             plot_paper_overall_coverage_figure(
@@ -4927,14 +5144,6 @@ def main():  # noqa: PLR0912, PLR0915
             )
         print("Finished generating paper plots.")
         return
-
-    write_single_step_results_table(
-        df,
-        out_dir,
-        styles,
-        dataset_order=ds_order,
-        hue_order=hu_order,
-    )
 
     # Render overall bars
     for m in args.metrics:
