@@ -288,7 +288,9 @@ class SpatioTemporalDataModule(LightningDataModule):
                     "data": self.test_dataset.data,
                     "constant_scalars": self.test_dataset.constant_scalars,
                     "constant_fields": self.test_dataset.constant_fields,
-                } if data is None else data["test"],
+                }
+                if data is None
+                else data["test"],
                 n_steps_input=n_steps_input,
                 n_steps_output=n_steps_output,
                 stride=stride,
