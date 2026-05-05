@@ -163,26 +163,35 @@ SINGLE_STEP_RESULTS_TABLE_METRICS: tuple[tuple[str, str], ...] = (
     ("overall_ssr", "SSR"),
     ("model_latency_ms_per_sample", "Inference latency (ms/sample)"),
     ("train_mean_epoch_s", "Training time (s/epoch)"),
-    ("single_step_epochs_trained", "Training epochs"),
+    ("single_step_epochs_trained", "Selected epoch"),
 )
 SINGLE_STEP_RESULTS_LATEX_HEADERS: dict[str, str] = {
     "Dataset": "Dataset",
     "Model": "Model",
-    "VRMSE": r"{VRMSE} {$\downarrow$}",
-    "CRPS": r"{CRPS} {$\downarrow$}",
+    "VRMSE": (
+        r"{\begin{tabular}[c]{@{}c@{}}VRMSE\\"
+        r"{$\downarrow$}\end{tabular}}"
+    ),
+    "CRPS": (
+        r"{\begin{tabular}[c]{@{}c@{}}CRPS\\"
+        r"{$\downarrow$}\end{tabular}}"
+    ),
     "Coverage MAE": (
         r"{\begin{tabular}[c]{@{}c@{}}Coverage\\MAE {$\downarrow$}\end{tabular}}"
     ),
-    "SSR": r"{SSR} {$\to 1$}",
-    "Training epochs": (r"{\begin{tabular}[c]{@{}c@{}}Training\\epochs\end{tabular}}"),
+    "SSR": (
+        r"{\begin{tabular}[c]{@{}c@{}}SSR\\"
+        r"{$\to 1$}\end{tabular}}"
+    ),
     "Inference latency (ms/sample)": (
-        r"{\begin{tabular}[c]{@{}c@{}}Inference\\latency\\"
+        r"{\begin{tabular}[c]{@{}c@{}}Latency\\"
         r"(ms/sample) {$\downarrow$}\end{tabular}}"
     ),
     "Training time (s/epoch)": (
-        r"{\begin{tabular}[c]{@{}c@{}}Training\\time\\"
-        r"(s/epoch) {$\downarrow$}\end{tabular}}"
+        r"{\begin{tabular}[c]{@{}c@{}}Epoch time\\"
+        r"(s) {$\downarrow$}\end{tabular}}"
     ),
+    "Selected epoch": (r"{\begin{tabular}[c]{@{}c@{}}Selected\\epoch\end{tabular}}"),
 }
 SINGLE_STEP_RESULTS_LOWER_IS_BETTER = {
     "VRMSE",
@@ -1863,7 +1872,7 @@ def _format_latex_table_value(value: object, column: str | None = None) -> str: 
     if column == "SSR":
         return f"{numeric:.2f}"
     if column in {
-        "Training epochs",
+        "Selected epoch",
         "Inference latency (ms/sample)",
         "Training time (s/epoch)",
     }:
@@ -1914,7 +1923,7 @@ def _single_step_results_latex_column_spec(column: str) -> str:
         "SSR": "S[table-format=1.2, detect-weight=true]",
         "Inference latency (ms/sample)": "S[table-format=3.0, detect-weight=true]",
         "Training time (s/epoch)": "S[table-format=3.0, detect-weight=true]",
-        "Training epochs": "S[table-format=4.0, detect-weight=true]",
+        "Selected epoch": "S[table-format=4.0, detect-weight=true]",
     }
     return specs.get(column, "l")
 
@@ -1922,8 +1931,10 @@ def _single_step_results_latex_column_spec(column: str) -> str:
 def render_single_step_results_latex(table: pd.DataFrame) -> str:
     """Render the results table using booktabs + siunitx styling."""
     columns = table.columns.tolist()
-    align = "\n  ".join(
-        [_single_step_results_latex_column_spec(col) for col in columns]
+    align = (
+        "@{}"
+        + "\n  ".join(_single_step_results_latex_column_spec(col) for col in columns)
+        + "@{}"
     )
     header = " & ".join(
         SINGLE_STEP_RESULTS_LATEX_HEADERS.get(col, _latex_escape(col))
@@ -1960,15 +1971,8 @@ def render_single_step_results_latex(table: pd.DataFrame) -> str:
                 body.append(r"\midrule")
     lines = [
         r"% Requires \usepackage{booktabs,siunitx}",
-        r"\begin{table}[t]",
-        r"\centering",
-        r"\caption{Overall results for single-step prediction across datasets. "
-        r"We report predictive accuracy (\gls{vrmse}), probabilistic accuracy "
-        r"(\gls{crps}), coverage calibration error, uncertainty calibration "
-        r"(\gls{ssr}), training epoch count for FM or best validation Winkler "
-        r"epoch for CRPS, and compute metrics "
-        r"(inference latency and epoch time).}",
-        r"\label{tab:overall_results_table}",
+        r"\small",
+        r"\setlength{\tabcolsep}{3.5pt}",
         rf"\begin{{tabular}}{{{align}}}",
         r"\toprule",
         header + r" \\",
@@ -1976,7 +1980,6 @@ def render_single_step_results_latex(table: pd.DataFrame) -> str:
         *body,
         r"\bottomrule",
         r"\end{tabular}",
-        r"\end{table}",
         "",
     ]
     return "\n".join(lines)
