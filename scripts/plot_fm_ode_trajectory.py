@@ -42,9 +42,9 @@ from omegaconf import DictConfig, OmegaConf, open_dict
 
 from autocast.processors.flow_matching import FlowMatchingProcessor
 from autocast.scripts.eval.encoder_processor_decoder import (
+    _extract_processor_state_dict,
     _maybe_inject_encoder_decoder_from_autoencoder_checkpoint,
     _maybe_swap_to_ambient_datamodule,
-    _extract_processor_state_dict,
 )
 from autocast.scripts.execution import load_checkpoint_payload
 from autocast.scripts.setup import setup_datamodule, setup_epd_model
@@ -54,6 +54,7 @@ log = logging.getLogger("plot_fm_ode_trajectory")
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments."""
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument(
         "--run-dir",
@@ -182,8 +183,8 @@ def parse_args() -> argparse.Namespace:
         default="",
         help=(
             "Colormap for latent-space tiles. Single name or comma-separated "
-            "list aligned with --latent-channels. If empty (default), reuses "
-            "the ambient --cmap so latent and ambient panels match."
+            "list aligned with --latent-channels. If empty (default), uses "
+            "the first rendered ambient colormap for all latent channels."
         ),
     )
     p.add_argument(
@@ -233,6 +234,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def resolve_device(name: str | None) -> torch.device:
+    """Resolve the torch device used for model evaluation and plotting."""
     if name is not None:
         return torch.device(name)
     if torch.cuda.is_available():
@@ -256,6 +258,7 @@ def select_sample(batch: Batch, idx: int) -> Batch:
 
 
 def to_device(batch: Batch, device: torch.device) -> Batch:
+    """Move all tensors in a batch to the requested device."""
     return Batch(
         input_fields=batch.input_fields.to(device),
         output_fields=batch.output_fields.to(device),
@@ -347,6 +350,7 @@ def save_tile(
 
 
 def channel_indices(args: argparse.Namespace, n_channels: int) -> list[int]:
+    """Resolve ambient channel indices to render."""
     if args.all_channels:
         return list(range(n_channels))
     if args.channel >= n_channels:
@@ -366,7 +370,7 @@ def parse_cmap_list(spec: str, channels: list[int]) -> dict[int, str]:
         msg = "--cmap must not be empty."
         raise ValueError(msg)
     if len(parts) == 1:
-        return {c: parts[0] for c in channels}
+        return dict.fromkeys(channels, parts[0])
     if len(parts) != len(channels):
         msg = (
             f"--cmap='{spec}' has {len(parts)} entries but {len(channels)} channels "
@@ -377,6 +381,7 @@ def parse_cmap_list(spec: str, channels: list[int]) -> dict[int, str]:
 
 
 def parse_symmetric_set(spec: str) -> set[str]:
+    """Parse colormap names that should use symmetric color limits."""
     return {p.strip() for p in spec.split(",") if p.strip()}
 
 
@@ -401,7 +406,8 @@ def advance_batch_free_running(model, batch: Batch) -> Batch:
     )
 
 
-def main() -> None:
+def main() -> None:  # noqa: PLR0912, PLR0915
+    """Run the FM ODE trajectory plotting workflow."""
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     args = parse_args()
 
@@ -472,7 +478,7 @@ def main() -> None:
 
     # Build a probe datamodule first so we can detect that the cached-latent
     # datamodule is the active one and trigger the swap to ambient.
-    probe_datamodule, cfg, probe_stats = setup_datamodule(cfg)
+    _probe_datamodule, cfg, probe_stats = setup_datamodule(cfg)
     cfg = _maybe_swap_to_ambient_datamodule(
         cfg,
         eval_mode="ambient",
@@ -506,13 +512,15 @@ def main() -> None:
     model.to(device)
     model.eval()
 
-    # Parse plan: which windows × which seeds.
+    # Parse plan: which windows and which seeds.
     seeds = [int(s) for s in args.seeds.split(",") if s.strip()]
     if not seeds:
-        raise ValueError("--seeds is empty.")
+        msg = "--seeds is empty."
+        raise ValueError(msg)
     windows = sorted({int(w) for w in args.rollout_windows.split(",") if w.strip()})
     if not windows:
-        raise ValueError("--rollout-windows is empty.")
+        msg = "--rollout-windows is empty."
+        raise ValueError(msg)
     log.info("Plan: windows=%s, seeds=%s", windows, seeds)
 
     # Choose the dataloader. Window 0 only is fine on the standard test
@@ -604,7 +612,7 @@ def main() -> None:
     latent_chans = parse_latent_channel_spec(args.latent_channels, n_latent_channels)
     latent_cmap_for: dict[int, str] = {}
     if latent_chans and not args.no_latent:
-        latent_cmap_spec = args.latent_cmap.strip() or args.cmap
+        latent_cmap_spec = args.latent_cmap.strip() or cmap_for[chans[0]]
         latent_cmap_for = parse_cmap_list(latent_cmap_spec, latent_chans)
     log.info(
         "Channels: ambient=%s (cmaps=%s), latent=%s (cmaps=%s)",
@@ -716,8 +724,9 @@ def main() -> None:
 
 
 def parse_latent_channel_spec(spec: str, n_latent: int) -> list[int]:
+    """Resolve latent channel indices to render from a CLI string."""
     s = spec.strip().lower()
-    if s == "none" or s == "":
+    if s in {"none", ""}:
         return []
     if s == "all":
         return list(range(n_latent))
@@ -727,7 +736,10 @@ def parse_latent_channel_spec(spec: str, n_latent: int) -> list[int]:
             continue
         idx = int(part)
         if not (0 <= idx < n_latent):
-            msg = f"--latent-channels={spec!r} contains out-of-range index {idx} (n_latent={n_latent})."
+            msg = (
+                f"--latent-channels={spec!r} contains out-of-range index {idx} "
+                f"(n_latent={n_latent})."
+            )
             raise ValueError(msg)
         out.append(idx)
     return out
@@ -800,7 +812,7 @@ def write_constants_tiles(
     log.info("Wrote constant scalars summary: %s", summary_path)
 
 
-def visualise_window(
+def visualise_window(  # noqa: PLR0912
     *,
     model,
     capture_sample: Batch,
@@ -977,6 +989,7 @@ def write_contact_sheet(
     out_path: Path,
     dpi: int,
 ) -> None:
+    """Write a contact sheet from ODE snapshot arrays."""
     n_cols = snapshots[0][1].shape[1]  # T_out
     n_rows = len(snapshots)
     fig, axes = plt.subplots(

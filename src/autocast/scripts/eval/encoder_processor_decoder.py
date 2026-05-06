@@ -682,20 +682,22 @@ def _save_rollout_snapshot_panels(
             f"batch_{target_idx}_sample_{local_idx}_"
             f"channel_{channel_idx}_snapshots_data"
         )
-        data_only_png = data_only_base.with_suffix(".png")
+        data_only_filename = data_only_base.with_suffix(f".{snapshot_ext}")
+        data_only_extra_formats = ["pdf"] if snapshot_ext.lower() != "pdf" else []
         plot_spatiotemporal_snapshots_data_only(
             true=trues_mean[local_idx : local_idx + 1].cpu(),
             timesteps=snapshot_timesteps,
             channel=channel_idx,
             batch_idx=0,
-            save_path=str(data_only_png),
-            extra_formats=["pdf"],
+            save_path=str(data_only_filename),
+            extra_formats=data_only_extra_formats,
             ylabel=dataset_short_label,
             preserve_aspect=preserve_aspect,
         )
-        saved_paths.append(data_only_png)
-        saved_paths.append(data_only_base.with_suffix(".pdf"))
-        log.info("Saved data-only rollout snapshot panel to %s", data_only_png)
+        saved_paths.append(data_only_filename)
+        for ext in data_only_extra_formats:
+            saved_paths.append(data_only_base.with_suffix(f".{ext}"))
+        log.info("Saved data-only rollout snapshot panel to %s", data_only_filename)
 
 
 def _render_rollouts(  # noqa: PLR0912

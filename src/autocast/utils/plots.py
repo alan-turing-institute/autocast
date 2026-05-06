@@ -1,6 +1,6 @@
 from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import Literal, cast
+from typing import Literal, TypeAlias, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -33,6 +33,8 @@ _SNAPSHOT_PAPER_RC: dict[str, object] = {
     "mathtext.fontset": "stix",
 }
 
+NormLike: TypeAlias = Normalize | TwoSlopeNorm | LogNorm | SymLogNorm | None
+
 
 def _panel_size_for_width(
     target_width_in: float,
@@ -42,8 +44,8 @@ def _panel_size_for_width(
 ) -> tuple[float, float]:
     panel_width = max(target_width_in / max(ncols, 1), 0.5)
     if preserve_aspect and len(spatial) == 2 and spatial[0] > 0 and spatial[1] > 0:
-        width, height = spatial
-        panel_height = panel_width * (height / width)
+        rows, cols = spatial
+        panel_height = panel_width * (rows / cols)
     else:
         panel_height = panel_width
     return panel_width, panel_height
@@ -423,7 +425,6 @@ def plot_spatiotemporal_snapshots(  # noqa: PLR0912, PLR0915
         else:
             diff_norm = TwoSlopeNorm(vmin=-diff_span, vcenter=0, vmax=diff_span)
 
-    NormLike = Normalize | TwoSlopeNorm | LogNorm | SymLogNorm | None
     rows_to_plot: list[tuple[np.ndarray, str, str, NormLike]] = [
         (true_channel, "Ground Truth", cmap, primary_norm),
     ]

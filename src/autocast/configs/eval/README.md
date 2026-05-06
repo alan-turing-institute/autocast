@@ -67,6 +67,8 @@ All eval configs support these parameters:
 - `rollout_snapshot_channels`: Channel indices to render (`null` means all)
 - `rollout_snapshot_dir`: Custom snapshot directory (default:
   work_dir/videos/snapshots)
+- `rollout_snapshot_dataset_label`: Optional row label for data-only snapshots
+  (default: infer from the rollout dataset when possible)
 - `accelerator`: Accelerator for evaluation (auto, cpu, cuda, mps)
 - `devices`: Number of GPUs for DDP evaluation (default: 1; set explicitly,
   e.g. 4, for multi-GPU runs)
