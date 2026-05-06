@@ -1977,7 +1977,6 @@ def render_single_step_results_latex(table: pd.DataFrame) -> str:
                 body.append(r"\midrule")
     lines = [
         r"% Requires \usepackage{booktabs,siunitx}",
-        r"\small",
         r"\setlength{\tabcolsep}{3.5pt}",
         rf"\begin{{tabular}}{{{align}}}",
         r"\toprule",

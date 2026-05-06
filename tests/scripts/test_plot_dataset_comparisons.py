@@ -215,6 +215,7 @@ def test_single_step_results_latex_uses_two_sig_figs(tmp_path: Path):
     tex = (tmp_path / "single_step_overall_results.tex").read_text()
     assert r"\begin{tabular}{@{}l" in tex
     assert r"Latency\\(ms/sample)" in tex
+    assert r"\small" not in tex
     assert "1.2e-02" in tex
     assert "9.9e-02" in tex
     assert "0.012345" not in tex
