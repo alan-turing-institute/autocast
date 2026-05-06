@@ -302,7 +302,7 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 
 autocast-plots --results-dir "$RESULTS_DIR" \
 	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" "$HUE_FM_LATENT" \
-	--run diff_cns64_diffusion_vit_9c98db0_e9bc460 "DM (latent)" "$HUE_DM" eval=eval_ambient \
+	--run diff_cns64_diffusion_vit_0c75022_80967c4 "DM (latent)" "$HUE_DM" eval=eval_ambient \
 	"${COMMON_ARGS[@]}" \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_cns_dm_latent"
 
