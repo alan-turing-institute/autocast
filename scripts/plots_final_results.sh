@@ -367,18 +367,18 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 
 autocast-plots --results-dir "$RESULTS_DIR" \
 	"${BASE_PLOT_ARGS[@]}" \
-	--run crps_cns64_vit_azula_large_9c98db0_957ff88 "m=4" "$HUE_ABLATION_ALT_1" eval=eval_best_multiwinkler_from0p25 \
-	--run crps_ad64_vit_azula_large_189c141_bbb0bc8 "m=4" "$HUE_ABLATION_ALT_1" eval=eval_best_multiwinkler_from0p25 \
-	--run crps_gs64_vit_azula_large_3b47441_4944cce "m=4" "$HUE_ABLATION_ALT_1" eval=eval_best_multiwinkler_from0p25 \
-	--run crps_gpe64_vit_azula_large_189c141_ce8db86 "m=4" "$HUE_ABLATION_ALT_1" eval=eval_best_multiwinkler_from0p25 \
-	--run crps_ad64_vit_azula_large_bed4611_da01a04 "m=8" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
-	--run crps_cns64_vit_azula_large_bed4611_c99f534 "m=8" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
-	--run crps_gpe64_vit_azula_large_bed4611_e0a6df5 "m=8" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
-	--run crps_gs64_vit_azula_large_bed4611_828a161 "m=8" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
-	--run crps_ad64_vit_azula_large_bed4611_69c99bf "m=16" "$HUE_ABLATION_ALT_3" eval=eval_best_multiwinkler_from0p25 \
-	--run crps_cns64_vit_azula_large_bed4611_5758ebc "m=16" "$HUE_ABLATION_ALT_3" eval=eval_best_multiwinkler_from0p25 \
-	--run crps_gpe64_vit_azula_large_bed4611_6b78265 "m=16" "$HUE_ABLATION_ALT_3" eval=eval_best_multiwinkler_from0p25 \
-	--run crps_gs64_vit_azula_large_bed4611_4d04729 "m=16" "$HUE_ABLATION_ALT_3" eval=eval_best_multiwinkler_from0p25 \
+	--run crps_cns64_vit_azula_large_9c98db0_957ff88 "M=4" "$HUE_ABLATION_ALT_1" eval=eval_best_multiwinkler_from0p25 \
+	--run crps_ad64_vit_azula_large_189c141_bbb0bc8 "M=4" "$HUE_ABLATION_ALT_1" eval=eval_best_multiwinkler_from0p25 \
+	--run crps_gs64_vit_azula_large_3b47441_4944cce "M=4" "$HUE_ABLATION_ALT_1" eval=eval_best_multiwinkler_from0p25 \
+	--run crps_gpe64_vit_azula_large_189c141_ce8db86 "M=4" "$HUE_ABLATION_ALT_1" eval=eval_best_multiwinkler_from0p25 \
+	--run crps_ad64_vit_azula_large_bed4611_da01a04 "M=8" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+	--run crps_cns64_vit_azula_large_bed4611_c99f534 "M=8" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+	--run crps_gpe64_vit_azula_large_bed4611_e0a6df5 "M=8" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+	--run crps_gs64_vit_azula_large_bed4611_828a161 "M=8" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+	--run crps_ad64_vit_azula_large_bed4611_69c99bf "M=16" "$HUE_ABLATION_ALT_3" eval=eval_best_multiwinkler_from0p25 \
+	--run crps_cns64_vit_azula_large_bed4611_5758ebc "M=16" "$HUE_ABLATION_ALT_3" eval=eval_best_multiwinkler_from0p25 \
+	--run crps_gpe64_vit_azula_large_bed4611_6b78265 "M=16" "$HUE_ABLATION_ALT_3" eval=eval_best_multiwinkler_from0p25 \
+	--run crps_gs64_vit_azula_large_bed4611_4d04729 "M=16" "$HUE_ABLATION_ALT_3" eval=eval_best_multiwinkler_from0p25 \
 	--dataset-order AD CNS GS GPE \
 	--error-ylim 1e-5 1 \
 	--lead-time-error-metrics vrmse \
