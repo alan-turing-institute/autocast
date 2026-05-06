@@ -384,7 +384,7 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_cns_vit_unet_m8"
 
 autocast-plots --results-dir "$RESULTS_DIR" \
-	--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS (\$\alpha\$fCRPS) loss" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+	--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS (\$\alpha\$fCRPS loss)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_cns64_vit_azula_large_9c98db0_6a91c49 "CRPS (CRPS loss)" "$HUE_ABLATION_ALT_1" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_cns64_vit_azula_large_9c98db0_d2a0496 "CRPS (fCRPS loss)" "$HUE_ABLATION_ALT_2" eval=eval_best_multiwinkler_from0p25 \
 	"${COMMON_ARGS[@]}" \
