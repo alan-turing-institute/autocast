@@ -288,8 +288,8 @@ def test_coverage_calibration_panel_uses_publication_axis_labels(tmp_path: Path)
     assert isinstance(fig, Figure)
     axes = fig.axes
     assert axes[0].get_ylabel() == "Empirical coverage"
-    assert axes[1].get_ylabel() == "Empirical coverage (0:4)"
-    assert axes[1].get_xlabel() == r"Expected coverage (1 - $\alpha$)"
+    assert axes[1].get_ylabel() == "Empirical coverage [0:4)"
+    assert axes[1].get_xlabel() == r"Nominal coverage (1 - $\alpha$)"
     plt.close(fig)
 
 
@@ -330,9 +330,7 @@ def test_coverage_calibration_panel_can_use_shared_xlabel_and_taller_height(
     assert isinstance(fig, Figure)
     assert fig.get_size_inches()[1] == 2.3 * 2 * 1.5
     assert fig.axes[1].get_xlabel() == ""
-    assert r"Expected coverage (1 - $\alpha$)" in [
-        text.get_text() for text in fig.texts
-    ]
+    assert r"Nominal coverage (1 - $\alpha$)" in [text.get_text() for text in fig.texts]
     plt.close(fig)
 
 

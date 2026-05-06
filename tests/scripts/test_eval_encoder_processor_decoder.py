@@ -19,6 +19,7 @@ from autocast.scripts.eval.encoder_processor_decoder import (
     _build_per_timestep_metric_factory,
     _decode_tensor,
     _maybe_swap_to_ambient_datamodule,
+    _metric_window_interval_label,
     _normalize_eval_mode,
     _normalize_per_batch_rows,
     _reindex_per_batch_rows_by_rank,
@@ -36,6 +37,12 @@ from autocast.scripts.eval.encoder_processor_decoder import (
     _validate_resolved_eval_path,
 )
 from autocast.types import Batch, EncodedBatch
+
+
+def test_metric_window_interval_label_uses_closed_open_notation():
+    assert _metric_window_interval_label(None) == "all"
+    assert _metric_window_interval_label((0, 4)) == "[0:4)"
+    assert _metric_window_interval_label((31, 99)) == "[31:99)"
 
 
 def test_resolve_rollout_batch_limit_falls_back_to_test_limit_when_null():

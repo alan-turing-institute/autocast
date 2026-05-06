@@ -619,7 +619,7 @@ def plot_coverage(
     title: str = "Coverage plot",
 ):
     """
-    Plot reliability diagram showing expected vs observed coverage.
+    Plot reliability diagram showing nominal vs empirical coverage.
 
     This is a convenience wrapper around MultiCoverage.plot().
 

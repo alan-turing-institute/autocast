@@ -131,6 +131,7 @@ PAPER_AXES_LINE_WIDTH = 0.55
 PAPER_TICK_LINE_WIDTH = 0.55
 PAPER_GRID_LINE_WIDTH = 0.45
 FIGURE_FORMATS: list[str] = ["png"]
+NOMINAL_COVERAGE_AXIS_LABEL = r"Nominal coverage (1 - $\alpha$)"
 PAPER_RC_PARAMS = {
     "font.family": "serif",
     "font.serif": [
@@ -341,15 +342,24 @@ def _coverage_window_axis_label(window: str, short: bool = False) -> str:
     prefix = "Emp. cov." if short else "Empirical coverage"
     if window == "all":
         return prefix
-    window_label = str(window).replace("-", ":")
-    return f"{prefix} ({window_label})"
+    window_label = _coverage_window_interval_label(window)
+    return f"{prefix} {window_label}"
 
 
 def _coverage_window_row_tag(window: str) -> str:
     """Short row identifier used when a shared y label carries the metric name."""
     if window == "all":
         return "all"
-    return f"({str(window).replace('-', ':')})"
+    return _coverage_window_interval_label(window)
+
+
+def _coverage_window_interval_label(window: str) -> str:
+    """Format rollout window identifiers as closed-open intervals."""
+    match = re.fullmatch(r"(\d+)-(\d+)", str(window))
+    if match is None:
+        return str(window)
+    start, end = match.groups()
+    return f"[{start}:{end})"
 
 
 def _coverage_level_label(metric: str) -> str:
@@ -2314,9 +2324,7 @@ def plot_coverage_calibration_panel(  # noqa: PLR0912, PLR0915
             if i == 0:
                 ax.set_title(ds_label)
             if i == nrows - 1:
-                ax.set_xlabel(
-                    "" if shared_axis_labels else r"Expected coverage (1 - $\alpha$)"
-                )
+                ax.set_xlabel("" if shared_axis_labels else NOMINAL_COVERAGE_AXIS_LABEL)
             if j == 0:
                 if shared_axis_labels:
                     ax.set_ylabel(_coverage_window_row_tag(str(w)))
@@ -2331,7 +2339,7 @@ def plot_coverage_calibration_panel(  # noqa: PLR0912, PLR0915
             _apply_axis_label_style(ax, axis_label_scale)
 
     if shared_axis_labels:
-        _set_shared_xlabel(fig, r"Expected coverage (1 - $\alpha$)", axis_label_scale)
+        _set_shared_xlabel(fig, NOMINAL_COVERAGE_AXIS_LABEL, axis_label_scale)
         _set_shared_ylabel(
             fig,
             _empirical_coverage_label(short=short_axis_labels),
@@ -3374,12 +3382,12 @@ def _set_paper_lead_time_xlabel(fig: FigureBase, y: float = 0.07) -> None:
     _set_paper_xlabel(fig, "Lead time", y=y)
 
 
-def _set_paper_expected_coverage_xlabel(
+def _set_paper_nominal_coverage_xlabel(
     fig: FigureBase,
     y: float = 0.07,
 ) -> None:
-    """Set a paper-sized shared expected-coverage x label."""
-    _set_paper_xlabel(fig, r"Expected coverage (1 - $\alpha$)", y=y)
+    """Set a paper-sized shared nominal-coverage x label."""
+    _set_paper_xlabel(fig, NOMINAL_COVERAGE_AXIS_LABEL, y=y)
 
 
 def _add_paper_panel_label(
@@ -3528,7 +3536,7 @@ def plot_paper_overall_coverage_figure(
         for ax in axes.flat:
             ax.set_xlabel("")
         axes[0][0].set_ylabel(_paper_empirical_coverage_label())
-        xlabel = fig.supxlabel(r"Expected coverage (1 - $\alpha$)", y=0.03)
+        xlabel = fig.supxlabel(NOMINAL_COVERAGE_AXIS_LABEL, y=0.03)
         xlabel.set_fontsize(PAPER_FONT_SIZE)
         _paper_legend(
             fig,
@@ -3610,8 +3618,8 @@ def plot_paper_uq_reliability_figure(
         )
         _replace_figure_text(
             left,
-            r"Expected coverage (1 - $\alpha$)",
-            r"Expected coverage (1 - $\alpha$)",
+            NOMINAL_COVERAGE_AXIS_LABEL,
+            NOMINAL_COVERAGE_AXIS_LABEL,
             y=-0.02,
         )
 
@@ -3904,8 +3912,8 @@ def plot_four_ds_ablation_figure(
             _paper_empirical_coverage_label(),
             x=-0.078,
         )
-        _remove_figure_text(left, {r"Expected coverage (1 - $\alpha$)"})
-        _set_paper_expected_coverage_xlabel(left, y=0.03)
+        _remove_figure_text(left, {NOMINAL_COVERAGE_AXIS_LABEL})
+        _set_paper_nominal_coverage_xlabel(left, y=0.03)
 
         _plot_paper_combined_lead_time_panel(
             df_in,
@@ -4000,8 +4008,8 @@ def plot_one_ds_ablation_figure_a(
             _paper_empirical_coverage_label(),
             x=-0.085,
         )
-        _remove_figure_text(left, {r"Expected coverage (1 - $\alpha$)"})
-        _set_paper_expected_coverage_xlabel(left, y=0.03)
+        _remove_figure_text(left, {NOMINAL_COVERAGE_AXIS_LABEL})
+        _set_paper_nominal_coverage_xlabel(left, y=0.03)
 
         _plot_paper_combined_lead_time_panel(
             df_in,

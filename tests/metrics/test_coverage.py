@@ -42,6 +42,23 @@ def test_multi_alpha_coverage_dict_keys_and_values():
         assert torch.isclose(torch.tensor(value), torch.tensor(1.0))
 
 
+def test_multicoverage_plot_uses_nominal_and_empirical_labels():
+    y_pred: TensorBTSC = torch.ones((2, 3, 4, 4, 5, 6))
+    y_true: TensorBTSC = torch.ones((2, 3, 4, 4, 5))
+
+    metric = MultiCoverage(coverage_levels=[0.5, 0.9])
+    metric.update(y_pred, y_true)
+
+    fig = metric.plot(save_csv=False)
+    ax = fig.axes[0]
+
+    assert ax.get_xlabel() == r"Nominal coverage (1 - $\alpha$)"
+    assert ax.get_ylabel() == "Empirical coverage"
+    legend = ax.get_legend()
+    assert legend is not None
+    assert "Nominal" in [text.get_text() for text in legend.get_texts()]
+
+
 def test_coverage_partial():
     # Setup: 1 batch, 1 time, 4 spatial points, 1 channel, 10 ensemble members
     # y_pred ensemble values: 0, 1, ..., 9
@@ -64,7 +81,7 @@ def test_coverage_partial():
 
     value = Coverage(coverage_level=0.8)(y_pred, y_true)
 
-    # expected coverage: 2 out of 4 -> 0.5
+    # observed coverage: 2 out of 4 -> 0.5
     assert torch.allclose(value, torch.tensor(0.5))
 
 
