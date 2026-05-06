@@ -164,7 +164,6 @@ SINGLE_STEP_RESULTS_TABLE_METRICS: tuple[tuple[str, str], ...] = (
     ("overall_ssr", "SSR"),
     ("model_latency_ms_per_sample", "Inference latency (ms/sample)"),
     ("train_mean_epoch_s", "Training time (s/epoch)"),
-    ("single_step_epochs_trained", "Selected epoch"),
 )
 SINGLE_STEP_RESULTS_LATEX_HEADERS: dict[str, str] = {
     "Dataset": "Dataset",
@@ -192,7 +191,6 @@ SINGLE_STEP_RESULTS_LATEX_HEADERS: dict[str, str] = {
         r"{\begin{tabular}[c]{@{}c@{}}Epoch time\\"
         r"(s) {$\downarrow$}\end{tabular}}"
     ),
-    "Selected epoch": (r"{\begin{tabular}[c]{@{}c@{}}Selected\\epoch\end{tabular}}"),
 }
 SINGLE_STEP_RESULTS_LOWER_IS_BETTER = {
     "VRMSE",
@@ -1882,7 +1880,6 @@ def _format_latex_table_value(value: object, column: str | None = None) -> str: 
     if column == "SSR":
         return f"{numeric:.2f}"
     if column in {
-        "Selected epoch",
         "Inference latency (ms/sample)",
         "Training time (s/epoch)",
     }:
@@ -1933,7 +1930,6 @@ def _single_step_results_latex_column_spec(column: str) -> str:
         "SSR": "S[table-format=1.2, detect-weight=true]",
         "Inference latency (ms/sample)": "S[table-format=3.0, detect-weight=true]",
         "Training time (s/epoch)": "S[table-format=3.0, detect-weight=true]",
-        "Selected epoch": "S[table-format=4.0, detect-weight=true]",
     }
     return specs.get(column, "l")
 

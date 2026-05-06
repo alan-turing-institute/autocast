@@ -213,12 +213,44 @@ def test_single_step_results_latex_uses_two_sig_figs(tmp_path: Path):
     pdc.write_single_step_results_table(df, tmp_path, styles)
 
     tex = (tmp_path / "single_step_overall_results.tex").read_text()
-    assert r"\begin{tabularx}{\linewidth}" in tex
-    assert r"\shortstack{Inference\\latency\\(ms/sample)}" in tex
+    assert r"\begin{tabular}{@{}l" in tex
+    assert r"Latency\\(ms/sample)" in tex
     assert "1.2e-02" in tex
     assert "9.9e-02" in tex
     assert "0.012345" not in tex
     assert "0.098765" not in tex
+
+
+def test_single_step_results_latex_midrule_aligns_with_dataset_boundaries():
+    """Booktabs lines: header midrule + one midrule between dataset blocks."""
+    df = pd.DataFrame(
+        {
+            "dataset_label": ["AD", "AD", "CNS", "CNS"],
+            "plot_group": ["crps", "fm", "crps", "fm"],
+            "overall_vrmse": [0.2, 0.1, 0.3, 0.4],
+            "overall_coverage": [0.05, 0.06, 0.07, 0.08],
+            "overall_crps": [0.05, 0.06, 0.08, 0.07],
+            "overall_ssr": [0.7, 1.2, 1.1, 0.6],
+            "model_latency_ms_per_sample": [12.0, 8.0, 9.0, 11.0],
+            "train_mean_epoch_s": [100.0, 200.0, 150.0, 50.0],
+        }
+    )
+    styles = {
+        "crps": {"label": "CRPS", "color": "tab:blue"},
+        "fm": {"label": "FM", "color": "tab:orange"},
+    }
+    table = pdc.build_single_step_results_table(
+        df,
+        styles,
+        dataset_order=["AD", "CNS"],
+        hue_order=["CRPS", "FM"],
+    )
+    tex = pdc.render_single_step_results_latex(table)
+    assert tex.count(r"\midrule") == 2
+    assert tex.index(r"\toprule") < tex.index(r"\midrule")
+    last_mid = tex.rindex(r"\midrule")
+    assert last_mid < tex.index(r"\bottomrule")
+    assert "\\midrule\nCNS & CRPS" in tex
 
 
 def test_single_step_results_latex_bolds_best_values_by_dataset(tmp_path: Path):
@@ -248,11 +280,12 @@ def test_single_step_results_latex_bolds_best_values_by_dataset(tmp_path: Path):
     )
 
     tex = (tmp_path / "single_step_overall_results.tex").read_text()
-    assert r"\textbf{1.0e-01}" in tex
-    assert r"\textbf{5.0e-02}" in tex
-    assert r"\textbf{1.2e+00}" in tex
-    assert r"\textbf{7.0e-02}" in tex
-    assert r"\textbf{1.1e+00}" in tex
+    # siunitx S columns use \bfseries (not \textbf{...}) for detect-weight cells
+    assert r"\bfseries 1.0e-01" in tex
+    assert r"\bfseries 5.0e-02" in tex
+    assert r"\bfseries 1.20" in tex
+    assert r"\bfseries 7.0e-02" in tex
+    assert r"\bfseries 1.10" in tex
 
 
 def test_coverage_calibration_panel_uses_publication_axis_labels(tmp_path: Path):
@@ -290,6 +323,11 @@ def test_coverage_calibration_panel_uses_publication_axis_labels(tmp_path: Path)
     assert axes[0].get_ylabel() == "Empirical coverage"
     assert axes[1].get_ylabel() == "Empirical coverage [0:4)"
     assert axes[1].get_xlabel() == r"Nominal coverage (1 - $\alpha$)"
+    # Perfect-calibration reference: y = x from (0, 0) to (1, 1), drawn first
+    xd = axes[0].lines[0].get_xdata()
+    yd = axes[0].lines[0].get_ydata()
+    assert np.allclose(np.asarray(xd, dtype=float), np.array([0.0, 1.0]))
+    assert np.allclose(np.asarray(yd, dtype=float), np.array([0.0, 1.0]))
     plt.close(fig)
 
 
