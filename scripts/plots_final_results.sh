@@ -287,17 +287,17 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS (ambient)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_gpe64_vit_azula_large_bed4611_e0a6df5 "CRPS (ambient)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_gs64_vit_azula_large_bed4611_828a161 "CRPS (ambient)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
-	--run diff_ad64_flow_matching_vit_09490da_dae1382 "FM (latent)" "$HUE_FM_LATENT" \
-	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" "$HUE_FM_LATENT" \
-	--run diff_gpe64_flow_matching_vit_09490da_47bf39a "FM (latent)" "$HUE_FM_LATENT" \
-	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "FM (latent)" "$HUE_FM_LATENT" \
+	--run crps_ad64_vit_azula_large_3b47441_3ad3562 "CRPS (latent)" "$HUE_CRPS_LATENT" eval=eval_best_multiwinkler_from0p25 \
+	--run crps_cns64_vit_azula_large_9c98db0_4b2a1a5 "CRPS (latent)" "$HUE_CRPS_LATENT" eval=eval_best_multiwinkler_from0p25 \
+	--run crps_gs64_vit_azula_large_3b47441_1c8e446 "CRPS (latent)" "$HUE_CRPS_LATENT" eval=eval_best_multiwinkler_from0p25 \
 	--run diff_ad64_flow_matching_vit_0f89f06_725d44a "FM (ambient)" "$HUE_FM_AMBIENT" \
 	--run diff_cns64_flow_matching_vit_0f89f06_483bb70 "FM (ambient)" "$HUE_FM_AMBIENT" \
 	--run diff_gpe64_flow_matching_vit_0f89f06_3b3604d "FM (ambient)" "$HUE_FM_AMBIENT" \
 	--run diff_gs64_flow_matching_vit_0f89f06_6e3a299 "FM (ambient)" "$HUE_FM_AMBIENT" \
-	--run crps_ad64_vit_azula_large_3b47441_3ad3562 "CRPS (latent)" "$HUE_CRPS_LATENT" eval=eval_best_multiwinkler_from0p25 \
-	--run crps_cns64_vit_azula_large_9c98db0_4b2a1a5 "CRPS (latent)" "$HUE_CRPS_LATENT" eval=eval_best_multiwinkler_from0p25 \
-	--run crps_gs64_vit_azula_large_3b47441_1c8e446 "CRPS (latent)" "$HUE_CRPS_LATENT" eval=eval_best_multiwinkler_from0p25 \
+	--run diff_ad64_flow_matching_vit_09490da_dae1382 "FM (latent)" "$HUE_FM_LATENT" \
+	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" "$HUE_FM_LATENT" \
+	--run diff_gpe64_flow_matching_vit_09490da_47bf39a "FM (latent)" "$HUE_FM_LATENT" \
+	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "FM (latent)" "$HUE_FM_LATENT" \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_ambient_fm_latent_crps_m8"
 
 autocast-plots --results-dir "$RESULTS_DIR" \
