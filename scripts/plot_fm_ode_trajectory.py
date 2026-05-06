@@ -4,8 +4,7 @@ Reconstructs the ambient-space EPD model from a processor-only checkpoint by
 re-using the eval pipeline's autoencoder injection + datamodule swap, then
 runs the flow-matching ODE step-by-step (Euler), capturing each intermediate
 latent. Each intermediate is decoded + denormalised and saved as one image
-tile per (intermediate, output-step, channel) so the panels can be assembled
-in Inkscape into something like the mock-up in methods_sketch_00.pdf.
+tile per (intermediate, output-step, channel) for assembling into diagrams.
 
 Example:
     python scripts/plot_fm_ode_trajectory.py \
@@ -59,9 +58,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--run-dir",
         type=Path,
-        default=Path(
-            "outputs/2026-04-20/diff_cns64_flow_matching_vit_09490da_636fcc3"
-        ),
+        default=Path("outputs/2026-04-20/diff_cns64_flow_matching_vit_09490da_636fcc3"),
         help="Run directory containing resolved_config.yaml and processor.ckpt.",
     )
     p.add_argument(
@@ -452,9 +449,11 @@ def main() -> None:
         eval_cfg_path = run_dir / "eval" / "resolved_eval_config.yaml"
         if eval_cfg_path.exists():
             eval_cfg = OmegaConf.load(eval_cfg_path)
-            ae_ckpt = eval_cfg.get("autoencoder_checkpoint") if isinstance(
-                eval_cfg, DictConfig
-            ) else None
+            ae_ckpt = (
+                eval_cfg.get("autoencoder_checkpoint")
+                if isinstance(eval_cfg, DictConfig)
+                else None
+            )
             if ae_ckpt is not None:
                 with open_dict(cfg):
                     cfg.autoencoder_checkpoint = ae_ckpt
@@ -621,9 +620,7 @@ def main() -> None:
     if latent_chans and not args.no_latent:
         with torch.no_grad():
             for w in windows:
-                tgt = base_sample.output_fields[
-                    :, w * n_t_out : (w + 1) * n_t_out
-                ]
+                tgt = base_sample.output_fields[:, w * n_t_out : (w + 1) * n_t_out]
                 # Encoder consumes Batch.input_fields, so masquerade the
                 # target window as the input.
                 fake_batch = Batch(
@@ -640,9 +637,13 @@ def main() -> None:
 
     latent_color_limits: dict[int, tuple[float, float]] = {}
     for lc in latent_chans:
-        all_vals = np.concatenate(
-            [arr[..., lc].ravel() for arr in latent_targets_per_window.values()]
-        ) if latent_targets_per_window else np.array([0.0, 1.0])
+        all_vals = (
+            np.concatenate(
+                [arr[..., lc].ravel() for arr in latent_targets_per_window.values()]
+            )
+            if latent_targets_per_window
+            else np.array([0.0, 1.0])
+        )
         vmin = float(np.percentile(all_vals, 2))
         vmax = float(np.percentile(all_vals, 98))
         if args.latent_symmetric:
@@ -928,8 +929,7 @@ def visualise_window(
                 vmin, vmax = latent_color_limits[lc]
                 save_tile(
                     target_window_latent[0, t_idx, ..., lc],
-                    out_dir
-                    / f"{tag}_latent_truth_t{t_idx:02d}_lc{lc}.{suffix}",
+                    out_dir / f"{tag}_latent_truth_t{t_idx:02d}_lc{lc}.{suffix}",
                     vmin=vmin,
                     vmax=vmax,
                     cmap=latent_cmap_for[lc],
