@@ -11,6 +11,7 @@ import pytest
 import torch
 from conftest import get_optimizer_config
 from hydra import compose, initialize_config_dir
+from hydra.utils import instantiate
 from lightning.pytorch.callbacks import ModelCheckpoint, Timer
 from matplotlib import pyplot as plt
 from omegaconf import DictConfig, OmegaConf, open_dict
@@ -326,6 +327,38 @@ def test_progress_model_checkpoint_disables_default_epoch_trigger():
     assert callback._every_n_epochs == 0
 
 
+def test_progress_model_checkpoint_state_key_includes_progress_window():
+    callbacks = [
+        ProgressModelCheckpoint(
+            monitor="val_multicoverage",
+            monitor_optional=True,
+            stop_after_fraction=0.25,
+            mode="min",
+            save_top_k=1,
+            filename="best-pre-{epoch:04d}",
+        ),
+        ProgressModelCheckpoint(
+            monitor="val_multicoverage",
+            monitor_optional=True,
+            start_after_fraction=0.25,
+            mode="min",
+            save_top_k=1,
+            filename="best-from0p25-{epoch:04d}",
+        ),
+        ProgressModelCheckpoint(
+            monitor="val_multicoverage",
+            monitor_optional=True,
+            start_after_fraction=0.5,
+            mode="min",
+            save_top_k=1,
+            filename="best-from0p50-{epoch:04d}",
+        ),
+    ]
+
+    state_keys = [callback.state_key for callback in callbacks]
+    assert len(state_keys) == len(set(state_keys))
+
+
 @pytest.mark.parametrize(
     "trigger_kwargs",
     [
@@ -502,6 +535,48 @@ def test_validation_metric_plot_callback_saves_custom_metric_plot(tmp_path: Path
     ).exists()
 
 
+def test_validation_metric_plot_callback_wandb_log_omits_step(tmp_path: Path):
+    callback = ValidationMetricPlotCallback(
+        save_local=False,
+        log_to_logger=True,
+        plot_metric_objects=False,
+    )
+
+    class FakeWandbRun:
+        project = "p"
+        entity = "e"
+
+        def __init__(self):
+            self.calls: list[dict] = []
+
+        def log(self, payload, step=None):
+            self.calls.append({"payload": payload, "step": step})
+
+    run = FakeWandbRun()
+    logger = SimpleNamespace(experiment=run)
+    trainer = SimpleNamespace(
+        callback_metrics={"val_loss": torch.tensor(1.5)},
+        default_root_dir=tmp_path,
+        global_step=1189,
+        is_global_zero=True,
+        sanity_checking=False,
+        loggers=[logger],
+    )
+    pl_module = SimpleNamespace(val_metrics=None)
+
+    callback.on_validation_end(
+        cast(L.Trainer, trainer), cast(L.LightningModule, pl_module)
+    )
+
+    assert run.calls, "expected at least one wandb.log call"
+    for call in run.calls:
+        assert call["step"] is None, (
+            "wandb.log must not receive an explicit step= argument; "
+            "passing trainer.global_step forces wandb's internal _step forward "
+            "and breaks the default X-axis for all other metrics."
+        )
+
+
 def test_default_trainer_config_tracks_coverage_winkler_and_plots(config_dir: str):
     trainer_cfg = OmegaConf.load(Path(config_dir) / "trainer" / "default.yaml")
     callbacks = list(trainer_cfg.callbacks)
@@ -514,6 +589,19 @@ def test_default_trainer_config_tracks_coverage_winkler_and_plots(config_dir: st
         == "autocast.callbacks.metrics.ValidationMetricPlotCallback"
         for callback in callbacks
     )
+
+
+def test_default_trainer_config_instantiates_callbacks(config_dir: str):
+    trainer_cfg = OmegaConf.load(Path(config_dir) / "trainer" / "default.yaml")
+
+    trainer = instantiate(trainer_cfg)
+    progress_state_keys = [
+        callback.state_key
+        for callback in trainer.callbacks
+        if isinstance(callback, ProgressModelCheckpoint)
+    ]
+
+    assert len(progress_state_keys) == len(set(progress_state_keys))
 
 
 def test_epd_config_forward_smoke(config_dir: str, toy_batch: Batch, dummy_datamodule):

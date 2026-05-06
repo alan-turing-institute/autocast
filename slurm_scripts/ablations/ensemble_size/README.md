@@ -1,7 +1,12 @@
 # Ensemble size ablation
 
 First-pass defaults focus on `n_members=16` under two batch-size
-regimes. For the current production submission pass,
+regimes. The planned CNS batch also includes a compute-matched
+`n_members=4` ViT point via the root-level planned submitter:
+`model.n_members=4` and `datamodule.batch_size=64`, preserving the baseline
+effective per-GPU batch of 256.
+
+For the current production submission pass,
 `submit_ensemble_large.sh` is pared down to just three `eff_bs1024` runs
 on `gray_scott`, `gpe_laser_only_wake`, and `advection_diffusion`; the
 CNS production entries and `fixed_bs32` combo are left commented for
@@ -32,6 +37,7 @@ Keep `bs_crps × n_members × 4 GPUs = 1024`. With `n_members=16`,
 
 | n_members | bs_per_gpu | effective per-GPU | effective global |
 |---:|---:|---:|---:|
+| 4 | 64 | 256 | 1024 |
 | 16 | 16 | 256 | 1024 |
 
 ## Dataset coverage
@@ -54,7 +60,8 @@ batch) CRPS ablations on the other comparison datasets.
 | `submit_ensemble_timing.sh` | 5-epoch timing for the current `eff_bs1024` timing set (`conditioned_navier_stokes`, `gray_scott`, `gpe_laser_only_wake`, `advection_diffusion`) -> `timing.ckpt` per run |
 | `submit_ensemble_large.sh`  | 24h production runs for the same three active runs, using cached or timing-derived cosine schedules |
 | `eval/submit_eval_crps_ambient.sh` | ambient eval for the current `m=16` CRPS run set (CNS `fixed_bs32` pilot plus all available `eff_bs1024` runs), with conservative `eval.batch_size=4` and explicit `eval.n_members=10` to match the comparison-study eval regime |
-| `eval_0p75/submit_eval_crps_ambient.sh` | ambient eval for the same run set, but against each run's third `quarter-*.ckpt` (the 75% schedule checkpoint), with outputs isolated under `eval_0p75/` |
+| `eval_0p50/submit_eval_crps_ambient.sh` | ambient eval for each run's `snapshot-0p50-*.ckpt` progress checkpoint, falling back to legacy quarter checkpoints |
+| `eval_0p75/submit_eval_crps_ambient.sh` | ambient eval for each run's `snapshot-0p75-*.ckpt` progress checkpoint, falling back to legacy quarter checkpoints |
 
 ## Extending the sweep
 
@@ -78,7 +85,8 @@ the run set is still partly ablation-only (`fixed_bs32`) even though the
 We keep two sibling eval directories here:
 
 - `eval/` for the standard final-checkpoint evals.
-- `eval_0p75/` for the third quarter-checkpoint (`75%`) evals, so those
+- `eval_0p50/` and `eval_0p75/` for 50% and 75% progress-checkpoint
+  evals, so those
   partial-schedule outputs do not mix with the canonical final-checkpoint
   metrics and videos.
 

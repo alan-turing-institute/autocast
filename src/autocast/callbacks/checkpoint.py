@@ -19,6 +19,8 @@ class ProgressModelCheckpoint(ModelCheckpoint):
       estimated number of optimizer steps in the run.
     - ``start_after_fraction`` delays monitored top-k checkpointing until a
       chosen fraction of training has completed.
+    - ``stop_after_fraction`` stops monitored top-k checkpointing once a chosen
+      fraction of training has completed.
 
     ``save_last`` continues to behave exactly as in ``ModelCheckpoint``.
     """
@@ -27,6 +29,7 @@ class ProgressModelCheckpoint(ModelCheckpoint):
         self,
         *,
         start_after_fraction: float = 0.0,
+        stop_after_fraction: float | None = None,
         every_n_train_steps_fraction: float | None = None,
         monitor_optional: bool = False,
         **kwargs: Any,
@@ -40,6 +43,20 @@ class ProgressModelCheckpoint(ModelCheckpoint):
         if not 0.0 <= start_after_fraction <= 1.0:
             raise ValueError(
                 f"start_after_fraction must be in [0, 1], got {start_after_fraction}."
+            )
+        if stop_after_fraction is not None and not 0.0 <= stop_after_fraction <= 1.0:
+            raise ValueError(
+                f"stop_after_fraction must be in [0, 1], got {stop_after_fraction}."
+            )
+        if (
+            stop_after_fraction is not None
+            and stop_after_fraction > 0.0
+            and stop_after_fraction < start_after_fraction
+        ):
+            raise ValueError(
+                "stop_after_fraction must be >= start_after_fraction when set, "
+                f"got start_after_fraction={start_after_fraction}, "
+                f"stop_after_fraction={stop_after_fraction}."
             )
         if every_n_train_steps_fraction is not None and not (
             0.0 < every_n_train_steps_fraction <= 1.0
@@ -69,6 +86,7 @@ class ProgressModelCheckpoint(ModelCheckpoint):
                 raise ValueError(msg)
 
         self.start_after_fraction = start_after_fraction
+        self.stop_after_fraction = stop_after_fraction
         self.every_n_train_steps_fraction = every_n_train_steps_fraction
         self.monitor_optional = monitor_optional
         self._resolved_fractional_steps = False
@@ -76,6 +94,20 @@ class ProgressModelCheckpoint(ModelCheckpoint):
     def on_fit_start(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
         super().on_fit_start(trainer, pl_module)
         self._maybe_resolve_fractional_train_steps(trainer)
+
+    @property
+    def state_key(self) -> str:
+        return self._generate_state_key(
+            monitor=self.monitor,
+            mode=self.mode,
+            every_n_train_steps=self._every_n_train_steps,
+            every_n_epochs=self._every_n_epochs,
+            train_time_interval=self._train_time_interval,
+            start_after_fraction=self.start_after_fraction,
+            stop_after_fraction=self.stop_after_fraction,
+            every_n_train_steps_fraction=self.every_n_train_steps_fraction,
+            monitor_optional=self.monitor_optional,
+        )
 
     def _maybe_resolve_fractional_train_steps(self, trainer: L.Trainer) -> None:
         if self.every_n_train_steps_fraction is None or self._resolved_fractional_steps:
@@ -165,9 +197,15 @@ class ProgressModelCheckpoint(ModelCheckpoint):
         return f"{progress_hundredths // 100}p{progress_hundredths % 100:02d}"
 
     def _monitor_ready(self, trainer: L.Trainer) -> bool:
-        if self.monitor is None or self.start_after_fraction <= 0.0:
+        if self.monitor is None:
             return True
-        return self._training_progress_fraction(trainer) >= self.start_after_fraction
+
+        progress = self._training_progress_fraction(trainer)
+        if self.start_after_fraction > 0.0 and progress < self.start_after_fraction:
+            return False
+        return not (
+            self.stop_after_fraction is not None and progress > self.stop_after_fraction
+        )
 
     def _save_topk_checkpoint(
         self, trainer: L.Trainer, monitor_candidates: dict[str, Any]

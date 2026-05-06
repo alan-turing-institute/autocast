@@ -69,6 +69,7 @@ for run_dir in "${RUN_DIRS[@]}"; do
         uv run autocast eval --mode slurm "${dry_run_arg[@]}" \
             --workdir "${run_dir}" \
             eval.checkpoint=processor.ckpt \
+            eval.mode=auto \
             +autoencoder_checkpoint="${ae_ckpt}" \
             eval.metrics="${EVAL_METRICS}" \
             eval.batch_size="${EVAL_BATCH_SIZE}" \

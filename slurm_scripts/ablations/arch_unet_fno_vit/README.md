@@ -3,7 +3,7 @@
 Compare U-Net and FNO backbones against the ViT (Azula) baseline on the
 CRPS ambient path.
 
-**Status:** stub — no scripts yet.
+**Status:** U-Net CNS config added; FNO remains unscheduled.
 
 ## Baseline
 
@@ -19,19 +19,21 @@ Swap `model.processor` backbone while trying to match parameter count
   CRPS.
 - `local_hydra/local_experiment/epd_crps_fno.yaml` — FNO + CRPS.
 
-Each will need per-CNS `local_experiment/ablations/arch/<arch>.yaml`
-that matches the ambient baseline's encoder/decoder/loss so only the
-backbone varies.
+The planned U-Net run uses
+`local_hydra/local_experiment/ablations/arch_unet_fno_vit/conditioned_navier_stokes/crps_unet_azula_80m.yaml`.
+It matches the ambient baseline's encoder/decoder/loss and uses an Azula U-Net
+channel ladder `[47, 94, 188, 376]`, measured at ~80.9M processor params for
+CNS ambient shapes.
+
+FNO still needs a matching per-CNS config before scheduling.
 
 ## Datasets
 
-CNS only for now. Table says 2 datasets × 2 non-ViT archs = 4 runs
-(CNS gives 2: U-Net and FNO).
+CNS only for now. Current planned coverage is U-Net only; FNO is held back
+until the parameter-matching decision is settled.
 
 ## Outstanding decisions
 
-- How to match parameter count across architectures — the comparison
-  table for the main study (see `slurm_scripts/comparison/README.md`)
-  locked ~80M for ViT variants; we need equivalent targets for U-Net
-  and FNO.
+- How to match FNO parameter count — the U-Net target is now fixed at ~80.9M
+  to match the 80M ViT variants.
 - Whether FNO needs a different patch-size / token structure.

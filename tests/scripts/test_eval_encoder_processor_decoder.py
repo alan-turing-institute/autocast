@@ -30,6 +30,7 @@ from autocast.scripts.eval.encoder_processor_decoder import (
     _resolve_rollout_batch_limit,
     _resolve_rollout_channel_names,
     _resolve_rollout_timestep_limit,
+    _save_rollout_snapshot_panels,
     _should_skip_metric,
     _split_metric_and_metadata_rows,
     _training_runtime_rows,
@@ -37,6 +38,7 @@ from autocast.scripts.eval.encoder_processor_decoder import (
     _validate_resolved_eval_path,
 )
 from autocast.types import Batch, EncodedBatch
+from autocast.utils.plots import _panel_size_for_width
 
 
 def test_metric_window_interval_label_uses_closed_open_notation():
@@ -440,6 +442,84 @@ def test_render_rollouts_resolves_indices_within_batched_samples(tmp_path, monke
     assert len(captured_paths) == 4
     for idx in range(4):
         assert any(f"batch_{idx}_sample_{idx}.mp4" in p for p in captured_paths)
+
+
+def test_snapshot_panel_size_preserves_imshow_row_col_aspect():
+    panel_width, panel_height = _panel_size_for_width(
+        target_width_in=6.0,
+        ncols=3,
+        spatial=(8, 4),
+        preserve_aspect=True,
+    )
+
+    assert panel_width == pytest.approx(2.0)
+    assert panel_height == pytest.approx(4.0)
+
+
+def test_save_rollout_snapshot_panels_uses_snapshot_extension_for_data_only(
+    tmp_path,
+    monkeypatch,
+):
+    calls: list[tuple[str, str, tuple[str, ...]]] = []
+
+    def _fake_snapshots(**kwargs):
+        calls.append(
+            (
+                "full",
+                kwargs["save_path"],
+                tuple(kwargs.get("extra_formats") or ()),
+            )
+        )
+
+    def _fake_data_only(**kwargs):
+        calls.append(
+            (
+                "data",
+                kwargs["save_path"],
+                tuple(kwargs.get("extra_formats") or ()),
+            )
+        )
+
+    monkeypatch.setattr(
+        "autocast.scripts.eval.encoder_processor_decoder.plot_spatiotemporal_snapshots",
+        _fake_snapshots,
+    )
+    monkeypatch.setattr(
+        "autocast.scripts.eval.encoder_processor_decoder."
+        "plot_spatiotemporal_snapshots_data_only",
+        _fake_data_only,
+    )
+
+    saved_paths = []
+    values = torch.zeros(1, 3, 2, 2, 1)
+    _save_rollout_snapshot_panels(
+        trues_mean=values,
+        preds_mean=values,
+        preds_uq=None,
+        local_idx=0,
+        target_idx=2,
+        snapshot_dir=tmp_path,
+        snapshot_timesteps=[0, 1],
+        snapshot_channels=[0],
+        snapshot_ext="jpg",
+        saved_paths=saved_paths,
+        names_for_plot=None,
+        preserve_aspect=True,
+        dataset_short_label="AD",
+    )
+
+    full_base = tmp_path / "batch_2_sample_0_channel_0_snapshots"
+    data_base = tmp_path / "batch_2_sample_0_channel_0_snapshots_data"
+    assert calls == [
+        ("full", str(full_base.with_suffix(".jpg")), ("pdf",)),
+        ("data", str(data_base.with_suffix(".jpg")), ("pdf",)),
+    ]
+    assert saved_paths == [
+        full_base.with_suffix(".jpg"),
+        full_base.with_suffix(".pdf"),
+        data_base.with_suffix(".jpg"),
+        data_base.with_suffix(".pdf"),
+    ]
 
 
 # ---------------------------------------------------------------------------

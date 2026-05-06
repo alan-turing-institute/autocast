@@ -216,6 +216,43 @@ def test_load_preset_launcher_cfg_ignores_unrelated_interpolation(
     assert launcher_cfg.get("timeout_min") == 120
 
 
+def test_load_preset_launcher_cfg_walks_local_experiment_parent_chain(
+    tmp_path: Path, monkeypatch
+):
+    # Child references a parent local_experiment that declares /distributed:
+    # — the loader must walk the chain so SLURM allocates the right resources.
+    local_root = tmp_path / "local_hydra" / "local_experiment"
+    parent_cfg = local_root / "parent.yaml"
+    parent_cfg.parent.mkdir(parents=True, exist_ok=True)
+    parent_cfg.write_text(
+        "\n".join(
+            [
+                "defaults:",
+                "  - /distributed: ddp_4gpu_slurm",
+                "  - _self_",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    child_cfg = local_root / "child.yaml"
+    child_cfg.write_text(
+        "\n".join(
+            [
+                "defaults:",
+                "  - /local_experiment/parent",
+                "  - _self_",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(tmp_path)
+    launcher_cfg = _load_preset_launcher_cfg(["local_experiment=child"])
+
+    assert launcher_cfg.get("gpus_per_node") == 4
+    assert launcher_cfg.get("tasks_per_node") == 4
+
+
 # ---------------------------------------------------------------------------
 # naming
 # ---------------------------------------------------------------------------
@@ -558,6 +595,40 @@ def test_eval_command_auto_infers_hydra_config(monkeypatch, tmp_path):
     assert any(o.startswith("datamodule.data_path=") for o in overrides)
     # Missing eval.checkpoint should be inferred from workdir
     assert any(o.startswith("eval.checkpoint=") for o in overrides)
+
+
+def test_eval_command_adds_snapshot_defaults_for_stale_resolved_config(
+    monkeypatch, tmp_path
+):
+    (tmp_path / "resolved_config.yaml").write_text(
+        "eval:\n  checkpoint: encoder_processor_decoder.ckpt\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "encoder_processor_decoder.ckpt").touch()
+    captured: dict[str, object] = {}
+
+    def _fake_run_module(_module, overrides, dry_run=False, mode="local", **_kwargs):
+        captured["overrides"] = overrides
+        del dry_run, mode, _kwargs  # accept run_module's keyword args
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.commands.run_module", _fake_run_module
+    )
+
+    user_override = "eval.rollout_snapshot_dir=/tmp/snapshots"
+    eval_command(
+        mode="local",
+        dataset=None,
+        work_dir=str(tmp_path),
+        overrides=[user_override],
+        dry_run=True,
+    )
+
+    overrides = captured["overrides"]
+    assert isinstance(overrides, list)
+    default_override = "+eval.rollout_snapshot_dir=null"
+    assert default_override in overrides
+    assert overrides.index(default_override) < overrides.index(user_override)
 
 
 def test_eval_command_includes_defaults_without_resolved_config(monkeypatch, tmp_path):

@@ -1,0 +1,64 @@
+# @package _global_
+defaults:
+  - /distributed: ddp_4gpu_slurm
+  - override /datamodule: conditioned_navier_stokes
+  - override /encoder@model.encoder: permute_concat
+  - override /decoder@model.decoder: channels_last
+  - override /processor@model.processor: vit_azula_large
+  - override /optimizer: adamw_half
+  - _self_
+
+experiment_name: ablation_noise_channels_crps_vit_256_conditioned_navier_stokes
+
+datamodule:
+  use_normalization: true
+  batch_size: 32
+
+float32_matmul_precision: high
+
+logging:
+  wandb:
+    enabled: true
+
+output:
+  skip_test: true
+
+optimizer:
+  learning_rate: 2e-4
+  warmup: 0
+
+model:
+  train_in_latent_space: false
+  n_members: 8
+  encoder:
+    with_constants: true
+  processor:
+    # With n_noise_channels=256, hidden_dim=568 drops the processor to ~53.4M
+    # params. Keep depth/heads fixed and use width as the single balancing knob;
+    # hidden_dim=704 gives ~79.9M processor params for CNS ambient shapes.
+    hidden_dim: 704
+    num_heads: 8
+    n_layers: 12
+    n_noise_channels: 256
+  loss_func:
+    _target_: autocast.losses.ensemble.AlphaFairCRPSLoss
+  train_metrics:
+    afcrps:
+      _target_: autocast.metrics.ensemble.AlphaFairCRPS
+    afcrps_mae_term:
+      _target_: autocast.metrics.ensemble.AlphaFairCRPSMAETerm
+    afcrps_spread_term:
+      _target_: autocast.metrics.ensemble.AlphaFairCRPSSpreadTerm
+  val_metrics:
+    afcrps:
+      _target_: autocast.metrics.ensemble.AlphaFairCRPS
+    afcrps_mae_term:
+      _target_: autocast.metrics.ensemble.AlphaFairCRPSMAETerm
+    afcrps_spread_term:
+      _target_: autocast.metrics.ensemble.AlphaFairCRPSSpreadTerm
+    spread:
+      _target_: autocast.metrics.ensemble.EnsembleSpread
+    multicoverage:
+      _target_: autocast.metrics.MultiCoverage
+    multiwinkler:
+      _target_: autocast.metrics.ensemble.MultiWinkler

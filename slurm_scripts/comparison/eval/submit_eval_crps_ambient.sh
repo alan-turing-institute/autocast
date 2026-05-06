@@ -1,12 +1,16 @@
 #!/bin/bash
 
 set -euo pipefail
-# Evaluate CRPS-in-ambient EPD runs trained on 2026-04-18.
-# Covers 4 primary runs (permute_concat across all 4 datasets) plus two CNS
-# ablations: AE-ambient (DC encoder/decoder, frozen) and identity+global_cond.
+# Evaluate CRPS-in-ambient EPD runs trained on 2026-04-24.
+# Covers the 4 primary permute_concat runs. CNS ablation-only reruns stay under
+# slurm_scripts/ablations/ until they are promoted into the comparison suite.
 # All are EPD checkpoints (encoder_processor_decoder.ckpt); eval uses the
 # resolved_config.yaml written alongside each run, so the trained architecture
 # is reproduced exactly for eval.
+#
+# Force eval.mode=ambient. These stateless EPD checkpoints can look
+# processor-only to eval.mode=auto because PermuteConcat / ChannelsLast add no
+# encoder_decoder.* weights, but raw-space ambient rollout is the right route.
 #
 # Batch size: CRPS eval fits 8/GPU comfortably (ambient 64x64, n_members=10,
 # single forward pass per rollout step — no ODE).
@@ -22,14 +26,10 @@ EVAL_METRICS="[mse,mae,nmse,nmae,rmse,nrmse,vmse,vrmse,linf,psrmse,psrmse_low,ps
 
 # Run dirs (absolute paths work; relative paths resolved from repo root).
 RUN_DIRS=(
-    # CRPS ambient (permute_concat) — 4 datasets
-    "outputs/2026-04-18/crps_gs64_vit_azula_large_0f89f06_779325a"
-    "outputs/2026-04-18/crps_gpe64_vit_azula_large_0f89f06_d337bd8"
-    "outputs/2026-04-18/crps_cns64_vit_azula_large_0f89f06_5b7332b"
-    "outputs/2026-04-18/crps_ad64_vit_azula_large_0f89f06_4667606"
-    # CNS ablations
-    "outputs/2026-04-18/crps_cns64_vit_azula_large_0f89f06_cf53b48"  # identity+global_cond
-    "outputs/2026-04-18/crps_cns64_vit_azula_large_0f89f06_e7e60d9"  # AE-ambient (DC encoder/decoder)
+    "outputs/2026-04-24/crps_gs64_vit_azula_large_bed4611_828a161"
+    "outputs/2026-04-24/crps_gpe64_vit_azula_large_bed4611_e0a6df5"
+    "outputs/2026-04-24/crps_cns64_vit_azula_large_bed4611_c99f534"
+    "outputs/2026-04-24/crps_ad64_vit_azula_large_bed4611_da01a04"
 )
 
 for run_dir in "${RUN_DIRS[@]}"; do
@@ -49,12 +49,14 @@ for run_dir in "${RUN_DIRS[@]}"; do
         echo "Submitting CRPS-ambient eval"
         echo "  mode: ${run_label}"
         echo "  run_dir: ${run_dir}"
+        echo "  eval.mode: ambient"
         echo "  eval.batch_size: ${EVAL_BATCH_SIZE}"
         echo "  eval.n_members: ${EVAL_N_MEMBERS}"
         echo "  eval.metrics: ${EVAL_METRICS}"
 
         uv run autocast eval --mode slurm "${dry_run_arg[@]}" \
             --workdir "${run_dir}" \
+            eval.mode=ambient \
             eval.metrics="${EVAL_METRICS}" \
             eval.batch_size="${EVAL_BATCH_SIZE}" \
             eval.n_members="${EVAL_N_MEMBERS}" \

@@ -240,7 +240,15 @@ class ValidationMetricPlotCallback(Callback):
                         payload[key] = wandb_image
                 if not payload:
                     payload[key] = fig
-                experiment.log(payload, step=step)
+                if self._is_wandb_experiment(experiment):
+                    # Passing step= forces wandb's internal _step to jump to
+                    # trainer.global_step, which is orders of magnitude ahead of
+                    # the auto-incremented _step used by Lightning's WandbLogger.
+                    # That collapses the default "Step" X-axis for every other
+                    # metric into stepped plateaus. Let wandb auto-increment.
+                    experiment.log(payload)
+                else:
+                    experiment.log(payload, step=step)
 
     @staticmethod
     def _is_wandb_experiment(experiment: Any) -> bool:

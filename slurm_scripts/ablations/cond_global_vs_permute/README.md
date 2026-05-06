@@ -5,9 +5,11 @@ channel concatenation) to `identity` encoder + `include_global_cond:
 true` (AdaLN modulation on the backbone). Makes conditioning flow match
 FM ambient, isolating the encoder effect.
 
-**Status:** CNS data point exists for CRPS-ViT —
-`outputs/2026-04-18/crps_cns64_vit_azula_large_0f89f06_cf53b48`. No new
-CRPS-ViT training needed for this pass; U-Net equivalent is pending.
+**Status:** CNS config exists and is included in the planned CNS batch. An
+older data point exists at
+`outputs/2026-04-18/crps_cns64_vit_azula_large_0f89f06_cf53b48`, but the
+current comparison basis uses 2026-04-24 CRPS runs, so rerun this ablation if
+date-aligned comparison is required.
 
 ## Baselines
 
@@ -22,6 +24,5 @@ CRPS-ViT training needed for this pass; U-Net equivalent is pending.
   mirroring the ViT ablation. U-Net backbone `include_global_cond` path
   to be verified against
   `src/autocast/processors/` U-Net module.
-- Eval for the existing CNS ViT ablation run is covered by
-  `slurm_scripts/comparison/eval/submit_eval_crps_ambient.sh` (included
-  in its RUN_DIRS).
+- Eval for a rerun should live under this ablation until it is promoted into
+  the main comparison eval set.

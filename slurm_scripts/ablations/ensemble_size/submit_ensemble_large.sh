@@ -120,7 +120,7 @@ resolve_cosine_epochs() {
 declare -A DATASETS=(
     ["gray_scott"]="epd/gray_scott/crps_vit_azula_large"
     ["gpe_laser_only_wake"]="epd/gpe_laser_wake_only/crps_vit_azula_large"
-    # ["conditioned_navier_stokes"]="epd/conditioned_navier_stokes/crps_vit_azula_large"
+    ["conditioned_navier_stokes"]="epd/conditioned_navier_stokes/crps_vit_azula_large"
     ["advection_diffusion"]="epd/advection_diffusion/crps_vit_azula_large"
 )
 
@@ -128,6 +128,7 @@ declare -A REGIMES_BY_DATASET=(
     ["gray_scott"]="eff_bs1024"
     ["gpe_laser_only_wake"]="eff_bs1024"
     # ["conditioned_navier_stokes"]="fixed_bs32 eff_bs1024"
+    ["conditioned_navier_stokes"]="eff_bs1024"
     ["advection_diffusion"]="eff_bs1024"
 )
 
@@ -162,7 +163,6 @@ for datamodule in "${!DATASETS[@]}"; do
             continue
         fi
 
-        quarter_epochs=$((cosine_epochs / 4))
         wandb_name="ensemble_m${n_members}_${regime}"
 
         for run_dry in "${RUN_DRY_STATES[@]}"; do
@@ -192,9 +192,10 @@ for datamodule in "${!DATASETS[@]}"; do
                 hydra.launcher.timeout_min="${TIMEOUT_MIN}" \
                 trainer.max_time="${BUDGET_MAX_TIME}" \
                 +trainer.max_epochs="${cosine_epochs}" \
-                trainer.callbacks.0.every_n_epochs="${quarter_epochs}" \
+                trainer.callbacks.0.every_n_train_steps_fraction=0.05 \
+                +trainer.callbacks.0.every_n_epochs=0 \
                 trainer.callbacks.0.save_top_k=-1 \
-                trainer.callbacks.0.filename=\"quarter-{epoch:04d}\"
+                trainer.callbacks.0.filename=\"snapshot-{progress_token}-{epoch:04d}-{step:08d}\"
         done
     done
 done

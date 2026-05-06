@@ -75,7 +75,11 @@ from autocast.scripts.setup import (
 from autocast.scripts.training import apply_float32_matmul_precision
 from autocast.scripts.utils import get_default_config_path
 from autocast.types.batch import Batch, EncodedBatch
-from autocast.utils import plot_spatiotemporal_video
+from autocast.utils import (
+    plot_spatiotemporal_snapshots,
+    plot_spatiotemporal_snapshots_data_only,
+    plot_spatiotemporal_video,
+)
 from autocast.utils.plots import (
     compute_metrics_from_dataloader,
     compute_metrics_per_timestep_from_dataloader,
@@ -306,6 +310,13 @@ def _resolve_video_dir(eval_cfg: DictConfig, work_dir: Path) -> Path:
     return (work_dir / "videos").resolve()
 
 
+def _resolve_rollout_snapshot_dir(eval_cfg: DictConfig, video_dir: Path) -> Path:
+    snapshot_dir = eval_cfg.get("rollout_snapshot_dir")
+    if snapshot_dir is not None:
+        return Path(snapshot_dir).expanduser().resolve()
+    return (video_dir / "snapshots").resolve()
+
+
 def _unwrap_module(module: Any) -> Any:
     """Return the underlying model when wrapped by Fabric/DDP-style wrappers."""
     unwrapped = module
@@ -401,6 +412,49 @@ def _resolve_rollout_channel_names(dataset: Any) -> list[str] | None:
             return None
 
     return channel_names
+
+
+_DATASET_SHORT_LABELS: tuple[tuple[str, str], ...] = (
+    # Order matters: longer/more-specific keys first.
+    ("advection_diffusion_multichannel", "ADM"),
+    ("advection_diffusion", "AD"),
+    ("conditioned_navier_stokes", "CNS"),
+    ("gray_scott", "GS"),
+    ("gpe", "GPE"),
+    ("reaction_diffusion", "RD"),
+    ("shallow_water2d", "SW"),
+    ("lattice_boltzmann", "LB"),
+)
+
+
+def _resolve_dataset_short_label(dataset: Any) -> str | None:
+    """Best-effort short label (e.g. ``AD``, ``CNS``, ``GS``, ``GPE``) for a dataset."""
+    if dataset is None:
+        return None
+
+    candidates: list[str] = []
+    for attr_chain in (
+        ("well_dataset", "dataset_name"),
+        ("well_dataset", "well_dataset_name"),
+        ("well_metadata", "dataset_name"),
+        ("dataset_name",),
+        ("well_dataset_name",),
+    ):
+        obj: Any = dataset
+        for attr in attr_chain:
+            obj = getattr(obj, attr, None)
+            if obj is None:
+                break
+        if isinstance(obj, str) and obj:
+            candidates.append(obj)
+
+    for raw in candidates:
+        normalized = raw.lower()
+        for key, label in _DATASET_SHORT_LABELS:
+            if key in normalized:
+                return label
+
+    return None
 
 
 def _process_metrics_results(
@@ -511,6 +565,152 @@ def _collect_rollout_sample_targets_for_batch(
     return sample_targets
 
 
+def _select_snapshot_timesteps(
+    timesteps: Sequence[int] | None,
+    n_timesteps: int,
+) -> list[int]:
+    if not timesteps:
+        return []
+
+    selected: list[int] = []
+    invalid: list[int] = []
+    seen: set[int] = set()
+    for raw_timestep in timesteps:
+        timestep = int(raw_timestep)
+        if 0 <= timestep < n_timesteps:
+            if timestep not in seen:
+                selected.append(timestep)
+                seen.add(timestep)
+        else:
+            invalid.append(timestep)
+
+    if invalid:
+        log.warning(
+            "Ignoring rollout snapshot timestep(s) outside [0, %s]: %s",
+            n_timesteps - 1,
+            invalid,
+        )
+    return selected
+
+
+def _select_snapshot_channels(
+    channels: Sequence[int] | None,
+    n_channels: int,
+) -> list[int]:
+    if channels is None:
+        return list(range(n_channels))
+
+    selected: list[int] = []
+    invalid: list[int] = []
+    seen: set[int] = set()
+    for raw_channel in channels:
+        channel = int(raw_channel)
+        if 0 <= channel < n_channels:
+            if channel not in seen:
+                selected.append(channel)
+                seen.add(channel)
+        else:
+            invalid.append(channel)
+
+    if invalid:
+        log.warning(
+            "Ignoring rollout snapshot channel(s) outside [0, %s]: %s",
+            n_channels - 1,
+            invalid,
+        )
+    return selected
+
+
+def _prepare_rollout_snapshot_plan(
+    *,
+    snapshot_dir: Path | None,
+    snapshot_timesteps: Sequence[int] | None,
+    snapshot_channels: Sequence[int] | None,
+    n_timesteps: int,
+    n_channels: int,
+) -> tuple[Path | None, list[int], list[int]]:
+    if snapshot_dir is None:
+        return None, [], []
+
+    selected_timesteps = _select_snapshot_timesteps(snapshot_timesteps, n_timesteps)
+    if not selected_timesteps:
+        return None, [], []
+
+    selected_channels = _select_snapshot_channels(snapshot_channels, n_channels)
+    if not selected_channels:
+        return None, [], []
+
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+    return snapshot_dir, selected_timesteps, selected_channels
+
+
+def _save_rollout_snapshot_panels(
+    *,
+    trues_mean: torch.Tensor,
+    preds_mean: torch.Tensor,
+    preds_uq: torch.Tensor | None,
+    local_idx: int,
+    target_idx: int,
+    snapshot_dir: Path,
+    snapshot_timesteps: Sequence[int],
+    snapshot_channels: Sequence[int],
+    snapshot_ext: str,
+    saved_paths: list[Path],
+    names_for_plot: list[str] | None,
+    preserve_aspect: bool,
+    dataset_short_label: str | None = None,
+) -> None:
+    # Always emit PDF alongside the configured raster format.
+    extra_formats = ["pdf"] if snapshot_ext.lower() != "pdf" else []
+    for channel_idx in snapshot_channels:
+        snapshot_filename = snapshot_dir / (
+            f"batch_{target_idx}_sample_{local_idx}_"
+            f"channel_{channel_idx}_snapshots.{snapshot_ext}"
+        )
+        plot_spatiotemporal_snapshots(
+            true=trues_mean[local_idx : local_idx + 1].cpu(),
+            pred=preds_mean[local_idx : local_idx + 1].cpu(),
+            pred_uq=(
+                preds_uq[local_idx : local_idx + 1].cpu()
+                if preds_uq is not None
+                else None
+            ),
+            timesteps=snapshot_timesteps,
+            channel=channel_idx,
+            batch_idx=0,
+            save_path=str(snapshot_filename),
+            extra_formats=extra_formats,
+            title="Rollout snapshots",
+            channel_names=names_for_plot,
+            preserve_aspect=preserve_aspect,
+        )
+        saved_paths.append(snapshot_filename)
+        for ext in extra_formats:
+            saved_paths.append(snapshot_filename.with_suffix(f".{ext}"))
+        log.info("Saved rollout snapshot panel to %s", snapshot_filename)
+
+        data_only_base = snapshot_dir / (
+            f"batch_{target_idx}_sample_{local_idx}_"
+            f"channel_{channel_idx}_snapshots_data"
+        )
+        data_only_filename = data_only_base.with_suffix(f".{snapshot_ext}")
+        data_only_extra_formats = ["pdf"] if snapshot_ext.lower() != "pdf" else []
+        plot_spatiotemporal_snapshots_data_only(
+            true=trues_mean[local_idx : local_idx + 1].cpu(),
+            timesteps=snapshot_timesteps,
+            channel=channel_idx,
+            batch_idx=0,
+            save_path=str(data_only_filename),
+            extra_formats=data_only_extra_formats,
+            ylabel=dataset_short_label,
+            preserve_aspect=preserve_aspect,
+        )
+        saved_paths.append(data_only_filename)
+        for ext in data_only_extra_formats:
+            saved_paths.append(data_only_base.with_suffix(f".{ext}"))
+        log.info("Saved data-only rollout snapshot panel to %s", data_only_filename)
+
+
 def _render_rollouts(  # noqa: PLR0912
     model: (
         EncoderProcessorDecoder
@@ -531,6 +731,11 @@ def _render_rollouts(  # noqa: PLR0912
     channel_names: list[str] | None = None,
     preserve_aspect: bool = False,
     decode_fn: Callable | None = None,
+    snapshot_timesteps: Sequence[int] | None = None,
+    snapshot_dir: Path | None = None,
+    snapshot_format: str = "png",
+    snapshot_channels: Sequence[int] | None = None,
+    dataset_short_label: str | None = None,
 ) -> list[Path]:
     # Return early if no rollout indices are requested
     if not batch_indices:
@@ -544,6 +749,7 @@ def _render_rollouts(  # noqa: PLR0912
     rendered_targets: set[int] = set()
     global_sample_offset = 0
     video_dir.mkdir(parents=True, exist_ok=True)
+    snapshot_ext = snapshot_format.removeprefix(".") or "png"
 
     # Perform rollouts and save videos for requested target indices.
     with torch.no_grad():
@@ -610,6 +816,17 @@ def _render_rollouts(  # noqa: PLR0912
                 sample_index=sample_index,
                 global_sample_offset=global_sample_offset,
             )
+            (
+                snapshot_dir_for_batch,
+                snapshot_timesteps_for_batch,
+                snapshot_channels_for_batch,
+            ) = _prepare_rollout_snapshot_plan(
+                snapshot_dir=snapshot_dir,
+                snapshot_timesteps=snapshot_timesteps,
+                snapshot_channels=snapshot_channels,
+                n_timesteps=int(trues_mean.shape[1]),
+                n_channels=n_channels,
+            )
 
             for target_idx, local_idx in sample_targets.items():
                 if target_idx in rendered_targets:
@@ -630,13 +847,30 @@ def _render_rollouts(  # noqa: PLR0912
                     fps=fps,
                     save_path=str(filename),
                     colorbar_mode="column",
-                    pred_uq_label="Ensemble Std Dev",
+                    pred_uq_label="Std Dev",
                     channel_names=names_for_plot,
                     preserve_aspect=preserve_aspect,
                 )
                 saved_paths.append(filename)
                 rendered_targets.add(target_idx)
                 log.info("Saved rollout visualization to %s", filename)
+
+                if snapshot_dir_for_batch is not None:
+                    _save_rollout_snapshot_panels(
+                        trues_mean=trues_mean,
+                        preds_mean=preds_mean,
+                        preds_uq=preds_uq,
+                        local_idx=local_idx,
+                        target_idx=target_idx,
+                        snapshot_dir=snapshot_dir_for_batch,
+                        snapshot_timesteps=snapshot_timesteps_for_batch,
+                        snapshot_channels=snapshot_channels_for_batch,
+                        snapshot_ext=snapshot_ext,
+                        saved_paths=saved_paths,
+                        names_for_plot=names_for_plot,
+                        preserve_aspect=preserve_aspect,
+                        dataset_short_label=dataset_short_label,
+                    )
 
             global_sample_offset += batch_size
 
@@ -1913,8 +2147,9 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
             rollout_test_loader = fabric.setup_dataloaders(
                 datamodule.rollout_test_dataloader(batch_size=eval_batch_size)
             )
+            rollout_dataset_for_labels = getattr(rollout_test_loader, "dataset", None)
             rollout_channel_names = _resolve_rollout_channel_names(
-                getattr(rollout_test_loader, "dataset", None)
+                rollout_dataset_for_labels
             )
             if rollout_channel_names is not None:
                 log.info(
@@ -1926,10 +2161,34 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                     "No rollout video channel labels found in core_field_names; "
                     "falling back to generic channel indices."
                 )
+            rollout_dataset_short_label = eval_cfg.get(
+                "rollout_snapshot_dataset_label"
+            ) or _resolve_dataset_short_label(rollout_dataset_for_labels)
+            if rollout_dataset_short_label is not None:
+                log.info(
+                    "Using dataset short label for data-only snapshots: %s",
+                    rollout_dataset_short_label,
+                )
 
             rollout_loader = _limit_batches(
                 rollout_test_loader,
                 max_rollout_batches,
+            )
+            save_rollout_snapshots = bool(eval_cfg.get("save_rollout_snapshots", False))
+            rollout_snapshot_dir = (
+                _resolve_rollout_snapshot_dir(eval_cfg, video_dir)
+                if save_rollout_snapshots
+                else None
+            )
+            rollout_snapshot_timesteps = (
+                eval_cfg.get("rollout_snapshot_timesteps", [])
+                if save_rollout_snapshots
+                else None
+            )
+            rollout_snapshot_channels = (
+                eval_cfg.get("rollout_snapshot_channels", None)
+                if save_rollout_snapshots
+                else None
             )
             _render_rollouts(
                 model,  # pyright: ignore[reportArgumentType]
@@ -1946,6 +2205,11 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 channel_names=rollout_channel_names,
                 preserve_aspect=eval_cfg.get("preserve_aspect", False),
                 decode_fn=decode_fn,
+                snapshot_timesteps=rollout_snapshot_timesteps,
+                snapshot_dir=rollout_snapshot_dir,
+                snapshot_format=eval_cfg.get("rollout_snapshot_format", "png"),
+                snapshot_channels=rollout_snapshot_channels,
+                dataset_short_label=rollout_dataset_short_label,
             )
 
         # Prepare metric functions for rollouts
