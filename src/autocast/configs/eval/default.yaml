@@ -61,6 +61,7 @@ rollout_snapshot_dir: null  # default: <video_dir>/snapshots
 rollout_snapshot_timesteps: [0, 4, 12, 30, 99]
 rollout_snapshot_channels: null  # null means all channels
 rollout_snapshot_format: png
+rollout_snapshot_dataset_label: null  # optional label for data-only snapshot rows
 
 # Accelerator for evaluation (mirrors Lightning Fabric API)
 accelerator: auto  # auto, cpu, cuda, or mps
