@@ -6,14 +6,14 @@ source "$(dirname "${BASH_SOURCE[0]}")/../../comparison/cached_latents/validate_
 # cached latents.
 # Mirrors slurm_scripts/comparison/cached_latents/submit_fm_large.sh but
 # targets the single ae_dc_large_f8 run.
-#
-# Replace COSINE_EPOCHS once timing is available from:
-#   submit_fm_f8_timing.sh
+# Derived from outputs/2026-04-28/timing/fm_f8_b256_conditioned_navier_stokes/
+# timing.ckpt via:
+#   uv run autocast time-epochs --from-checkpoint <path>/timing.ckpt -b 24 -m 0.02
 
 DATAMODULE="conditioned_navier_stokes"
 EXPERIMENT="processor/conditioned_navier_stokes/fm_vit_large"
 AE_RUN_DIR="$HOME/autocast/outputs/2026-04-26/ae_cns64_de1b4b7_e1059d7"
-COSINE_EPOCHS=3223  # placeholder: 16x16 main-study value; re-fit from f8 timing
+COSINE_EPOCHS=4379  # 19.33 s/epoch from the 5-epoch f8 timing run
 
 BUDGET_MAX_TIME="00:23:59:00"
 TIMEOUT_MIN=1439

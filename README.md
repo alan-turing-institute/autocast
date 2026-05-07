@@ -258,3 +258,7 @@ Use Hydra multi-run directly for sweeps, e.g.
 
 Or launch prewritten jobs from a manifest:
 `bash scripts/launch_from_manifest.sh run_manifests/example_runs.txt`.
+
+## Ethical guidance
+
+See [ETHICAL_GUIDANCE.md](ETHICAL_GUIDANCE.md) for guidance on the intended scope and use of AutoCast.

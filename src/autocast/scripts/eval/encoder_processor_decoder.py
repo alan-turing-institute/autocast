@@ -75,7 +75,11 @@ from autocast.scripts.setup import (
 from autocast.scripts.training import apply_float32_matmul_precision
 from autocast.scripts.utils import get_default_config_path
 from autocast.types.batch import Batch, EncodedBatch
-from autocast.utils import plot_spatiotemporal_snapshots, plot_spatiotemporal_video
+from autocast.utils import (
+    plot_spatiotemporal_snapshots,
+    plot_spatiotemporal_snapshots_data_only,
+    plot_spatiotemporal_video,
+)
 from autocast.utils.plots import (
     compute_metrics_from_dataloader,
     compute_metrics_per_timestep_from_dataloader,
@@ -402,6 +406,49 @@ def _resolve_rollout_channel_names(dataset: Any) -> list[str] | None:
     return channel_names
 
 
+_DATASET_SHORT_LABELS: tuple[tuple[str, str], ...] = (
+    # Order matters: longer/more-specific keys first.
+    ("advection_diffusion_multichannel", "ADM"),
+    ("advection_diffusion", "AD"),
+    ("conditioned_navier_stokes", "CNS"),
+    ("gray_scott", "GS"),
+    ("gpe", "GPE"),
+    ("reaction_diffusion", "RD"),
+    ("shallow_water2d", "SW"),
+    ("lattice_boltzmann", "LB"),
+)
+
+
+def _resolve_dataset_short_label(dataset: Any) -> str | None:
+    """Best-effort short label (e.g. ``AD``, ``CNS``, ``GS``, ``GPE``) for a dataset."""
+    if dataset is None:
+        return None
+
+    candidates: list[str] = []
+    for attr_chain in (
+        ("well_dataset", "dataset_name"),
+        ("well_dataset", "well_dataset_name"),
+        ("well_metadata", "dataset_name"),
+        ("dataset_name",),
+        ("well_dataset_name",),
+    ):
+        obj: Any = dataset
+        for attr in attr_chain:
+            obj = getattr(obj, attr, None)
+            if obj is None:
+                break
+        if isinstance(obj, str) and obj:
+            candidates.append(obj)
+
+    for raw in candidates:
+        normalized = raw.lower()
+        for key, label in _DATASET_SHORT_LABELS:
+            if key in normalized:
+                return label
+
+    return None
+
+
 def _process_metrics_results(
     results: dict[None | tuple[int, int], dict[str, Metric]],
     per_batch_rows: list[dict[str, float | str]] | None = None,
@@ -600,7 +647,10 @@ def _save_rollout_snapshot_panels(
     saved_paths: list[Path],
     names_for_plot: list[str] | None,
     preserve_aspect: bool,
+    dataset_short_label: str | None = None,
 ) -> None:
+    # Always emit PDF alongside the configured raster format.
+    extra_formats = ["pdf"] if snapshot_ext.lower() != "pdf" else []
     for channel_idx in snapshot_channels:
         snapshot_filename = snapshot_dir / (
             f"batch_{target_idx}_sample_{local_idx}_"
@@ -618,12 +668,36 @@ def _save_rollout_snapshot_panels(
             channel=channel_idx,
             batch_idx=0,
             save_path=str(snapshot_filename),
+            extra_formats=extra_formats,
             title="Rollout snapshots",
             channel_names=names_for_plot,
             preserve_aspect=preserve_aspect,
         )
         saved_paths.append(snapshot_filename)
+        for ext in extra_formats:
+            saved_paths.append(snapshot_filename.with_suffix(f".{ext}"))
         log.info("Saved rollout snapshot panel to %s", snapshot_filename)
+
+        data_only_base = snapshot_dir / (
+            f"batch_{target_idx}_sample_{local_idx}_"
+            f"channel_{channel_idx}_snapshots_data"
+        )
+        data_only_filename = data_only_base.with_suffix(f".{snapshot_ext}")
+        data_only_extra_formats = ["pdf"] if snapshot_ext.lower() != "pdf" else []
+        plot_spatiotemporal_snapshots_data_only(
+            true=trues_mean[local_idx : local_idx + 1].cpu(),
+            timesteps=snapshot_timesteps,
+            channel=channel_idx,
+            batch_idx=0,
+            save_path=str(data_only_filename),
+            extra_formats=data_only_extra_formats,
+            ylabel=dataset_short_label,
+            preserve_aspect=preserve_aspect,
+        )
+        saved_paths.append(data_only_filename)
+        for ext in data_only_extra_formats:
+            saved_paths.append(data_only_base.with_suffix(f".{ext}"))
+        log.info("Saved data-only rollout snapshot panel to %s", data_only_filename)
 
 
 def _render_rollouts(  # noqa: PLR0912
@@ -650,6 +724,7 @@ def _render_rollouts(  # noqa: PLR0912
     snapshot_dir: Path | None = None,
     snapshot_format: str = "png",
     snapshot_channels: Sequence[int] | None = None,
+    dataset_short_label: str | None = None,
 ) -> list[Path]:
     # Return early if no rollout indices are requested
     if not batch_indices:
@@ -761,7 +836,7 @@ def _render_rollouts(  # noqa: PLR0912
                     fps=fps,
                     save_path=str(filename),
                     colorbar_mode="column",
-                    pred_uq_label="Ensemble Std Dev",
+                    pred_uq_label="Std Dev",
                     channel_names=names_for_plot,
                     preserve_aspect=preserve_aspect,
                 )
@@ -783,6 +858,7 @@ def _render_rollouts(  # noqa: PLR0912
                         saved_paths=saved_paths,
                         names_for_plot=names_for_plot,
                         preserve_aspect=preserve_aspect,
+                        dataset_short_label=dataset_short_label,
                     )
 
             global_sample_offset += batch_size
@@ -2060,8 +2136,9 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
             rollout_test_loader = fabric.setup_dataloaders(
                 datamodule.rollout_test_dataloader(batch_size=eval_batch_size)
             )
+            rollout_dataset_for_labels = getattr(rollout_test_loader, "dataset", None)
             rollout_channel_names = _resolve_rollout_channel_names(
-                getattr(rollout_test_loader, "dataset", None)
+                rollout_dataset_for_labels
             )
             if rollout_channel_names is not None:
                 log.info(
@@ -2072,6 +2149,14 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 log.info(
                     "No rollout video channel labels found in core_field_names; "
                     "falling back to generic channel indices."
+                )
+            rollout_dataset_short_label = eval_cfg.get(
+                "rollout_snapshot_dataset_label"
+            ) or _resolve_dataset_short_label(rollout_dataset_for_labels)
+            if rollout_dataset_short_label is not None:
+                log.info(
+                    "Using dataset short label for data-only snapshots: %s",
+                    rollout_dataset_short_label,
                 )
 
             rollout_loader = _limit_batches(
@@ -2113,6 +2198,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 snapshot_dir=rollout_snapshot_dir,
                 snapshot_format=eval_cfg.get("rollout_snapshot_format", "png"),
                 snapshot_channels=rollout_snapshot_channels,
+                dataset_short_label=rollout_dataset_short_label,
             )
 
         # Prepare metric functions for rollouts

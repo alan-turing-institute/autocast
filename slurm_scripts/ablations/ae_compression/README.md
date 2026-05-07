@@ -50,6 +50,7 @@ downsamples (3 → 64 → 16; 4 → 64 → 8).
 | `submit_cache_latents_f8.sh` | cache f8 latents from `ae_cns64_de1b4b7_e1059d7` |
 | `submit_fm_f8_timing.sh` | 5-epoch FM-in-latent timing run on f8 latents |
 | `submit_fm_f8_large.sh` | 24h FM-in-latent run on f8 latents (placeholder `COSINE_EPOCHS`) |
+| `submit_eval_fm_f8_encode_once.sh` | eval the f8 FM-in-latent run with raw-space encode-once metrics |
 
 ## Workflow
 
@@ -71,6 +72,8 @@ Once `ae_cns64_de1b4b7_e1059d7` (base 50M f8) finishes:
    not directly transferable).
 3. Update `COSINE_EPOCHS` in `submit_fm_f8_large.sh` from the timing
    output, then `bash submit_fm_f8_large.sh`.
+4. `bash submit_eval_fm_f8_encode_once.sh` — eval the trained f8 FM run
+   through `eval.mode=encode_once`, writing to `eval_encode_once/`.
 
 Reuses `processor/conditioned_navier_stokes/fm_vit_large.yaml` unchanged
 — the `vit` backbone with `patch_size=1` adapts to the smaller spatial
