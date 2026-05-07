@@ -3,9 +3,7 @@ name = "autocast"
 version = "0.0.1"
 description = "Spatiotemporal forecasting"
 readme = "README.md"
-authors = [
-    { name = "AI for Physical Systems Team at The Alan Turing Institute", email = "ai4physics@turing.ac.uk" },
-]
+authors = [{ name = "Anonymous Authors" }]
 requires-python = ">=3.11,<3.13"
 dependencies = [
     "autoemulate>=1.2.0",

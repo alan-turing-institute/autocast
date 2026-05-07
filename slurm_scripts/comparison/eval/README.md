@@ -52,8 +52,7 @@ for 25 steps on 64×64 fields:
 The cached-latent comparison scripts now rely on the default
 `eval.mode=auto`, which resolves to `encode_once` for processor-only
 cached-latent runs when `autoencoder_checkpoint=<ae.ckpt>` is supplied.
-That behavior landed in
-[PR #339](https://github.com/alan-turing-institute/autocast/pull/339).
+That behavior is now part of the default evaluation workflow.
 It keeps metrics in raw data space while avoiding the extra decode/encode
 drift charged by the explicit ambient ablation. That is now the only
 comparison-suite path we keep under `slurm_scripts/comparison/eval/`.

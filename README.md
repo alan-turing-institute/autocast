@@ -1,4 +1,4 @@
-# AutoCast <img src="https://raw.githubusercontent.com/alan-turing-institute/autocast/refs/heads/main/AC.png" align="right" height="138" />
+# AutoCast <img src="AC.png" align="right" height="138" />
 
 ## Installation
 
