@@ -37,12 +37,13 @@ class TheWellDataModule(LightningDataModule):
             num_workers if num_workers is not None else min(os.cpu_count() or 1, 8)
         )
 
-        # Build common kwargs - use path directly if provided, otherwise use dataset name
+        # Build common kwargs and choose either a direct path or a dataset name.
         common_kwargs = {
             "n_steps_input": n_steps_input,
             "n_steps_output": n_steps_output,
             "use_normalization": use_normalization,
             "normalization_type": normalization_type,
+            "normalization_path": normalization_path,
             "autoencoder_mode": autoencoder_mode,
             **well_kwargs,
         }
@@ -54,58 +55,27 @@ class TheWellDataModule(LightningDataModule):
 
         self.train_dataset = TheWell(
             well_split_name="train",
-            n_steps_input=n_steps_input,
-            n_steps_output=n_steps_output,
-            use_normalization=use_normalization,
-            normalization_type=normalization_type,
-            normalization_path=normalization_path,
-            autoencoder_mode=autoencoder_mode,
-            **well_kwargs,
+            **common_kwargs,
         )
         self.val_dataset = TheWell(
             well_split_name="valid",
-            n_steps_input=n_steps_input,
-            n_steps_output=n_steps_output,
-            use_normalization=use_normalization,
-            normalization_type=normalization_type,
-            normalization_path=normalization_path,
-            autoencoder_mode=autoencoder_mode,
-            **well_kwargs,
+            **common_kwargs,
         )
         self.test_dataset = TheWell(
             well_split_name="test",
-            n_steps_input=n_steps_input,
-            n_steps_output=n_steps_output,
-            use_normalization=use_normalization,
-            normalization_type=normalization_type,
-            normalization_path=normalization_path,
-            autoencoder_mode=autoencoder_mode,
-            **well_kwargs,
+            **common_kwargs,
         )
 
         if not autoencoder_mode:
-            # Remove autoencoder_mode for rollout datasets
-            rollout_kwargs = {
-                k: v for k, v in common_kwargs.items() if k != "autoencoder_mode"
-            }
+            rollout_kwargs = common_kwargs.copy()
+            rollout_kwargs.pop("autoencoder_mode")
+            rollout_kwargs["full_trajectory_mode"] = True
             self.rollout_val_dataset = TheWell(
                 well_split_name="train",
-                n_steps_input=n_steps_input,
-                n_steps_output=n_steps_output,
-                use_normalization=use_normalization,
-                normalization_type=normalization_type,
-                normalization_path=normalization_path,
-                full_trajectory_mode=True,
                 **rollout_kwargs,
             )
             self.rollout_test_dataset = TheWell(
                 well_split_name="test",
-                n_steps_input=n_steps_input,
-                n_steps_output=n_steps_output,
-                use_normalization=use_normalization,
-                normalization_type=normalization_type,
-                normalization_path=normalization_path,
-                full_trajectory_mode=True,
                 **rollout_kwargs,
             )
 

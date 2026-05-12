@@ -30,12 +30,40 @@ import argparse
 import re
 import shutil
 from pathlib import Path
+from typing import Any, cast
 
 import h5py
 import numpy as np
 import yaml
 from scipy.ndimage import gaussian_filter
 from tqdm import tqdm
+
+
+def _attr_bool(attrs: dict[str, Any], key: str, default: bool = False) -> bool:
+    value = attrs.get(key, default)
+    if isinstance(value, np.ndarray):
+        return bool(value.item())
+    return bool(value)
+
+
+def _attr_int(attrs: Any, key: str) -> int | None:
+    if key not in attrs:
+        return None
+    value = attrs[key]
+    if isinstance(value, np.ndarray):
+        return int(value.item())
+    return int(cast(Any, value))
+
+
+def _attr_int_sequence(attrs: Any, key: str) -> tuple[int, ...] | None:
+    if key not in attrs:
+        return None
+    value = attrs[key]
+    if isinstance(value, np.ndarray):
+        return tuple(int(dim) for dim in value.tolist())
+    if isinstance(value, list | tuple):
+        return tuple(int(dim) for dim in value)
+    return None
 
 
 def downsample_field(
@@ -56,12 +84,13 @@ def downsample_field(
         time_varying: Whether the field varies in time.
         spatial_filtering: Whether to apply Gaussian filtering before downsampling.
         n_batch_dims: Number of batch dimensions (e.g., sample dimension).
-        n_tensor_dims: Number of tensor dimensions (0 for scalars, 1 for vectors, 2 for tensors).
+        n_tensor_dims: Number of tensor dimensions, e.g. 0 for scalars.
         spatial_downsample_factor: Factor by which to downsample spatial dimensions.
         temporal_downsample_factor: Factor by which to downsample time dimension.
         time_fraction: Fraction of time steps to keep (applied before downsampling).
 
-    Returns:
+    Returns
+    -------
         Downsampled array.
     """
     n_time_dims = 1 if time_varying else 0
@@ -108,7 +137,7 @@ def downsample_field(
     return data
 
 
-def process_dataset_item(
+def process_dataset_item(  # noqa: PLR0912
     src_dataset: h5py.Dataset,
     dst_group: h5py.Group,
     name: str,
@@ -130,7 +159,7 @@ def process_dataset_item(
         time_fraction: Fraction of time to keep.
         trajectories_to_process: Number of trajectories to process (None for all).
     """
-    attrs = dict(src_dataset.attrs)
+    attrs: dict[str, Any] = dict(src_dataset.attrs)
 
     # Handle scalar datasets
     if src_dataset.shape == ():
@@ -138,53 +167,51 @@ def process_dataset_item(
     else:
         data = src_dataset[:]
 
-        downsample_kws = dict(
-            spatial_downsample_factor=spatial_downsample_factor,
-            temporal_downsample_factor=temporal_downsample_factor,
-            time_fraction=time_fraction,
-        )
-
         # Handle different dataset types
         if (
             re.match(r"t[012]_fields.*", full_name)
             or full_name == "additional_information/g_contravariant"
         ):
             # Field data - apply full downsampling
-            if (
-                attrs.get("sample_varying", False)
-                and trajectories_to_process is not None
-            ):
+            sample_varying = _attr_bool(attrs, "sample_varying")
+            if sample_varying and trajectories_to_process is not None:
                 data = data[:trajectories_to_process, ...]
 
             if full_name.startswith("t0_fields"):
                 n_tensor_dims = 0
             elif full_name.startswith("t1_fields"):
                 n_tensor_dims = 1
-            elif full_name.startswith("t2_fields"):
-                n_tensor_dims = 2
-            elif full_name == "additional_information/g_contravariant":
+            elif (
+                full_name.startswith("t2_fields")
+                or full_name == "additional_information/g_contravariant"
+            ):
                 n_tensor_dims = 2
             else:
                 n_tensor_dims = 0
 
             data = downsample_field(
                 data,
-                time_varying=attrs.get("time_varying", False),
+                time_varying=_attr_bool(attrs, "time_varying"),
                 spatial_filtering=True,
-                n_batch_dims=int(attrs.get("sample_varying", False)),
+                n_batch_dims=int(sample_varying),
                 n_tensor_dims=n_tensor_dims,
-                **downsample_kws,
+                spatial_downsample_factor=spatial_downsample_factor,
+                temporal_downsample_factor=temporal_downsample_factor,
+                time_fraction=time_fraction,
             )
 
         elif re.match(r"dimensions/time", full_name):
             # Time dimension - only temporal downsampling
+            sample_varying = _attr_bool(attrs, "sample_varying")
             data = downsample_field(
                 data,
                 time_varying=True,
                 spatial_filtering=False,
-                n_batch_dims=int(attrs.get("sample_varying", False)),
+                n_batch_dims=int(sample_varying),
                 n_tensor_dims=0,
-                **downsample_kws,
+                spatial_downsample_factor=spatial_downsample_factor,
+                temporal_downsample_factor=temporal_downsample_factor,
+                time_fraction=time_fraction,
             )
 
         elif (
@@ -198,23 +225,20 @@ def process_dataset_item(
                 spatial_filtering=False,
                 n_batch_dims=0,
                 n_tensor_dims=0,
-                **downsample_kws,
+                spatial_downsample_factor=spatial_downsample_factor,
+                temporal_downsample_factor=temporal_downsample_factor,
+                time_fraction=time_fraction,
             )
 
         elif re.match(r"scalars/.*", full_name):
             # Scalar data - trajectory limiting and time downsampling only
-            if (
-                attrs.get("sample_varying", False)
-                and trajectories_to_process is not None
-            ):
+            sample_varying = _attr_bool(attrs, "sample_varying")
+            if sample_varying and trajectories_to_process is not None:
                 data = data[:trajectories_to_process, ...]
-            if attrs.get("time_varying", False):
+            if _attr_bool(attrs, "time_varying"):
                 new_time_length = int(data.shape[-1] * time_fraction)
                 time_slice = slice(None, new_time_length, temporal_downsample_factor)
-                if attrs.get("sample_varying", False):
-                    data = data[:, time_slice]
-                else:
-                    data = data[time_slice]
+                data = data[:, time_slice] if sample_varying else data[time_slice]
 
         elif re.match(r"boundary_conditions/.*/mask", full_name):
             # Boundary condition masks - handle specially
@@ -231,7 +255,9 @@ def process_dataset_item(
                     spatial_filtering=False,
                     n_batch_dims=0,
                     n_tensor_dims=0,
-                    **downsample_kws,
+                    spatial_downsample_factor=spatial_downsample_factor,
+                    temporal_downsample_factor=temporal_downsample_factor,
+                    time_fraction=time_fraction,
                 )
 
     # Create the dataset in destination
@@ -242,8 +268,8 @@ def process_dataset_item(
         dst_group[name].attrs[key] = value
 
     # Update spatial resolution if present
-    if "spatial_resolution" in attrs:
-        old_resolution = attrs["spatial_resolution"]
+    old_resolution = _attr_int_sequence(attrs, "spatial_resolution")
+    if old_resolution is not None:
         new_resolution = tuple(
             dim // spatial_downsample_factor for dim in old_resolution
         )
@@ -321,30 +347,31 @@ def process_file(
     for key, value in src_file.attrs.items():
         dst_file.attrs[key] = value
 
-    # Update spatial resolution
-    if "spatial_resolution" in dst_file.attrs:
-        old_resolution = dst_file.attrs["spatial_resolution"]
+    old_resolution = _attr_int_sequence(dst_file.attrs, "spatial_resolution")
+    if old_resolution is not None:
         dst_file.attrs["spatial_resolution"] = tuple(
             dim // spatial_downsample_factor for dim in old_resolution
         )
 
-    # Update spatial grid size if present
-    if "spatial_grid_size" in dst_file.attrs:
-        old_grid_size = dst_file.attrs["spatial_grid_size"]
+    old_grid_size = _attr_int_sequence(dst_file.attrs, "spatial_grid_size")
+    if old_grid_size is not None:
         dst_file.attrs["spatial_grid_size"] = tuple(
             dim // spatial_downsample_factor for dim in old_grid_size
         )
 
-    # Update n_trajectories if limiting
-    if trajectories_to_process is not None and "n_trajectories" in dst_file.attrs:
+    n_trajectories = _attr_int(dst_file.attrs, "n_trajectories")
+    if trajectories_to_process is not None and n_trajectories is not None:
         dst_file.attrs["n_trajectories"] = min(
-            trajectories_to_process, dst_file.attrs["n_trajectories"]
+            int(trajectories_to_process),
+            n_trajectories,
         )
 
     # Process all top-level groups
-    for group_name in src_file.keys():
+    for group_name, item in src_file.items():
+        if not isinstance(item, h5py.Group):
+            continue
         process_group(
-            src_file[group_name],
+            item,
             dst_file.create_group(group_name),
             spatial_downsample_factor,
             temporal_downsample_factor,
@@ -425,7 +452,7 @@ def update_metadata_file(
         yaml.safe_dump(metadata, f, default_flow_style=False)
 
 
-def downsample_dataset(
+def downsample_dataset(  # noqa: PLR0912, PLR0915
     input_path: str | Path,
     output_path: str | Path,
     spatial_downsample_factor: int = 2,
@@ -450,10 +477,12 @@ def downsample_dataset(
             None means process all available splits.
         overwrite: If True, overwrite existing output directory.
 
-    Returns:
+    Returns
+    -------
         Path to the output directory.
 
-    Raises:
+    Raises
+    ------
         ValueError: If input path doesn't exist or parameters are invalid.
         FileExistsError: If output path exists and overwrite is False.
 
@@ -473,13 +502,16 @@ def downsample_dataset(
         raise ValueError(f"Input path does not exist: {input_path}")
 
     if spatial_downsample_factor < 1:
-        raise ValueError("spatial_downsample_factor must be >= 1")
+        msg = "spatial_downsample_factor must be >= 1"
+        raise ValueError(msg)
 
     if temporal_downsample_factor < 1:
-        raise ValueError("temporal_downsample_factor must be >= 1")
+        msg = "temporal_downsample_factor must be >= 1"
+        raise ValueError(msg)
 
     if not 0 < time_fraction <= 1:
-        raise ValueError("time_fraction must be in (0, 1]")
+        msg = "time_fraction must be in (0, 1]"
+        raise ValueError(msg)
 
     # Handle output directory
     if output_path.exists():
@@ -504,9 +536,10 @@ def downsample_dataset(
             data_dir = input_path
         else:
             raise ValueError(f"No data directory or HDF5 files found in {input_path}")
-    else:
-        if splits is None:
-            splits = [d.name for d in data_dir.iterdir() if d.is_dir()]
+    elif splits is None:
+        splits = [d.name for d in data_dir.iterdir() if d.is_dir()]
+    if splits is None:
+        splits = []
 
     # Create output data directory structure
     output_data_dir = output_path / "data"
@@ -543,7 +576,7 @@ def downsample_dataset(
 
             with h5py.File(src_file_path, "r") as src_file:
                 # Determine trajectories to process
-                n_traj = src_file.attrs.get("n_trajectories", None)
+                n_traj = _attr_int(src_file.attrs, "n_trajectories")
                 trajectories_to_process = max_trajectories
                 if n_traj is not None and max_trajectories is not None:
                     trajectories_to_process = min(max_trajectories, n_traj)
@@ -618,7 +651,8 @@ def downsample_from_welldataset(
         splits: List of splits to process.
         overwrite: Whether to overwrite existing output.
 
-    Returns:
+    Returns
+    -------
         Path to the output directory.
 
     Example:
@@ -647,23 +681,34 @@ def downsample_from_welldataset(
 def main():
     """Command-line interface for dataset downsampling."""
     parser = argparse.ArgumentParser(
-        description="Downsample a TheWell dataset to create a lower resolution version.",
+        description=(
+            "Downsample a TheWell dataset to create a lower resolution version."
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   # Downsample spatially by 2x
-  python -m autocast.data.downsample --input-path /data/dataset --output-path /data/dataset_2x --spatial-factor 2
+  python -m autocast.data.downsample \\
+      --input-path /data/dataset \\
+      --output-path /data/dataset_2x \\
+      --spatial-factor 2
 
   # Downsample both spatially (4x) and temporally (2x)
-  python -m autocast.data.downsample --input-path /data/dataset --output-path /data/dataset_4x2x \\
+  python -m autocast.data.downsample \\
+      --input-path /data/dataset \\
+      --output-path /data/dataset_4x2x \\
       --spatial-factor 4 --temporal-factor 2
 
   # Create a small subset for debugging (100 trajectories, 50% of time)
-  python -m autocast.data.downsample --input-path /data/dataset --output-path /data/dataset_mini \\
+  python -m autocast.data.downsample \\
+      --input-path /data/dataset \\
+      --output-path /data/dataset_mini \\
       --spatial-factor 4 --max-trajectories 100 --time-fraction 0.5
 
   # Process only train split
-  python -m autocast.data.downsample --input-path /data/dataset --output-path /data/dataset_2x \\
+  python -m autocast.data.downsample \\
+      --input-path /data/dataset \\
+      --output-path /data/dataset_2x \\
       --spatial-factor 2 --splits train
         """,
     )
@@ -696,7 +741,9 @@ Examples:
         "--time-fraction",
         type=float,
         default=1.0,
-        help="Fraction of total time to keep, applied before downsampling (default: 1.0)",
+        help=(
+            "Fraction of total time to keep, applied before downsampling (default: 1.0)"
+        ),
     )
     parser.add_argument(
         "--max-trajectories",
@@ -709,7 +756,9 @@ Examples:
         type=str,
         nargs="+",
         default=None,
-        help="Splits to process (e.g., train valid test). Default: all available splits",
+        help=(
+            "Splits to process (e.g., train valid test). Default: all available splits"
+        ),
     )
     parser.add_argument(
         "--overwrite",
