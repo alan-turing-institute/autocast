@@ -1,11 +1,13 @@
 """Tests for CachedLatentDataset and its integration with EncodedDataModule."""
 
+import h5py
 import pytest
 import torch
 
 from autocast.data.encoded_dataset import (
     CachedLatentDataset,
     EncodedDataModule,
+    MiniWellInputOutput,
 )
 from autocast.types.batch import EncodedBatch, EncodedSample
 from autocast.types.collation import collate_encoded_samples
@@ -115,6 +117,31 @@ def test_cached_dataset_collation_produces_encoded_batch(tmp_path):
     assert isinstance(batch, EncodedBatch)
     assert batch.encoded_inputs.shape == (3, 2, *spatial)
     assert batch.encoded_output_fields.shape == (3, 2, *spatial)
+
+
+def test_miniwell_input_output_preserves_global_cond(tmp_path):
+    file_path = tmp_path / "data.h5"
+    state = torch.randn(2, 6, 3, 4, 5)
+    labels = torch.randn(2, 6)
+    with h5py.File(file_path, "w") as h5:
+        h5.create_dataset("state", data=state.numpy())
+        h5.create_dataset("label", data=labels.numpy())
+
+    dataset = MiniWellInputOutput(
+        file_name=str(file_path),
+        n_steps_input=2,
+        n_steps_output=3,
+        steps=5,
+        stride=1,
+    )
+
+    sample = dataset[0]
+
+    assert isinstance(sample, EncodedSample)
+    assert sample.encoded_inputs.shape == (2, 4, 5, 3)
+    assert sample.encoded_output_fields.shape == (3, 4, 5, 3)
+    assert sample.global_cond is not None
+    assert torch.allclose(sample.global_cond, labels[0])
 
 
 # --- EncodedDataModule with CachedLatentDataset tests ---
