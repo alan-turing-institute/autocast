@@ -9,8 +9,11 @@ set -euo pipefail
 # timing.ckpt under outputs/*/timing_planned_04/<run_id>/timing.ckpt.
 
 declare -A COSINE_EPOCHS_BY_RUN=(
-    # Add pinned values here after timing retrieval if you want to make the
-    # production launch independent of local timing.ckpt discovery.
+    # Pinned from outputs/2026-05-12/timing_planned_04/*/retrieve.sh at
+    # 24h budget, 2% margin (uv run autocast time-epochs -b 24 -m 0.02).
+    ["fair_crps_m8_gs"]=360
+    ["fair_crps_m8_gpe"]=427
+    ["fair_crps_m8_ad"]=423
 )
 
 BUDGET_MAX_TIME="00:23:59:00"
