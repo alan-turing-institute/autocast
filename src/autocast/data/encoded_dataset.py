@@ -18,10 +18,13 @@ class EncodedBatchMixin:
     @staticmethod
     def to_sample(data: dict) -> EncodedSample:
         """Convert a dictionary of tensors to a Sample object."""
+        global_cond = data.get("global_cond")
+        if global_cond is None:
+            global_cond = data.get("label")
         return EncodedSample(
             encoded_inputs=data["input_fields"],
             encoded_output_fields=data["output_fields"],
-            global_cond=data.get("label"),
+            global_cond=global_cond,
             encoded_info=data.get("encoded_info", {}),
         )
 
