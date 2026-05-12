@@ -9,10 +9,14 @@ set -euo pipefail
 # warmup=0). Batch: 256/GPU.
 #
 # COSINE_EPOCHS should come from a timing run so the cosine half-period fills
-# the 24h budget. This script uses, in order:
+# the 24h budget. Pinned value below comes from:
+#   seconds/epoch=109.2s, 24h budget, 2% margin -> max_epochs=775
+#
+# This script uses, in order:
 #   1. COSINE_EPOCHS=<int>
 #   2. TIMING_CHECKPOINT=<path>/timing.ckpt
 #   3. the latest outputs/*/rb_fm_vit_large_b256/timing.ckpt
+#   4. PINNED_COSINE_EPOCHS=775 from the timing output above
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
@@ -21,6 +25,7 @@ DATASETS_ROOT="${AUTOCAST_DATASETS:-${REPO_ROOT}/datasets}"
 EXPERIMENT="the_well/rayleigh_benard/fm_vit_large"
 CACHE_DIR="${DATASETS_ROOT}/rayleigh_benard/1e3z5x2c_rayleigh_benard_dcae_f32c64_large/cache/rayleigh_benard"
 TIMING_RUN_ID="${TIMING_RUN_ID:-rb_fm_vit_large_b256}"
+PINNED_COSINE_EPOCHS=775
 BUDGET_MAX_TIME="00:23:59:00"
 TIMEOUT_MIN=1439
 RUN_DRY_STATES=("true" "false")
@@ -61,15 +66,12 @@ resolve_cosine_epochs() {
         timing_ckpt="$(find_timing_checkpoint)"
     fi
 
-    if [[ -z "${timing_ckpt}" ]]; then
-        echo "No COSINE_EPOCHS or timing.ckpt found." >&2
-        echo "Run submit_rayleigh_benard_fm_vit_timing.sh first, or set:" >&2
-        echo "  COSINE_EPOCHS=<int>" >&2
-        echo "  TIMING_CHECKPOINT=<path>/timing.ckpt" >&2
-        return 1
+    if [[ -n "${timing_ckpt}" ]]; then
+        derive_cosine_epochs_from_timing "${timing_ckpt}"
+        return 0
     fi
 
-    derive_cosine_epochs_from_timing "${timing_ckpt}"
+    printf '%s\n' "${PINNED_COSINE_EPOCHS}"
 }
 
 for split in train valid test; do
