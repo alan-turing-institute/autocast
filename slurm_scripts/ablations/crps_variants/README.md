@@ -3,7 +3,7 @@
 Compare `AlphaFairCRPS` (baseline) vs `FairCRPS` vs `CRPS`.
 
 **Status:** FairCRPS and plain CRPS CNS configs added; AlphaFairCRPS is the
-2026-04-24 CRPS baseline.
+2026-04-24 CRPS baseline. FairCRPS configs also exist for GS, GPE, and AD.
 
 ## Baseline
 
@@ -26,13 +26,23 @@ Class paths were verified against `src/autocast/losses/ensemble.py` and
 
 ## Datasets
 
-CNS only for now. The planned batch adds the two non-baseline loss variants:
+Planned batch 01 adds the two non-baseline CNS loss variants:
 
 - `local_hydra/local_experiment/ablations/crps_variants/conditioned_navier_stokes/crps_vit_fair.yaml`
 - `local_hydra/local_experiment/ablations/crps_variants/conditioned_navier_stokes/crps_vit_plain.yaml`
 
+Planned batch 04 extends the FairCRPS m=8 ViT run to the other raw-field
+EPD datasets:
+
+- `local_hydra/local_experiment/ablations/crps_variants/gray_scott/crps_vit_fair.yaml`
+- `local_hydra/local_experiment/ablations/crps_variants/gpe_laser_wake_only/crps_vit_fair.yaml`
+- `local_hydra/local_experiment/ablations/crps_variants/advection_diffusion/crps_vit_fair.yaml`
+
 ## Implementation sketch
 
-The cross-cutting submitter is
+The CNS cross-cutting submitter is
 `slurm_scripts/ablations/submit_planned_01_{timing,large}.sh`; it keeps the
-loss-variant runs alongside the other planned CNS ablations.
+loss-variant runs alongside the other planned CNS ablations. The cross-dataset
+FairCRPS submitter is
+`slurm_scripts/ablations/submit_planned_04_{timing,large}.sh`, with eval in
+`slurm_scripts/ablations/submit_eval_planned_04.sh`.
