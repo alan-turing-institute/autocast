@@ -161,6 +161,10 @@ EVAL_PATH_LATENT_CACHED_WITH_DECODER = "latent_cached_with_decoder"
 # `eval.mode=latent` is paired with `eval.latent_space_metrics=true`.
 EVAL_PATH_LATENT_CACHED_LATENT_ONLY = "latent_cached_latent_only"
 
+LOLA_WRAPPED_ENCODER_TARGET = "autocast.external.lola.wrapped_encoder.WrappedEncoder"
+LOLA_WRAPPED_DECODER_TARGET = "autocast.external.lola.wrapped_decoder.WrappedDecoder"
+THE_WELL_DATAMODULE_TARGET = "autocast.data.datamodule.TheWellDataModule"
+
 
 def _decode_tensor(
     x: torch.Tensor,
@@ -1390,6 +1394,232 @@ def _load_autoencoder_config_from_cache(cache_dir: Path) -> DictConfig | None:
         return None
 
 
+def _lola_autoencoder_run_candidates(cache_dir: Path) -> list[Path]:
+    """Return nearby directories that may hold a LoLA autoencoder run.
+
+    Rayleigh-Benard cached-latent runs are laid out as
+    ``<ae_run>/cache/<dataset>`` with ``config.yaml`` and ``state.pth`` in
+    ``<ae_run>`` instead of an ``autoencoder_config.yaml`` beside the cache.
+    Keep the search deliberately local so unrelated parent directories are
+    not treated as model runs.
+    """
+    candidates = [cache_dir, *list(cache_dir.parents)[:4]]
+    unique: list[Path] = []
+    seen: set[Path] = set()
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        unique.append(candidate)
+    return unique
+
+
+def _load_lola_autoencoder_config_from_cache(
+    cache_dir: Path,
+) -> tuple[DictConfig, Path] | None:
+    """Load a LoLA autoencoder config near a cached-latent directory."""
+    for run_dir in _lola_autoencoder_run_candidates(cache_dir):
+        config_path = run_dir / "config.yaml"
+        state_path = run_dir / "state.pth"
+        if not config_path.exists() or not state_path.exists():
+            continue
+        try:
+            loaded = OmegaConf.load(config_path)
+        except Exception as exc:
+            log.warning(
+                "Could not load LoLA autoencoder config from %s: %s",
+                config_path,
+                exc,
+            )
+            continue
+        if isinstance(loaded, DictConfig) and loaded.get("ae") is not None:
+            return loaded, run_dir
+        log.debug(
+            "Ignoring %s because it does not look like a LoLA AE config.", config_path
+        )
+    return None
+
+
+def _load_lola_autoencoder_config_from_datamodule(
+    cfg: DictConfig,
+) -> tuple[DictConfig, Path] | None:
+    """Load a LoLA autoencoder config using ``cfg.datamodule.data_path``."""
+    data_path = cfg.get("datamodule", {}).get("data_path")
+    if not data_path:
+        return None
+    return _load_lola_autoencoder_config_from_cache(Path(str(data_path)).expanduser())
+
+
+def _lola_autoencoder_kwargs(ae_cfg: DictConfig, run_dir: Path) -> dict[str, Any]:
+    """Return LoLA AE kwargs in the format accepted by the wrapped modules."""
+    ae_node = ae_cfg.get("ae")
+    ae_kwargs = OmegaConf.to_container(ae_node, resolve=True)
+    if not isinstance(ae_kwargs, dict):
+        msg = f"Expected mapping under 'ae' in {run_dir / 'config.yaml'}."
+        raise TypeError(msg)
+    if isinstance(ae_node, DictConfig) and "loss" in ae_node:
+        # Keep the historical DictConfig value accepted by LoLA helpers.
+        ae_kwargs["loss"] = ae_node.loss
+    return ae_kwargs
+
+
+def _lola_autoencoder_stats(
+    ae_cfg: DictConfig,
+    run_dir: Path,
+) -> tuple[Any, Any]:
+    """Return LoLA dataset mean/std from the autoencoder run config."""
+    stats = ae_cfg.get("dataset", {}).get("stats", {})
+    mean = stats.get("mean")
+    std = stats.get("std")
+    if mean is None or std is None:
+        msg = (
+            f"LoLA autoencoder config at {run_dir / 'config.yaml'} is missing "
+            "dataset.stats.mean/std."
+        )
+        raise ValueError(msg)
+    return mean, std
+
+
+def _build_lola_autoencoder_config_nodes(
+    ae_cfg: DictConfig,
+    run_dir: Path,
+) -> tuple[DictConfig, DictConfig]:
+    """Build Hydra config nodes for the LoLA encoder/decoder wrappers."""
+    mean, std = _lola_autoencoder_stats(ae_cfg, run_dir)
+    base_kwargs = {
+        **_lola_autoencoder_kwargs(ae_cfg, run_dir),
+        "device": "cpu",
+        "runpath": str(run_dir),
+        "mean": mean,
+        "std": std,
+    }
+    encoder_cfg = OmegaConf.create(
+        {
+            "_target_": LOLA_WRAPPED_ENCODER_TARGET,
+            **base_kwargs,
+        }
+    )
+    decoder_cfg = OmegaConf.create(
+        {
+            "_target_": LOLA_WRAPPED_DECODER_TARGET,
+            **base_kwargs,
+        }
+    )
+    return encoder_cfg, decoder_cfg
+
+
+def _positive_int(value: Any, default: int) -> int:
+    if isinstance(value, bool):
+        return default
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
+
+
+def _infer_lola_well_base_path(ae_cfg: DictConfig, run_dir: Path) -> str:
+    dataset_name = str(ae_cfg.get("dataset", {}).get("name") or "")
+    if dataset_name and run_dir.parent.name == dataset_name:
+        return str(run_dir.parent.parent)
+    return "${oc.env:AUTOCAST_DATASETS,./datasets}"
+
+
+def _lola_stats_path(ae_cfg: DictConfig, run_dir: Path) -> str:
+    dataset_name = str(ae_cfg.get("dataset", {}).get("name") or "")
+    candidate = run_dir.parent / "stats.yaml"
+    if candidate.exists():
+        return str(candidate)
+    if dataset_name:
+        return f"${{oc.env:AUTOCAST_DATASETS,./datasets}}/{dataset_name}/stats.yaml"
+    return "${oc.env:AUTOCAST_DATASETS,./datasets}/stats.yaml"
+
+
+def _build_lola_raw_datamodule_config(
+    ae_cfg: DictConfig,
+    run_dir: Path,
+    original_datamodule: Mapping[str, Any],
+) -> DictConfig:
+    """Build an unnormalized raw TheWell datamodule for LoLA encode-once eval."""
+    dataset_cfg = ae_cfg.get("dataset", {})
+    dataset_name = dataset_cfg.get("name")
+    if not dataset_name:
+        msg = f"LoLA autoencoder config at {run_dir / 'config.yaml'} has no dataset.name."
+        raise ValueError(msg)
+
+    stride = _positive_int(original_datamodule.get("stride"), 1)
+    datamodule_cfg: dict[str, Any] = {
+        "_target_": THE_WELL_DATAMODULE_TARGET,
+        "well_dataset_name": str(dataset_name),
+        "well_base_path": _infer_lola_well_base_path(ae_cfg, run_dir),
+        "n_steps_input": _positive_int(original_datamodule.get("n_steps_input"), 1),
+        "n_steps_output": _positive_int(original_datamodule.get("n_steps_output"), 1),
+        "min_dt_stride": stride,
+        "max_dt_stride": stride,
+        "batch_size": _positive_int(original_datamodule.get("batch_size"), 1),
+        "num_workers": _positive_int(original_datamodule.get("num_workers"), 0),
+        "use_normalization": False,
+        "normalization_path": _lola_stats_path(ae_cfg, run_dir),
+        "autoencoder_mode": False,
+        "max_rollout_steps": _positive_int(
+            original_datamodule.get("max_rollout_steps"), 100
+        ),
+        "flatten_tensors": True,
+        "cache_small": True,
+        "max_cache_size": 1.0e9,
+        "return_grid": True,
+        "boundary_return_type": "padding",
+    }
+    for key in ("include_filters", "exclude_filters"):
+        value = dataset_cfg.get(key)
+        if value is not None:
+            datamodule_cfg[key] = list(value)
+
+    return OmegaConf.create(datamodule_cfg)
+
+
+def _inject_lola_autoencoder_components(
+    cfg: DictConfig,
+    ae_cfg: DictConfig,
+    run_dir: Path,
+) -> DictConfig:
+    """Backfill model.encoder/decoder with LoLA wrappers when absent."""
+    encoder_cfg, decoder_cfg = _build_lola_autoencoder_config_nodes(ae_cfg, run_dir)
+    with open_dict(cfg):
+        if cfg.get("model") is None:
+            cfg.model = OmegaConf.create({})
+    model_cfg = cfg.get("model")
+    if not isinstance(model_cfg, DictConfig):
+        return cfg
+    with open_dict(model_cfg):
+        if model_cfg.get("encoder") is None:
+            model_cfg["encoder"] = encoder_cfg
+        if model_cfg.get("decoder") is None:
+            model_cfg["decoder"] = decoder_cfg
+    return cfg
+
+
+def _has_autoencoder_components(cfg: DictConfig) -> bool:
+    model_cfg = cfg.get("model", {})
+    return model_cfg.get("encoder") is not None and model_cfg.get("decoder") is not None
+
+
+def _has_lola_autoencoder_components(cfg: DictConfig) -> bool:
+    model_cfg = cfg.get("model", {})
+    encoder_cfg = model_cfg.get("encoder")
+    decoder_cfg = model_cfg.get("decoder")
+    encoder_target = (
+        encoder_cfg.get("_target_") if hasattr(encoder_cfg, "get") else None
+    )
+    decoder_target = (
+        decoder_cfg.get("_target_") if hasattr(decoder_cfg, "get") else None
+    )
+    return (
+        str(encoder_target) == LOLA_WRAPPED_ENCODER_TARGET
+        and str(decoder_target) == LOLA_WRAPPED_DECODER_TARGET
+    )
+
+
 def _load_autoencoder_run_config_from_checkpoint(
     autoencoder_checkpoint: Any,
 ) -> DictConfig | None:
@@ -1496,6 +1726,7 @@ def _resolve_auto_eval_mode(
     processor_only: bool,
     example_batch: Any,
     has_autoencoder_checkpoint: bool,
+    has_autoencoder_components: bool = False,
 ) -> str:
     """Map ``eval.mode=auto`` to a concrete mode for the current run.
 
@@ -1509,7 +1740,9 @@ def _resolve_auto_eval_mode(
     """
     if not processor_only:
         return "ambient"
-    if has_autoencoder_checkpoint and isinstance(example_batch, (Batch, EncodedBatch)):
+    if (has_autoencoder_checkpoint or has_autoencoder_components) and isinstance(
+        example_batch, (Batch, EncodedBatch)
+    ):
         return "encode_once"
     return "latent"
 
@@ -1544,17 +1777,38 @@ def _maybe_swap_to_ambient_datamodule(
         )
         raise ValueError(msg)
 
-    ae_cfg = _load_autoencoder_config_from_cache(Path(data_path))
-    if ae_cfg is None:
-        msg = (
-            f"eval.mode={eval_mode} requested but the cached-latents directory "
-            f"{data_path} has no 'autoencoder_config.yaml'. Either regenerate "
-            "the cache with a recent `autocast cache-latents` (which saves the "
-            "autoencoder config), or pass datamodule=<raw> explicitly."
-        )
-        raise FileNotFoundError(msg)
-
     original_datamodule = cfg.get("datamodule", {})
+    cache_dir = Path(str(data_path)).expanduser()
+    ae_cfg = _load_autoencoder_config_from_cache(cache_dir)
+    if ae_cfg is None:
+        lola_loaded = _load_lola_autoencoder_config_from_cache(cache_dir)
+        if lola_loaded is None:
+            msg = (
+                f"eval.mode={eval_mode} requested but the cached-latents directory "
+                f"{data_path} has no 'autoencoder_config.yaml' and no nearby LoLA "
+                "autoencoder config.yaml/state.pth. Either regenerate the cache "
+                "with a recent `autocast cache-latents` (which saves the "
+                "autoencoder config), or pass datamodule=<raw> explicitly."
+            )
+            raise FileNotFoundError(msg)
+        lola_cfg, run_dir = lola_loaded
+        swapped_datamodule = _build_lola_raw_datamodule_config(
+            lola_cfg,
+            run_dir,
+            original_datamodule,
+        )
+        cfg = _inject_lola_autoencoder_components(cfg, lola_cfg, run_dir)
+        with open_dict(cfg):
+            cfg.datamodule = swapped_datamodule
+        log.info(
+            "eval.mode=%s: substituting cached_latents datamodule with an "
+            "unnormalized raw TheWell datamodule inferred from LoLA autoencoder "
+            "run %s. LoLA mean/std remain in the wrapped encoder/decoder.",
+            eval_mode,
+            run_dir,
+        )
+        return cfg
+
     ae_datamodule = ae_cfg.get("datamodule")
     if ae_datamodule is None:
         msg = (
@@ -1572,7 +1826,7 @@ def _maybe_swap_to_ambient_datamodule(
     with open_dict(swapped_datamodule):
         OmegaConf.update(swapped_datamodule, "autoencoder_mode", False, merge=True)
         OmegaConf.update(swapped_datamodule, "full_trajectory_mode", False, merge=True)
-        for step_key in ("n_steps_input", "n_steps_output", "stride"):
+        for step_key in ("n_steps_input", "n_steps_output"):
             step_value = (
                 original_datamodule.get(step_key)
                 if isinstance(original_datamodule, Mapping)
@@ -1580,6 +1834,24 @@ def _maybe_swap_to_ambient_datamodule(
             )
             if isinstance(step_value, int) and step_value > 0:
                 OmegaConf.update(swapped_datamodule, step_key, step_value, merge=True)
+        stride_value = (
+            original_datamodule.get("stride")
+            if isinstance(original_datamodule, Mapping)
+            else None
+        )
+        if isinstance(stride_value, int) and stride_value > 0:
+            target = str(swapped_datamodule.get("_target_", ""))
+            if target.endswith("TheWellDataModule"):
+                OmegaConf.update(
+                    swapped_datamodule, "min_dt_stride", stride_value, merge=True
+                )
+                OmegaConf.update(
+                    swapped_datamodule, "max_dt_stride", stride_value, merge=True
+                )
+                if "stride" in swapped_datamodule:
+                    del swapped_datamodule["stride"]
+            else:
+                OmegaConf.update(swapped_datamodule, "stride", stride_value, merge=True)
 
     log.info(
         "eval.mode=%s: substituting cached_latents datamodule with the "
@@ -1599,6 +1871,7 @@ def _resolve_eval_path(
     processor_only: bool,
     example_batch: Any,
     has_autoencoder_checkpoint: bool,
+    has_autoencoder_components: bool = False,
     decode_fn_loaded: bool,
 ) -> str:
     """Map the (eval.mode, checkpoint, datamodule) combination to a code path.
@@ -1612,7 +1885,9 @@ def _resolve_eval_path(
     """
     if not processor_only:
         return EVAL_PATH_AMBIENT_EPD
-    if isinstance(example_batch, Batch) and has_autoencoder_checkpoint:
+    if isinstance(example_batch, Batch) and (
+        has_autoencoder_checkpoint or has_autoencoder_components
+    ):
         if eval_mode == "encode_once":
             return EVAL_PATH_ENCODE_ONCE
         return EVAL_PATH_AMBIENT_EPD
@@ -1628,7 +1903,8 @@ def _validate_resolved_eval_path(*, eval_mode: str, resolved_path: str) -> None:
             "eval.mode=ambient but the resolved eval path is "
             f"{resolved_path!r}. Ambient eval requires a full EPD checkpoint, "
             "OR a processor-only checkpoint combined with "
-            "autoencoder_checkpoint=<ae.ckpt> AND a raw-Batch datamodule. "
+            "autoencoder_checkpoint=<ae.ckpt> or LoLA encoder/decoder config "
+            "AND a raw-Batch datamodule. "
             "Double-check eval.checkpoint, autoencoder_checkpoint, and "
             "datamodule=."
         )
@@ -1653,7 +1929,8 @@ def _validate_resolved_eval_path(*, eval_mode: str, resolved_path: str) -> None:
             f"eval.mode=encode_once but the resolved eval path is "
             f"{resolved_path!r}. encode_once needs both encoder and decoder "
             "to score decoded rollouts against raw ground truth. Pass "
-            "autoencoder_checkpoint=<ae.ckpt> or switch to eval.mode=latent."
+            "autoencoder_checkpoint=<ae.ckpt>, use a cached LoLA autoencoder "
+            "run, or switch to eval.mode=latent."
         )
         raise ValueError(msg)
 
@@ -1718,9 +1995,10 @@ def _try_build_decode_fn(
     if not data_path:
         return None, None
 
-    ae_cfg = _load_autoencoder_config_from_cache(Path(data_path))
+    cache_dir = Path(str(data_path)).expanduser()
+    ae_cfg = _load_autoencoder_config_from_cache(cache_dir)
     if ae_cfg is None:
-        return None, None
+        return _try_build_lola_decode_fn(cache_dir)
 
     try:
         _, decoder = setup_autoencoder_components(ae_cfg, {})
@@ -1773,6 +2051,50 @@ def _try_build_decode_fn(
     except Exception as exc:
         log.warning(
             "Could not build decoder from autoencoder config — "
+            "falling back to latent-space evaluation: %s",
+            exc,
+        )
+        lola_decoder, lola_decode_fn = _try_build_lola_decode_fn(cache_dir)
+        if lola_decode_fn is not None:
+            return lola_decoder, lola_decode_fn
+        return None, None
+
+
+def _try_build_lola_decode_fn(
+    cache_dir: Path,
+) -> "tuple[Any, Any] | tuple[None, None]":
+    """Build a decoder for LoLA cached latents when metadata is absent."""
+    loaded = _load_lola_autoencoder_config_from_cache(cache_dir)
+    if loaded is None:
+        return None, None
+    ae_cfg, run_dir = loaded
+
+    try:
+        from autocast.external.lola.wrapped_decoder import WrappedDecoder
+
+        ae_kwargs = _lola_autoencoder_kwargs(ae_cfg, run_dir)
+        mean, std = _lola_autoencoder_stats(ae_cfg, run_dir)
+
+        decoder = WrappedDecoder(
+            device="cpu",
+            runpath=run_dir,
+            mean=torch.as_tensor(mean, dtype=torch.float32),
+            std=torch.as_tensor(std, dtype=torch.float32),
+            **ae_kwargs,
+        )
+        decoder.eval()
+        log.info(
+            "Loaded LoLA autoencoder decoder from %s for data-space evaluation.",
+            run_dir,
+        )
+
+        def decode_fn(x):
+            return decoder.decode(x)
+
+        return decoder, decode_fn
+    except Exception as exc:
+        log.warning(
+            "Could not build decoder from LoLA autoencoder config — "
             "falling back to latent-space evaluation: %s",
             exc,
         )
@@ -1858,6 +2180,11 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
 
     # Setup datamodule and resolve config
     datamodule, cfg, stats = setup_datamodule(cfg)
+    has_reachable_autoencoder = (
+        bool(cfg.get("autoencoder_checkpoint"))
+        or _has_autoencoder_components(cfg)
+        or _load_lola_autoencoder_config_from_datamodule(cfg) is not None
+    )
 
     # Stateless encoders/decoders (e.g. PermuteConcat/ChannelsLast, Identity)
     # contribute no `encoder_decoder.*` params, so a full EPD checkpoint can
@@ -1888,6 +2215,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
             processor_only=processor_only,
             example_batch=stats.get("example_batch"),
             has_autoencoder_checkpoint=bool(cfg.get("autoencoder_checkpoint")),
+            has_autoencoder_components=has_reachable_autoencoder,
         )
         log.info("eval.mode=auto resolved to %s for this run", eval_mode)
 
@@ -1918,6 +2246,8 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     #                        (data-space metrics) or opt-in latent-only.
 
     example_batch = stats.get("example_batch")
+    has_model_autoencoder_components = _has_autoencoder_components(cfg)
+    has_lola_autoencoder_components = _has_lola_autoencoder_components(cfg)
 
     log.info(
         "Checkpoint type: %s",
@@ -1928,13 +2258,17 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     decoder_module = None  # keep reference for device placement
 
     if processor_only:
-        if isinstance(example_batch, Batch) and cfg.get("autoencoder_checkpoint"):
-            # Mode 1: reconstruct full EPD; encoder+decoder from autoencoder_checkpoint
+        if isinstance(example_batch, Batch) and (
+            cfg.get("autoencoder_checkpoint") or has_model_autoencoder_components
+        ):
+            # Mode 1: reconstruct full EPD; encoder+decoder from checkpoint config
+            # or LoLA wrapper config, then load processor weights only.
             log.info(
-                "Mode 1 eval: reconstructing full EPD from autoencoder checkpoint "
+                "Mode 1 eval: reconstructing full EPD from encoder/decoder config "
                 "+ processor checkpoint."
             )
-            cfg = _maybe_inject_encoder_decoder_from_autoencoder_checkpoint(cfg)
+            if cfg.get("autoencoder_checkpoint"):
+                cfg = _maybe_inject_encoder_decoder_from_autoencoder_checkpoint(cfg)
             model = setup_epd_model(cfg, stats, datamodule=datamodule)
             processor_sd = _extract_processor_state_dict(
                 checkpoint_payload, use_ema=use_ema
@@ -1976,6 +2310,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
         processor_only=processor_only,
         example_batch=example_batch,
         has_autoencoder_checkpoint=bool(cfg.get("autoencoder_checkpoint")),
+        has_autoencoder_components=has_model_autoencoder_components,
         decode_fn_loaded=decode_fn is not None,
     )
     log.info("Resolved eval path: %s", resolved_eval_path)
