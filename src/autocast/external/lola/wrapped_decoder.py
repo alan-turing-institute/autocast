@@ -19,8 +19,9 @@ class WrappedDecoder(Decoder):
     def __init__(self, device: str = "cpu", **kwargs):
         super().__init__()
         self.batch_size = kwargs.pop("batch_size", 16)
-        self.mean = kwargs.pop("mean")
-        self.std = kwargs.pop("std")
+        self.latent_channels = kwargs["lat_channels"]
+        self.register_buffer("mean", torch.as_tensor(kwargs.pop("mean")))
+        self.register_buffer("std", torch.as_tensor(kwargs.pop("std")))
         runpath = kwargs.pop("runpath", None)
         self.wrapped_autoencoder = get_autoencoder(**kwargs)
         if runpath is not None:

@@ -15,9 +15,13 @@ from autocast.scripts.eval.encoder_processor_decoder import (
     EVAL_PATH_ENCODE_ONCE,
     EVAL_PATH_LATENT_CACHED_LATENT_ONLY,
     EVAL_PATH_LATENT_CACHED_WITH_DECODER,
+    LOLA_WRAPPED_DECODER_TARGET,
+    LOLA_WRAPPED_ENCODER_TARGET,
+    THE_WELL_DATAMODULE_TARGET,
     _build_eval_predict_fn,
     _build_per_timestep_metric_factory,
     _decode_tensor,
+    _load_lola_autoencoder_config_from_cache,
     _maybe_swap_to_ambient_datamodule,
     _normalize_eval_mode,
     _normalize_per_batch_rows,
@@ -33,6 +37,7 @@ from autocast.scripts.eval.encoder_processor_decoder import (
     _should_skip_metric,
     _split_metric_and_metadata_rows,
     _training_runtime_rows,
+    _try_build_decode_fn,
     _validate_latent_space_metrics_flag,
     _validate_resolved_eval_path,
 )
@@ -582,6 +587,17 @@ def test_resolve_auto_eval_mode_picks_faithful_default(
     assert resolved == expected
 
 
+def test_resolve_auto_eval_mode_uses_configured_autoencoder_components():
+    resolved = _resolve_auto_eval_mode(
+        processor_only=True,
+        example_batch=_example_batch("encoded"),
+        has_autoencoder_checkpoint=False,
+        has_autoencoder_components=True,
+    )
+
+    assert resolved == "encode_once"
+
+
 _RESOLVE_EVAL_PATH_CASES = [
     # Full EPD: always resolves to ambient_epd regardless of mode.
     ("ambient", False, "batch", False, False, EVAL_PATH_AMBIENT_EPD),
@@ -637,6 +653,19 @@ def test_resolve_eval_path_matches_run_evaluation_branches(
     )
 
     assert resolved == expected
+
+
+def test_resolve_eval_path_accepts_raw_batch_with_autoencoder_components():
+    resolved = _resolve_eval_path(
+        eval_mode="encode_once",
+        processor_only=True,
+        example_batch=_example_batch("batch"),
+        has_autoencoder_checkpoint=False,
+        has_autoencoder_components=True,
+        decode_fn_loaded=False,
+    )
+
+    assert resolved == EVAL_PATH_ENCODE_ONCE
 
 
 def test_validate_resolved_eval_path_ambient_rejects_latent_path():
@@ -746,6 +775,142 @@ def test_require_decoder_allows_opt_in_and_warns(caplog):
     assert any(
         "latent_space_metrics=true" in record.message for record in caplog.records
     ), "expected a prominent warning about latent-only metrics"
+
+
+def test_load_lola_autoencoder_config_from_cache_finds_run_parent(tmp_path):
+    run_dir = tmp_path / "lola_ae"
+    cache_dir = run_dir / "cache" / "rayleigh_benard"
+    cache_dir.mkdir(parents=True)
+    (run_dir / "state.pth").touch()
+    OmegaConf.save(
+        OmegaConf.create(
+            {
+                "ae": {"pix_channels": 4, "lat_channels": 64},
+                "dataset": {"stats": {"mean": [0.0], "std": [1.0]}},
+            }
+        ),
+        run_dir / "config.yaml",
+    )
+
+    loaded = _load_lola_autoencoder_config_from_cache(cache_dir)
+
+    assert loaded is not None
+    cfg, discovered_run_dir = loaded
+    assert discovered_run_dir == run_dir
+    assert cfg.ae.lat_channels == 64
+
+
+def test_try_build_decode_fn_falls_back_to_lola_autoencoder_run(tmp_path, monkeypatch):
+    run_dir = tmp_path / "lola_ae"
+    cache_dir = run_dir / "cache" / "rayleigh_benard"
+    cache_dir.mkdir(parents=True)
+    (run_dir / "state.pth").touch()
+    OmegaConf.save(
+        OmegaConf.create(
+            {
+                "ae": {
+                    "pix_channels": 4,
+                    "lat_channels": 64,
+                    "loss": {"losses": ["mse"], "weights": [1.0]},
+                },
+                "dataset": {"stats": {"mean": [0.5], "std": [2.0]}},
+            }
+        ),
+        run_dir / "config.yaml",
+    )
+    captured = {}
+
+    class FakeWrappedDecoder:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+        def eval(self):
+            return self
+
+        def decode(self, x):
+            return x + 1
+
+    monkeypatch.setattr(
+        "autocast.external.lola.wrapped_decoder.WrappedDecoder",
+        FakeWrappedDecoder,
+    )
+    cfg = OmegaConf.create({"datamodule": {"data_path": str(cache_dir)}})
+
+    decoder, decode_fn = _try_build_decode_fn(cfg)
+
+    assert isinstance(decoder, FakeWrappedDecoder)
+    assert decode_fn is not None
+    assert captured["runpath"] == run_dir
+    assert torch.allclose(captured["mean"], torch.tensor([0.5]))
+    assert torch.allclose(captured["std"], torch.tensor([2.0]))
+    assert torch.equal(decode_fn(torch.zeros(1)), torch.ones(1))
+
+
+def test_maybe_swap_to_ambient_datamodule_wires_lola_autoencoder(tmp_path):
+    dataset_dir = tmp_path / "rayleigh_benard"
+    run_dir = dataset_dir / "lola_ae"
+    cache_dir = run_dir / "cache" / "rayleigh_benard"
+    cache_dir.mkdir(parents=True)
+    (run_dir / "state.pth").touch()
+    (dataset_dir / "stats.yaml").write_text("stats: {}\n")
+    OmegaConf.save(
+        OmegaConf.create(
+            {
+                "ae": {
+                    "pix_channels": 4,
+                    "lat_channels": 64,
+                    "loss": {"losses": ["mse"], "weights": [1.0]},
+                },
+                "dataset": {
+                    "name": "rayleigh_benard",
+                    "include_filters": [],
+                    "stats": {"mean": [0.5], "std": [2.0]},
+                },
+            }
+        ),
+        run_dir / "config.yaml",
+    )
+    cfg = OmegaConf.create(
+        {
+            "datamodule": {
+                "_target_": "cached.LatentDataModule",
+                "data_path": str(cache_dir),
+                "n_steps_input": 2,
+                "n_steps_output": 5,
+                "stride": 3,
+                "batch_size": 7,
+                "num_workers": 0,
+            },
+            "model": {"processor": {"_target_": "fake.Processor"}},
+        }
+    )
+    encoded = EncodedBatch(
+        encoded_inputs=torch.zeros(1, 1, 2, 2, 1),
+        encoded_output_fields=torch.zeros(1, 1, 2, 2, 1),
+        global_cond=None,
+        encoded_info={},
+    )
+
+    _maybe_swap_to_ambient_datamodule(
+        cfg, eval_mode="encode_once", example_batch=encoded
+    )
+
+    assert cfg.datamodule._target_ == THE_WELL_DATAMODULE_TARGET
+    assert cfg.datamodule.well_dataset_name == "rayleigh_benard"
+    assert cfg.datamodule.well_base_path == str(tmp_path)
+    assert cfg.datamodule.use_normalization is False
+    assert cfg.datamodule.n_steps_input == 2
+    assert cfg.datamodule.n_steps_output == 5
+    assert cfg.datamodule.min_dt_stride == 3
+    assert cfg.datamodule.max_dt_stride == 3
+    assert cfg.datamodule.batch_size == 7
+    assert "stride" not in cfg.datamodule
+    assert cfg.model.encoder._target_ == LOLA_WRAPPED_ENCODER_TARGET
+    assert cfg.model.decoder._target_ == LOLA_WRAPPED_DECODER_TARGET
+    assert cfg.model.encoder.runpath == str(run_dir)
+    assert cfg.model.decoder.runpath == str(run_dir)
+    assert list(cfg.model.encoder.mean) == [0.5]
+    assert list(cfg.model.decoder.std) == [2.0]
 
 
 def test_maybe_swap_to_ambient_datamodule_is_noop_for_raw_batch(tmp_path):

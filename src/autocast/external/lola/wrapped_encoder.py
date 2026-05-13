@@ -22,6 +22,7 @@ class ChannelsFirstEncoder(EncoderWithCond):
             output_fields=batch.output_fields,
             constant_scalars=batch.constant_scalars,
             constant_fields=batch.constant_fields,
+            boundary_conditions=batch.boundary_conditions,
         )
 
     def encode(self, batch: Batch) -> torch.Tensor:
@@ -40,8 +41,14 @@ class WrappedEncoder(ChannelsFirstEncoder):
 
     def __init__(self, **kwargs):
         super().__init__()
-        self.mean = kwargs.pop("mean", None)
-        self.std = kwargs.pop("std", None)
+        mean = kwargs.pop("mean", None)
+        std = kwargs.pop("std", None)
+        self.latent_channels = kwargs["lat_channels"]
+        self.register_buffer(
+            "mean",
+            torch.as_tensor(mean) if mean is not None else None,
+        )
+        self.register_buffer("std", torch.as_tensor(std) if std is not None else None)
         device = kwargs.pop("device", None)
         runpath = kwargs.pop("runpath", None)
         self.wrapped_autoencoder = get_autoencoder(**kwargs)
@@ -62,6 +69,7 @@ class WrappedEncoder(ChannelsFirstEncoder):
             output_fields=batch.output_fields,
             constant_scalars=batch.constant_scalars,
             constant_fields=batch.constant_fields,
+            boundary_conditions=batch.boundary_conditions,
         )
 
         return ChannelsFirstEncoder.preprocess(self, batch)
