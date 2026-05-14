@@ -10,7 +10,7 @@ from omegaconf import OmegaConf
 from autocast.decoders.base import Decoder
 from autocast.encoders.base import GenericEncoder
 from autocast.external.lola.wrapped_decoder import WrappedDecoder
-from autocast.external.lola.wrapped_encoder import ChannelsFirstEncoder
+from autocast.external.lola.wrapped_encoder import ChannelsFirstEncoder, WrappedEncoder
 from autocast.metrics.ensemble import CRPS, AlphaFairCRPS, SpreadSkillRatio
 from autocast.scripts.eval.encoder_processor_decoder import (
     DEFAULT_EVAL_METRICS,
@@ -529,6 +529,47 @@ def test_save_rollout_snapshot_panels_uses_snapshot_extension_for_data_only(
     ]
 
 
+def test_render_rollouts_can_use_custom_rollout_predict(tmp_path, monkeypatch):
+    class DummyModel:
+        def rollout(self, *_args, **_kwargs):
+            msg = "standard rollout should not be called"
+            raise AssertionError(msg)
+
+    captured_true: list[torch.Tensor] = []
+
+    def _fake_plot_spatiotemporal_video(**kwargs):
+        captured_true.append(kwargs["true"])
+
+    monkeypatch.setattr(
+        "autocast.scripts.eval.encoder_processor_decoder.plot_spatiotemporal_video",
+        _fake_plot_spatiotemporal_video,
+    )
+
+    trues = torch.full((2, 3, 2, 2, 1), 7.0)
+
+    def _custom_predict(_batch):
+        preds = torch.zeros_like(trues)
+        return preds, trues
+
+    out_paths = _render_rollouts(
+        model=cast(Any, DummyModel()),
+        dataloader=[object()],
+        batch_indices=[1],
+        video_dir=tmp_path,
+        sample_index=0,
+        fmt="mp4",
+        fps=5,
+        stride=1,
+        max_rollout_steps=2,
+        free_running_only=True,
+        n_members=None,
+        rollout_predict_fn=_custom_predict,
+    )
+
+    assert len(out_paths) == 1
+    assert torch.equal(captured_true[0], trues[1:2])
+
+
 # ---------------------------------------------------------------------------
 # eval.mode + ambient/latent path resolution
 # ---------------------------------------------------------------------------
@@ -922,6 +963,54 @@ def test_maybe_swap_to_ambient_datamodule_wires_lola_autoencoder(tmp_path):
     assert list(cfg.model.decoder.std) == [2.0]
 
 
+def test_lola_raw_datamodule_wires_log_scalar_conditioning(tmp_path):
+    dataset_dir = tmp_path / "rayleigh_benard"
+    run_dir = dataset_dir / "lola_ae"
+    cache_dir = run_dir / "cache" / "rayleigh_benard"
+    cache_dir.mkdir(parents=True)
+    (run_dir / "state.pth").touch()
+    (dataset_dir / "stats.yaml").write_text("stats: {}\n")
+    OmegaConf.save(
+        OmegaConf.create(
+            {
+                "ae": {
+                    "pix_channels": 4,
+                    "lat_channels": 64,
+                    "loss": {"losses": ["mse"], "weights": [1.0]},
+                },
+                "dataset": {
+                    "name": "rayleigh_benard",
+                    "augment": ["log_scalars", "random_axis_roll"],
+                    "stats": {"mean": [0.5], "std": [2.0]},
+                },
+            }
+        ),
+        run_dir / "config.yaml",
+    )
+    cfg = OmegaConf.create(
+        {
+            "datamodule": {
+                "_target_": "cached.LatentDataModule",
+                "data_path": str(cache_dir),
+            },
+            "model": {"processor": {"_target_": "fake.Processor"}},
+        }
+    )
+    encoded = EncodedBatch(
+        encoded_inputs=torch.zeros(1, 1, 2, 2, 1),
+        encoded_output_fields=torch.zeros(1, 1, 2, 2, 1),
+        global_cond=None,
+        encoded_info={},
+    )
+
+    _maybe_swap_to_ambient_datamodule(
+        cfg, eval_mode="encode_once", example_batch=encoded
+    )
+
+    assert cfg.model.encoder.log_scalars is True
+    assert "log_scalars" not in cfg.model.decoder
+
+
 def test_maybe_swap_to_ambient_datamodule_is_noop_for_raw_batch(tmp_path):
     cfg = OmegaConf.create(
         {"datamodule": {"_target_": "raw.DataModule", "data_path": str(tmp_path)}}
@@ -1182,6 +1271,26 @@ def test_build_lola_autoencoder_config_nodes_propagates_chunk_size(tmp_path):
     )
     assert encoder_cfg.chunk_size == 8
     assert decoder_cfg.chunk_size == 8
+
+
+def test_wrapped_encoder_encode_cond_can_log_scalars():
+    encoder = WrappedEncoder.__new__(WrappedEncoder)
+    object.__setattr__(encoder, "log_scalars", True)
+    scalars = torch.tensor([[1.0e7, 5.0]])
+    boundary_conditions = torch.tensor([[[2.0, 2.0], [0.0, 0.0]]])
+    batch = Batch(
+        input_fields=torch.zeros(1, 1, 2, 2, 1),
+        output_fields=torch.zeros(1, 1, 2, 2, 1),
+        constant_scalars=scalars,
+        constant_fields=None,
+        boundary_conditions=boundary_conditions,
+    )
+
+    cond = encoder.encode_cond(batch)
+
+    assert cond is not None
+    expected = torch.cat([torch.log(scalars), boundary_conditions.flatten(1)], dim=1)
+    assert torch.allclose(cond, expected)
 
 
 def test_wrapped_encoder_chunked_apply_matches_unchunked():
