@@ -3,6 +3,7 @@
 from types import SimpleNamespace
 from typing import Any, cast
 
+import matplotlib.pyplot as plt
 import pytest
 import torch
 from omegaconf import OmegaConf
@@ -48,6 +49,7 @@ from autocast.scripts.eval.encoder_processor_decoder import (
 )
 from autocast.scripts.setup import _apply_eval_chunk_size
 from autocast.types import Batch, EncodedBatch
+from autocast.utils import plot_spatiotemporal_snapshots
 
 
 def test_resolve_rollout_batch_limit_falls_back_to_test_limit_when_null():
@@ -487,6 +489,72 @@ def test_render_rollouts_can_use_custom_rollout_predict(tmp_path, monkeypatch):
 
     assert len(out_paths) == 1
     assert torch.equal(captured_true[0], trues[1:2])
+
+
+def test_render_rollouts_forwards_transpose_spatial_to_plots(tmp_path, monkeypatch):
+    class DummyModel:
+        def rollout(self, *_args, **_kwargs):
+            preds = torch.zeros(1, 2, 2, 3, 1)
+            trues = torch.ones_like(preds)
+            return preds, trues
+
+    captured_video: list[bool] = []
+    captured_snapshots: list[bool] = []
+
+    def _fake_plot_spatiotemporal_video(**kwargs):
+        captured_video.append(kwargs["transpose_spatial"])
+
+    def _fake_plot_spatiotemporal_snapshots(**kwargs):
+        captured_snapshots.append(kwargs["transpose_spatial"])
+
+    monkeypatch.setattr(
+        "autocast.scripts.eval.encoder_processor_decoder.plot_spatiotemporal_video",
+        _fake_plot_spatiotemporal_video,
+    )
+    monkeypatch.setattr(
+        "autocast.scripts.eval.encoder_processor_decoder.plot_spatiotemporal_snapshots",
+        _fake_plot_spatiotemporal_snapshots,
+    )
+
+    out_paths = _render_rollouts(
+        model=cast(Any, DummyModel()),
+        dataloader=[object()],
+        batch_indices=[0],
+        video_dir=tmp_path / "videos",
+        sample_index=0,
+        fmt="mp4",
+        fps=5,
+        stride=1,
+        max_rollout_steps=2,
+        free_running_only=True,
+        n_members=None,
+        transpose_spatial=True,
+        snapshot_timesteps=[0],
+        snapshot_dir=tmp_path / "snapshots",
+        snapshot_channels=[0],
+    )
+
+    assert len(out_paths) == 2
+    assert captured_video == [True]
+    assert captured_snapshots == [True]
+
+
+def test_snapshot_plot_transposes_spatial_axes():
+    tensor = torch.arange(6, dtype=torch.float32).reshape(1, 1, 2, 3, 1)
+
+    fig = plot_spatiotemporal_snapshots(
+        true=tensor,
+        timesteps=[0],
+        channel=0,
+        transpose_spatial=True,
+    )
+    try:
+        plotted = fig.axes[0].images[0].get_array()
+        assert plotted is not None
+        assert plotted.shape == (3, 2)
+        assert float(plotted[0, 1]) == 3.0
+    finally:
+        plt.close(fig)
 
 
 # ---------------------------------------------------------------------------

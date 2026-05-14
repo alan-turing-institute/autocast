@@ -606,6 +606,7 @@ def _save_rollout_snapshot_panels(
     saved_paths: list[Path],
     names_for_plot: list[str] | None,
     preserve_aspect: bool,
+    transpose_spatial: bool,
 ) -> None:
     for channel_idx in snapshot_channels:
         snapshot_filename = snapshot_dir / (
@@ -627,6 +628,7 @@ def _save_rollout_snapshot_panels(
             title="Rollout snapshots",
             channel_names=names_for_plot,
             preserve_aspect=preserve_aspect,
+            transpose_spatial=transpose_spatial,
         )
         saved_paths.append(snapshot_filename)
         log.info("Saved rollout snapshot panel to %s", snapshot_filename)
@@ -651,6 +653,7 @@ def _render_rollouts(  # noqa: PLR0912, PLR0915
     n_members: int | None = None,
     channel_names: list[str] | None = None,
     preserve_aspect: bool = False,
+    transpose_spatial: bool = False,
     decode_fn: Callable | None = None,
     rollout_predict_fn: Callable[[Any], tuple[torch.Tensor, torch.Tensor | None]]
     | None = None,
@@ -775,6 +778,7 @@ def _render_rollouts(  # noqa: PLR0912, PLR0915
                     pred_uq_label="Ensemble Std Dev",
                     channel_names=names_for_plot,
                     preserve_aspect=preserve_aspect,
+                    transpose_spatial=transpose_spatial,
                 )
                 saved_paths.append(filename)
                 rendered_targets.add(target_idx)
@@ -794,6 +798,7 @@ def _render_rollouts(  # noqa: PLR0912, PLR0915
                         saved_paths=saved_paths,
                         names_for_plot=names_for_plot,
                         preserve_aspect=preserve_aspect,
+                        transpose_spatial=transpose_spatial,
                     )
 
             global_sample_offset += batch_size
@@ -2492,6 +2497,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 n_members=n_members,
                 channel_names=rollout_channel_names,
                 preserve_aspect=eval_cfg.get("preserve_aspect", False),
+                transpose_spatial=eval_cfg.get("transpose_spatial", False),
                 decode_fn=decode_fn,
                 rollout_predict_fn=render_rollout_predict,
                 snapshot_timesteps=rollout_snapshot_timesteps,

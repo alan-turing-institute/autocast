@@ -33,6 +33,7 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     colorbar_mode_uq: Literal["none", "row"] = "none",
     channel_names: list[str] | None = None,
     preserve_aspect: bool = False,
+    transpose_spatial: bool = False,
 ):
     """Create a video comparing ground truth and predicted spatiotemporal time series.
 
@@ -69,6 +70,9 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
         If True, resize each subplot panel to match the spatial WxH ratio of the
         data so the image fills the panel without distortion. If False (default),
         panels are square and the image is stretched to fill via ``aspect='auto'``.
+    transpose_spatial: bool
+        If True, swap the two spatial axes before plotting. This only changes the
+        visualization orientation; tensor values and metrics are unchanged.
 
     Returns
     -------
@@ -163,7 +167,9 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     _base = 4.0
     if preserve_aspect and len(spatial) == 2:
         W, H = spatial
-        # _to_imshow_frame does NOT transpose by default, so imshow receives (W, H):
+        if transpose_spatial:
+            W, H = H, W
+        # _to_imshow_frame does not transpose by default, so imshow receives
         # rows = W (figure height), cols = H (figure width).
         # Scale the smaller base dimension and cap to avoid excessively large figures.
         if H > 0 and W > 0:
@@ -205,7 +211,10 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
             if data is None:
                 msg = "Data for plotting cannot be None."
                 raise ValueError(msg)
-            frame0 = _to_imshow_frame(data[0, :, :, ch])
+            frame0 = _to_imshow_frame(
+                data[0, :, :, ch],
+                transpose=transpose_spatial,
+            )
 
             # Row indices: 0=true, 1=pred, 2=diff, 3=pred_uq (if present),
             # 4=coverage (if both present) or 3=coverage (if only coverage)
@@ -267,18 +276,41 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
 
     def update(frame):
         for ch in range(C):
-            images[0][ch].set_array(_to_imshow_frame(true_batch[frame, :, :, ch]))
+            images[0][ch].set_array(
+                _to_imshow_frame(
+                    true_batch[frame, :, :, ch],
+                    transpose=transpose_spatial,
+                )
+            )
             if pred_batch is not None:
-                images[1][ch].set_array(_to_imshow_frame(pred_batch[frame, :, :, ch]))
+                images[1][ch].set_array(
+                    _to_imshow_frame(
+                        pred_batch[frame, :, :, ch],
+                        transpose=transpose_spatial,
+                    )
+                )
             if diff_batch is not None:
-                images[2][ch].set_array(_to_imshow_frame(diff_batch[frame, :, :, ch]))
+                images[2][ch].set_array(
+                    _to_imshow_frame(
+                        diff_batch[frame, :, :, ch],
+                        transpose=transpose_spatial,
+                    )
+                )
             if pred_uq_batch is not None:
                 images[3][ch].set_array(
-                    _to_imshow_frame(pred_uq_batch[frame, :, :, ch])
+                    _to_imshow_frame(
+                        pred_uq_batch[frame, :, :, ch],
+                        transpose=transpose_spatial,
+                    )
                 )
             if coverage_batch is not None:
                 coverage_row = 4 if pred_uq_batch is not None else 3
-                images[coverage_row][ch].set_array(coverage_batch[frame, :, :, ch])
+                images[coverage_row][ch].set_array(
+                    _to_imshow_frame(
+                        coverage_batch[frame, :, :, ch],
+                        transpose=transpose_spatial,
+                    )
+                )
         suptitle_text.set_text(
             f"{title} - Batch {batch_idx} - Time Step: {frame}/{T - 1}"
         )
@@ -318,6 +350,7 @@ def plot_spatiotemporal_snapshots(  # noqa: PLR0912, PLR0915
     pred_uq_label: str = "Ensemble Std Dev",
     channel_names: list[str] | None = None,
     preserve_aspect: bool = False,
+    transpose_spatial: bool = False,
 ) -> Figure:
     """Create a still panel at selected timesteps for one spatial channel."""
     true_batch = true[batch_idx]
@@ -395,6 +428,8 @@ def plot_spatiotemporal_snapshots(  # noqa: PLR0912, PLR0915
     nrows = len(rows_to_plot)
     ncols = len(selected_timesteps)
     width, height = spatial
+    if transpose_spatial:
+        width, height = height, width
     base = 3.0
     if preserve_aspect and height > 0 and width > 0:
         ratio = width / height
@@ -412,11 +447,22 @@ def plot_spatiotemporal_snapshots(  # noqa: PLR0912, PLR0915
         constrained_layout=True,
     )
     image_rows = []
+
+    def _to_imshow_frame(frame: np.ndarray) -> np.ndarray:
+        if transpose_spatial:
+            return np.asarray(rearrange(frame, "s1 s2 -> s2 s1"))
+        return frame
+
     for row_idx, (data, row_label, row_cmap, norm) in enumerate(rows_to_plot):
         row_images = []
         for col_idx, timestep in enumerate(selected_timesteps):
             ax = axes[row_idx][col_idx]
-            im = ax.imshow(data[timestep], cmap=row_cmap, aspect="auto", norm=norm)
+            im = ax.imshow(
+                _to_imshow_frame(data[timestep]),
+                cmap=row_cmap,
+                aspect="auto",
+                norm=norm,
+            )
             row_images.append(im)
             ax.set_xticks([])
             ax.set_yticks([])
