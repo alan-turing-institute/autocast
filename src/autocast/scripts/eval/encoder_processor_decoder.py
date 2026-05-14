@@ -706,7 +706,7 @@ def _save_rollout_snapshot_panels(
         log.info("Saved data-only rollout snapshot panel to %s", data_only_filename)
 
 
-def _render_rollouts(  # noqa: PLR0912
+def _render_rollouts(  # noqa: PLR0912, PLR0915
     model: (
         EncoderProcessorDecoder
         | EncoderProcessorDecoderEnsemble
@@ -726,6 +726,8 @@ def _render_rollouts(  # noqa: PLR0912
     channel_names: list[str] | None = None,
     preserve_aspect: bool = False,
     decode_fn: Callable | None = None,
+    rollout_predict_fn: Callable[[Any], tuple[torch.Tensor, torch.Tensor | None]]
+    | None = None,
     snapshot_timesteps: Sequence[int] | None = None,
     snapshot_dir: Path | None = None,
     snapshot_format: str = "png",
@@ -752,13 +754,16 @@ def _render_rollouts(  # noqa: PLR0912
             if rendered_targets == targets:
                 break
 
-            preds, trues = model.rollout(
-                batch,
-                stride=stride,
-                max_rollout_steps=max_rollout_steps,
-                free_running_only=free_running_only,
-                n_members=n_members if n_members and n_members > 1 else None,
-            )
+            if rollout_predict_fn is None:
+                preds, trues = model.rollout(
+                    batch,
+                    stride=stride,
+                    max_rollout_steps=max_rollout_steps,
+                    free_running_only=free_running_only,
+                    n_members=n_members if n_members and n_members > 1 else None,
+                )
+            else:
+                preds, trues = rollout_predict_fn(batch)
             if decode_fn is not None:
                 with torch.no_grad():
                     preds = _decode_tensor(
@@ -1492,6 +1497,12 @@ def _build_lola_autoencoder_config_nodes(
 ) -> tuple[DictConfig, DictConfig]:
     """Build Hydra config nodes for the LoLA encoder/decoder wrappers."""
     mean, std = _lola_autoencoder_stats(ae_cfg, run_dir)
+    augmentations_raw = ae_cfg.get("dataset", {}).get("augment", [])
+    if isinstance(augmentations_raw, str):
+        augmentations = {augmentations_raw}
+    else:
+        augmentations = {str(item) for item in augmentations_raw or []}
+    log_scalars = "log_scalars" in augmentations
     base_kwargs: dict[str, Any] = {
         **_lola_autoencoder_kwargs(ae_cfg, run_dir),
         "device": "cpu",
@@ -1505,6 +1516,7 @@ def _build_lola_autoencoder_config_nodes(
         {
             "_target_": LOLA_WRAPPED_ENCODER_TARGET,
             **base_kwargs,
+            "log_scalars": log_scalars,
         }
     )
     decoder_cfg = OmegaConf.create(
@@ -2546,6 +2558,18 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 if save_rollout_snapshots
                 else None
             )
+            render_rollout_predict = (
+                _build_encode_once_rollout_predict(
+                    model,
+                    rollout_stride=rollout_stride,
+                    max_rollout_steps=max_rollout_steps,
+                    free_running_only=eval_cfg.get("free_running_only", True),
+                    n_members=n_members if n_members and n_members > 1 else None,
+                    device=fabric.device,
+                )
+                if resolved_eval_path == EVAL_PATH_ENCODE_ONCE
+                else None
+            )
             _render_rollouts(
                 model,  # pyright: ignore[reportArgumentType]
                 rollout_loader,
@@ -2561,6 +2585,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 channel_names=rollout_channel_names,
                 preserve_aspect=eval_cfg.get("preserve_aspect", False),
                 decode_fn=decode_fn,
+                rollout_predict_fn=render_rollout_predict,
                 snapshot_timesteps=rollout_snapshot_timesteps,
                 snapshot_dir=rollout_snapshot_dir,
                 snapshot_format=eval_cfg.get("rollout_snapshot_format", "png"),
