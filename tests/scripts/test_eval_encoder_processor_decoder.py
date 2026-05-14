@@ -303,8 +303,9 @@ def test_default_eval_metrics_include_spread_and_skill_for_lola_comparison():
     assert "ssr" in DEFAULT_EVAL_METRICS
 
 
-def test_should_skip_metric_variogram_only():
+def test_should_skip_metric_skips_memory_intensive_ones():
     assert _should_skip_metric("variogram") is True
+    assert _should_skip_metric("energy") is True
     assert _should_skip_metric("crps") is False
     assert _should_skip_metric("ssr") is False
 

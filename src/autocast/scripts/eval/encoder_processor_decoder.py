@@ -143,7 +143,7 @@ DEFAULT_EVAL_METRICS = [
     "winkler",
 ]
 
-MEMORY_INTENSIVE_METRICS = {"variogram"}
+MEMORY_INTENSIVE_METRICS = {"variogram", "energy"}
 
 EVAL_MODES = ("auto", "encode_once", "ambient", "latent")
 DEFAULT_EVAL_MODE = "auto"
