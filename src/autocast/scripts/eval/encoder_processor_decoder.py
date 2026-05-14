@@ -68,6 +68,7 @@ from autocast.scripts.execution import (
     resolve_hydra_work_dir,
 )
 from autocast.scripts.setup import (
+    _read_eval_chunk_size,
     setup_autoencoder_components,
     setup_datamodule,
     setup_epd_model,
@@ -1511,25 +1512,6 @@ def _build_lola_raw_datamodule_config(
     return OmegaConf.create(datamodule_cfg)
 
 
-def _chunk_size_from_cfg(cfg: DictConfig) -> int | None:
-    """Read the optional eval.chunk_size knob, returning None if absent.
-
-    Used by autoencoder wrappers that support batch chunking on forward
-    (currently the LoLA wrapped encoder/decoder, but the knob is generic).
-    """
-    eval_cfg = cfg.get("eval") if isinstance(cfg, DictConfig) else None
-    if not isinstance(eval_cfg, DictConfig):
-        return None
-    value = eval_cfg.get("chunk_size")
-    if value is None:
-        return None
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        return None
-    return parsed if parsed > 0 else None
-
-
 def _inject_lola_autoencoder_components(
     cfg: DictConfig,
     ae_cfg: DictConfig,
@@ -1539,7 +1521,7 @@ def _inject_lola_autoencoder_components(
     encoder_cfg, decoder_cfg = _build_lola_autoencoder_config_nodes(
         ae_cfg,
         run_dir,
-        chunk_size=_chunk_size_from_cfg(cfg),
+        chunk_size=_read_eval_chunk_size(cfg),
     )
     with open_dict(cfg):
         if cfg.get("model") is None:
@@ -1958,7 +1940,7 @@ def _try_build_decode_fn(
         return None, None
 
     cache_dir = Path(str(data_path)).expanduser()
-    chunk_size = _chunk_size_from_cfg(cfg)
+    chunk_size = _read_eval_chunk_size(cfg)
     ae_cfg = _load_autoencoder_config_from_cache(cache_dir)
     if ae_cfg is None:
         return _try_build_lola_decode_fn(cache_dir, chunk_size=chunk_size)

@@ -25,17 +25,6 @@ class ChannelsFirstEncoder(EncoderWithCond):
             boundary_conditions=batch.boundary_conditions,
         )
 
-    def _chunked_apply(
-        self, fn: Callable[[torch.Tensor], torch.Tensor], x: torch.Tensor
-    ) -> torch.Tensor:
-        chunk_size = getattr(self, "chunk_size", None)
-        if chunk_size is None or chunk_size <= 0 or x.shape[0] <= chunk_size:
-            return fn(x)
-        return torch.cat(
-            [fn(x[i : i + chunk_size]) for i in range(0, x.shape[0], chunk_size)],
-            dim=0,
-        )
-
     def encode(self, batch: Batch) -> torch.Tensor:
         batch = self.preprocess(batch)
         b, _, t, *_ = batch.input_fields.shape
