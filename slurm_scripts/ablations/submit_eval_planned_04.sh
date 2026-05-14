@@ -4,13 +4,8 @@ set -euo pipefail
 # Eval submitter for the cross-dataset FairCRPS ablation runs.
 #
 # This mirrors the CRPS-ambient profile from submit_eval_planned_01.sh, but
-# targets the FairCRPS m=8 ViT ablation for GS, GPE, and AD. The script can
-# either auto-discover completed runs by W&B name under outputs/**/resolved_config.yaml
-# or use explicit paths supplied via:
-#
-#   FAIR_CRPS_M8_GS_RUN_DIR=outputs/.../crps_gs64_...
-#   FAIR_CRPS_M8_GPE_RUN_DIR=outputs/.../crps_gpe64_...
-#   FAIR_CRPS_M8_AD_RUN_DIR=outputs/.../crps_ad64_...
+# targets the FairCRPS m=8 ViT ablation for GS, GPE, and AD. Run dirs are
+# hard-coded in the RUNS table below.
 #
 # Output: <run>/eval_best_multiwinkler_from0p25/.
 
@@ -22,50 +17,12 @@ ROLLOUT_SNAPSHOT_TIMESTEPS="[0,4,12,30,99]"
 RUN_DRY_STATES=("true" "false")
 EVAL_METRICS="[mse,mae,nmse,nmae,rmse,nrmse,vmse,vrmse,linf,psrmse,psrmse_low,psrmse_mid,psrmse_high,psrmse_tail,pscc,pscc_low,pscc_mid,pscc_high,pscc_tail,crps,fcrps,afcrps,energy,ssr,winkler]"
 
-# run_id|datamodule
+# run_id|datamodule|run_dir
 RUNS=(
-    "fair_crps_m8_gs|gray_scott"
-    "fair_crps_m8_gpe|gpe_laser_only_wake"
-    "fair_crps_m8_ad|advection_diffusion"
+    "fair_crps_m8_gs|gray_scott|outputs/2026-05-12/planned_04/crps_gs64_vit_azula_large_5a8c216_2ced703"
+    "fair_crps_m8_gpe|gpe_laser_only_wake|outputs/2026-05-12/planned_04/crps_gpe64_vit_azula_large_5a8c216_2b1460a"
+    "fair_crps_m8_ad|advection_diffusion|outputs/2026-05-12/planned_04/crps_ad64_vit_azula_large_5a8c216_9978d9b"
 )
-
-env_run_dir_var() {
-    local run_id="$1"
-    local upper
-    upper="$(tr '[:lower:]' '[:upper:]' <<< "${run_id}")"
-    printf '%s_RUN_DIR\n' "${upper}"
-}
-
-find_fair_crps_run_dir() {
-    local run_id="$1"
-    local env_var explicit_dir
-    env_var="$(env_run_dir_var "${run_id}")"
-    explicit_dir="${!env_var:-}"
-
-    if [[ -n "${explicit_dir}" ]]; then
-        printf '%s\n' "${explicit_dir}"
-        return 0
-    fi
-
-    if [[ ! -d outputs ]]; then
-        return 1
-    fi
-
-    local -a matches=()
-    local cfg
-    while IFS= read -r cfg; do
-        if grep -q "name: ${run_id}$" "${cfg}" && \
-           grep -q "autocast.losses.ensemble.FairCRPSLoss" "${cfg}"; then
-            matches+=("$(dirname "${cfg}")")
-        fi
-    done < <(find outputs -path '*/resolved_config.yaml' ! -path '*/eval*/*' | sort)
-
-    if (( ${#matches[@]} == 0 )); then
-        return 1
-    fi
-
-    printf '%s\n' "${matches[$(( ${#matches[@]} - 1 ))]}"
-}
 
 resolve_multiwinkler_checkpoint() {
     local run_dir="$1"
@@ -147,13 +104,7 @@ submit_crps_ambient() {
 }
 
 for run_spec in "${RUNS[@]}"; do
-    IFS='|' read -r run_id datamodule <<< "${run_spec}"
-
-    if ! run_dir="$(find_fair_crps_run_dir "${run_id}")"; then
-        env_var="$(env_run_dir_var "${run_id}")"
-        echo "Skipping ${run_id}: no FairCRPS run found; set ${env_var}=outputs/..." >&2
-        continue
-    fi
+    IFS='|' read -r run_id datamodule run_dir <<< "${run_spec}"
 
     if [[ ! -d "${run_dir}" ]]; then
         echo "Skipping ${run_id}: run_dir missing at ${run_dir}" >&2
