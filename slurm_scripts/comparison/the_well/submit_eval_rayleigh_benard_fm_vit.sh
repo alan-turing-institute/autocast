@@ -15,8 +15,12 @@ set -euo pipefail
 # Batch size: RB ambient resolution is 512x128 (vs 64x64 for the Well-2D
 # basis), and encode_once still pays a full decoder pass on the entire rollout
 # horizon (max_rollout_steps=25, stride=4 -> up to 100 frames per sample).
-# With n_members=10 and flow_ode_steps=50 through the processor, EVAL_BATCH_SIZE=2
-# is the safe starting point; drop to 1 on OOM, raise toward 4 if comfortable.
+# With n_members=10 and flow_ode_steps=50 through the processor, EVAL_BATCH_SIZE=1
+# pairs with EVAL_CHUNK_SIZE=8 to keep per-stage activation tensors small.
+# Test phase sees B*M = 10 frames into the encoder (chunked to 8); rollout
+# decoder sees B*M*rollout_T = 1000 frames (chunked to 8). Chunking is
+# numerically identical to non-chunked LoLA forward (LayerNorm is
+# per-spatial-position, convs independent across batch dim).
 #
 # Single-GPU on purpose: matches the comparison/eval/ scripts (known-good
 # wall-clock and outputs), avoids the DDP tail-padding bias for aggregate
@@ -27,8 +31,9 @@ set -euo pipefail
 # (`+distributed=ddp_4gpu_slurm eval.batch_indices=[]`) plus a 1-GPU
 # render-only job, rather than turning DDP on here.
 
-EVAL_BATCH_SIZE=2
+EVAL_BATCH_SIZE=1
 EVAL_N_MEMBERS=10
+EVAL_CHUNK_SIZE=8
 TIMEOUT_MIN=1439
 RUN_DRY_STATES=("true" "false")
 EVAL_METRICS="[mse,mae,nmse,nmae,rmse,nrmse,vmse,vrmse,linf,psrmse,psrmse_low,psrmse_mid,psrmse_high,psrmse_tail,pscc,pscc_low,pscc_mid,pscc_high,pscc_tail,crps,fcrps,afcrps,energy,ssr,winkler]"
@@ -62,6 +67,7 @@ for run_dir in "${RUN_DIRS[@]}"; do
         echo "  eval.mode: encode_once"
         echo "  eval.batch_size: ${EVAL_BATCH_SIZE}"
         echo "  eval.n_members: ${EVAL_N_MEMBERS}"
+        echo "  eval.chunk_size: ${EVAL_CHUNK_SIZE}"
         echo "  eval.metrics: ${EVAL_METRICS}"
 
         uv run autocast eval --mode slurm "${dry_run_arg[@]}" \
@@ -71,6 +77,7 @@ for run_dir in "${RUN_DIRS[@]}"; do
             eval.metrics="${EVAL_METRICS}" \
             eval.batch_size="${EVAL_BATCH_SIZE}" \
             eval.n_members="${EVAL_N_MEMBERS}" \
+            +eval.chunk_size="${EVAL_CHUNK_SIZE}" \
             hydra.launcher.cpus_per_task=8 \
             hydra.launcher.timeout_min="${TIMEOUT_MIN}"
     done

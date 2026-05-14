@@ -7,6 +7,8 @@ import pytest
 import torch
 from omegaconf import OmegaConf
 
+from autocast.external.lola.wrapped_decoder import WrappedDecoder
+from autocast.external.lola.wrapped_encoder import ChannelsFirstEncoder
 from autocast.metrics.ensemble import CRPS, AlphaFairCRPS, SpreadSkillRatio
 from autocast.scripts.eval.encoder_processor_decoder import (
     DEFAULT_EVAL_METRICS,
@@ -19,7 +21,9 @@ from autocast.scripts.eval.encoder_processor_decoder import (
     LOLA_WRAPPED_ENCODER_TARGET,
     THE_WELL_DATAMODULE_TARGET,
     _build_eval_predict_fn,
+    _build_lola_autoencoder_config_nodes,
     _build_per_timestep_metric_factory,
+    _chunk_size_from_cfg,
     _decode_tensor,
     _load_lola_autoencoder_config_from_cache,
     _maybe_swap_to_ambient_datamodule,
@@ -832,7 +836,7 @@ def test_try_build_decode_fn_falls_back_to_lola_autoencoder_run(tmp_path, monkey
             return x + 1
 
     monkeypatch.setattr(
-        "autocast.external.lola.wrapped_decoder.WrappedDecoder",
+        "autocast.scripts.eval.encoder_processor_decoder.WrappedDecoder",
         FakeWrappedDecoder,
     )
     cfg = OmegaConf.create({"datamodule": {"data_path": str(cache_dir)}})
@@ -1131,3 +1135,134 @@ def test_run_evaluation_auto_resolves_stateless_epd_to_ambient(tmp_path, monkeyp
         run_evaluation(cast(Any, cfg), work_dir=tmp_path)
 
     assert captured["eval_mode"] == "ambient"
+
+
+def test_chunk_size_from_cfg_returns_none_when_absent():
+    cfg = OmegaConf.create({"eval": {}})
+    assert _chunk_size_from_cfg(cfg) is None
+
+
+def test_chunk_size_from_cfg_returns_none_for_non_positive():
+    cfg = OmegaConf.create({"eval": {"chunk_size": 0}})
+    assert _chunk_size_from_cfg(cfg) is None
+
+
+def test_chunk_size_from_cfg_parses_positive_int():
+    cfg = OmegaConf.create({"eval": {"chunk_size": 8}})
+    assert _chunk_size_from_cfg(cfg) == 8
+
+
+def test_build_lola_autoencoder_config_nodes_omits_chunk_size_when_none(tmp_path):
+    ae_cfg = OmegaConf.create(
+        {
+            "ae": {"pix_channels": 4, "lat_channels": 64},
+            "dataset": {"stats": {"mean": [0.0], "std": [1.0]}},
+        }
+    )
+    encoder_cfg, decoder_cfg = _build_lola_autoencoder_config_nodes(
+        ae_cfg, tmp_path, chunk_size=None
+    )
+    assert "chunk_size" not in encoder_cfg
+    assert "chunk_size" not in decoder_cfg
+
+
+def test_build_lola_autoencoder_config_nodes_propagates_chunk_size(tmp_path):
+    ae_cfg = OmegaConf.create(
+        {
+            "ae": {"pix_channels": 4, "lat_channels": 64},
+            "dataset": {"stats": {"mean": [0.0], "std": [1.0]}},
+        }
+    )
+    encoder_cfg, decoder_cfg = _build_lola_autoencoder_config_nodes(
+        ae_cfg, tmp_path, chunk_size=8
+    )
+    assert encoder_cfg.chunk_size == 8
+    assert decoder_cfg.chunk_size == 8
+
+
+def test_wrapped_encoder_chunked_apply_matches_unchunked():
+    encoder = ChannelsFirstEncoder.__new__(ChannelsFirstEncoder)
+    x = torch.randn(10, 3, 4, 4)
+
+    def fn(t: torch.Tensor) -> torch.Tensor:
+        return t * 2.5 + 1.0
+
+    object.__setattr__(encoder, "chunk_size", None)
+    out_unchunked = encoder._chunked_apply(fn, x)
+
+    object.__setattr__(encoder, "chunk_size", 3)
+    out_chunked = encoder._chunked_apply(fn, x)
+
+    assert torch.allclose(out_chunked, out_unchunked)
+    assert out_chunked.shape == x.shape
+
+
+def test_wrapped_encoder_chunked_apply_handles_partial_final_chunk():
+    encoder = ChannelsFirstEncoder.__new__(ChannelsFirstEncoder)
+    object.__setattr__(encoder, "chunk_size", 4)
+    x = torch.randn(7, 2, 3, 3)
+    out = encoder._chunked_apply(lambda t: t, x)
+    assert torch.equal(out, x)
+
+
+def test_wrapped_decoder_chunked_apply_matches_unchunked():
+    decoder = WrappedDecoder.__new__(WrappedDecoder)
+    object.__setattr__(decoder, "chunk_size", None)
+    x = torch.randn(12, 4, 8, 8)
+
+    def fn(t: torch.Tensor) -> torch.Tensor:
+        return t.flip(dims=(-1,)) - 0.25
+
+    out_unchunked = decoder._chunked_apply(fn, x)
+
+    object.__setattr__(decoder, "chunk_size", 5)
+    out_chunked = decoder._chunked_apply(fn, x)
+
+    assert torch.allclose(out_chunked, out_unchunked)
+    assert out_chunked.shape == x.shape
+
+
+def test_try_build_decode_fn_passes_chunk_size_to_lola_decoder(tmp_path, monkeypatch):
+    run_dir = tmp_path / "lola_ae"
+    cache_dir = run_dir / "cache" / "rayleigh_benard"
+    cache_dir.mkdir(parents=True)
+    (run_dir / "state.pth").touch()
+    OmegaConf.save(
+        OmegaConf.create(
+            {
+                "ae": {
+                    "pix_channels": 4,
+                    "lat_channels": 64,
+                    "loss": {"losses": ["mse"], "weights": [1.0]},
+                },
+                "dataset": {"stats": {"mean": [0.5], "std": [2.0]}},
+            }
+        ),
+        run_dir / "config.yaml",
+    )
+    captured: dict[str, Any] = {}
+
+    class FakeWrappedDecoder:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+        def eval(self):
+            return self
+
+        def decode(self, x):
+            return x
+
+    monkeypatch.setattr(
+        "autocast.scripts.eval.encoder_processor_decoder.WrappedDecoder",
+        FakeWrappedDecoder,
+    )
+    cfg = OmegaConf.create(
+        {
+            "datamodule": {"data_path": str(cache_dir)},
+            "eval": {"chunk_size": 8},
+        }
+    )
+
+    decoder, _ = _try_build_decode_fn(cfg)
+    assert isinstance(decoder, FakeWrappedDecoder)
+    assert captured.get("chunk_size") == 8

@@ -25,11 +25,22 @@ class ChannelsFirstEncoder(EncoderWithCond):
             boundary_conditions=batch.boundary_conditions,
         )
 
+    def _chunked_apply(
+        self, fn: Callable[[torch.Tensor], torch.Tensor], x: torch.Tensor
+    ) -> torch.Tensor:
+        chunk_size = getattr(self, "chunk_size", None)
+        if chunk_size is None or chunk_size <= 0 or x.shape[0] <= chunk_size:
+            return fn(x)
+        return torch.cat(
+            [fn(x[i : i + chunk_size]) for i in range(0, x.shape[0], chunk_size)],
+            dim=0,
+        )
+
     def encode(self, batch: Batch) -> torch.Tensor:
         batch = self.preprocess(batch)
         b, _, t, *_ = batch.input_fields.shape
         x = rearrange(batch.input_fields, "B C T ... -> (B T) C ...")
-        x = self.wrapped_encode_func(x)
+        x = self._chunked_apply(self.wrapped_encode_func, x)
         return rearrange(x, "(B T) C ... -> B T ... C", B=b, T=t)
 
 
@@ -43,6 +54,7 @@ class WrappedEncoder(ChannelsFirstEncoder):
         super().__init__()
         mean = kwargs.pop("mean", None)
         std = kwargs.pop("std", None)
+        self.chunk_size = kwargs.pop("chunk_size", None)
         self.latent_channels = kwargs["lat_channels"]
         self.register_buffer(
             "mean",
