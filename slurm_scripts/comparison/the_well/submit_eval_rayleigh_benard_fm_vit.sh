@@ -68,6 +68,7 @@ for run_dir in "${RUN_DIRS[@]}"; do
         echo "  eval.batch_size: ${EVAL_BATCH_SIZE}"
         echo "  eval.n_members: ${EVAL_N_MEMBERS}"
         echo "  eval.chunk_size: ${EVAL_CHUNK_SIZE}"
+        echo "  eval.transpose_spatial: true"
         echo "  eval.metrics: ${EVAL_METRICS}"
 
         uv run autocast eval --mode slurm "${dry_run_arg[@]}" \
@@ -78,6 +79,7 @@ for run_dir in "${RUN_DIRS[@]}"; do
             eval.batch_size="${EVAL_BATCH_SIZE}" \
             eval.n_members="${EVAL_N_MEMBERS}" \
             +eval.chunk_size="${EVAL_CHUNK_SIZE}" \
+            eval.transpose_spatial=true \
             hydra.launcher.cpus_per_task=8 \
             hydra.launcher.timeout_min="${TIMEOUT_MIN}"
     done

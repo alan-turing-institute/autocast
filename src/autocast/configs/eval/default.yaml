@@ -53,6 +53,8 @@ batch_indices: []
 video_format: mp4  # gif or mp4
 video_sample_index: 0
 fps: 5
+preserve_aspect: false
+transpose_spatial: false
 
 # Rollout snapshot settings. When enabled, eval saves still panels for the
 # requested rollout samples using raw tensors rather than extracting MP4 frames.
