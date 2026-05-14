@@ -62,6 +62,8 @@ All eval configs support these parameters:
 - `video_format`: Video format (mp4 or gif)
 - `video_sample_index`: Sample index within batch to visualize
 - `fps`: Frames per second for videos
+- `preserve_aspect`: Preserve spatial aspect ratio in rollout plots
+- `transpose_spatial`: Swap the two spatial axes in rollout plots
 - `save_rollout_snapshots`: Save still rollout panels from raw tensors
 - `rollout_snapshot_timesteps`: Timestep indices shown in each still panel
 - `rollout_snapshot_channels`: Channel indices to render (`null` means all)

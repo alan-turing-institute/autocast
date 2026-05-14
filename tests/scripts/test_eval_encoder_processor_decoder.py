@@ -3,6 +3,7 @@
 from types import SimpleNamespace
 from typing import Any, cast
 
+import matplotlib.pyplot as plt
 import pytest
 import torch
 from omegaconf import OmegaConf
@@ -39,7 +40,6 @@ from autocast.scripts.eval.encoder_processor_decoder import (
     _resolve_rollout_batch_limit,
     _resolve_rollout_channel_names,
     _resolve_rollout_timestep_limit,
-    _save_rollout_snapshot_panels,
     _should_skip_metric,
     _split_metric_and_metadata_rows,
     _training_runtime_rows,
@@ -50,7 +50,7 @@ from autocast.scripts.eval.encoder_processor_decoder import (
 )
 from autocast.scripts.setup import _apply_eval_chunk_size
 from autocast.types import Batch, EncodedBatch
-from autocast.utils.plots import _panel_size_for_width
+from autocast.utils import plot_spatiotemporal_snapshots
 
 
 def test_resolve_rollout_batch_limit_falls_back_to_test_limit_when_null():
@@ -451,84 +451,6 @@ def test_render_rollouts_resolves_indices_within_batched_samples(tmp_path, monke
         assert any(f"batch_{idx}_sample_{idx}.mp4" in p for p in captured_paths)
 
 
-def test_snapshot_panel_size_preserves_imshow_row_col_aspect():
-    panel_width, panel_height = _panel_size_for_width(
-        target_width_in=6.0,
-        ncols=3,
-        spatial=(8, 4),
-        preserve_aspect=True,
-    )
-
-    assert panel_width == pytest.approx(2.0)
-    assert panel_height == pytest.approx(4.0)
-
-
-def test_save_rollout_snapshot_panels_uses_snapshot_extension_for_data_only(
-    tmp_path,
-    monkeypatch,
-):
-    calls: list[tuple[str, str, tuple[str, ...]]] = []
-
-    def _fake_snapshots(**kwargs):
-        calls.append(
-            (
-                "full",
-                kwargs["save_path"],
-                tuple(kwargs.get("extra_formats") or ()),
-            )
-        )
-
-    def _fake_data_only(**kwargs):
-        calls.append(
-            (
-                "data",
-                kwargs["save_path"],
-                tuple(kwargs.get("extra_formats") or ()),
-            )
-        )
-
-    monkeypatch.setattr(
-        "autocast.scripts.eval.encoder_processor_decoder.plot_spatiotemporal_snapshots",
-        _fake_snapshots,
-    )
-    monkeypatch.setattr(
-        "autocast.scripts.eval.encoder_processor_decoder."
-        "plot_spatiotemporal_snapshots_data_only",
-        _fake_data_only,
-    )
-
-    saved_paths = []
-    values = torch.zeros(1, 3, 2, 2, 1)
-    _save_rollout_snapshot_panels(
-        trues_mean=values,
-        preds_mean=values,
-        preds_uq=None,
-        local_idx=0,
-        target_idx=2,
-        snapshot_dir=tmp_path,
-        snapshot_timesteps=[0, 1],
-        snapshot_channels=[0],
-        snapshot_ext="jpg",
-        saved_paths=saved_paths,
-        names_for_plot=None,
-        preserve_aspect=True,
-        dataset_short_label="AD",
-    )
-
-    full_base = tmp_path / "batch_2_sample_0_channel_0_snapshots"
-    data_base = tmp_path / "batch_2_sample_0_channel_0_snapshots_data"
-    assert calls == [
-        ("full", str(full_base.with_suffix(".jpg")), ("pdf",)),
-        ("data", str(data_base.with_suffix(".jpg")), ("pdf",)),
-    ]
-    assert saved_paths == [
-        full_base.with_suffix(".jpg"),
-        full_base.with_suffix(".pdf"),
-        data_base.with_suffix(".jpg"),
-        data_base.with_suffix(".pdf"),
-    ]
-
-
 def test_render_rollouts_can_use_custom_rollout_predict(tmp_path, monkeypatch):
     class DummyModel:
         def rollout(self, *_args, **_kwargs):
@@ -568,6 +490,72 @@ def test_render_rollouts_can_use_custom_rollout_predict(tmp_path, monkeypatch):
 
     assert len(out_paths) == 1
     assert torch.equal(captured_true[0], trues[1:2])
+
+
+def test_render_rollouts_forwards_transpose_spatial_to_plots(tmp_path, monkeypatch):
+    class DummyModel:
+        def rollout(self, *_args, **_kwargs):
+            preds = torch.zeros(1, 2, 2, 3, 1)
+            trues = torch.ones_like(preds)
+            return preds, trues
+
+    captured_video: list[bool] = []
+    captured_snapshots: list[bool] = []
+
+    def _fake_plot_spatiotemporal_video(**kwargs):
+        captured_video.append(kwargs["transpose_spatial"])
+
+    def _fake_plot_spatiotemporal_snapshots(**kwargs):
+        captured_snapshots.append(kwargs["transpose_spatial"])
+
+    monkeypatch.setattr(
+        "autocast.scripts.eval.encoder_processor_decoder.plot_spatiotemporal_video",
+        _fake_plot_spatiotemporal_video,
+    )
+    monkeypatch.setattr(
+        "autocast.scripts.eval.encoder_processor_decoder.plot_spatiotemporal_snapshots",
+        _fake_plot_spatiotemporal_snapshots,
+    )
+
+    out_paths = _render_rollouts(
+        model=cast(Any, DummyModel()),
+        dataloader=[object()],
+        batch_indices=[0],
+        video_dir=tmp_path / "videos",
+        sample_index=0,
+        fmt="mp4",
+        fps=5,
+        stride=1,
+        max_rollout_steps=2,
+        free_running_only=True,
+        n_members=None,
+        transpose_spatial=True,
+        snapshot_timesteps=[0],
+        snapshot_dir=tmp_path / "snapshots",
+        snapshot_channels=[0],
+    )
+
+    assert len(out_paths) == 2
+    assert captured_video == [True]
+    assert captured_snapshots == [True]
+
+
+def test_snapshot_plot_transposes_spatial_axes():
+    tensor = torch.arange(6, dtype=torch.float32).reshape(1, 1, 2, 3, 1)
+
+    fig = plot_spatiotemporal_snapshots(
+        true=tensor,
+        timesteps=[0],
+        channel=0,
+        transpose_spatial=True,
+    )
+    try:
+        plotted = fig.axes[0].images[0].get_array()
+        assert plotted is not None
+        assert plotted.shape == (3, 2)
+        assert float(plotted[0, 1]) == 3.0
+    finally:
+        plt.close(fig)
 
 
 # ---------------------------------------------------------------------------
