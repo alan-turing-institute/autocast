@@ -189,9 +189,13 @@ class DCDecoder(Decoder):
         """
         b, t, *_ = z.shape
         z = rearrange(z, "B T ... C -> (B T) C ...")
-        for blocks in self.ascent:
-            for block in cast(nn.ModuleList, blocks):
-                z = block(z)
-        z = self.unpatch(z)
+
+        def _heavy(z_chunk: TensorBTSC) -> TensorBTSC:
+            for blocks in self.ascent:
+                for block in cast(nn.ModuleList, blocks):
+                    z_chunk = block(z_chunk)
+            return self.unpatch(z_chunk)
+
+        z = self._chunked_apply(_heavy, z)
         z = rearrange(z, "(B T) C ... -> B T ... C", B=b, T=t, C=self.output_channels)
         return z

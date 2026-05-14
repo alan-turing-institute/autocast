@@ -36,17 +36,6 @@ class WrappedDecoder(Decoder):
             print(f"Loaded autoencoder weights from {runpath / 'state.pth'}")
         self.wrapped_decode_func = self.wrapped_autoencoder.decode
 
-    def _chunked_apply(
-        self, fn: Callable[[torch.Tensor], torch.Tensor], x: torch.Tensor
-    ) -> torch.Tensor:
-        chunk_size = self.chunk_size
-        if chunk_size is None or chunk_size <= 0 or x.shape[0] <= chunk_size:
-            return fn(x)
-        return torch.cat(
-            [fn(x[i : i + chunk_size]) for i in range(0, x.shape[0], chunk_size)],
-            dim=0,
-        )
-
     def decode(self, z: torch.Tensor) -> torch.Tensor:
         b, t, *_ = z.shape
         z = rearrange(z, "B T ... C -> (B T) C ...")
