@@ -18,6 +18,7 @@ from the_well.data.normalization import ZScoreNormalization
 from torchmetrics import Metric
 
 from autocast.benchmarking import benchmark_model, benchmark_rollout
+from autocast.external.lola.wrapped_decoder import WrappedDecoder
 from autocast.metrics import (
     MAE,
     MSE,
@@ -1377,10 +1378,13 @@ def _load_lola_autoencoder_config_from_datamodule(
 def _lola_autoencoder_kwargs(ae_cfg: DictConfig, run_dir: Path) -> dict[str, Any]:
     """Return LoLA AE kwargs in the format accepted by the wrapped modules."""
     ae_node = ae_cfg.get("ae")
-    ae_kwargs = OmegaConf.to_container(ae_node, resolve=True)
-    if not isinstance(ae_kwargs, dict):
+    ae_kwargs_raw = OmegaConf.to_container(ae_node, resolve=True)
+    if not isinstance(ae_kwargs_raw, dict):
         msg = f"Expected mapping under 'ae' in {run_dir / 'config.yaml'}."
         raise TypeError(msg)
+    ae_kwargs: dict[str, Any] = {
+        str(key): value for key, value in ae_kwargs_raw.items()
+    }
     if isinstance(ae_node, DictConfig) and "loss" in ae_node:
         # Keep the historical DictConfig value accepted by LoLA helpers.
         ae_kwargs["loss"] = ae_node.loss
@@ -1407,16 +1411,19 @@ def _lola_autoencoder_stats(
 def _build_lola_autoencoder_config_nodes(
     ae_cfg: DictConfig,
     run_dir: Path,
+    chunk_size: int | None = None,
 ) -> tuple[DictConfig, DictConfig]:
     """Build Hydra config nodes for the LoLA encoder/decoder wrappers."""
     mean, std = _lola_autoencoder_stats(ae_cfg, run_dir)
-    base_kwargs = {
+    base_kwargs: dict[str, Any] = {
         **_lola_autoencoder_kwargs(ae_cfg, run_dir),
         "device": "cpu",
         "runpath": str(run_dir),
         "mean": mean,
         "std": std,
     }
+    if chunk_size is not None:
+        base_kwargs["chunk_size"] = int(chunk_size)
     encoder_cfg = OmegaConf.create(
         {
             "_target_": LOLA_WRAPPED_ENCODER_TARGET,
@@ -1468,7 +1475,9 @@ def _build_lola_raw_datamodule_config(
     dataset_cfg = ae_cfg.get("dataset", {})
     dataset_name = dataset_cfg.get("name")
     if not dataset_name:
-        msg = f"LoLA autoencoder config at {run_dir / 'config.yaml'} has no dataset.name."
+        msg = (
+            f"LoLA autoencoder config at {run_dir / 'config.yaml'} has no dataset.name."
+        )
         raise ValueError(msg)
 
     stride = _positive_int(original_datamodule.get("stride"), 1)
@@ -1502,13 +1511,36 @@ def _build_lola_raw_datamodule_config(
     return OmegaConf.create(datamodule_cfg)
 
 
+def _chunk_size_from_cfg(cfg: DictConfig) -> int | None:
+    """Read the optional eval.chunk_size knob, returning None if absent.
+
+    Used by autoencoder wrappers that support batch chunking on forward
+    (currently the LoLA wrapped encoder/decoder, but the knob is generic).
+    """
+    eval_cfg = cfg.get("eval") if isinstance(cfg, DictConfig) else None
+    if not isinstance(eval_cfg, DictConfig):
+        return None
+    value = eval_cfg.get("chunk_size")
+    if value is None:
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
 def _inject_lola_autoencoder_components(
     cfg: DictConfig,
     ae_cfg: DictConfig,
     run_dir: Path,
 ) -> DictConfig:
     """Backfill model.encoder/decoder with LoLA wrappers when absent."""
-    encoder_cfg, decoder_cfg = _build_lola_autoencoder_config_nodes(ae_cfg, run_dir)
+    encoder_cfg, decoder_cfg = _build_lola_autoencoder_config_nodes(
+        ae_cfg,
+        run_dir,
+        chunk_size=_chunk_size_from_cfg(cfg),
+    )
     with open_dict(cfg):
         if cfg.get("model") is None:
             cfg.model = OmegaConf.create({})
@@ -1747,6 +1779,12 @@ def _maybe_swap_to_ambient_datamodule(
     # matching processor training (n_steps_input / n_steps_output), otherwise
     # metric shapes become incompatible.
     swapped_datamodule = OmegaConf.create(ae_datamodule)
+    if not isinstance(swapped_datamodule, DictConfig):
+        msg = (
+            f"autoencoder_config.yaml at {data_path} contains a non-mapping "
+            "'datamodule' section; cannot auto-wire eval datamodule swap."
+        )
+        raise TypeError(msg)
     with open_dict(swapped_datamodule):
         OmegaConf.update(swapped_datamodule, "autoencoder_mode", False, merge=True)
         OmegaConf.update(swapped_datamodule, "full_trajectory_mode", False, merge=True)
@@ -1764,7 +1802,7 @@ def _maybe_swap_to_ambient_datamodule(
             else None
         )
         if isinstance(stride_value, int) and stride_value > 0:
-            target = str(swapped_datamodule.get("_target_", ""))
+            target = str(OmegaConf.select(swapped_datamodule, "_target_") or "")
             if target.endswith("TheWellDataModule"):
                 OmegaConf.update(
                     swapped_datamodule, "min_dt_stride", stride_value, merge=True
@@ -1920,9 +1958,10 @@ def _try_build_decode_fn(
         return None, None
 
     cache_dir = Path(str(data_path)).expanduser()
+    chunk_size = _chunk_size_from_cfg(cfg)
     ae_cfg = _load_autoencoder_config_from_cache(cache_dir)
     if ae_cfg is None:
-        return _try_build_lola_decode_fn(cache_dir)
+        return _try_build_lola_decode_fn(cache_dir, chunk_size=chunk_size)
 
     try:
         _, decoder = setup_autoencoder_components(ae_cfg, {})
@@ -1978,7 +2017,9 @@ def _try_build_decode_fn(
             "falling back to latent-space evaluation: %s",
             exc,
         )
-        lola_decoder, lola_decode_fn = _try_build_lola_decode_fn(cache_dir)
+        lola_decoder, lola_decode_fn = _try_build_lola_decode_fn(
+            cache_dir, chunk_size=chunk_size
+        )
         if lola_decode_fn is not None:
             return lola_decoder, lola_decode_fn
         return None, None
@@ -1986,6 +2027,7 @@ def _try_build_decode_fn(
 
 def _try_build_lola_decode_fn(
     cache_dir: Path,
+    chunk_size: int | None = None,
 ) -> "tuple[Any, Any] | tuple[None, None]":
     """Build a decoder for LoLA cached latents when metadata is absent."""
     loaded = _load_lola_autoencoder_config_from_cache(cache_dir)
@@ -1994,18 +2036,19 @@ def _try_build_lola_decode_fn(
     ae_cfg, run_dir = loaded
 
     try:
-        from autocast.external.lola.wrapped_decoder import WrappedDecoder
-
         ae_kwargs = _lola_autoencoder_kwargs(ae_cfg, run_dir)
         mean, std = _lola_autoencoder_stats(ae_cfg, run_dir)
 
-        decoder = WrappedDecoder(
-            device="cpu",
-            runpath=run_dir,
-            mean=torch.as_tensor(mean, dtype=torch.float32),
-            std=torch.as_tensor(std, dtype=torch.float32),
+        decoder_kwargs: dict[str, Any] = {
+            "device": "cpu",
+            "runpath": run_dir,
+            "mean": torch.as_tensor(mean, dtype=torch.float32),
+            "std": torch.as_tensor(std, dtype=torch.float32),
             **ae_kwargs,
-        )
+        }
+        if chunk_size is not None:
+            decoder_kwargs["chunk_size"] = int(chunk_size)
+        decoder = WrappedDecoder(**decoder_kwargs)
         decoder.eval()
         log.info(
             "Loaded LoLA autoencoder decoder from %s for data-space evaluation.",
