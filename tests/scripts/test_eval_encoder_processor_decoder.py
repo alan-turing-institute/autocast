@@ -7,6 +7,8 @@ import pytest
 import torch
 from omegaconf import OmegaConf
 
+from autocast.decoders.base import Decoder
+from autocast.encoders.base import GenericEncoder
 from autocast.external.lola.wrapped_decoder import WrappedDecoder
 from autocast.external.lola.wrapped_encoder import ChannelsFirstEncoder
 from autocast.metrics.ensemble import CRPS, AlphaFairCRPS, SpreadSkillRatio
@@ -23,12 +25,12 @@ from autocast.scripts.eval.encoder_processor_decoder import (
     _build_eval_predict_fn,
     _build_lola_autoencoder_config_nodes,
     _build_per_timestep_metric_factory,
-    _chunk_size_from_cfg,
     _decode_tensor,
     _load_lola_autoencoder_config_from_cache,
     _maybe_swap_to_ambient_datamodule,
     _normalize_eval_mode,
     _normalize_per_batch_rows,
+    _read_eval_chunk_size,
     _reindex_per_batch_rows_by_rank,
     _render_rollouts,
     _require_decoder_unless_latent_metrics_opt_in,
@@ -46,6 +48,7 @@ from autocast.scripts.eval.encoder_processor_decoder import (
     _validate_resolved_eval_path,
     run_evaluation,
 )
+from autocast.scripts.setup import _apply_eval_chunk_size
 from autocast.types import Batch, EncodedBatch
 from autocast.utils.plots import _panel_size_for_width
 
@@ -1138,19 +1141,19 @@ def test_run_evaluation_auto_resolves_stateless_epd_to_ambient(tmp_path, monkeyp
     assert captured["eval_mode"] == "ambient"
 
 
-def test_chunk_size_from_cfg_returns_none_when_absent():
+def test_read_eval_chunk_size_returns_none_when_absent():
     cfg = OmegaConf.create({"eval": {}})
-    assert _chunk_size_from_cfg(cfg) is None
+    assert _read_eval_chunk_size(cfg) is None
 
 
-def test_chunk_size_from_cfg_returns_none_for_non_positive():
+def test_read_eval_chunk_size_returns_none_for_non_positive():
     cfg = OmegaConf.create({"eval": {"chunk_size": 0}})
-    assert _chunk_size_from_cfg(cfg) is None
+    assert _read_eval_chunk_size(cfg) is None
 
 
-def test_chunk_size_from_cfg_parses_positive_int():
+def test_read_eval_chunk_size_parses_positive_int():
     cfg = OmegaConf.create({"eval": {"chunk_size": 8}})
-    assert _chunk_size_from_cfg(cfg) == 8
+    assert _read_eval_chunk_size(cfg) == 8
 
 
 def test_build_lola_autoencoder_config_nodes_omits_chunk_size_when_none(tmp_path):
@@ -1221,6 +1224,32 @@ def test_wrapped_decoder_chunked_apply_matches_unchunked():
 
     assert torch.allclose(out_chunked, out_unchunked)
     assert out_chunked.shape == x.shape
+
+
+def test_apply_eval_chunk_size_sets_attribute_on_module_when_configured():
+    module = torch.nn.Linear(3, 3)
+    cfg = OmegaConf.create({"eval": {"chunk_size": 16}})
+    _apply_eval_chunk_size(module, cfg)
+    assert module.chunk_size == 16
+
+
+def test_apply_eval_chunk_size_noop_when_absent():
+    module = torch.nn.Linear(3, 3)
+    cfg = OmegaConf.create({"eval": {}})
+    _apply_eval_chunk_size(module, cfg)
+    assert not hasattr(module, "chunk_size") or module.chunk_size is None
+
+
+def test_encoder_and_decoder_bases_define_chunked_apply():
+    """``_chunked_apply`` and ``chunk_size`` live on the abstract bases so any
+    subclass inherits them. The concrete behavior is exercised via the LoLA
+    wrappers above; this just guards the base-class contract.
+    """
+    assert callable(getattr(GenericEncoder, "_chunked_apply", None))
+    assert callable(getattr(Decoder, "_chunked_apply", None))
+    # Default chunk_size is None (no chunking) on both bases.
+    assert GenericEncoder.chunk_size is None
+    assert Decoder.chunk_size is None
 
 
 def test_try_build_decode_fn_passes_chunk_size_to_lola_decoder(tmp_path, monkeypatch):
