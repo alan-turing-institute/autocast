@@ -220,7 +220,11 @@ class NRMSE(BTSCMetric):
 
 
 class VMSE(BTSCMetric):
-    """Variance Scaled Mean Squared Error over spatial dims."""
+    """Variance Scaled Mean Squared Error over spatial dims.
+
+    Computes VMSE = MSE / (std(y_true)**2 + eps). Preserved for comparability
+    with prior runs; matches The Well's VMSE formula and default eps.
+    """
 
     name: str = "vmse"
 
@@ -248,16 +252,19 @@ class VMSE(BTSCMetric):
 class VRMSE(BTSCMetric):
     """Variance-Scaled Root Mean Squared Error over spatial dims.
 
-    Computes VRMSE = RMSE / std(y_true), where std is computed over spatial dims.
+    Computes VRMSE = sqrt(MSE) / (std(y_true) + eps). Preserved for comparability
+    with prior runs. Differs from the LoLA / The Well canonical form
+    sqrt(MSE / (var + eps)) only in the regularization regime (small std);
+    for non-degenerate fields the two agree to <<1%.
     """
 
     name: str = "vrmse"
 
     def __init__(
         self,
+        eps: float = 1e-7,
         reduce_all: bool = True,
         dist_sync_on_step: bool = False,
-        eps: float = 1e-7,
     ):
         super().__init__(
             reduce_all=reduce_all,
@@ -270,10 +277,78 @@ class VRMSE(BTSCMetric):
         spatial_dims = tuple(range(-self.n_spatial_dims - 1, -1))
 
         norm_std = torch.std(y_true, dim=spatial_dims)
-
         return torch.sqrt(torch.mean((y_pred - y_true) ** 2, dim=spatial_dims)) / (
             norm_std + self.eps
         )
+
+
+class VMSE2(BTSCMetric):
+    """Variance-Scaled MSE matching LoLA's evaluator.
+
+    Computes VMSE = MSE / (var(y_true) + eps) with eps = 1e-6, matching
+    https://github.com/francois-rozet/lola/blob/main/experiments/eval.py.
+
+    Same formula as [VMSE][autocast.metrics.deterministic.VMSE],
+    but with a larger regularizer that prevents tiny-variance fields from
+    dominating the aggregate.
+    """
+
+    name: str = "vmse_v2"
+
+    def __init__(
+        self,
+        eps: float = 1e-6,
+        reduce_all: bool = True,
+        dist_sync_on_step: bool = False,
+    ):
+        super().__init__(
+            reduce_all=reduce_all,
+            dist_sync_on_step=dist_sync_on_step,
+        )
+        self.eps = eps
+
+    def _score(self, y_pred: TensorBTSC, y_true: TensorBTSC) -> TensorBTC:
+        self.n_spatial_dims = self._infer_n_spatial_dims(y_pred)
+        spatial_dims = tuple(range(-self.n_spatial_dims - 1, -1))
+        norm_var = torch.var(y_true, dim=spatial_dims)
+        return torch.mean((y_pred - y_true) ** 2, dim=spatial_dims) / (
+            norm_var + self.eps
+        )
+
+
+class VRMSE2(BTSCMetric):
+    """Variance-Scaled RMSE matching LoLA's evaluator.
+
+    Computes VRMSE = sqrt(MSE / (var(y_true) + eps)) with eps = 1e-6, matching
+    https://github.com/francois-rozet/lola/blob/main/experiments/eval.py.
+
+    The Well uses the same formula with eps = 1e-7. Use this for new evaluation
+    work; [VRMSE][autocast.metrics.deterministic.VRMSE]
+    uses a different regularizer (`std + eps` in the denominator) that produces
+    inflated values for near-uniform fields.
+    """
+
+    name: str = "vrmse_v2"
+
+    def __init__(
+        self,
+        eps: float = 1e-6,
+        reduce_all: bool = True,
+        dist_sync_on_step: bool = False,
+    ):
+        super().__init__(
+            reduce_all=reduce_all,
+            dist_sync_on_step=dist_sync_on_step,
+        )
+        self.eps = eps
+
+    def _score(self, y_pred: TensorBTSC, y_true: TensorBTSC) -> TensorBTC:
+        self.n_spatial_dims = self._infer_n_spatial_dims(y_pred)
+        spatial_dims = tuple(range(-self.n_spatial_dims - 1, -1))
+
+        norm_var = torch.var(y_true, dim=spatial_dims)
+        mse = torch.mean((y_pred - y_true) ** 2, dim=spatial_dims)
+        return torch.sqrt(mse / (norm_var + self.eps))
 
 
 class LInfinity(BTSCMetric):
