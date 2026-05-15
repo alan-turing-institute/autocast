@@ -384,11 +384,17 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_cns_vit_unet_m8"
 
 autocast-plots --results-dir "$RESULTS_DIR" \
+	"${ALL_DATASET_COMMON_ARGS[@]}" \
+	--run crps_ad64_vit_azula_large_bed4611_da01a04 "CRPS (\$\alpha\$fCRPS loss)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS (\$\alpha\$fCRPS loss)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+	--run crps_gpe64_vit_azula_large_bed4611_e0a6df5 "CRPS (\$\alpha\$fCRPS loss)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+	--run crps_gs64_vit_azula_large_bed4611_828a161 "CRPS (\$\alpha\$fCRPS loss)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_cns64_vit_azula_large_9c98db0_6a91c49 "CRPS (CRPS loss)" "$HUE_ABLATION_ALT_1" eval=eval_best_multiwinkler_from0p25 \
+	--run crps_ad64_vit_azula_large_5a8c216_9978d9b "CRPS (fCRPS loss)" "$HUE_ABLATION_ALT_2" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_cns64_vit_azula_large_9c98db0_d2a0496 "CRPS (fCRPS loss)" "$HUE_ABLATION_ALT_2" eval=eval_best_multiwinkler_from0p25 \
-	"${COMMON_ARGS[@]}" \
-	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_cns_crps_variants"
+	--run crps_gpe64_vit_azula_large_5a8c216_2b1460a "CRPS (fCRPS loss)" "$HUE_ABLATION_ALT_2" eval=eval_best_multiwinkler_from0p25 \
+	--run crps_gs64_vit_azula_large_5a8c216_2ced703 "CRPS (fCRPS loss)" "$HUE_ABLATION_ALT_2" eval=eval_best_multiwinkler_from0p25 \
+	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_crps_variants"
 
 autocast-plots --results-dir "$RESULTS_DIR" \
 	"${BASE_PLOT_ARGS[@]}" \
