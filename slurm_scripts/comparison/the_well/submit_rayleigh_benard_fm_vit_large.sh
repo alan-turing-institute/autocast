@@ -9,14 +9,20 @@ set -euo pipefail
 # warmup=0). Batch: 256/GPU.
 #
 # COSINE_EPOCHS should come from a timing run so the cosine half-period fills
-# the 24h budget. Pinned value below comes from:
-#   seconds/epoch=109.2s, 24h budget, 2% margin -> max_epochs=775
+# the 24h budget. The pinned fallback below comes from the latest worker-enabled
+# timing checkpoint:
+#   outputs/2026-05-15/timing/rb_fm_vit_large_b256/timing.ckpt
+#   seconds/epoch=76.0s, 24h budget, 2% margin -> max_epochs=1114
+#
+# For comparison:
+#   outputs/2026-05-12/timing/rb_fm_vit_large_b256: 109.2s -> 775
+#   completed 2026-05-12 production run: 73.4s -> 1152
 #
 # This script uses, in order:
 #   1. COSINE_EPOCHS=<int>
 #   2. TIMING_CHECKPOINT=<path>/timing.ckpt
 #   3. the latest outputs/*/rb_fm_vit_large_b256/timing.ckpt
-#   4. PINNED_COSINE_EPOCHS=775 from the timing output above
+#   4. PINNED_COSINE_EPOCHS=1114 from the timing output above
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
@@ -25,7 +31,7 @@ DATASETS_ROOT="${AUTOCAST_DATASETS:-${REPO_ROOT}/datasets}"
 EXPERIMENT="the_well/rayleigh_benard/fm_vit_large"
 CACHE_DIR="${DATASETS_ROOT}/rayleigh_benard/1e3z5x2c_rayleigh_benard_dcae_f32c64_large/cache/rayleigh_benard"
 TIMING_RUN_ID="${TIMING_RUN_ID:-rb_fm_vit_large_b256}"
-PINNED_COSINE_EPOCHS=775
+PINNED_COSINE_EPOCHS=1114
 BUDGET_MAX_TIME="00:23:59:00"
 TIMEOUT_MIN=1439
 DATALOADER_NUM_WORKERS="${DATALOADER_NUM_WORKERS:-8}"
