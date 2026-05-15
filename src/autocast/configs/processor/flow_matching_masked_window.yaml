@@ -1,0 +1,12 @@
+defaults:
+  - /backbone@backbone: unet
+  - _self_
+
+_target_: autocast.processors.flow_matching_masked_window.FlowMatchingMaskedWindowProcessor
+flow_ode_steps: 4
+n_steps_input: null
+n_steps_output: null
+n_channels_out: null
+lmbda: 1.0
+rho: 1.0
+atleast: 1
