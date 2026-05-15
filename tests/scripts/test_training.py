@@ -139,6 +139,52 @@ def test_processor_config_training_step_smoke(config_dir: str, dummy_datamodule)
     assert loss.ndim == 0
 
 
+def test_masked_window_flow_matching_config_smoke(config_dir: str, dummy_datamodule):
+    processor_cfg = _load_config(
+        config_dir, "processor/flow_matching_masked_window"
+    ).processor
+    with open_dict(processor_cfg):
+        processor_cfg.backbone.include_global_cond = False
+        processor_cfg.backbone.global_cond_channels = 0
+
+    encoded_inputs = torch.randn(2, 1, 4, 4, 1)
+    encoded_outputs = torch.randn(2, 4, 4, 4, 1)
+    cfg = OmegaConf.create(
+        {
+            "model": {
+                "processor": processor_cfg,
+                "loss_func": {"_target_": "torch.nn.MSELoss"},
+            },
+            "optimizer": get_optimizer_config(learning_rate=1e-3),
+            "datamodule": {
+                "stride": 1,
+                "n_steps_input": encoded_inputs.shape[1],
+                "n_steps_output": encoded_outputs.shape[1],
+            },
+        }
+    )
+    batch = EncodedBatch(
+        encoded_inputs=encoded_inputs,
+        encoded_output_fields=encoded_outputs,
+        global_cond=None,
+        encoded_info={},
+    )
+    stats = _stats_from_encoded_batch(batch)
+    model = setup_processor_model(cfg, stats, dummy_datamodule)
+
+    processor = model.processor
+    assert processor.flow_matching_model.n_steps_input == 5
+    assert processor.flow_matching_model.n_steps_output == 5
+    assert processor.flow_matching_model.cond_channels == 1
+
+    output = model.map(encoded_inputs, None)
+    assert output.shape == encoded_outputs.shape
+
+    loss = model.training_step(batch, batch_idx=0)
+    assert torch.is_tensor(loss)
+    assert loss.ndim == 0
+
+
 def test_processor_metric_overrides_are_forwarded(config_dir: str, dummy_datamodule):
     processor_cfg = _load_config(config_dir, "processor/flow_matching").processor
     with open_dict(processor_cfg):
