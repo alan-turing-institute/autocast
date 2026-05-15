@@ -15,7 +15,10 @@ datamodule:
   n_steps_output: 4
   stride: 1
   batch_size: 256
-  num_workers: 0
+  num_workers: 8
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 2
 
 float32_matmul_precision: high
 

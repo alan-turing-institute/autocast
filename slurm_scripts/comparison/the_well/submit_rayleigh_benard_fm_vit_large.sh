@@ -28,6 +28,8 @@ TIMING_RUN_ID="${TIMING_RUN_ID:-rb_fm_vit_large_b256}"
 PINNED_COSINE_EPOCHS=775
 BUDGET_MAX_TIME="00:23:59:00"
 TIMEOUT_MIN=1439
+DATALOADER_NUM_WORKERS="${DATALOADER_NUM_WORKERS:-8}"
+CPUS_PER_TASK="${CPUS_PER_TASK:-16}"
 RUN_DRY_STATES=("true" "false")
 
 has_hdf5_split() {
@@ -110,12 +112,19 @@ for run_dry in "${RUN_DRY_STATES[@]}"; do
     echo "  local_experiment: ${EXPERIMENT}"
     echo "  cache dir: ${CACHE_DIR}"
     echo "  cosine_epochs: ${cosine_epochs}"
+    echo "  datamodule.num_workers: ${DATALOADER_NUM_WORKERS}"
+    echo "  hydra.launcher.cpus_per_task: ${CPUS_PER_TASK}"
 
     uv run autocast processor --mode slurm "${dry_run_arg[@]}" \
         local_experiment="${EXPERIMENT}" \
         datamodule.data_path="${CACHE_DIR}" \
+        datamodule.num_workers="${DATALOADER_NUM_WORKERS}" \
+        datamodule.pin_memory=true \
+        datamodule.persistent_workers=true \
+        datamodule.prefetch_factor=2 \
         logging.wandb.enabled=true \
         optimizer.cosine_epochs="${cosine_epochs}" \
+        hydra.launcher.cpus_per_task="${CPUS_PER_TASK}" \
         hydra.launcher.timeout_min="${TIMEOUT_MIN}" \
         trainer.max_time="${BUDGET_MAX_TIME}" \
         +trainer.max_epochs="${cosine_epochs}" \

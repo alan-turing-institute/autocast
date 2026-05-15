@@ -16,6 +16,8 @@ BUDGET_HOURS="${BUDGET_HOURS:-24}"
 NUM_TIMING_EPOCHS="${NUM_TIMING_EPOCHS:-5}"
 RUN_GROUP="${RUN_GROUP:-$(date +%Y-%m-%d)/timing}"
 RUN_ID="${RUN_ID:-rb_fm_vit_large_b256}"
+DATALOADER_NUM_WORKERS="${DATALOADER_NUM_WORKERS:-8}"
+CPUS_PER_TASK="${CPUS_PER_TASK:-16}"
 
 has_hdf5_split() {
     local split_dir="$1"
@@ -37,6 +39,8 @@ echo "  timing epochs: ${NUM_TIMING_EPOCHS}"
 echo "  budget: ${BUDGET_HOURS}h"
 echo "  run_group: ${RUN_GROUP}"
 echo "  run_id: ${RUN_ID}"
+echo "  datamodule.num_workers: ${DATALOADER_NUM_WORKERS}"
+echo "  hydra.launcher.cpus_per_task: ${CPUS_PER_TASK}"
 
 uv run autocast time-epochs --kind processor --mode slurm \
     --run-group "${RUN_GROUP}" \
@@ -44,7 +48,12 @@ uv run autocast time-epochs --kind processor --mode slurm \
     -n "${NUM_TIMING_EPOCHS}" \
     -b "${BUDGET_HOURS}" \
     local_experiment="${EXPERIMENT}" \
-    datamodule.data_path="${CACHE_DIR}"
+    datamodule.data_path="${CACHE_DIR}" \
+    datamodule.num_workers="${DATALOADER_NUM_WORKERS}" \
+    datamodule.pin_memory=true \
+    datamodule.persistent_workers=true \
+    datamodule.prefetch_factor=2 \
+    hydra.launcher.cpus_per_task="${CPUS_PER_TASK}"
 
 echo ""
 echo "Once the SLURM job completes, collect the timing result with:"
