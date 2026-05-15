@@ -36,6 +36,7 @@ BUDGET_MAX_TIME="00:23:59:00"
 TIMEOUT_MIN=1439
 DATALOADER_NUM_WORKERS="${DATALOADER_NUM_WORKERS:-8}"
 CPUS_PER_TASK="${CPUS_PER_TASK:-16}"
+LOG_EVERY_N_STEPS="${LOG_EVERY_N_STEPS:-50}"
 RUN_DRY_STATES=("true" "false")
 
 has_hdf5_split() {
@@ -120,6 +121,7 @@ for run_dry in "${RUN_DRY_STATES[@]}"; do
     echo "  cosine_epochs: ${cosine_epochs}"
     echo "  datamodule.num_workers: ${DATALOADER_NUM_WORKERS}"
     echo "  hydra.launcher.cpus_per_task: ${CPUS_PER_TASK}"
+    echo "  trainer.log_every_n_steps: ${LOG_EVERY_N_STEPS}"
 
     uv run autocast processor --mode slurm "${dry_run_arg[@]}" \
         local_experiment="${EXPERIMENT}" \
@@ -133,6 +135,9 @@ for run_dry in "${RUN_DRY_STATES[@]}"; do
         hydra.launcher.cpus_per_task="${CPUS_PER_TASK}" \
         hydra.launcher.timeout_min="${TIMEOUT_MIN}" \
         trainer.max_time="${BUDGET_MAX_TIME}" \
+        trainer.log_every_n_steps="${LOG_EVERY_N_STEPS}" \
+        +trainer.enable_progress_bar=false \
+        +trainer.num_sanity_val_steps=0 \
         +trainer.max_epochs="${cosine_epochs}" \
         trainer.callbacks.0.every_n_train_steps_fraction=0.05 \
         +trainer.callbacks.0.every_n_epochs=0 \
