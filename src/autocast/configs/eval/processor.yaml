@@ -13,6 +13,8 @@ metrics:
   - nrmse
   - vmse
   - vrmse
+  - vmse_v2
+  - vrmse_v2
   - linf
   - psrmse
   - psrmse_low
