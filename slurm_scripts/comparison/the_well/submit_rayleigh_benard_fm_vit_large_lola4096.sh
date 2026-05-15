@@ -87,6 +87,7 @@ for run_dry in "${RUN_DRY_STATES[@]}"; do
         datamodule.prefetch_factor=2 \
         logging.wandb.enabled=true \
         optimizer.scheduler_interval=step \
+        optimizer.cosine_epochs=null \
         +optimizer.cosine_steps="${TOTAL_OPTIMIZER_STEPS}" \
         hydra.launcher.cpus_per_task="${CPUS_PER_TASK}" \
         hydra.launcher.timeout_min="${TIMEOUT_MIN}" \
