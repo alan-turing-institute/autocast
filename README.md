@@ -1,6 +1,6 @@
 # AutoCast <img src="https://raw.githubusercontent.com/alan-turing-institute/autocast/refs/heads/main/AC.png" align="right" height="138" />
 <!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
-[![All Contributors](https://img.shields.io/badge/all_contributors-8-orange.svg?style=flat-square)](#contributors-)
+[![All Contributors](https://img.shields.io/badge/all_contributors-9-orange.svg?style=flat-square)](#contributors-)
 <!-- ALL-CONTRIBUTORS-BADGE:END -->
 
 ## Installation
@@ -286,6 +286,7 @@ Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/d
     </tr>
     <tr>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/qiencai"><img src="https://avatars.githubusercontent.com/u/185296522?v=4?s=100" width="100px;" alt="QC"/><br /><sub><b>QC</b></sub></a><br /><a href="#ideas-qiencai" title="Ideas, Planning, & Feedback">🤔</a> <a href="https://github.com/alan-turing-institute/autocast/commits?author=qiencai" title="Code">💻</a> <a href="https://github.com/alan-turing-institute/autocast/issues?q=author%3Aqiencai" title="Bug reports">🐛</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/penelopeysm"><img src="https://avatars.githubusercontent.com/u/122629585?v=4?s=100" width="100px;" alt="Penelope Yong"/><br /><sub><b>Penelope Yong</b></sub></a><br /><a href="#ideas-penelopeysm" title="Ideas, Planning, & Feedback">🤔</a> <a href="https://github.com/alan-turing-institute/autocast/commits?author=penelopeysm" title="Code">💻</a> <a href="https://github.com/alan-turing-institute/autocast/issues?q=author%3Apenelopeysm" title="Bug reports">🐛</a> <a href="https://github.com/alan-turing-institute/autocast/pulls?q=is%3Apr+reviewed-by%3Apenelopeysm" title="Reviewed Pull Requests">👀</a></td>
     </tr>
   </tbody>
 </table>
