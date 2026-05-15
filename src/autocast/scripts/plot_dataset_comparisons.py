@@ -2490,6 +2490,7 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
     assert axes is not None
     assert fig is not None
 
+    shared_row_limits: list[list[tuple[float, float]]] = [[] for _ in range(nrows)]
     for r, metric in enumerate(metrics_to_plot):
         sub = metrics_long[metrics_long["metric"] == metric]
         for c, ds_label in enumerate(datasets):
@@ -2586,8 +2587,10 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
             _apply_tick_label_style(ax, tick_label_scale)
             _apply_axis_label_style(ax, axis_label_scale)
             use_log = (row_yscale or "log") == "log"
+            y_limit: tuple[float, float] | None = None
             if is_cov and not is_cov_delta:
                 ax.set_ylim(0, 1)
+                y_limit = (0.0, 1.0)
             elif is_cov_delta:
                 finite = [v for v in vals if np.isfinite(v)]
                 if finite:
@@ -2598,6 +2601,7 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
                     lim = 0.1
                 ax.set_yscale("linear")
                 ax.set_ylim(-lim, lim)
+                y_limit = (-lim, lim)
             elif vals:
                 if use_log:
                     ax.set_yscale("log")
@@ -2622,6 +2626,7 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
                     else:
                         ymin, ymax = 0.0, 1.0
                 ax.set_ylim(bottom=ymin, top=ymax)
+                y_limit = (float(ymin), float(ymax))
             if (not is_cov or is_cov_delta) and row_ref is not None:
                 ax.axhline(
                     row_ref,
@@ -2634,23 +2639,37 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
             if not is_cov and not is_ssr and error_ylim is not None:
                 lo, hi = error_ylim
                 cur_lo, cur_hi = ax.get_ylim()
+                next_lo = lo if lo is not None else cur_lo
+                next_hi = hi if hi is not None else cur_hi
                 ax.set_ylim(
-                    bottom=lo if lo is not None else cur_lo,
-                    top=hi if hi is not None else cur_hi,
+                    bottom=next_lo,
+                    top=next_hi,
                 )
+                y_limit = (float(next_lo), float(next_hi))
+            if (
+                sharey
+                and y_limit is not None
+                and np.isfinite(y_limit[0])
+                and np.isfinite(y_limit[1])
+            ):
+                shared_row_limits[r].append(y_limit)
     if sharey:
         axes_arr = np.asarray(axes)
-        finite_limits = [
-            ax.get_ylim()
-            for ax in axes_arr.flat
-            if np.isfinite(ax.get_ylim()[0]) and np.isfinite(ax.get_ylim()[1])
-        ]
-        if finite_limits:
+        for r, row_axes in enumerate(axes_arr):
+            finite_limits = shared_row_limits[r]
+            if not finite_limits:
+                finite_limits = [
+                    ax.get_ylim()
+                    for ax in row_axes
+                    if np.isfinite(ax.get_ylim()[0]) and np.isfinite(ax.get_ylim()[1])
+                ]
+            if not finite_limits:
+                continue
             ymin = min(lo for lo, _ in finite_limits)
             ymax = max(hi for _, hi in finite_limits)
-            if any(ax.get_yscale() == "log" for ax in axes_arr.flat):
+            if any(ax.get_yscale() == "log" for ax in row_axes):
                 ymin = max(ymin, 1e-12)
-            for ax in axes_arr.flat:
+            for ax in row_axes:
                 ax.set_ylim(ymin, ymax)
     if shared_ylabel is not None:
         _set_shared_ylabel(fig, shared_ylabel, axis_label_scale)
