@@ -37,6 +37,7 @@ TIMEOUT_MIN="${TIMEOUT_MIN:-1439}"
 DATALOADER_NUM_WORKERS="${DATALOADER_NUM_WORKERS:-8}"
 CPUS_PER_TASK="${CPUS_PER_TASK:-16}"
 LOG_EVERY_N_STEPS="${LOG_EVERY_N_STEPS:-64}"
+PROFILE_MODE="${PROFILE_MODE:-false}"
 RUN_DRY_STATES=("true" "false")
 
 has_hdf5_split() {
@@ -75,6 +76,24 @@ for run_dry in "${RUN_DRY_STATES[@]}"; do
     echo "  hydra.launcher.cpus_per_task: ${CPUS_PER_TASK}"
     echo "  trainer.log_every_n_steps: ${LOG_EVERY_N_STEPS}"
     echo "  trainer.max_time: ${BUDGET_MAX_TIME}"
+    echo "  profile mode: ${PROFILE_MODE}"
+
+    extra_trainer_overrides=()
+    if [[ "${PROFILE_MODE}" == "true" ]]; then
+        # Short throughput probes should avoid validation/checkpoint collectives at
+        # the terminal max_steps boundary; they only need TrainingTimerCallback.
+        extra_trainer_overrides=(
+            "trainer.callbacks=[]"
+            "+trainer.limit_val_batches=0"
+        )
+    else
+        extra_trainer_overrides=(
+            "trainer.callbacks.0.every_n_train_steps_fraction=0.05"
+            "+trainer.callbacks.0.every_n_epochs=0"
+            "trainer.callbacks.0.save_top_k=-1"
+            "trainer.callbacks.0.filename=\"snapshot-{progress_token}-{epoch:04d}-{step:08d}\""
+        )
+    fi
 
     uv run autocast processor --mode slurm "${dry_run_arg[@]}" \
         local_experiment="${EXPERIMENT}" \
@@ -97,8 +116,5 @@ for run_dry in "${RUN_DRY_STATES[@]}"; do
         +trainer.val_check_interval="${VAL_CHECK_INTERVAL}" \
         +trainer.enable_progress_bar=false \
         +trainer.num_sanity_val_steps=0 \
-        trainer.callbacks.0.every_n_train_steps_fraction=0.05 \
-        +trainer.callbacks.0.every_n_epochs=0 \
-        trainer.callbacks.0.save_top_k=-1 \
-        trainer.callbacks.0.filename=\"snapshot-{progress_token}-{epoch:04d}-{step:08d}\"
+        "${extra_trainer_overrides[@]}"
 done
