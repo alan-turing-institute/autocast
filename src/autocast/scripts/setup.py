@@ -7,7 +7,7 @@ from typing import Any
 
 import torch
 from hydra.utils import get_class, instantiate
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 from torch import nn
 
 from autocast.data.datamodule import SpatioTemporalDataModule, TheWellDataModule
@@ -476,8 +476,27 @@ def _build_processor(
             ):
                 instantiation_kwargs.pop(key, None)
 
-    target = processor_config.get("_target_") if processor_config else None
+    target = processor_config.get("_target_") if processor_config is not None else None
+
+    # Load mask if this is MaskedFlowMatchingProcessor
+    mask = None
+    if processor_config is not None and "masked_flow_matching" in (target or ""):
+        mask_path = processor_config.get("mask_path")
+        if mask_path:
+            log.info("Loading mask from %s", mask_path)
+            mask = torch.load(mask_path)
+        # Remove mask_path from config (it's only for setup, not for processor init)
+        # Temporarily disable struct mode to allow removal
+        struct_mode = OmegaConf.is_struct(processor_config)
+        OmegaConf.set_struct(processor_config, False)
+        if "mask_path" in processor_config:
+            del processor_config["mask_path"]
+        OmegaConf.set_struct(processor_config, struct_mode)
+
     filtered_kwargs = _filter_kwargs_for_target(target, instantiation_kwargs)
+    if mask is not None:
+        filtered_kwargs["mask"] = mask
+
     return instantiate(processor_config, **filtered_kwargs)
 
 
