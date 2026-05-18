@@ -1,0 +1,93 @@
+# @package _global_
+defaults:
+  - /distributed: ddp_4gpu_slurm
+  - override /datamodule: the_well
+  - override /encoder@model.encoder: lola_wrapped
+  - override /decoder@model.decoder: lola_wrapped
+  - override /processor@model.processor: vit_azula_large
+  - override /optimizer: adamw_half
+  - _self_
+
+experiment_name: the_well_rayleigh_benard_crps_vit_azula_large_ambient
+
+# CRPS in ambient Rayleigh-Benard space, with the same frozen LoLA DCAE used to
+# produce the cached latents for FM. The raw TheWell datamodule stays
+# unnormalized because the LoLA wrappers apply their own mean/std internally.
+datamodule:
+  well_dataset_name: rayleigh_benard
+  well_base_path: ${oc.env:AUTOCAST_DATASETS,./datasets}
+  n_steps_input: 1
+  n_steps_output: 4
+  min_dt_stride: 1
+  max_dt_stride: 1
+  batch_size: 1
+  num_workers: 8
+  use_normalization: false
+  normalization_path: ${oc.env:AUTOCAST_DATASETS,./datasets}/rayleigh_benard/stats.yaml
+  autoencoder_mode: false
+  max_rollout_steps: 100
+  flatten_tensors: true
+  cache_small: true
+  max_cache_size: 1.0e9
+  return_grid: true
+  boundary_return_type: padding
+
+float32_matmul_precision: high
+
+logging:
+  wandb:
+    enabled: true
+
+output:
+  skip_test: true
+
+optimizer:
+  learning_rate: 2e-4
+  warmup: 0
+
+model:
+  train_in_latent_space: false
+  freeze_encoder_decoder: true
+  n_members: 8
+  encoder:
+    runpath: ${oc.env:AUTOCAST_DATASETS,./datasets}/rayleigh_benard/1e3z5x2c_rayleigh_benard_dcae_f32c64_large
+    pix_channels: 4
+    mean: [0.38, 0.01, 0.0, 0.0]
+    std: [0.25, 0.15, 0.21, 0.18]
+    log_scalars: true
+  decoder:
+    runpath: ${oc.env:AUTOCAST_DATASETS,./datasets}/rayleigh_benard/1e3z5x2c_rayleigh_benard_dcae_f32c64_large
+    pix_channels: 4
+    mean: [0.38, 0.01, 0.0, 0.0]
+    std: [0.25, 0.15, 0.21, 0.18]
+    batch_size: 8
+  processor:
+    hidden_dim: 568
+    num_heads: 8
+    n_layers: 12
+    patch_size: 1
+    n_noise_channels: 1024
+    global_cond_channels: auto
+    include_global_cond: true
+  loss_func:
+    _target_: autocast.losses.ensemble.AlphaFairCRPSLoss
+  train_metrics:
+    afcrps:
+      _target_: autocast.metrics.ensemble.AlphaFairCRPS
+    afcrps_mae_term:
+      _target_: autocast.metrics.ensemble.AlphaFairCRPSMAETerm
+    afcrps_spread_term:
+      _target_: autocast.metrics.ensemble.AlphaFairCRPSSpreadTerm
+  val_metrics:
+    afcrps:
+      _target_: autocast.metrics.ensemble.AlphaFairCRPS
+    afcrps_mae_term:
+      _target_: autocast.metrics.ensemble.AlphaFairCRPSMAETerm
+    afcrps_spread_term:
+      _target_: autocast.metrics.ensemble.AlphaFairCRPSSpreadTerm
+    spread:
+      _target_: autocast.metrics.ensemble.EnsembleSpread
+    multicoverage:
+      _target_: autocast.metrics.MultiCoverage
+    multiwinkler:
+      _target_: autocast.metrics.ensemble.MultiWinkler
