@@ -8,13 +8,16 @@ from autocast.types.types import (
     TensorBC,
     TensorBNC,
     TensorBSC,
+    TensorBTC,
     TensorBTSC,
     TensorC,
     TensorNC,
     TensorS,
     TensorSC,
+    TensorTC,
     TensorTSC,
 )
+
 
 # Generic batch type variable
 BatchT = TypeVar("BatchT")
@@ -29,6 +32,7 @@ class Sample:
     constant_scalars: TensorC | None
     constant_fields: TensorSC | None
     boundary_conditions: TensorS | None
+    time_varying_scalars: TensorTC | None = None
 
 
 @dataclass
@@ -50,6 +54,7 @@ class Batch:
     constant_scalars: TensorBC | None
     constant_fields: TensorBSC | None
     boundary_conditions: TensorS | None = None
+    time_varying_scalars: TensorBTC | None = None
 
     def repeat(self, m: int) -> "Batch":
         """Repeat batch members.
@@ -79,6 +84,11 @@ class Batch:
                 if self.boundary_conditions is not None
                 else None
             ),
+            time_varying_scalars=(
+                self.time_varying_scalars.repeat_interleave(m, dim=0)
+                if self.time_varying_scalars is not None
+                else None
+            ),
         )
 
     def to(self, device: torch.device | str) -> "Batch":
@@ -99,6 +109,11 @@ class Batch:
             boundary_conditions=(
                 self.boundary_conditions.to(device)
                 if self.boundary_conditions is not None
+                else None
+            ),
+            time_varying_scalars=(
+                self.time_varying_scalars.to(device)
+                if self.time_varying_scalars is not None
                 else None
             ),
         )

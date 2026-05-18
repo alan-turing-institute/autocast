@@ -264,11 +264,17 @@ def setup_datamodule(
         n_constant_field_channels = (
             batch.constant_fields.shape[-1] if batch.constant_fields is not None else 0
         )
+        n_time_varying_scalars = (
+            batch.time_varying_scalars.shape[-1]
+            if batch.time_varying_scalars is not None
+            else 0
+        )
     elif isinstance(batch, EncodedBatch):
         train_inputs = batch.encoded_inputs
         train_outputs = batch.encoded_output_fields
         n_constant_scalars = None
         n_constant_field_channels = None
+        n_time_varying_scalars = None
     else:
         raise TypeError(f"Unsupported batch type: {type(batch)}")
 
@@ -282,6 +288,7 @@ def setup_datamodule(
         "n_steps_output": output_shape[1],
         "n_constant_scalars": n_constant_scalars,
         "n_constant_field_channels": n_constant_field_channels,
+        "n_time_varying_scalars": n_time_varying_scalars,
         "input_shape": input_shape,
         "output_shape": output_shape,
         "example_batch": batch,

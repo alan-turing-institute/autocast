@@ -125,4 +125,9 @@ def batch_to_device(batch: Batch, device: torch.device) -> Batch:
             if batch.boundary_conditions is not None
             else None
         ),
+        time_varying_scalars=(
+            batch.time_varying_scalars.to(device)
+            if batch.time_varying_scalars is not None
+            else None
+        ),
     )

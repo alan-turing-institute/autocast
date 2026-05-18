@@ -82,6 +82,8 @@ class EncoderProcessorDecoder(
                 output_fields=batch.output_fields,
                 constant_scalars=batch.constant_scalars,
                 constant_fields=batch.constant_fields,
+                boundary_conditions=batch.boundary_conditions,
+                time_varying_scalars=batch.time_varying_scalars,
             )
         return batch
 
@@ -193,6 +195,11 @@ class EncoderProcessorDecoder(
                 if batch.boundary_conditions is not None
                 else None
             ),
+            time_varying_scalars=(
+                batch.time_varying_scalars.clone()
+                if batch.time_varying_scalars is not None
+                else None
+            ),
         )
 
     def _predict(self, batch: Batch) -> Tensor:
@@ -240,4 +247,14 @@ class EncoderProcessorDecoder(
             constant_scalars=batch.constant_scalars,
             constant_fields=batch.constant_fields,
             boundary_conditions=batch.boundary_conditions,
+            time_varying_scalars=(
+                batch.time_varying_scalars[:, stride:, :]
+                if batch.time_varying_scalars is not None
+                and batch.time_varying_scalars.shape[1] > stride
+                else (
+                    batch.time_varying_scalars[:, 0:0, :]
+                    if batch.time_varying_scalars is not None
+                    else None
+                )
+            ),
         )
