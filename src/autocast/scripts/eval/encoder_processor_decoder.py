@@ -2645,88 +2645,98 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
 
     # Evaluation
 
-    compute_coverage = eval_cfg.get("compute_coverage", False)
-    test_metric_fns: dict[str, Callable[[], Metric]] = {}
-
-    metric_registry = dict(AVAILABLE_METRICS)
-    if has_ensemble:
-        metric_registry.update(AVAILABLE_METRICS_ENSEMBLE)
-
-    for name in metrics_list:
-        if _should_skip_metric(name):
-            log.info("Skipping metric '%s' due to memory cost.", name)
-            continue
-        if name in AVAILABLE_METRICS:
-            test_metric_fns[name] = _build_metric_factory(AVAILABLE_METRICS[name])
-            if deterministic_metric_member_average:
-                test_metric_fns[_deterministic_member_average_metric_name(name)] = (
-                    _build_member_average_metric_factory(AVAILABLE_METRICS[name])
-                )
-            for member_index in deterministic_metric_member_indices:
-                test_metric_fns[
-                    _deterministic_member_metric_name(name, member_index)
-                ] = _build_metric_factory(
-                    AVAILABLE_METRICS[name],
-                    ensemble_member_index=member_index,
-                )
-        elif name in AVAILABLE_METRICS_ENSEMBLE:
-            if has_ensemble:
-                test_metric_fns[name] = AVAILABLE_METRICS_ENSEMBLE[name]
-            else:
-                log.info(
-                    "Skipping ensemble metric '%s' because n_members <= 1.",
-                    name,
-                )
-        else:
-            log.warning("Metric %s not found in available metrics", name)
-
-    if (n_members > 1) or compute_coverage:
-
-        def coverage_factory() -> Metric:
-            return MultiCoverage(coverage_levels=eval_cfg.get("coverage_levels", None))
-
-        test_metric_fns["coverage"] = coverage_factory
-
-    log.info("Computing test metrics: %s", list(test_metric_fns.keys()))
-
-    # Use metric_windows from config (apply to all metrics)
-    test_windows = _map_windows(eval_cfg.get("metric_windows", None))
-
-    # Build predict_fn.
-    # - Mode 1 / plain EPD: model(batch) already returns decoded tensor; trues
-    #   are taken from batch.output_fields by compute_metrics_from_dataloader.
-    # - Mode 2: decode both latent predictions and latent ground truth so
-    #   metrics are computed in data space.
-    # - Latent fallback: return (latent_pred, latent_true) directly.
-    predict_fn = _build_eval_predict_fn(
-        model,
-        is_processor_model=is_processor_model,
-        decode_fn=decode_fn,
-        n_members=n_members if n_members and n_members > 1 else None,
-    )
-
-    test_metrics_results, _, test_per_batch_rows = compute_metrics_from_dataloader(
-        dataloader=test_loader,
-        metric_fns=test_metric_fns,
-        predict_fn=predict_fn,
-        windows=test_windows,
-        return_per_batch=True,
-        device=fabric.device,
-    )
-
-    if test_per_batch_rows:
-        test_per_batch_rows = _gather_per_batch_rows(test_per_batch_rows, fabric=fabric)
-
-    # Process and save test metrics
-    test_rows = _process_metrics_results(
-        test_metrics_results,
-        per_batch_rows=test_per_batch_rows,  # pyright: ignore[reportArgumentType]
-        log_prefix="Test",
-        plot_dir=work_dir,
-    )
-
     evaluation_rows: list[dict[str, float | str]] = []
-    evaluation_rows.extend(test_rows)
+    compute_test_metrics = eval_cfg.get("compute_test_metrics", True)
+
+    if compute_test_metrics:
+        compute_coverage = eval_cfg.get("compute_coverage", False)
+        test_metric_fns: dict[str, Callable[[], Metric]] = {}
+
+        metric_registry = dict(AVAILABLE_METRICS)
+        if has_ensemble:
+            metric_registry.update(AVAILABLE_METRICS_ENSEMBLE)
+
+        for name in metrics_list:
+            if _should_skip_metric(name):
+                log.info("Skipping metric '%s' due to memory cost.", name)
+                continue
+            if name in AVAILABLE_METRICS:
+                test_metric_fns[name] = _build_metric_factory(AVAILABLE_METRICS[name])
+                if deterministic_metric_member_average:
+                    test_metric_fns[_deterministic_member_average_metric_name(name)] = (
+                        _build_member_average_metric_factory(AVAILABLE_METRICS[name])
+                    )
+                for member_index in deterministic_metric_member_indices:
+                    test_metric_fns[
+                        _deterministic_member_metric_name(name, member_index)
+                    ] = _build_metric_factory(
+                        AVAILABLE_METRICS[name],
+                        ensemble_member_index=member_index,
+                    )
+            elif name in AVAILABLE_METRICS_ENSEMBLE:
+                if has_ensemble:
+                    test_metric_fns[name] = AVAILABLE_METRICS_ENSEMBLE[name]
+                else:
+                    log.info(
+                        "Skipping ensemble metric '%s' because n_members <= 1.",
+                        name,
+                    )
+            else:
+                log.warning("Metric %s not found in available metrics", name)
+
+        if (n_members > 1) or compute_coverage:
+
+            def coverage_factory() -> Metric:
+                return MultiCoverage(
+                    coverage_levels=eval_cfg.get("coverage_levels", None)
+                )
+
+            test_metric_fns["coverage"] = coverage_factory
+
+        log.info("Computing test metrics: %s", list(test_metric_fns.keys()))
+
+        # Use metric_windows from config (apply to all metrics)
+        test_windows = _map_windows(eval_cfg.get("metric_windows", None))
+
+        # Build predict_fn.
+        # - Mode 1 / plain EPD: model(batch) already returns decoded tensor; trues
+        #   are taken from batch.output_fields by compute_metrics_from_dataloader.
+        # - Mode 2: decode both latent predictions and latent ground truth so
+        #   metrics are computed in data space.
+        # - Latent fallback: return (latent_pred, latent_true) directly.
+        predict_fn = _build_eval_predict_fn(
+            model,
+            is_processor_model=is_processor_model,
+            decode_fn=decode_fn,
+            n_members=n_members if n_members and n_members > 1 else None,
+        )
+
+        test_metrics_results, _, test_per_batch_rows = compute_metrics_from_dataloader(
+            dataloader=test_loader,
+            metric_fns=test_metric_fns,
+            predict_fn=predict_fn,
+            windows=test_windows,
+            return_per_batch=True,
+            device=fabric.device,
+        )
+
+        if test_per_batch_rows:
+            test_per_batch_rows = _gather_per_batch_rows(
+                test_per_batch_rows, fabric=fabric
+            )
+
+        # Process and save test metrics
+        test_rows = _process_metrics_results(
+            test_metrics_results,
+            per_batch_rows=test_per_batch_rows,  # pyright: ignore[reportArgumentType]
+            log_prefix="Test",
+            plot_dir=work_dir,
+        )
+
+        evaluation_rows.extend(test_rows)
+    else:
+        log.info("Skipping test metrics computation (eval.compute_test_metrics=false).")
+
     evaluation_rows.extend(
         _evaluation_metadata_rows(
             checkpoint_payload=checkpoint_payload,

@@ -14,6 +14,11 @@ mode: auto
 # metrics are not meaningful -- leave as `false` for real evals.
 latent_space_metrics: false
 
+# Whether to compute single-step test metrics. Set to false to skip the test-set
+# metric pass entirely (e.g. when only re-rendering videos/snapshots). Rollout
+# metrics are controlled separately via `compute_rollout_metrics`.
+compute_test_metrics: true
+
 # Evaluation metrics to compute
 metrics:
   - mse
