@@ -49,6 +49,10 @@ All eval configs support these parameters:
   `auto` dispatches to a concrete mode at run time based on the checkpoint
   and datamodule, so omitting the flag gives the fair default for every
   run. See [Evaluation modes](#evaluation-modes) below.
+- `compute_test_metrics`: When `false`, skip the single-step test-set metric
+  pass entirely (no `evaluation_metrics.csv` written). Useful for re-rendering
+  rollout videos/snapshots without paying for metrics. Rollout metrics are
+  gated separately via `compute_rollout_metrics`.
 - `metrics`: List of metrics to compute (default includes mse/mae/rmse/vrmse,
   power spectrum scores `psrmse*`, cross-correlation spectrum scores `pscc*`,
   and ensemble scores `crps`, `fcrps`, `afcrps`, `energy`, `spread`, `skill`,
