@@ -397,7 +397,7 @@ def _paper_relative_coverage_label() -> str:
 # Each preset targets a qualitatively distinct aspect of ensemble forecast
 # quality and produces a dedicated lead-time panel (rows=metrics, cols=datasets).
 # Fields:
-#   metrics:  row keys (must match rows in rollout_metrics_per_timestep_channel_0.csv)
+#   metrics:  row keys (must match rows in rollout_metrics_per_timestep_channel_all.csv)
 #   name:     output PNG filename
 #   title:    short human-readable group title (used for legend/caption)
 #   yscale:   'log' (default for error-like scores) or 'linear' (for ratios)
@@ -2427,7 +2427,7 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
             results_root
             / str(run_path)
             / eval_subdir
-            / "rollout_metrics_per_timestep_channel_0.csv"
+            / "rollout_metrics_per_timestep_channel_all.csv"
         )
         if not p.exists():
             continue

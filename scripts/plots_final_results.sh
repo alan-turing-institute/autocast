@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-PLOTS_PATH=${PLOTS_PATH:-2026-05-15_final_plots}
+PLOTS_PATH=${PLOTS_PATH:-2026-05-19_final_plots}
 RESULTS_DIR=${RESULTS_DIR:-outputs/2026-05-15_collated}
 OUTPUT_DIR=${OUTPUT_DIR:-$RESULTS_DIR/$PLOTS_PATH/main_comparison_m8_complete_no_fm_amb_best_winkler}
 FIGURE_FORMATS=${FIGURE_FORMATS:-png}
@@ -395,6 +395,13 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	--run crps_gpe64_vit_azula_large_5a8c216_2b1460a "CRPS (fCRPS loss)" "$HUE_ABLATION_ALT_2" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_gs64_vit_azula_large_5a8c216_2ced703 "CRPS (fCRPS loss)" "$HUE_ABLATION_ALT_2" eval=eval_best_multiwinkler_from0p25 \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_crps_variants"
+
+autocast-plots --results-dir "$RESULTS_DIR" \
+	"${COMMON_ARGS[@]}" \
+	--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS (\$\alpha\$fCRPS loss)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+	--run crps_cns64_vit_azula_large_9c98db0_6a91c49 "CRPS (CRPS loss)" "$HUE_ABLATION_ALT_1" eval=eval_best_multiwinkler_from0p25 \
+	--run crps_cns64_vit_azula_large_9c98db0_d2a0496 "CRPS (fCRPS loss)" "$HUE_ABLATION_ALT_2" eval=eval_best_multiwinkler_from0p25 \
+	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_cns_crps_variants"
 
 autocast-plots --results-dir "$RESULTS_DIR" \
 	"${BASE_PLOT_ARGS[@]}" \
