@@ -1,5 +1,6 @@
 """Unit tests for evaluation batch-limit resolution."""
 
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -12,6 +13,7 @@ from autocast.decoders.base import Decoder
 from autocast.encoders.base import GenericEncoder
 from autocast.external.lola.wrapped_decoder import WrappedDecoder
 from autocast.external.lola.wrapped_encoder import ChannelsFirstEncoder, WrappedEncoder
+from autocast.metrics.deterministic import MSE
 from autocast.metrics.ensemble import CRPS, AlphaFairCRPS, SpreadSkillRatio
 from autocast.scripts.eval.encoder_processor_decoder import (
     DEFAULT_EVAL_METRICS,
@@ -25,12 +27,19 @@ from autocast.scripts.eval.encoder_processor_decoder import (
     THE_WELL_DATAMODULE_TARGET,
     _build_eval_predict_fn,
     _build_lola_autoencoder_config_nodes,
+    _build_member_average_metric_factory,
+    _build_metric_factory,
     _build_per_timestep_metric_factory,
     _decode_tensor,
+    _deterministic_member_average_metric_name,
+    _deterministic_member_metric_name,
     _load_lola_autoencoder_config_from_cache,
     _maybe_swap_to_ambient_datamodule,
+    _normalize_ensemble_member_indices,
     _normalize_eval_mode,
     _normalize_per_batch_rows,
+    _parse_deterministic_member_average_metric_name,
+    _parse_deterministic_member_metric_name,
     _read_eval_chunk_size,
     _reindex_per_batch_rows_by_rank,
     _render_rollouts,
@@ -303,6 +312,65 @@ def test_build_per_timestep_metric_factory_sets_reduce_all_false_for_ssr():
     assert getattr(metric, "reduce_all", None) is False
 
 
+def test_build_metric_factory_can_score_single_ensemble_member():
+    preds = torch.tensor([[[[[0.0, 3.0]]]]])
+    trues = torch.zeros(1, 1, 1, 1)
+
+    mean_metric = _build_metric_factory(MSE)()
+    mean_metric.update(preds, trues)
+
+    member_metric = _build_metric_factory(MSE, ensemble_member_index=0)()
+    member_metric.update(preds, trues)
+
+    assert float(mean_metric.compute()) == pytest.approx(2.25)
+    assert float(member_metric.compute()) == pytest.approx(0.0)
+
+
+def test_build_member_average_metric_factory_scores_members_independently():
+    preds = torch.tensor([[[[[0.0, 4.0]]]]])
+    trues = torch.zeros(1, 1, 1, 1)
+
+    mean_metric = _build_metric_factory(MSE)()
+    mean_metric.update(preds, trues)
+
+    member_avg_metric = _build_member_average_metric_factory(MSE)()
+    member_avg_metric.update(preds, trues)
+
+    assert float(mean_metric.compute()) == pytest.approx(4.0)
+    assert float(member_avg_metric.compute()) == pytest.approx(8.0)
+
+
+def test_deterministic_member_metric_name_round_trips():
+    name = _deterministic_member_metric_name("vrmse_v2", 3)
+
+    assert name == "vrmse_v2_member_3"
+    assert _parse_deterministic_member_metric_name(name) == ("vrmse_v2", 3)
+    assert _parse_deterministic_member_metric_name("crps_member_3") is None
+
+
+def test_deterministic_member_average_metric_name_round_trips():
+    name = _deterministic_member_average_metric_name("vrmse_v2")
+
+    assert name == "vrmse_v2_member_avg"
+    assert _parse_deterministic_member_average_metric_name(name) == "vrmse_v2"
+    assert _parse_deterministic_member_average_metric_name("crps_member_avg") is None
+
+
+def test_normalize_ensemble_member_indices_validates_bounds():
+    assert _normalize_ensemble_member_indices(
+        [0, 2, 0],
+        n_members=3,
+        field_name="eval.rollout_member_indices",
+    ) == [0, 2]
+
+    with pytest.raises(ValueError, match="invalid values"):
+        _normalize_ensemble_member_indices(
+            [3],
+            n_members=3,
+            field_name="eval.rollout_member_indices",
+        )
+
+
 def test_default_eval_metrics_include_spread_and_skill_for_lola_comparison():
     assert "spread" in DEFAULT_EVAL_METRICS
     assert "skill" in DEFAULT_EVAL_METRICS
@@ -490,6 +558,147 @@ def test_render_rollouts_can_use_custom_rollout_predict(tmp_path, monkeypatch):
 
     assert len(out_paths) == 1
     assert torch.equal(captured_true[0], trues[1:2])
+
+
+def test_render_rollouts_can_emit_single_member_diagnostics(tmp_path, monkeypatch):
+    class DummyModel:
+        def rollout(self, *_args, **_kwargs):
+            member0 = torch.zeros(1, 2, 2, 2, 1)
+            member1 = torch.full_like(member0, 4.0)
+            preds = torch.stack((member0, member1), dim=-1)
+            trues = torch.ones_like(member0)
+            return preds, trues
+
+    captured: list[tuple[str, torch.Tensor, list[tuple[torch.Tensor, str]] | None]] = []
+
+    def _fake_plot_spatiotemporal_video(**kwargs):
+        captured.append(
+            (kwargs["save_path"], kwargs["pred"], kwargs.get("extra_preds"))
+        )
+
+    monkeypatch.setattr(
+        "autocast.scripts.eval.encoder_processor_decoder.plot_spatiotemporal_video",
+        _fake_plot_spatiotemporal_video,
+    )
+
+    out_paths = _render_rollouts(
+        model=cast(Any, DummyModel()),
+        dataloader=[object()],
+        batch_indices=[0],
+        video_dir=tmp_path,
+        sample_index=0,
+        fmt="mp4",
+        fps=5,
+        stride=1,
+        max_rollout_steps=2,
+        free_running_only=True,
+        n_members=2,
+        member_indices=[1],
+    )
+
+    assert len(out_paths) == 1
+    assert [Path(path).name for path, _, _ in captured] == ["batch_0_sample_0.mp4"]
+    assert float(captured[0][1].mean()) == pytest.approx(2.0)
+    assert captured[0][2] is not None
+    member_pred, member_label = captured[0][2][0]
+    assert member_label == "Member 1"
+    assert float(member_pred.mean()) == pytest.approx(4.0)
+
+
+def test_render_rollouts_can_emit_separate_member_files(tmp_path, monkeypatch):
+    class DummyModel:
+        def rollout(self, *_args, **_kwargs):
+            member0 = torch.zeros(1, 2, 2, 2, 1)
+            member1 = torch.full_like(member0, 4.0)
+            preds = torch.stack((member0, member1), dim=-1)
+            trues = torch.ones_like(member0)
+            return preds, trues
+
+    captured: list[tuple[str, torch.Tensor, list[tuple[torch.Tensor, str]] | None]] = []
+
+    def _fake_plot_spatiotemporal_video(**kwargs):
+        captured.append(
+            (kwargs["save_path"], kwargs["pred"], kwargs.get("extra_preds"))
+        )
+
+    monkeypatch.setattr(
+        "autocast.scripts.eval.encoder_processor_decoder.plot_spatiotemporal_video",
+        _fake_plot_spatiotemporal_video,
+    )
+
+    out_paths = _render_rollouts(
+        model=cast(Any, DummyModel()),
+        dataloader=[object()],
+        batch_indices=[0],
+        video_dir=tmp_path,
+        sample_index=0,
+        fmt="mp4",
+        fps=5,
+        stride=1,
+        max_rollout_steps=2,
+        free_running_only=True,
+        n_members=2,
+        member_indices=[1],
+        member_render_mode="separate",
+    )
+
+    assert len(out_paths) == 2
+    assert [Path(path).name for path, _, _ in captured] == [
+        "batch_0_sample_0.mp4",
+        "batch_0_sample_0_member_1.mp4",
+    ]
+    assert captured[0][2] is None
+    assert float(captured[0][1].mean()) == pytest.approx(2.0)
+    assert float(captured[1][1].mean()) == pytest.approx(4.0)
+
+
+def test_render_rollouts_can_emit_inline_and_separate_member_files(
+    tmp_path, monkeypatch
+):
+    class DummyModel:
+        def rollout(self, *_args, **_kwargs):
+            member0 = torch.zeros(1, 2, 2, 2, 1)
+            member1 = torch.full_like(member0, 4.0)
+            preds = torch.stack((member0, member1), dim=-1)
+            trues = torch.ones_like(member0)
+            return preds, trues
+
+    captured: list[tuple[str, torch.Tensor, list[tuple[torch.Tensor, str]] | None]] = []
+
+    def _fake_plot_spatiotemporal_video(**kwargs):
+        captured.append(
+            (kwargs["save_path"], kwargs["pred"], kwargs.get("extra_preds"))
+        )
+
+    monkeypatch.setattr(
+        "autocast.scripts.eval.encoder_processor_decoder.plot_spatiotemporal_video",
+        _fake_plot_spatiotemporal_video,
+    )
+
+    out_paths = _render_rollouts(
+        model=cast(Any, DummyModel()),
+        dataloader=[object()],
+        batch_indices=[0],
+        video_dir=tmp_path,
+        sample_index=0,
+        fmt="mp4",
+        fps=5,
+        stride=1,
+        max_rollout_steps=2,
+        free_running_only=True,
+        n_members=2,
+        member_indices=[1],
+        member_render_mode="both",
+    )
+
+    assert len(out_paths) == 2
+    assert [Path(path).name for path, _, _ in captured] == [
+        "batch_0_sample_0.mp4",
+        "batch_0_sample_0_member_1.mp4",
+    ]
+    assert captured[0][2] is not None
+    assert captured[0][2][0][1] == "Member 1"
+    assert captured[1][2] is None
 
 
 def test_render_rollouts_forwards_transpose_spatial_to_plots(tmp_path, monkeypatch):

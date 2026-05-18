@@ -1,4 +1,4 @@
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from typing import Literal, cast
 
 import matplotlib.pyplot as plt
@@ -20,6 +20,7 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     pred: TensorBTSC | None = None,
     pred_uq: TensorBTSC | None = None,
     coverage: TensorBTSC | None = None,
+    extra_preds: Sequence[tuple[TensorBTSC, str]] | None = None,
     batch_idx: int = 0,
     fps: int = 5,
     vmin: float | None = None,
@@ -27,6 +28,7 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     cmap: str = "viridis",
     save_path: str | None = None,
     title: str = "Ground Truth vs Prediction",
+    pred_label: str = "Prediction",
     pred_uq_label: str = "Prediction UQ",
     coverage_label: str = "Coverage",
     colorbar_mode: Literal["none", "row", "column", "all"] = "none",
@@ -82,9 +84,19 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     pred_batch = pred[batch_idx] if pred is not None else None
     pred_uq_batch = pred_uq[batch_idx] if pred_uq is not None else None
     coverage_batch = coverage[batch_idx] if coverage is not None else None
+    extra_pred_batches = [
+        (extra_pred[batch_idx], label) for extra_pred, label in (extra_preds or [])
+    ]
 
     # Extract dims and move to CPU
     T, *spatial, C = true_batch.shape
+    for extra_pred_batch, label in extra_pred_batches:
+        if extra_pred_batch.shape != true_batch.shape:
+            msg = (
+                f"Extra prediction row {label!r} must match true shape "
+                f"{tuple(true_batch.shape)}, got {tuple(extra_pred_batch.shape)}."
+            )
+            raise ValueError(msg)
     true_batch = true_batch.detach().cpu().numpy()
     if pred_batch is not None:
         pred_batch = pred_batch.detach().cpu().numpy()
@@ -92,14 +104,23 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
         pred_uq_batch = pred_uq_batch.detach().cpu().numpy()
     if coverage_batch is not None:
         coverage_batch = coverage_batch.detach().cpu().numpy()
+    extra_pred_batches_np = [
+        (extra_pred_batch.detach().cpu().numpy(), label)
+        for extra_pred_batch, label in extra_pred_batches
+    ]
 
     primary_rows = [true_batch]
+    primary_labels = ["Ground Truth"]
 
     # Calculate difference
     diff_batch = None
     if pred_batch is not None:
         diff_batch = true_batch - pred_batch
         primary_rows.append(pred_batch)
+        primary_labels.append(pred_label)
+    for extra_pred_batch, label in extra_pred_batches_np:
+        primary_rows.append(extra_pred_batch)
+        primary_labels.append(label)
 
     # Set-up rows
     n_primary_rows = len(primary_rows)
@@ -142,16 +163,39 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
         diff_span = diff_max if diff_max > 0 else 1e-9
         diff_norm = TwoSlopeNorm(vmin=-diff_span, vcenter=0, vmax=diff_span)
 
-    rows_to_plot: list[tuple[np.ndarray | Tensor | None, str, str]] = [
-        (true_batch, "Ground Truth", cmap),
+    rows_to_plot: list[tuple[np.ndarray | Tensor, str, str]] = [
+        (row, label, cmap)
+        for row, label in zip(primary_rows, primary_labels, strict=True)
     ]
-    if pred is not None:
-        rows_to_plot.append((pred_batch, "Prediction", cmap))
-        rows_to_plot.append((diff_batch, "Difference (True - Pred)", "RdBu"))
-    if pred_uq is not None:
+    row_norms: list[list[Normalize | TwoSlopeNorm | None]] = [*norms]
+    if diff_batch is not None:
+        rows_to_plot.append((diff_batch, f"Difference (True - {pred_label})", "RdBu"))
+        row_norms.append([diff_norm for _ in range(C)])
+    if pred_uq_batch is not None:
         rows_to_plot.append((pred_uq_batch, pred_uq_label, "inferno"))
-    if coverage is not None:
+        if colorbar_mode_uq == "none":
+            row_norms.append(
+                [
+                    Normalize(
+                        vmin=float(pred_uq_batch[..., ch].min()),
+                        vmax=float(pred_uq_batch[..., ch].max()),
+                    )
+                    for ch in range(C)
+                ]
+            )
+        else:
+            row_norms.append(
+                [
+                    Normalize(
+                        vmin=float(pred_uq_batch.min()),
+                        vmax=float(pred_uq_batch.max()),
+                    )
+                    for _ in range(C)
+                ]
+            )
+    if coverage_batch is not None:
         rows_to_plot.append((coverage_batch, coverage_label, "gray"))
+        row_norms.append([Normalize(vmin=0, vmax=1) for _ in range(C)])
 
     total_rows = len(rows_to_plot)
 
@@ -207,33 +251,7 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
                 transpose=transpose_spatial,
             )
 
-            # Row indices: 0=true, 1=pred, 2=diff, 3=pred_uq (if present),
-            # 4=coverage (if both present) or 3=coverage (if only coverage)
-            pred_uq_row_idx = 3 if pred_uq_batch is not None else None
-            coverage_row_idx = (
-                (4 if pred_uq_batch is not None else 3)
-                if coverage_batch is not None
-                else None
-            )
-
-            if row_idx < n_primary_rows:
-                norm = norms[row_idx][ch]
-            elif row_idx == pred_uq_row_idx and pred_uq_batch is not None:
-                uq_min = (
-                    float(pred_uq_batch[..., ch].min())
-                    if colorbar_mode_uq == "none"
-                    else float(pred_uq_batch.min())
-                )
-                uq_max = (
-                    float(pred_uq_batch[..., ch].max())
-                    if colorbar_mode_uq == "none"
-                    else float(pred_uq_batch.max())
-                )
-                norm = Normalize(vmin=uq_min, vmax=uq_max)
-            elif row_idx == coverage_row_idx:
-                norm = Normalize(vmin=0, vmax=1)
-            else:
-                norm = diff_norm
+            norm = row_norms[row_idx][ch]
             im = ax.imshow(frame0, cmap=row_cmap, aspect="auto", norm=norm)
 
             if row_idx == 0:
@@ -266,39 +284,11 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     suptitle_text = fig.suptitle("", fontsize=14, fontweight="bold")
 
     def update(frame):
-        for ch in range(C):
-            images[0][ch].set_array(
-                _to_imshow_frame(
-                    true_batch[frame, :, :, ch],
-                    transpose=transpose_spatial,
-                )
-            )
-            if pred_batch is not None:
-                images[1][ch].set_array(
+        for row_idx, (data, _, _) in enumerate(rows_to_plot):
+            for ch in range(C):
+                images[row_idx][ch].set_array(
                     _to_imshow_frame(
-                        pred_batch[frame, :, :, ch],
-                        transpose=transpose_spatial,
-                    )
-                )
-            if diff_batch is not None:
-                images[2][ch].set_array(
-                    _to_imshow_frame(
-                        diff_batch[frame, :, :, ch],
-                        transpose=transpose_spatial,
-                    )
-                )
-            if pred_uq_batch is not None:
-                images[3][ch].set_array(
-                    _to_imshow_frame(
-                        pred_uq_batch[frame, :, :, ch],
-                        transpose=transpose_spatial,
-                    )
-                )
-            if coverage_batch is not None:
-                coverage_row = 4 if pred_uq_batch is not None else 3
-                images[coverage_row][ch].set_array(
-                    _to_imshow_frame(
-                        coverage_batch[frame, :, :, ch],
+                        data[frame, :, :, ch],
                         transpose=transpose_spatial,
                     )
                 )
@@ -331,6 +321,7 @@ def plot_spatiotemporal_snapshots(  # noqa: PLR0912, PLR0915
     pred_uq: TensorBTSC | None = None,
     *,
     timesteps: Iterable[int],
+    extra_preds: Sequence[tuple[TensorBTSC, str]] | None = None,
     channel: int = 0,
     batch_idx: int = 0,
     vmin: float | None = None,
@@ -338,6 +329,7 @@ def plot_spatiotemporal_snapshots(  # noqa: PLR0912, PLR0915
     cmap: str = "viridis",
     save_path: str | None = None,
     title: str = "Ground Truth vs Prediction",
+    pred_label: str = "Prediction",
     pred_uq_label: str = "Ensemble Std Dev",
     channel_names: list[str] | None = None,
     preserve_aspect: bool = False,
@@ -347,6 +339,9 @@ def plot_spatiotemporal_snapshots(  # noqa: PLR0912, PLR0915
     true_batch = true[batch_idx]
     pred_batch = pred[batch_idx] if pred is not None else None
     pred_uq_batch = pred_uq[batch_idx] if pred_uq is not None else None
+    extra_pred_batches = [
+        (extra_pred[batch_idx], label) for extra_pred, label in (extra_preds or [])
+    ]
 
     T, *spatial, C = true_batch.shape
     if len(spatial) != 2:
@@ -371,18 +366,34 @@ def plot_spatiotemporal_snapshots(  # noqa: PLR0912, PLR0915
         msg = "At least one timestep is required for snapshot plotting."
         raise ValueError(msg)
 
+    for extra_pred_batch, label in extra_pred_batches:
+        if extra_pred_batch.shape != true_batch.shape:
+            msg = (
+                f"Extra prediction row {label!r} must match true shape "
+                f"{tuple(true_batch.shape)}, got {tuple(extra_pred_batch.shape)}."
+            )
+            raise ValueError(msg)
+
     true_np = true_batch.detach().cpu().numpy()
     pred_np = pred_batch.detach().cpu().numpy() if pred_batch is not None else None
     pred_uq_np = (
         pred_uq_batch.detach().cpu().numpy() if pred_uq_batch is not None else None
     )
+    extra_pred_np = [
+        (extra_pred_batch.detach().cpu().numpy(), label)
+        for extra_pred_batch, label in extra_pred_batches
+    ]
     true_channel = true_np[:, :, :, channel]
     pred_channel = pred_np[:, :, :, channel] if pred_np is not None else None
     pred_uq_channel = pred_uq_np[:, :, :, channel] if pred_uq_np is not None else None
+    extra_pred_channels = [
+        (extra_pred[:, :, :, channel], label) for extra_pred, label in extra_pred_np
+    ]
 
     primary_arrays = [true_channel]
     if pred_channel is not None:
         primary_arrays.append(pred_channel)
+    primary_arrays.extend(extra_pred for extra_pred, _ in extra_pred_channels)
 
     min_val = (
         vmin if vmin is not None else min(float(arr.min()) for arr in primary_arrays)
@@ -404,10 +415,13 @@ def plot_spatiotemporal_snapshots(  # noqa: PLR0912, PLR0915
         (true_channel, "Ground Truth", cmap, primary_norm),
     ]
     if pred_channel is not None:
-        rows_to_plot.append((pred_channel, "Prediction", cmap, primary_norm))
+        rows_to_plot.append((pred_channel, pred_label, cmap, primary_norm))
+    for extra_pred_channel, label in extra_pred_channels:
+        rows_to_plot.append((extra_pred_channel, label, cmap, primary_norm))
+    if pred_channel is not None:
         assert diff_channel is not None
         rows_to_plot.append(
-            (diff_channel, "Difference (True - Pred)", "RdBu", diff_norm)
+            (diff_channel, f"Difference (True - {pred_label})", "RdBu", diff_norm)
         )
     if pred_uq_channel is not None:
         uq_norm = Normalize(

@@ -67,6 +67,20 @@ rollout_snapshot_channels: null  # null means all channels
 rollout_snapshot_format: png
 rollout_snapshot_dataset_label: null  # optional label for data-only snapshot rows
 
+# Ensemble diagnostics. By default, deterministic metrics score the ensemble
+# mean (matching LOLA's VRMSE/skill eval) and rollout visualizations plot the
+# ensemble mean. Add member indices here to also emit single-member metric
+# columns (e.g. vrmse_v2_member_0) and member rollout diagnostics.
+# rollout_member_render_mode controls whether requested members are added as
+# rows in the main mean plot, rendered as separate files, or both.
+# Set deterministic_metric_member_average=true to also emit columns like
+# vrmse_v2_member_avg, where each ensemble member is scored independently and
+# the metric state is averaged over members.
+deterministic_metric_member_average: false
+deterministic_metric_member_indices: []
+rollout_member_indices: []
+rollout_member_render_mode: inline  # inline, separate, or both
+
 # Accelerator for evaluation (mirrors Lightning Fabric API)
 accelerator: auto  # auto, cpu, cuda, or mps
 strategy: auto
