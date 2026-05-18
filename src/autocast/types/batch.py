@@ -18,7 +18,6 @@ from autocast.types.types import (
     TensorTSC,
 )
 
-
 # Generic batch type variable
 BatchT = TypeVar("BatchT")
 

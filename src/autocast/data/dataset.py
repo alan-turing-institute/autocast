@@ -32,7 +32,7 @@ class BatchMixin:
 class SpatioTemporalDataset(Dataset, BatchMixin):
     """A class for spatio-temporal datasets."""
 
-    def __init__(  # noqa: PLR0915
+    def __init__(  # noqa: PLR0912, PLR0915
         self,
         data_path: str | None,
         data: dict | None = None,
@@ -203,9 +203,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
                 if self.time_varying_scalars is not None:
                     t_out_start = sub_idx * self.stride + self.n_steps_input
                     t_out_end = (
-                        t_out_start
-                        + self.n_steps_output
-                        + self.n_tvs_extra_steps
+                        t_out_start + self.n_steps_output + self.n_tvs_extra_steps
                     )
                     self.all_time_varying_scalars.append(
                         self.time_varying_scalars[
