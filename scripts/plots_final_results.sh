@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-PLOTS_PATH=${PLOTS_PATH:-2026-05-15_final_plots}
+PLOTS_PATH=${PLOTS_PATH:-2026-05-19_final_plots}
 RESULTS_DIR=${RESULTS_DIR:-outputs/2026-05-15_collated}
 OUTPUT_DIR=${OUTPUT_DIR:-$RESULTS_DIR/$PLOTS_PATH/main_comparison_m8_complete_no_fm_amb_best_winkler}
 FIGURE_FORMATS=${FIGURE_FORMATS:-png}
