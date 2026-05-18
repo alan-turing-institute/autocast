@@ -217,9 +217,17 @@ def _overall_or_window_bar_ylim(
     return error_ylim
 
 
-def _overall_or_window_bar_yscale(metric: str) -> str:
-    """Choose a y-scale for scalar overall/window bar charts."""
+def _overall_or_window_bar_yscale(metric: str, error_yscale: str = "log") -> str:
+    """Choose a y-scale for scalar overall/window bar charts.
+
+    ``error_yscale='linear'`` forces error-like metrics onto a linear axis;
+    dispersion metrics (SSR) stay linear regardless.
+    """
     if _is_dispersion_metric(metric):
+        return "linear"
+    if "coverage" in metric:
+        return "auto"
+    if error_yscale == "linear":
         return "linear"
     return "auto"
 
@@ -3075,6 +3083,7 @@ def plot_panel_figure(  # noqa: PLR0915
     short_axis_labels: bool = False,
     shared_axis_labels: bool = False,
     lead_time_coverage_delta: bool = False,
+    error_yscale: str = "log",
 ) -> None:
     """Render a panel composite figure with a reserved notes area.
 
@@ -3183,7 +3192,7 @@ def plot_panel_figure(  # noqa: PLR0915
             m.upper(),
             out_dir,
             styles,
-            y_scale=_overall_or_window_bar_yscale(m),
+            y_scale=_overall_or_window_bar_yscale(m, error_yscale),
             dataset_order=dataset_order,
             hue_order=hue_order,
             ax=left_axes[i],
@@ -3237,6 +3246,7 @@ def plot_panel_figure(  # noqa: PLR0915
         fig=right_top,
         save=False,
         error_ylim=error_ylim,
+        yscale=error_yscale,
         show_legend=False,
         **plot_style_kwargs,
     )
@@ -4473,6 +4483,17 @@ def main():  # noqa: PLR0912, PLR0915
         help="Y-axis scale for training-curve plots (default: log).",
     )
     parser.add_argument(
+        "--error-yscale",
+        choices=["log", "linear"],
+        default="log",
+        help=(
+            "Y-axis scale for error-like metrics (VRMSE, CRPS, power-spectrum "
+            "RMSE, ...) in lead-time panels, overall/window bar charts, and "
+            "metric-group panels. Coverage and dispersion (SSR) plots are "
+            "unaffected. Default: log."
+        ),
+    )
+    parser.add_argument(
         "--training-ylim",
         nargs=2,
         metavar=("LOW", "HIGH"),
@@ -5179,7 +5200,7 @@ def main():  # noqa: PLR0912, PLR0915
             m.upper(),
             out_dir,
             styles,
-            y_scale=_overall_or_window_bar_yscale(m),
+            y_scale=_overall_or_window_bar_yscale(m, args.error_yscale),
             dataset_order=ds_order,
             hue_order=hu_order,
             ylim=_overall_or_window_bar_ylim(m, error_ylim),
@@ -5197,7 +5218,7 @@ def main():  # noqa: PLR0912, PLR0915
                 m.upper(),
                 out_dir,
                 styles,
-                y_scale=_overall_or_window_bar_yscale(m),
+                y_scale=_overall_or_window_bar_yscale(m, args.error_yscale),
                 dataset_order=ds_order,
                 hue_order=hu_order,
                 ylim=_overall_or_window_bar_ylim(m, error_ylim),
@@ -5306,6 +5327,7 @@ def main():  # noqa: PLR0912, PLR0915
             dataset_order=ds_order,
             hue_order=hu_order,
             error_ylim=error_ylim,
+            yscale=args.error_yscale,
             **plot_style_kwargs,
         )
     if cov_metric:
@@ -5349,6 +5371,7 @@ def main():  # noqa: PLR0912, PLR0915
             dataset_order=ds_order,
             hue_order=hu_order,
             error_ylim=error_ylim,
+            yscale=args.error_yscale,
             **plot_style_kwargs,
         )
 
@@ -5435,6 +5458,8 @@ def main():  # noqa: PLR0912, PLR0915
         group_metrics = cast(list[str], preset["metrics"])
         group_name = cast(str, preset["name"])
         group_yscale = cast(str, preset.get("yscale", "log"))
+        if args.error_yscale == "linear" and group_yscale == "log":
+            group_yscale = "linear"
         group_ref = cast("float | None", preset.get("ref"))
         plot_lead_time_panel(
             df,
@@ -5482,6 +5507,7 @@ def main():  # noqa: PLR0912, PLR0915
         "training_refresh": args.training_refresh,
         "error_ylim": error_ylim,
         "coverage_ylim": coverage_ylim,
+        "error_yscale": args.error_yscale,
         **plot_style_kwargs,
     }
     if args.panel_figure:
