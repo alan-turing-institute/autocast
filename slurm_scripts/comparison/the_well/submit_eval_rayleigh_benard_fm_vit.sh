@@ -38,10 +38,26 @@ TIMEOUT_MIN=1439
 RUN_DRY_STATES=("true" "false")
 EVAL_METRICS="[mse,mae,nmse,nmae,rmse,nrmse,vmse,vrmse,vmse_v2,vrmse_v2,linf,psrmse,psrmse_low,psrmse_mid,psrmse_high,psrmse_tail,pscc,pscc_low,pscc_mid,pscc_high,pscc_tail,crps,fcrps,afcrps,energy,ssr,winkler]"
 
-RUN_DIRS=(
-    "outputs/2026-05-12/diff_rayleigh_benard_flow_matching_vit_5ee7659_1a0afcd"
-    "outputs/2026-05-12/diff_rayleigh_benard_flow_matching_vit_4d8cf74_bd6a7ae"
+RUN_PATTERNS=(
+    # "outputs/2026-05-12/diff_rayleigh_benard_flow_matching_vit_5ee7659_1a0afcd"
+    # "outputs/2026-05-12/diff_rayleigh_benard_flow_matching_vit_4d8cf74_bd6a7ae"
+    # epochs=4096, steps per epoch 64, non-masked window
+    # "outputs/2026-05-15/diff_rayleigh_benard_flow_matching_vit_65377a2_acb8513"
+    # epochs=4096, steps per epoch 64, masked window
+    "outputs/2026-05-15/diff_rayleigh_benard_flow_matching_vit_1de6ca4_5a7a7bb"
 )
+
+RUN_DIRS=()
+shopt -s nullglob
+for run_pattern in "${RUN_PATTERNS[@]}"; do
+    matches=( ${run_pattern} )
+    if ((${#matches[@]} == 0)); then
+        RUN_DIRS+=("${run_pattern}")
+    else
+        RUN_DIRS+=("${matches[@]}")
+    fi
+done
+shopt -u nullglob
 
 for run_dir in "${RUN_DIRS[@]}"; do
     if [[ ! -f "${run_dir}/resolved_config.yaml" ]]; then
