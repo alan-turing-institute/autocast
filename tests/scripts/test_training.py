@@ -173,9 +173,9 @@ def test_masked_window_flow_matching_config_smoke(config_dir: str, dummy_datamod
     model = setup_processor_model(cfg, stats, dummy_datamodule)
 
     processor = model.processor
-    assert processor.flow_matching_model.n_steps_input == 5
-    assert processor.flow_matching_model.n_steps_output == 5
-    assert processor.flow_matching_model.cond_channels == 1
+    assert processor.flow_matching_model.n_steps_input == 5  # type: ignore  # noqa: PGH003
+    assert processor.flow_matching_model.n_steps_output == 5  # type: ignore  # noqa: PGH003
+    assert processor.flow_matching_model.cond_channels == 1  # type: ignore  # noqa: PGH003
 
     output = model.map(encoded_inputs, None)
     assert output.shape == encoded_outputs.shape
