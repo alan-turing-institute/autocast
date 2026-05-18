@@ -5,6 +5,7 @@ import logging
 import os
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
+from types import MethodType
 from typing import Any
 
 import hydra
@@ -153,6 +154,8 @@ MEMORY_INTENSIVE_METRICS = {"variogram", "energy"}
 
 EVAL_MODES = ("auto", "encode_once", "ambient", "latent")
 DEFAULT_EVAL_MODE = "auto"
+ROLLOUT_MEMBER_RENDER_MODES = ("inline", "separate", "both")
+DEFAULT_ROLLOUT_MEMBER_RENDER_MODE = "inline"
 
 # Resolved eval paths exposed for validation / testing. Each corresponds to
 # exactly one branch in `run_evaluation`'s model-selection / rollout block.
@@ -602,6 +605,7 @@ def _save_rollout_snapshot_panels(
     trues_mean: torch.Tensor,
     preds_mean: torch.Tensor,
     preds_uq: torch.Tensor | None,
+    extra_preds: Sequence[tuple[torch.Tensor, str]] | None,
     local_idx: int,
     target_idx: int,
     snapshot_dir: Path,
@@ -612,11 +616,14 @@ def _save_rollout_snapshot_panels(
     names_for_plot: list[str] | None,
     preserve_aspect: bool,
     transpose_spatial: bool,
+    filename_suffix: str = "",
+    title: str = "Rollout snapshots",
+    pred_label: str = "Prediction",
 ) -> None:
     for channel_idx in snapshot_channels:
         snapshot_filename = snapshot_dir / (
             f"batch_{target_idx}_sample_{local_idx}_"
-            f"channel_{channel_idx}_snapshots.{snapshot_ext}"
+            f"channel_{channel_idx}{filename_suffix}_snapshots.{snapshot_ext}"
         )
         plot_spatiotemporal_snapshots(
             true=trues_mean[local_idx : local_idx + 1].cpu(),
@@ -627,10 +634,19 @@ def _save_rollout_snapshot_panels(
                 else None
             ),
             timesteps=snapshot_timesteps,
+            extra_preds=(
+                [
+                    (extra_pred[local_idx : local_idx + 1].cpu(), label)
+                    for extra_pred, label in extra_preds
+                ]
+                if extra_preds
+                else None
+            ),
             channel=channel_idx,
             batch_idx=0,
             save_path=str(snapshot_filename),
-            title="Rollout snapshots",
+            title=title,
+            pred_label=pred_label,
             channel_names=names_for_plot,
             preserve_aspect=preserve_aspect,
             transpose_spatial=transpose_spatial,
@@ -666,6 +682,8 @@ def _render_rollouts(  # noqa: PLR0912, PLR0915
     snapshot_dir: Path | None = None,
     snapshot_format: str = "png",
     snapshot_channels: Sequence[int] | None = None,
+    member_indices: Sequence[int] | None = None,
+    member_render_mode: str = DEFAULT_ROLLOUT_MEMBER_RENDER_MODE,
 ) -> list[Path]:
     # Return early if no rollout indices are requested
     if not batch_indices:
@@ -680,6 +698,9 @@ def _render_rollouts(  # noqa: PLR0912, PLR0915
     global_sample_offset = 0
     video_dir.mkdir(parents=True, exist_ok=True)
     snapshot_ext = snapshot_format.removeprefix(".") or "png"
+    member_render_mode = _normalize_rollout_member_render_mode(member_render_mode)
+    include_members_inline = member_render_mode in ("inline", "both")
+    include_member_files = member_render_mode in ("separate", "both")
 
     # Perform rollouts and save videos for requested target indices.
     with torch.no_grad():
@@ -720,14 +741,21 @@ def _render_rollouts(  # noqa: PLR0912, PLR0915
 
             # Reduce ensemble dimension for plotting if present.
             # When n_members > 1, the rollout output has shape (B, T, ..., C, M).
+            extra_preds: list[tuple[torch.Tensor, str]] = []
             if n_members is not None and n_members > 1:
                 preds_mean = preds.mean(dim=-1)
                 preds_uq = preds.std(dim=-1)
                 trues_mean = trues
+                pred_label = "Ensemble Mean"
+                for member_index in member_indices or []:
+                    extra_preds.append(
+                        (preds[..., int(member_index)], f"Member {member_index}")
+                    )
             else:
                 preds_mean = preds
                 trues_mean = trues
                 preds_uq = None
+                pred_label = "Prediction"
 
             names_for_plot = channel_names
             n_channels = int(trues_mean.shape[-1])
@@ -766,6 +794,7 @@ def _render_rollouts(  # noqa: PLR0912, PLR0915
                     continue
 
                 filename = video_dir / f"batch_{target_idx}_sample_{local_idx}.{fmt}"
+                inline_extra_preds = extra_preds if include_members_inline else []
 
                 # Plot one sample at a time for deterministic target-to-file mapping.
                 plot_spatiotemporal_video(
@@ -776,9 +805,19 @@ def _render_rollouts(  # noqa: PLR0912, PLR0915
                         if preds_uq is not None
                         else None
                     ),
+                    extra_preds=(
+                        [
+                            (extra_pred[local_idx : local_idx + 1].cpu(), label)
+                            for extra_pred, label in inline_extra_preds
+                        ]
+                        if inline_extra_preds
+                        else None
+                    ),
                     batch_idx=0,
                     fps=fps,
                     save_path=str(filename),
+                    title="Rollout",
+                    pred_label=pred_label,
                     colorbar_mode="column",
                     pred_uq_label="Ensemble Std Dev",
                     channel_names=names_for_plot,
@@ -786,7 +825,6 @@ def _render_rollouts(  # noqa: PLR0912, PLR0915
                     transpose_spatial=transpose_spatial,
                 )
                 saved_paths.append(filename)
-                rendered_targets.add(target_idx)
                 log.info("Saved rollout visualization to %s", filename)
 
                 if snapshot_dir_for_batch is not None:
@@ -794,6 +832,7 @@ def _render_rollouts(  # noqa: PLR0912, PLR0915
                         trues_mean=trues_mean,
                         preds_mean=preds_mean,
                         preds_uq=preds_uq,
+                        extra_preds=inline_extra_preds,
                         local_idx=local_idx,
                         target_idx=target_idx,
                         snapshot_dir=snapshot_dir_for_batch,
@@ -804,7 +843,64 @@ def _render_rollouts(  # noqa: PLR0912, PLR0915
                         names_for_plot=names_for_plot,
                         preserve_aspect=preserve_aspect,
                         transpose_spatial=transpose_spatial,
+                        title="Rollout snapshots",
+                        pred_label=pred_label,
                     )
+
+                if include_member_files:
+                    for member_pred, member_label in extra_preds:
+                        member_suffix = f"_{member_label.lower().replace(' ', '_')}"
+                        member_filename = video_dir / (
+                            f"batch_{target_idx}_sample_{local_idx}"
+                            f"{member_suffix}.{fmt}"
+                        )
+                        plot_spatiotemporal_video(
+                            true=trues_mean[local_idx : local_idx + 1].cpu(),
+                            pred=member_pred[local_idx : local_idx + 1].cpu(),
+                            pred_uq=(
+                                preds_uq[local_idx : local_idx + 1].cpu()
+                                if preds_uq is not None
+                                else None
+                            ),
+                            batch_idx=0,
+                            fps=fps,
+                            save_path=str(member_filename),
+                            title=f"Rollout {member_label}",
+                            pred_label=member_label,
+                            colorbar_mode="column",
+                            pred_uq_label="Ensemble Std Dev",
+                            channel_names=names_for_plot,
+                            preserve_aspect=preserve_aspect,
+                            transpose_spatial=transpose_spatial,
+                        )
+                        saved_paths.append(member_filename)
+                        log.info(
+                            "Saved rollout member visualization to %s",
+                            member_filename,
+                        )
+
+                        if snapshot_dir_for_batch is not None:
+                            _save_rollout_snapshot_panels(
+                                trues_mean=trues_mean,
+                                preds_mean=member_pred,
+                                preds_uq=preds_uq,
+                                extra_preds=None,
+                                local_idx=local_idx,
+                                target_idx=target_idx,
+                                snapshot_dir=snapshot_dir_for_batch,
+                                snapshot_timesteps=snapshot_timesteps_for_batch,
+                                snapshot_channels=snapshot_channels_for_batch,
+                                snapshot_ext=snapshot_ext,
+                                saved_paths=saved_paths,
+                                names_for_plot=names_for_plot,
+                                preserve_aspect=preserve_aspect,
+                                transpose_spatial=transpose_spatial,
+                                filename_suffix=member_suffix,
+                                title=f"Rollout {member_label} snapshots",
+                                pred_label=member_label,
+                            )
+
+                rendered_targets.add(target_idx)
 
             global_sample_offset += batch_size
 
@@ -852,6 +948,9 @@ def _normalize_row_values_for_csv(row: Mapping[str, Any]) -> dict[str, Any]:
 
 def _build_per_timestep_metric_factory(
     metric_cls: type[Metric],
+    *,
+    ensemble_member_index: int | None = None,
+    ensemble_member_average: bool = False,
 ) -> Callable[[], Metric]:
     """Build a metric factory configured for per-timestep outputs.
 
@@ -859,17 +958,187 @@ def _build_per_timestep_metric_factory(
     constructor args. We first try ``reduce_all=False`` and then fall back to
     setting ``metric.reduce_all`` directly when available.
     """
+    if ensemble_member_average:
+        return _build_member_average_metric_factory(metric_cls, reduce_all=False)
+    return _build_metric_factory(
+        metric_cls,
+        reduce_all=False,
+        ensemble_member_index=ensemble_member_index,
+    )
+
+
+class EnsembleMemberAverageMetric(Metric):
+    """Score each ensemble member independently and average the metric state."""
+
+    def __init__(self, metric_factory: Callable[[], Metric]) -> None:
+        super().__init__()
+        self.metric = metric_factory()
+
+    def update(self, y_pred: torch.Tensor, y_true: torch.Tensor) -> None:
+        if y_pred.ndim == y_true.ndim + 1 and y_pred.shape[:-1] == y_true.shape:
+            for member_index in range(y_pred.shape[-1]):
+                self.metric.update(y_pred[..., member_index], y_true)
+            return
+        self.metric.update(y_pred, y_true)
+
+    def compute(self) -> torch.Tensor:
+        return self.metric.compute()
+
+    def reset(self) -> None:
+        super().reset()
+        self.metric.reset()
+
+
+def _build_metric_factory(
+    metric_cls: type[Metric],
+    *,
+    reduce_all: bool | None = None,
+    ensemble_member_index: int | None = None,
+) -> Callable[[], Metric]:
+    """Build a metric factory with optional single-member ensemble scoring."""
 
     def _factory(cls: type[Metric] = metric_cls) -> Metric:
-        try:
-            return cls(reduce_all=False)
-        except TypeError:
+        if reduce_all is None:
             metric = cls()
-            if hasattr(metric, "reduce_all"):
-                metric.reduce_all = False
-            return metric
+        else:
+            try:
+                metric = cls(reduce_all=reduce_all)
+            except TypeError:
+                metric = cls()
+                if hasattr(metric, "reduce_all"):
+                    metric.reduce_all = reduce_all
+
+        if ensemble_member_index is not None:
+            member_index = int(ensemble_member_index)
+
+            def _select_member(_self, y_pred: torch.Tensor) -> torch.Tensor:
+                if not 0 <= member_index < y_pred.shape[-1]:
+                    msg = (
+                        f"Configured ensemble member index {member_index} is outside "
+                        f"the prediction ensemble axis of size {y_pred.shape[-1]}."
+                    )
+                    raise IndexError(msg)
+                return y_pred[..., member_index]
+
+            metric._ensemble_aggregation = MethodType(  # type: ignore[attr-defined]
+                _select_member,
+                metric,
+            )
+        return metric
 
     return _factory
+
+
+def _build_member_average_metric_factory(
+    metric_cls: type[Metric],
+    *,
+    reduce_all: bool | None = None,
+) -> Callable[[], Metric]:
+    """Build a factory that averages deterministic metric scores over members."""
+
+    def _factory(cls: type[Metric] = metric_cls) -> Metric:
+        base_factory = _build_metric_factory(cls, reduce_all=reduce_all)
+        return EnsembleMemberAverageMetric(base_factory)
+
+    return _factory
+
+
+def _deterministic_member_metric_name(name: str, member_index: int) -> str:
+    return f"{name}_member_{member_index}"
+
+
+def _deterministic_member_average_metric_name(name: str) -> str:
+    return f"{name}_member_avg"
+
+
+def _parse_deterministic_member_metric_name(name: str) -> tuple[str, int] | None:
+    base_name, separator, raw_index = name.rpartition("_member_")
+    if not separator or base_name not in AVAILABLE_METRICS:
+        return None
+    try:
+        member_index = int(raw_index)
+    except ValueError:
+        return None
+    return base_name, member_index
+
+
+def _parse_deterministic_member_average_metric_name(name: str) -> str | None:
+    suffix = "_member_avg"
+    if not name.endswith(suffix):
+        return None
+    base_name = name[: -len(suffix)]
+    if base_name not in AVAILABLE_METRICS:
+        return None
+    return base_name
+
+
+def _normalize_ensemble_member_indices(
+    indices: int | Sequence[int] | None,
+    *,
+    n_members: int | None,
+    field_name: str,
+) -> list[int]:
+    """Validate and de-duplicate configured ensemble member indices."""
+    if indices is None:
+        return []
+
+    if isinstance(indices, bool):
+        raw_indices: list[Any] = [indices]
+    elif isinstance(indices, int):
+        raw_indices = [indices]
+    else:
+        try:
+            raw_indices = list(indices)
+        except TypeError as exc:
+            msg = (
+                f"{field_name} must be null, an integer, or a sequence of integers; "
+                f"got {indices!r}."
+            )
+            raise TypeError(msg) from exc
+
+    if not raw_indices:
+        return []
+
+    if n_members is None or n_members <= 1:
+        msg = f"{field_name} requires eval/model n_members > 1."
+        raise ValueError(msg)
+
+    selected: list[int] = []
+    seen: set[int] = set()
+    invalid: list[Any] = []
+    for raw_index in raw_indices:
+        if isinstance(raw_index, bool) or not isinstance(raw_index, int):
+            invalid.append(raw_index)
+            continue
+        if not 0 <= raw_index < n_members:
+            invalid.append(raw_index)
+            continue
+        if raw_index not in seen:
+            selected.append(raw_index)
+            seen.add(raw_index)
+
+    if invalid:
+        msg = (
+            f"{field_name} entries must be integer ensemble indices in "
+            f"[0, {n_members - 1}], got invalid values {invalid}."
+        )
+        raise ValueError(msg)
+
+    return selected
+
+
+def _normalize_rollout_member_render_mode(value: str | None) -> str:
+    """Normalize how requested rollout member diagnostics are rendered."""
+    if value is None:
+        return DEFAULT_ROLLOUT_MEMBER_RENDER_MODE
+    normalized = str(value).strip().lower()
+    if normalized not in ROLLOUT_MEMBER_RENDER_MODES:
+        msg = (
+            "eval.rollout_member_render_mode must be one of "
+            f"{ROLLOUT_MEMBER_RENDER_MODES}, got {value!r}."
+        )
+        raise ValueError(msg)
+    return normalized
 
 
 def _should_skip_metric(name: str) -> bool:
@@ -2305,6 +2574,39 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
 
     # Get number of ensemble members from config if available
     n_members = cfg.get("model", {}).get("n_members", 1)
+    has_ensemble = bool(n_members and n_members > 1)
+    rollout_member_indices = _normalize_ensemble_member_indices(
+        eval_cfg.get("rollout_member_indices", []),
+        n_members=n_members,
+        field_name="eval.rollout_member_indices",
+    )
+    rollout_member_render_mode = _normalize_rollout_member_render_mode(
+        eval_cfg.get("rollout_member_render_mode")
+    )
+    deterministic_metric_member_indices = _normalize_ensemble_member_indices(
+        eval_cfg.get("deterministic_metric_member_indices", []),
+        n_members=n_members,
+        field_name="eval.deterministic_metric_member_indices",
+    )
+    deterministic_metric_member_average = bool(
+        eval_cfg.get("deterministic_metric_member_average", False)
+    )
+    if deterministic_metric_member_average and not has_ensemble:
+        msg = "eval.deterministic_metric_member_average requires n_members > 1."
+        raise ValueError(msg)
+    if rollout_member_indices:
+        log.info(
+            "Rendering rollout diagnostics for ensemble member(s) %s in %s mode.",
+            rollout_member_indices,
+            rollout_member_render_mode,
+        )
+    if deterministic_metric_member_indices:
+        log.info(
+            "Adding deterministic single-member metric diagnostics for member(s): %s",
+            deterministic_metric_member_indices,
+        )
+    if deterministic_metric_member_average:
+        log.info("Adding deterministic member-averaged metric diagnostics.")
 
     # Setup Fabric accelerator/device management.
     # Prefer eval.accelerator to mirror Lightning API, while keeping
@@ -2343,7 +2645,6 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     test_metric_fns: dict[str, Callable[[], Metric]] = {}
 
     metric_registry = dict(AVAILABLE_METRICS)
-    has_ensemble = bool(n_members and n_members > 1)
     if has_ensemble:
         metric_registry.update(AVAILABLE_METRICS_ENSEMBLE)
 
@@ -2352,7 +2653,18 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
             log.info("Skipping metric '%s' due to memory cost.", name)
             continue
         if name in AVAILABLE_METRICS:
-            test_metric_fns[name] = AVAILABLE_METRICS[name]
+            test_metric_fns[name] = _build_metric_factory(AVAILABLE_METRICS[name])
+            if deterministic_metric_member_average:
+                test_metric_fns[_deterministic_member_average_metric_name(name)] = (
+                    _build_member_average_metric_factory(AVAILABLE_METRICS[name])
+                )
+            for member_index in deterministic_metric_member_indices:
+                test_metric_fns[
+                    _deterministic_member_metric_name(name, member_index)
+                ] = _build_metric_factory(
+                    AVAILABLE_METRICS[name],
+                    ensemble_member_index=member_index,
+                )
         elif name in AVAILABLE_METRICS_ENSEMBLE:
             if has_ensemble:
                 test_metric_fns[name] = AVAILABLE_METRICS_ENSEMBLE[name]
@@ -2509,6 +2821,8 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 snapshot_dir=rollout_snapshot_dir,
                 snapshot_format=eval_cfg.get("rollout_snapshot_format", "png"),
                 snapshot_channels=rollout_snapshot_channels,
+                member_indices=rollout_member_indices,
+                member_render_mode=rollout_member_render_mode,
             )
 
         # Prepare metric functions for rollouts
@@ -2520,7 +2834,22 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                     log.info("Skipping rollout metric '%s' due to memory cost.", name)
                     continue
                 if name in AVAILABLE_METRICS:
-                    rollout_metric_fns[name] = AVAILABLE_METRICS[name]
+                    rollout_metric_fns[name] = _build_metric_factory(
+                        AVAILABLE_METRICS[name]
+                    )
+                    if deterministic_metric_member_average:
+                        rollout_metric_fns[
+                            _deterministic_member_average_metric_name(name)
+                        ] = _build_member_average_metric_factory(
+                            AVAILABLE_METRICS[name]
+                        )
+                    for member_index in deterministic_metric_member_indices:
+                        rollout_metric_fns[
+                            _deterministic_member_metric_name(name, member_index)
+                        ] = _build_metric_factory(
+                            AVAILABLE_METRICS[name],
+                            ensemble_member_index=member_index,
+                        )
                 elif name in AVAILABLE_METRICS_ENSEMBLE:
                     if has_ensemble:
                         rollout_metric_fns[name] = AVAILABLE_METRICS_ENSEMBLE[name]
@@ -2648,11 +2977,31 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                     per_timestep_metric_fns[name] = metric_factory
                 else:
                     metric_cls = AVAILABLE_METRICS.get(name)
+                    member_index = None
+                    member_average = False
+                    if metric_cls is None:
+                        parsed_member_metric = _parse_deterministic_member_metric_name(
+                            name
+                        )
+                        if parsed_member_metric is not None:
+                            base_name, member_index = parsed_member_metric
+                            metric_cls = AVAILABLE_METRICS.get(base_name)
+                    if metric_cls is None:
+                        base_name = _parse_deterministic_member_average_metric_name(
+                            name
+                        )
+                        if base_name is not None:
+                            member_average = True
+                            metric_cls = AVAILABLE_METRICS.get(base_name)
                     if metric_cls is None:
                         metric_cls = AVAILABLE_METRICS_ENSEMBLE.get(name)
                     if metric_cls is not None:
                         per_timestep_metric_fns[name] = (
-                            _build_per_timestep_metric_factory(metric_cls)
+                            _build_per_timestep_metric_factory(
+                                metric_cls,
+                                ensemble_member_index=member_index,
+                                ensemble_member_average=member_average,
+                            )
                         )
 
             if per_timestep_metric_fns:

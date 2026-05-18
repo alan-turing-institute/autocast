@@ -55,6 +55,8 @@ All eval configs support these parameters:
   `ssr`; `variogram` remains available via explicit opt-in. Note that for
   ensemble predictions, `skill` is the RMSE of the ensemble mean, so it matches
   `rmse` numerically and is included for explicit spread/skill reporting.)
+- Deterministic metrics on ensemble predictions are scored on the ensemble
+  mean by default, matching LOLA's VRMSE/skill evaluation.
 - `csv_path`: Custom path for metrics CSV (default: work_dir/evaluation_metrics.csv)
 - `video_dir`: Custom directory for rollout videos (default: work_dir/videos)
 - `batch_indices`: List of rollout sample indices to visualize (resolved across
@@ -69,6 +71,17 @@ All eval configs support these parameters:
 - `rollout_snapshot_channels`: Channel indices to render (`null` means all)
 - `rollout_snapshot_dir`: Custom snapshot directory (default:
   work_dir/videos/snapshots)
+- `rollout_member_indices`: Additional ensemble members to render beside the
+  default ensemble-mean rollout videos/snapshots.
+- `rollout_member_render_mode`: How requested member diagnostics are rendered:
+  `inline` adds member rows to the main mean plot, `separate` writes
+  `_member_<idx>` files, and `both` does both.
+- `deterministic_metric_member_indices`: Additional ensemble members to score
+  with deterministic metrics beside the default ensemble-mean scores. CSV
+  columns are suffixed as `<metric>_member_<idx>`.
+- `deterministic_metric_member_average`: Also score each ensemble member
+  independently with deterministic metrics and average over members. CSV
+  columns are suffixed as `<metric>_member_avg`.
 - `accelerator`: Accelerator for evaluation (auto, cpu, cuda, mps)
 - `devices`: Number of GPUs for DDP evaluation (default: 1; set explicitly,
   e.g. 4, for multi-GPU runs)
