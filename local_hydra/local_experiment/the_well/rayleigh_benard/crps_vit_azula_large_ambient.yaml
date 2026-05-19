@@ -2,16 +2,17 @@
 defaults:
   - /distributed: ddp_4gpu_slurm
   - override /datamodule: the_well
-  - override /encoder@model.encoder: permute_concat
-  - override /decoder@model.decoder: channels_last
+  - override /encoder@model.encoder: identity
+  - override /decoder@model.decoder: identity
   - override /processor@model.processor: vit_azula_large
   - override /optimizer: adamw_half
   - _self_
 
 experiment_name: the_well_rayleigh_benard_crps_vit_azula_large_ambient
 
-# CRPS directly in ambient Rayleigh-Benard space, matching the raw-space EPD
-# setup used by the other comparison datasets.
+# CRPS directly in ambient Rayleigh-Benard space. Use identity encoder/decoder
+# so constants and boundary conditions are routed through global_cond/AdaLN, as
+# in the CNS identity+global_cond ablation.
 datamodule:
   well_dataset_name: rayleigh_benard
   well_base_path: ${oc.env:AUTOCAST_DATASETS,./datasets}
@@ -47,17 +48,18 @@ optimizer:
 model:
   train_in_latent_space: false
   n_members: 8
-  encoder:
-    with_constants: true
   processor:
-    # Raw RB is 512x128, so patch_size=32 gives the same 16x4 token grid as
-    # LoLA latent patch_size=1. hidden_dim=864, n_layers=16 keeps the trainable
-    # processor close to the ~220M LoLA-scale budget.
-    hidden_dim: 864
+    # Match the LoLA latent token grid: cached RB latents are 16x4 with
+    # patch_size=1, and raw RB is 512x128, so patch_size=32 gives the same
+    # 16x4 token layout. hidden_dim=848, n_layers=16 keeps the trainable
+    # processor close to the ~218M LoLA-scale budget.
+    hidden_dim: 848
     num_heads: 8
     n_layers: 16
     patch_size: 32
     n_noise_channels: 1024
+    # Route RB constants and boundary conditions through global_cond/AdaLN,
+    # not spatial concatenation.
     global_cond_channels: auto
     include_global_cond: true
   loss_func:

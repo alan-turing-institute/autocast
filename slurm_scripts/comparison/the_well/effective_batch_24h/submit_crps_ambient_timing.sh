@@ -3,7 +3,8 @@
 set -euo pipefail
 
 # Timing run for the fresh Rayleigh-Benard effective-batch 24h comparison:
-# CRPS directly in ambient space with the standard raw EPD encoder/decoder.
+# CRPS directly in ambient space with identity encoder/decoder and global_cond
+# conditioning for constants/boundary conditions.
 #
 # Effective global batch = 32/GPU * 8 members * 4 GPUs = 1024.
 # Each timing epoch is capped to 64 train batches so the epoch-stepped cosine
