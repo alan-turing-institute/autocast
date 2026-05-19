@@ -68,7 +68,7 @@ uv run autocast time-epochs --kind epd --mode slurm \
     datamodule.well_base_path="${DATASETS_ROOT}" \
     datamodule.batch_size="${PER_GPU_BATCH_SIZE}" \
     datamodule.num_workers="${DATALOADER_NUM_WORKERS}" \
-    trainer.accumulate_grad_batches="${ACCUMULATE_GRAD_BATCHES}" \
+    +trainer.accumulate_grad_batches="${ACCUMULATE_GRAD_BATCHES}" \
     model.encoder.runpath="${LOLA_AE_DIR}" \
     model.encoder.chunk_size="${ENCODER_CHUNK_SIZE}" \
     model.decoder.runpath="${LOLA_AE_DIR}" \

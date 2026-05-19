@@ -59,7 +59,7 @@ uv run autocast time-epochs --kind processor --mode slurm \
     datamodule.pin_memory=true \
     datamodule.persistent_workers=true \
     datamodule.prefetch_factor=2 \
-    trainer.accumulate_grad_batches="${ACCUMULATE_GRAD_BATCHES}" \
+    +trainer.accumulate_grad_batches="${ACCUMULATE_GRAD_BATCHES}" \
     hydra.launcher.cpus_per_task="${CPUS_PER_TASK}"
 
 echo ""

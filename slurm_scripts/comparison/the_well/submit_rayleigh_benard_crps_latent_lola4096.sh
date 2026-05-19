@@ -107,7 +107,7 @@ for run_dry in "${RUN_DRY_STATES[@]}"; do
         optimizer.cosine_epochs="${MAX_EPOCHS}" \
         hydra.launcher.cpus_per_task="${CPUS_PER_TASK}" \
         hydra.launcher.timeout_min="${TIMEOUT_MIN}" \
-        trainer.accumulate_grad_batches="${ACCUMULATE_GRAD_BATCHES}" \
+        +trainer.accumulate_grad_batches="${ACCUMULATE_GRAD_BATCHES}" \
         trainer.max_time="${BUDGET_MAX_TIME}" \
         trainer.log_every_n_steps="${LOG_EVERY_N_STEPS}" \
         +trainer.max_epochs="${MAX_EPOCHS}" \
