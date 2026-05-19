@@ -40,9 +40,11 @@ optimizer:
 model:
   n_members: 8
   processor:
-    hidden_dim: 568
+    # Match the ~220M-parameter LoLA FM processor as closely as possible while
+    # keeping the latent patch_size=1 tokenization.
+    hidden_dim: 896
     num_heads: 8
-    n_layers: 12
+    n_layers: 16
     patch_size: 1
     n_noise_channels: 1024
     global_cond_channels: auto

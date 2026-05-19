@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # Final 24h run for the fresh Rayleigh-Benard effective-batch comparison:
-# CRPS in ambient space via frozen LoLA encoder/decoder.
+# CRPS directly in ambient space with the standard raw EPD encoder/decoder.
 #
 # Effective global batch = 32/GPU * 8 members * 4 GPUs = 1024. Epochs are
 # fixed-size budget epochs of 64 train batches by default, not full dataset
@@ -17,7 +17,6 @@ EXPERIMENT="the_well/rayleigh_benard/crps_vit_azula_large_ambient"
 EXPERIMENT_NAME="the_well_rayleigh_benard_effbatch24h_crps_ambient_b32_m8"
 RUN_ID="rb_eff24_crps_ambient_b32_m8"
 RAW_DATA_DIR="${DATASETS_ROOT}/rayleigh_benard/data"
-LOLA_AE_DIR="${DATASETS_ROOT}/rayleigh_benard/1e3z5x2c_rayleigh_benard_dcae_f32c64_large"
 TIMING_GROUP_GLOB="${TIMING_GROUP_GLOB:-*/timing/rb_effective_batch_24h}"
 BUDGET_HOURS="${BUDGET_HOURS:-24}"
 BUDGET_MARGIN="${BUDGET_MARGIN:-0.02}"
@@ -30,8 +29,6 @@ N_MEMBERS="${N_MEMBERS:-8}"
 DATALOADER_NUM_WORKERS="${DATALOADER_NUM_WORKERS:-8}"
 CPUS_PER_TASK="${CPUS_PER_TASK:-16}"
 LOG_EVERY_N_STEPS="${LOG_EVERY_N_STEPS:-50}"
-ENCODER_CHUNK_SIZE="${ENCODER_CHUNK_SIZE:-8}"
-DECODER_CHUNK_SIZE="${DECODER_CHUNK_SIZE:-4}"
 DRY_RUN_ONLY="${DRY_RUN_ONLY:-false}"
 if [[ "${DRY_RUN_ONLY}" == "true" ]]; then
     RUN_DRY_STATES=("true")
@@ -52,11 +49,6 @@ for split in train valid test; do
         exit 1
     fi
 done
-
-if [[ ! -f "${LOLA_AE_DIR}/config.yaml" ]] || [[ ! -f "${LOLA_AE_DIR}/state.pth" ]]; then
-    echo "Missing LoLA config.yaml or state.pth under ${LOLA_AE_DIR}" >&2
-    exit 1
-fi
 
 find_timing_checkpoint() {
     if [[ ! -d outputs ]]; then
@@ -127,7 +119,6 @@ for run_dry in "${RUN_DRY_STATES[@]}"; do
     echo "  local_experiment: ${EXPERIMENT}"
     echo "  experiment_name: ${EXPERIMENT_NAME}"
     echo "  raw data dir: ${RAW_DATA_DIR}"
-    echo "  LoLA AE dir: ${LOLA_AE_DIR}"
     echo "  cosine_epochs: ${COSINE_EPOCHS_RESOLVED}"
     echo "  datamodule.batch_size: ${PER_GPU_BATCH_SIZE} per GPU"
     echo "  model.n_members: ${N_MEMBERS}"
@@ -135,8 +126,6 @@ for run_dry in "${RUN_DRY_STATES[@]}"; do
     echo "  raw train batches/epoch: ${EFFECTIVE_BATCHES_PER_EPOCH}"
     echo "  effective units/epoch: ${EFFECTIVE_UNITS_PER_EPOCH}"
     echo "  check_val_every_n_epoch: ${CHECK_VAL_EVERY_N_EPOCH}"
-    echo "  encoder chunk size: ${ENCODER_CHUNK_SIZE}"
-    echo "  decoder chunk size: ${DECODER_CHUNK_SIZE}"
     echo "  trainer.max_time: ${BUDGET_MAX_TIME}"
 
     uv run autocast epd --mode slurm --run-id "${EXPERIMENT_NAME}" "${dry_run_arg[@]}" \
@@ -146,10 +135,6 @@ for run_dry in "${RUN_DRY_STATES[@]}"; do
         "datamodule.batch_size=${PER_GPU_BATCH_SIZE}" \
         "datamodule.num_workers=${DATALOADER_NUM_WORKERS}" \
         "model.n_members=${N_MEMBERS}" \
-        "model.encoder.runpath=${LOLA_AE_DIR}" \
-        "model.encoder.chunk_size=${ENCODER_CHUNK_SIZE}" \
-        "model.decoder.runpath=${LOLA_AE_DIR}" \
-        "model.decoder.chunk_size=${DECODER_CHUNK_SIZE}" \
         "logging.wandb.enabled=true" \
         "optimizer.cosine_epochs=${COSINE_EPOCHS_RESOLVED}" \
         "hydra.launcher.cpus_per_task=${CPUS_PER_TASK}" \

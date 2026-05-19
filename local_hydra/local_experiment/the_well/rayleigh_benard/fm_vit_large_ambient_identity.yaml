@@ -51,12 +51,14 @@ model:
   processor:
     flow_ode_steps: 50
     backbone:
-      # patch_size=16 keeps the 512x128 RB grid at 32x8 = 256 tokens,
-      # matching the token count of the older 64x64, patch_size=4 EPD runs.
-      hid_channels: 704
-      hid_blocks: 12
+      # LoLA cached latents are stored channel-first as C=64, H=16, W=4,
+      # so latent patch_size=1 gives 64 tokens. Raw RB is 512x128, hence
+      # patch_size=32 matches that 16x4 token grid while the 944x16 ViT stays
+      # near the ~220M-parameter LoLA FM latent processor.
+      hid_channels: 944
+      hid_blocks: 16
       attention_heads: 8
-      patch_size: 16
+      patch_size: 32
       dropout: 0.05
       ffn_factor: 4
   val_metrics: []

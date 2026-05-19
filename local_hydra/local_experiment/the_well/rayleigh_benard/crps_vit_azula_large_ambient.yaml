@@ -2,17 +2,16 @@
 defaults:
   - /distributed: ddp_4gpu_slurm
   - override /datamodule: the_well
-  - override /encoder@model.encoder: lola_wrapped
-  - override /decoder@model.decoder: lola_wrapped
+  - override /encoder@model.encoder: permute_concat
+  - override /decoder@model.decoder: channels_last
   - override /processor@model.processor: vit_azula_large
   - override /optimizer: adamw_half
   - _self_
 
 experiment_name: the_well_rayleigh_benard_crps_vit_azula_large_ambient
 
-# CRPS in ambient Rayleigh-Benard space, with the same frozen LoLA DCAE used to
-# produce the cached latents for FM. The raw TheWell datamodule stays
-# unnormalized because the LoLA wrappers apply their own mean/std internally.
+# CRPS directly in ambient Rayleigh-Benard space, matching the raw-space EPD
+# setup used by the other comparison datasets.
 datamodule:
   well_dataset_name: rayleigh_benard
   well_base_path: ${oc.env:AUTOCAST_DATASETS,./datasets}
@@ -20,9 +19,9 @@ datamodule:
   n_steps_output: 4
   min_dt_stride: 1
   max_dt_stride: 1
-  batch_size: 1
+  batch_size: 32
   num_workers: 8
-  use_normalization: false
+  use_normalization: true
   normalization_path: ${oc.env:AUTOCAST_DATASETS,./datasets}/rayleigh_benard/stats.yaml
   autoencoder_mode: false
   max_rollout_steps: 100
@@ -47,25 +46,17 @@ optimizer:
 
 model:
   train_in_latent_space: false
-  freeze_encoder_decoder: true
   n_members: 8
   encoder:
-    runpath: ${oc.env:AUTOCAST_DATASETS,./datasets}/rayleigh_benard/1e3z5x2c_rayleigh_benard_dcae_f32c64_large
-    pix_channels: 4
-    mean: [0.38, 0.01, 0.0, 0.0]
-    std: [0.25, 0.15, 0.21, 0.18]
-    log_scalars: true
-  decoder:
-    runpath: ${oc.env:AUTOCAST_DATASETS,./datasets}/rayleigh_benard/1e3z5x2c_rayleigh_benard_dcae_f32c64_large
-    pix_channels: 4
-    mean: [0.38, 0.01, 0.0, 0.0]
-    std: [0.25, 0.15, 0.21, 0.18]
-    batch_size: 8
+    with_constants: true
   processor:
-    hidden_dim: 568
+    # Raw RB is 512x128, so patch_size=32 gives the same 16x4 token grid as
+    # LoLA latent patch_size=1. hidden_dim=864, n_layers=16 keeps the trainable
+    # processor close to the ~220M LoLA-scale budget.
+    hidden_dim: 864
     num_heads: 8
-    n_layers: 12
-    patch_size: 1
+    n_layers: 16
+    patch_size: 32
     n_noise_channels: 1024
     global_cond_channels: auto
     include_global_cond: true
