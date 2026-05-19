@@ -21,6 +21,7 @@ TIMING_GROUP_GLOB="${TIMING_GROUP_GLOB:-*/timing/rb_effective_batch_24h}"
 BUDGET_HOURS="${BUDGET_HOURS:-24}"
 BUDGET_MARGIN="${BUDGET_MARGIN:-0.02}"
 BUDGET_MAX_TIME="${BUDGET_MAX_TIME:-00:23:59:00}"
+DEFAULT_COSINE_EPOCHS=2299
 TIMEOUT_MIN="${TIMEOUT_MIN:-1439}"
 EFFECTIVE_BATCHES_PER_EPOCH="${EFFECTIVE_BATCHES_PER_EPOCH:-64}"
 CHECK_VAL_EVERY_N_EPOCH="${CHECK_VAL_EVERY_N_EPOCH:-8}"
@@ -81,6 +82,11 @@ resolve_cosine_epochs() {
 
     if [[ -n "${COSINE_EPOCHS:-}" ]]; then
         printf '%s\n' "${COSINE_EPOCHS}"
+        return 0
+    fi
+
+    if [[ -n "${DEFAULT_COSINE_EPOCHS:-}" ]]; then
+        printf '%s\n' "${DEFAULT_COSINE_EPOCHS}"
         return 0
     fi
 
