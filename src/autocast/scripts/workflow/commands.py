@@ -1023,9 +1023,9 @@ def _print_timing_results(
     print(f"{'=' * 60}")
     print("\nRecommended overrides:")
     print(
-        f"  +trainer.max_epochs={result['max_epochs']} "
-        f"trainer.max_time={max_time_str} "
-        f"optimizer=adamw_half"
+        f"  ++trainer.max_epochs={result['max_epochs']} "
+        f"++trainer.max_time={max_time_str} "
+        f"++optimizer=adamw_half"
     )
     return result
 
