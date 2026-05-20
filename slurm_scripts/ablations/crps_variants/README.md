@@ -2,8 +2,8 @@
 
 Compare `AlphaFairCRPS` (baseline) vs `FairCRPS` vs `CRPS`.
 
-**Status:** FairCRPS and plain CRPS CNS configs added; AlphaFairCRPS is the
-2026-04-24 CRPS baseline. FairCRPS configs also exist for GS, GPE, and AD.
+**Status:** FairCRPS and plain CRPS configs exist for CNS, GS, GPE, and AD.
+AlphaFairCRPS is the 2026-04-24 CRPS baseline.
 
 ## Baseline
 
@@ -38,6 +38,12 @@ EPD datasets:
 - `local_hydra/local_experiment/ablations/crps_variants/gpe_laser_wake_only/crps_vit_fair.yaml`
 - `local_hydra/local_experiment/ablations/crps_variants/advection_diffusion/crps_vit_fair.yaml`
 
+Planned batch 05 mirrors planned batch 04 with plain CRPS loss:
+
+- `local_hydra/local_experiment/ablations/crps_variants/gray_scott/crps_vit_plain.yaml`
+- `local_hydra/local_experiment/ablations/crps_variants/gpe_laser_wake_only/crps_vit_plain.yaml`
+- `local_hydra/local_experiment/ablations/crps_variants/advection_diffusion/crps_vit_plain.yaml`
+
 ## Implementation sketch
 
 The CNS cross-cutting submitter is
@@ -45,4 +51,6 @@ The CNS cross-cutting submitter is
 loss-variant runs alongside the other planned CNS ablations. The cross-dataset
 FairCRPS submitter is
 `slurm_scripts/ablations/submit_planned_04_{timing,large}.sh`, with eval in
-`slurm_scripts/ablations/submit_eval_planned_04.sh`.
+`slurm_scripts/ablations/submit_eval_planned_04.sh`. The cross-dataset plain
+CRPS submitter is `slurm_scripts/ablations/submit_planned_05_{timing,large}.sh`,
+with eval staging in `slurm_scripts/ablations/submit_eval_planned_05.sh`.

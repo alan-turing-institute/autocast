@@ -6,12 +6,11 @@ loosely here for all three — true ablations (EMA on/off), comparisons
 (FM vs diffusion, ViT vs U-Net), and sweeps (ensemble size, noise
 channels) — to match how ML papers usually label this section.
 
-Most ablations are still **CNS-only for now**. The current exception is
-`ensemble_size` under the `eff_bs1024` regime, which now extends to the
-other three main comparison datasets (`gray_scott`,
-`gpe_laser_only_wake`, `advection_diffusion`) in addition to CNS. Each
-script keeps dataset coverage local so widening an ablation remains a
-small edit.
+Most ablations are still **CNS-only for now**. The current exceptions are
+`ensemble_size` under the `eff_bs1024` regime and `crps_variants`, which now
+extend to the other three main comparison datasets (`gray_scott`,
+`gpe_laser_only_wake`, `advection_diffusion`) in addition to CNS. Each script
+keeps dataset coverage local so widening an ablation remains a small edit.
 
 ## Status table
 
@@ -22,7 +21,7 @@ small edit.
 | planned_01 batch | mixed | CNS | 8 | timing scripted |
 | planned_02 batch | mixed | GS / GPE / AD | 6 | timing + production scripted |
 | noise_channels | sweep | CNS | 1 | config + planned |
-| crps_variants (AlphaFair / Fair / CRPS) | comparison | CNS | 2 new (+baseline) | config + planned |
+| crps_variants (AlphaFair / Fair / CRPS) | comparison | GS / GPE / CNS / AD | 8 new (+baseline) | config + planned |
 | fm_vs_diffusion | comparison | CNS | 1 | config + planned |
 | arch_unet_fno_vit | comparison | CNS | 1 U-Net (+ViT baseline) | config + planned |
 | model_size | sweep | CNS | 2 active (+2 staged) | in progress |
@@ -78,6 +77,16 @@ extending without repurposing earlier scripts. It covers:
 The m=4 GPE/AD follow-up follows the same timing-then-production pattern:
 `submit_planned_02_m4_followup_timing.sh` first, then
 `submit_planned_02_m4_followup_large.sh` after retrieving timing outputs.
+
+## Planned Batches 04-05
+
+The cross-dataset CRPS-variant follow-ups live in separate batches so each loss
+variant keeps its own timing outputs, production outputs, and eval script:
+
+| planned run | study folder | implementation |
+|---|---|---|
+| GS/GPE/AD m=8 fair CRPS | `crps_variants` | FairCRPS loss on the 80M CRPS ViT via `submit_planned_04_*` |
+| GS/GPE/AD m=8 plain CRPS | `crps_variants` | CRPS loss on the same ViT via `submit_planned_05_*` |
 
 ## Design notes
 
