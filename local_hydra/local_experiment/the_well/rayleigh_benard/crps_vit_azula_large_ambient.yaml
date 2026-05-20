@@ -24,6 +24,13 @@ datamodule:
   num_workers: 8
   use_normalization: true
   normalization_path: ${oc.env:AUTOCAST_DATASETS,./datasets}/rayleigh_benard/stats.yaml
+  # Deterministic LoLA-style conditioning transform. This runs through
+  # WellDataset(transform=...) for every split, including eval/rollout loaders.
+  transform:
+    _target_: autocast.data.transforms.LogScalars
+    # Match the LoLA latent cache labels for Rayleigh-Benard:
+    # [log(Rayleigh), log(Prandtl), flattened boundary conditions].
+    scalar_names: [Rayleigh, Prandtl]
   autoencoder_mode: false
   max_rollout_steps: 100
   flatten_tensors: true
