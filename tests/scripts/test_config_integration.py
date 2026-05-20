@@ -22,10 +22,12 @@ def config_dir(REPO_ROOT: Path) -> str:
     return str(REPO_ROOT / "src" / "autocast" / "configs")
 
 
-def _load_config(config_dir: str, config_name: str) -> DictConfig:
+def _load_config(
+    config_dir: str, config_name: str, overrides: list[str] | None = None
+) -> DictConfig:
     """Load a config by name."""
     with initialize_config_dir(version_base=None, config_dir=config_dir):
-        return compose(config_name=config_name)
+        return compose(config_name=config_name, overrides=overrides or [])
 
 
 # --- Parametrized tests over top-level configs ---
@@ -47,6 +49,18 @@ def test_top_level_config_has_trainer(config_dir: str, config_name: str):
     """Verify top-level configs have trainer section."""
     cfg = _load_config(config_dir, config_name)
     assert "trainer" in cfg
+
+
+def test_multinode_distributed_config_sets_trainer_nodes(config_dir: str):
+    cfg = _load_config(
+        config_dir,
+        "encoder_processor_decoder",
+        overrides=["+distributed=ddp_4gpu_2node_slurm"],
+    )
+
+    assert cfg.trainer.devices == 4
+    assert cfg.trainer.num_nodes == 2
+    assert cfg.trainer.strategy == "ddp"
 
 
 # --- Parametrized tests over component configs ---

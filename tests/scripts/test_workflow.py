@@ -42,6 +42,8 @@ from autocast.scripts.workflow.overrides import (
     strip_hydra_sweep_controls,
 )
 from autocast.scripts.workflow.slurm import (
+    _build_sbatch_command,
+    _load_direct_distributed_launcher_cfg,
     _load_preset_launcher_cfg,
     _parse_override_scalar,
     _should_use_srun,
@@ -172,6 +174,14 @@ def test_should_use_srun_auto_for_multi_task_or_gpu():
     assert _should_use_srun({"tasks_per_node": 1, "gpus_per_node": 2}) is True
 
 
+def test_should_use_srun_auto_for_multinode():
+    assert _should_use_srun({"nodes": 2, "tasks_per_node": 1}) is True
+    assert (
+        _should_use_srun({"additional_parameters": {"nodes": 2}, "tasks_per_node": 1})
+        is True
+    )
+
+
 def test_should_use_srun_auto_false_for_single_task_single_gpu():
     assert _should_use_srun({"tasks_per_node": 1, "gpus_per_node": 1}) is False
 
@@ -185,6 +195,27 @@ def test_should_use_srun_respects_explicit_override():
         _should_use_srun({"tasks_per_node": 2, "gpus_per_node": 2, "use_srun": False})
         is False
     )
+
+
+def test_build_sbatch_command_includes_nodes(tmp_path: Path):
+    batch_script = tmp_path / "submit.sh"
+    cmd = _build_sbatch_command(
+        job_name="autocast-test",
+        log_dir=tmp_path,
+        launcher_cfg={
+            "nodes": 2,
+            "gpus_per_node": 4,
+            "tasks_per_node": 4,
+            "additional_parameters": {"mem": 0, "nodes": 99},
+        },
+        batch_script_path=batch_script,
+    )
+
+    assert "--nodes=2" in cmd
+    assert "--gpus-per-node=4" in cmd
+    assert "--ntasks-per-node=4" in cmd
+    assert "--mem=0" in cmd
+    assert "--nodes=99" not in cmd
 
 
 def test_load_preset_launcher_cfg_ignores_unrelated_interpolation(
@@ -249,6 +280,16 @@ def test_load_preset_launcher_cfg_walks_local_experiment_parent_chain(
     monkeypatch.chdir(tmp_path)
     launcher_cfg = _load_preset_launcher_cfg(["local_experiment=child"])
 
+    assert launcher_cfg.get("gpus_per_node") == 4
+    assert launcher_cfg.get("tasks_per_node") == 4
+
+
+def test_load_direct_distributed_launcher_cfg_supports_multinode():
+    launcher_cfg = _load_direct_distributed_launcher_cfg(
+        ["+distributed=ddp_4gpu_2node_slurm"]
+    )
+
+    assert launcher_cfg.get("nodes") == 2
     assert launcher_cfg.get("gpus_per_node") == 4
     assert launcher_cfg.get("tasks_per_node") == 4
 

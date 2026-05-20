@@ -61,14 +61,23 @@ submission.
 - Mapping rule: config key `X` maps to CLI override `hydra.launcher.X=<value>`
     - `timeout_min` -> `hydra.launcher.timeout_min=...`
     - `cpus_per_task` -> `hydra.launcher.cpus_per_task=...`
+    - `nodes` -> `hydra.launcher.nodes=...`
     - `gpus_per_node` -> `hydra.launcher.gpus_per_node=...`
     - `tasks_per_node` -> `hydra.launcher.tasks_per_node=...`
     - `use_srun` -> `hydra.launcher.use_srun=<true|false>`
     - `additional_parameters.mem` -> `hydra.launcher.additional_parameters.mem=...`
 
 - SLURM launch behavior:
-    - Default is auto: batch script uses `srun` when `tasks_per_node > 1` or `gpus_per_node > 1`.
+    - Default is auto: batch script uses `srun` when `nodes > 1`,
+        `tasks_per_node > 1`, or `gpus_per_node > 1`.
     - Override explicitly with `hydra.launcher.use_srun=true` or `hydra.launcher.use_srun=false`.
+
+- Distributed presets under `src/autocast/configs/distributed/` set both the
+    Lightning runtime and SLURM allocation. For example,
+    `+distributed=ddp_4gpu_2node_slurm` sets `trainer.devices=4`,
+    `trainer.num_nodes=2`, `hydra.launcher.nodes=2`,
+    `hydra.launcher.gpus_per_node=4`, and
+    `hydra.launcher.tasks_per_node=4`.
 
 - For `autocast train-eval` specifically:
     - Positional overrides apply to **train**.

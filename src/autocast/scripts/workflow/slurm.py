@@ -41,6 +41,25 @@ def _parse_override_scalar(value: str) -> int | str | bool:
     return int(stripped) if stripped.isdigit() else stripped
 
 
+def _as_positive_int(value: object) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    try:
+        parsed = int(str(value).strip())
+    except (TypeError, ValueError):
+        return 0
+    return parsed if parsed > 0 else 0
+
+
+def _launcher_positive_int(launcher_cfg: dict, key: str) -> int:
+    value = launcher_cfg.get(key)
+    if value is None:
+        additional_parameters = launcher_cfg.get("additional_parameters", {})
+        if isinstance(additional_parameters, dict):
+            value = additional_parameters.get(key)
+    return _as_positive_int(value)
+
+
 def _nested_set(target: dict, dotted_key: str, value: int | str | bool) -> None:
     parts = dotted_key.split(".")
     current = target
@@ -123,13 +142,40 @@ def _extract_distributed_preset_name(
     return None
 
 
+def _extract_distributed_override_name(overrides: list[str]) -> str | None:
+    for override in reversed(overrides):
+        norm = normalized_override(override)
+        if norm.startswith(("distributed=", "/distributed=")):
+            value = norm.split("=", 1)[1].strip()
+            return value or None
+    return None
+
+
 def _load_distributed_cfg(name: str) -> dict:
     cfg_root = Path(__file__).resolve().parents[2] / "configs"
-    path = cfg_root / "distributed" / f"{name}.yaml"
-    if not path.exists():
+    candidate_paths = [
+        cfg_root / "distributed" / f"{name}.yaml",
+        Path.cwd() / "local_hydra" / "distributed" / f"{name}.yaml",
+    ]
+    external_config_root = os.environ.get("AUTOCAST_CONFIG_PATH")
+    if external_config_root:
+        candidate_paths.append(
+            Path(external_config_root) / "distributed" / f"{name}.yaml"
+        )
+    for path in candidate_paths:
+        if not path.exists():
+            continue
+        loaded = OmegaConf.to_container(OmegaConf.load(path), resolve=False)
+        return loaded if isinstance(loaded, dict) else {}
+    return {}
+
+
+def _extract_launcher_cfg(cfg: dict) -> dict:
+    hydra_cfg = cfg.get("hydra")
+    if not isinstance(hydra_cfg, dict):
         return {}
-    loaded = OmegaConf.to_container(OmegaConf.load(path), resolve=False)
-    return loaded if isinstance(loaded, dict) else {}
+    launcher_cfg = hydra_cfg.get("launcher")
+    return launcher_cfg if isinstance(launcher_cfg, dict) else {}
 
 
 def _load_launcher_from_file(path: Path) -> dict:
@@ -150,11 +196,14 @@ def _load_launcher_from_file(path: Path) -> dict:
         cfg = raw
     if not isinstance(cfg, dict):
         return {}
-    hydra_cfg = cfg.get("hydra")
-    if not isinstance(hydra_cfg, dict):
+    return _extract_launcher_cfg(cfg)
+
+
+def _load_direct_distributed_launcher_cfg(overrides: list[str]) -> dict:
+    distributed = _extract_distributed_override_name(overrides)
+    if distributed is None:
         return {}
-    launcher_cfg = hydra_cfg.get("launcher")
-    return launcher_cfg if isinstance(launcher_cfg, dict) else {}
+    return _extract_launcher_cfg(_load_distributed_cfg(distributed))
 
 
 def _load_preset_launcher_cfg(overrides: list[str]) -> dict:
@@ -205,11 +254,13 @@ def _resolve_launcher_submission_context(
         overrides
     )
     preset_launcher_cfg = _load_preset_launcher_cfg(overrides)
+    direct_distributed_launcher_cfg = _load_direct_distributed_launcher_cfg(overrides)
     launcher_cfg = load_launcher_defaults(launcher_name)
     merged_launcher_cfg = OmegaConf.to_container(
         OmegaConf.merge(
             launcher_cfg,
             preset_launcher_cfg,
+            direct_distributed_launcher_cfg,
             launcher_override_cfg,
         ),
         resolve=True,
@@ -294,18 +345,11 @@ def _should_use_srun(launcher_cfg: dict) -> bool:
         if lowered in {"false", "0", "no", "off"}:
             return False
 
-    def _as_positive_int(value: object) -> int:
-        if isinstance(value, bool):
-            return int(value)
-        try:
-            parsed = int(str(value).strip())
-        except (TypeError, ValueError):
-            return 0
-        return parsed if parsed > 0 else 0
-
-    tasks_per_node = _as_positive_int(launcher_cfg.get("tasks_per_node"))
-    gpus_per_node = _as_positive_int(launcher_cfg.get("gpus_per_node"))
-    return tasks_per_node > 1 or gpus_per_node > 1
+    nodes = _launcher_positive_int(launcher_cfg, "nodes")
+    tasks_per_node = _launcher_positive_int(launcher_cfg, "tasks_per_node")
+    gpus_per_node = _launcher_positive_int(launcher_cfg, "gpus_per_node")
+    ntasks = _launcher_positive_int(launcher_cfg, "ntasks")
+    return nodes > 1 or tasks_per_node > 1 or gpus_per_node > 1 or ntasks > 1
 
 
 def _build_sbatch_command(
@@ -328,19 +372,25 @@ def _build_sbatch_command(
     if formatted_time is not None:
         sbatch_cmd.append(f"--time={formatted_time}")
 
-    for cfg_key, sbatch_flag in [
+    mapped_sbatch_flags = [
+        ("nodes", "nodes"),
         ("cpus_per_task", "cpus-per-task"),
         ("gpus_per_node", "gpus-per-node"),
         ("tasks_per_node", "ntasks-per-node"),
         ("partition", "partition"),
-    ]:
+    ]
+    handled_additional_keys: set[str] = set()
+    for cfg_key, sbatch_flag in mapped_sbatch_flags:
         val = launcher_cfg.get(cfg_key)
         if val is not None:
             sbatch_cmd.append(f"--{sbatch_flag}={val}")
+            handled_additional_keys.add(cfg_key)
 
     additional_parameters = launcher_cfg.get("additional_parameters", {})
     if isinstance(additional_parameters, dict):
         for key, value in additional_parameters.items():
+            if key in handled_additional_keys:
+                continue
             sbatch_cmd.append(f"--{key}={value}")
 
     sbatch_cmd.append(str(batch_script_path))
@@ -564,9 +614,15 @@ def submit_manifest_via_sbatch(
 
     launcher_name, launcher_override_cfg, _ = extract_launcher_overrides(overrides)
     preset_launcher_cfg = _load_preset_launcher_cfg(overrides)
+    direct_distributed_launcher_cfg = _load_direct_distributed_launcher_cfg(overrides)
     launcher_cfg = load_launcher_defaults(launcher_name)
     merged_launcher_cfg = OmegaConf.to_container(
-        OmegaConf.merge(launcher_cfg, preset_launcher_cfg, launcher_override_cfg),
+        OmegaConf.merge(
+            launcher_cfg,
+            preset_launcher_cfg,
+            direct_distributed_launcher_cfg,
+            launcher_override_cfg,
+        ),
         resolve=True,
     )
     if not isinstance(merged_launcher_cfg, dict):

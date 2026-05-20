@@ -85,6 +85,9 @@ multi-GPU explicitly (or via a distributed preset):
 # 4-GPU evaluation via the distributed config
 autocast eval +distributed=ddp_4gpu_slurm eval.checkpoint=path/to/model.ckpt
 
+# 2-node, 4-GPU-per-node evaluation
+autocast eval +distributed=ddp_4gpu_2node_slurm eval.checkpoint=path/to/model.ckpt
+
 # Explicit GPU count override
 autocast eval eval.devices=4 eval.checkpoint=path/to/model.ckpt
 ```
