@@ -367,6 +367,17 @@ class TrainingTimerCallback(Callback):
         self._epoch_times_s = list(state_dict.get("epoch_times_s", []))
 
 
+def _gpu_util_callbacks(config: DictConfig) -> list[Callback]:
+    """Return a per-rank GPU-utilization logger if ``log_gpu_util`` is set.
+
+    Diagnostic only (e.g. multi-node smoke tests): each rank logs its own GPU
+    utilization, so the combined SLURM log covers every GPU across every node.
+    """
+    if config.get("log_gpu_util", False):
+        return [GpuUtilizationLogCallback()]
+    return []
+
+
 def run_training(
     config: DictConfig,
     model: L.LightningModule,
@@ -425,8 +436,11 @@ def run_training(
         ):
             callback.setdefault("save_last", "link")
 
-    callbacks.append(CheckpointAliasSymlinkCallback(checkpoint_path))
-    callbacks.append(TrainingTimerCallback())
+    callbacks += [
+        CheckpointAliasSymlinkCallback(checkpoint_path),
+        TrainingTimerCallback(),
+        *_gpu_util_callbacks(config),
+    ]
     trainer_cfg["callbacks"] = callbacks
 
     trainer = instantiate(
@@ -599,10 +613,7 @@ def train_autoencoder(
         trainer_cfg, logger=wandb_logger, default_root_dir=str(work_dir)
     )
     trainer.callbacks.append(TrainingTimerCallback())
-    if config.get("log_gpu_util", False):
-        # Diagnostic only (e.g. multi-node smoke tests): each rank logs its own
-        # GPU utilization, so the combined SLURM log covers every GPU/node.
-        trainer.callbacks.append(GpuUtilizationLogCallback())
+    trainer.callbacks.extend(_gpu_util_callbacks(config))
     output_cfg = config.get("output", {})
     if output_cfg.get("save_config", False) and trainer.is_global_zero:
         save_resolved_config(
