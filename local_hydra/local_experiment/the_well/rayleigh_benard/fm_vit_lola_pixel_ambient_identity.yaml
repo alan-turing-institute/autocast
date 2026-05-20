@@ -1,0 +1,71 @@
+# @package _global_
+defaults:
+  - /distributed: ddp_4gpu_slurm
+  - override /datamodule: the_well
+  - override /encoder@model.encoder: identity
+  - override /decoder@model.decoder: identity
+  - override /processor@model.processor: flow_matching_vit
+  - override /backbone@model.processor.backbone: vit
+  - override /optimizer: adamw_half
+  - _self_
+
+experiment_name: the_well_rayleigh_benard_fm_vit_lola_pixel_ambient_identity
+
+# Raw/ambient-space flow matching baseline using the pixel-space ViT
+# hyperparameters from LOLA's experiments/configs/surrogate/vit_pixel.yaml.
+datamodule:
+  well_dataset_name: rayleigh_benard
+  well_base_path: ${oc.env:AUTOCAST_DATASETS,./datasets}
+  n_steps_input: 1
+  n_steps_output: 4
+  min_dt_stride: 1
+  max_dt_stride: 1
+  batch_size: 256
+  num_workers: 8
+  use_normalization: true
+  normalization_path: ${oc.env:AUTOCAST_DATASETS,./datasets}/rayleigh_benard/stats.yaml
+  autoencoder_mode: false
+  max_rollout_steps: 100
+  flatten_tensors: true
+  cache_small: true
+  max_cache_size: 1.0e9
+  return_grid: true
+  boundary_return_type: padding
+
+float32_matmul_precision: high
+
+logging:
+  wandb:
+    enabled: true
+
+output:
+  skip_test: true
+
+optimizer:
+  learning_rate: 1e-4
+  warmup: 0
+
+model:
+  train_in_latent_space: true
+  freeze_encoder_decoder: true
+  processor:
+    flow_ode_steps: 50
+    backbone:
+      # LOLA's pixel ViT uses patch_size=[1, 16, 16] because its ViT sees
+      # time as an additional spatial axis. AutoCast's TemporalViTBackbone
+      # folds time into channels before the 2D ViT, so the equivalent spatial
+      # patching is [16, 16].
+      mod_features: 256
+      hid_channels: 2048
+      hid_blocks: 16
+      ffn_factor: 4
+      attention_heads: 16
+      qk_norm: true
+      rope: true
+      # LOLA's ViT does not add Azula's relative positional bias path.
+      rpb: false
+      patch_size: [16, 16]
+      window_size: null
+      dropout: 0.05
+      checkpointing: true
+  val_metrics: []
