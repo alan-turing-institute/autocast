@@ -1,4 +1,4 @@
-#!/bin/bash
+!/bin/bash
 
 set -euo pipefail
 # Smoke-test multi-node DDP/NCCL with the comparison AE config.
@@ -27,7 +27,7 @@ RUN_ID="${RUN_ID:-ae_multinode_${DATAMODULE}}"
 MAX_EPOCHS="${MAX_EPOCHS:-1}"
 MAX_TIME="${MAX_TIME:-00:00:30:00}"
 TIMEOUT_MIN="${TIMEOUT_MIN:-35}"
-WANDB_ENABLED="${WANDB_ENABLED:-false}"
+WANDB_ENABLED="${WANDB_ENABLED:-true}"
 DRY_RUN="${DRY_RUN:-false}"
 
 dry_run_arg=()
@@ -55,6 +55,6 @@ uv run autocast ae --mode slurm "${dry_run_arg[@]}" \
     local_experiment="${EXPERIMENT}" \
     distributed=ddp_4gpu_2node_slurm \
     logging.wandb.enabled="${WANDB_ENABLED}" \
-    trainer.max_epochs="${MAX_EPOCHS}" \
+    +trainer.max_epochs="${MAX_EPOCHS}" \
     trainer.max_time="${MAX_TIME}" \
     hydra.launcher.timeout_min="${TIMEOUT_MIN}"
