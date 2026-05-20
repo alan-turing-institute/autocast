@@ -9,8 +9,11 @@ set -euo pipefail
 # timing.ckpt under outputs/*/timing_planned_05/<run_id>/timing.ckpt.
 
 declare -A COSINE_EPOCHS_BY_RUN=(
-    # Populate after retrieving planned_05 timing outputs if you want to pin
-    # values; otherwise the resolver below derives them from timing.ckpt.
+    # Pinned from outputs/2026-05-20/timing_planned_05/*/timing.ckpt at
+    # 24h budget, 2% margin (uv run autocast time-epochs -b 24 -m 0.02).
+    ["plain_crps_m8_gs"]=380
+    ["plain_crps_m8_gpe"]=427
+    ["plain_crps_m8_ad"]=454
 )
 
 BUDGET_MAX_TIME="00:23:59:00"
