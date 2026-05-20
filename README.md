@@ -173,11 +173,30 @@ Workdir/chdir behavior:
 - Training configs set `hydra.job.chdir=true`, so script execution runs inside that run directory.
 - Script internals resolve workdir via Hydra runtime output dir (`resolve_hydra_work_dir(...)`), avoiding cwd/path mismatches.
 
-Multi-GPU is supported by passing trainer/Hydra overrides, e.g.:
+Multi-GPU and multi-node SLURM runs are supported through distributed presets
+under `src/autocast/configs/distributed/`:
 ```bash
 uv run autocast epd --mode slurm \
 	datamodule=reaction_diffusion \
-	trainer.devices=4 trainer.strategy=ddp hydra.launcher.gpus_per_node=4
+	+distributed=ddp_4gpu_slurm
+```
+
+For a 2-node, 4-GPU-per-node DDP run:
+```bash
+uv run autocast epd --mode slurm \
+	datamodule=reaction_diffusion \
+	+distributed=ddp_4gpu_2node_slurm
+```
+
+The preset sets both Lightning `trainer.devices`/`trainer.num_nodes` and the
+matching Slurm `hydra.launcher.nodes`/`gpus_per_node`/`tasks_per_node` values.
+Equivalent explicit overrides also work, e.g.:
+```bash
+uv run autocast epd --mode slurm \
+	datamodule=reaction_diffusion \
+	trainer.devices=4 trainer.num_nodes=2 trainer.strategy=ddp \
+	hydra.launcher.nodes=2 hydra.launcher.gpus_per_node=4 \
+	hydra.launcher.tasks_per_node=4
 ```
 
 ### Experiment Tracking with Weights & Biases

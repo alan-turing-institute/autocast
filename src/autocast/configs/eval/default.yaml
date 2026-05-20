@@ -65,7 +65,9 @@ rollout_snapshot_dataset_label: null  # optional label for data-only snapshot ro
 
 # Accelerator for evaluation (mirrors Lightning Fabric API)
 accelerator: auto  # auto, cpu, cuda, or mps
+strategy: auto
 devices: 1 # default single-GPU eval; override with int (e.g. 4) for multi-GPU DDP
+num_nodes: 1
 
 # Rollout settings
 max_rollout_steps: 10
