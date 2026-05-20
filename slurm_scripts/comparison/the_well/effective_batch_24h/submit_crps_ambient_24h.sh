@@ -31,10 +31,6 @@ N_MEMBERS="${N_MEMBERS:-8}"
 DATALOADER_NUM_WORKERS="${DATALOADER_NUM_WORKERS:-8}"
 CPUS_PER_TASK="${CPUS_PER_TASK:-16}"
 LOG_EVERY_N_STEPS="${LOG_EVERY_N_STEPS:-50}"
-# Optional gradient clipping: when set (e.g. 1.0) it is passed to the Lightning
-# Trainer as trainer.gradient_clip_val. Empty leaves it unset (no clipping),
-# preserving prior behaviour.
-GRADIENT_CLIP_VAL="${GRADIENT_CLIP_VAL:-}"
 DRY_RUN_ONLY="${DRY_RUN_ONLY:-false}"
 if [[ "${DRY_RUN_ONLY}" == "true" ]]; then
     RUN_DRY_STATES=("true")
@@ -116,11 +112,6 @@ fi
 EFFECTIVE_GLOBAL_BATCH="$((PER_GPU_BATCH_SIZE * N_MEMBERS * NUM_GPUS))"
 EFFECTIVE_UNITS_PER_EPOCH="$((EFFECTIVE_GLOBAL_BATCH * EFFECTIVE_BATCHES_PER_EPOCH))"
 
-extra_overrides=()
-if [[ -n "${GRADIENT_CLIP_VAL}" ]]; then
-    extra_overrides+=("trainer.gradient_clip_val=${GRADIENT_CLIP_VAL}")
-fi
-
 for run_dry in "${RUN_DRY_STATES[@]}"; do
     dry_run_arg=()
     run_label="slurm"
@@ -143,7 +134,6 @@ for run_dry in "${RUN_DRY_STATES[@]}"; do
     echo "  effective units/epoch: ${EFFECTIVE_UNITS_PER_EPOCH}"
     echo "  check_val_every_n_epoch: ${CHECK_VAL_EVERY_N_EPOCH}"
     echo "  trainer.max_time: ${BUDGET_MAX_TIME}"
-    echo "  trainer.gradient_clip_val: ${GRADIENT_CLIP_VAL:-<unset>}"
 
     uv run autocast epd --mode slurm --run-id "${EXPERIMENT_NAME}" "${dry_run_arg[@]}" \
         "local_experiment=${EXPERIMENT}" \
@@ -167,6 +157,5 @@ for run_dry in "${RUN_DRY_STATES[@]}"; do
         "trainer.callbacks.0.every_n_train_steps_fraction=0.05" \
         "+trainer.callbacks.0.every_n_epochs=0" \
         "trainer.callbacks.0.save_top_k=-1" \
-        "trainer.callbacks.0.filename=\"snapshot-{progress_token}-{epoch:04d}-{step:08d}\"" \
-        "${extra_overrides[@]}"
+        "trainer.callbacks.0.filename=\"snapshot-{progress_token}-{epoch:04d}-{step:08d}\""
 done
