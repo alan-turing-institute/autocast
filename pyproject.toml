@@ -22,6 +22,7 @@ dependencies = [
     "timm>=0.9",
     "torch>=2.9.1",
     "wandb>=0.18.7",
+    "nvidia-ml-py>=13.595.45",
 ]
 
 [project.optional-dependencies]

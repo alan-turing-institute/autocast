@@ -61,11 +61,23 @@ class GpuUtilizationLogCallback(Callback):
         self._thread: threading.Thread | None = None
 
     def _sample_loop(self) -> None:
+        warned = False
         while not self._stop.is_set():
             try:
                 util = torch.cuda.utilization(self._device)
-            except Exception:  # NVML may be unavailable on some drivers/builds.
-                pass
+            except Exception as exc:  # e.g. missing pynvml or NVML init failure.
+                # Log the reason once so an empty summary is self-explaining
+                # rather than a silent "no samples collected".
+                if not warned:
+                    log.warning(
+                        "GpuUtilizationLogCallback[host=%s cuda:%s]: sampling "
+                        "disabled, torch.cuda.utilization failed: %s: %s",
+                        socket.gethostname(),
+                        self._device,
+                        type(exc).__name__,
+                        exc,
+                    )
+                    warned = True
             else:
                 with self._lock:
                     self._samples.append(int(util))
