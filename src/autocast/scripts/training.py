@@ -14,6 +14,7 @@ from lightning.pytorch.callbacks import Callback, ModelCheckpoint, Timer
 from matplotlib import pyplot as plt
 from omegaconf import DictConfig, OmegaConf
 
+from autocast.callbacks.gpu_util import GpuUtilizationLogCallback
 from autocast.data.datamodule import SpatioTemporalDataModule, TheWellDataModule
 from autocast.logging import create_wandb_logger
 from autocast.logging.wandb import maybe_watch_model
@@ -598,6 +599,10 @@ def train_autoencoder(
         trainer_cfg, logger=wandb_logger, default_root_dir=str(work_dir)
     )
     trainer.callbacks.append(TrainingTimerCallback())
+    if config.get("log_gpu_util", False):
+        # Diagnostic only (e.g. multi-node smoke tests): each rank logs its own
+        # GPU utilization, so the combined SLURM log covers every GPU/node.
+        trainer.callbacks.append(GpuUtilizationLogCallback())
     output_cfg = config.get("output", {})
     if output_cfg.get("save_config", False) and trainer.is_global_zero:
         save_resolved_config(
