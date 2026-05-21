@@ -1,11 +1,59 @@
 import torch
-from azula.denoise import KarrasDenoiser, SimpleDenoiser
+from azula.denoise import Denoiser, GaussianPosterior, KarrasDenoiser, SimpleDenoiser
 from azula.noise import Schedule
 from azula.sample import DDIMSampler, DDPMSampler, EulerSampler, HeunSampler, Sampler
 from torch import nn
 
 from autocast.processors.base import Processor
 from autocast.types import EncodedBatch, Tensor
+
+
+class LolaElucidatedDenoiser(Denoiser):
+    """LoLA EDM-style denoiser preconditioning.
+
+    This mirrors ``ElucidatedDenoiser`` in LoLA's ``lola/diffusion.py``. The
+    main difference from Azula's local ``KarrasDenoiser`` is the modulation
+    input scale: LoLA feeds ``10 * log(sigma / alpha)`` to the time embedding.
+    """
+
+    def __init__(
+        self,
+        backbone: nn.Module,
+        schedule: Schedule,
+        c_noise_scale: float = 1e1,
+    ) -> None:
+        super().__init__()
+        self.backbone = backbone
+        self.schedule = schedule
+        self.c_noise_scale = c_noise_scale
+
+    def forward(self, x_t: Tensor, t: Tensor, **kwargs) -> GaussianPosterior:
+        alpha_t, sigma_t = self.schedule(t)
+
+        while alpha_t.ndim < x_t.ndim:
+            alpha_t, sigma_t = alpha_t[..., None], sigma_t[..., None]
+
+        c_in = torch.rsqrt(alpha_t**2 + sigma_t**2)
+        c_out = sigma_t * torch.rsqrt(alpha_t**2 + sigma_t**2)
+        c_skip = alpha_t / (alpha_t**2 + sigma_t**2)
+        c_noise = self.c_noise_scale * torch.log(sigma_t / alpha_t).reshape_as(t)
+
+        mean = c_skip * x_t + c_out * self.backbone(c_in * x_t, c_noise, **kwargs)
+        var = sigma_t**2 / (alpha_t**2 + sigma_t**2)
+
+        return GaussianPosterior(mean=mean, var=var)
+
+    def loss(self, x: Tensor, t: Tensor, **kwargs) -> Tensor:
+        alpha_t, sigma_t = self.schedule(t)
+
+        while alpha_t.ndim < x.ndim:
+            alpha_t, sigma_t = alpha_t[..., None], sigma_t[..., None]
+
+        z = torch.randn_like(x)
+        x_t = alpha_t * x + sigma_t * z
+        q = self(x_t, t, **kwargs)
+
+        return ((q.mean - x).square() / q.var.detach()).mean()
 
 
 class DiffusionProcessor(Processor):
@@ -34,6 +82,11 @@ class DiffusionProcessor(Processor):
             self.denoiser = SimpleDenoiser(backbone=backbone, schedule=schedule)
         elif denoiser_type == "karras":
             self.denoiser = KarrasDenoiser(backbone=backbone, schedule=schedule)
+        elif denoiser_type in {"lola", "lola_elucidated"}:
+            self.denoiser = LolaElucidatedDenoiser(
+                backbone=backbone,
+                schedule=schedule,
+            )
         else:
             raise ValueError(f"Unknown denoiser type: {denoiser_type}")
 
