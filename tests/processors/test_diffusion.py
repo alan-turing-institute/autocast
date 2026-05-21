@@ -5,11 +5,13 @@ import pytest
 import torch
 from azula.noise import VPSchedule
 from conftest import get_optimizer_config
+from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
 from autocast.models.processor import ProcessorModel
 from autocast.nn.unet import TemporalUNetBackbone
 from autocast.processors.diffusion import DiffusionProcessor
+from autocast.processors.noise import LogLogitSchedule
 from autocast.types import EncodedBatch
 
 
@@ -66,6 +68,22 @@ class _DiffusionEncodedDataset(Dataset):
         )
 
 
+class _CaptureBackbone(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.last_t: torch.Tensor | None = None
+
+    def forward(
+        self,
+        x_t: torch.Tensor,
+        t: torch.Tensor,
+        cond: torch.Tensor | None = None,  # noqa: ARG002
+        global_cond: torch.Tensor | None = None,  # noqa: ARG002
+    ) -> torch.Tensor:
+        self.last_t = t.detach()
+        return torch.zeros_like(x_t)
+
+
 def _build_encoded_loader(
     *,
     n_steps_input: int,
@@ -87,6 +105,72 @@ def _build_encoded_loader(
         collate_fn=_single_item_collate,
         num_workers=0,
     )
+
+
+def test_log_logit_schedule_matches_lola_formula():
+    schedule = LogLogitSchedule(
+        sigma_min=1e-3,
+        sigma_max=1e3,
+        scale=1.0,
+        shift=0.0,
+    )
+    t = torch.tensor([0.0, 0.25, 0.75, 1.0])
+
+    alpha, sigma = schedule(t)
+
+    t_min = 1e-3 / (1 + 1e-3)
+    t_max = 1e3 / (1 + 1e3)
+    expected_sigma = torch.exp(torch.logit(t * (t_max - t_min) + t_min))
+
+    assert torch.allclose(alpha, torch.ones_like(t))
+    assert torch.allclose(sigma, expected_sigma)
+
+
+def test_lola_denoiser_uses_scaled_log_sigma_modulation():
+    backbone = _CaptureBackbone()
+    schedule = LogLogitSchedule()
+    processor = DiffusionProcessor(
+        backbone=backbone,
+        schedule=schedule,
+        denoiser_type="lola",
+        n_steps_output=4,
+        n_channels_out=2,
+    )
+    x = torch.randn(2, 4, 3, 3, 2)
+    t = torch.tensor([0.2, 0.6])
+
+    processor.denoiser(
+        x,
+        t,
+        cond=torch.randn(2, 1, 3, 3, 2),
+        global_cond=None,
+    )
+
+    assert backbone.last_t is not None
+    alpha, sigma = schedule(t)
+    expected_t = 10.0 * torch.log(sigma / alpha)
+    assert torch.allclose(backbone.last_t, expected_t)
+
+
+def test_lola_diffusion_processor_loss_is_finite():
+    processor = DiffusionProcessor(
+        backbone=_CaptureBackbone(),
+        schedule=LogLogitSchedule(),
+        denoiser_type="lola",
+        n_steps_output=2,
+        n_channels_out=1,
+    )
+    batch = EncodedBatch(
+        encoded_inputs=torch.randn(2, 1, 3, 3, 1),
+        encoded_output_fields=torch.randn(2, 2, 3, 3, 1),
+        global_cond=None,
+        encoded_info={},
+    )
+
+    loss = processor.loss(batch)
+
+    assert loss.shape == ()
+    assert torch.isfinite(loss)
 
 
 params = list(
