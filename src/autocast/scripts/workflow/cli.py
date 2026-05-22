@@ -198,11 +198,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="Safety margin fraction subtracted from budget (default: 0.02 = 2%%).",
     )
     time_parser.add_argument(
+        "--statistic",
+        choices=["mean", "median"],
+        default="mean",
+        help=("Epoch-time statistic used for the recommendation (default: mean)."),
+    )
+    time_parser.add_argument(
         "--from-checkpoint",
         metavar="CKPT",
         help=(
             "Path to an existing timing checkpoint. Skips training and "
             "computes the recommendation directly."
+        ),
+    )
+    time_parser.add_argument(
+        "--from-log",
+        metavar="LOG",
+        help=(
+            "Path to a training log containing TrainingTimerCallback output. "
+            "Skips training and computes the recommendation from the log."
         ),
     )
     _add_common_args(time_parser)
@@ -389,10 +403,12 @@ def main() -> None:
             num_epochs=args.num_epochs,
             budget_hours=args.budget,
             margin=args.margin,
+            statistic=args.statistic,
             run_group=args.run_group,
             run_id=args.run_id,
             work_dir=args.workdir,
             from_checkpoint=args.from_checkpoint,
+            from_log=args.from_log,
             runtime_typechecking=args.runtime_typechecking,
             dry_run=args.dry_run,
         )

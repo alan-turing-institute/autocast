@@ -13,6 +13,7 @@ import pytest
 from autocast.scripts.workflow import cli as workflow_cli
 from autocast.scripts.workflow.cli import build_parser
 from autocast.scripts.workflow.commands import (
+    _extract_epoch_times_from_log,
     benchmark_command,
     benchmark_manifest_command,
     build_effective_eval_overrides,
@@ -23,6 +24,7 @@ from autocast.scripts.workflow.commands import (
     infer_hydra_config_from_workdir,
     infer_resume_checkpoint,
     run_module,
+    time_epochs_command,
     train_eval_single_job_command,
 )
 from autocast.scripts.workflow.helpers import run_module_command
@@ -138,6 +140,67 @@ def test_expand_sweep_overrides_product():
     assert len(result) == 4
     assert ["a=1", "b=x"] in result
     assert ["a=2", "b=y"] in result
+
+
+def test_extract_epoch_times_from_log_prefers_per_epoch_line(tmp_path: Path):
+    log_path = tmp_path / "processor.log"
+    log_path.write_text(
+        "\n".join(
+            [
+                "TrainingTimerCallback: epochs=3 mean=11.0s min=10.0s max=12.0s",
+                "TrainingTimerCallback epoch_times_s: 10.0s, 11.0s, 12.0s",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    epoch_times, source = _extract_epoch_times_from_log(log_path)
+
+    assert epoch_times == [10.0, 11.0, 12.0]
+    assert source == "TrainingTimerCallback per-epoch log line"
+
+
+def test_extract_epoch_times_from_log_uses_summary_mean(tmp_path: Path):
+    log_path = tmp_path / "processor.log"
+    log_path.write_text(
+        "TrainingTimerCallback: epochs=2299 mean=16.4s min=12.2s max=65.3s\n",
+        encoding="utf-8",
+    )
+
+    epoch_times, source = _extract_epoch_times_from_log(log_path)
+
+    assert epoch_times == [16.4]
+    assert source == (
+        "TrainingTimerCallback log summary: epochs=2299 mean=16.4s min=12.2s max=65.3s"
+    )
+
+
+def test_time_epochs_from_log_can_use_median(tmp_path: Path, capsys):
+    log_path = tmp_path / "processor.log"
+    log_path.write_text(
+        "\n".join(
+            [
+                "TrainingTimerCallback: epochs=3 mean=21.0s min=10.0s max=42.0s",
+                "TrainingTimerCallback epoch_times_s: 10.0s, 11.0s, 42.0s",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = time_epochs_command(
+        mode="local",
+        dataset=None,
+        output_base=str(tmp_path),
+        overrides=[],
+        from_log=str(log_path),
+        statistic="median",
+    )
+
+    captured = capsys.readouterr()
+    assert result is not None
+    assert result["seconds_per_epoch"] == 11.0
+    assert "Summary: mean=21.0s median=11.0s" in captured.out
+    assert "Using: median" in captured.out
 
 
 def test_expand_sweep_overrides_limit_exceeded():
