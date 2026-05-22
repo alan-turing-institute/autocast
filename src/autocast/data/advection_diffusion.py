@@ -65,9 +65,9 @@ class AdvectionDiffusion(Simulator):
 
     def _forward(self, x: TensorLike) -> TensorLike:
         # Expect single input sample in batch
-        assert x.shape[0] == 1, (
-            f"Simulator._forward expects a single input, got {x.shape[0]}"
-        )
+        assert (
+            x.shape[0] == 1
+        ), f"Simulator._forward expects a single input, got {x.shape[0]}"
 
         # x contains the physical parameters [nu, mu]
         sample = x.cpu().numpy()[0]
@@ -99,13 +99,13 @@ class AdvectionDiffusion(Simulator):
         Returns:
             Dictionary with keys:
                 ``data``
-                Tensor of shape ``(batch, time, n, n, channels)`` if
-                `return_timeseries` is ``True`` or ``(batch, 1, n, n, channels)``
-                otherwise. Channels follow `[vorticity, u, v, streamfunction]`.
+                    Tensor of shape ``(batch, time, n, n, channels)`` if
+                     `return_timeseries` is ``True`` or ``(batch, 1, n, n, channels)``
+                    otherwise. Channels follow `[vorticity, u, v, streamfunction]`.
                 ``constant_scalars``
-                Sampled `[nu, mu]` parameters.
+                    Sampled `[nu, mu]` parameters.
                 ``constant_fields``
-                Placeholder for future field inputs; always ``None`` here.
+                    Placeholder for future field inputs; always ``None`` here.
         """
         x = self.sample_inputs(n, random_seed)
 

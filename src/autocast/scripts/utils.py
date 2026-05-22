@@ -370,7 +370,7 @@ class RunCollator:
         Args:
             run_dir: Path to the run directory.
         Returns:
-            dict[str, Any] | None: Dictionary of run data, or None if processing fails.
+            Dictionary of run data, or None if processing fails.
         """
         try:
             # Extract metadata

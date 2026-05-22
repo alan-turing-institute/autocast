@@ -165,8 +165,8 @@ def create_notebook_logger(
         tags: Tags to attach to the run
         watch: Model watching mode: "gradients", "parameters", "all", or None to disable
     Returns:
-        logger : WandbLogger | None: Configured logger instance, or None if disabled
-        watch_cfg : _WatchConfig | None: Watch configuration for use with maybe_watch_model
+        logger: Configured logger instance, or None if disabled
+        watch_cfg : Watch configuration for use with maybe_watch_model, or None if disabled
     Examples:
         >>> logger, watch_cfg = create_notebook_logger(
         ...     project="my-project",

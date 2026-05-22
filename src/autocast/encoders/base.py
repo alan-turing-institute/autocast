@@ -31,7 +31,7 @@ class GenericEncoder(nn.Module, ABC, Generic[BatchT, BatchTEncoded]):
         Args:
             batch: Input batch to be encoded.
         Returns:
-            TensorBNC | tuple[TensorBNC, Tensor | None]: Encoded tensor in the latent space with shape (B, *, C_latent) or a tuple of
+            Encoded tensor in the latent space with shape (B, *, C_latent) or a tuple of
                 (encoded tensor, optional conditioning tensor of shape (B, D)).
         """
 

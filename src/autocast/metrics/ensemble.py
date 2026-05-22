@@ -778,7 +778,8 @@ class SpreadSkillRatio(BTSCMMetric):
             y_true: (B, T, S, C)
 
         Returns:
-            (B, T, C) if score_dims='spatial', (B, S, C) if temporal,: or (B, T, S, C) if None.
+            SSR: (B, T, C) if score_dims='spatial', (B, S, C) if temporal,
+                or (B, T, S, C) if None.
         """
         y_pred_tensor, y_true_tensor = self._check_input(y_pred, y_true)
 

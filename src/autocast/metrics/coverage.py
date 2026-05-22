@@ -219,7 +219,7 @@ class MultiCoverage(Metric):
             save_path: Path for the PNG file. CSV will use the same path with .csv extension.
             levels: Coverage levels (expected coverage values).
             observed_means: Mean observed coverage across all channels for each level.
-            observed_channels (np.ndarray, shape (L, C)): Observed coverage per level per channel.
+            observed_channels: Observed coverage per level per channel, shape (L, C).
         """
         # Generate CSV path from PNG path
         csv_path = Path(save_path).with_suffix(".csv")

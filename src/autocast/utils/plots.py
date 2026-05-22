@@ -73,7 +73,7 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     """Create a video comparing ground truth and predicted spatiotemporal time series.
 
     Args:
-        true (array_like (B, T, W, H, C)): Ground-truth tensor.
+        true: Ground-truth tensor of shape (B, T, W, H, C).
         pred: Optional predicted tensor of shape (B, T, W, H, C).
         batch_idx: Which batch index to visualize (default: 0).
         fps: Frames per second for the video (default: 5).
@@ -606,10 +606,7 @@ def compute_metrics_from_dataloader(
         return_tensors: If True, also return concatenated (pred, true) tensors.
         return_per_batch: If True, also return a list of dictionaries containing metrics for each batch.
     Returns:
-        tuple[: dict[None | tuple[int, int], dict[str, Metric]],
-            tuple[TensorBTSCM, TensorBTSC] | None,
-            list[dict[str, float | str]] | None,
-        ]: The populated metrics, optionally the tensors, and optionally per-batch metrics.
+        The populated metrics, optionally the tensors, and optionally per-batch metrics.
     """
     metrics_per_window = {
         window: {
@@ -833,9 +830,7 @@ def compute_coverage_scores_from_dataloader(
             If multiple windows provided, evaluates each independently.
         return_tensors: If True, also return concatenated (pred, true) tensors.
     Returns:
-        tuple[: dict[None | tuple[int, int], MultiCoverage],
-            tuple[TensorBTSCM, TensorBTSC] | None,
-        ]: The populated MultiCoverage metric and optionally the tensors.
+        The populated MultiCoverage metric and optionally the tensors.
     """
     coverage_levels_ = (
         coverage_levels or np.linspace(0.05, 0.95, 10, endpoint=True).tolist()
