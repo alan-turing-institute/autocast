@@ -103,6 +103,57 @@ def test_autoencoder_config_trainer_fit_smoke(
     trainer.fit(model, train_dataloaders=dummy_loader, val_dataloaders=dummy_loader)
 
 
+def test_autoencoder_trainer_fit_bf16_mixed_smoke(
+    config_dir: str, toy_batch: Batch, dummy_loader, dummy_datamodule
+):
+    """Verify bf16-mixed + gradient_clip_val=1.0 defaults don't produce NaN/Inf.
+
+    These two settings are the behaviour-changing defaults in trainer/default.yaml.
+    Running a smoke fit with both enabled catches regressions where mixed precision
+    introduces NaN/Inf in our model paths or where clipping interferes with the
+    optimizer step.
+    """
+    model_cfg = _load_config(config_dir, "model/autoencoder")
+    cfg = _wrap_model_config(model_cfg)
+    with open_dict(cfg):
+        cfg.optimizer = get_optimizer_config()
+        cfg.datamodule = {
+            "n_steps_input": toy_batch.input_fields.shape[1],
+            "n_steps_output": toy_batch.output_fields.shape[1],
+        }
+    stats = _stats_from_batch(toy_batch)
+    model = setup_autoencoder_model(cfg, stats, dummy_datamodule)
+
+    trainer = L.Trainer(
+        accelerator="cpu",
+        devices=1,
+        max_epochs=1,
+        limit_train_batches=1,
+        limit_val_batches=1,
+        logger=False,
+        enable_checkpointing=False,
+        enable_model_summary=False,
+        enable_progress_bar=False,
+        precision="bf16-mixed",
+        gradient_clip_val=1.0,
+    )
+    trainer.fit(model, train_dataloaders=dummy_loader, val_dataloaders=dummy_loader)
+
+    for name, p in model.named_parameters():
+        assert torch.isfinite(p).all(), f"param {name} has NaN/Inf after bf16-mixed fit"
+
+
+def test_default_trainer_config_has_expected_precision_and_clip(config_dir: str):
+    """Pin trainer/default.yaml's bf16-mixed + gradient_clip_val=1.0 defaults.
+
+    These are explicitly project-wide defaults; this test fails loudly if they
+    are silently changed (e.g. by a future refactor that lowers WD or precision).
+    """
+    trainer_cfg = OmegaConf.load(Path(config_dir) / "trainer" / "default.yaml")
+    assert trainer_cfg.precision == "bf16-mixed"
+    assert trainer_cfg.gradient_clip_val == 1.0
+
+
 def test_processor_config_training_step_smoke(config_dir: str, dummy_datamodule):
     processor_cfg = _load_config(config_dir, "processor/flow_matching").processor
     with open_dict(processor_cfg):
