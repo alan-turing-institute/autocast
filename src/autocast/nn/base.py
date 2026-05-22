@@ -144,8 +144,7 @@ class TemporalBackboneBase(nn.Module, ABC):
             tcn_kernel_size: Kernel size for TCN
             tcn_num_layers: Number of TCN layers
 
-        Returns
-        -------
+        Returns:
             Temporal processing module
         """
         if temporal_method == "attention":
@@ -177,8 +176,7 @@ class TemporalBackboneBase(nn.Module, ABC):
             x_t: Input tensor (B, T, W, H, C)
             cond: Conditioning tensor (B, T_cond, W, H, C), or None
 
-        Returns
-        -------
+        Returns:
             Tuple of (processed_input, processed_cond)
         """
         x_t_temporal = self.temporal_proc_input(x_t)
@@ -192,8 +190,7 @@ class TemporalBackboneBase(nn.Module, ABC):
         This method should be implemented by subclasses to instantiate
         their specific backbone architecture.
 
-        Returns
-        -------
+        Returns:
             The backbone module (e.g., UNet or ViT)
         """
 
@@ -223,8 +220,7 @@ class TemporalBackboneBase(nn.Module, ABC):
             cond: Conditioning input (B, T_cond, W, H, C)
             global_cond: Optional global conditioning/modulation vector (B, D)
 
-        Returns
-        -------
+        Returns:
             Denoised output (B, T, W, H, C)
         """
         # Accept either scalar timesteps (B,) or precomputed modulation vectors (B, D).

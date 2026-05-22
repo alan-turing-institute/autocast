@@ -116,8 +116,7 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
             global_cond: Optional global conditioning tensor with shape
                 (B, C_global). Used only when include_global_cond=True.
 
-        Returns
-        -------
+        Returns:
             Output tensor with the same rank as ``x``: (B, C, H, W) if ``x`` was
             4D, (B, T=n_steps_output, H, W, C) otherwise.
         """

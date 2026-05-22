@@ -49,10 +49,8 @@ def _encode_and_save_split(
     ``encoded_fields`` (the full encoded trajectory) and optionally
     ``global_cond``.
 
-    Returns
-    -------
-    dict
-        Metadata about the encoded split (num_trajectories, shapes).
+    Returns:
+        dict: Metadata about the encoded split (num_trajectories, shapes).
     """
     split_dir.mkdir(parents=True, exist_ok=True)
 
@@ -128,20 +126,13 @@ def cache_latents(
     allows runtime-configurable windowing (``n_steps_input``,
     ``n_steps_output``, ``stride``) when loading with ``CachedLatentDataset``.
 
-    Parameters
-    ----------
-    cfg
-        Hydra configuration (must include ``datamodule`` and ``model.encoder``
-        sections, plus ``autoencoder_checkpoint``).
-    output_dir
-        Directory to write cached latent files into.
-    device
-        Device to run encoding on (``"auto"``, ``"cpu"``, ``"cuda"``, etc.).
-
-    Returns
-    -------
-    Path
-        The output directory containing cached latents.
+    Args:
+        cfg: Hydra configuration (must include ``datamodule`` and ``model.encoder``
+            sections, plus ``autoencoder_checkpoint``).
+        output_dir: Directory to write cached latent files into.
+        device: Device to run encoding on (``"auto"``, ``"cpu"``, ``"cuda"``, etc.).
+    Returns:
+        Path: The output directory containing cached latents.
     """
     resolved_device = _resolve_device(device)
     log.info("Using device: %s", resolved_device)

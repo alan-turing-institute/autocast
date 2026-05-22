@@ -1179,25 +1179,24 @@ def time_epochs_command(
     command exits immediately, printing a ``--from-checkpoint`` command to
     retrieve results once the job completes.
 
-    Parameters
-    ----------
-    kind:
-        Training kind: ``"ae"``, ``"epd"``, or ``"processor"``.
-    dataset:
-        Hydra datamodule group name (e.g. ``"advection_diffusion_multichannel"``).
-    output_base:
-        Root output directory (forwarded to ``build_train_overrides``).
-    overrides:
-        Additional Hydra overrides forwarded to the timing run.
-    num_epochs:
-        How many epochs to run for the timing measurement.
-    budget_hours:
-        Target wall-clock budget in hours.
-    margin:
-        Fraction of *budget_hours* held back as safety headroom (default 2 %).
-    from_checkpoint:
-        Path to an existing checkpoint; skips training and computes the
-        recommendation directly.
+    Args:
+        kind:
+            Training kind: ``"ae"``, ``"epd"``, or ``"processor"``.
+        dataset:
+            Hydra datamodule group name (e.g. ``"advection_diffusion_multichannel"``).
+        output_base:
+            Root output directory (forwarded to ``build_train_overrides``).
+        overrides:
+            Additional Hydra overrides forwarded to the timing run.
+        num_epochs:
+            How many epochs to run for the timing measurement.
+        budget_hours:
+            Target wall-clock budget in hours.
+        margin:
+            Fraction of *budget_hours* held back as safety headroom (default 2 %).
+        from_checkpoint:
+            Path to an existing checkpoint; skips training and computes the
+            recommendation directly.
     """
     try:
         _validate_time_epochs_args(

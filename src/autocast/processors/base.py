@@ -41,7 +41,6 @@ class Processor(ABC, nn.Module, Generic[BatchT]):
             x (Tensor): Input tensor of shape (B, T_in, ...)
             global_cond (Tensor | None): Optional conditioning/modulation tensor.
 
-        Returns
-        -------
+        Returns:
             y (Tensor): Output tensor of shape (B, T_out, ...)
         """

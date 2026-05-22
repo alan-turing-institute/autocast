@@ -27,41 +27,32 @@ class RolloutMixin(ABC, Generic[BatchT]):
     ) -> RolloutOutput:
         """Perform rollout over multiple time steps.
 
-        Parameters
-        ----------
-        batch: BatchT
-            Input batch containing initial data for rollout.
-        free_running_only: bool, optional
-            If True, disables teacher forcing during rollout. By default False.
-        return_windows: bool, optional
-            If True, returns the true outputs in windows matching the model's output
-            shape. By default False.
-        detach: bool, optional
-            If True, detaches the output from the graph before feeding it back in
-            as input. Set to False for autoregressive loss calculation. By default True.
-        n_members: int | None
-            Number of ensemble members for ensemble models. By default None.
+        Args:
+            batch (BatchT): Input batch containing initial data for rollout.
+            free_running_only (bool, optional): If True, disables teacher forcing during rollout. By default False.
+            return_windows (bool, optional): If True, returns the true outputs in windows matching the model's output
+                shape. By default False.
+            detach (bool, optional): If True, detaches the output from the graph before feeding it back in
+                as input. Set to False for autoregressive loss calculation. By default True.
+            n_members (int | None): Number of ensemble members for ensemble models. By default None.
+        Note:
+            The outputs stack along a new axis after batch representing number of rollout
+            windows R. Each window R contains n_steps_output time steps T.
+            For example with:
+            - batch size B=16
+            - rollout windows R=10
+            - n_steps_output T=2 per window,
+            - spatial dimensions W=16, H=8
+            - channels C=2
 
+            The shapes will be:
+              (B, R, T, W, H, C) = (16, 10, 2, 16, 8, 2)
 
-        Notes
-        -----
-        The outputs stack along a new axis after batch representing number of rollout
-        windows R. Each window R contains n_steps_output time steps T.
-        For example with:
-        - batch size B=16
-        - rollout windows R=10
-        - n_steps_output T=2 per window,
-        - spatial dimensions W=16, H=8
-        - channels C=2
+            If we do not return windows, we then rearrange to concatenate the windows
+            along time:
+              (B, T*T, W, H, C) = (16, 20, 16, 8, 2)
 
-        The shapes will be:
-          (B, R, T, W, H, C) = (16, 10, 2, 16, 8, 2)
-
-        If we do not return windows, we then rearrange to concatenate the windows
-        along time:
-          (B, T*T, W, H, C) = (16, 20, 16, 8, 2)
-
-        requiring that the stride equals n_steps_output.
+            requiring that the stride equals n_steps_output.
         """
         pred_outs: list[Tensor] = []
         true_outs: list[Tensor] = []

@@ -279,15 +279,14 @@ class TrainingTimerCallback(Callback):
     next; the final epoch is closed out in ``on_train_end`` (which fires
     after the last validation loop).
 
-    Note
-    ----
-    Lightning often saves checkpoints during ``on_train_epoch_end`` (e.g. when
-    ``ModelCheckpoint(save_on_train_epoch_end=True)`` is configured). That is
-    *before* ``on_train_end`` runs. To avoid mixing two meanings in one field:
-    - ``training_runtime_total_s`` is only set once training has ended.
-    - ``training_runtime_elapsed_s`` is a snapshot of wall-clock time *so far*.
-    Consumers (e.g. eval scripts) can prefer ``*_total_s`` and fall back to
-    ``*_elapsed_s`` if needed.
+    Note:
+        Lightning often saves checkpoints during ``on_train_epoch_end`` (e.g. when
+        ``ModelCheckpoint(save_on_train_epoch_end=True)`` is configured). That is
+        *before* ``on_train_end`` runs. To avoid mixing two meanings in one field:
+        - ``training_runtime_total_s`` is only set once training has ended.
+        - ``training_runtime_elapsed_s`` is a snapshot of wall-clock time *so far*.
+        Consumers (e.g. eval scripts) can prefer ``*_total_s`` and fall back to
+        ``*_elapsed_s`` if needed.
     """
 
     def __init__(self) -> None:

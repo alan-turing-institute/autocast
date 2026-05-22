@@ -129,8 +129,7 @@ class TemporalUNetBackbone(TemporalBackboneBase):
                 - spatial: Spatial dimensionality (2 for 2D)
                 - periodic: Whether to use periodic boundary conditions
 
-        Returns
-        -------
+        Returns:
             UNet module
         """
         hid_channels = kwargs.pop("hid_channels")

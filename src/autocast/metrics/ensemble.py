@@ -137,8 +137,7 @@ class BTSCMMetric(BaseMetric[TensorBTSCM, TensorBTSC]):
             y_pred: Predictions of shape (B, T, S, C, M)
             y_true: Ground truth of shape (B, T, S, C)
 
-        Returns
-        -------
+        Returns:
             Tensor of shape (B, T, C) if reduce_over='spatial',
             (B, S, C) if reduce_over='temporal', or (B, T, S, C) if None.
         """
@@ -163,8 +162,7 @@ class BTSCMMetric(BaseMetric[TensorBTSCM, TensorBTSC]):
             y_pred: Predictions of shape (B, T, S, C)
             y_true: Ground truth of shape (B, T, S, C)
 
-        Returns
-        -------
+        Returns:
             Tuple of (y_pred, y_true) as Tensors
         """
         if isinstance(y_pred, np.ndarray):
@@ -212,8 +210,7 @@ def _sorted_pairwise_abs_weighted_sum(y_pred: TensorBTSCM) -> TensorBTSC:
     Args:
         y_pred: Predictions of shape (..., M)
 
-    Returns
-    -------
+    Returns:
         Tensor of shape (...) containing the weighted sum of sorted values.
     """
     n_ensemble = y_pred.shape[-1]
@@ -283,8 +280,7 @@ def _common_crps_score(
         y_true: Ground truth of shape (B, T, S, C)
         adjustment_factor: Factor to adjust the second term in CRPS calculation
 
-    Returns
-    -------
+    Returns:
         Tensor of shape (B, T, S, C) with CRPS scores
     """
     term1, term2 = _common_crps_terms(y_pred, y_true, adjustment_factor)
@@ -315,8 +311,7 @@ class CRPS(BTSCMMetric):
             y_pred: Predictions of shape (B, T, S, C, M)
             y_true: Ground truth of shape (B, T, S, C)
 
-        Returns
-        -------
+        Returns:
             Tensor of shape (B, T, S, C) with CRPS scores
         """
         return _common_crps_score(y_pred, y_true, adjustment_factor=1.0)
@@ -326,14 +321,13 @@ class CRPSMAETerm(BTSCMMetric):
     r"""
     Mean-absolute-error term in the CRPS decomposition.
 
-    Notes
-    -----
-    This is the first CRPS term,
+    Note:
+        This is the first CRPS term,
 
-    .. math::
-        \frac{1}{M}\sum_{m=1}^{M} |x_m - y|,
+        .. math::
+            \frac{1}{M}\sum_{m=1}^{M} |x_m - y|,
 
-    so it is MAE-like, but it is **not** the deterministic MAE of the ensemble mean.
+        so it is MAE-like, but it is **not** the deterministic MAE of the ensemble mean.
     """
 
     name: str = "crps_mae_term"
@@ -346,14 +340,13 @@ class CRPSSpreadTerm(BTSCMMetric):
     r"""
     Pairwise spread term in the CRPS decomposition.
 
-    Notes
-    -----
-    This is the second CRPS term,
+    Note:
+        This is the second CRPS term,
 
-    .. math::
-        \frac{1}{2M^2}\sum_{j=1}^{M}\sum_{k=1}^{M}|x_j - x_k|,
+        .. math::
+            \frac{1}{2M^2}\sum_{j=1}^{M}\sum_{k=1}^{M}|x_j - x_k|,
 
-    represented via the sort-based identity used elsewhere in this module.
+        represented via the sort-based identity used elsewhere in this module.
     """
 
     name: str = "crps_spread_term"
@@ -386,8 +379,7 @@ class FairCRPS(BTSCMMetric):
             y_pred: Predictions of shape (B, T, S, C, M)
             y_true: Ground truth of shape (B, T, S, C)
 
-        Returns
-        -------
+        Returns:
             Tensor of shape (B, T, S, C) with fCRPS scores
         """
         n_ensemble = y_pred.shape[-1]
@@ -469,8 +461,7 @@ def _alpha_fair_crps_score(
         y_true: (B, T, S, C)
         alpha: Smoothing parameter
 
-    Returns
-    -------
+    Returns:
         afCRPS: (B, T, S, C)
     """
     term1, term2 = _alpha_fair_crps_terms(y_pred, y_true, alpha)
@@ -481,21 +472,19 @@ class AlphaFairCRPS(BTSCMMetric):
     r"""
     Almost Fair Continuous Ranked Probability Score (afCRPS) (stable form).
 
-    Notes
-    -----
-    Definition:
-    .. math::
-        \text{afCRPS}_\alpha := \alpha \text{fCRPS} + (1-\alpha) \text{CRPS}
+    Note:
+        Definition:
+        .. math::
+            \text{afCRPS}_\alpha := \alpha \text{fCRPS} + (1-\alpha) \text{CRPS}
 
-    Implementation follows eq. (4) in the AIFS-CRPS paper: rearranged sum of positive
-    terms to avoid instability.
+        Implementation follows eq. (4) in the AIFS-CRPS paper: rearranged sum of positive
+        terms to avoid instability.
 
-    References
-    ----------
-    Lang, S., Alexe, M., Clare, M. C., Roberts, C., Adewoyin, R., Bouallègue, Z. B.,
-    ... & Leutbecher, M. (2024).
-    AIFS-CRPS: ensemble forecasting using a model trained with a loss function based on
-    the continuous ranked probability score. arXiv preprint arXiv:2412.15832.
+    References:
+        Lang, S., Alexe, M., Clare, M. C., Roberts, C., Adewoyin, R., Bouallègue, Z. B.,
+        ... & Leutbecher, M. (2024).
+        AIFS-CRPS: ensemble forecasting using a model trained with a loss function based on
+        the continuous ranked probability score. arXiv preprint arXiv:2412.15832.
     """
 
     name: str = "afcrps"
@@ -525,8 +514,7 @@ class AlphaFairCRPS(BTSCMMetric):
             y_pred: (B, T, S, C, M)
             y_true: (B, T, S, C)
 
-        Returns
-        -------
+        Returns:
             afCRPS: (B, T, S, C)
         """
         return _alpha_fair_crps_score(y_pred, y_true, self.alpha)
@@ -604,10 +592,9 @@ class EnergyScore(BTSCMMetric):
 
     with :math:`\alpha \in (0, 2)`.
 
-    Notes
-    -----
-    The ``vector_dims`` argument controls which dimensions define the multivariate
-    vector used in the norm.
+    Note:
+        The ``vector_dims`` argument controls which dimensions define the multivariate
+        vector used in the norm.
     """
 
     name: str = "energy"
@@ -667,10 +654,9 @@ class VariogramScore(BTSCMMetric):
 
     with :math:`p > 0` and non-negative weights :math:`w_{ij}`.
 
-    Notes
-    -----
-    The ``vector_dims`` argument controls which dimensions define the multivariate
-    vector used by the variogram transformation.
+    Note:
+        The ``vector_dims`` argument controls which dimensions define the multivariate
+        vector used by the variogram transformation.
     """
 
     name: str = "variogram"
@@ -752,15 +738,14 @@ class SpreadSkillRatio(BTSCMMetric):
     r"""
     Corrected spread-to-skill ratio (SSR) for ensemble forecasts.
 
-    Notes
-    -----
-    Uses the corrected finite-ensemble form:
-    .. math::
-        \text{SSR}_{\text{corrected}} = \frac{\text{Spread}}{\text{Skill}}
-        \sqrt{\frac{M + 1}{M}},
-    where skill is the pointwise RMSE of the ensemble mean and spread is the
-    pointwise ensemble standard deviation. Spatial/temporal reductions are then
-    handled by the base class according to score_dims.
+    Note:
+        Uses the corrected finite-ensemble form:
+        .. math::
+            \text{SSR}_{\text{corrected}} = \frac{\text{Spread}}{\text{Skill}}
+            \sqrt{\frac{M + 1}{M}},
+        where skill is the pointwise RMSE of the ensemble mean and spread is the
+        pointwise ensemble standard deviation. Spatial/temporal reductions are then
+        handled by the base class according to score_dims.
 
     """
 
@@ -792,10 +777,8 @@ class SpreadSkillRatio(BTSCMMetric):
             y_pred: (B, T, S, C, M)
             y_true: (B, T, S, C)
 
-        Returns
-        -------
-            SSR: (B, T, C) if score_dims='spatial', (B, S, C) if temporal,
-                 or (B, T, S, C) if None.
+        Returns:
+            SSR: (B, T, C) if score_dims='spatial', (B, S, C) if temporal,: or (B, T, S, C) if None.
         """
         y_pred_tensor, y_true_tensor = self._check_input(y_pred, y_true)
 
@@ -835,26 +818,25 @@ class EnsembleSpread(BTSCMMetric):
     r"""
     Ensemble spread for probabilistic forecasts.
 
-    Notes
-    -----
-    By default, returns a **finite-ensemble corrected spread**:
+    Note:
+        By default, returns a **finite-ensemble corrected spread**:
 
-    .. math::
-        \text{Spread}_{\text{corr}} =
-            \sqrt{\left\langle \mathrm{Var}_{m,\text{unbiased}}(x_m)\right\rangle}
-            \sqrt{\frac{M + 1}{M}}.
+        .. math::
+            \text{Spread}_{\text{corr}} =
+                \sqrt{\left\langle \mathrm{Var}_{m,\text{unbiased}}(x_m)\right\rangle}
+                \sqrt{\frac{M + 1}{M}}.
 
-    This correction is commonly used so that spread and skill are comparable for
-    finite ensemble sizes when using unbiased sample variance. It matches the
-    form used in LoLA/paper evaluations (Appendix "Spread / Skill") where:
-    ``spread = sqrt((M+1)/(M-1) * mean((x_m - mean_m)^2))``, since
-    ``Var_unbiased = (M/(M-1)) * mean((x_m - mean_m)^2)``.
+        This correction is commonly used so that spread and skill are comparable for
+        finite ensemble sizes when using unbiased sample variance. It matches the
+        form used in LoLA/paper evaluations (Appendix "Spread / Skill") where:
+        ``spread = sqrt((M+1)/(M-1) * mean((x_m - mean_m)^2))``, since
+        ``Var_unbiased = (M/(M-1)) * mean((x_m - mean_m)^2)``.
 
-    If ``corrected=False``, returns the uncorrected macroscopic ensemble standard
-    deviation computed from the unbiased variance estimator:
+        If ``corrected=False``, returns the uncorrected macroscopic ensemble standard
+        deviation computed from the unbiased variance estimator:
 
-    .. math::
-        \sqrt{\left\langle \mathrm{Var}_{m,\text{unbiased}}(x_m)\right\rangle}.
+        .. math::
+            \sqrt{\left\langle \mathrm{Var}_{m,\text{unbiased}}(x_m)\right\rangle}.
     """
 
     name: str = "spread"
@@ -914,23 +896,22 @@ class EnsembleSkill(BTSCMMetric):
     r"""
     Ensemble skill defined as RMSE of the ensemble mean.
 
-    Notes
-    -----
-    Skill is defined as the RMSE of the ensemble mean:
+    Note:
+        Skill is defined as the RMSE of the ensemble mean:
 
-    .. math::
-        \text{Skill} = \sqrt{\left\langle (\bar{x} - y)^2 \right\rangle},
+        .. math::
+            \text{Skill} = \sqrt{\left\langle (\bar{x} - y)^2 \right\rangle},
 
-    where :math:`\langle \cdot \rangle` denotes the spatial mean.
+        where :math:`\langle \cdot \rangle` denotes the spatial mean.
 
-    This metric reduces the squared error over spatial/temporal dimensions *before*
-    taking the square root (macroscopic RMSE), as is commonly done in ensemble
-    forecast evaluation (and in LoLA/paper appendices).
+        This metric reduces the squared error over spatial/temporal dimensions *before*
+        taking the square root (macroscopic RMSE), as is commonly done in ensemble
+        forecast evaluation (and in LoLA/paper appendices).
 
-    In the default spatial-reduction evaluation path, this is numerically
-    equivalent to the deterministic ``RMSE`` metric applied to an ensemble
-    prediction tensor, because ``RMSE`` first averages over the ensemble
-    dimension and then computes RMSE.
+        In the default spatial-reduction evaluation path, this is numerically
+        equivalent to the deterministic ``RMSE`` metric applied to an ensemble
+        prediction tensor, because ``RMSE`` first averages over the ensemble
+        dimension and then computes RMSE.
     """
 
     name: str = "skill"
@@ -1041,17 +1022,15 @@ class MultiWinkler(Metric):
     averaging the Winkler score across interval levels, time, space, channels,
     and samples. Lower values are better.
 
-    Notes
-    -----
-    This is an unweighted average of central interval scores across the chosen
-    coverage grid. The weighted interval score (WIS) uses a related multi-level
-    interval-score construction with prescribed weights.
+    Note:
+        This is an unweighted average of central interval scores across the chosen
+        coverage grid. The weighted interval score (WIS) uses a related multi-level
+        interval-score construction with prescribed weights.
 
-    References
-    ----------
-    Bracher, J., Ray, E. L., Gneiting, T., & Reich, N. G. (2021). Evaluating
-    epidemic forecasts in an interval format. PLOS Computational Biology,
-    17(2), e1008618. https://doi.org/10.1371/journal.pcbi.1008618
+    References:
+        Bracher, J., Ray, E. L., Gneiting, T., & Reich, N. G. (2021). Evaluating
+        epidemic forecasts in an interval format. PLOS Computational Biology,
+        17(2), e1008618. https://doi.org/10.1371/journal.pcbi.1008618
     """
 
     name: str = "multiwinkler"
