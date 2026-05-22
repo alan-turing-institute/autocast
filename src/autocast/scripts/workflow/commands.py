@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import shlex
+import statistics
 import subprocess
 import tempfile
 from pathlib import Path
@@ -910,6 +912,16 @@ def cache_latents_command(
 # time-epochs
 # ---------------------------------------------------------------------------
 
+_TIMER_SUMMARY_RE = re.compile(
+    r"TrainingTimerCallback: epochs=(?P<epochs>\d+) "
+    r"mean=(?P<mean>[0-9.]+)s "
+    r"min=(?P<min>[0-9.]+)s "
+    r"max=(?P<max>[0-9.]+)s"
+)
+_TIMER_EPOCH_TIMES_RE = re.compile(
+    r"TrainingTimerCallback epoch_times_s:\s*(?P<times>.+)"
+)
+
 
 def _extract_epoch_times_from_checkpoint(ckpt_path: Path) -> list[float] | None:
     """Read per-epoch durations saved by ``TrainingTimerCallback``.
@@ -934,6 +946,47 @@ def _extract_epoch_times_from_checkpoint(ckpt_path: Path) -> list[float] | None:
     except Exception:
         pass
     return None
+
+
+def _extract_epoch_times_from_log(
+    log_path: Path,
+) -> tuple[list[float] | None, str | None]:
+    """Read epoch timing data from a training stdout/stderr log.
+
+    ``TrainingTimerCallback`` prints either the full per-epoch list for short
+    timing runs, or at least a summary line for long production runs.  Returning
+    the summary mean as a one-item list lets the existing budget calculation
+    work without loading a multi-GB checkpoint.
+    """
+    if not log_path.exists():
+        return None, None
+
+    last_epoch_times: list[float] | None = None
+    last_summary: re.Match[str] | None = None
+    for line in log_path.read_text(errors="replace").splitlines():
+        if match := _TIMER_EPOCH_TIMES_RE.search(line):
+            last_epoch_times = [
+                float(value)
+                for value in re.findall(r"([0-9]+(?:\.[0-9]+)?)s", match.group("times"))
+            ]
+        if match := _TIMER_SUMMARY_RE.search(line):
+            last_summary = match
+
+    if last_epoch_times:
+        return last_epoch_times, "TrainingTimerCallback per-epoch log line"
+
+    if last_summary is not None:
+        mean_epoch_s = float(last_summary.group("mean"))
+        label = (
+            "TrainingTimerCallback log summary: "
+            f"epochs={last_summary.group('epochs')} "
+            f"mean={mean_epoch_s:.1f}s "
+            f"min={float(last_summary.group('min')):.1f}s "
+            f"max={float(last_summary.group('max')):.1f}s"
+        )
+        return [mean_epoch_s], label
+
+    return None, None
 
 
 def _compute_max_epochs(
@@ -992,13 +1045,32 @@ def _print_timing_results(
     epoch_times: list[float],
     budget_hours: float,
     margin: float,
+    *,
+    source_label: str | None = None,
+    statistic: str = "mean",
 ) -> dict | None:
     """Compute and print the ``max_epochs`` recommendation from epoch timings."""
-    seconds_per_epoch = sum(epoch_times) / len(epoch_times)
-    print(
-        "\nPer-epoch times (from TrainingTimerCallback): "
-        + ", ".join(f"{t:.1f}s" for t in epoch_times)
-    )
+    mean_epoch_s = statistics.fmean(epoch_times)
+    median_epoch_s = statistics.median(epoch_times)
+    if statistic == "mean":
+        seconds_per_epoch = mean_epoch_s
+    elif statistic == "median":
+        seconds_per_epoch = median_epoch_s
+    else:
+        print(f"\nERROR: Unknown timing statistic: {statistic}")
+        return None
+
+    if len(epoch_times) == 1:
+        print(f"\nEpoch time estimate: {seconds_per_epoch:.1f}s")
+    else:
+        print(
+            "\nPer-epoch times (from TrainingTimerCallback): "
+            + ", ".join(f"{t:.1f}s" for t in epoch_times)
+        )
+        print(f"Summary: mean={mean_epoch_s:.1f}s median={median_epoch_s:.1f}s")
+        print(f"Using: {statistic}")
+    if source_label is not None:
+        print(f"Source: {source_label}")
 
     try:
         result = _compute_max_epochs(seconds_per_epoch, budget_hours, margin)
@@ -1031,7 +1103,7 @@ def _print_timing_results(
 
 
 def _validate_time_epochs_args(
-    *, num_epochs: int, budget_hours: float, margin: float
+    *, num_epochs: int, budget_hours: float, margin: float, statistic: str = "mean"
 ) -> None:
     if num_epochs < 1:
         msg = "--num-epochs must be >= 1"
@@ -1041,6 +1113,9 @@ def _validate_time_epochs_args(
         raise ValueError(msg)
     if not (0.0 <= margin < 1.0):
         msg = "--margin must be in [0, 1)"
+        raise ValueError(msg)
+    if statistic not in {"mean", "median"}:
+        msg = "--statistic must be one of: mean, median"
         raise ValueError(msg)
 
 
@@ -1158,6 +1233,8 @@ def time_epochs_command(
     run_id: str | None = None,
     work_dir: str | None = None,
     from_checkpoint: str | None = None,
+    from_log: str | None = None,
+    statistic: str = "mean",
     runtime_typechecking: bool = False,
     dry_run: bool = False,
 ) -> dict | None:
@@ -1198,12 +1275,25 @@ def time_epochs_command(
     from_checkpoint:
         Path to an existing checkpoint; skips training and computes the
         recommendation directly.
+    from_log:
+        Path to a training log containing ``TrainingTimerCallback`` output.
+        This is useful for completed long runs where loading the checkpoint
+        would be unnecessarily slow.
+    statistic:
+        Epoch-time statistic to base the recommendation on. ``"mean"`` keeps
+        historical behavior; ``"median"`` is useful when a short timing run
+        contains a validation or startup outlier.
     """
+    if from_checkpoint is not None and from_log is not None:
+        print("ERROR: Pass only one of --from-checkpoint or --from-log.")
+        return None
+
     try:
         _validate_time_epochs_args(
             num_epochs=num_epochs,
             budget_hours=budget_hours,
             margin=margin,
+            statistic=statistic,
         )
     except ValueError as exc:
         print(f"ERROR: {exc}")
@@ -1219,7 +1309,26 @@ def time_epochs_command(
                 "TrainingTimerCallback."
             )
             return None
-        return _print_timing_results(epoch_times, budget_hours, margin)
+        return _print_timing_results(
+            epoch_times, budget_hours, margin, statistic=statistic
+        )
+
+    if from_log is not None:
+        log_path = Path(from_log)
+        epoch_times, source_label = _extract_epoch_times_from_log(log_path)
+        if not epoch_times:
+            print(
+                f"ERROR: Could not extract per-epoch times from {log_path}. "
+                "Check that the log contains TrainingTimerCallback output."
+            )
+            return None
+        return _print_timing_results(
+            epoch_times,
+            budget_hours,
+            margin,
+            source_label=source_label,
+            statistic=statistic,
+        )
 
     epoch_times, exit_early = _run_time_epochs_training(
         kind=kind,
@@ -1246,4 +1355,4 @@ def time_epochs_command(
         )
         return None
 
-    return _print_timing_results(epoch_times, budget_hours, margin)
+    return _print_timing_results(epoch_times, budget_hours, margin, statistic=statistic)
