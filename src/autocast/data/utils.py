@@ -31,25 +31,25 @@ def get_datamodule(
     """Get the configured datamodule.
 
     Args:
-        the_well (bool): Whether to use The Well dataset.
-        simulation_name (str): Name of the simulation to use (either "advection_diffusion" or
+        the_well: Whether to use The Well dataset.
+        simulation_name: Name of the simulation to use (either "advection_diffusion" or
             "reaction_diffusion", or "advection_diffusion_multichannel") or the name of
             The Well dataset.
-        n_steps_input (int): Number of input time steps.
-        n_steps_output (int): Number of output time steps.
-        stride (int): Stride between time steps.
-        autoencoder_mode (bool): Whether to use autoencoder mode.
-        n_train (int): Number of training samples to generate (if not using The Well).
-        n_valid (int): Number of validation samples to generate (if not using The Well).
-        n_test (int): Number of test samples to generate (if not using The Well).
-        simulation_datasets_path (str): Base path to store and load temporary datasets from running simulations.
-        the_well_dataset_path (str): Base path to The Well datasets.
-        overwrite_tmp (bool): Whether to overwrite existing temporary datasets.
-        num_workers (int): Number of workers for data loading.
-        batch_size (int = 16,): Batch size for the datamodule.
-        use_normalization (bool): Whether to use normalization.
-        normalization_path (str): Path to normalization statistics.
-        normalization_stats (dict | None): Preloaded normalization statistics (e.g. from Hydra config). Only
+        n_steps_input: Number of input time steps.
+        n_steps_output: Number of output time steps.
+        stride: Stride between time steps.
+        autoencoder_mode: Whether to use autoencoder mode.
+        n_train: Number of training samples to generate (if not using The Well).
+        n_valid: Number of validation samples to generate (if not using The Well).
+        n_test: Number of test samples to generate (if not using The Well).
+        simulation_datasets_path: Base path to store and load temporary datasets from running simulations.
+        the_well_dataset_path: Base path to The Well datasets.
+        overwrite_tmp: Whether to overwrite existing temporary datasets.
+        num_workers: Number of workers for data loading.
+        batch_size: Batch size for the datamodule.
+        use_normalization: Whether to use normalization.
+        normalization_path: Path to normalization statistics.
+        normalization_stats: Preloaded normalization statistics (e.g. from Hydra config). Only
             supported for non-The Well datasets; when provided, used instead of
             normalization_path.
     """

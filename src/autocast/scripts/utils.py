@@ -62,7 +62,7 @@ def get_default_config_path() -> str:
     installed-package layouts.
 
     Returns:
-        str: Absolute path to the configs directory.
+        Absolute path to the configs directory.
     Raises:
         FileNotFoundError: If no valid config directory can be resolved.
     """
@@ -104,8 +104,8 @@ class RunCollator:
     Supports glob-like pattern matching for flexible config parameter extraction.
 
     Args:
-        outputs_dir (str | Path, default="outputs"): Path to the outputs directory containing runs.
-        config_params (dict[str, str] | None, default=None): Dictionary mapping output column names to config path patterns.
+        outputs_dir: Path to the outputs directory containing runs.
+        config_params: Dictionary mapping output column names to config path patterns.
             If None, uses default parameters. Supports glob wildcards:
             - Exact paths: "model.encoder._target_"
             - Wildcards: "model.*.hidden_dim" (matches any single key)
@@ -162,7 +162,7 @@ class RunCollator:
         - eval/evaluation_metrics.csv
 
         Returns:
-            list[Path]: List of run directory paths, sorted by modification time.
+            List of run directory paths, sorted by modification time.
         """
         runs = []
         for config_file in self.outputs_path.rglob("resolved_config.yaml"):
@@ -176,9 +176,9 @@ class RunCollator:
         """Extract run metadata (name, date, path, category).
 
         Args:
-            run_dir (Path): Path to the run directory.
+            run_dir: Path to the run directory.
         Returns:
-            dict[str, str]: Dictionary with run_path, run_name, date, and category.
+            Dictionary with run_path, run_name, date, and category.
         """
         metadata = {}
 
@@ -221,11 +221,11 @@ class RunCollator:
         """Find all config paths matching the glob pattern.
 
         Args:
-            config (dict): Configuration dictionary.
-            pattern (str): Dot-separated pattern with optional wildcards.
+            config: Configuration dictionary.
+            pattern: Dot-separated pattern with optional wildcards.
                 Examples: "model.encoder._target_", "model.*.hidden_dim"
         Returns:
-            list[tuple[str, Any]]: List of (path, value) tuples for all matching paths.
+            List of (path, value) tuples for all matching paths.
         """
         parts = pattern.split(".")
         results = []
@@ -270,12 +270,12 @@ class RunCollator:
         - "model.processor.hidden_*" (wildcard at end)
 
         Args:
-            config (dict): Configuration dictionary.
-            path (str): Dot-separated path with optional wildcards
+            config: Configuration dictionary.
+            path: Dot-separated path with optional wildcards
                 (e.g., "model.encoder._target_" or "model.*.hidden_dim").
-            default (Any, default="N/A"): Default value if path not found.
+            default: Default value if path not found.
         Returns:
-            Any: Value at the first matching path, or default if not found.
+            Value at the first matching path, or default if not found.
         """
         matches = self._find_matching_paths(config, path)
         if matches:
@@ -286,9 +286,9 @@ class RunCollator:
         """Simplify a _target_ value by extracting the last component.
 
         Args:
-            target (str): Full target path (e.g., "autocast.models.encoder.Encoder").
+            target: Full target path (e.g., "autocast.models.encoder.Encoder").
         Returns:
-            str: Simplified name (e.g., "Encoder"), or "Unknown" if empty.
+            Simplified name (e.g., "Encoder"), or "Unknown" if empty.
         """
         if not target or target == "N/A":
             return "Unknown"
@@ -298,9 +298,9 @@ class RunCollator:
         """Extract specified parameters from config using configured paths.
 
         Args:
-            config (dict): Loaded configuration dictionary.
+            config: Loaded configuration dictionary.
         Returns:
-            dict[str, Any]: Dictionary with extracted parameter values.
+            Dictionary with extracted parameter values.
         """
         info = {}
 
@@ -319,9 +319,9 @@ class RunCollator:
         """Parse both evaluation_metrics.csv and rollout_metrics.csv.
 
         Args:
-            run_dir (Path): Path to the run directory.
+            run_dir: Path to the run directory.
         Returns:
-            dict[str, Any]: Dictionary with overall metrics and windowed metrics.
+            Dictionary with overall metrics and windowed metrics.
         """
         metrics: dict[str, Any] = {}
 
@@ -368,7 +368,7 @@ class RunCollator:
         """Process a single run directory, handling errors gracefully.
 
         Args:
-            run_dir (Path): Path to the run directory.
+            run_dir: Path to the run directory.
         Returns:
             dict[str, Any] | None: Dictionary of run data, or None if processing fails.
         """
@@ -405,8 +405,8 @@ class RunCollator:
         """Save DataFrame to CSV following existing patterns.
 
         Args:
-            df (pd.DataFrame): DataFrame to save.
-            output_path (Path): Path where the CSV file will be saved.
+            df: DataFrame to save.
+            output_path: Path where the CSV file will be saved.
         """
         if df.empty:
             self.log.warning("No runs to save; DataFrame is empty.")
@@ -428,10 +428,10 @@ class RunCollator:
         """Collate results from multiple runs in the outputs directory.
 
         Args:
-            output_csv (str | Path, default="collated_results.csv"): Path where the CSV file will be saved.
-            save_csv (bool, default=True): Whether to save the DataFrame to CSV.
+            output_csv: Path where the CSV file will be saved.
+            save_csv: Whether to save the DataFrame to CSV.
         Returns:
-            pd.DataFrame: DataFrame with columns for run metadata and metrics.
+            DataFrame with columns for run metadata and metrics.
         """
         # Discover runs
         runs = self._discover_runs()
@@ -468,13 +468,13 @@ def collate_run_results(
     and calls its collate method.
 
     Args:
-        outputs_dir (str | Path, default="outputs"): Path to the outputs directory containing runs.
-        output_csv (str | Path, default="collated_results.csv"): Path where the CSV file will be saved.
-        save_csv (bool, default=True): Whether to save the DataFrame to CSV.
-        config_params (dict[str, str] | None, default=None): Dictionary mapping output column names to config paths (dot notation).
+        outputs_dir: Path to the outputs directory containing runs.
+        output_csv: Path where the CSV file will be saved.
+        save_csv: Whether to save the DataFrame to CSV.
+        config_params: Dictionary mapping output column names to config paths (dot notation).
             If None, uses default parameters.
     Returns:
-        pd.DataFrame: DataFrame with columns for run metadata and metrics.
+        DataFrame with columns for run metadata and metrics.
     """
     collator = RunCollator(outputs_dir=outputs_dir, config_params=config_params)
     return collator.collate(output_csv=output_csv, save_csv=save_csv)

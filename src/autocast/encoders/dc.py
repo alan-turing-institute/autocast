@@ -19,26 +19,26 @@ class DCEncoder(EncoderWithCond):
     with optional attention.
 
     Args:
-        in_channels (int): Number of input channels.
-        out_channels (int): Number of output (latent) channels.
-        hid_channels (Sequence[int]): Number of channels at each depth level.
-        hid_blocks (Sequence[int]): Number of residual blocks at each depth level.
-        kernel_size (int | Sequence[int]): Kernel size for convolutions.
-        stride (int | Sequence[int]): Stride for downsampling operations.
-        pixel_shuffle (bool): Whether to use pixel shuffling (patchify) for downsampling.
-        norm (str): Type of normalization ('layer' or 'group').
-        attention_heads (dict[int, int] | None): Dict mapping depth index to number of attention heads.
-        ffn_factor (int): Channel expansion factor in FFN blocks.
-        spatial (int): Number of spatial dimensions (2 for 2D, 3 for 3D).
-        patch_size (int | Sequence[int]): Patch size for patchifying at the start.
-        periodic (bool): Whether spatial dimensions are periodic (use circular padding).
-        dropout (float | None): Dropout rate.
-        checkpointing (bool): Whether to use gradient checkpointing.
-        identity_init (bool): Initialize down/upsampling convolutions as identity.
-        ffn_out_scale (float | None): Optional multiplicative scale applied to each ResBlock FFN output conv.
-        saturation (str | None): Optional latent saturation mode. Supported: {"softclip2", "softclip",
+        in_channels: Number of input channels.
+        out_channels: Number of output (latent) channels.
+        hid_channels: Number of channels at each depth level.
+        hid_blocks: Number of residual blocks at each depth level.
+        kernel_size: Kernel size for convolutions.
+        stride: Stride for downsampling operations.
+        pixel_shuffle: Whether to use pixel shuffling (patchify) for downsampling.
+        norm: Type of normalization ('layer' or 'group').
+        attention_heads: Dict mapping depth index to number of attention heads.
+        ffn_factor: Channel expansion factor in FFN blocks.
+        spatial: Number of spatial dimensions (2 for 2D, 3 for 3D).
+        patch_size: Patch size for patchifying at the start.
+        periodic: Whether spatial dimensions are periodic (use circular padding).
+        dropout: Dropout rate.
+        checkpointing: Whether to use gradient checkpointing.
+        identity_init: Initialize down/upsampling convolutions as identity.
+        ffn_out_scale: Optional multiplicative scale applied to each ResBlock FFN output conv.
+        saturation: Optional latent saturation mode. Supported: {"softclip2", "softclip",
             "tanh", "arcsinh", "rmsnorm"}.
-        saturation_scale (float): Saturation scale B used by soft clipping/tanh variants.
+        saturation_scale: Saturation scale B used by soft clipping/tanh variants.
     Note:
         Based on the implementation from:
         - Deep Compression Autoencoder for Efficient High-Resolution Diffusion Models
@@ -186,9 +186,9 @@ class DCEncoder(EncoderWithCond):
         """Encode input batch to latent representation.
 
         Args:
-            batch (Batch): Input batch containing input_fields with shape (B, T, spatial..., C_i).
+            batch: Input batch containing input_fields with shape (B, T, spatial..., C_i).
         Returns:
-            Tensor: Encoded latent tensor with shape (B, T, spatial_reduced..., C_o).
+            Encoded latent tensor with shape (B, T, spatial_reduced..., C_o).
         """
         return self.encode_tensor(batch.input_fields)
 
@@ -196,9 +196,9 @@ class DCEncoder(EncoderWithCond):
         """Forward pass through encoder (for direct tensor input).
 
         Args:
-            x (TensorBTSC): Input tensor with shape (B, T, spatial..., C_i).
+            x: Input tensor with shape (B, T, spatial..., C_i).
         Returns:
-            TensorBTSC: Encoded latent tensor.
+            Encoded latent tensor.
         """
         b, t, *_, _ = x.shape
         # Concatenate batch and time for processing

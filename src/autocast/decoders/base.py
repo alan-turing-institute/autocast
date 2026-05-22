@@ -23,9 +23,9 @@ class Decoder(nn.Module, ABC):
         """Decode the latent tensor back to the original space.
 
         Args:
-            z (TensorBNC): Latent tensor to be decoded.
+            z: Latent tensor to be decoded.
         Returns:
-            Tensor: Decoded tensor in the original space.
+            Decoded tensor in the original space.
         """
 
     def forward(self, z: TensorBNC) -> TensorBTSC:

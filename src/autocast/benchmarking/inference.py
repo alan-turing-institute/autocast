@@ -188,7 +188,7 @@ def benchmark_rollout(
     wall-clock timings.  tqdm progress output is suppressed during the run.
 
     Returns:
-        dict[str, float]: throughput_samples_per_sec
+        throughput_samples_per_sec
             Batch elements (samples) processed per second: ``n * batch_size / t``.
             One "sample" is one batch element completing the full rollout.
             Use ``latency_ms_per_step`` to compare per-step cost against

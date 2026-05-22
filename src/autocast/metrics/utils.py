@@ -66,11 +66,11 @@ class MetricsMixin:
         """Update metrics and log them.
 
         Args:
-            model (L.LightningModule): The Lightning module to log metrics to.
-            metric_collection (MetricCollection | None): The metric collection to update and log. If None, this method does nothing.
-            y_pred (TensorBTSC | TensorBTSCM): Model predictions.
-            y_true (Tensor): Ground truth targets.
-            batch_size (int): Batch size.
+            model: The Lightning module to log metrics to.
+            metric_collection: The metric collection to update and log. If None, this method does nothing.
+            y_pred: Model predictions.
+            y_true: Ground truth targets.
+            batch_size: Batch size.
         """
         if metrics is not None:
             metrics.update(y_pred, y_true)

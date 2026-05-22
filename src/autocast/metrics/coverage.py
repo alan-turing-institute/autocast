@@ -122,11 +122,11 @@ class MultiCoverage(Metric):
         Plot reliability diagram showing expected vs observed coverage.
 
         Args:
-            save_path (str, optional): Path to save the plot (PNG). If provided and save_csv=True,
+            save_path: Path to save the plot (PNG). If provided and save_csv=True,
                 a CSV file with the same name will also be saved.
-            title (str): Plot title.
-            cmap_str (str): Color map string from matplotlib.
-            save_csv (bool, default=True): If True and save_path is provided, save plot data as CSV
+            title: Plot title.
+            cmap_str: Color map string from matplotlib.
+            save_csv: If True and save_path is provided, save plot data as CSV
                 before creating the plot.
         Returns:
             matplotlib.figure.Figure
@@ -216,9 +216,9 @@ class MultiCoverage(Metric):
         Save coverage plot data to CSV file.
 
         Args:
-            save_path (Path or str): Path for the PNG file. CSV will use the same path with .csv extension.
-            levels (list of float): Coverage levels (expected coverage values).
-            observed_means (list of float): Mean observed coverage across all channels for each level.
+            save_path: Path for the PNG file. CSV will use the same path with .csv extension.
+            levels: Coverage levels (expected coverage values).
+            observed_means: Mean observed coverage across all channels for each level.
             observed_channels (np.ndarray, shape (L, C)): Observed coverage per level per channel.
         """
         # Generate CSV path from PNG path

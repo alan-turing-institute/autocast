@@ -29,7 +29,7 @@ class GenericEncoder(nn.Module, ABC, Generic[BatchT, BatchTEncoded]):
         """Encode the input tensor into the latent space.
 
         Args:
-            batch (BatchT): Input batch to be encoded.
+            batch: Input batch to be encoded.
         Returns:
             TensorBNC | tuple[TensorBNC, Tensor | None]: Encoded tensor in the latent space with shape (B, *, C_latent) or a tuple of
                 (encoded tensor, optional conditioning tensor of shape (B, D)).
@@ -42,10 +42,10 @@ class GenericEncoder(nn.Module, ABC, Generic[BatchT, BatchTEncoded]):
         """Encode a full BatchT into a BatchTEncoded.
 
         Args:
-            batch (BatchT): Input batch to be encoded.
-            encoded_info (dict | None): Optional dictionary of additional encoded information to include.
+            batch: Input batch to be encoded.
+            encoded_info: Optional dictionary of additional encoded information to include.
         Returns:
-            BatchTEncoded: Encoded batch containing encoded inputs and original output fields.
+            Encoded batch containing encoded inputs and original output fields.
         """
 
     def forward(self, batch: BatchT) -> TensorBNC | tuple[TensorBNC, Tensor | None]:
@@ -62,9 +62,9 @@ class _Encoder(GenericEncoder[Batch, EncodedBatch]):
         Subclasses can override to implement different encoding strategies.
 
         Args:
-            batch (Batch): Input batch to be encoded.
+            batch: Input batch to be encoded.
         Returns:
-            EncodedBatch: Encoded batch containing encoded inputs and original output fields.
+            Encoded batch containing encoded inputs and original output fields.
         """
         encoded = self.encode(batch)
 
@@ -107,9 +107,9 @@ class Encoder(_Encoder):
         """Encode the input tensor into the latent space.
 
         Args:
-            x (Batch): Input batch to be encoded.
+            x: Input batch to be encoded.
         Returns:
-            TensorBNC: Encoded tensor in the latent space with shape (B, *, C_latent).
+            Encoded tensor in the latent space with shape (B, *, C_latent).
         """
 
 
@@ -138,9 +138,9 @@ class EncoderWithCond(Encoder):
         """Encode the input tensor into the latent space.
 
         Args:
-            x (Batch): Input batch to be encoded.
+            x: Input batch to be encoded.
         Returns:
-            tuple[TensorBNC, Tensor | None]: Encoded tensor in the latent space with shape (B, *, C_latent) with optional
+            Encoded tensor in the latent space with shape (B, *, C_latent) with optional
                 conditioning tensor of shape (B, D).
         """
         return (self.encode(batch), self.encode_cond(batch))

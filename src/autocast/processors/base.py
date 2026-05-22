@@ -38,8 +38,8 @@ class Processor(ABC, nn.Module, Generic[BatchT]):
         Map input states to output states.
 
         Args:
-            x (Tensor): Input tensor of shape (B, T_in, ...)
-            global_cond (Tensor | None): Optional conditioning/modulation tensor.
+            x: Input tensor of shape (B, T_in, ...)
+            global_cond: Optional conditioning/modulation tensor.
 
         Returns:
             y (Tensor): Output tensor of shape (B, T_out, ...)

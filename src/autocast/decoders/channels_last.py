@@ -16,8 +16,8 @@ class ChannelsLast(Decoder):
         """Initialize the ChannelsLast decoder.
 
         Args:
-            output_channels (int): Number of output channels (C).
-            time_steps (int): Number of time steps (T) to be unmerged from the channel dimension to
+            output_channels: Number of output channels (C).
+            time_steps: Number of time steps (T) to be unmerged from the channel dimension to
                 reconstruct the time dimension. Default is 1.
         """
         super().__init__()
