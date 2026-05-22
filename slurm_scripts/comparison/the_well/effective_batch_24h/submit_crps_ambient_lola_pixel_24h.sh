@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-# Final 24h run for the fresh Rayleigh-Benard effective-batch comparison:
+# Final 24hr run for the fresh Rayleigh-Benard effective-batch comparison:
 # CRPS in ambient space with the LOLA pixel-space ViT hyperparameters.
 #
 # Effective global batch = 32/GPU * 8 members * 4 GPUs = 1024. Epochs are
@@ -13,15 +13,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../.." && pwd)"
 DATASETS_ROOT="${AUTOCAST_DATASETS:-${REPO_ROOT}/datasets}"
 
-EXPERIMENT="the_well/rayleigh_benard/crps_vit_azula_lola_pixel_ambient"
-EXPERIMENT_NAME="the_well_rayleigh_benard_effbatch24h_crps_ambient_lola_pixel_b32_m8"
-RUN_ID="rb_eff24_crps_ambient_lola_pixel_b32_m8"
+EXPERIMENT="${EXPERIMENT:-the_well/rayleigh_benard/crps_vit_azula_lola_pixel_ambient}"
+EXPERIMENT_NAME="${EXPERIMENT_NAME:-the_well_rayleigh_benard_effbatch_crps_ambient_lola_pixel_b32_m8_24hr}"
+RUN_ID="${RUN_ID:-rb_effbatch_crps_ambient_lola_pixel_b32_m8_24hr}"
 RAW_DATA_DIR="${DATASETS_ROOT}/rayleigh_benard/data"
 TIMING_GROUP_GLOB="${TIMING_GROUP_GLOB:-*/timing/rb_effective_batch_24h}"
 BUDGET_HOURS="${BUDGET_HOURS:-24}"
 BUDGET_MARGIN="${BUDGET_MARGIN:-0.02}"
 BUDGET_MAX_TIME="${BUDGET_MAX_TIME:-00:23:59:00}"
-DEFAULT_COSINE_EPOCHS=280
+# Match the LOLA pixel-surrogate training horizon while max_time keeps this to
+# the 24hr wall-clock budget.
+DEFAULT_COSINE_EPOCHS="${DEFAULT_COSINE_EPOCHS-4096}"
 TIMEOUT_MIN="${TIMEOUT_MIN:-1439}"
 EFFECTIVE_BATCHES_PER_EPOCH="${EFFECTIVE_BATCHES_PER_EPOCH:-64}"
 CHECK_VAL_EVERY_N_EPOCH="${CHECK_VAL_EVERY_N_EPOCH:-8}"
@@ -75,6 +77,11 @@ derive_cosine_epochs_from_timing() {
 resolve_cosine_epochs() {
     local timing_ckpt
 
+    if [[ -n "${COSINE_EPOCHS_CRPS_AMBIENT_LOLA_PIXEL_24HR:-}" ]]; then
+        printf '%s\n' "${COSINE_EPOCHS_CRPS_AMBIENT_LOLA_PIXEL_24HR}"
+        return 0
+    fi
+
     if [[ -n "${COSINE_EPOCHS_CRPS_AMBIENT_LOLA_PIXEL:-}" ]]; then
         printf '%s\n' "${COSINE_EPOCHS_CRPS_AMBIENT_LOLA_PIXEL}"
         return 0
@@ -93,7 +100,7 @@ resolve_cosine_epochs() {
     timing_ckpt="$(find_timing_checkpoint)"
     if [[ -z "${timing_ckpt}" ]]; then
         echo "No timing checkpoint found for ${RUN_ID}." >&2
-        echo "Run ${SCRIPT_DIR}/submit_crps_ambient_lola_pixel_timing.sh first, or set COSINE_EPOCHS_CRPS_AMBIENT_LOLA_PIXEL=<epochs>." >&2
+        echo "Run ${SCRIPT_DIR}/submit_crps_ambient_lola_pixel_timing.sh first, or set COSINE_EPOCHS_CRPS_AMBIENT_LOLA_PIXEL_24HR=<epochs>." >&2
         return 1
     fi
 
@@ -119,11 +126,12 @@ for run_dry in "${RUN_DRY_STATES[@]}"; do
         run_label="slurm --dry-run"
     fi
 
-    echo "Submitting RB effective-batch 24h run"
+    echo "Submitting RB effective-batch 24hr run"
     echo "  mode: ${run_label}"
     echo "  method: CRPS ambient LOLA pixel ViT"
     echo "  local_experiment: ${EXPERIMENT}"
     echo "  experiment_name: ${EXPERIMENT_NAME}"
+    echo "  paired timing run_id: ${RUN_ID}"
     echo "  raw data dir: ${RAW_DATA_DIR}"
     echo "  cosine_epochs: ${COSINE_EPOCHS_RESOLVED}"
     echo "  datamodule.batch_size: ${PER_GPU_BATCH_SIZE} per GPU"

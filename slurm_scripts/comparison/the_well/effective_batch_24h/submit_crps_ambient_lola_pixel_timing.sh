@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-# Timing run for the fresh Rayleigh-Benard effective-batch 24h comparison:
+# Timing run for the fresh Rayleigh-Benard effective-batch 24hr comparison:
 # CRPS in ambient space with the LOLA pixel-space ViT hyperparameters.
 #
 # Effective global batch = 32/GPU * 8 members * 4 GPUs = 1024.
@@ -13,8 +13,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../.." && pwd)"
 DATASETS_ROOT="${AUTOCAST_DATASETS:-${REPO_ROOT}/datasets}"
 
-EXPERIMENT="the_well/rayleigh_benard/crps_vit_azula_lola_pixel_ambient"
-RUN_ID="rb_eff24_crps_ambient_lola_pixel_b32_m8"
+EXPERIMENT="${EXPERIMENT:-the_well/rayleigh_benard/crps_vit_azula_lola_pixel_ambient}"
+RUN_ID="${RUN_ID:-rb_effbatch_crps_ambient_lola_pixel_b32_m8_24hr}"
 RAW_DATA_DIR="${DATASETS_ROOT}/rayleigh_benard/data"
 RUN_GROUP="${RUN_GROUP:-$(date +%Y-%m-%d)/timing/rb_effective_batch_24h}"
 BUDGET_HOURS="${BUDGET_HOURS:-24}"
