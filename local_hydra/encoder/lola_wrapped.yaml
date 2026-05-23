@@ -1,0 +1,12 @@
+_target_: autocast.external.lola.wrapped_encoder.WrappedEncoder
+defaults:
+  - /external/lola/ae@_here_: dcae_f32c64_large
+  - _self_
+
+pix_channels: null
+device: cpu
+runpath: null
+mean: null
+std: null
+log_scalars: false
+chunk_size: null
