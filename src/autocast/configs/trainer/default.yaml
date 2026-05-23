@@ -139,3 +139,8 @@ callbacks:
   # unaffected.
   - _target_: autocast.callbacks.ema.EMACallback
     decay: 0.999
+  # Diagnostic: global pre-clip gradient L2 norm (+ per-param max and LR),
+  # logged every optimizer step. Cheap and training-neutral — it never touches
+  # the gradients — so it stays on for all runs and lets train_loss spikes be
+  # attributed to gradient explosions vs under-capacity.
+  - _target_: autocast.callbacks.GradNormCallback
