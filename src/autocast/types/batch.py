@@ -103,6 +103,28 @@ class Batch:
             ),
         )
 
+    def pin_memory(self) -> "Batch":
+        """Pin CPU tensors for faster host-to-device transfer."""
+        return Batch(
+            input_fields=self.input_fields.pin_memory(),
+            output_fields=self.output_fields.pin_memory(),
+            constant_scalars=(
+                self.constant_scalars.pin_memory()
+                if self.constant_scalars is not None
+                else None
+            ),
+            constant_fields=(
+                self.constant_fields.pin_memory()
+                if self.constant_fields is not None
+                else None
+            ),
+            boundary_conditions=(
+                self.boundary_conditions.pin_memory()
+                if self.boundary_conditions is not None
+                else None
+            ),
+        )
+
 
 @dataclass
 class EncodedBatch:
@@ -148,4 +170,15 @@ class EncodedBatch:
                 self.global_cond.to(device) if self.global_cond is not None else None
             ),
             encoded_info={k: v.to(device) for k, v in self.encoded_info.items()},
+        )
+
+    def pin_memory(self) -> "EncodedBatch":
+        """Pin CPU tensors for faster host-to-device transfer."""
+        return EncodedBatch(
+            encoded_inputs=self.encoded_inputs.pin_memory(),
+            encoded_output_fields=self.encoded_output_fields.pin_memory(),
+            global_cond=(
+                self.global_cond.pin_memory() if self.global_cond is not None else None
+            ),
+            encoded_info={k: v.pin_memory() for k, v in self.encoded_info.items()},
         )

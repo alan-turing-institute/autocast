@@ -7,6 +7,7 @@ import torch
 from autocast.data.encoded_dataset import (
     CachedLatentDataset,
     EncodedDataModule,
+    MiniWellDataModule,
     MiniWellInputOutput,
 )
 from autocast.types.batch import EncodedBatch, EncodedSample
@@ -142,6 +143,34 @@ def test_miniwell_input_output_preserves_global_cond(tmp_path):
     assert sample.encoded_output_fields.shape == (3, 4, 5, 3)
     assert sample.global_cond is not None
     assert torch.allclose(sample.global_cond, labels[0])
+
+
+def test_miniwell_datamodule_supports_worker_dataloader(tmp_path):
+    for split in ("train", "valid", "test"):
+        split_dir = tmp_path / split
+        split_dir.mkdir(parents=True)
+        with h5py.File(split_dir / "data.h5", "w") as h5:
+            h5.create_dataset("state", data=torch.randn(2, 6, 3, 4, 5).numpy())
+            h5.create_dataset("label", data=torch.randn(2, 6).numpy())
+
+    dm = MiniWellDataModule(
+        data_path=str(tmp_path),
+        n_steps_input=2,
+        n_steps_output=3,
+        batch_size=2,
+        num_workers=1,
+        pin_memory=False,
+        persistent_workers=False,
+        prefetch_factor=2,
+    )
+
+    batch = next(iter(dm.train_dataloader()))
+
+    assert isinstance(batch, EncodedBatch)
+    assert batch.encoded_inputs.shape == (2, 2, 4, 5, 3)
+    assert batch.encoded_output_fields.shape == (2, 3, 4, 5, 3)
+    assert batch.global_cond is not None
+    assert batch.global_cond.shape == (2, 6)
 
 
 # --- EncodedDataModule with CachedLatentDataset tests ---
