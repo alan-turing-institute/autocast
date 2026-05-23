@@ -340,6 +340,7 @@ def setup_autoencoder_components(
     if (
         encoder_config
         and isinstance(input_channels, int)
+        and "in_channels" in encoder_config
         and encoder_config.get("in_channels") in (None, "auto")
     ):
         # TODO: add more robust approach to inlcuding extra constant channels
