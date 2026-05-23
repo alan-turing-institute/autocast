@@ -577,14 +577,16 @@ def test_validation_metric_plot_callback_wandb_log_omits_step(tmp_path: Path):
         )
 
 
-def test_default_trainer_config_tracks_coverage_winkler_and_plots(config_dir: str):
+def test_default_trainer_config_tracks_coverage_winkler_without_plots(
+    config_dir: str,
+):
     trainer_cfg = OmegaConf.load(Path(config_dir) / "trainer" / "default.yaml")
     callbacks = list(trainer_cfg.callbacks)
     monitors = [callback.get("monitor") for callback in callbacks]
 
     assert "val_multicoverage" in monitors
     assert "val_multiwinkler" in monitors
-    assert any(
+    assert not any(
         callback.get("_target_")
         == "autocast.callbacks.metrics.ValidationMetricPlotCallback"
         for callback in callbacks
