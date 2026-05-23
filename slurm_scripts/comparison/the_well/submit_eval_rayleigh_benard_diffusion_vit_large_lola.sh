@@ -30,6 +30,7 @@ EVAL_BENCHMARK_ENABLED="${EVAL_BENCHMARK_ENABLED:-true}"
 EVAL_BENCHMARK_ROLLOUT_ENABLED="${EVAL_BENCHMARK_ROLLOUT_ENABLED:-true}"
 TIMEOUT_MIN="${TIMEOUT_MIN:-1439}"
 CPUS_PER_TASK="${CPUS_PER_TASK:-8}"
+SLURM_MEM="${SLURM_MEM:-115G}"
 DRY_RUN_ONLY="${DRY_RUN_ONLY:-false}"
 if [[ "${DRY_RUN_ONLY}" == "true" ]]; then
     RUN_DRY_STATES=("true")
@@ -86,6 +87,7 @@ for run_dir in "${RUN_DIRS[@]}"; do
         echo "  eval.transpose_spatial: true"
         echo "  eval.benchmark.enabled: ${EVAL_BENCHMARK_ENABLED}"
         echo "  eval.benchmark_rollout.enabled: ${EVAL_BENCHMARK_ROLLOUT_ENABLED}"
+        echo "  hydra.launcher.mem: ${SLURM_MEM}"
         echo "  eval.metrics: ${EVAL_METRICS}"
 
         uv run autocast eval --mode slurm "${dry_run_arg[@]}" \
@@ -103,6 +105,7 @@ for run_dir in "${RUN_DIRS[@]}"; do
             eval.benchmark.enabled="${EVAL_BENCHMARK_ENABLED}" \
             eval.benchmark_rollout.enabled="${EVAL_BENCHMARK_ROLLOUT_ENABLED}" \
             hydra.launcher.cpus_per_task="${CPUS_PER_TASK}" \
+            hydra.launcher.additional_parameters.mem="${SLURM_MEM}" \
             hydra.launcher.timeout_min="${TIMEOUT_MIN}"
     done
 done
