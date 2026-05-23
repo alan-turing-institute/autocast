@@ -125,12 +125,6 @@ def _link_checkpoint_target_to_latest(trainer: L.Trainer, target_path: Path) -> 
     return True
 
 
-def _save_or_link_checkpoint_target(trainer: L.Trainer, target_path: Path) -> None:
-    if not _link_checkpoint_target_to_latest(trainer, target_path):
-        target_path.parent.mkdir(parents=True, exist_ok=True)
-        trainer.save_checkpoint(target_path)
-        log.info("Saved checkpoint to %s", target_path.resolve())
-
 
 def _resume_weights_only(
     model: L.LightningModule,
@@ -503,18 +497,14 @@ def run_training(
         log.info("Starting training from scratch (no resume checkpoint).")
         trainer.fit(model=model, datamodule=datamodule)
 
-    # Save stable checkpoint target (prefer callback checkpoint) immediately
-    # after fit so a checkpoint exists even if optional test later fails.
+    # trainer.save_checkpoint() must be called on all ranks (i.e., not gated by
+    # trainer.is_global_zero) because it contains an internal distributed
+    # barrier. Lightning's code already ensures that only the global zero rank
+    # writes to the actual checkpoint file.
+    # Also no need to make parent directory as Lightning handles it.
+    trainer.save_checkpoint(checkpoint_path)
     if trainer.is_global_zero:
-        _save_or_link_checkpoint_target(trainer, checkpoint_path)
-
-        # If the stable target is a symlink, replace with a final concrete checkpoint.
-        if checkpoint_path.is_symlink():
-            checkpoint_path.unlink()
-            trainer.save_checkpoint(checkpoint_path)
-
-    # Ensure non-zero ranks observe the finalized checkpoint before test.
-    trainer.strategy.barrier("checkpoint-alias-finalize")
+        log.info("Saved checkpoint to %s", checkpoint_path.resolve())
 
     # Run testing if not skipped.
     if not skip_test:
@@ -672,12 +662,10 @@ def train_autoencoder(
         output_cfg.get("checkpoint_path"),
         default_name="autoencoder.ckpt",
     )
+    # `save_checkpoint` must be called on all ranks, see comment above.
+    trainer.save_checkpoint(checkpoint_path)
     if trainer.is_global_zero:
-        trainer.save_checkpoint(checkpoint_path)
         log.info("Saved checkpoint to %s", checkpoint_path.resolve())
-
         _save_reconstructions(model, datamodule, work_dir)
-
-    trainer.strategy.barrier("autoencoder-post-training-finalize")
 
     return checkpoint_path
