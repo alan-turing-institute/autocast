@@ -21,9 +21,9 @@ TIMING_GROUP_GLOB="${TIMING_GROUP_GLOB:-*/timing/rb_effective_batch_24h}"
 BUDGET_HOURS="${BUDGET_HOURS:-24}"
 BUDGET_MARGIN="${BUDGET_MARGIN:-0.02}"
 BUDGET_MAX_TIME="${BUDGET_MAX_TIME:-00:23:59:00}"
-# Match the LOLA pixel-surrogate training horizon while max_time keeps this to
-# the 24hr wall-clock budget.
-DEFAULT_COSINE_EPOCHS="${DEFAULT_COSINE_EPOCHS-4096}"
+# Mean epoch time over an 8-epoch validation cadence is 310.34s, so a 24h
+# budget with the 2% margin fits 272 fixed-size epochs.
+DEFAULT_COSINE_EPOCHS="${DEFAULT_COSINE_EPOCHS-272}"
 TIMEOUT_MIN="${TIMEOUT_MIN:-1439}"
 EFFECTIVE_BATCHES_PER_EPOCH="${EFFECTIVE_BATCHES_PER_EPOCH:-64}"
 CHECK_VAL_EVERY_N_EPOCH="${CHECK_VAL_EVERY_N_EPOCH:-8}"
