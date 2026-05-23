@@ -1,5 +1,7 @@
 """Temporal ViT backbone with flexible temporal processing methods."""
 
+from collections.abc import Sequence
+
 from azula.nn.vit import ViT
 from torch import nn
 
@@ -28,7 +30,7 @@ class TemporalViTBackbone(TemporalBackboneBase):
         hid_channels: int = 768,
         hid_blocks: int = 12,
         attention_heads: int = 12,
-        patch_size: int = 4,
+        patch_size: int | Sequence[int] = 4,
         spatial: int = 2,
         temporal_method: str = "none",
         temporal_attention_heads: int = 8,
@@ -41,6 +43,11 @@ class TemporalViTBackbone(TemporalBackboneBase):
         ffn_factor: int = 4,
         checkpointing: bool = False,
         use_precomputed_modulation: bool = False,
+        unpatch_size: int | Sequence[int] | None = None,
+        qk_norm: bool = True,
+        rope: bool = False,
+        rpb: bool = True,
+        window_size: int | Sequence[int] | None = None,
     ):
         """Initialize Temporal ViT Backbone.
 
@@ -57,6 +64,7 @@ class TemporalViTBackbone(TemporalBackboneBase):
             hid_blocks: Number of transformer blocks
             attention_heads: Number of attention heads in ViT
             patch_size: Size of patches for ViT
+            unpatch_size: Optional output unpatch size for ViT
             spatial: Spatial dimensionality (2 for 2D)
             temporal_method: Method for temporal processing. Options:
                 - "attention": Multi-head self-attention over time
@@ -68,9 +76,21 @@ class TemporalViTBackbone(TemporalBackboneBase):
             tcn_num_layers: Number of TCN layers
             dropout: Dropout rate in ViT blocks
             ffn_factor: Feedforward network expansion factor in ViT blocks
+            qk_norm: Whether to normalize attention queries and keys
+            rope: Whether to use rotary positional embeddings in attention
+            rpb: Whether to use relative positional bias in attention
+            window_size: Local attention window size. Only None is supported by
+                the installed Azula ViT used here.
             checkpointing: Whether to use gradient checkpointing in ViT
             use_precomputed_modulation: Whether to use precomputed modulation tensors.
         """
+        if window_size is not None:
+            msg = (
+                "TemporalViTBackbone does not support non-null window_size with "
+                "the installed Azula ViT. Use window_size=null for global attention."
+            )
+            raise ValueError(msg)
+
         # Initialize base class with common parameters
         super().__init__(
             in_channels=in_channels,
@@ -97,9 +117,13 @@ class TemporalViTBackbone(TemporalBackboneBase):
             hid_blocks=hid_blocks,
             attention_heads=attention_heads,
             patch_size=patch_size,
+            unpatch_size=unpatch_size,
             spatial=spatial,
             ffn_factor=ffn_factor,
             dropout=dropout,
+            qk_norm=qk_norm,
+            rope=rope,
+            rpb=rpb,
             checkpointing=checkpointing,
         )
 
@@ -117,9 +141,13 @@ class TemporalViTBackbone(TemporalBackboneBase):
                 - hid_blocks: Number of transformer blocks
                 - attention_heads: Number of attention heads in ViT
                 - patch_size: Size of patches for ViT
+                - unpatch_size: Optional output unpatch size for ViT
                 - spatial: Spatial dimensionality (2 for 2D)
                 - ffn_factor: The channel factor in the FFN.
                 - dropout: The dropout rate in :math:`[0, 1]`.
+                - qk_norm: Whether to normalize attention queries and keys.
+                - rope: Whether to use rotary positional embeddings.
+                - rpb: Whether to use relative positional bias.
                 - checkpointing: Whether to use gradient checkpointing or not.
 
         Returns:
@@ -134,8 +162,12 @@ class TemporalViTBackbone(TemporalBackboneBase):
             hid_blocks=kwargs["hid_blocks"],
             attention_heads=kwargs["attention_heads"],
             patch_size=kwargs["patch_size"],
+            unpatch_size=kwargs.get("unpatch_size"),
             spatial=kwargs["spatial"],
             ffn_factor=kwargs.get("ffn_factor", 4),
             dropout=kwargs.get("dropout", 0.0),
+            qk_norm=kwargs.get("qk_norm", True),
+            rope=kwargs.get("rope", False),
+            rpb=kwargs.get("rpb", True),
             checkpointing=kwargs.get("checkpointing", False),
         )
