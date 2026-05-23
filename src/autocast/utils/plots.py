@@ -1,18 +1,54 @@
 from collections.abc import Callable, Iterable, Sequence
-from typing import Literal, cast
+from pathlib import Path
+from typing import Literal, TypeAlias, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from einops import rearrange
 from matplotlib import animation
-from matplotlib.colors import Normalize, TwoSlopeNorm
+from matplotlib.colors import LogNorm, Normalize, SymLogNorm, TwoSlopeNorm
 from matplotlib.figure import Figure
 from matplotlib.gridspec import GridSpec
 from torchmetrics import Metric
 
 from autocast.metrics.coverage import Coverage, MultiCoverage
 from autocast.types import Tensor, TensorBTSC, TensorBTSCM
+
+# A4 typeset linewidth (~160mm of text width with 25mm side margins) in inches.
+A4_LINEWIDTH_IN = 6.3
+
+# Paper-ready Matplotlib rc settings: Times serif at 10pt, used for the
+# spatiotemporal snapshot panels so they sit at \linewidth in LaTeX figures.
+_SNAPSHOT_PAPER_RC: dict[str, object] = {
+    "font.family": "serif",
+    "font.serif": ["Times", "Times New Roman", "DejaVu Serif", "serif"],
+    "font.size": 10,
+    "axes.titlesize": 10,
+    "axes.labelsize": 10,
+    "xtick.labelsize": 9,
+    "ytick.labelsize": 9,
+    "legend.fontsize": 9,
+    "figure.titlesize": 10,
+    "mathtext.fontset": "stix",
+}
+
+NormLike: TypeAlias = Normalize | TwoSlopeNorm | LogNorm | SymLogNorm | None
+
+
+def _panel_size_for_width(
+    target_width_in: float,
+    ncols: int,
+    spatial: tuple[int, ...],
+    preserve_aspect: bool,
+) -> tuple[float, float]:
+    panel_width = max(target_width_in / max(ncols, 1), 0.5)
+    if preserve_aspect and len(spatial) == 2 and spatial[0] > 0 and spatial[1] > 0:
+        rows, cols = spatial
+        panel_height = panel_width * (rows / cols)
+    else:
+        panel_height = panel_width
+    return panel_width, panel_height
 
 
 def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
@@ -73,8 +109,7 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
         data so the image fills the panel without distortion. If False (default),
         panels are square and the image is stretched to fill via ``aspect='auto'``.
     transpose_spatial: bool
-        If True, swap the two spatial axes before plotting. This only changes the
-        visualization orientation; tensor values and metrics are unchanged.
+        If True, swap the two spatial axes before plotting.
 
     Returns
     -------
@@ -99,13 +134,6 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
 
     # Extract dims and move to CPU
     T, *spatial, C = true_batch.shape
-    for extra_pred_batch, label in extra_pred_batches:
-        if extra_pred_batch.shape != true_batch.shape:
-            msg = (
-                f"Extra prediction row {label!r} must match true shape "
-                f"{tuple(true_batch.shape)}, got {tuple(extra_pred_batch.shape)}."
-            )
-            raise ValueError(msg)
     true_batch = true_batch.detach().cpu().numpy()
     if pred_batch is not None:
         pred_batch = pred_batch.detach().cpu().numpy()
@@ -119,17 +147,13 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     ]
 
     primary_rows = [true_batch]
-    primary_labels = ["Ground Truth"]
 
     # Calculate difference
     diff_batch = None
     if pred_batch is not None:
         diff_batch = true_batch - pred_batch
         primary_rows.append(pred_batch)
-        primary_labels.append(pred_label)
-    for extra_pred_batch, label in extra_pred_batches_np:
-        primary_rows.append(extra_pred_batch)
-        primary_labels.append(label)
+    primary_rows.extend(extra_pred for extra_pred, _ in extra_pred_batches_np)
 
     # Set-up rows
     n_primary_rows = len(primary_rows)
@@ -172,39 +196,19 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
         diff_span = diff_max if diff_max > 0 else 1e-9
         diff_norm = TwoSlopeNorm(vmin=-diff_span, vcenter=0, vmax=diff_span)
 
-    rows_to_plot: list[tuple[np.ndarray | Tensor, str, str]] = [
-        (row, label, cmap)
-        for row, label in zip(primary_rows, primary_labels, strict=True)
+    rows_to_plot: list[tuple[np.ndarray | Tensor | None, str, str]] = [
+        (true_batch, "Ground Truth", cmap),
     ]
-    row_norms: list[list[Normalize | TwoSlopeNorm | None]] = [*norms]
-    if diff_batch is not None:
-        rows_to_plot.append((diff_batch, f"Difference (True - {pred_label})", "RdBu"))
-        row_norms.append([diff_norm for _ in range(C)])
-    if pred_uq_batch is not None:
+    if pred is not None:
+        rows_to_plot.append((pred_batch, pred_label, cmap))
+    for extra_pred_batch, label in extra_pred_batches_np:
+        rows_to_plot.append((extra_pred_batch, label, cmap))
+    if pred is not None:
+        rows_to_plot.append((diff_batch, "Difference (True - Pred)", "RdBu"))
+    if pred_uq is not None:
         rows_to_plot.append((pred_uq_batch, pred_uq_label, "inferno"))
-        if colorbar_mode_uq == "none":
-            row_norms.append(
-                [
-                    Normalize(
-                        vmin=float(pred_uq_batch[..., ch].min()),
-                        vmax=float(pred_uq_batch[..., ch].max()),
-                    )
-                    for ch in range(C)
-                ]
-            )
-        else:
-            row_norms.append(
-                [
-                    Normalize(
-                        vmin=float(pred_uq_batch.min()),
-                        vmax=float(pred_uq_batch.max()),
-                    )
-                    for _ in range(C)
-                ]
-            )
-    if coverage_batch is not None:
+    if coverage is not None:
         rows_to_plot.append((coverage_batch, coverage_label, "gray"))
-        row_norms.append([Normalize(vmin=0, vmax=1) for _ in range(C)])
 
     total_rows = len(rows_to_plot)
 
@@ -213,7 +217,7 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
         W, H = spatial
         if transpose_spatial:
             W, H = H, W
-        # _to_imshow_frame does not transpose by default, so imshow receives
+        # _to_imshow_frame does NOT transpose by default, so imshow receives (W, H):
         # rows = W (figure height), cols = H (figure width).
         # Scale the smaller base dimension and cap to avoid excessively large figures.
         if H > 0 and W > 0:
@@ -255,12 +259,42 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
             if data is None:
                 msg = "Data for plotting cannot be None."
                 raise ValueError(msg)
-            frame0 = _to_imshow_frame(
-                data[0, :, :, ch],
-                transpose=transpose_spatial,
+            frame0 = _to_imshow_frame(data[0, :, :, ch], transpose=transpose_spatial)
+
+            diff_row_idx = n_primary_rows if diff_batch is not None else None
+            pred_uq_row_idx = (
+                n_primary_rows + int(diff_batch is not None)
+                if pred_uq_batch is not None
+                else None
+            )
+            coverage_row_idx = (
+                n_primary_rows
+                + int(diff_batch is not None)
+                + int(pred_uq_batch is not None)
+                if coverage_batch is not None
+                else None
             )
 
-            norm = row_norms[row_idx][ch]
+            if row_idx < n_primary_rows:
+                norm = norms[row_idx][ch]
+            elif row_idx == diff_row_idx:
+                norm = diff_norm
+            elif row_idx == pred_uq_row_idx and pred_uq_batch is not None:
+                uq_min = (
+                    float(pred_uq_batch[..., ch].min())
+                    if colorbar_mode_uq == "none"
+                    else float(pred_uq_batch.min())
+                )
+                uq_max = (
+                    float(pred_uq_batch[..., ch].max())
+                    if colorbar_mode_uq == "none"
+                    else float(pred_uq_batch.max())
+                )
+                norm = Normalize(vmin=uq_min, vmax=uq_max)
+            elif row_idx == coverage_row_idx:
+                norm = Normalize(vmin=0, vmax=1)
+            else:
+                norm = None
             im = ax.imshow(frame0, cmap=row_cmap, aspect="auto", norm=norm)
 
             if row_idx == 0:
@@ -293,12 +327,56 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     suptitle_text = fig.suptitle("", fontsize=14, fontweight="bold")
 
     def update(frame):
-        for row_idx, (data, _, _) in enumerate(rows_to_plot):
-            for ch in range(C):
-                images[row_idx][ch].set_array(
+        for ch in range(C):
+            images[0][ch].set_array(
+                _to_imshow_frame(
+                    true_batch[frame, :, :, ch],
+                    transpose=transpose_spatial,
+                )
+            )
+            if pred_batch is not None:
+                images[1][ch].set_array(
                     _to_imshow_frame(
-                        data[frame, :, :, ch],
+                        pred_batch[frame, :, :, ch], transpose=transpose_spatial
+                    )
+                )
+            for extra_idx, (extra_pred_batch, _) in enumerate(extra_pred_batches_np):
+                images[1 + int(pred_batch is not None) + extra_idx][ch].set_array(
+                    _to_imshow_frame(
+                        extra_pred_batch[frame, :, :, ch],
                         transpose=transpose_spatial,
+                    )
+                )
+            if diff_batch is not None:
+                diff_row = 1 + int(pred_batch is not None) + len(extra_pred_batches_np)
+                images[diff_row][ch].set_array(
+                    _to_imshow_frame(
+                        diff_batch[frame, :, :, ch], transpose=transpose_spatial
+                    )
+                )
+            if pred_uq_batch is not None:
+                uq_row = (
+                    1
+                    + int(pred_batch is not None)
+                    + len(extra_pred_batches_np)
+                    + int(diff_batch is not None)
+                )
+                images[uq_row][ch].set_array(
+                    _to_imshow_frame(
+                        pred_uq_batch[frame, :, :, ch], transpose=transpose_spatial
+                    )
+                )
+            if coverage_batch is not None:
+                coverage_row = (
+                    1
+                    + int(pred_batch is not None)
+                    + len(extra_pred_batches_np)
+                    + int(diff_batch is not None)
+                    + int(pred_uq_batch is not None)
+                )
+                images[coverage_row][ch].set_array(
+                    _to_imshow_frame(
+                        coverage_batch[frame, :, :, ch], transpose=transpose_spatial
                     )
                 )
         suptitle_text.set_text(
@@ -337,12 +415,16 @@ def plot_spatiotemporal_snapshots(  # noqa: PLR0912, PLR0915
     vmax: float | None = None,
     cmap: str = "viridis",
     save_path: str | None = None,
+    extra_formats: Iterable[str] | None = None,
     title: str = "Ground Truth vs Prediction",
     pred_label: str = "Prediction",
-    pred_uq_label: str = "Ensemble Std Dev",
+    pred_uq_label: str = "Std Dev",
     channel_names: list[str] | None = None,
     preserve_aspect: bool = False,
     transpose_spatial: bool = False,
+    target_width_in: float = A4_LINEWIDTH_IN,
+    diff_log: bool = False,
+    uq_log: bool = False,
 ) -> Figure:
     """Create a still panel at selected timesteps for one spatial channel."""
     true_batch = true[batch_idx]
@@ -375,14 +457,6 @@ def plot_spatiotemporal_snapshots(  # noqa: PLR0912, PLR0915
         msg = "At least one timestep is required for snapshot plotting."
         raise ValueError(msg)
 
-    for extra_pred_batch, label in extra_pred_batches:
-        if extra_pred_batch.shape != true_batch.shape:
-            msg = (
-                f"Extra prediction row {label!r} must match true shape "
-                f"{tuple(true_batch.shape)}, got {tuple(extra_pred_batch.shape)}."
-            )
-            raise ValueError(msg)
-
     true_np = true_batch.detach().cpu().numpy()
     pred_np = pred_batch.detach().cpu().numpy() if pred_batch is not None else None
     pred_uq_np = (
@@ -413,14 +487,23 @@ def plot_spatiotemporal_snapshots(  # noqa: PLR0912, PLR0915
     primary_norm = Normalize(vmin=min_val, vmax=max_val)
 
     diff_channel = None
-    diff_norm = None
+    diff_norm: Normalize | TwoSlopeNorm | SymLogNorm | None = None
     if pred_channel is not None:
         diff_channel = true_channel - pred_channel
         diff_max = float(np.abs(diff_channel).max())
         diff_span = diff_max if diff_max > 0 else 1e-9
-        diff_norm = TwoSlopeNorm(vmin=-diff_span, vcenter=0, vmax=diff_span)
+        if diff_log:
+            linthresh = max(diff_span * 1e-3, 1e-12)
+            diff_norm = SymLogNorm(
+                linthresh=linthresh,
+                vmin=-diff_span,
+                vmax=diff_span,
+                base=10,
+            )
+        else:
+            diff_norm = TwoSlopeNorm(vmin=-diff_span, vcenter=0, vmax=diff_span)
 
-    rows_to_plot: list[tuple[np.ndarray, str, str, Normalize | TwoSlopeNorm | None]] = [
+    rows_to_plot: list[tuple[np.ndarray, str, str, NormLike]] = [
         (true_channel, "Ground Truth", cmap, primary_norm),
     ]
     if pred_channel is not None:
@@ -429,81 +512,170 @@ def plot_spatiotemporal_snapshots(  # noqa: PLR0912, PLR0915
         rows_to_plot.append((extra_pred_channel, label, cmap, primary_norm))
     if pred_channel is not None:
         assert diff_channel is not None
-        rows_to_plot.append(
-            (diff_channel, f"Difference (True - {pred_label})", "RdBu", diff_norm)
-        )
+        rows_to_plot.append((diff_channel, "Difference", "RdBu", diff_norm))
     if pred_uq_channel is not None:
-        uq_norm = Normalize(
-            vmin=float(pred_uq_channel.min()),
-            vmax=float(pred_uq_channel.max()),
-        )
+        uq_finite = pred_uq_channel[np.isfinite(pred_uq_channel)]
+        uq_positive = uq_finite[uq_finite > 0]
+        if uq_log and uq_positive.size > 0:
+            uq_vmin = float(uq_positive.min())
+            uq_vmax = float(uq_finite.max())
+            if uq_vmax <= uq_vmin:
+                uq_vmax = uq_vmin * 10.0 + 1e-12
+            uq_norm: Normalize | LogNorm = LogNorm(vmin=uq_vmin, vmax=uq_vmax)
+        else:
+            uq_norm = Normalize(
+                vmin=float(pred_uq_channel.min()),
+                vmax=float(pred_uq_channel.max()),
+            )
         rows_to_plot.append((pred_uq_channel, pred_uq_label, "inferno", uq_norm))
 
     nrows = len(rows_to_plot)
     ncols = len(selected_timesteps)
-    width, height = spatial
-    if transpose_spatial:
-        width, height = height, width
-    base = 3.0
-    if preserve_aspect and height > 0 and width > 0:
-        ratio = width / height
-        panel_width = base if ratio >= 1 else min(base / ratio, 3 * base)
-        panel_height = min(base * ratio, 3 * base) if ratio >= 1 else base
-    else:
-        panel_width = base
-        panel_height = base
-
-    fig, axes = plt.subplots(
-        nrows,
-        ncols,
-        figsize=(ncols * panel_width, nrows * panel_height),
-        squeeze=False,
-        constrained_layout=True,
+    spatial_for_layout = (
+        tuple(reversed(spatial)) if transpose_spatial else tuple(spatial)
     )
-    image_rows = []
+    panel_width, panel_height = _panel_size_for_width(
+        target_width_in, ncols, spatial_for_layout, preserve_aspect
+    )
 
-    def _to_imshow_frame(frame: np.ndarray) -> np.ndarray:
-        if transpose_spatial:
-            return np.asarray(rearrange(frame, "s1 s2 -> s2 s1"))
-        return frame
+    with plt.rc_context(_SNAPSHOT_PAPER_RC):
+        fig, axes = plt.subplots(
+            nrows,
+            ncols,
+            figsize=(ncols * panel_width, nrows * panel_height),
+            squeeze=False,
+            constrained_layout=True,
+        )
+        image_rows = []
+        for row_idx, (data, row_label, row_cmap, norm) in enumerate(rows_to_plot):
+            row_images = []
+            for col_idx, timestep in enumerate(selected_timesteps):
+                ax = axes[row_idx][col_idx]
+                # LogNorm warns on non-positive values; clip to positive floor.
+                if isinstance(norm, LogNorm):
+                    floor = float(norm.vmin) if norm.vmin is not None else 1e-12
+                    plot_data = np.clip(data[timestep], floor, None)
+                else:
+                    plot_data = data[timestep]
+                if transpose_spatial:
+                    plot_data = np.asarray(rearrange(plot_data, "s1 s2 -> s2 s1"))
+                im = ax.imshow(plot_data, cmap=row_cmap, aspect="auto", norm=norm)
+                row_images.append(im)
+                ax.set_xticks([])
+                ax.set_yticks([])
+                if row_idx == 0:
+                    ax.set_title(f"$i={timestep}$")
+                if col_idx == 0:
+                    ax.set_ylabel(row_label)
+            image_rows.append(row_images)
 
-    for row_idx, (data, row_label, row_cmap, norm) in enumerate(rows_to_plot):
-        row_images = []
-        for col_idx, timestep in enumerate(selected_timesteps):
-            ax = axes[row_idx][col_idx]
-            im = ax.imshow(
-                _to_imshow_frame(data[timestep]),
-                cmap=row_cmap,
-                aspect="auto",
-                norm=norm,
+        for row_idx, row_images in enumerate(image_rows):
+            fig.colorbar(
+                row_images[-1],
+                ax=axes[row_idx, :].tolist(),
+                fraction=0.025,
+                pad=0.02,
             )
-            row_images.append(im)
+
+        channel_label = (
+            f"channel {channel}"
+            if channel_names is None
+            else f"{channel_names[channel]} (channel {channel})"
+        )
+        fig.suptitle(f"{title} - {channel_label}", fontweight="bold")
+
+        if save_path:
+            fig.savefig(save_path, dpi=300, bbox_inches="tight")
+            for ext in extra_formats or ():
+                ext_clean = ext.lstrip(".")
+                alt_path = str(Path(save_path).with_suffix(f".{ext_clean}"))
+                if alt_path != str(save_path):
+                    fig.savefig(alt_path, dpi=300, bbox_inches="tight")
+            plt.close(fig)
+
+    return fig
+
+
+def plot_spatiotemporal_snapshots_data_only(
+    true: TensorBTSC,
+    *,
+    timesteps: Iterable[int],
+    channel: int = 0,
+    batch_idx: int = 0,
+    vmin: float | None = None,
+    vmax: float | None = None,
+    cmap: str = "viridis",
+    save_path: str | None = None,
+    extra_formats: Iterable[str] | None = None,
+    ylabel: str | None = None,
+    preserve_aspect: bool = False,
+    target_width_in: float = A4_LINEWIDTH_IN,
+) -> Figure:
+    r"""Single-row snapshot panel of ground-truth data with no axis ticks.
+
+    Each panel is titled ``$i={t}$``. The leftmost panel carries ``ylabel`` if
+    provided (typically a dataset short label, e.g. ``AD``, ``CNS``, ``GS``,
+    ``GPE``). Sized for A4 ``\linewidth`` with Times 10pt.
+    """
+    true_batch = true[batch_idx]
+    T, *spatial, C = true_batch.shape
+    if len(spatial) != 2:
+        msg = (
+            "plot_spatiotemporal_snapshots_data_only expects exactly two "
+            f"spatial dimensions, got shape {tuple(true_batch.shape)}."
+        )
+        raise ValueError(msg)
+    if not 0 <= channel < C:
+        msg = f"channel must be in [0, {C - 1}], got {channel}."
+        raise ValueError(msg)
+
+    selected_timesteps = [int(t) for t in timesteps]
+    invalid_timesteps = [t for t in selected_timesteps if t < 0 or t >= T]
+    if invalid_timesteps:
+        msg = (
+            f"timesteps must be in [0, {T - 1}], got invalid values "
+            f"{invalid_timesteps}."
+        )
+        raise ValueError(msg)
+    if not selected_timesteps:
+        msg = "At least one timestep is required for snapshot plotting."
+        raise ValueError(msg)
+
+    true_np = true_batch.detach().cpu().numpy()[:, :, :, channel]
+    min_val = vmin if vmin is not None else float(true_np.min())
+    max_val = vmax if vmax is not None else float(true_np.max())
+    norm = Normalize(vmin=min_val, vmax=max_val)
+
+    ncols = len(selected_timesteps)
+    panel_width, panel_height = _panel_size_for_width(
+        target_width_in, ncols, tuple(spatial), preserve_aspect
+    )
+
+    with plt.rc_context(_SNAPSHOT_PAPER_RC):
+        fig, axes = plt.subplots(
+            1,
+            ncols,
+            figsize=(ncols * panel_width, panel_height),
+            squeeze=False,
+            constrained_layout=True,
+        )
+        for col_idx, timestep in enumerate(selected_timesteps):
+            ax = axes[0][col_idx]
+            ax.imshow(true_np[timestep], cmap=cmap, aspect="auto", norm=norm)
             ax.set_xticks([])
             ax.set_yticks([])
-            if row_idx == 0:
-                ax.set_title(f"t={timestep}")
-            if col_idx == 0:
-                ax.set_ylabel(row_label)
-        image_rows.append(row_images)
+            ax.set_title(f"$i={timestep}$")
+            if col_idx == 0 and ylabel:
+                ax.set_ylabel(ylabel)
 
-    for row_idx, row_images in enumerate(image_rows):
-        fig.colorbar(
-            row_images[-1],
-            ax=axes[row_idx, :].tolist(),
-            fraction=0.025,
-            pad=0.02,
-        )
-
-    channel_label = (
-        f"channel {channel}"
-        if channel_names is None
-        else f"{channel_names[channel]} (channel {channel})"
-    )
-    fig.suptitle(f"{title} - {channel_label}", fontsize=14, fontweight="bold")
-
-    if save_path:
-        fig.savefig(save_path, dpi=150, bbox_inches="tight")
-        plt.close(fig)
+        if save_path:
+            fig.savefig(save_path, dpi=300, bbox_inches="tight")
+            for ext in extra_formats or ():
+                ext_clean = ext.lstrip(".")
+                alt_path = str(Path(save_path).with_suffix(f".{ext_clean}"))
+                if alt_path != str(save_path):
+                    fig.savefig(alt_path, dpi=300, bbox_inches="tight")
+            plt.close(fig)
 
     return fig
 
