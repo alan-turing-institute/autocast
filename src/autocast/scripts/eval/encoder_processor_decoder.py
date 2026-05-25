@@ -87,6 +87,14 @@ from autocast.utils.plots import (
 
 log = logging.getLogger(__name__)
 
+
+def _metric_window_interval_label(window: tuple[int, int] | None) -> str:
+    """Format metric windows as closed-open intervals for plot labels."""
+    if window is None:
+        return "all"
+    return f"[{window[0]}:{window[1]})"
+
+
 AVAILABLE_METRICS = {
     "mae": MAE,
     "mse": MSE,
@@ -488,7 +496,10 @@ def _process_metrics_results(
                 metric.plot(
                     save_path=plot_dir
                     / f"{log_prefix.lower()}_coverage_window_{window_str}.png",
-                    title=f"{log_prefix} Coverage Window {window}",
+                    title=(
+                        f"{log_prefix} Coverage Window "
+                        f"{_metric_window_interval_label(window)}"
+                    ),
                 )
 
             # Try to get a scalar value for csv
