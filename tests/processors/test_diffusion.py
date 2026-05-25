@@ -173,6 +173,36 @@ def test_lola_diffusion_processor_loss_is_finite():
     assert torch.isfinite(loss)
 
 
+@pytest.mark.parametrize("sampler", ["ab", "vab"])
+def test_diffusion_ab_sampler_runs_and_is_deterministic(sampler: str):
+    """LoLA's Adams-Bashforth samplers integrate through `map` deterministically.
+
+    Guards the wiring for matching LoLA's inference recipe (algorithm="ab",
+    order=2). Being a deterministic ODE solver, the same init noise (seed) must
+    yield an identical sample.
+    """
+    processor = DiffusionProcessor(
+        backbone=_CaptureBackbone(),
+        schedule=LogLogitSchedule(),
+        denoiser_type="lola",
+        n_steps_output=4,
+        n_channels_out=2,
+        sampler=sampler,
+        sampler_steps=8,
+        sampler_order=2,
+    )
+    x = torch.randn(2, 1, 8, 8, 2)
+
+    torch.manual_seed(0)
+    out_a = processor.map(x, None)
+    torch.manual_seed(0)
+    out_b = processor.map(x, None)
+
+    assert out_a.shape == (2, 4, 8, 8, 2)
+    assert torch.isfinite(out_a).all()
+    assert torch.allclose(out_a, out_b)
+
+
 params = list(
     itertools.product(
         [1, 4],  # n_steps_output

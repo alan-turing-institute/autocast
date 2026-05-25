@@ -1,7 +1,15 @@
 import torch
 from azula.denoise import Denoiser, GaussianPosterior, KarrasDenoiser, SimpleDenoiser
 from azula.noise import Schedule
-from azula.sample import DDIMSampler, DDPMSampler, EulerSampler, HeunSampler, Sampler
+from azula.sample import (
+    DDIMSampler,
+    DDPMSampler,
+    EulerSampler,
+    HeunSampler,
+    Sampler,
+    vABSampler,
+    zABSampler,
+)
 from torch import nn
 
 from autocast.processors.base import Processor
@@ -69,6 +77,7 @@ class DiffusionProcessor(Processor):
         n_channels_out: int = 1,
         sampler_steps: int = 50,
         sampler: str = "euler",
+        sampler_order: int = 2,
     ):
         super().__init__()
         self.learning_rate = learning_rate
@@ -76,6 +85,8 @@ class DiffusionProcessor(Processor):
         self.n_channels_out = n_channels_out
         self.sampler_steps = sampler_steps
         self.sampler = sampler
+        # Multistep order for Adams-Bashforth samplers ("ab"/"vab")
+        self.sampler_order = sampler_order
 
         # Create Azula denoiser with chosen preconditioning
         if denoiser_type == "simple":
@@ -194,10 +205,32 @@ class DiffusionProcessor(Processor):
                 silent=silent,
                 **sampler_kwargs,
             )
+        elif sampler == "ab":
+            # Adams-Bashforth multistep ODE solver with noise (z) prediction.
+            azula_sampler = zABSampler(
+                denoiser=self.denoiser,
+                order=self.sampler_order,
+                start=1.0,
+                stop=0.0,
+                steps=num_steps,
+                silent=silent,
+                **sampler_kwargs,
+            )
+        elif sampler == "vab":
+            # Adams-Bashforth multistep ODE solver with velocity (v) prediction.
+            azula_sampler = vABSampler(
+                denoiser=self.denoiser,
+                order=self.sampler_order,
+                start=1.0,
+                stop=0.0,
+                steps=num_steps,
+                silent=silent,
+                **sampler_kwargs,
+            )
         else:
             raise ValueError(
-                f"Unknown sampler: {sampler}. Choose from: 'euler', 'heun', 'ddim',"
-                "'ddpm'"
+                f"Unknown sampler: {sampler}. Choose from: 'euler', 'heun', 'ddim', "
+                "'ddpm', 'ab', 'vab'"
             )
         return azula_sampler
 
