@@ -6,6 +6,7 @@ from typing import Any
 
 import heavyball
 import torch
+from lightning.pytorch.callbacks import Timer
 from lightning.pytorch.utilities.types import OptimizerLRScheduler
 from omegaconf import DictConfig, OmegaConf
 from torch import nn
@@ -40,11 +41,12 @@ class OptimizerMixin(nn.Module):
         return max(min_prob, max_prob * decay ** max(n - flat_start, 0))
 
     def _get_scheduler_interval(self, cfg: dict[str, Any]) -> str:
-        """Return scheduler interval ('epoch' or 'step')."""
+        """Return scheduler interval ('epoch', 'step', or 'time')."""
         interval = str(cfg.get("scheduler_interval", "epoch")).lower()
-        if interval not in {"epoch", "step"}:
+        if interval not in {"epoch", "step", "time"}:
             msg = (
-                f"scheduler_interval must be either 'epoch' or 'step'. Got: {interval}"
+                "scheduler_interval must be 'epoch', 'step', or 'time'. "
+                f"Got: {interval}"
             )
             raise ValueError(msg)
         return interval
@@ -175,6 +177,95 @@ class OptimizerMixin(nn.Module):
             warmup = int(warmup_raw)
         return max(warmup, 0)
 
+    def _resolve_time_warmup(self, cfg: dict[str, Any]) -> float:
+        """Resolve warmup as a fraction of the wall-clock budget.
+
+        With ``scheduler_interval='time'`` warmup is a fraction of
+        ``trainer.max_time`` (a float in ``[0, 1)``); absolute step/epoch
+        counts are meaningless against a wall-clock budget and are rejected.
+        """
+        warmup_cfg = cfg.get("warmup", 0)
+        warmup_raw = 0.0 if warmup_cfg is None else float(warmup_cfg)
+        if not math.isfinite(warmup_raw):
+            msg = f"warmup must be finite. Got: {warmup_raw}"
+            raise ValueError(msg)
+        if not 0.0 <= warmup_raw < 1.0:
+            msg = (
+                "With scheduler_interval='time', warmup must be a fraction in "
+                f"[0, 1) of the wall-clock budget. Got: {warmup_raw}"
+            )
+            raise ValueError(msg)
+        return warmup_raw
+
+    def _find_training_timer(self) -> Timer | None:
+        """Return Lightning's Timer callback if one is installed."""
+        trainer = getattr(self, "trainer", None)
+        callbacks = getattr(trainer, "callbacks", []) if trainer is not None else []
+        return next((cb for cb in callbacks if isinstance(cb, Timer)), None)
+
+    def _require_time_budget(self) -> None:
+        """Ensure a wall-clock budget exists for time-based scheduling.
+
+        ``trainer.max_time`` installs Lightning's ``Timer`` with a duration
+        (``max_time`` itself is not exposed as a trainer attribute). A Timer
+        without a duration, or no Timer at all, means there is no budget to
+        anneal over, so fail loud rather than silently never decaying.
+        """
+        timer = self._find_training_timer()
+        if timer is None or timer.time_remaining() is None:
+            msg = (
+                "scheduler_interval='time' requires a wall-clock budget; set "
+                "trainer.max_time (which installs Lightning's Timer)."
+            )
+            raise ValueError(msg)
+
+    def _training_time_progress(self) -> float:
+        """Fraction in [0, 1] of the wall-clock budget elapsed.
+
+        Reads Lightning's ``Timer`` callback, whose elapsed offset is restored
+        from checkpoints (and cleared by ``reset_resume_time_budget``). The
+        schedule therefore tracks the same clock that enforces ``max_time``: a
+        single-job run anneals over the job; a full-state-resumed run anneals
+        over the cumulative training time. Returns 0.0 (schedule start) if no
+        Timer / budget is available, which only happens before training begins.
+        """
+        timer = self._find_training_timer()
+        if timer is None:
+            return 0.0
+        remaining = timer.time_remaining()
+        if remaining is None:
+            return 0.0
+        elapsed = timer.time_elapsed()
+        budget = elapsed + remaining
+        if budget <= 0.0:
+            return 0.0
+        return min(max(elapsed / budget, 0.0), 1.0)
+
+    def _create_time_cosine(
+        self,
+        optimizer: torch.optim.Optimizer,
+        cfg: dict[str, Any],
+        min_lr_ratio: float,
+    ) -> torch.optim.lr_scheduler.LambdaLR:
+        """Cosine LR annealed over wall-clock time (``trainer.max_time``).
+
+        The lambda ignores the step counter and instead reads elapsed training
+        time from Lightning's ``Timer`` each step, so the LR reaches
+        ``min_lr_ratio`` exactly as the budget is exhausted regardless of
+        throughput. Stepped per optimizer step (see ``configure_optimizers``).
+        """
+        warmup_frac = self._resolve_time_warmup(cfg)
+
+        def lr_lambda(_step: int) -> float:
+            progress = self._training_time_progress()
+            cosine = 0.5 * (1.0 + math.cos(math.pi * progress))
+            scaled = min_lr_ratio + (1.0 - min_lr_ratio) * cosine
+            if warmup_frac > 0.0 and progress < warmup_frac:
+                return (progress / warmup_frac) * scaled
+            return scaled
+
+        return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
+
     def _create_scheduler(
         self, optimizer: torch.optim.Optimizer, cfg: dict[str, Any]
     ) -> torch.optim.lr_scheduler.LRScheduler:
@@ -188,6 +279,16 @@ class OptimizerMixin(nn.Module):
             raise ValueError(msg)
 
         if scheduler_name in {"cosine", "cosine_with_restarts"}:
+            if scheduler_interval == "time":
+                if scheduler_name == "cosine_with_restarts":
+                    msg = (
+                        "cosine_with_restarts is not supported with "
+                        "scheduler_interval='time'."
+                    )
+                    raise ValueError(msg)
+                self._require_time_budget()
+                return self._create_time_cosine(optimizer, cfg, min_lr_ratio)
+
             horizon = self._resolve_cosine_horizon(cfg, scheduler_interval)
             warmup = self._resolve_warmup(cfg, horizon)
             use_restarts = scheduler_name == "cosine_with_restarts"
@@ -265,11 +366,17 @@ class OptimizerMixin(nn.Module):
                 },
             }
 
+        # Time-based cosine steps per optimizer step (the lambda reads the
+        # wall-clock; Lightning's lr_scheduler only accepts "step"/"epoch").
+        lightning_interval = (
+            "step" if scheduler_interval == "time" else scheduler_interval
+        )
+
         return {
             "optimizer": optimizer,
             "lr_scheduler": {
                 "scheduler": scheduler,
-                "interval": scheduler_interval,
+                "interval": lightning_interval,
                 "frequency": 1,
             },
         }
