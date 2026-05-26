@@ -107,6 +107,18 @@
         "bug",
         "review"
       ]
+    },
+    {
+      "login": "farhanferoz",
+      "name": "farhanferoz",
+      "avatar_url": "https://avatars.githubusercontent.com/u/34422685?v=4",
+      "profile": "https://github.com/farhanferoz",
+      "contributions": [
+        "ideas",
+        "code",
+        "bug",
+        "review"
+      ]
     }
   ],
   "contributorsPerLine": 7,
