@@ -412,6 +412,40 @@ def test_lead_time_coverage_delta_is_proportional(tmp_path: Path):
     plt.close(fig)
 
 
+def test_lead_time_coverage_ylim_applies_to_standalone_panel(tmp_path: Path):
+    eval_dir = tmp_path / "run1" / "eval"
+    eval_dir.mkdir(parents=True)
+    pd.DataFrame(
+        [[0.25, 0.75]],
+        index=pd.Index(["coverage_0.5"], name="metric"),
+        columns=pd.Index(["0", "1"]),
+    ).to_csv(eval_dir / "rollout_metrics_per_timestep_channel_all.csv")
+    df = pd.DataFrame(
+        {
+            "dataset_label": ["AD"],
+            "plot_group": ["model"],
+            "run_path": ["run1"],
+            "eval_subdir": ["eval"],
+        }
+    )
+    styles = {"model": {"color": "black", "label": "model", "linestyle": "-"}}
+
+    fig = pdc.plot_lead_time_panel(
+        df,
+        ["coverage_0.5"],
+        tmp_path,
+        tmp_path,
+        "coverage.png",
+        styles,
+        coverage_ylim=(0.2, 0.8),
+        save=False,
+    )
+
+    assert isinstance(fig, Figure)
+    assert fig.axes[0].get_ylim() == (0.2, 0.8)
+    plt.close(fig)
+
+
 def test_short_axis_labels_use_compact_shared_coverage_delta(tmp_path: Path):
     eval_dir = tmp_path / "run1" / "eval"
     eval_dir.mkdir(parents=True)
@@ -480,3 +514,49 @@ def test_lead_time_error_labels_are_uppercase(tmp_path: Path):
     assert isinstance(fig, Figure)
     assert fig.axes[0].get_ylabel() == "VRMSE"
     plt.close(fig)
+
+
+def test_run_target_preserves_nested_relative_paths(tmp_path: Path):
+    results_dir = tmp_path / "outputs"
+    run_id = "2026-05-01/crps_ad64_vit_azula_large_abcd123_ef45678"
+    run_dir = results_dir / run_id
+    eval_dir = run_dir / "eval"
+    eval_dir.mkdir(parents=True)
+    pd.DataFrame([{"window": "all", "batch_idx": "all", "vrmse": 0.1}]).to_csv(
+        eval_dir / "evaluation_metrics.csv", index=False
+    )
+
+    [target] = pdc._discover_run_targets(results_dir)
+    row = pdc.load_single_run_metrics(
+        target.path,
+        eval_subdir=target.eval_subdir,
+        run_ref=target.ref,
+        run_path=target.relative_path,
+    )
+
+    assert target.relative_path == run_id
+    assert row["run_path"] == run_id
+    assert row["run_name"] == "crps_ad64_vit_azula_large_abcd123_ef45678"
+
+
+def test_load_single_run_metrics_uses_cache_before_wandb(
+    monkeypatch,
+    tmp_path: Path,
+):
+    run_dir = tmp_path / "crps_ad64_vit_azula_large_abcd123_ef45678"
+    eval_dir = run_dir / "eval"
+    eval_dir.mkdir(parents=True)
+    pd.DataFrame([{"window": "all", "batch_idx": "all", "vrmse": 0.1}]).to_csv(
+        eval_dir / "evaluation_metrics.csv", index=False
+    )
+
+    def fail_wandb(*_args: Any, **_kwargs: Any) -> int | None:
+        msg = "W&B should not be queried without force_training_refresh"
+        raise AssertionError(msg)
+
+    monkeypatch.setattr(pdc, "_best_winkler_epoch_from_wandb", fail_wandb)
+
+    row = pdc.load_single_run_metrics(run_dir)
+
+    assert row["overall_vrmse"] == 0.1
+    assert "best_winkler_epoch" not in row

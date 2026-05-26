@@ -5,6 +5,7 @@ import math
 import re
 import sys
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, SupportsIndex, cast
@@ -202,6 +203,16 @@ SINGLE_STEP_RESULTS_LOWER_IS_BETTER = {
 SINGLE_STEP_RESULTS_TARGET_METRICS = {"SSR": 1.0}
 
 
+@dataclass(frozen=True)
+class RunTarget:
+    """Resolved run target plus the path that should be stored in plot data."""
+
+    path: Path
+    eval_subdir: str
+    ref: str
+    relative_path: str
+
+
 def _is_dispersion_metric(metric: str) -> bool:
     """Return True for ratio-style dispersion diagnostics."""
     return metric in DISPERSION_METRICS
@@ -333,6 +344,21 @@ def _set_figure_text_style(
 
 def _scaled_figsize(width: float, height: float, figure_scale: float = 1.0):
     return (width * figure_scale, height * figure_scale)
+
+
+def _apply_optional_ylim(
+    ax: MplAxes,
+    ylim: tuple[float | None, float | None] | None,
+) -> tuple[float, float] | None:
+    """Apply optional y-axis bounds, preserving automatic bounds for ``None``."""
+    if ylim is None:
+        return None
+    lo, hi = ylim
+    cur_lo, cur_hi = ax.get_ylim()
+    next_lo = lo if lo is not None else cur_lo
+    next_hi = hi if hi is not None else cur_hi
+    ax.set_ylim(bottom=next_lo, top=next_hi)
+    return (float(next_lo), float(next_hi))
 
 
 def _metric_axis_label(metric: str) -> str:
@@ -629,6 +655,54 @@ def apply_filter_expr(
 def resolve_results_root(outputs_dir: str) -> Path:  # noqa: D103
     p = Path(outputs_dir).expanduser()
     return (Path.cwd() / p).resolve() if not p.is_absolute() else p.resolve()
+
+
+def _run_relative_path(results_dir: Path, run_dir: Path, run_id: str | None) -> str:
+    """Return the path that plotting reloads should use under ``results_dir``."""
+    if run_id is not None and not Path(run_id).expanduser().is_absolute():
+        return Path(run_id).as_posix()
+    try:
+        return run_dir.resolve().relative_to(results_dir.resolve()).as_posix()
+    except ValueError:
+        return str(run_dir.expanduser().resolve())
+
+
+def _make_run_target(
+    results_dir: Path,
+    run_id: str,
+    eval_subdir: str | None = None,
+    run_ref: str | None = None,
+) -> RunTarget:
+    """Resolve a requested run id into a stable target record."""
+    run_path = Path(run_id).expanduser()
+    run_dir = run_path if run_path.is_absolute() else results_dir / run_path
+    resolved_eval_subdir = normalize_eval_subdir(eval_subdir)
+    return RunTarget(
+        path=run_dir,
+        eval_subdir=resolved_eval_subdir,
+        ref=run_ref or run_id,
+        relative_path=_run_relative_path(results_dir, run_dir, run_id),
+    )
+
+
+def _discover_run_targets(results_dir: Path) -> list[RunTarget]:
+    """Recursively discover runs with a default eval metrics CSV."""
+    targets = []
+    for metrics_csv in results_dir.rglob("evaluation_metrics.csv"):
+        eval_dir = metrics_csv.parent
+        if eval_dir.name != DEFAULT_EVAL_SUBDIR:
+            continue
+        run_dir = eval_dir.parent
+        relative_path = _run_relative_path(results_dir, run_dir, run_id=None)
+        targets.append(
+            RunTarget(
+                path=run_dir,
+                eval_subdir=DEFAULT_EVAL_SUBDIR,
+                ref=run_dir.name,
+                relative_path=relative_path,
+            )
+        )
+    return sorted(targets, key=lambda target: target.path)
 
 
 def normalize_eval_subdir(eval_subdir: str | None) -> str:
@@ -972,6 +1046,7 @@ def load_single_run_metrics(  # noqa: PLR0912, PLR0915
     run_dir: Path,
     eval_subdir: str = DEFAULT_EVAL_SUBDIR,
     run_ref: str | None = None,
+    run_path: str | None = None,
     force_training_refresh: bool = False,
 ) -> dict:
     """Load evaluation metrics and rollout metrics from a single run directory."""
@@ -979,7 +1054,7 @@ def load_single_run_metrics(  # noqa: PLR0912, PLR0915
     row = {
         "run_name": run_ref or run_dir.name,
         "run_id": run_dir.name,
-        "run_path": run_dir.name,
+        "run_path": run_path or run_dir.name,
         "eval_subdir": resolved_eval_subdir,
         "dataset": None,
     }
@@ -1080,15 +1155,15 @@ def load_single_run_metrics(  # noqa: PLR0912, PLR0915
 
     loss_family, _, _ = parse_loss_dataset_arch(run_dir.name)
     if loss_family == "crps":
-        best_winkler_epoch = _best_winkler_epoch_from_wandb(
+        best_winkler_epoch = _best_winkler_epoch_from_cache(
             run_dir,
             eval_subdir=resolved_eval_subdir,
-            force_refresh=force_training_refresh,
         )
-        if best_winkler_epoch is None:
-            best_winkler_epoch = _best_winkler_epoch_from_cache(
+        if best_winkler_epoch is None and force_training_refresh:
+            best_winkler_epoch = _best_winkler_epoch_from_wandb(
                 run_dir,
                 eval_subdir=resolved_eval_subdir,
+                force_refresh=True,
             )
         if best_winkler_epoch is not None:
             row["best_winkler_epoch"] = best_winkler_epoch
@@ -2170,13 +2245,7 @@ def grouped_bar(  # noqa: PLR0912, PLR0915
             alpha=0.65,
         )
 
-    if ylim is not None:
-        lo, hi = ylim
-        cur_lo, cur_hi = ax.get_ylim()
-        ax.set_ylim(
-            bottom=lo if lo is not None else cur_lo,
-            top=hi if hi is not None else cur_hi,
-        )
+    _apply_optional_ylim(ax, ylim)
 
     if show_legend:
         handles, labels = ax.get_legend_handles_labels()
@@ -2383,6 +2452,7 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
     fig: FigureBase | None = None,
     save: bool = True,
     error_ylim: tuple[float | None, float | None] | None = None,
+    coverage_ylim: tuple[float | None, float | None] | None = None,
     show_legend: bool = True,
     yscale: str | None = None,
     ref_value: float | None = None,
@@ -2402,8 +2472,10 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
 ) -> FigureBase | None:
     """Plot per-metric, per-dataset lead-time curves as a panel figure.
 
-    ``error_ylim`` (low, high) overrides auto y-limits for non-coverage rows;
-    coverage rows remain fixed at [0, 1]. Either bound may be ``None``.
+    ``error_ylim`` overrides auto y-limits for non-coverage rows.
+    ``coverage_ylim`` overrides coverage rows; otherwise raw coverage stays
+    fixed at [0, 1] and coverage-delta rows use symmetric auto limits.
+    Either bound may be ``None``.
     When ``axes`` is provided, draw into that pre-made grid with shape
     (len(metrics_to_plot), n_datasets).
 
@@ -2504,7 +2576,7 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
         for c, ds_label in enumerate(datasets):
             ax = axes[r][c]
             ds = sub[sub["dataset_label"] == ds_label]
-            is_cov = metric.startswith("coverage_")
+            is_cov = metric == "coverage" or metric.startswith("coverage_")
             is_ssr = metric == "ssr"
             is_cov_delta = bool(coverage_delta and is_cov)
             cov_target: float | None = None
@@ -2643,17 +2715,10 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
                     linewidth=ref_line_width,
                     alpha=0.6,
                 )
-            # Apply user override for error rows (skip SSR: ratio diagnostic)
-            if not is_cov and not is_ssr and error_ylim is not None:
-                lo, hi = error_ylim
-                cur_lo, cur_hi = ax.get_ylim()
-                next_lo = lo if lo is not None else cur_lo
-                next_hi = hi if hi is not None else cur_hi
-                ax.set_ylim(
-                    bottom=next_lo,
-                    top=next_hi,
-                )
-                y_limit = (float(next_lo), float(next_hi))
+            if is_cov and coverage_ylim is not None:
+                y_limit = _apply_optional_ylim(ax, coverage_ylim) or y_limit
+            elif not is_cov and not is_ssr and error_ylim is not None:
+                y_limit = _apply_optional_ylim(ax, error_ylim) or y_limit
             if (
                 sharey
                 and y_limit is not None
@@ -3264,24 +3329,11 @@ def plot_panel_figure(  # noqa: PLR0915
         fig=right_bot,
         save=False,
         error_ylim=None,
+        coverage_ylim=coverage_ylim,
         coverage_delta=lead_time_coverage_delta,
         show_legend=False,
         **plot_style_kwargs,
     )
-    if coverage_ylim is not None:
-        lo, hi = coverage_ylim
-        rb_arr = np.asarray(rb_axes)
-        for r, metric in enumerate(coverage_metrics):
-            # SSR is a ratio diagnostic (linear, ref=1.0) mixed into the
-            # coverage panel; do not squash it onto the coverage [0, 1] axis.
-            if metric == "ssr":
-                continue
-            for ax in rb_arr[r]:
-                cur_lo, cur_hi = ax.get_ylim()
-                ax.set_ylim(
-                    bottom=lo if lo is not None else cur_lo,
-                    top=hi if hi is not None else cur_hi,
-                )
 
     # --- Global legend --------------------------------------------------
     # Collect groups present anywhere for the legend.
@@ -4774,7 +4826,7 @@ def main():  # noqa: PLR0912, PLR0915
     # Gather explicitly requested runs, or fallback to auto-discover
     if explicit_groups:
         run_targets = [
-            (results_dir / r, DEFAULT_EVAL_SUBDIR, r)
+            _make_run_target(results_dir, r, DEFAULT_EVAL_SUBDIR, r)
             for g in explicit_groups
             for r in g
         ]
@@ -4791,35 +4843,29 @@ def main():  # noqa: PLR0912, PLR0915
                 n_seen = ref_counts.get(base_ref, 0)
                 ref_counts[base_ref] = n_seen + 1
                 run_ref = base_ref if n_seen == 0 else f"{base_ref}#{n_seen + 1}"
-                run_targets.append((results_dir / run_id, eval_subdir, run_ref))
+                run_targets.append(
+                    _make_run_target(results_dir, run_id, eval_subdir, run_ref)
+                )
             if args.runs:
                 for run_id in args.runs[len(args.run) :]:
-                    run_targets.append(
-                        (results_dir / run_id, DEFAULT_EVAL_SUBDIR, run_id)
-                    )
+                    run_targets.append(_make_run_target(results_dir, run_id))
         else:
             run_targets = [
-                (
-                    results_dir / r,
-                    normalize_eval_subdir(
-                        eval_subdir_by_run.get(r, DEFAULT_EVAL_SUBDIR)
-                    ),
+                _make_run_target(
+                    results_dir,
+                    r,
+                    eval_subdir_by_run.get(r, DEFAULT_EVAL_SUBDIR),
                     r,
                 )
                 for r in args.runs
             ]
     else:
-        run_targets = sorted(
-            [
-                (p, DEFAULT_EVAL_SUBDIR, p.name)
-                for p in results_dir.iterdir()
-                if p.is_dir() and (p / "eval" / "evaluation_metrics.csv").exists()
-            ],
-            key=lambda x: x[0],
-        )
+        run_targets = _discover_run_targets(results_dir)
 
     valid_run_names = {
-        name for rd, _, run_ref in run_targets for name in (run_ref, rd.name)
+        name
+        for target in run_targets
+        for name in (target.ref, target.path.name, target.relative_path)
     }
 
     try:
@@ -4834,9 +4880,13 @@ def main():  # noqa: PLR0912, PLR0915
     if args.list:
         print(f"Loading {len(run_targets)} runs...")
         m_rows = []
-        for rd, run_eval_subdir, run_ref in run_targets:
+        for target in run_targets:
             m_rows.append(
-                load_config_metadata(rd, eval_subdir=run_eval_subdir, run_ref=run_ref)
+                load_config_metadata(
+                    target.path,
+                    eval_subdir=target.eval_subdir,
+                    run_ref=target.ref,
+                )
             )
         mdf = pd.DataFrame(m_rows)
 
@@ -4984,19 +5034,20 @@ def main():  # noqa: PLR0912, PLR0915
 
     print(f"Loading {len(run_targets)} runs...")
     rows = []
-    for d, run_eval_subdir, run_ref in run_targets:
-        if not d.exists():
-            print(f"Warning: requested run not found: {d}")
+    for target in run_targets:
+        if not target.path.exists():
+            print(f"Warning: requested run not found: {target.path}")
             continue
         try:
             r = load_single_run_metrics(
-                d,
-                eval_subdir=run_eval_subdir,
-                run_ref=run_ref,
+                target.path,
+                eval_subdir=target.eval_subdir,
+                run_ref=target.ref,
+                run_path=target.relative_path,
                 force_training_refresh=args.training_refresh,
             )
         except Exception as e:
-            print(f"Error loading {d}: {e}")
+            print(f"Error loading {target.path}: {e}")
             continue
         rows.append(r)
 
@@ -5340,6 +5391,7 @@ def main():  # noqa: PLR0912, PLR0915
             styles,
             dataset_order=ds_order,
             hue_order=hu_order,
+            coverage_ylim=coverage_ylim,
             **plot_style_kwargs,
         )
         if args.lead_time_coverage_delta:
@@ -5354,6 +5406,7 @@ def main():  # noqa: PLR0912, PLR0915
                     styles,
                     dataset_order=ds_order,
                     hue_order=hu_order,
+                    coverage_ylim=coverage_ylim,
                     coverage_delta=True,
                     **plot_style_kwargs,
                 )
@@ -5371,6 +5424,7 @@ def main():  # noqa: PLR0912, PLR0915
             dataset_order=ds_order,
             hue_order=hu_order,
             error_ylim=error_ylim,
+            coverage_ylim=coverage_ylim,
             yscale=args.error_yscale,
             **plot_style_kwargs,
         )

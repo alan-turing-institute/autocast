@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 PLOTS_PATH=2026-04-20_plots_m16_complete
 
@@ -6,7 +7,7 @@ PLOTS_PATH=2026-04-20_plots_m16_complete
 # Comparison with previous CNS results
 # m=8 
 # --run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (24hrs, update, n=1024, afCRPS, h=568, layers=12)" 0 \
-autocast-plots --results-dir outputs/2026-04-20_collated \
+uv run autocast-plots --results-dir outputs/2026-04-20_collated \
 	--run crps_cns64_vit_azula_large_1ed9013_ab31602 "CRPS (24hrs, prelim, n=1024, afCRPS, h=632, layers=10)" 0 \
 	--run crps_cns64_vit_azula_large_0db40e1_dcd79e4 "CRPS (24hrs, update, n=1024, afCRPS, h=568, layers=12, m=16)" 0 \
 	--run diff_cns64_flow_matching_vit_1ed9013_893624d "FM (24hrs, prelim)" 2 \
@@ -26,7 +27,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 
 # Main comparison: CRPS ambient variants, CRPS processor-on-latents, FM ambient (EPD)
 # --run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (ambient)" 0 \
-autocast-plots --results-dir outputs/2026-04-20_collated \
+uv run autocast-plots --results-dir outputs/2026-04-20_collated \
 	--run crps_ad64_vit_azula_large_0f89f06_4667606 "CRPS (ambient)" 0 \
 	--run crps_cns64_vit_azula_large_0db40e1_dcd79e4 "CRPS (ambient m=16)" 0 \
 	--run crps_gpe64_vit_azula_large_0f89f06_d337bd8 "CRPS (ambient)" 0 \
@@ -54,7 +55,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 
 
 # Main comparison (with m=16 runs 100^ complete): CRPS ambient variants, CRPS processor-on-latents, FM ambient (EPD)
-autocast-plots --results-dir outputs/2026-04-20_collated \
+uv run autocast-plots --results-dir outputs/2026-04-20_collated \
 	--run crps_ad64_vit_azula_large_ac1bb06_ef6368d "CRPS (ambient, m=16)" 0 \
 	--run crps_cns64_vit_azula_large_0db40e1_dcd79e4 "CRPS (ambient, m=16)" 0 \
 	--run crps_gpe64_vit_azula_large_ac1bb06_638585e "CRPS (ambient, m=16)" 0 \
@@ -67,7 +68,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 2 \
 	--run diff_gpe64_flow_matching_vit_09490da_47bf39a "FM (latent)" 2 \
 	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "FM (latent)" 2 \
-	--dataset-order AD CNS GS GPE\
+	--dataset-order AD CNS GS GPE \
 	--error-ylim 1e-5 1 \
 	--lead-time-error-metrics vrmse rmse \
 	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
@@ -81,7 +82,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--output-dir outputs/2026-04-20_collated/$PLOTS_PATH/main_comparison_m16_complete
 
 # Main comparison (with m=16 runs 100^ complete): CRPS ambient variants, CRPS processor-on-latents, FM ambient (EPD)
-autocast-plots --results-dir outputs/2026-04-20_collated \
+uv run autocast-plots --results-dir outputs/2026-04-20_collated \
 	--run crps_ad64_vit_azula_large_ac1bb06_ef6368d "CRPS (ambient, m=16)" 0 \
 	--run crps_cns64_vit_azula_large_0db40e1_dcd79e4 "CRPS (ambient, m=16)" 0 \
 	--run crps_gpe64_vit_azula_large_ac1bb06_638585e "CRPS (ambient, m=16)" 0 \
@@ -90,7 +91,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 2 \
 	--run diff_gpe64_flow_matching_vit_09490da_47bf39a "FM (latent)" 2 \
 	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "FM (latent)" 2 \
-	--dataset-order AD CNS GS GPE\
+	--dataset-order AD CNS GS GPE \
 	--error-ylim 1e-5 1 \
 	--lead-time-error-metrics vrmse rmse \
 	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
@@ -110,7 +111,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 # ../2026-04-24/crps_gs64_vit_azula_large_bed4611_828a161/
 
 # Main comparison (with m=8 runs 100^ complete): best winkler
-autocast-plots --results-dir outputs/2026-04-20_collated \
+uv run autocast-plots --results-dir outputs/2026-04-20_collated \
 	--run crps_ad64_vit_azula_large_bed4611_da01a04 "CRPS (ambient, m=8)" 0 eval=eval_best_multiwinkler_from0p25 \
 	--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS (ambient, m=8)" 0 eval=eval_best_multiwinkler_from0p25 \
 	--run crps_gpe64_vit_azula_large_bed4611_e0a6df5 "CRPS (ambient, m=8)" 0 eval=eval_best_multiwinkler_from0p25 \
@@ -119,7 +120,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 2 \
 	--run diff_gpe64_flow_matching_vit_09490da_47bf39a "FM (latent)" 2 \
 	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "FM (latent)" 2 \
-	--dataset-order AD CNS GS GPE\
+	--dataset-order AD CNS GS GPE \
 	--error-ylim 1e-5 1 \
 	--lead-time-error-metrics vrmse rmse \
 	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
@@ -139,7 +140,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 # ../2026-04-24/ensemble_size/crps_gs64_vit_azula_large_bed4611_4d04729/
 
 # Main comparison (with m=16 runs 100^ complete): CRPS ambient variants, CRPS processor-on-latents, FM ambient (EPD)
-autocast-plots --results-dir outputs/2026-04-20_collated \
+uv run autocast-plots --results-dir outputs/2026-04-20_collated \
 	--run crps_ad64_vit_azula_large_bed4611_69c99bf "CRPS (ambient, m=16)" 0 eval=eval_best_multiwinkler_from0p25 \
 	--run crps_cns64_vit_azula_large_bed4611_5758ebc "CRPS (ambient, m=16)" 0 eval=eval_best_multiwinkler_from0p25 \
 	--run crps_gpe64_vit_azula_large_bed4611_6b78265 "CRPS (ambient, m=16)" 0 eval=eval_best_multiwinkler_from0p25 \
@@ -148,7 +149,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 2 \
 	--run diff_gpe64_flow_matching_vit_09490da_47bf39a "FM (latent)" 2 \
 	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "FM (latent)" 2 \
-	--dataset-order AD CNS GS GPE\
+	--dataset-order AD CNS GS GPE \
 	--error-ylim 1e-5 1 \
 	--lead-time-error-metrics vrmse rmse \
 	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
@@ -165,7 +166,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 
 
 # # Main comparison (with m=16 runs at 75% checkpoint): CRPS ambient variants, CRPS processor-on-latents, FM ambient (EPD)
-# autocast-plots --results-dir outputs/2026-04-20_collated \
+# uv run autocast-plots --results-dir outputs/2026-04-20_collated \
 # 	--run crps_ad64_vit_azula_large_ac1bb06_ef6368d "CRPS (ambient, m=16)" 0 eval=eval_0p75 \
 # 	--run crps_cns64_vit_azula_large_0db40e1_dcd79e4 "CRPS (ambient, m=16)" 0 eval=eval_0p75 \
 # 	--run crps_gpe64_vit_azula_large_ac1bb06_638585e "CRPS (ambient, m=16)" 0 eval=eval_0p75 \
@@ -178,7 +179,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 # 	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 2 \
 # 	--run diff_gpe64_flow_matching_vit_09490da_47bf39a "FM (latent)" 2 \
 # 	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "FM (latent)" 2 \
-# 	--dataset-order AD CNS GS GPE\
+# 	--dataset-order AD CNS GS GPE \
 # 	--error-ylim 1e-5 1 \
 # 	--lead-time-error-metrics vrmse rmse \
 # 	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
@@ -192,16 +193,16 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 # 	--output-dir outputs/2026-04-20_collated/$PLOTS_PATH/main_comparison_m16_complete_0p75
 
 # Main comparison (with m=16 runs at 75% checkpoint): CRPS ambient variants, CRPS processor-on-latents, FM ambient (EPD)
-autocast-plots --results-dir outputs/2026-04-20_collated \
+uv run autocast-plots --results-dir outputs/2026-04-20_collated \
 	--run crps_ad64_vit_azula_large_ac1bb06_ef6368d "CRPS (ambient, m=16)" 0 eval=eval_0p75 \
 	--run crps_cns64_vit_azula_large_0db40e1_dcd79e4 "CRPS (ambient, m=16)" 0 eval=eval_0p75 \
 	--run crps_gpe64_vit_azula_large_ac1bb06_638585e "CRPS (ambient, m=16)" 0 eval=eval_0p75 \
 	--run crps_gs64_vit_azula_large_ac1bb06_639963f "CRPS (ambient, m=16) " 0 eval=eval_0p75 \
-	--run diff_ad64_flow_matching_vit_09490da_dae1382 "FM (latent)" 2 eval=eval_0p75\
-	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 2 eval=eval_0p75\
-	--run diff_gpe64_flow_matching_vit_09490da_47bf39a "FM (latent)" 2 eval=eval_0p75\
-	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "FM (latent)" 2 eval=eval_0p75\
-	--dataset-order AD CNS GS GPE\
+	--run diff_ad64_flow_matching_vit_09490da_dae1382 "FM (latent)" 2 eval=eval_0p75 \
+	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 2 eval=eval_0p75 \
+	--run diff_gpe64_flow_matching_vit_09490da_47bf39a "FM (latent)" 2 eval=eval_0p75 \
+	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "FM (latent)" 2 eval=eval_0p75 \
+	--dataset-order AD CNS GS GPE \
 	--error-ylim 1e-5 1 \
 	--lead-time-error-metrics vrmse rmse \
 	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
@@ -215,7 +216,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--output-dir outputs/2026-04-20_collated/$PLOTS_PATH/main_comparison_m16_complete_0p75_fm_too
 
 # # Main comparison (with m=16 runs at 50% checkpoint): CRPS ambient variants, CRPS processor-on-latents, FM ambient (EPD)
-# autocast-plots --results-dir outputs/2026-04-20_collated \
+# uv run autocast-plots --results-dir outputs/2026-04-20_collated \
 # 	--run crps_ad64_vit_azula_large_ac1bb06_ef6368d "CRPS (ambient, m=16)" 0 eval=eval_0p50 \
 # 	--run crps_cns64_vit_azula_large_0db40e1_dcd79e4 "CRPS (ambient, m=16)" 0 eval=eval_0p50 \
 # 	--run crps_gpe64_vit_azula_large_ac1bb06_638585e "CRPS (ambient, m=16)" 0 eval=eval_0p50 \
@@ -228,7 +229,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 # 	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 2 \
 # 	--run diff_gpe64_flow_matching_vit_09490da_47bf39a "FM (latent)" 2 \
 # 	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "FM (latent)" 2 \
-# 	--dataset-order AD CNS GS GPE\
+# 	--dataset-order AD CNS GS GPE \
 # 	--error-ylim 1e-5 1 \
 # 	--lead-time-error-metrics vrmse rmse \
 # 	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
@@ -242,16 +243,16 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 # 	--output-dir outputs/2026-04-20_collated/$PLOTS_PATH/main_comparison_m16_complete_0p50
 
 # Main comparison (with m=16 runs at 50% checkpoint): CRPS ambient variants, CRPS processor-on-latents, FM ambient (EPD)
-autocast-plots --results-dir outputs/2026-04-20_collated \
+uv run autocast-plots --results-dir outputs/2026-04-20_collated \
 	--run crps_ad64_vit_azula_large_ac1bb06_ef6368d "CRPS (ambient, m=16)" 0 eval=eval_0p50 \
 	--run crps_cns64_vit_azula_large_0db40e1_dcd79e4 "CRPS (ambient, m=16)" 0 eval=eval_0p50 \
 	--run crps_gpe64_vit_azula_large_ac1bb06_638585e "CRPS (ambient, m=16)" 0 eval=eval_0p50 \
 	--run crps_gs64_vit_azula_large_ac1bb06_639963f "CRPS (ambient, m=16) " 0 eval=eval_0p50 \
-	--run diff_ad64_flow_matching_vit_09490da_dae1382 "FM (latent)" 2 eval=eval_0p50\
-	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 2 eval=eval_0p50\
-	--run diff_gpe64_flow_matching_vit_09490da_47bf39a "FM (latent)" 2 eval=eval_0p50\
-	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "FM (latent)" 2 eval=eval_0p50\
-	--dataset-order AD CNS GS GPE\
+	--run diff_ad64_flow_matching_vit_09490da_dae1382 "FM (latent)" 2 eval=eval_0p50 \
+	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 2 eval=eval_0p50 \
+	--run diff_gpe64_flow_matching_vit_09490da_47bf39a "FM (latent)" 2 eval=eval_0p50 \
+	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "FM (latent)" 2 eval=eval_0p50 \
+	--dataset-order AD CNS GS GPE \
 	--error-ylim 1e-5 1 \
 	--lead-time-error-metrics vrmse rmse \
 	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
@@ -267,7 +268,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 
 # Ablation with CRPS ViT using global cond instead of permute_concat and channels last
 # --run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (ambient)" 0 \
-autocast-plots --results-dir outputs/2026-04-20_collated \
+uv run autocast-plots --results-dir outputs/2026-04-20_collated \
 	--run diff_cns64_flow_matching_vit_0f89f06_483bb70 "FM (ambient)" 1 \
 	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 2 \
 	--run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (ambient, m=8)" 0 \
@@ -288,7 +289,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 
 # Usign cached latents for evaluation instead of AE-ambient latents for CRPS latent variant
 # --run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (ambient)" 0 \
-autocast-plots --results-dir outputs/2026-04-20_collated \
+uv run autocast-plots --results-dir outputs/2026-04-20_collated \
 	--run diff_cns64_flow_matching_vit_0f89f06_483bb70 "FM (ambient)" 1 \
 	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 2 \
 	--run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (ambient, m=8)" 0 \
@@ -311,7 +312,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 
 # Ablation with CRPS ensemble size
 # TODO: update with final runs
-autocast-plots --results-dir outputs/2026-04-20_collated \
+uv run autocast-plots --results-dir outputs/2026-04-20_collated \
 	--run diff_cns64_flow_matching_vit_0f89f06_483bb70 "FM (ambient)" 1 \
 	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 2 \
 	--run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (ambient, m=8)" 0 \
@@ -331,7 +332,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	--output-dir outputs/2026-04-20_collated/$PLOTS_PATH/ablation_crps_ensemble_size_complete
 
 # Model size ablation
-autocast-plots --results-dir outputs/2026-04-20_collated \
+uv run autocast-plots --results-dir outputs/2026-04-20_collated \
 	--run diff_cns64_flow_matching_vit_0f89f06_483bb70 "FM (ambient)" 1 \
 	--run diff_cns64_flow_matching_vit_896_3a69487_e894c55 "FM (ambient, 2x)" 1 \
 	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" 2 \
@@ -355,13 +356,13 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 # PLOTS_PATH=2026-04-08_plots
 
 # # CRPS variants
-# autocast-plots --results-dir outputs/2026-04-01_collated \
-# 	--run diff_sw2d64_flow_matching_vit_4d5fcbd_067529b "FM (large)"\
-# 	--run crps_sw2d64_vit_azula_large_8fe25aa_74f91d8 "ViT (large)"\
-# 	--run crps_sw2d64_vit_azula_large_60114bf_5d5c8e1 "ViT (1024)"\
-# 	--run crps_sw2d64_vit_azula_large_concat_60114bf_acf9189 "ViT (concat)"\
-# 	--run epd_sw2d64_vit_azula_large_8c5f696_c5f3ea9 "ViT (MAE loss)"\
-# 	--run crps_sw2d64_vit_azula_large_feb5e43_c630eda "ViT (afCRPS loss)"\
+# uv run autocast-plots --results-dir outputs/2026-04-01_collated \
+# 	--run diff_sw2d64_flow_matching_vit_4d5fcbd_067529b "FM (large)" \
+# 	--run crps_sw2d64_vit_azula_large_8fe25aa_74f91d8 "ViT (large)" \
+# 	--run crps_sw2d64_vit_azula_large_60114bf_5d5c8e1 "ViT (1024)" \
+# 	--run crps_sw2d64_vit_azula_large_concat_60114bf_acf9189 "ViT (concat)" \
+# 	--run epd_sw2d64_vit_azula_large_8c5f696_c5f3ea9 "ViT (MAE loss)" \
+# 	--run crps_sw2d64_vit_azula_large_feb5e43_c630eda "ViT (afCRPS loss)" \
 # 	--error-ylim 1e-3 1 \
 # 	--lead-time-error-metrics vrmse rmse \
 # 	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
@@ -372,7 +373,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 # 	--output-dir outputs/2026-04-01_collated/$PLOTS_PATH/sw_crps_variants
 
 # # 23hrs
-# autocast-plots --results-dir outputs/2026-04-01_collated --sort Date --filter "Dataset=SW2D64 AND (Model=AzulaViTProcessor OR Model=FlowMatchingProcessor) AND Resolution=64x64 AND scale=large" \
+# uv run autocast-plots --results-dir outputs/2026-04-01_collated --sort Date --filter "Dataset=SW2D64 AND (Model=AzulaViTProcessor OR Model=FlowMatchingProcessor) AND Resolution=64x64 AND scale=large" \
 # 	--run diff_sw2d64_flow_matching_vit_4d5fcbd_067529b "FM (large)" \
 # 	--run crps_sw2d64_vit_azula_large_8fe25aa_74f91d8 "ViT (large)" \
 # 	--run crps_sw2d64_vit_azula_large_feb5e43_90e3465 "ViT (23hrs)" \
@@ -387,7 +388,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 # 	--output-dir outputs/2026-04-01_collated/$PLOTS_PATH/sw_23hrs
 
 # # Comparison of 1:4, 1:1 and 2:1
-# autocast-plots --results-dir outputs/2026-04-01_collated \
+# uv run autocast-plots --results-dir outputs/2026-04-01_collated \
 # 	--run diff_cns64_flow_matching_vit_55a4d1a_511e7b1 "FM (1:4)" \
 # 	--run diff_sw2d64_flow_matching_vit_4d5fcbd_067529b "FM (1:4)" \
 # 	--run crps_cns64_vit_azula_large_8fe25aa_d105b90 "ViT (1:4)" \
@@ -411,7 +412,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 # 	--output-dir outputs/2026-04-01_collated/$PLOTS_PATH/1_4_vs_1_1_vs_2_1_no_cached_latents
 
 # # Comparison of 1:4 and 8x gradient steps
-# autocast-plots --results-dir outputs/2026-04-01_collated \
+# uv run autocast-plots --results-dir outputs/2026-04-01_collated \
 # 	--run diff_cns64_flow_matching_vit_55a4d1a_511e7b1 "FM (1:4)" \
 # 	--run diff_sw2d64_flow_matching_vit_4d5fcbd_067529b "FM (1:4)" \
 # 	--run diff_cns64_flow_matching_vit_c3c9713_d2bcaa2 "FM (64, 24hrs)" \
@@ -427,7 +428,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 # 	--output-dir outputs/2026-04-01_collated/$PLOTS_PATH/fm_8x
 
 # # Comparison with 128x128
-# autocast-plots --results-dir outputs/2026-04-01_collated \
+# uv run autocast-plots --results-dir outputs/2026-04-01_collated \
 # 	--run crps_shallow_water2d_128_vit_azula_large_05cf9ff_29b49a6 "ViT 128x128" \
 # 	--run crps_sw2d64_vit_azula_large_8fe25aa_74f91d8 "ViT 64x64" \
 # 	--color-by-label \
@@ -441,7 +442,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 # 	--output-dir outputs/2026-04-01_collated/$PLOTS_PATH/128x128
 
 # # Comparison with ODE steps
-# autocast-plots --results-dir outputs/2026-04-01_collated \
+# uv run autocast-plots --results-dir outputs/2026-04-01_collated \
 # 	--run diff_cns64_flow_matching_vit_c3c9713_d2bcaa2_25 "FM (25 steps)" \
 # 	--run diff_cns64_flow_matching_vit_c3c9713_d2bcaa2 "FM (50 steps)" \
 # 	--run diff_cns64_flow_matching_vit_c3c9713_d2bcaa2_100 "FM (100 steps)" \
@@ -461,7 +462,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 
 
 # # Comparison of 1:4, longer 1:4, smoother optimizer 1:4
-# autocast-plots --results-dir outputs/2026-04-01_collated \
+# uv run autocast-plots --results-dir outputs/2026-04-01_collated \
 # 	--run crps_cns64_vit_azula_large_8fe25aa_d105b90 "ViT" \
 # 	--run diff_cns64_flow_matching_vit_55a4d1a_511e7b1 "FM" \
 # 	--run diff_cns64_flow_matching_vit_13eba33_82f423d "FM (36hrs)" \
@@ -478,7 +479,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 
 # # Compare SW, CNS, GPE
 # # TODO: update SW, CNS and GPE with same training schedule (GPE currently 2e-4)
-# autocast-plots --results-dir outputs/2026-04-01_collated \
+# uv run autocast-plots --results-dir outputs/2026-04-01_collated \
 # 	--run crps_cns64_vit_azula_large_eb4a4f6_294dc78 "ViT" \
 # 	--run crps_sw2d64_vit_azula_large_eb4a4f6_682f33b "ViT" \
 # 	--run diff_cns64_flow_matching_vit_2007857_2cfb01f "FM" \
@@ -497,7 +498,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 # 	--output-dir outputs/2026-04-01_collated/$PLOTS_PATH/sw_cns_gpe
 
 # # Compare DM, FM, ViT for SW, CNS
-# autocast-plots --results-dir outputs/2026-04-01_collated \
+# uv run autocast-plots --results-dir outputs/2026-04-01_collated \
 # 	--run crps_cns64_vit_azula_large_eb4a4f6_294dc78 "ViT" \
 # 	--run crps_sw2d64_vit_azula_large_eb4a4f6_682f33b "ViT" \
 # 	--run diff_cns64_flow_matching_vit_2007857_2cfb01f "FM" \
@@ -516,7 +517,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 # 	--output-dir outputs/2026-04-01_collated/$PLOTS_PATH/crps_fm_dm
 
 # # Compare ViT and FM for batch_size 32 and 128 trained over 12hrs 1GPU / 3hrs 4GPU
-# autocast-plots --results-dir outputs/2026-04-01_collated \
+# uv run autocast-plots --results-dir outputs/2026-04-01_collated \
 # 	--run diff_cns64_flow_matching_vit_2007857_2cfb01f "FM" \
 # 	--run diff_sw2d64_flow_matching_vit_cb09424_7566c5e "FM" \
 # 	--run crps_cns64_vit_azula_large_8fe25aa_d105b90 "ViT (n=256, CRPS, h=768, bs=32)" \
@@ -536,7 +537,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 
 
 # # Compare DM, FM, ViT for SW, CNS
-# autocast-plots --results-dir outputs/2026-04-01_collated \
+# uv run autocast-plots --results-dir outputs/2026-04-01_collated \
 # 	--run diff_cns64_flow_matching_vit_2007857_2cfb01f "FM" \
 # 	--run diff_sw2d64_flow_matching_vit_cb09424_7566c5e "FM" \
 # 	--run crps_cns64_vit_azula_large_eb4a4f6_294dc78 "ViT (n=256, CRPS, h=768)" \
@@ -558,7 +559,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 
 
 # # # Compare FM, ViT for SW, CNS with long 24hrs runs
-# autocast-plots --results-dir outputs/2026-04-01_collated \
+# uv run autocast-plots --results-dir outputs/2026-04-01_collated \
 # 	--run diff_cns64_flow_matching_vit_2007857_2cfb01f "FM (3hrs)" \
 # 	--run diff_cns64_flow_matching_vit_1ed9013_893624d "FM (24hrs)" \
 # 	--run crps_cns64_vit_azula_large_1ed9013_babdaa8 "ViT (3hrs, n=1024, afCRPS, h=632)" \
@@ -579,7 +580,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 
 
 # # Compare FM, ViT for SW, CNS with long 24hrs runs
-# autocast-plots --results-dir outputs/2026-04-01_collated \
+# uv run autocast-plots --results-dir outputs/2026-04-01_collated \
 # 	--run diff_cns64_flow_matching_vit_2007857_2cfb01f "FM (3hrs)" \
 # 	--run diff_cns64_flow_matching_vit_1ed9013_893624d "FM (24hrs)" \
 # 	--run crps_cns64_vit_azula_large_1ed9013_babdaa8 "ViT (3hrs, n=1024, afCRPS, h=632)" \
@@ -600,7 +601,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 	
 
 # # Compare FM, ViT for CNS with varying batch size, training time, precision and model size
-# autocast-plots --results-dir outputs/2026-04-01_collated \
+# uv run autocast-plots --results-dir outputs/2026-04-01_collated \
 # 	--run diff_cns64_flow_matching_vit_2007857_2cfb01f "FM (3hrs)" \
 # 	--run crps_cns64_vit_azula_large_1ed9013_ab31602 "ViT (24hrs, n=1024, afCRPS, h=632)" \
 # 	--run crps_cns64_vit_azula_large_1ed9013_babdaa8 "ViT (3hrs, n=1024, afCRPS, h=632)" \
@@ -619,7 +620,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 # 	# --color-by-label \
 
 # # Compare FM, ViT for SW, CNS with long 24hrs runs
-# autocast-plots --results-dir outputs/2026-04-01_collated \
+# uv run autocast-plots --results-dir outputs/2026-04-01_collated \
 # 	--run diff_cns64_flow_matching_vit_1ed9013_893624d "FM (24hrs)" \
 # 	--run diff_cns64_flow_matching_vit_1ed9013_893624d_ode_method "FM (24hrs, Adams-Bashforth)" \
 # 	--dataset-order CNS \
@@ -638,7 +639,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 # # - between optimizer with cosine period of 2 epochs compared
 # # - 3hrs on 4GPU (or 12hrs on 1GPU) compared to 24hrs on 4GPU
 # # - updated 4x batch size, 4x hidden dimension, afCRPS vs CRPS for ViT
-# autocast-plots --results-dir outputs/2026-04-01_collated \
+# uv run autocast-plots --results-dir outputs/2026-04-01_collated \
 # 	--run diff_cns64_flow_matching_vit_55a4d1a_511e7b1 "FM (12hrs, old optim)" \
 # 	--run diff_cns64_flow_matching_vit_2007857_2cfb01f "FM (3hrs)" \
 # 	--run diff_cns64_flow_matching_vit_1ed9013_893624d "FM (24hrs)" \
@@ -651,7 +652,7 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 # 	--run crps_sw2d64_vit_azula_large_8fe25aa_74f91d8 "ViT (12hrs, 1GPU, n=256, CRPS, h=768, old optim)" \
 # 	--run crps_cns64_vit_azula_large_1ed9013_babdaa8 "ViT (3hrs, n=1024, afCRPS, h=632)" \
 # 	--run crps_sw2d64_vit_azula_large_1ed9013_6ab9fa2 "ViT (24hrs, n=1024, afCRPS, h=632)" \
-# 	--dataset-order SW, CNS\
+# 	--dataset-order SW, CNS \
 # 	--color-by-label \
 # 	--error-ylim 1e-3 1 \
 # 	--lead-time-error-metrics vrmse rmse \
@@ -664,11 +665,11 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 
 # # Revisit b16-mixed with lower batch size and updated optimizers:
 # # TODO: add once eval completed
-# autocast-plots --results-dir outputs/2026-04-01_collated \
+# uv run autocast-plots --results-dir outputs/2026-04-01_collated \
 # 	--run crps_sw2d64_vit_azula_large_8fe25aa_74f91d8 "ViT (12hrs, 1GPU, n=256, CRPS, h=768, old optim)" \
 # 	--run crps_sw2d64_vit_azula_large_1ed9013_6ab9fa2 "ViT (24hrs, n=1024, afCRPS, h=632)" \
 # 	--run crps_sw2d64_vit_azula_large_ed15816_085752e "ViT (6hrs, n=1024, afCRPS, h=632, b16-mixed, bs=32)" \
-# 	--dataset-order SW\
+# 	--dataset-order SW \
 # 	--color-by-label \
 # 	--error-ylim 1e-3 1 \
 # 	--lead-time-error-metrics vrmse rmse \
@@ -680,12 +681,12 @@ autocast-plots --results-dir outputs/2026-04-20_collated \
 # 	--output-dir outputs/2026-04-01_collated/$PLOTS_PATH/b16-mixed_lower_bs_comparison
 
 # # SW in ambient compared to latent
-# autocast-plots --results-dir outputs/2026-04-01_collated \
+# uv run autocast-plots --results-dir outputs/2026-04-01_collated \
 # 	--run crps_sw2d64_vit_azula_large_1ed9013_6ab9fa2 "ViT (24hrs, n=1024, afCRPS, h=632)" \
 # 	--run diff_sw2d64_flow_matching_vit_cb09424_7566c5e "FM (3hrs)" \
 # 	--run diff_sw2d64_flow_matching_vit_53e8e0e_933bcfa "FM (3hrs ambient, new optim)" \
 # 	--run diff_sw2d64_flow_matching_vit_53e8e0e_933bcfa_ema "FM (3hrs ambient, new optim, EMA)" \
-# 	--dataset-order SW\
+# 	--dataset-order SW \
 # 	--color-by-label \
 # 	--error-ylim 1e-3 1 \
 # 	--lead-time-error-metrics vrmse rmse \

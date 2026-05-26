@@ -215,7 +215,7 @@ if [[ "$PAPER_MAIN_FIGURES" != true && "$FOUR_DS_ABLATION" != true && "$ONE_DS_A
 	echo "Paper-ready outputs are disabled. Run with --paper-figures to write paper_*.png files."
 fi
 
-autocast-plots --results-dir "$RESULTS_DIR" \
+uv run autocast-plots --results-dir "$RESULTS_DIR" \
 	"${BASE_PLOT_ARGS[@]}" \
 	--run crps_ad64_vit_azula_large_bed4611_da01a04 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
@@ -249,7 +249,7 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 if [[ "$PAPER_ONLY" != true ]]; then
 	# Same as above but rendered smaller so the two coverage panels read well when
 	# paired side-by-side in LaTeX (each at ~0.5\textwidth).
-	autocast-plots --results-dir "$RESULTS_DIR" \
+	uv run autocast-plots --results-dir "$RESULTS_DIR" \
 		"${BASE_PLOT_ARGS[@]}" \
 		--run crps_ad64_vit_azula_large_bed4611_da01a04 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 		--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
@@ -281,7 +281,7 @@ if [[ "$PAPER_ONLY" != true ]]; then
 		--output-dir "${OUTPUT_DIR}_pairfig"
 fi
 
-autocast-plots --results-dir "$RESULTS_DIR" \
+uv run autocast-plots --results-dir "$RESULTS_DIR" \
 	"${ALL_DATASET_COMMON_ARGS[@]}" \
 	--run crps_ad64_vit_azula_large_bed4611_da01a04 "CRPS (ambient)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS (ambient)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
@@ -300,13 +300,13 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "FM (latent)" "$HUE_FM_LATENT" \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_ambient_fm_latent_crps_m8"
 
-autocast-plots --results-dir "$RESULTS_DIR" \
+uv run autocast-plots --results-dir "$RESULTS_DIR" \
 	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" "$HUE_FM_LATENT" \
 	--run diff_cns64_diffusion_vit_0c75022_80967c4 "DM (latent)" "$HUE_DM" eval=eval_encode_once \
 	"${COMMON_ARGS[@]}" \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_cns_dm_latent"
 
-autocast-plots --results-dir "$RESULTS_DIR" \
+uv run autocast-plots --results-dir "$RESULTS_DIR" \
 	--run diff_ad64_flow_matching_vit_09490da_dae1382 "ODE=1" "$HUE_ODE_ABLATION_STEPS" eval=eval_encode_once_ode001 \
 	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "ODE=1" "$HUE_ODE_ABLATION_STEPS" eval=eval_encode_once_ode001 \
 	--run diff_gpe64_flow_matching_vit_09490da_47bf39a "ODE=1" "$HUE_ODE_ABLATION_STEPS" eval=eval_encode_once_ode001 \
@@ -334,7 +334,7 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	"${ALL_DATASET_COMMON_ARGS[@]}" \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_fm_ode_steps"
 
-autocast-plots --results-dir "$RESULTS_DIR" \
+uv run autocast-plots --results-dir "$RESULTS_DIR" \
 	"${BASE_PLOT_ARGS[@]}" \
 	--run crps_ad64_vit_azula_large_0f89f06_4667606 "CRPS (best val loss)" "$HUE_ABLATION_ALT_2" eval=eval \
 	--run crps_cns64_vit_azula_large_0f89f06_5b7332b "CRPS (best val loss)" "$HUE_ABLATION_ALT_2" eval=eval \
@@ -365,25 +365,25 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	${FOUR_DS_ABLATION_ARG:+$FOUR_DS_ABLATION_ARG} \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_crps_multiwinkler_eval_m8"
 
-autocast-plots --results-dir "$RESULTS_DIR" \
+uv run autocast-plots --results-dir "$RESULTS_DIR" \
 	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (6x)" "$HUE_FM_LATENT" \
 	--run diff_cns64_flow_matching_vit_43cbdde_bb55197 "FM (24x)" "$HUE_ABLATION_ALT_2" eval=eval_encode_once \
 	"${COMMON_ARGS[@]}" \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_cns_fm_autoencoder"
 
-autocast-plots --results-dir "$RESULTS_DIR" \
+uv run autocast-plots --results-dir "$RESULTS_DIR" \
 	--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS (channel concatenation)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_cns64_vit_azula_large_9c98db0_2fa67c5 "CRPS (backbone modulation)" "$HUE_ABLATION_ALT_2" eval=eval_best_multiwinkler_from0p25 \
 	"${COMMON_ARGS[@]}" \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_cns_global_conditioning_m8"
 
-autocast-plots --results-dir "$RESULTS_DIR" \
+uv run autocast-plots --results-dir "$RESULTS_DIR" \
 	--run crps_cns64_vit_azula_large_bed4611_c99f534 "ViT" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_cns64_unet_azula_large_9c98db0_65f8f71 "U-Net" "$HUE_ABLATION_ALT_2" eval=eval_best_multiwinkler_from0p25 \
 	"${COMMON_ARGS[@]}" \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_cns_vit_unet_m8"
 
-autocast-plots --results-dir "$RESULTS_DIR" \
+uv run autocast-plots --results-dir "$RESULTS_DIR" \
 	"${ALL_DATASET_COMMON_ARGS[@]}" \
 	--run crps_ad64_vit_azula_large_bed4611_da01a04 "CRPS (\$\alpha\$fCRPS loss)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS (\$\alpha\$fCRPS loss)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
@@ -396,7 +396,7 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	--run crps_gs64_vit_azula_large_5a8c216_2ced703 "CRPS (fCRPS loss)" "$HUE_ABLATION_ALT_2" eval=eval_best_multiwinkler_from0p25 \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_crps_variants"
 
-autocast-plots --results-dir "$RESULTS_DIR" \
+uv run autocast-plots --results-dir "$RESULTS_DIR" \
 	"${BASE_PLOT_ARGS[@]}" \
 	--run crps_cns64_vit_azula_large_9c98db0_957ff88 "M=4" "$HUE_ABLATION_ALT_1" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_ad64_vit_azula_large_189c141_bbb0bc8 "M=4" "$HUE_ABLATION_ALT_1" eval=eval_best_multiwinkler_from0p25 \
@@ -431,7 +431,7 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	${FOUR_DS_ABLATION_ARG:+$FOUR_DS_ABLATION_ARG} \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_ensemble_size"
 
-autocast-plots --results-dir "$RESULTS_DIR" \
+uv run autocast-plots --results-dir "$RESULTS_DIR" \
 	--run crps_cns64_vit_azula_large_bed4611_c99f534 "noise=1024, h=568" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 	--run crps_cns64_vit_azula_large_9c98db0_86e355d "noise=256, h=704" "$HUE_ABLATION_ALT_2" eval=eval_best_multiwinkler_from0p25 \
 	"${COMMON_ARGS[@]}" \

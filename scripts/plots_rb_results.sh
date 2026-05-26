@@ -14,7 +14,7 @@ HUE_B=1
 
 echo "Writing plots under: $OUTPUT_DIR"
 
-autocast-plots --results-dir "$RESULTS_DIR" \
+uv run autocast-plots --results-dir "$RESULTS_DIR" \
 	--figure-formats "${FIGURE_FORMAT_ARRAY[@]}" \
 	--run diff_rayleigh_benard_flow_matching_vit_1de6ca4_5a7a7bb "FM (masked window)" "$HUE_A" \
 	--run diff_rayleigh_benard_flow_matching_vit_65377a2_acb8513 "FM (whole window)" "$HUE_B" \
