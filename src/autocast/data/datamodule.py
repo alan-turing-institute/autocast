@@ -180,11 +180,13 @@ class SpatioTemporalDataModule(LightningDataModule):
         normalization_path: None | str = None,
         normalization_stats: dict | DictConfig | None = None,
         num_workers: int | None = None,
+        n_tvs_extra_steps: int = 0,
     ):
         super().__init__()
         self.verbose = verbose
         self.use_normalization = use_normalization
         self.autoencoder_mode = autoencoder_mode
+        self.n_tvs_extra_steps = n_tvs_extra_steps
         # Auto-detect num_workers based on available CPUs, capped at 8
         self.num_workers = (
             num_workers if num_workers is not None else min(os.cpu_count() or 1, 8)
@@ -212,6 +214,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             normalization_type=normalization_type,
             normalization_path=normalization_path,
             normalization_stats=normalization_stats,
+            n_tvs_extra_steps=n_tvs_extra_steps,
         )
 
         # # Compute normalization from training data if requested
@@ -243,6 +246,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             normalization_type=normalization_type,
             normalization_path=normalization_path,
             normalization_stats=normalization_stats,
+            n_tvs_extra_steps=n_tvs_extra_steps,
         )
         self.test_dataset = dataset_cls(
             data_path=str(test_path) if test_path is not None else None,
@@ -259,6 +263,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             normalization_type=normalization_type,
             normalization_path=normalization_path,
             normalization_stats=normalization_stats,
+            n_tvs_extra_steps=n_tvs_extra_steps,
         )
 
         self.batch_size = batch_size
@@ -278,6 +283,7 @@ class SpatioTemporalDataModule(LightningDataModule):
                 normalization_type=normalization_type,
                 normalization_path=normalization_path,
                 normalization_stats=normalization_stats,
+                n_tvs_extra_steps=n_tvs_extra_steps,
             )
             self.rollout_test_dataset = dataset_cls(
                 data_path=str(test_path) if test_path is not None else None,
@@ -293,6 +299,7 @@ class SpatioTemporalDataModule(LightningDataModule):
                 normalization_type=normalization_type,
                 normalization_path=normalization_path,
                 normalization_stats=normalization_stats,
+                n_tvs_extra_steps=n_tvs_extra_steps,
             )
 
     def train_dataloader(self) -> DataLoader:

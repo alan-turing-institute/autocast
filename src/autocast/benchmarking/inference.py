@@ -34,6 +34,9 @@ def make_synthetic_batch(example_batch: Batch, batch_size: int) -> Batch:
         constant_scalars=_slice_optional_first(example_batch.constant_scalars),
         constant_fields=_slice_optional_first(example_batch.constant_fields),
         boundary_conditions=_slice_optional_first(example_batch.boundary_conditions),
+        time_varying_scalars=_slice_optional_first(
+            getattr(example_batch, "time_varying_scalars", None)
+        ),
     )
     return single.repeat(batch_size) if batch_size > 1 else single
 

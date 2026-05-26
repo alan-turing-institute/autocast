@@ -25,13 +25,14 @@ class BatchMixin:
             constant_scalars=data.get("constant_scalars"),
             constant_fields=data.get("constant_fields"),
             boundary_conditions=data.get("boundary_conditions"),
+            time_varying_scalars=data.get("time_varying_scalars"),
         )
 
 
 class SpatioTemporalDataset(Dataset, BatchMixin):
     """A class for spatio-temporal datasets."""
 
-    def __init__(  # noqa: PLR0915
+    def __init__(  # noqa: PLR0912, PLR0915
         self,
         data_path: str | None,
         data: dict | None = None,
@@ -47,6 +48,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         normalization_type: type[ZScoreNormalization] | None = ZScoreNormalization,
         normalization_path: str | None = None,
         normalization_stats: dict | DictConfig | None = None,
+        n_tvs_extra_steps: int = 0,
     ):
         """
         Initialize the dataset.
@@ -86,6 +88,12 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             Path to normalization statistics file (yaml). Defaults to None.
         normalization_stats: dict | None
             Preloaded normalization statistics. Defaults to None.
+        n_tvs_extra_steps: int
+            Number of additional `time_varying_scalars` steps to keep beyond
+            `n_steps_output` so that autoregressive rollouts can read a fresh
+            scalar slice at every step. Set to `autoregressive_train_steps *
+            stride` (or larger) to cover the full rollout horizon. Defaults to
+            0 (single-step inference only).
         """
         self.dtype = dtype
         self.verbose = verbose
@@ -131,6 +139,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         self.n_steps_output = n_steps_output
         self.stride = stride
         self.channel_idxs = channel_idxs
+        self.n_tvs_extra_steps = n_tvs_extra_steps
 
         # Destructured here
         (
@@ -146,6 +155,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         self.all_output_fields = []
         self.all_constant_scalars = []
         self.all_constant_fields = []
+        self.all_time_varying_scalars: list[torch.Tensor] = []
 
         # Create input-output pairs
         for traj_idx in range(self.n_trajectories):
@@ -186,6 +196,21 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
                         self.constant_fields[traj_idx].to(self.dtype)
                     )
 
+                # Slice time-varying scalars: `n_steps_output + n_tvs_extra_steps`
+                # steps total starting at the first prediction timestep. The
+                # rollout consumes one slice per step; `n_tvs_extra_steps` must
+                # be large enough to cover the autoregressive horizon.
+                if self.time_varying_scalars is not None:
+                    t_out_start = sub_idx * self.stride + self.n_steps_input
+                    t_out_end = (
+                        t_out_start + self.n_steps_output + self.n_tvs_extra_steps
+                    )
+                    self.all_time_varying_scalars.append(
+                        self.time_varying_scalars[
+                            traj_idx, t_out_start:t_out_end, :
+                        ].to(self.dtype)
+                    )
+
         if self.verbose:
             print(f"Created {len(self.all_input_fields)} subtrajectory samples")
             print(f"Each input sample shape: {self.all_input_fields[0].shape}")
@@ -217,6 +242,26 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             else None
         )
 
+        # Time-varying scalars: [N, T, C] — one scalar vector per timestep per
+        # trajectory.
+        self.time_varying_scalars = (
+            torch.Tensor(f["time_varying_scalars"][:]).to(self.dtype)  # type: ignore  # noqa: PGH003
+            if "time_varying_scalars" in f
+            and f["time_varying_scalars"] is not None
+            and f["time_varying_scalars"] != {}
+            else None
+        )
+        if (
+            self.time_varying_scalars is not None
+            and self.time_varying_scalars.shape[1] < self.data.shape[1]
+        ):
+            msg = (
+                f"time_varying_scalars time dimension "
+                f"({self.time_varying_scalars.shape[1]}) must be >= data time "
+                f"dimension ({self.data.shape[1]})."
+            )
+            raise ValueError(msg)
+
     def read_data(self, data_path: str):
         """Read data.
 
@@ -239,6 +284,17 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             )
             self.constant_scalars = data.get("constant_scalars", None)
             self.constant_fields = data.get("constant_fields", None)
+            self.time_varying_scalars = data.get("time_varying_scalars", None)
+            if (
+                self.time_varying_scalars is not None
+                and self.time_varying_scalars.shape[1] < self.data.shape[1]
+            ):
+                msg = (
+                    f"time_varying_scalars time dimension "
+                    f"({self.time_varying_scalars.shape[1]}) must be >= data "
+                    f"time dimension ({self.data.shape[1]})."
+                )
+                raise ValueError(msg)
             return
         msg = "No data provided to parse."
         raise ValueError(msg)
@@ -290,6 +346,8 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             item["constant_scalars"] = self.all_constant_scalars[idx]
         if len(self.all_constant_fields) > 0:
             item["constant_fields"] = self.all_constant_fields[idx]
+        if len(self.all_time_varying_scalars) > 0:
+            item["time_varying_scalars"] = self.all_time_varying_scalars[idx]
 
         return self.to_sample(item)
 

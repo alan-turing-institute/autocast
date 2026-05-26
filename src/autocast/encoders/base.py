@@ -141,6 +141,10 @@ class EncoderWithCond(Encoder):
         """Encode global conditioning tensor from the batch.
 
         Default implementation flattens constant scalars and boundary conditions.
+        When `time_varying_scalars` are provided, the slice corresponding to the
+        current prediction step (index 0 along the time axis) is concatenated to
+        the conditioning vector. The rollout/training loop is responsible for
+        advancing this tensor (see `EncoderProcessorDecoder._advance_batch`).
         """
         global_cond = None
         if batch.constant_scalars is not None:
@@ -152,6 +156,21 @@ class EncoderWithCond(Encoder):
                 global_cond = bc
             else:
                 global_cond = torch.cat([global_cond, bc], dim=1)
+        if batch.time_varying_scalars is not None:
+            if batch.time_varying_scalars.shape[1] == 0:
+                msg = (
+                    "time_varying_scalars is exhausted (shape[1] == 0). "
+                    "The autoregressive rollout has consumed all pre-computed "
+                    "steps. Increase `n_tvs_extra_steps` in the datamodule "
+                    "config so the dataset stores enough future steps."
+                )
+                raise RuntimeError(msg)
+            # Slice the current prediction step (index 0 along time axis).
+            tvs = batch.time_varying_scalars[:, 0, :]  # (B, C_tvs)
+            if global_cond is None:
+                global_cond = tvs
+            else:
+                global_cond = torch.cat([global_cond, tvs], dim=1)
 
         return global_cond
 
