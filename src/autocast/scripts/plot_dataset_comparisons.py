@@ -776,6 +776,22 @@ def dataset_module_from_data_path(data_path: str | None) -> str | None:
     return None
 
 
+def dataset_hints_from_datamodule(
+    datamodule: Mapping,
+) -> tuple[str | None, str | None, str]:
+    """Return display and module dataset hints from a datamodule config."""
+    data_path = str(datamodule.get("data_path") or "")
+    if data_path:
+        return Path(data_path).name, dataset_module_from_data_path(data_path), data_path
+
+    well_dataset_name = datamodule.get("well_dataset_name")
+    if well_dataset_name:
+        dataset = str(well_dataset_name)
+        return dataset, normalize_dataset_module(dataset), data_path
+
+    return None, None, data_path
+
+
 def resolution_from_run_name(run_name: str | None) -> str | None:
     """Infer a model resolution token from run_name when present."""
     if not run_name:
@@ -1071,9 +1087,11 @@ def load_single_run_metrics(  # noqa: PLR0912, PLR0915
     if cfg:
         datamodule = cfg.get("datamodule", {})
         if isinstance(datamodule, Mapping):
-            data_path = datamodule.get("data_path", "")
-            row["dataset"] = Path(data_path).name if data_path else row.get("dataset")
-            row["dataset_from_data_path"] = dataset_module_from_data_path(data_path)
+            dataset, dataset_from_data_path, _ = dataset_hints_from_datamodule(
+                datamodule
+            )
+            row["dataset"] = dataset or row.get("dataset")
+            row["dataset_from_data_path"] = dataset_from_data_path
         trainer_max_epochs = _trainer_max_epochs_from_config(cfg)
         if trainer_max_epochs is not None:
             row["trainer_max_epochs"] = trainer_max_epochs
@@ -1186,9 +1204,11 @@ def _extract_config_fields(cfg: dict, row: dict[str, object]) -> None:
     row["n_steps_input"] = datamodule.get("n_steps_input")
     row["n_steps_output"] = datamodule.get("n_steps_output")
     row["batch_size"] = datamodule.get("batch_size")
-    data_path = datamodule.get("data_path", "")
-    row["dataset"] = Path(data_path).name
-    row["dataset_from_data_path"] = dataset_module_from_data_path(data_path)
+    dataset, dataset_from_data_path, data_path = dataset_hints_from_datamodule(
+        datamodule
+    )
+    row["dataset"] = dataset
+    row["dataset_from_data_path"] = dataset_from_data_path
     row["loss_func"] = (
         cfg.get("model", {}).get("loss_func", {}).get("_target_", "").split(".")[-1]
     )
