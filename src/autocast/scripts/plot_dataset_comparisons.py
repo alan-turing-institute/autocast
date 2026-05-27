@@ -528,12 +528,13 @@ def format_run_table(df: pd.DataFrame) -> str:
     return df[columns + metric_columns].to_string(index=False)
 
 
-def build_parser() -> argparse.ArgumentParser:
-    """Build the command-line parser."""
-    parser = argparse.ArgumentParser(
-        description="Generate small comparison plots from Autocast evaluation outputs."
+def add_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add plotting arguments to an argparse parser."""
+    parser.add_argument(
+        "--results-dir",
+        required=True,
+        help="Root directory containing run outputs",
     )
-    parser.add_argument("--results-dir", required=True, help="Collated results folder")
     parser.add_argument(
         "--output-dir",
         help="Directory for plots (defaults to <results-dir>/plots/<name>)",
@@ -580,14 +581,32 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--list", action="store_true", help="Print selected runs")
     parser.add_argument("--sort", help="Column to sort selected runs by")
     parser.add_argument("--reverse", action="store_true", help="Reverse sort order")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Build the command-line parser."""
+    parser = argparse.ArgumentParser(
+        description="Generate small comparison plots from Autocast evaluation outputs."
+    )
+    add_arguments(parser)
     return parser
 
 
-def main(argv: Sequence[str] | None = None) -> None:
-    """Run the plotting CLI."""
-    parser = build_parser()
-    args = parser.parse_args(argv)
+def _argument_error(
+    parser: argparse.ArgumentParser | None,
+    message: str,
+) -> None:
+    if parser is not None:
+        parser.error(message)
+    raise ValueError(message)
 
+
+def run_from_args(
+    args: argparse.Namespace,
+    *,
+    parser: argparse.ArgumentParser | None = None,
+) -> None:
+    """Run plotting from parsed command-line arguments."""
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     results_dir = Path(args.results_dir).expanduser().resolve()
     output_dir = (
@@ -605,10 +624,10 @@ def main(argv: Sequence[str] | None = None) -> None:
     )
     if args.sort:
         if args.sort not in df.columns:
-            parser.error(f"--sort column {args.sort!r} is not present")
+            _argument_error(parser, f"--sort column {args.sort!r} is not present")
         df = df.sort_values(args.sort, ascending=not args.reverse)
     if df.empty:
-        parser.error("no runs matched the requested selection")
+        _argument_error(parser, "no runs matched the requested selection")
 
     write_run_table(df, output_dir)
     if args.list:
@@ -632,6 +651,12 @@ def main(argv: Sequence[str] | None = None) -> None:
         )
 
     log.info("Wrote plots to %s", output_dir)
+
+
+def main(argv: Sequence[str] | None = None) -> None:
+    """Run the plotting CLI."""
+    parser = build_parser()
+    run_from_args(parser.parse_args(argv), parser=parser)
 
 
 if __name__ == "__main__":
