@@ -15,7 +15,7 @@ from omegaconf import OmegaConf
 
 from autocast.data.advection_diffusion import AdvectionDiffusion
 from autocast.data.datamodule import SpatioTemporalDataModule, TheWellDataModule
-from autocast.data.dataset import ReactionDiffusionDataset, SpatioTemporalDataset
+from autocast.data.dataset import SpatioTemporalDataset
 
 _AUTOSIM_SIMULATOR_CONFIGS: dict[str, dict[str, Any]] = {
     "advection_diffusion": {
@@ -71,7 +71,7 @@ def get_autosim_datamodule(
     n_train: int = 20,
     n_valid: int = 4,
     n_test: int = 4,
-    simulation_datasets_path: str = "../datasets/autosim",
+    simulation_datasets_path: str = "../datasets/tmp",
     data_path: str | None = None,
     overwrite: bool = False,
     seed: int | None = None,
@@ -157,11 +157,6 @@ def get_autosim_datamodule(
             output_path=normalization_path,
         )
 
-    dataset_cls = (
-        ReactionDiffusionDataset
-        if simulation_name == "reaction_diffusion"
-        else SpatioTemporalDataset
-    )
     return SpatioTemporalDataModule(
         data=None,
         data_path=str(cache_path),
@@ -172,7 +167,7 @@ def get_autosim_datamodule(
         batch_size=batch_size,
         use_normalization=use_normalization,
         normalization_path=str(normalization_path) if use_normalization else None,
-        dataset_cls=dataset_cls,
+        dataset_cls=SpatioTemporalDataset,
         num_workers=num_workers,
     )
 
@@ -285,11 +280,6 @@ def get_datamodule(
                 )
                 torch.save(combined_data[split], Path(split_path, "data.pt"))
 
-        dataset_cls = (
-            ReactionDiffusionDataset
-            if simulation_name == "reaction_diffusion"
-            else SpatioTemporalDataset
-        )
         return SpatioTemporalDataModule(
             data=None,
             data_path=str(cache_path),
@@ -301,7 +291,7 @@ def get_datamodule(
             use_normalization=use_normalization,
             normalization_path=None if normalization_stats else normalization_path,
             normalization_stats=normalization_stats,
-            dataset_cls=dataset_cls,
+            dataset_cls=SpatioTemporalDataset,
             num_workers=num_workers,
         )
 
