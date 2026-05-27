@@ -5235,14 +5235,6 @@ def main():  # noqa: PLR0912, PLR0915
         cov_metric = [m for m in cov_metric if m != "ssr"]
     paper_cov_metric = _paper_coverage_metrics(cov_metric)
 
-    write_single_step_results_table(
-        df,
-        out_dir,
-        styles,
-        dataset_order=ds_order,
-        hue_order=hu_order,
-    )
-
     if args.paper_only:
         if args.paper_main_figures:
             plot_paper_overall_coverage_figure(
@@ -5309,6 +5301,14 @@ def main():  # noqa: PLR0912, PLR0915
             )
         print("Finished generating paper plots.")
         return
+
+    write_single_step_results_table(
+        df,
+        out_dir,
+        styles,
+        dataset_order=ds_order,
+        hue_order=hu_order,
+    )
 
     # Render overall bars
     for m in args.metrics:

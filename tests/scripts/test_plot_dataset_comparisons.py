@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -639,6 +640,46 @@ def test_format_available_eval_subdirs_truncates_long_lists():
         )
         == "eval, eval_0p50, eval_0p75, ... (+1)"
     )
+
+
+def test_paper_only_skips_single_step_table(monkeypatch, tmp_path: Path):
+    results_dir = tmp_path / "outputs"
+    output_dir = tmp_path / "plots"
+    run_name = "crps_ad64_vit_azula_large_abcd123_ef45678"
+    run_dir = results_dir / run_name
+    eval_dir = run_dir / "eval"
+    eval_dir.mkdir(parents=True)
+    (run_dir / "resolved_config.yaml").write_text(
+        "datamodule:\n  data_path: /tmp/ad64\ntrainer:\n  max_epochs: 1\n"
+    )
+    pd.DataFrame([{"window": "all", "batch_idx": "all", "vrmse": 0.1}]).to_csv(
+        eval_dir / "evaluation_metrics.csv", index=False
+    )
+
+    def fail_table_write(*_args: Any, **_kwargs: Any) -> None:
+        msg = "paper-only mode should not write standard single-step tables"
+        raise AssertionError(msg)
+
+    monkeypatch.setattr(pdc, "write_single_step_results_table", fail_table_write)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "autocast-plots",
+            "--results-dir",
+            str(results_dir),
+            "--output-dir",
+            str(output_dir),
+            "--run",
+            run_name,
+            "--paper-only",
+        ],
+    )
+
+    pdc.main()
+
+    assert not (output_dir / "single_step_overall_results.csv").exists()
+    assert not (output_dir / "single_step_overall_results.tex").exists()
 
 
 def test_load_single_run_metrics_uses_cache_before_wandb(
