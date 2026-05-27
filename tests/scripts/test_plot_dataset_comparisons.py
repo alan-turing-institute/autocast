@@ -18,8 +18,8 @@ def test_default_plot_metrics_include_overall_crps_and_ssr():
         list(pdc.DEFAULT_PLOT_METRICS)
     )
 
-    assert err_metric == ["vrmse", "crps", "rmse"]
-    assert cov_metric == ["coverage", "coverage_0.9", "coverage_0.5", "ssr"]
+    assert err_metric == ["vrmse", "coverage", "crps", "rmse"]
+    assert cov_metric == ["coverage_0.9", "coverage_0.5", "ssr"]
 
 
 def test_overall_ssr_bars_are_linear_and_ignore_error_ylim():
@@ -446,6 +446,44 @@ def test_lead_time_coverage_ylim_applies_to_standalone_panel(tmp_path: Path):
     plt.close(fig)
 
 
+def test_lead_time_generic_coverage_is_error_metric(tmp_path: Path):
+    eval_dir = tmp_path / "run1" / "eval"
+    eval_dir.mkdir(parents=True)
+    pd.DataFrame(
+        [[0.02, 0.04]],
+        index=pd.Index(["coverage"], name="metric"),
+        columns=pd.Index(["0", "1"]),
+    ).to_csv(eval_dir / "rollout_metrics_per_timestep_channel_all.csv")
+    df = pd.DataFrame(
+        {
+            "dataset_label": ["AD"],
+            "plot_group": ["model"],
+            "run_path": ["run1"],
+            "eval_subdir": ["eval"],
+        }
+    )
+    styles = {"model": {"color": "black", "label": "model", "linestyle": "-"}}
+
+    fig = pdc.plot_lead_time_panel(
+        df,
+        ["coverage"],
+        tmp_path,
+        tmp_path,
+        "coverage_mae.png",
+        styles,
+        coverage_ylim=(0.2, 0.8),
+        yscale="linear",
+        save=False,
+    )
+
+    assert isinstance(fig, Figure)
+    ax = fig.axes[0]
+    assert ax.get_ylabel() == "Coverage MAE"
+    assert ax.get_ylim() != (0.2, 0.8)
+    assert np.asarray(ax.lines[0].get_ydata(), dtype=float).tolist() == [0.02, 0.04]
+    plt.close(fig)
+
+
 def test_short_axis_labels_use_compact_shared_coverage_delta(tmp_path: Path):
     eval_dir = tmp_path / "run1" / "eval"
     eval_dir.mkdir(parents=True)
@@ -520,8 +558,10 @@ def test_run_target_preserves_nested_relative_paths(tmp_path: Path):
     results_dir = tmp_path / "outputs"
     run_id = "2026-05-01/crps_ad64_vit_azula_large_abcd123_ef45678"
     run_dir = results_dir / run_id
+    run_dir.mkdir(parents=True)
+    (run_dir / "resolved_config.yaml").write_text("datamodule: {}\n")
     eval_dir = run_dir / "eval"
-    eval_dir.mkdir(parents=True)
+    eval_dir.mkdir()
     pd.DataFrame([{"window": "all", "batch_idx": "all", "vrmse": 0.1}]).to_csv(
         eval_dir / "evaluation_metrics.csv", index=False
     )
@@ -537,6 +577,68 @@ def test_run_target_preserves_nested_relative_paths(tmp_path: Path):
     assert target.relative_path == run_id
     assert row["run_path"] == run_id
     assert row["run_name"] == "crps_ad64_vit_azula_large_abcd123_ef45678"
+
+
+def test_discover_run_targets_defaults_to_one_eval_per_run(tmp_path: Path):
+    results_dir = tmp_path / "outputs"
+    run_dir = results_dir / "2026-05-01" / "crps_ad64_vit_abcd123_ef45678"
+    run_dir.mkdir(parents=True)
+    (run_dir / "resolved_config.yaml").write_text("datamodule: {}\n")
+    for eval_subdir in [
+        "eval",
+        "eval_best_multiwinkler_from0p25",
+        "eval_encode_once_ode001",
+    ]:
+        eval_dir = run_dir / eval_subdir
+        eval_dir.mkdir()
+        pd.DataFrame([{"window": "all", "batch_idx": "all", "vrmse": 0.1}]).to_csv(
+            eval_dir / "evaluation_metrics.csv", index=False
+        )
+    artifact_eval_dir = results_dir / "plots" / "copied" / "eval_extra"
+    artifact_eval_dir.mkdir(parents=True)
+    pd.DataFrame([{"window": "all", "batch_idx": "all", "vrmse": 0.1}]).to_csv(
+        artifact_eval_dir / "evaluation_metrics.csv", index=False
+    )
+
+    targets = pdc._discover_run_targets(results_dir)
+
+    assert [target.eval_subdir for target in targets] == ["eval"]
+    assert targets[0].relative_path == str(run_dir.relative_to(results_dir))
+    assert targets[0].ref == run_dir.name
+    assert pdc._available_eval_subdirs(run_dir) == [
+        "eval",
+        "eval_best_multiwinkler_from0p25",
+        "eval_encode_once_ode001",
+    ]
+    assert pdc._format_available_eval_subdirs(pdc._available_eval_subdirs(run_dir)) == (
+        "eval, eval_best_multiwinkler_from0p25, eval_encode_once_ode001"
+    )
+
+
+def test_discover_run_targets_uses_eval_postfix_when_default_missing(tmp_path: Path):
+    results_dir = tmp_path / "outputs"
+    run_dir = results_dir / "2026-05-01" / "crps_ad64_vit_abcd123_ef45678"
+    run_dir.mkdir(parents=True)
+    (run_dir / "resolved_config.yaml").write_text("datamodule: {}\n")
+    eval_dir = run_dir / "eval_encode_once_ode001"
+    eval_dir.mkdir()
+    pd.DataFrame([{"window": "all", "batch_idx": "all", "vrmse": 0.1}]).to_csv(
+        eval_dir / "evaluation_metrics.csv", index=False
+    )
+
+    [target] = pdc._discover_run_targets(results_dir)
+
+    assert target.eval_subdir == "eval_encode_once_ode001"
+    assert target.ref == f"{run_dir.name}::eval=eval_encode_once_ode001"
+
+
+def test_format_available_eval_subdirs_truncates_long_lists():
+    assert (
+        pdc._format_available_eval_subdirs(
+            ["eval", "eval_0p50", "eval_0p75", "eval_encode_once"]
+        )
+        == "eval, eval_0p50, eval_0p75, ... (+1)"
+    )
 
 
 def test_load_single_run_metrics_uses_cache_before_wandb(

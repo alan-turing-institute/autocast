@@ -218,6 +218,11 @@ def _is_dispersion_metric(metric: str) -> bool:
     return metric in DISPERSION_METRICS
 
 
+def _is_empirical_coverage_metric(metric: str) -> bool:
+    """Return True for coverage_<level> empirical coverage curves."""
+    return metric.startswith("coverage_")
+
+
 def _overall_or_window_bar_ylim(
     metric: str,
     error_ylim: tuple[float | None, float | None] | None,
@@ -253,13 +258,16 @@ def _overall_or_window_bar_ref_value(metric: str) -> float | None:
 def _derive_lead_time_metrics(metrics: list[str]) -> tuple[list[str], list[str]]:
     """Split scalar plot metrics into error and coverage lead-time rows."""
     err_metric = [
-        m for m in metrics if "coverage" not in m and not _is_dispersion_metric(m)
+        m
+        for m in metrics
+        if not _is_empirical_coverage_metric(m) and not _is_dispersion_metric(m)
     ]
-    cov_metric = [m for m in metrics if "coverage" in m]
+    cov_metric = [m for m in metrics if _is_empirical_coverage_metric(m)]
     dispersion_metric = [m for m in metrics if _is_dispersion_metric(m)]
 
-    # Add common rollout variants if we only provided generic 'coverage'.
-    if "coverage" in metrics and "coverage_0.9" not in cov_metric:
+    # Add common empirical rollout variants if only generic coverage MAE was
+    # requested for scalar summaries.
+    if "coverage" in metrics and not any(m.startswith("coverage_") for m in cov_metric):
         cov_metric.extend(["coverage_0.9", "coverage_0.5"])
         err_metric.append("rmse")
 
@@ -363,9 +371,11 @@ def _apply_optional_ylim(
 
 def _metric_axis_label(metric: str) -> str:
     """Format metric keys as publication-facing axis labels."""
-    if metric.startswith("coverage_"):
+    if _is_empirical_coverage_metric(metric):
         level = metric.split("_", 1)[1]
         return f"COVERAGE {level}"
+    if metric == "coverage":
+        return "Coverage MAE"
     return metric.upper()
 
 
@@ -685,20 +695,73 @@ def _make_run_target(
     )
 
 
+def _is_eval_metrics_dir(path: Path) -> bool:
+    """Return True for eval output dirs, including eval_* variants."""
+    return path.name == DEFAULT_EVAL_SUBDIR or path.name.startswith(
+        f"{DEFAULT_EVAL_SUBDIR}_"
+    )
+
+
+def _eval_sort_key(eval_subdir: str) -> tuple[int, str]:
+    """Sort the default eval first, then postfix variants alphabetically."""
+    return (0 if eval_subdir == DEFAULT_EVAL_SUBDIR else 1, eval_subdir)
+
+
+def _available_eval_subdirs(run_dir: Path) -> list[str]:
+    """Return eval dirs with metrics for a single run directory."""
+    if not run_dir.exists():
+        return []
+    eval_subdirs = []
+    for child in run_dir.iterdir():
+        if (
+            child.is_dir()
+            and _is_eval_metrics_dir(child)
+            and (child / "evaluation_metrics.csv").exists()
+        ):
+            eval_subdirs.append(normalize_eval_subdir(child.name))
+    return sorted(set(eval_subdirs), key=_eval_sort_key)
+
+
+def _select_default_eval_subdir(eval_subdirs: list[str]) -> str:
+    """Pick the eval subdir used for automatic one-row-per-run discovery."""
+    if DEFAULT_EVAL_SUBDIR in eval_subdirs:
+        return DEFAULT_EVAL_SUBDIR
+    return eval_subdirs[0]
+
+
+def _format_available_eval_subdirs(
+    eval_subdirs: list[str],
+    max_items: int = 3,
+) -> str:
+    """Format eval variants compactly for ``--list`` output."""
+    if not eval_subdirs:
+        return ""
+    if len(eval_subdirs) <= max_items:
+        return ", ".join(eval_subdirs)
+    shown = ", ".join(eval_subdirs[:max_items])
+    return f"{shown}, ... (+{len(eval_subdirs) - max_items})"
+
+
 def _discover_run_targets(results_dir: Path) -> list[RunTarget]:
-    """Recursively discover runs with a default eval metrics CSV."""
+    """Recursively discover one default eval target per run."""
     targets = []
-    for metrics_csv in results_dir.rglob("evaluation_metrics.csv"):
-        eval_dir = metrics_csv.parent
-        if eval_dir.name != DEFAULT_EVAL_SUBDIR:
+    for config_file in results_dir.rglob("resolved_config.yaml"):
+        run_dir = config_file.parent
+        eval_subdirs = _available_eval_subdirs(run_dir)
+        if not eval_subdirs:
             continue
-        run_dir = eval_dir.parent
+        eval_subdir = _select_default_eval_subdir(eval_subdirs)
         relative_path = _run_relative_path(results_dir, run_dir, run_id=None)
+        ref = (
+            run_dir.name
+            if eval_subdir == DEFAULT_EVAL_SUBDIR
+            else f"{run_dir.name}::eval={eval_subdir}"
+        )
         targets.append(
             RunTarget(
                 path=run_dir,
-                eval_subdir=DEFAULT_EVAL_SUBDIR,
-                ref=run_dir.name,
+                eval_subdir=eval_subdir,
+                ref=ref,
                 relative_path=relative_path,
             )
         )
@@ -2473,8 +2536,9 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
     """Plot per-metric, per-dataset lead-time curves as a panel figure.
 
     ``error_ylim`` overrides auto y-limits for non-coverage rows.
-    ``coverage_ylim`` overrides coverage rows; otherwise raw coverage stays
-    fixed at [0, 1] and coverage-delta rows use symmetric auto limits.
+    ``coverage_ylim`` overrides empirical coverage rows; otherwise coverage
+    curves stay fixed at [0, 1] and coverage-delta rows use symmetric auto
+    limits.
     Either bound may be ``None``.
     When ``axes`` is provided, draw into that pre-made grid with shape
     (len(metrics_to_plot), n_datasets).
@@ -2576,7 +2640,7 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
         for c, ds_label in enumerate(datasets):
             ax = axes[r][c]
             ds = sub[sub["dataset_label"] == ds_label]
-            is_cov = metric == "coverage" or metric.startswith("coverage_")
+            is_cov = _is_empirical_coverage_metric(metric)
             is_ssr = metric == "ssr"
             is_cov_delta = bool(coverage_delta and is_cov)
             cov_target: float | None = None
@@ -4881,13 +4945,15 @@ def main():  # noqa: PLR0912, PLR0915
         print(f"Loading {len(run_targets)} runs...")
         m_rows = []
         for target in run_targets:
-            m_rows.append(
-                load_config_metadata(
-                    target.path,
-                    eval_subdir=target.eval_subdir,
-                    run_ref=target.ref,
-                )
+            row = load_config_metadata(
+                target.path,
+                eval_subdir=target.eval_subdir,
+                run_ref=target.ref,
             )
+            row["available_evals"] = _format_available_eval_subdirs(
+                _available_eval_subdirs(target.path)
+            )
+            m_rows.append(row)
         mdf = pd.DataFrame(m_rows)
 
         if mdf.empty:
@@ -4942,6 +5008,7 @@ def main():  # noqa: PLR0912, PLR0915
 
         show_cols = [
             "run_name",
+            "available_evals",
             "dataset_label",
             "processor",
             "resolution",
@@ -4966,6 +5033,7 @@ def main():  # noqa: PLR0912, PLR0915
 
         renames = {
             "run_name": "Run",
+            "available_evals": "Evals",
             "dataset_label": "Dataset",
             "processor": "Model",
             "resolution": "Resolution",
