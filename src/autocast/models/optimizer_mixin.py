@@ -91,6 +91,13 @@ class OptimizerMixin(nn.Module):
         if cfg.get("learning_rate") is None:
             msg = "learning_rate is required in optimizer_config."
             raise ValueError(msg)
+        if cfg.get("grad_clip") is not None:
+            msg = (
+                "optimizer.grad_clip is no longer read; gradient clipping is "
+                "wired through trainer.gradient_clip_val. Move the value to "
+                "trainer.gradient_clip_val (or set it to null to disable)."
+            )
+            raise ValueError(msg)
         optimizer_name = str(cfg.get("optimizer")).lower()
         lr = cfg.get("learning_rate")
         if not isinstance(lr, (float, int)):
@@ -151,6 +158,23 @@ class OptimizerMixin(nn.Module):
             merge_dims=merge_dims,
         )
 
+    def _resolve_warmup(self, cfg: dict[str, Any], horizon: int) -> int:
+        """Resolve warmup steps/epochs from config.
+
+        A float in (0, 1) is treated as a fraction of the cosine horizon
+        (e.g. 0.05 -> 5% of horizon). Anything else is interpreted as an
+        absolute count. Negative values clamp to 0. NaN / inf are rejected.
+        """
+        warmup_raw = cfg.get("warmup", 0)
+        if isinstance(warmup_raw, float) and not math.isfinite(warmup_raw):
+            msg = f"warmup must be finite. Got: {warmup_raw}"
+            raise ValueError(msg)
+        if isinstance(warmup_raw, float) and 0.0 < warmup_raw < 1.0:
+            warmup = int(warmup_raw * horizon)
+        else:
+            warmup = int(warmup_raw)
+        return max(warmup, 0)
+
     def _create_scheduler(
         self, optimizer: torch.optim.Optimizer, cfg: dict[str, Any]
     ) -> torch.optim.lr_scheduler.LRScheduler:
@@ -158,8 +182,6 @@ class OptimizerMixin(nn.Module):
         scheduler_name = str(cfg.get("scheduler", "")).lower()
         scheduler_interval = self._get_scheduler_interval(cfg)
 
-        warmup = int(cfg.get("warmup", 0))
-        warmup = max(warmup, 0)
         min_lr_ratio = float(cfg.get("min_lr_ratio", 0.0))
         if not 0.0 <= min_lr_ratio <= 1.0:
             msg = f"min_lr_ratio must be in [0, 1]. Got: {min_lr_ratio}"
@@ -167,6 +189,7 @@ class OptimizerMixin(nn.Module):
 
         if scheduler_name in {"cosine", "cosine_with_restarts"}:
             horizon = self._resolve_cosine_horizon(cfg, scheduler_interval)
+            warmup = self._resolve_warmup(cfg, horizon)
             use_restarts = scheduler_name == "cosine_with_restarts"
 
             def cosine_lambda(t: int) -> float:
