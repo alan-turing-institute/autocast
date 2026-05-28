@@ -7,16 +7,21 @@ name: "${.optimizer}_${.learning_rate}_${.scheduler}"
 optimizer: "adamw"
 betas: [0.9, 0.99]
 learning_rate: 1e-4
-# Decoupled weight decay for AdamW (Loshchilov & Hutter, ICLR 2019,
-# arXiv:1711.05101). 0.01 is conservative for this field-regression regime; the
-# textbook ViT-classification value (0.05) tends to over-regularise. Applied
-# uniformly (no no-decay groups for biases/norm scales yet).
+# Decoupled weight decay (AdamW): Loshchilov & Hutter, ICLR 2019
+# (arXiv:1711.05101). In modern training WD acts on optimisation dynamics more
+# than as a regulariser (D'Angelo et al., NeurIPS 2024, arXiv:2310.04415). 0.01
+# is the PyTorch AdamW default; the ViT-classification value 0.05 tends to
+# over-regularise this field-regression regime. Applied uniformly (no no-decay
+# groups for biases/norm scales yet).
 weight_decay: 0.01
-# Linear warmup as a fraction of the cosine horizon (5%). Warmup: Goyal et al.
-# (2017, arXiv:1706.02677); cosine annealing: Loshchilov & Hutter, SGDR (ICLR
-# 2017, arXiv:1608.03983). Integer = absolute steps/epochs; float in (0, 1) =
-# fraction of the horizon.
+# Linear warmup as a fraction of the cosine horizon (5%). Why warmup helps:
+# Kalra & Barkeshli, NeurIPS 2024 (arXiv:2406.09405); Adam-specific variance
+# argument: Liu et al. (RAdam), ICLR 2020 (arXiv:1908.03265). Integer = absolute
+# steps/epochs; float in (0, 1) = fraction of the horizon.
 warmup: 0.05
+# Cosine annealing: Loshchilov & Hutter, SGDR, ICLR 2017 (arXiv:1608.03983);
+# set the cycle length to match the run (Hoffmann et al., Chinchilla, 2022,
+# arXiv:2203.15556).
 scheduler: "cosine"
 # Optional scheduler controls:
 # scheduler_interval: "epoch"     # "epoch" or "step"

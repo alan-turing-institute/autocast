@@ -1,7 +1,9 @@
 # Recommended trainer defaults (opt-in). Select with: trainer=updated_defaults
-# Inherits trainer/default.yaml and enables gradient clipping (1.0). bf16-mixed
-# is deliberately NOT enabled here: fp32-vs-bf16 showed performance degradation
-# in earlier experiments, so precision is left at Lightning's 32-true.
+# Inherits trainer/default.yaml and enables gradient clipping (1.0, the GPT-style
+# global-norm default; matches LOLA). Why clipping helps: Zhang et al., ICLR 2020
+# (arXiv:1905.11881); origin: Pascanu et al., ICML 2013 (arXiv:1211.5063).
+# bf16-mixed is deliberately NOT enabled here: fp32-vs-bf16 showed performance
+# degradation in earlier experiments, so precision is left at Lightning's 32-true.
 defaults:
   - default
   - _self_
