@@ -94,6 +94,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         self.normalization_path = normalization_path
         self.normalization_stats = normalization_stats
         self.autoencoder_mode = autoencoder_mode
+        self._channel_idxs_applied = False
 
         if data_path is not None:
             self.read_data(data_path)
@@ -101,8 +102,9 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         if data is not None:
             self.parse_data(data)
 
-        if channel_idxs is not None:
+        if channel_idxs is not None and not self._channel_idxs_applied:
             self.data = self.data[..., list(channel_idxs)]
+            self._channel_idxs_applied = True
 
         self.set_up_normalization()
 
@@ -216,6 +218,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             and f["constant_fields"] != {}
             else None
         )
+        self._channel_idxs_applied = bool(f.get("_channel_idxs_applied", False))
 
     def read_data(self, data_path: str):
         """Read data.
@@ -239,9 +242,19 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             )
             self.constant_scalars = data.get("constant_scalars", None)
             self.constant_fields = data.get("constant_fields", None)
+            self._channel_idxs_applied = bool(data.get("_channel_idxs_applied", False))
             return
         msg = "No data provided to parse."
         raise ValueError(msg)
+
+    def to_preloaded_data(self) -> dict[str, Any]:
+        """Return the in-memory payload accepted by ``data=`` without copying."""
+        return {
+            "data": self.data,
+            "constant_scalars": self.constant_scalars,
+            "constant_fields": self.constant_fields,
+            "_channel_idxs_applied": self._channel_idxs_applied,
+        }
 
     def __len__(self):  # noqa: D105
         return len(self.all_input_fields)

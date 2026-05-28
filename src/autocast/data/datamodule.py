@@ -264,16 +264,11 @@ class SpatioTemporalDataModule(LightningDataModule):
         self.batch_size = batch_size
 
         if not self.autoencoder_mode:
-            # Reuse already-loaded tensors to avoid reading the dataset from disk twice.
+            # Reuse loaded tensors; the payload records if channel_idxs were applied
+            # so rollout datasets do not slice the data a second time.
             self.rollout_val_dataset = dataset_cls(
                 data_path=None,
-                data={
-                    "data": self.train_dataset.data,
-                    "constant_scalars": self.train_dataset.constant_scalars,
-                    "constant_fields": self.train_dataset.constant_fields,
-                }
-                if data is None
-                else data["train"],
+                data=self.train_dataset.to_preloaded_data(),
                 n_steps_input=n_steps_input,
                 n_steps_output=n_steps_output,
                 stride=stride,
@@ -288,13 +283,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             )
             self.rollout_test_dataset = dataset_cls(
                 data_path=None,
-                data={
-                    "data": self.test_dataset.data,
-                    "constant_scalars": self.test_dataset.constant_scalars,
-                    "constant_fields": self.test_dataset.constant_fields,
-                }
-                if data is None
-                else data["test"],
+                data=self.test_dataset.to_preloaded_data(),
                 n_steps_input=n_steps_input,
                 n_steps_output=n_steps_output,
                 stride=stride,
