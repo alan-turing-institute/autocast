@@ -143,6 +143,46 @@ def test_autoencoder_trainer_fit_bf16_mixed_smoke(
         assert torch.isfinite(p).all(), f"param {name} has NaN/Inf after bf16-mixed fit"
 
 
+def test_autoencoder_trainer_fit_time_cosine_smoke(
+    config_dir: str, toy_batch: Batch, dummy_loader, dummy_datamodule
+):
+    """scheduler_interval='time' wires up and runs under a real max_time Trainer.
+
+    Confirms the wall-clock cosine path finds Lightning's Timer in
+    trainer.callbacks and that the time->step interval mapping in
+    configure_optimizers is accepted by Lightning's scheduler config.
+    """
+    model_cfg = _load_config(config_dir, "model/autoencoder")
+    cfg = _wrap_model_config(model_cfg)
+    with open_dict(cfg):
+        cfg.optimizer = get_optimizer_config(
+            scheduler="cosine", scheduler_interval="time"
+        )
+        cfg.datamodule = {
+            "n_steps_input": toy_batch.input_fields.shape[1],
+            "n_steps_output": toy_batch.output_fields.shape[1],
+        }
+    stats = _stats_from_batch(toy_batch)
+    model = setup_autoencoder_model(cfg, stats, dummy_datamodule)
+
+    trainer = L.Trainer(
+        accelerator="cpu",
+        devices=1,
+        max_epochs=1,
+        limit_train_batches=2,
+        limit_val_batches=1,
+        max_time="00:01:00:00",
+        logger=False,
+        enable_checkpointing=False,
+        enable_model_summary=False,
+        enable_progress_bar=False,
+    )
+    trainer.fit(model, train_dataloaders=dummy_loader, val_dataloaders=dummy_loader)
+
+    for name, p in model.named_parameters():
+        assert torch.isfinite(p).all(), f"param {name} not finite after time-cosine fit"
+
+
 def test_default_trainer_config_omits_clip_and_precision(config_dir: str):
     """Pin trainer/default.yaml to the reproducibility-preserving defaults.
 

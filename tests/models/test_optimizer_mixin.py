@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any, cast
 
 import pytest
 import torch
+from lightning.pytorch.callbacks import Timer
 from torch import nn
 
 from autocast.models.optimizer_mixin import OptimizerMixin
@@ -163,3 +165,99 @@ class TestCosineSchedulerWithWarmup:
         # Step 0: ~1/51. Step 50: ~51/51 * cos(50/1000 * pi) ~ 0.997. Strict climb.
         assert lrs[0] < lrs[25] < lrs[50]
         assert lrs[50] == pytest.approx(0.997, rel=1e-2)
+
+
+class _FakeTrainer:
+    """Minimal stand-in exposing the callbacks the time-cosine path reads."""
+
+    def __init__(self, timer: Timer | None):
+        self.callbacks = [] if timer is None else [timer]
+
+
+class TestTimeCosineSchedule:
+    """Wall-clock cosine: LR annealed over trainer.max_time via Lightning's Timer."""
+
+    def _build(
+        self, *, warmup: float | int = 0.0, min_lr_ratio: float = 0.0
+    ) -> tuple[torch.optim.lr_scheduler.LambdaLR, Timer]:
+        timer = Timer(duration="00:01:00:00")  # 3600 s budget
+        m = _ToyMixinUser()
+        m.trainer = _FakeTrainer(timer)  # type: ignore[attr-defined]
+        opt = torch.optim.SGD(m.parameters(), lr=1.0)
+        cfg = cast(
+            "Any",
+            {
+                "scheduler": "cosine",
+                "scheduler_interval": "time",
+                "min_lr_ratio": min_lr_ratio,
+                "warmup": warmup,
+            },
+        )
+        sched = m._create_scheduler(opt, cfg)
+        assert isinstance(sched, torch.optim.lr_scheduler.LambdaLR)
+        return sched, timer
+
+    def _lr_at(
+        self,
+        sched: torch.optim.lr_scheduler.LambdaLR,
+        timer: Timer,
+        elapsed_s: int,
+    ) -> float:
+        # start_time is None (training not "started"), so time_elapsed() == _offset.
+        timer._offset = elapsed_s
+        sched.optimizer.step()
+        sched.step()
+        return float(sched.get_last_lr()[0])
+
+    def test_zero_elapsed_is_full_lr(self) -> None:
+        sched, timer = self._build()
+        assert self._lr_at(sched, timer, 0) == pytest.approx(1.0)
+
+    def test_half_budget_is_cosine_half(self) -> None:
+        sched, timer = self._build()
+        # progress 0.5 -> 0.5 * (1 + cos(pi/2)) = 0.5
+        assert self._lr_at(sched, timer, 1800) == pytest.approx(0.5)
+
+    def test_full_budget_hits_floor(self) -> None:
+        sched, timer = self._build(min_lr_ratio=0.1)
+        # progress 1.0 -> cosine 0 -> min_lr_ratio
+        assert self._lr_at(sched, timer, 3600) == pytest.approx(0.1)
+
+    def test_past_budget_clamps_to_floor(self) -> None:
+        sched, timer = self._build()
+        assert self._lr_at(sched, timer, 7200) == pytest.approx(0.0)
+
+    def test_warmup_is_fraction_of_budget(self) -> None:
+        sched, timer = self._build(warmup=0.1)
+        # progress 0.05, within warmup 0.1 -> warm factor 0.5
+        expected = 0.5 * 0.5 * (1.0 + math.cos(math.pi * 0.05))
+        assert self._lr_at(sched, timer, 180) == pytest.approx(expected, rel=1e-4)
+
+    def test_warmup_completes_at_fraction(self) -> None:
+        sched, timer = self._build(warmup=0.1)
+        # progress == warmup -> full cosine, no warm factor
+        expected = 0.5 * (1.0 + math.cos(math.pi * 0.1))
+        assert self._lr_at(sched, timer, 360) == pytest.approx(expected, rel=1e-6)
+
+    def test_requires_time_budget(self) -> None:
+        m = _ToyMixinUser()
+        m.trainer = _FakeTrainer(None)  # type: ignore[attr-defined]  # no Timer
+        opt = torch.optim.SGD(m.parameters(), lr=1.0)
+        cfg = cast("Any", {"scheduler": "cosine", "scheduler_interval": "time"})
+        with pytest.raises(ValueError, match="max_time"):
+            m._create_scheduler(opt, cfg)
+
+    def test_rejects_restarts_in_time_mode(self) -> None:
+        m = _ToyMixinUser()
+        m.trainer = _FakeTrainer(Timer(duration="00:01:00:00"))  # type: ignore[attr-defined]
+        opt = torch.optim.SGD(m.parameters(), lr=1.0)
+        cfg = cast(
+            "Any",
+            {"scheduler": "cosine_with_restarts", "scheduler_interval": "time"},
+        )
+        with pytest.raises(ValueError, match="cosine_with_restarts"):
+            m._create_scheduler(opt, cfg)
+
+    def test_rejects_absolute_warmup_in_time_mode(self) -> None:
+        with pytest.raises(ValueError, match="fraction"):
+            self._build(warmup=100)
