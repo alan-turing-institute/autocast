@@ -41,9 +41,7 @@ uv sync --extra dev
 uv run pre-commit install
 ```
 
-For detailed documentation on the available scripts and configuration system, see [docs/SCRIPTS_AND_CONFIGS.md](docs/SCRIPTS_AND_CONFIGS.md).
-
-## Quickstart
+## Introduction
 
 `autocast` is primarily meant to be used as a command-line tool.
 
@@ -128,6 +126,21 @@ uv run autocast ae \
     datamodule.data_path=/path/to/dataset \
     +trainer.max_epochs=5
 ```
+
+### Output paths
+
+To specify the output directory for an experiment, you can use the `--workdir` flag:
+
+```bash
+uv run autocast ae \
+    --workdir /path/to/output/directory \
+    datamodule=advection_diffusion \
+    datamodule.data_path=/path/to/dataset \
+    +trainer.max_epochs=5
+```
+
+Or alternatively, specify `--run-group=RUN_GROUP` and `--run-id=RUN_ID` to have `autocast` automatically generate the output directory as `outputs/RUN_GROUP/RUN_ID`.
+If logging to Weights and Biases is enabled, the run ID will also be used for the default W&B run name.
 
 ### Making your own configurations
 
