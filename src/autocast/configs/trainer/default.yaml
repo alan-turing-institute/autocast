@@ -8,12 +8,9 @@ log_every_n_steps: 10
 enable_checkpointing: true
 detect_anomaly: false
 default_root_dir: null
-# Default null (no clipping) for reproducibility with existing runs; recommended
-# starting point is 1.0 (set per experiment).
+# Default null (no clipping) preserves reproducibility with existing runs. To
+# enable gradient clipping (1.0) opt in with trainer=updated_defaults.
 gradient_clip_val: null
-# precision: defaults to Lightning's 32-true. Recommended bf16-mixed for ~1.5-2x
-# A100 throughput, but first validate a bf16-vs-fp32 rollout matches within
-# tolerance (long autoregressive rollouts / spectral ops are precision-sensitive).
 
 # Save snapshots throughout training based on optimizer-step progress.
 # Override at runtime, e.g.:

@@ -1,0 +1,31 @@
+# Recommended tuned AdamW defaults (opt-in). Select with:
+#   optimizer=updated_defaults/adamw
+# Live defaults in optimizer/adamw.yaml are left unchanged for reproducibility;
+# this config carries the values we'd otherwise move to defaults (see the
+# follow-up issue to replace the in-place defaults).
+name: "${.optimizer}_${.learning_rate}_${.scheduler}"
+optimizer: "adamw"
+betas: [0.9, 0.99]
+learning_rate: 1e-4
+# Decoupled weight decay for AdamW (Loshchilov & Hutter, ICLR 2019,
+# arXiv:1711.05101). 0.01 is conservative for this field-regression regime; the
+# textbook ViT-classification value (0.05) tends to over-regularise. Applied
+# uniformly (no no-decay groups for biases/norm scales yet).
+weight_decay: 0.01
+# Linear warmup as a fraction of the cosine horizon (5%). Warmup: Goyal et al.
+# (2017, arXiv:1706.02677); cosine annealing: Loshchilov & Hutter, SGDR (ICLR
+# 2017, arXiv:1608.03983). Integer = absolute steps/epochs; float in (0, 1) =
+# fraction of the horizon.
+warmup: 0.05
+scheduler: "cosine"
+# Optional scheduler controls:
+# scheduler_interval: "epoch"     # "epoch" or "step"
+# cosine_epochs: null              # Used when scheduler_interval="epoch"
+# cosine_steps: null               # Used when scheduler_interval="step"
+# cosine_t_max: 1                  # Fallback horizon if trainer values are unavailable
+# Horizon precedence (highest to lowest):
+# 1) cosine_epochs/cosine_steps (based on scheduler_interval)
+# 2) trainer max value (max_epochs or estimated_stepping_batches)
+# 3) cosine_t_max
+# min_lr_ratio: 0.0                # Final LR ratio in [0, 1]
+# scheduler: "cosine_with_restarts"

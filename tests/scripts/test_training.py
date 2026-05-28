@@ -108,10 +108,10 @@ def test_autoencoder_trainer_fit_bf16_mixed_smoke(
 ):
     """Verify bf16-mixed + gradient_clip_val=1.0 don't produce NaN/Inf.
 
-    These are the recommended (opt-in) precision/clipping settings documented in
-    trainer/default.yaml. Running a smoke fit with both enabled catches
-    regressions where mixed precision introduces NaN/Inf in our model paths or
-    where clipping interferes with the optimizer step.
+    bf16-mixed is a supported but non-default option (not recommended — earlier
+    experiments showed fp32-vs-bf16 degradation). This smoke fit with both
+    enabled catches regressions where mixed precision introduces NaN/Inf in our
+    model paths or where clipping interferes with the optimizer step.
     """
     model_cfg = _load_config(config_dir, "model/autoencoder")
     cfg = _wrap_model_config(model_cfg)
@@ -147,14 +147,38 @@ def test_default_trainer_config_omits_clip_and_precision(config_dir: str):
     """Pin trainer/default.yaml to the reproducibility-preserving defaults.
 
     gradient_clip_val stays null (no clipping) and precision is left unset
-    (Lightning's 32-true) so existing runs reproduce unchanged; bf16-mixed and
-    clipping are opt-in recommendations documented in the config. Fails loudly if
-    a refactor silently re-introduces a behaviour-changing default.
+    (Lightning's 32-true) so existing runs reproduce unchanged; the tuned values
+    live in the opt-in ``updated_defaults`` configs. Fails loudly if a refactor
+    silently re-introduces a behaviour-changing default.
     """
     trainer_cfg = OmegaConf.load(Path(config_dir) / "trainer" / "default.yaml")
     assert isinstance(trainer_cfg, DictConfig)
     assert trainer_cfg.get("gradient_clip_val") is None
     assert trainer_cfg.get("precision") is None
+
+
+def test_updated_defaults_configs_opt_in(config_dir: str):
+    """The opt-in recommended configs select cleanly and carry the tuned values.
+
+    Per review: live defaults stay untouched and the tuned values ship as
+    selectable configs (``optimizer=updated_defaults/adamw``,
+    ``trainer=updated_defaults``) rather than changing the defaults in place.
+    """
+    cfg = _load_config(
+        config_dir,
+        "autoencoder",
+        overrides=[
+            "optimizer=updated_defaults/adamw",
+            "trainer=updated_defaults",
+        ],
+    )
+    assert cfg.optimizer.weight_decay == 0.01
+    assert cfg.optimizer.warmup == 0.05
+    assert cfg.trainer.gradient_clip_val == 1.0
+    # bf16 deliberately not recommended (see review); precision stays unset.
+    assert cfg.trainer.get("precision") is None
+    # Inheritance from trainer/default.yaml preserved the callbacks.
+    assert len(cfg.trainer.callbacks) > 0
 
 
 def test_processor_config_training_step_smoke(config_dir: str, dummy_datamodule):

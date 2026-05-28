@@ -2,13 +2,11 @@ name: "${.optimizer}_${.learning_rate}_${.scheduler}"
 optimizer: "adamw"
 betas: [0.9, 0.99]
 learning_rate: 1e-4
-# Default 0.0 for reproducibility with existing runs. Recommended starting
-# point for this field-regression regime is 0.01 (the textbook ViT-classification
-# 0.05 tends to over-regularise); set per experiment. NB: when enabled it is
-# applied uniformly (no no-decay groups for biases/norms yet).
+# Defaults preserve reproducibility with existing runs. For tuned starting
+# points (weight_decay, warmup) opt in with optimizer=updated_defaults/adamw.
 weight_decay: 0.0
 # Warmup: integer = absolute steps/epochs; float in (0, 1) = fraction of the
-# cosine horizon. Default 0 for reproducibility; recommended 0.05 (5% of horizon).
+# cosine horizon.
 warmup: 0
 scheduler: "cosine"
 # Optional scheduler controls:
