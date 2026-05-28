@@ -43,7 +43,6 @@ COMMON_ARGS=(
 	--panel-figure \
 	--panel-figure-no-training \
 	--coverage-panel-overall-rollout-windows \
-	--uniform-run-hue-color \
 	--tick-label-scale 1.5 \
 	--axis-label-scale 1.3 \
 	--legend-font-scale 1.5 \
@@ -70,15 +69,19 @@ plot_group() {
 
 plot_group masked_vs_non_masked \
 	--run "$RB_FM_MASKED" "FM masked (4096, eff_bs=256)" "$HUE_FM_MASKED" \
-	--run "$RB_FM_NON_MASKED" "FM non-masked (4096, eff_bs=256)" "$HUE_FM_NON_MASKED"
+	--run "$RB_FM_NON_MASKED" "FM non-masked (4096, eff_bs=256)" "$HUE_FM_NON_MASKED" \
+	--uniform-run-hue-color
 
 plot_group 24hrs \
 	--run "$RB_CRPS_LATENT_24H" "CRPS latent (24h, eff_bs=128)" "$HUE_CRPS_LATENT" \
 	--run "$RB_FM_LATENT_24H" "FM latent (24h, eff_bs=1024)" "$HUE_FM_LATENT" \
 	--run "$RB_CRPS_AMBIENT_24H" "CRPS ambient (24h, eff_bs=128)" "$HUE_CRPS_AMBIENT" \
-	--run "$RB_CRPS_LOLA_AMBIENT_24H" "CRPS LoLA ambient (24h, eff_bs=128)" "$HUE_CRPS_LOLA_AMBIENT"
+	--run "$RB_CRPS_LOLA_AMBIENT_24H" "CRPS LoLA ambient (24h, eff_bs=128)" "$HUE_CRPS_LOLA_AMBIENT" \
+	--uniform-run-hue-color
 
 plot_group 4096 \
 	--run "$RB_FM_NON_MASKED" "FM non-masked (4096, eff_bs=256)" "$HUE_FM_NON_MASKED" \
 	--run "$RB_FM_MASKED" "FM masked (4096, eff_bs=256)" "$HUE_FM_MASKED" \
-	--run "$RB_DIFFUSION_4096" "Diffusion LoLA (4096, eff_bs=256)" "$HUE_DIFFUSION" eval=eval_encode_once
+	--run "$RB_DIFFUSION_4096" "Diffusion LoLA (4096, eff_bs=256)" "$HUE_DIFFUSION" eval=eval_encode_once \
+	--run "$RB_DIFFUSION_4096" "Diffusion LoLA (4096, eff_bs=256, AB)" "$HUE_DIFFUSION" eval=eval_encode_once_ab16 \
+	--run "$RB_DIFFUSION_4096" "Diffusion LoLA (4096, eff_bs=256, DDPM)" "$HUE_DIFFUSION" eval=eval_encode_once_ddpm50
