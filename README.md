@@ -5,43 +5,156 @@
 
 ## Installation
 
-### Prereqiuisites
+### Prerequisites
 
 - [uv](https://github.com/astral-sh/uv): running scripts; managing virtual environments
 - [ffmpeg](https://ffmpeg.org/): optional video generation during evaluation
 
-### Development
-For development, install with [`uv`](https://github.com/astral-sh/uv):
-```bash
-uv sync --extra dev
+### Usage
+
+If you'd just like to use the code in autocast:
+
+```
+# Clone the repo
+git clone git@github.com:alan-turing-institute/autocast.git
+cd autocast
+
+# Install dependencies
+uv sync
 ```
 
-If contributing to the codebase, you can run 
-```bash 
- pre-commit install 
- ```
-This will setup the pre-commit checks so any pushed commits will pass the CI. 
+This will allow you to run `uv run autocast` from within the repository.
+
+### Development
+
+If you want to contribute to the autocast codebase, the following will get you set up:
+
+```bash
+# Clone the repo
+git clone git@github.com:alan-turing-institute/autocast.git
+cd autocast
+
+# Install development dependencies
+uv sync --extra dev
+
+# Set up pre-commit checks, so that any pushed commits pass CI
+uv run pre-commit install
+```
 
 For detailed documentation on the available scripts and configuration system, see [docs/SCRIPTS_AND_CONFIGS.md](docs/SCRIPTS_AND_CONFIGS.md).
 
 ## Quickstart
 
-The `autocast` CLI is built on top of [Hydra](https://hydra.cc/), meaning you can pass configuration overrides directly to the commands.
+`autocast` is primarily meant to be used as a command-line tool.
 
-Train an encoder-decoder stack:
+The `autocast` CLI is built on top of [Hydra](https://hydra.cc/).
+This means that configurations are specified in YAML files and can be composed together to quickly switch between different datasets and model architectures.
+
+### Base configurations and subcommands
+
+The 'base' configurations for datasets and model architectures are stored in `src/autocast/configs`.
+In particular, `autocast` comes with some subcommands for training standard model stacks:
+
+| Command                     | Description                                | Default config                                                                                               |
+| --------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| `uv run autocast ae`        | Train an autoencoder                       | [`src/autocast/configs/autoencoder.yaml`](src/autocast/configs/autoencoder.yaml)
+| `uv run autocast processor` | Train a processor (frozen encoder/decoder) | [`src/autocast/configs/processor.yaml`](src/autocast/configs/processor.yaml)                                 |
+| `uv run autocast epd`       | Train an encoder-processor-decoder         | [`src/autocast/configs/encoder_processor_decoder.yaml`](src/autocast/configs/encoder_processor_decoder.yaml) |
+
+Notice that each of these YAML files in turn refer to a number of _other_ YAML files.
+For example, `src/autocast/configs/autoencoder.yaml` specifies (amongst other things)
+
+```yaml
+defaults:
+  - model: autoencoder
+  - logging: wandb
+```
+
+which in turn point to `src/autocast/configs/model/autoencoder.yaml` and `src/autocast/configs/logging/wandb.yaml` respectively.
+In this way, configurations can be built up from smaller pieces in a modular way.
+
+### Adding and overriding configurations
+
+Hydra allows you to add or override any configuration value from the command line.
+See [the Hydra documentation](https://hydra.cc/docs/advanced/override_grammar/basic/) for more details.
+As an example, to _override_ the number of training epochs for the `ae` command, you can run:
 
 ```bash
 uv run autocast ae trainer.max_epochs=5
 ```
 
-Train and evaluate an encoder-processor-decoder stack:
+Note that this only works if the `trainer.max_epochs` key is defined in the default configuration for that command.
+If the key is not defined, you have to prefix it with `+` to tell Hydra to add it:
 
 ```bash
-uv run autocast train-eval datamodule=reaction_diffusion
+uv run autocast ae +trainer.max_epochs=5
 ```
 
-Evaluation writes a CSV of aggregate metrics to `eval.csv_path` and, when `eval.batch_indices` is provided,
-stores rollout animations for the specified test batches.
+If you want to specify the option regardless of whether it is defined in the default config or not, you can use `++`:
+
+```bash
+uv run autocast ae ++trainer.max_epochs=5
+```
+
+### Data modules
+
+By default, these commands all point to their own _data modules_, which specify the dataset and how it gets loaded.
+The data module configurations are stored in `src/autocast/configs/datamodule/`.
+
+`autocast` can read datasets stored in two different formats:
+
+| Format                                                                       | Appropriate setting for `datamodule` | Override...                                                    |
+| ------                                                                       | ------------------------------------ | -----------                                                    |
+| HDF5 files from [The Well](https://polymathic-ai.org/the_well/)              | `datamodule=the_well`                | `datamodule.well_base_path` and `datamodule.well_dataset_name` |
+| `.pt` files from [autosim](https://github.com/alan-turing-institute/autosim) | `datamodule=advection_diffusion`     | `datamodule.data_path`                                         |
+
+For example, let's say that you have used `autosim` to generate a dataset of advection-diffusion simulations.
+We'll keep the size of the spatial grid (`simulator.n`) and the number of trajectories (`dataset.n_...`) small for this example.
+We'll also manually specify the output directory for the generated dataset, so that we can point `autocast` to it later (otherwise `autosim` will automatically generate a directory for you by default):
+
+```bash
+# See the autosim repository for more information on this.
+
+uv run autosim simulator=advection_diffusion \
+    simulator.n=16 dataset.n_train=10 dataset.n_valid=2 dataset.n_test=2 \
+    dataset.output_dir=/path/to/dataset
+```
+
+You can then train an autoencoder on that dataset (with all other settings inherited from that default) with:
+
+```bash
+uv run autocast ae \
+    datamodule=advection_diffusion \
+    datamodule.data_path=/path/to/dataset \
+    +trainer.max_epochs=5
+```
+
+### Making your own configurations
+
+If you find yourself making the same overrides repeatedly, it is probably worth it to make a new YAML configuration that specifies these overrides.
+If they are generally useful for the package, these can stored in `src/autocast/configs/experiments/<myexpt>.yaml` and specified on the command-line with `+experiment=<myexpt>`.
+
+Some of the configurations we used for our experiments are stored in the `local_hydra/local_experiment` folder.
+These are not in the main `src/autocast/configs` folder because they are not meant to be distributed as part of the package.
+These configuration files can, however, still be used by setting `local_experiment=<name>` on the command line.
+
+(This works because `autocast` makes sure to add `local_hydra` to Hydra's search path, allowing you to load configurations from there even though they are outside the package.)
+
+## Running experiments on SLURM
+
+`autocast` supports running experiments on SLURM clusters by adding the `--mode slurm` flag.
+This automatically generates a submission Bash script and submits it to the cluster, so you don't have to worry about writing your own submission scripts.
+
+For example, to run the same autoencoder training as above, but on SLURM, you can run:
+
+```bash
+uv run autocast ae --mode slurm \
+    datamodule=advection_diffusion \
+    datamodule.data_path=/path/to/dataset \
+    +trainer.max_epochs=5
+```
+
+---------------------------------
 
 ## Example pipeline
 
