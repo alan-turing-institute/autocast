@@ -180,15 +180,13 @@ class SpatioTemporalDataModule(LightningDataModule):
         normalization_path: None | str = None,
         normalization_stats: dict | DictConfig | None = None,
         num_workers: int | None = None,
-        pin_memory: bool | None = None,
+        pin_memory: bool = torch.cuda.is_available(),
     ):
         super().__init__()
         self.verbose = verbose
         self.use_normalization = use_normalization
         self.autoencoder_mode = autoencoder_mode
-        self.pin_memory = (
-            torch.cuda.is_available() if pin_memory is None else pin_memory
-        )
+        self.pin_memory = pin_memory
         # Auto-detect num_workers based on available CPUs, capped at 8
         self.num_workers = (
             num_workers if num_workers is not None else min(os.cpu_count() or 1, 8)
