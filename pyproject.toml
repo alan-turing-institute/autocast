@@ -9,6 +9,7 @@ authors = [
 requires-python = ">=3.11,<3.13"
 dependencies = [
     "autoemulate>=1.2.0",
+    "autosim",
     "azula>=0.7.0",
     "beartype>=0.22.8",
     "einops>=0.8.1",
@@ -116,6 +117,7 @@ explicit = true
 
 [tool.uv.sources]
 autoemulate = { git = "https://github.com/alan-turing-institute/autoemulate.git" }
+autosim = { git = "https://github.com/alan-turing-institute/autosim.git" }
 torch = [
     { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
 ]
