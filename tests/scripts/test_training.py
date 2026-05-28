@@ -106,12 +106,12 @@ def test_autoencoder_config_trainer_fit_smoke(
 def test_autoencoder_trainer_fit_bf16_mixed_smoke(
     config_dir: str, toy_batch: Batch, dummy_loader, dummy_datamodule
 ):
-    """Verify bf16-mixed + gradient_clip_val=1.0 defaults don't produce NaN/Inf.
+    """Verify bf16-mixed + gradient_clip_val=1.0 don't produce NaN/Inf.
 
-    These two settings are the behaviour-changing defaults in trainer/default.yaml.
-    Running a smoke fit with both enabled catches regressions where mixed precision
-    introduces NaN/Inf in our model paths or where clipping interferes with the
-    optimizer step.
+    These are the recommended (opt-in) precision/clipping settings documented in
+    trainer/default.yaml. Running a smoke fit with both enabled catches
+    regressions where mixed precision introduces NaN/Inf in our model paths or
+    where clipping interferes with the optimizer step.
     """
     model_cfg = _load_config(config_dir, "model/autoencoder")
     cfg = _wrap_model_config(model_cfg)
@@ -143,15 +143,18 @@ def test_autoencoder_trainer_fit_bf16_mixed_smoke(
         assert torch.isfinite(p).all(), f"param {name} has NaN/Inf after bf16-mixed fit"
 
 
-def test_default_trainer_config_has_expected_precision_and_clip(config_dir: str):
-    """Pin trainer/default.yaml's bf16-mixed + gradient_clip_val=1.0 defaults.
+def test_default_trainer_config_omits_clip_and_precision(config_dir: str):
+    """Pin trainer/default.yaml to the reproducibility-preserving defaults.
 
-    These are explicitly project-wide defaults; this test fails loudly if they
-    are silently changed (e.g. by a future refactor that lowers WD or precision).
+    gradient_clip_val stays null (no clipping) and precision is left unset
+    (Lightning's 32-true) so existing runs reproduce unchanged; bf16-mixed and
+    clipping are opt-in recommendations documented in the config. Fails loudly if
+    a refactor silently re-introduces a behaviour-changing default.
     """
     trainer_cfg = OmegaConf.load(Path(config_dir) / "trainer" / "default.yaml")
-    assert trainer_cfg.precision == "bf16-mixed"
-    assert trainer_cfg.gradient_clip_val == 1.0
+    assert isinstance(trainer_cfg, DictConfig)
+    assert trainer_cfg.get("gradient_clip_val") is None
+    assert trainer_cfg.get("precision") is None
 
 
 def test_processor_config_training_step_smoke(config_dir: str, dummy_datamodule):
