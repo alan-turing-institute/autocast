@@ -47,6 +47,7 @@ class EncoderProcessorDecoder(
         test_metrics: Sequence[Metric] | None = None,
         input_noise_injector: NoiseInjector | None = None,
         norm: ZScoreNormalization | None = None,
+        predict_incremental_diff: bool = False,
         **kwargs: Any,
     ) -> None:
         super().__init__()
@@ -61,6 +62,7 @@ class EncoderProcessorDecoder(
         self.freeze_encoder_decoder = freeze_encoder_decoder
         self.input_noise_injector = input_noise_injector
         self.norm = norm
+        self.predict_incremental_diff = predict_incremental_diff
 
         if self.train_in_latent_space or self.freeze_encoder_decoder:
             self.encoder_decoder.freeze()
@@ -98,6 +100,11 @@ class EncoderProcessorDecoder(
         encoded, global_cond = self.encoder_decoder.encoder.encode_with_cond(batch)
         mapped = self.processor.map(encoded, global_cond)
         decoded = self.encoder_decoder.decoder.decode(mapped)
+        if self.predict_incremental_diff:
+            # Skip connection: network predicts the increment; add last input frame.
+            # Slice input channels to match output channels (first C_out channels).
+            last_input = batch.input_fields[:, -1:, ..., : decoded.shape[-1]]
+            decoded = decoded + last_input
         return decoded
 
     def loss(self, batch: Batch) -> tuple[Tensor, Tensor | None]:
