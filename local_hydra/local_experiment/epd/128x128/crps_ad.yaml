@@ -1,0 +1,12 @@
+# @package _global_
+defaults:
+  - epd/advection_diffusion/crps_vit_azula_large
+  - /distributed: ddp_4gpu_slurm
+  - override /datamodule: 128x128/advection_diffusion
+  - _self_
+
+experiment_name: epd_crps_vit_azula_large_advection_diffusion_128
+
+model:
+  processor:
+    patch_size: 8

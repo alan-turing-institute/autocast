@@ -1,0 +1,12 @@
+# Decodes (16 x 16 x 8) to (128 x 128 x C_in), corresponding
+# to compression rate of 24x for CNS (C_in = 3). This matches
+# the latent space for the 64x64 decoders.
+#
+# This is approx 25M params (50M for the full autoencoder)
+defaults:
+  - dc_large
+  - _self_
+
+in_channels: 8
+hid_channels: [512, 256, 128, 64]
+hid_blocks: [3, 3, 3, 3]
