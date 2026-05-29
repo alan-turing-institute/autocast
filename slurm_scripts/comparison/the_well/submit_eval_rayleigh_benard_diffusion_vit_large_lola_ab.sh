@@ -44,6 +44,7 @@ EVAL_ROLLOUT_MEMBER_RENDER_MODE="${EVAL_ROLLOUT_MEMBER_RENDER_MODE:-both}"
 EVAL_SUBDIR="${EVAL_SUBDIR:-eval_encode_once_${EVAL_SAMPLER}${EVAL_SAMPLER_STEPS}_o${EVAL_SAMPLER_ORDER}}"
 EVAL_BENCHMARK_ENABLED="${EVAL_BENCHMARK_ENABLED:-true}"
 EVAL_BENCHMARK_ROLLOUT_ENABLED="${EVAL_BENCHMARK_ROLLOUT_ENABLED:-true}"
+EVAL_AUTOENCODED_TARGET_METRICS="${EVAL_AUTOENCODED_TARGET_METRICS:-true}"
 TIMEOUT_MIN="${TIMEOUT_MIN:-1439}"
 CPUS_PER_TASK="${CPUS_PER_TASK:-8}"
 SLURM_MEM="${SLURM_MEM:-115G}"
@@ -106,6 +107,7 @@ for run_dir in "${RUN_DIRS[@]}"; do
         echo "  eval.n_members: ${EVAL_N_MEMBERS}"
         echo "  eval.chunk_size: ${EVAL_CHUNK_SIZE}"
         echo "  eval.transpose_spatial: true"
+        echo "  eval.compute_rollout_autoencoded_target_metrics: ${EVAL_AUTOENCODED_TARGET_METRICS}"
         echo "  eval.benchmark.enabled: ${EVAL_BENCHMARK_ENABLED}"
         echo "  eval.benchmark_rollout.enabled: ${EVAL_BENCHMARK_ROLLOUT_ENABLED}"
         echo "  hydra.launcher.mem: ${SLURM_MEM}"
@@ -126,6 +128,7 @@ for run_dir in "${RUN_DIRS[@]}"; do
             eval.n_members="${EVAL_N_MEMBERS}" \
             +eval.chunk_size="${EVAL_CHUNK_SIZE}" \
             eval.transpose_spatial=true \
+            eval.compute_rollout_autoencoded_target_metrics="${EVAL_AUTOENCODED_TARGET_METRICS}" \
             eval.rollout_member_indices="${EVAL_DIAGNOSTIC_MEMBER_INDICES}" \
             eval.rollout_member_render_mode="${EVAL_ROLLOUT_MEMBER_RENDER_MODE}" \
             eval.benchmark.enabled="${EVAL_BENCHMARK_ENABLED}" \
