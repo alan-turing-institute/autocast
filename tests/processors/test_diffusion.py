@@ -84,6 +84,13 @@ class _CaptureBackbone(nn.Module):
         return torch.zeros_like(x_t)
 
 
+class _IdentitySampler:
+    start = 1.0
+
+    def __call__(self, x: torch.Tensor, **_: object) -> torch.Tensor:
+        return x
+
+
 def _build_encoded_loader(
     *,
     n_steps_input: int,
@@ -150,6 +157,59 @@ def test_lola_denoiser_uses_scaled_log_sigma_modulation():
     alpha, sigma = schedule(t)
     expected_t = 10.0 * torch.log(sigma / alpha)
     assert torch.allclose(backbone.last_t, expected_t)
+
+
+def test_diffusion_processor_initializes_from_sampler_start(monkeypatch):
+    schedule = LogLogitSchedule(
+        sigma_min=1e-3,
+        sigma_max=1e3,
+        scale=1.0,
+        shift=0.0,
+    )
+    processor = DiffusionProcessor(
+        backbone=_CaptureBackbone(),
+        schedule=schedule,
+        denoiser_type="lola",
+        n_steps_output=1,
+        n_channels_out=1,
+    )
+    monkeypatch.setattr(processor, "_get_sampler", lambda *_, **__: _IdentitySampler())
+
+    x = torch.zeros(4096, 1, 1, 1, 1)
+    torch.manual_seed(0)
+
+    out = processor.map(x, None)
+
+    _, sigma_start = schedule(torch.tensor(1.0))
+    expected_std = torch.sqrt(1 + sigma_start.square()).item()
+    assert out.std().item() == pytest.approx(expected_std, rel=0.1)
+    assert out.std().item() > 100.0
+
+
+@pytest.mark.parametrize("sampler_name", ["euler", "heun", "ddim", "ddpm", "ab", "vab"])
+def test_diffusion_sampler_grid_runs_start_to_stop(sampler_name: str):
+    processor = DiffusionProcessor(
+        backbone=_CaptureBackbone(),
+        schedule=LogLogitSchedule(),
+        denoiser_type="lola",
+        n_steps_output=1,
+        n_channels_out=1,
+        sampler=sampler_name,
+        sampler_steps=4,
+    )
+    sampler = processor._get_sampler(
+        processor.sampler_steps,
+        dtype=torch.float32,
+        device=torch.device("cpu"),
+    )
+
+    timesteps = sampler.timesteps
+    time_pairs = timesteps.unfold(0, 2, 1)
+
+    assert timesteps[0].item() == pytest.approx(1.0)
+    assert timesteps[-1].item() == pytest.approx(0.0)
+    assert time_pairs[0, 0].item() == pytest.approx(1.0)
+    assert time_pairs[-1, 1].item() == pytest.approx(0.0)
 
 
 def test_lola_diffusion_processor_loss_is_finite():
