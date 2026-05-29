@@ -1,12 +1,12 @@
 #!/bin/bash
 
 set -euo pipefail
-# Evaluate the Rayleigh-Benard LoLA diffusion ViT-large cached-latent run with
-# LoLA's *inference* sampler instead of Euler, to confirm whether the eval/SSR
+# Evaluate the Rayleigh-Benard LOLA diffusion ViT-large cached-latent run with
+# LOLA's *inference* sampler instead of Euler, to confirm whether the eval/SSR
 # result depends on the sampler.
 #
-# Background: the trained run sampled with deterministic Euler (50 steps); LoLA
-# evaluates with algorithm="ab" (Adams-Bashforth multistep, order=2) at 16
+# Background: the trained run sampled with deterministic Euler (50 steps); LOLA
+# evaluates with algorithm="ab" (Adams-Bashforth multistep, order=3) at 16
 # steps. AB is also a *deterministic* ODE integrator, so this isolates the
 # integrator (Euler vs higher-order multistep) on the stiff VE probability-flow
 # ODE -- the variable the earlier "AB ~= Euler" flow-matching test could not
@@ -16,7 +16,8 @@ set -euo pipefail
 # Nothing is retrained: the sampler is a processor attribute set at construction
 # from resolved_config.yaml, so we just override model.processor.sampler /
 # .sampler_steps at eval time (struct-safe; both keys exist in the resolved
-# config). sampler_order defaults to 2 (LoLA) in the DiffusionProcessor ctor.
+# config). sampler_order is added with ++ because older resolved configs did
+# not include it.
 #
 # Outputs go to a distinct subdir (eval_encode_once_ab16) with explicit
 # csv_path/video_dir so this does NOT clobber the Euler eval (eval_encode_once).
@@ -27,19 +28,20 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 cd "${REPO_ROOT}"
 
-# Sampler knobs. LoLA's eval recipe is ab / 16 steps. Set EVAL_SAMPLER_STEPS=50
-# to control for step count against the Euler-50 baseline instead.
+# Sampler knobs. LOLA's eval recipe is ab / 16 steps / order 3.
+# Set EVAL_SAMPLER_STEPS=50 to control for step count against the Euler-50
+# baseline instead.
 EVAL_SAMPLER="${EVAL_SAMPLER:-ab}"
 EVAL_SAMPLER_STEPS="${EVAL_SAMPLER_STEPS:-16}"
+EVAL_SAMPLER_ORDER="${EVAL_SAMPLER_ORDER:-3}"
 
 EVAL_BATCH_SIZE="${EVAL_BATCH_SIZE:-1}"
-# Baseline Euler eval used 10 members; keep 10 for a clean sampler-only diff.
-# (LoLA itself used 16 members -- set EVAL_N_MEMBERS=16 to also match that.)
-EVAL_N_MEMBERS="${EVAL_N_MEMBERS:-10}"
+# LOLA evaluates 16 sampled rollouts.
+EVAL_N_MEMBERS="${EVAL_N_MEMBERS:-16}"
 EVAL_CHUNK_SIZE="${EVAL_CHUNK_SIZE:-8}"
 EVAL_DIAGNOSTIC_MEMBER_INDICES="${EVAL_DIAGNOSTIC_MEMBER_INDICES:-[0]}"
 EVAL_ROLLOUT_MEMBER_RENDER_MODE="${EVAL_ROLLOUT_MEMBER_RENDER_MODE:-both}"
-EVAL_SUBDIR="${EVAL_SUBDIR:-eval_encode_once_${EVAL_SAMPLER}${EVAL_SAMPLER_STEPS}}"
+EVAL_SUBDIR="${EVAL_SUBDIR:-eval_encode_once_${EVAL_SAMPLER}${EVAL_SAMPLER_STEPS}_o${EVAL_SAMPLER_ORDER}}"
 EVAL_BENCHMARK_ENABLED="${EVAL_BENCHMARK_ENABLED:-true}"
 EVAL_BENCHMARK_ROLLOUT_ENABLED="${EVAL_BENCHMARK_ROLLOUT_ENABLED:-true}"
 TIMEOUT_MIN="${TIMEOUT_MIN:-1439}"
@@ -68,7 +70,7 @@ done
 shopt -u nullglob
 
 if ((${#RUN_DIRS[@]} == 0)); then
-    echo "No matching Rayleigh-Benard LoLA diffusion runs found." >&2
+    echo "No matching Rayleigh-Benard LOLA diffusion runs found." >&2
     exit 1
 fi
 
@@ -93,11 +95,11 @@ for run_dir in "${RUN_DIRS[@]}"; do
             run_label="slurm --dry-run"
         fi
 
-        echo "Submitting RB LoLA diffusion ViT-large cached-latent eval (AB sampler)"
+        echo "Submitting RB LOLA diffusion ViT-large cached-latent eval (AB sampler)"
         echo "  mode: ${run_label}"
         echo "  run_dir: ${run_dir}"
         echo "  output_subdir: ${EVAL_SUBDIR}"
-        echo "  model.processor.sampler: ${EVAL_SAMPLER} (order=2)"
+        echo "  model.processor.sampler: ${EVAL_SAMPLER} (order=${EVAL_SAMPLER_ORDER})"
         echo "  model.processor.sampler_steps: ${EVAL_SAMPLER_STEPS}"
         echo "  eval.mode: encode_once"
         echo "  eval.batch_size: ${EVAL_BATCH_SIZE}"
@@ -116,6 +118,7 @@ for run_dir in "${RUN_DIRS[@]}"; do
             eval.mode=encode_once \
             model.processor.sampler="${EVAL_SAMPLER}" \
             model.processor.sampler_steps="${EVAL_SAMPLER_STEPS}" \
+            ++model.processor.sampler_order="${EVAL_SAMPLER_ORDER}" \
             eval.csv_path="${eval_output_dir}/evaluation_metrics.csv" \
             eval.video_dir="${eval_output_dir}/videos" \
             eval.metrics="${EVAL_METRICS}" \
