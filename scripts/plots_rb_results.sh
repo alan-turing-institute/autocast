@@ -82,6 +82,6 @@ plot_group 24hrs \
 plot_group 4096 \
 	--run "$RB_FM_NON_MASKED" "FM non-masked (4096, eff_bs=256)" "$HUE_FM_NON_MASKED" \
 	--run "$RB_FM_MASKED" "FM masked (4096, eff_bs=256)" "$HUE_FM_MASKED" \
-	--run "$RB_DIFFUSION_4096" "Diffusion LoLA (4096, eff_bs=256)" "$HUE_DIFFUSION" eval=eval_encode_once \
 	--run "$RB_DIFFUSION_4096" "Diffusion LoLA (4096, eff_bs=256, AB)" "$HUE_DIFFUSION" eval=eval_encode_once_ab16 \
 	--run "$RB_DIFFUSION_4096" "Diffusion LoLA (4096, eff_bs=256, DDPM)" "$HUE_DIFFUSION" eval=eval_encode_once_ddpm50
+	# --run "$RB_DIFFUSION_4096" "Diffusion LoLA (4096, eff_bs=256)" "$HUE_DIFFUSION" eval=eval_encode_once \
