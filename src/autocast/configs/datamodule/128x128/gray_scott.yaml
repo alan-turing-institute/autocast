@@ -1,0 +1,5 @@
+defaults:
+  - gray_scott
+  - _self_
+
+data_path: "${oc.env:AUTOCAST_DATASETS,./datasets}/128x128/gray_scott_574df6a"

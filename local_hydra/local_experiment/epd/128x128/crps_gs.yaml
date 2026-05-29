@@ -1,0 +1,12 @@
+# @package _global_
+defaults:
+  - epd/gray_scott/crps_vit_azula_large
+  - /distributed: ddp_4gpu_slurm
+  - override /datamodule: 128x128/gray_scott
+  - _self_
+
+experiment_name: epd_crps_vit_azula_large_gray_scott_128
+
+model:
+  processor:
+    patch_size: 8

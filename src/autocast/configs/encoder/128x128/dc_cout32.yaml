@@ -1,0 +1,10 @@
+# Encodes (128 x 128 x C_in) to (16 x 16 x 32), corresponding
+# to compression rate of 6x for CNS (C_in = 3). This compression
+# rate matches that used for the 64x64 encoders.
+
+defaults:
+  - dc_large
+
+out_channels: 32
+hid_channels: [64, 128, 256, 512]
+hid_blocks: [3, 3, 3, 3]
