@@ -242,6 +242,7 @@ def _build_encode_once_rollout_predict(
     n_members: int | None,
     device: Any,
     compare_to_autoencoded_target: bool = False,
+    rollout_start: int = 0,
 ) -> Callable[[Any], tuple[torch.Tensor, torch.Tensor | None]]:
     """Build a rollout closure that encodes once and compares against raw truth.
 
@@ -281,6 +282,7 @@ def _build_encode_once_rollout_predict(
         batch: Any,
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
         with torch.no_grad():
+            batch = _crop_rollout_batch_start(batch, rollout_start)
             encoded_batch = encoder_decoder.encoder.encode_batch(batch)
             preds_latent, trues_latent = processor_wrapper.rollout(
                 encoded_batch,
@@ -310,6 +312,62 @@ def _build_encode_once_rollout_predict(
         return preds[:, :min_len], trues[:, :min_len]
 
     return rollout_predict_encode_once
+
+
+def _crop_rollout_batch_start(batch: Any, rollout_start: int) -> Any:
+    """Shift full-trajectory batches to a later rollout initial state.
+
+    ``rollout_start`` follows LOLA's evaluation convention: it is the absolute
+    trajectory timestep of the final conditioning frame. Multi-frame contexts
+    therefore include the preceding ``n_steps_input - 1`` frames.
+    """
+    if rollout_start <= 0:
+        return batch
+
+    start = int(rollout_start)
+    if isinstance(batch, Batch):
+        n_steps_input = int(batch.input_fields.shape[1])
+        trajectory = torch.cat([batch.input_fields, batch.output_fields], dim=1)
+        input_start = max(0, start - n_steps_input + 1)
+        target_start = input_start + n_steps_input
+        if target_start >= trajectory.shape[1]:
+            msg = (
+                f"eval.rollout_start={start} leaves no target frames for a "
+                f"trajectory of length {trajectory.shape[1]} with "
+                f"n_steps_input={n_steps_input}."
+            )
+            raise ValueError(msg)
+        return Batch(
+            input_fields=trajectory[:, input_start:target_start, ...],
+            output_fields=trajectory[:, target_start:, ...],
+            constant_scalars=batch.constant_scalars,
+            constant_fields=batch.constant_fields,
+            boundary_conditions=batch.boundary_conditions,
+        )
+
+    if isinstance(batch, EncodedBatch):
+        n_steps_input = int(batch.encoded_inputs.shape[1])
+        trajectory = torch.cat(
+            [batch.encoded_inputs, batch.encoded_output_fields],
+            dim=1,
+        )
+        input_start = max(0, start - n_steps_input + 1)
+        target_start = input_start + n_steps_input
+        if target_start >= trajectory.shape[1]:
+            msg = (
+                f"eval.rollout_start={start} leaves no target frames for an "
+                f"encoded trajectory of length {trajectory.shape[1]} with "
+                f"n_steps_input={n_steps_input}."
+            )
+            raise ValueError(msg)
+        return EncodedBatch(
+            encoded_inputs=trajectory[:, input_start:target_start, ...],
+            encoded_output_fields=trajectory[:, target_start:, ...],
+            global_cond=batch.global_cond,
+            encoded_info=batch.encoded_info,
+        )
+
+    return batch
 
 
 def _resolve_csv_path(eval_cfg: DictConfig, work_dir: Path) -> Path:
@@ -2769,6 +2827,10 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
 
     if batch_indices or compute_rollout_coverage or compute_rollout_metrics:
         max_rollout_steps = eval_cfg.get("max_rollout_steps", 10)
+        rollout_start = int(eval_cfg.get("rollout_start", 0) or 0)
+        if rollout_start < 0:
+            msg = f"eval.rollout_start must be >= 0, got {rollout_start}."
+            raise ValueError(msg)
 
         # Use rollout_stride config or fallback to n_steps_output (from stats)
         data_config = cfg.get("datamodule", {})
@@ -2820,6 +2882,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                     free_running_only=eval_cfg.get("free_running_only", True),
                     n_members=n_members if n_members and n_members > 1 else None,
                     device=fabric.device,
+                    rollout_start=rollout_start,
                 )
                 if resolved_eval_path == EVAL_PATH_ENCODE_ONCE
                 else None
@@ -2904,6 +2967,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
             )
 
             def _standard_rollout_predict(batch):
+                batch = _crop_rollout_batch_start(batch, rollout_start)
                 preds, trues = model.rollout(
                     batch,
                     stride=rollout_stride,
@@ -2941,6 +3005,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                         n_members=n_members if n_members and n_members > 1 else None,
                         device=fabric.device,
                         compare_to_autoencoded_target=compare_to_autoencoded_target,
+                        rollout_start=rollout_start,
                     )
                 return _standard_rollout_predict
 

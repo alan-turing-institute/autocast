@@ -32,6 +32,7 @@ from autocast.scripts.eval.encoder_processor_decoder import (
     _build_member_average_metric_factory,
     _build_metric_factory,
     _build_per_timestep_metric_factory,
+    _crop_rollout_batch_start,
     _decode_tensor,
     _deterministic_member_average_metric_name,
     _deterministic_member_metric_name,
@@ -83,6 +84,71 @@ def test_resolve_rollout_batch_limit_prefers_explicit_rollout_limit():
     )
 
     assert _resolve_rollout_batch_limit(eval_cfg) == 5
+
+
+def test_crop_rollout_batch_start_shifts_raw_full_trajectory_batch():
+    fields = torch.arange(6, dtype=torch.float32).view(1, 6, 1, 1, 1)
+    batch = Batch(
+        input_fields=fields[:, :1],
+        output_fields=fields[:, 1:],
+        constant_scalars=torch.ones(1, 1),
+        constant_fields=torch.ones(1, 1, 1, 1),
+    )
+
+    cropped = _crop_rollout_batch_start(batch, 2)
+
+    assert isinstance(cropped, Batch)
+    assert cropped.input_fields.flatten().tolist() == [2.0]
+    assert cropped.output_fields.flatten().tolist() == [3.0, 4.0, 5.0]
+    assert cropped.constant_scalars is batch.constant_scalars
+    assert cropped.constant_fields is batch.constant_fields
+
+
+def test_crop_rollout_batch_start_uses_start_as_context_endpoint():
+    fields = torch.arange(8, dtype=torch.float32).view(1, 8, 1, 1, 1)
+    batch = Batch(
+        input_fields=fields[:, :3],
+        output_fields=fields[:, 3:],
+        constant_scalars=None,
+        constant_fields=None,
+    )
+
+    cropped = _crop_rollout_batch_start(batch, 5)
+
+    assert isinstance(cropped, Batch)
+    assert cropped.input_fields.flatten().tolist() == [3.0, 4.0, 5.0]
+    assert cropped.output_fields.flatten().tolist() == [6.0, 7.0]
+
+
+def test_crop_rollout_batch_start_shifts_encoded_full_trajectory_batch():
+    fields = torch.arange(6, dtype=torch.float32).view(1, 6, 1)
+    batch = EncodedBatch(
+        encoded_inputs=fields[:, :1],
+        encoded_output_fields=fields[:, 1:],
+        global_cond=torch.ones(1, 1),
+        encoded_info={"x": torch.ones(1, 1)},
+    )
+
+    cropped = _crop_rollout_batch_start(batch, 2)
+
+    assert isinstance(cropped, EncodedBatch)
+    assert cropped.encoded_inputs.flatten().tolist() == [2.0]
+    assert cropped.encoded_output_fields.flatten().tolist() == [3.0, 4.0, 5.0]
+    assert cropped.global_cond is batch.global_cond
+    assert cropped.encoded_info is batch.encoded_info
+
+
+def test_crop_rollout_batch_start_requires_target_frames():
+    fields = torch.arange(3, dtype=torch.float32).view(1, 3, 1, 1, 1)
+    batch = Batch(
+        input_fields=fields[:, :1],
+        output_fields=fields[:, 1:],
+        constant_scalars=None,
+        constant_fields=None,
+    )
+
+    with pytest.raises(ValueError, match="leaves no target frames"):
+        _crop_rollout_batch_start(batch, 2)
 
 
 def test_build_eval_predict_fn_uses_predict_for_wrapped_processor_model():

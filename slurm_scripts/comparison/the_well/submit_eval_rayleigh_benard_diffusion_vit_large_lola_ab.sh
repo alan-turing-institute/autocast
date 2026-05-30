@@ -41,7 +41,9 @@ EVAL_N_MEMBERS="${EVAL_N_MEMBERS:-16}"
 EVAL_CHUNK_SIZE="${EVAL_CHUNK_SIZE:-8}"
 EVAL_DIAGNOSTIC_MEMBER_INDICES="${EVAL_DIAGNOSTIC_MEMBER_INDICES:-[0]}"
 EVAL_ROLLOUT_MEMBER_RENDER_MODE="${EVAL_ROLLOUT_MEMBER_RENDER_MODE:-both}"
-EVAL_SUBDIR="${EVAL_SUBDIR:-eval_encode_once_${EVAL_SAMPLER}${EVAL_SAMPLER_STEPS}_o${EVAL_SAMPLER_ORDER}}"
+# LOLA RB paper figures use start=16 as the final conditioning timestep.
+EVAL_ROLLOUT_START="${EVAL_ROLLOUT_START:-16}"
+EVAL_SUBDIR="${EVAL_SUBDIR:-eval_encode_once_${EVAL_SAMPLER}${EVAL_SAMPLER_STEPS}_o${EVAL_SAMPLER_ORDER}_start${EVAL_ROLLOUT_START}}"
 EVAL_BENCHMARK_ENABLED="${EVAL_BENCHMARK_ENABLED:-true}"
 EVAL_BENCHMARK_ROLLOUT_ENABLED="${EVAL_BENCHMARK_ROLLOUT_ENABLED:-true}"
 EVAL_AUTOENCODED_TARGET_METRICS="${EVAL_AUTOENCODED_TARGET_METRICS:-true}"
@@ -106,6 +108,7 @@ for run_dir in "${RUN_DIRS[@]}"; do
         echo "  eval.batch_size: ${EVAL_BATCH_SIZE}"
         echo "  eval.n_members: ${EVAL_N_MEMBERS}"
         echo "  eval.chunk_size: ${EVAL_CHUNK_SIZE}"
+        echo "  eval.rollout_start: ${EVAL_ROLLOUT_START}"
         echo "  eval.transpose_spatial: true"
         echo "  eval.compute_rollout_autoencoded_target_metrics: ${EVAL_AUTOENCODED_TARGET_METRICS}"
         echo "  eval.benchmark.enabled: ${EVAL_BENCHMARK_ENABLED}"
@@ -127,6 +130,7 @@ for run_dir in "${RUN_DIRS[@]}"; do
             eval.batch_size="${EVAL_BATCH_SIZE}" \
             eval.n_members="${EVAL_N_MEMBERS}" \
             +eval.chunk_size="${EVAL_CHUNK_SIZE}" \
+            eval.rollout_start="${EVAL_ROLLOUT_START}" \
             eval.transpose_spatial=true \
             eval.compute_rollout_autoencoded_target_metrics="${EVAL_AUTOENCODED_TARGET_METRICS}" \
             eval.rollout_member_indices="${EVAL_DIAGNOSTIC_MEMBER_INDICES}" \
