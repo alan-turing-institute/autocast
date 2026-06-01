@@ -35,6 +35,7 @@ from autocast.scripts.eval.encoder_processor_decoder import (
     _training_runtime_rows,
     _validate_latent_space_metrics_flag,
     _validate_resolved_eval_path,
+    run_evaluation,
 )
 from autocast.types import Batch, EncodedBatch
 from autocast.utils.plots import _panel_size_for_width
@@ -903,3 +904,65 @@ def test_maybe_swap_to_ambient_datamodule_errors_without_data_path():
         _maybe_swap_to_ambient_datamodule(
             cfg, eval_mode="ambient", example_batch=encoded
         )
+
+
+def test_run_evaluation_auto_resolves_stateless_epd_to_ambient(tmp_path, monkeypatch):
+    """Regression: a full EPD checkpoint with a stateless encoder/decoder.
+
+    Stateless encoders/decoders (PermuteConcat/ChannelsLast, Identity, ...)
+    contribute no ``encoder_decoder.*`` params, so the checkpoint initially
+    looks processor-only. ``run_evaluation`` must reclassify it as full EPD
+    *before* resolving ``eval.mode=auto`` so the auto resolution returns
+    ``ambient``; otherwise it picks ``latent`` (no autoencoder reachable) and
+    later fails ``_validate_resolved_eval_path`` against the ``ambient_epd``
+    path. We drive ``run_evaluation`` far enough to capture the resolved mode,
+    then abort before any model is built.
+    """
+    eval_mod = "autocast.scripts.eval.encoder_processor_decoder"
+
+    cfg = OmegaConf.create(
+        {
+            "eval": {"mode": "auto", "checkpoint": str(tmp_path / "ckpt.ckpt")},
+            "model": {
+                # Stateless encoder/decoder: present in config, no learned params.
+                "encoder": {"_target_": "autocast.models.encoders.PermuteConcat"},
+                "decoder": {"_target_": "autocast.models.decoders.ChannelsLast"},
+            },
+        }
+    )
+    raw_batch = _example_batch("batch")
+
+    # Checkpoint with only processor weights -> _is_processor_only_checkpoint True.
+    monkeypatch.setattr(
+        f"{eval_mod}.load_checkpoint_payload",
+        lambda _path: {"state_dict": {"processor.layer.weight": torch.zeros(1)}},
+    )
+    monkeypatch.setattr(
+        f"{eval_mod}.resolve_checkpoint_path",
+        lambda *_args, **_kwargs: tmp_path / "ckpt.ckpt",
+    )
+    # Datamodule yields a raw Batch (the ambient/full-EPD signal).
+    monkeypatch.setattr(
+        f"{eval_mod}.setup_datamodule",
+        lambda config: (object(), config, {"example_batch": raw_batch}),
+    )
+
+    class _StopAfterResolve(Exception):
+        pass
+
+    captured: dict[str, str] = {}
+
+    def _capture_and_stop(_cfg, *, eval_mode, **_kwargs):
+        # First call after eval.mode=auto is resolved; record and bail out
+        # before the heavy model-setup path runs.
+        captured["eval_mode"] = eval_mode
+        raise _StopAfterResolve
+
+    monkeypatch.setattr(
+        f"{eval_mod}._maybe_swap_to_ambient_datamodule", _capture_and_stop
+    )
+
+    with pytest.raises(_StopAfterResolve):
+        run_evaluation(cast(Any, cfg), work_dir=tmp_path)
+
+    assert captured["eval_mode"] == "ambient"
