@@ -1205,6 +1205,13 @@ def test_build_parser_benchmark_basic(parser: argparse.ArgumentParser):
     assert args.workdir == "/tmp/w"
 
 
+def test_build_parser_plot_basic(parser: argparse.ArgumentParser):
+    args = parser.parse_args(["plot", "--results-dir", "outputs", "--metrics", "vrmse"])
+    assert args.command == "plot"
+    assert args.results_dir == "outputs"
+    assert args.metrics == ["vrmse"]
+
+
 def test_build_parser_train_eval_with_eval_overrides(
     parser: argparse.ArgumentParser,
 ):
@@ -1465,6 +1472,29 @@ def test_main_unknown_dashed_flag_still_errors(monkeypatch):
 
     with pytest.raises(SystemExit):
         workflow_cli.main()
+
+
+def test_main_plot_dispatches_without_hydra_overrides(monkeypatch, tmp_path):
+    captured = {}
+
+    def _fake_plot_command(args, **_kwargs):
+        captured["args"] = args
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.cli.plot_command",
+        _fake_plot_command,
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["autocast", "plot", "--results-dir", str(tmp_path), "--list"],
+    )
+
+    workflow_cli.main()
+
+    assert captured["args"].command == "plot"
+    assert captured["args"].results_dir == str(tmp_path)
+    assert captured["args"].list is True
 
 
 def test_main_eval_does_not_infer_dataset_from_workdir(monkeypatch, tmp_path):

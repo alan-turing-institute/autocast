@@ -5,6 +5,12 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from autocast.scripts.plot_dataset_comparisons import (
+    add_arguments as add_plot_arguments,
+)
+from autocast.scripts.plot_dataset_comparisons import (
+    run_from_args as plot_command,
+)
 from autocast.scripts.workflow.commands import (
     benchmark_command,
     benchmark_manifest_command,
@@ -160,6 +166,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_common_args(cache_parser)
 
+    # -- plot --------------------------------------------------------------
+    plot_parser = subparsers.add_parser(
+        "plot",
+        description="Generate comparison plots from evaluation outputs.",
+    )
+    add_plot_arguments(plot_parser)
+
     # -- time-epochs -------------------------------------------------------
     time_parser = subparsers.add_parser(
         "time-epochs",
@@ -253,7 +266,7 @@ def _resolve_resume_from(
     return str(inferred_resume) if inferred_resume is not None else None
 
 
-def main() -> None:
+def main() -> None:  # noqa: PLR0911
     """Parse command-line args and execute the selected workflow command."""
     parser = build_parser()
     args, unknown = parser.parse_known_args()
@@ -261,6 +274,10 @@ def main() -> None:
     unknown_flags = [token for token in unknown if token.startswith("-")]
     if unknown_flags:
         parser.error(f"unrecognized arguments: {' '.join(unknown_flags)}")
+
+    if args.command == "plot":
+        plot_command(args, parser=parser)
+        return
 
     # Merge passthrough Hydra globals and positional/unknown overrides.
     combined_overrides = []

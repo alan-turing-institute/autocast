@@ -22,7 +22,9 @@ If contributing to the codebase, you can run
  ```
 This will setup the pre-commit checks so any pushed commits will pass the CI. 
 
-For detailed documentation on the available scripts and configuration system, see [docs/SCRIPTS_AND_CONFIGS.md](docs/SCRIPTS_AND_CONFIGS.md).
+For detailed documentation on the available scripts and configuration system,
+see [docs/SCRIPTS_AND_CONFIGS.md](docs/SCRIPTS_AND_CONFIGS.md). For plotting
+evaluated runs, see [docs/PLOTTING.md](docs/PLOTTING.md).
 
 ## Quickstart
 
