@@ -18,56 +18,34 @@ class DCEncoder(EncoderWithCond):
     Progressively downsamples input to latent representation using residual blocks
     with optional attention.
 
-    Parameters
-    ----------
-    in_channels: int
-        Number of input channels.
-    out_channels: int
-        Number of output (latent) channels.
-    hid_channels: Sequence[int]
-        Number of channels at each depth level.
-    hid_blocks: Sequence[int]
-        Number of residual blocks at each depth level.
-    kernel_size: int | Sequence[int]
-        Kernel size for convolutions.
-    stride: int | Sequence[int]
-        Stride for downsampling operations.
-    pixel_shuffle: bool
-        Whether to use pixel shuffling (patchify) for downsampling.
-    norm: str
-        Type of normalization ('layer' or 'group').
-    attention_heads: dict[int, int] | None
-        Dict mapping depth index to number of attention heads.
-    ffn_factor: int
-        Channel expansion factor in FFN blocks.
-    spatial: int
-        Number of spatial dimensions (2 for 2D, 3 for 3D).
-    patch_size: int | Sequence[int]
-        Patch size for patchifying at the start.
-    periodic: bool
-        Whether spatial dimensions are periodic (use circular padding).
-    dropout: float | None
-        Dropout rate.
-    checkpointing: bool
-        Whether to use gradient checkpointing.
-    identity_init: bool
-        Initialize down/upsampling convolutions as identity.
-    ffn_out_scale: float | None
-        Optional multiplicative scale applied to each ResBlock FFN output conv.
-    saturation: str | None
-        Optional latent saturation mode. Supported: {"softclip2", "softclip",
-        "tanh", "arcsinh", "rmsnorm"}.
-    saturation_scale: float
-        Saturation scale B used by soft clipping/tanh variants.
-
-    Notes
-    -----
-    Based on the implementation from:
-    - Deep Compression Autoencoder for Efficient High-Resolution Diffusion Models
-    (Chen et al., 2024), https://arxiv.org/abs/2410.10733v1
-    - Lost in Latent Space: An Empirical Study of Latent Diffusion Models for Physics
-    Emulation (Rozet et al., 2024), https://arxiv.org/abs/2507.02608,
-    https://github.com/PolymathicAI/lola
+    Args:
+        in_channels: Number of input channels.
+        out_channels: Number of output (latent) channels.
+        hid_channels: Number of channels at each depth level.
+        hid_blocks: Number of residual blocks at each depth level.
+        kernel_size: Kernel size for convolutions.
+        stride: Stride for downsampling operations.
+        pixel_shuffle: Whether to use pixel shuffling (patchify) for downsampling.
+        norm: Type of normalization ('layer' or 'group').
+        attention_heads: Dict mapping depth index to number of attention heads.
+        ffn_factor: Channel expansion factor in FFN blocks.
+        spatial: Number of spatial dimensions (2 for 2D, 3 for 3D).
+        patch_size: Patch size for patchifying at the start.
+        periodic: Whether spatial dimensions are periodic (use circular padding).
+        dropout: Dropout rate.
+        checkpointing: Whether to use gradient checkpointing.
+        identity_init: Initialize down/upsampling convolutions as identity.
+        ffn_out_scale: Optional multiplicative scale applied to each ResBlock FFN output conv.
+        saturation: Optional latent saturation mode. Supported: {"softclip2", "softclip",
+            "tanh", "arcsinh", "rmsnorm"}.
+        saturation_scale: Saturation scale B used by soft clipping/tanh variants.
+    Note:
+        Based on the implementation from:
+        - Deep Compression Autoencoder for Efficient High-Resolution Diffusion Models
+        (Chen et al., 2024), https://arxiv.org/abs/2410.10733v1
+        - Lost in Latent Space: An Empirical Study of Latent Diffusion Models for Physics
+        Emulation (Rozet et al., 2024), https://arxiv.org/abs/2507.02608,
+        https://github.com/PolymathicAI/lola
     """
 
     encoder_model: nn.Module
@@ -207,32 +185,20 @@ class DCEncoder(EncoderWithCond):
     def encode(self, batch: Batch) -> TensorBTSC:
         """Encode input batch to latent representation.
 
-        Parameters
-        ----------
-        batch: Batch
-            Input batch containing input_fields with shape (B, T, spatial..., C_i).
-
-        Returns
-        -------
-        Tensor
+        Args:
+            batch: Input batch containing input_fields with shape (B, T, spatial..., C_i).
+        Returns:
             Encoded latent tensor with shape (B, T, spatial_reduced..., C_o).
-
         """
         return self.encode_tensor(batch.input_fields)
 
     def encode_tensor(self, x: TensorBTSC) -> TensorBTSC:
         """Forward pass through encoder (for direct tensor input).
 
-        Parameters
-        ----------
-        x: TensorBTSC
-            Input tensor with shape (B, T, spatial..., C_i).
-
-        Returns
-        -------
-        TensorBTSC
+        Args:
+            x: Input tensor with shape (B, T, spatial..., C_i).
+        Returns:
             Encoded latent tensor.
-
         """
         b, t, *_, _ = x.shape
         # Concatenate batch and time for processing

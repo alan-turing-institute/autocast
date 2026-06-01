@@ -51,41 +51,25 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         """
         Initialize the dataset.
 
-        Parameters
-        ----------
-        data_path: str
-            Path to the HDF5 file containing the dataset.
-        data: dict | None
-            Preloaded data. Defaults to None.
-        n_steps_input: int
-            Number of input time steps.
-        n_steps_output: int
-            Number of output time steps.
-        stride: int
-            Stride for sampling the data.
-        data: dict | None
-            Preloaded data. Defaults to None.
-        channel_idxs: tuple[int, ...] | None
-            Indices of channels to select from the raw data (applied to both
-            input and output). If None, all channels are used. Defaults to None.
-        full_trajectory_mode: bool
-            If True, use full trajectories without creating subtrajectories.
-        autoencoder_mode: bool
-            If True, return (input, input) pairs for autoencoder training.
-            Defaults to False.
-        dtype: torch.dtype
-            Data type for tensors. Defaults to torch.float32.
-        verbose: bool
-            If True, print dataset information.
-        use_normalization: bool
-            Whether to apply Z-score normalization. Defaults to False.
-        normalization_type: type[ZScoreNormalization] | None
-            Normalization object (computed from training data). Defaults to
-            ZScoreNormalization.
-        normalization_path: str | None
-            Path to normalization statistics file (yaml). Defaults to None.
-        normalization_stats: dict | None
-            Preloaded normalization statistics. Defaults to None.
+        Args:
+            data_path: Path to the HDF5 file containing the dataset.
+            data: Preloaded data. Defaults to None.
+            n_steps_input: Number of input time steps.
+            n_steps_output: Number of output time steps.
+            stride: Stride for sampling the data.
+            data: Preloaded data. Defaults to None.
+            channel_idxs: Indices of channels to select from the raw data (applied to both
+                input and output). If None, all channels are used. Defaults to None.
+            full_trajectory_mode: If True, use full trajectories without creating subtrajectories.
+            autoencoder_mode: If True, return (input, input) pairs for autoencoder training.
+                Defaults to False.
+            dtype: Data type for tensors. Defaults to torch.float32.
+            verbose: If True, print dataset information.
+            use_normalization: Whether to apply Z-score normalization. Defaults to False.
+            normalization_type: Normalization object (computed from training data). Defaults to
+                ZScoreNormalization.
+            normalization_path: Path to normalization statistics file (yaml). Defaults to None.
+            normalization_stats: Preloaded normalization statistics. Defaults to None.
         """
         self.dtype = dtype
         self.verbose = verbose

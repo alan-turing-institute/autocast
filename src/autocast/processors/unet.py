@@ -37,21 +37,14 @@ class UNetClassic(nn.Module):
 
     If you use this implementation, please cite the original work above.
 
-    Parameters
-    ----------
-    dim_in : int
-        Number of input channels.
-    dim_out : int
-        Number of output channels.
-    n_spatial_dims : int
-        Number of spatial dimensions (1, 2, or 3).
-    spatial_resolution : Sequence[int]
-        Spatial resolution of the input data.
-    init_features : int, optional
-        Number of features in the first encoder block. Default is 32.
-    gradient_checkpointing : bool, optional
-        Whether to use gradient checkpointing to reduce memory usage.
-        Default is False.
+    Args:
+        dim_in: Number of input channels.
+        dim_out: Number of output channels.
+        n_spatial_dims: Number of spatial dimensions (1, 2, or 3).
+        spatial_resolution: Spatial resolution of the input data.
+        init_features: Number of features in the first encoder block. Default is 32.
+        gradient_checkpointing: Whether to use gradient checkpointing to reduce memory usage.
+            Default is False.
     """
 
     def __init__(
@@ -123,14 +116,9 @@ class UNetClassic(nn.Module):
     def forward(self, x: Tensor) -> Tensor:
         """Forward pass through the U-Net.
 
-        Parameters
-        ----------
-        x : Tensor
-            Input tensor of shape (B, C_in, *spatial_dims).
-
-        Returns
-        -------
-        Tensor
+        Args:
+            x: Input tensor of shape (B, C_in, *spatial_dims).
+        Returns:
             Output tensor of shape (B, C_out, *spatial_dims).
         """
         # Encoder path with skip connections
@@ -168,18 +156,11 @@ class UNetClassic(nn.Module):
         - Conv -> BatchNorm -> Tanh
         - Conv -> BatchNorm -> Tanh
 
-        Parameters
-        ----------
-        in_channels : int
-            Number of input channels.
-        features : int
-            Number of output channels.
-        name : str
-            Name prefix for the layers in this block.
-
-        Returns
-        -------
-        nn.Sequential
+        Args:
+            in_channels: Number of input channels.
+            features: Number of output channels.
+            name: Name prefix for the layers in this block.
+        Returns:
             Sequential module containing the block layers.
         """
         return nn.Sequential(
@@ -237,23 +218,15 @@ class UNetProcessor(Processor[EncodedBatch]):
 
     If you use this implementation, please cite the original work above.
 
-    Parameters
-    ----------
-    in_channels : int
-        Number of input channels.
-    out_channels : int
-        Number of output channels.
-    spatial_resolution : Sequence[int]
-        Spatial resolution of the input data (e.g., [64, 64] for 2D).
-    n_spatial_dims : int, optional
-        Number of spatial dimensions (1, 2, or 3). Default is 2.
-    init_features : int, optional
-        Number of features in the first encoder block. Default is 32.
-    gradient_checkpointing : bool, optional
-        Whether to use gradient checkpointing to reduce memory usage.
-        Default is False.
-    loss_func : nn.Module, optional
-        Loss function. Defaults to MSELoss.
+    Args:
+        in_channels: Number of input channels.
+        out_channels: Number of output channels.
+        spatial_resolution: Spatial resolution of the input data (e.g., [64, 64] for 2D).
+        n_spatial_dims: Number of spatial dimensions (1, 2, or 3). Default is 2.
+        init_features: Number of features in the first encoder block. Default is 32.
+        gradient_checkpointing: Whether to use gradient checkpointing to reduce memory usage.
+            Default is False.
+        loss_func: Loss function. Defaults to MSELoss.
     """
 
     def __init__(
@@ -285,16 +258,10 @@ class UNetProcessor(Processor[EncodedBatch]):
     def map(self, x: Tensor, global_cond: Tensor | None) -> Tensor:
         """Map input states to output states.
 
-        Parameters
-        ----------
-        x : Tensor
-            Input tensor of shape (B, T_in, *spatial_dims).
-        global_cond : Tensor | None
-            Optional conditioning tensor (currently unused).
-
-        Returns
-        -------
-        Tensor
+        Args:
+            x: Input tensor of shape (B, T_in, *spatial_dims).
+            global_cond: Optional conditioning tensor (currently unused).
+        Returns:
             Output tensor of shape (B, T_out, *spatial_dims).
         """
         _ = global_cond  # Unused global_cond within UNet currently
@@ -303,14 +270,9 @@ class UNetProcessor(Processor[EncodedBatch]):
     def loss(self, batch: EncodedBatch) -> Tensor:
         """Compute loss between output and target.
 
-        Parameters
-        ----------
-        batch : EncodedBatch
-            Batch containing encoded inputs and output fields.
-
-        Returns
-        -------
-        Tensor
+        Args:
+            batch: Batch containing encoded inputs and output fields.
+        Returns:
             Loss value.
         """
         output = self.map(batch.encoded_inputs, batch.global_cond)
@@ -322,42 +284,27 @@ class AzulaUNetProcessor(Processor[EncodedBatch]):
 
     This processor wraps TemporalUNetBackbone with an Azula UNet backbone.
 
-    Parameters
-    ----------
-    in_channels : int
-        Number of input channels.
-    out_channels : int
-        Number of output channels.
-    hid_channels : Sequence[int], optional
-        Hidden channel dimensions at each level.
-        Default is [64, 128, 256, 512].
-    hid_blocks : Sequence[int], optional
-        Number of residual blocks at each level.
-        Default is [2, 2, 2, 2].
-    norm : str, optional
-        Normalization type: 'batch', 'group', 'layer', or 'rms'.
-        Default is 'layer'.
-    groups : int, optional
-        Number of groups for GroupNorm. Default is 8.
-    ffn_factor : int, optional
-        Feed-forward network expansion factor. Default is 2.
-    dropout : float, optional
-        Dropout probability. Default is 0.0.
-    periodic : bool, optional
-        Whether to use periodic boundary conditions. Default is False.
-    gradient_checkpointing : bool, optional
-        Whether to use gradient checkpointing. Default is False.
-    loss_func : nn.Module, optional
-        Loss function. Defaults to MSELoss.
-    n_noise_channels: int | None = None
-        Number of noise channels for conditional normalization. If None, no
-        noise conditioning is used. Default is None.
-    global_cond_channels: int | None, optional
-        Width of the optional global conditioning vector.
-    include_global_cond: bool, optional
-        Whether to inject global conditioning into modulation.
-        Uses the same two-layer embedding pattern as ViT temporal backbones.
-        Default is False.
+    Args:
+        in_channels: Number of input channels.
+        out_channels: Number of output channels.
+        hid_channels: Hidden channel dimensions at each level.
+            Default is [64, 128, 256, 512].
+        hid_blocks: Number of residual blocks at each level.
+            Default is [2, 2, 2, 2].
+        norm: Normalization type: 'batch', 'group', 'layer', or 'rms'.
+            Default is 'layer'.
+        groups: Number of groups for GroupNorm. Default is 8.
+        ffn_factor: Feed-forward network expansion factor. Default is 2.
+        dropout: Dropout probability. Default is 0.0.
+        periodic: Whether to use periodic boundary conditions. Default is False.
+        gradient_checkpointing: Whether to use gradient checkpointing. Default is False.
+        loss_func: Loss function. Defaults to MSELoss.
+        n_noise_channels: Number of noise channels for conditional normalization. If None, no
+            noise conditioning is used. Default is None.
+        global_cond_channels: Width of the optional global conditioning vector.
+        include_global_cond: Whether to inject global conditioning into modulation.
+            Uses the same two-layer embedding pattern as ViT temporal backbones.
+            Default is False.
     """
 
     def __init__(
@@ -418,19 +365,12 @@ class AzulaUNetProcessor(Processor[EncodedBatch]):
     ) -> Tensor:
         """Forward pass through the Azula UNet.
 
-        Parameters
-        ----------
-        x : Tensor
-            Input tensor of shape (B, C_in, *spatial_dims).
-        x_noise : Tensor | None
-            Optional noise conditioning tensor of shape (B, n_noise_channels).
-        global_cond : Tensor | None
-            Optional global conditioning tensor of shape (B, C_global).
-            Used only when include_global_cond=True.
-
-        Returns
-        -------
-        Tensor
+        Args:
+            x: Input tensor of shape (B, C_in, *spatial_dims).
+            x_noise: Optional noise conditioning tensor of shape (B, n_noise_channels).
+            global_cond: Optional global conditioning tensor of shape (B, C_global).
+                Used only when include_global_cond=True.
+        Returns:
             Output tensor of shape (B, C_out, *spatial_dims).
         """
         if x.ndim != 4:
@@ -486,16 +426,10 @@ class AzulaUNetProcessor(Processor[EncodedBatch]):
     def map(self, x: Tensor, global_cond: Tensor | None) -> Tensor:
         """Map input states to output states.
 
-        Parameters
-        ----------
-        x : Tensor
-            Input tensor of shape (B, C_in, *spatial_dims).
-        global_cond : Tensor | None
-            Optional conditioning vector. Used when include_global_cond=True.
-
-        Returns
-        -------
-        Tensor
+        Args:
+            x: Input tensor of shape (B, C_in, *spatial_dims).
+            global_cond: Optional conditioning vector. Used when include_global_cond=True.
+        Returns:
             Output tensor of shape (B, C_out, *spatial_dims).
         """
         if self.n_noise_channels > 0:
@@ -511,14 +445,9 @@ class AzulaUNetProcessor(Processor[EncodedBatch]):
     def loss(self, batch: EncodedBatch) -> Tensor:
         """Compute loss between output and target.
 
-        Parameters
-        ----------
-        batch : EncodedBatch
-            Batch containing encoded inputs and output fields.
-
-        Returns
-        -------
-        Tensor
+        Args:
+            batch: Batch containing encoded inputs and output fields.
+        Returns:
             Loss value.
         """
         output = self.map(batch.encoded_inputs, batch.global_cond)

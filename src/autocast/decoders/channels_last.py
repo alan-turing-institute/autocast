@@ -15,13 +15,10 @@ class ChannelsLast(Decoder):
     def __init__(self, output_channels: int, time_steps: int = 1) -> None:
         """Initialize the ChannelsLast decoder.
 
-        Parameters
-        ----------
-        output_channels: int
-            Number of output channels (C).
-        time_steps: int
-            Number of time steps (T) to be unmerged from the channel dimension to
-            reconstruct the time dimension. Default is 1.
+        Args:
+            output_channels: Number of output channels (C).
+            time_steps: Number of time steps (T) to be unmerged from the channel dimension to
+                reconstruct the time dimension. Default is 1.
         """
         super().__init__()
         self.output_channels = output_channels

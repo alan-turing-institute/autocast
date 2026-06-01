@@ -42,8 +42,7 @@ class BTSCMetric(BaseMetric[TensorBTSC | TensorBTSCM, TensorBTSC]):
             y_pred: Predictions of shape (B, T, S, C)
             y_true: Ground truth of shape (B, T, S, C)
 
-        Returns
-        -------
+        Returns:
             Tuple of (y_pred, y_true) as Tensors
         """
         if isinstance(y_pred, np.ndarray):
@@ -87,13 +86,9 @@ class BTSCMetric(BaseMetric[TensorBTSC | TensorBTSCM, TensorBTSC]):
     def _ensemble_aggregation(self, y_pred: TensorBTSCM) -> TensorBTSC:
         """Aggregate ensemble dimension.
 
-        Parameters
-        ----------
-        y_pred
-            Predictions with ensemble dim, shape (B, T, C, M)
-
-        Returns
-        -------
+        Args:
+            y_pred: Predictions with ensemble dim, shape (B, T, C, M)
+        Returns:
             Aggregated predictions, shape (B, T, S, C)
         """
         return y_pred.mean(dim=-1)

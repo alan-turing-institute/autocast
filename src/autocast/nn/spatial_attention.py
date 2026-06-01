@@ -13,13 +13,9 @@ class SpatialAttentionWrapper(nn.Module):
     def __init__(self, attention_module: nn.Module, spatial: int) -> None:
         """Initialize the spatial attention wrapper.
 
-        Parameters
-        ----------
-        attention_module: nn.Module
-            The attention module to wrap.
-        spatial: int
-            Number of spatial dimensions.
-
+        Args:
+            attention_module: The attention module to wrap.
+            spatial: Number of spatial dimensions.
         """
         super().__init__()
         self.attention = attention_module
@@ -28,16 +24,10 @@ class SpatialAttentionWrapper(nn.Module):
     def forward(self, x: TensorBCS) -> TensorBCS:
         """Forward pass handling spatial dimension transformation.
 
-        Parameters
-        ----------
-        x: Tensor
-            Input tensor with shape (B, C, spatial_dims...).
-
-        Returns
-        -------
-        Tensor
+        Args:
+            x: Input tensor with shape (B, C, spatial_dims...).
+        Returns:
             Output tensor with shape (B, C, spatial_dims...).
-
         """
         batch_size, channels = x.shape[:2]
         spatial_shape = x.shape[2:]
@@ -64,15 +54,9 @@ class Residual(nn.Sequential):
     def forward(self, input: Tensor) -> Tensor:
         """Forward pass with residual connection.
 
-        Parameters
-        ----------
-        input: Tensor
-            Input tensor.
-
-        Returns
-        -------
-        Tensor
+        Args:
+            input: Input tensor.
+        Returns:
             Input + output from sequential layers.
-
         """
         return input + super().forward(input)

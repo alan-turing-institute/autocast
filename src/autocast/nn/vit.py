@@ -121,8 +121,7 @@ class TemporalViTBackbone(TemporalBackboneBase):
                 - dropout: The dropout rate in :math:`[0, 1]`.
                 - checkpointing: Whether to use gradient checkpointing or not.
 
-        Returns
-        -------
+        Returns:
             ViT module
         """
         return ViT(

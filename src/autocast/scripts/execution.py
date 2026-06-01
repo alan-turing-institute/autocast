@@ -33,11 +33,10 @@ def resolve_hydra_work_dir(work_dir: Path | None) -> Path:
 def resolve_device(device: str = "auto") -> torch.device:
     """Resolve a device string to a :class:`torch.device`.
 
-    Parameters
-    ----------
-    device:
-        Named device (``"cpu"``, ``"cuda"``, ``"mps"``) or ``"auto"`` to
-        select the best available accelerator.
+    Args:
+        device:
+            Named device (``"cpu"``, ``"cuda"``, ``"mps"``) or ``"auto"`` to
+            select the best available accelerator.
     """
     if device != "auto":
         return torch.device(device)

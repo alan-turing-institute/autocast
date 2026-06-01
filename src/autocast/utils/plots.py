@@ -72,43 +72,27 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
 ):
     """Create a video comparing ground truth and predicted spatiotemporal time series.
 
-    Parameters
-    ----------
-    true: array_like (B, T, W, H, C)
-        Ground-truth tensor.
-    pred: array_like
-        Optional predicted tensor of shape (B, T, W, H, C).
-    batch_idx: int
-        Which batch index to visualize (default: 0).
-    fps: int, optional
-        Frames per second for the video (default: 5).
-    vmin: float, optional
-        Minimum value for color scale (default: auto from data).
-    vmax: float, optional
-        Maximum value for color scale (default: auto from data).
-    cmap: str, optional
-        Colormap to use (default: "viridis").
-    save_path: str, optional
-        Optional path to save the video (e.g., "output.mp4").
-    title: str, optional
-        Title for the video (default: "Ground Truth vs Prediction").
-    colorbar_mode: {"none", "row", "column", "all"}
-        Select how colorbars (and underlying color scales) are shared for the
-        first two rows (true vs prediction):
-        - "none": every subplot gets its own colorbar (default).
-        - "row": a single colorbar per row (first two rows only).
-        - "column": a single colorbar per column (true/pred share per channel).
-        - "all": one colorbar shared across the first two rows.
-    channel_names: list[str] | None
-        Optional list of channel names for titles.
-    preserve_aspect: bool
-        If True, resize each subplot panel to match the spatial WxH ratio of the
-        data so the image fills the panel without distortion. If False (default),
-        panels are square and the image is stretched to fill via ``aspect='auto'``.
-
-    Returns
-    -------
-    animation.FuncAnimation
+    Args:
+        true: Ground-truth tensor of shape (B, T, W, H, C).
+        pred: Optional predicted tensor of shape (B, T, W, H, C).
+        batch_idx: Which batch index to visualize (default: 0).
+        fps: Frames per second for the video (default: 5).
+        vmin: Minimum value for color scale (default: auto from data).
+        vmax: Maximum value for color scale (default: auto from data).
+        cmap: Colormap to use (default: "viridis").
+        save_path: Optional path to save the video (e.g., "output.mp4").
+        title: Title for the video (default: "Ground Truth vs Prediction").
+        colorbar_mode: Select how colorbars (and underlying color scales) are shared for the
+            first two rows (true vs prediction):
+            - "none": every subplot gets its own colorbar (default).
+            - "row": a single colorbar per row (first two rows only).
+            - "column": a single colorbar per column (true/pred share per channel).
+            - "all": one colorbar shared across the first two rows.
+        channel_names: Optional list of channel names for titles.
+        preserve_aspect: If True, resize each subplot panel to match the spatial WxH ratio of the
+            data so the image fills the panel without distortion. If False (default),
+            panels are square and the image is stretched to fill via ``aspect='auto'``.
+    Returns:
         Animation object that can be displayed in notebooks.
     """
     colorbar_mode_str = colorbar_mode.lower()
@@ -610,32 +594,18 @@ def compute_metrics_from_dataloader(
     """
     Compute metrics from a dataloader by running model forward passes.
 
-    Parameters
-    ----------
-    dataloader: Iterable
-        DataLoader that yields batches.
-    metric_fns: dict[str, Callable[[], Metric]]
-        Dictionary of functions that return fresh metric instances, keyed by metric
-        name.
-    predict_fn: Callable
-        Custom function (batch) -> (preds, trues) for cases like rollout or simply
-        the model forward. Should return a tuple of (preds, trues) tensors or a
-        single tensor of predictions (in which case trues will be taken from batch).
-    windows: list[tuple[int, int] | None], optional
-        List of (t_start, t_end) windows to evaluate. None means use all timesteps.
-        If multiple windows provided, evaluates each independently.
-    return_tensors: bool
-        If True, also return concatenated (pred, true) tensors.
-    return_per_batch: bool
-        If True, also return a list of dictionaries containing metrics for each batch.
-
-    Returns
-    -------
-    tuple[
-        dict[None | tuple[int, int], dict[str, Metric]],
-        tuple[TensorBTSCM, TensorBTSC] | None,
-        list[dict[str, float | str]] | None,
-    ]
+    Args:
+        dataloader: DataLoader that yields batches.
+        metric_fns: Dictionary of functions that return fresh metric instances, keyed by metric
+            name.
+        predict_fn: Custom function (batch) -> (preds, trues) for cases like rollout or simply
+            the model forward. Should return a tuple of (preds, trues) tensors or a
+            single tensor of predictions (in which case trues will be taken from batch).
+        windows: List of (t_start, t_end) windows to evaluate. None means use all timesteps.
+            If multiple windows provided, evaluates each independently.
+        return_tensors: If True, also return concatenated (pred, true) tensors.
+        return_per_batch: If True, also return a list of dictionaries containing metrics for each batch.
+    Returns:
         The populated metrics, optionally the tensors, and optionally per-batch metrics.
     """
     metrics_per_window = {
@@ -740,25 +710,17 @@ def compute_metrics_per_timestep_from_dataloader(  # noqa: PLR0912, PLR0915
     (e.g. coverage_0.05, coverage_0.10, ...) so reliability curves can be built
     per timestep.
 
-    Parameters
-    ----------
-    dataloader: Iterable
-        DataLoader that yields batches (e.g. rollout test dataloader).
-    metric_fns: dict[str, Callable[[], Metric]]
-        Metric factory functions. Metrics should return (1, C) when updated with
-        (B, 1, S, C) and reduce_all=False (deterministic metrics) or be
-        MultiCoverage (expanded to one key per alpha).
-    predict_fn: Callable
-        (batch) -> (preds, trues) returning tensors of shape (B, T, S, C) or
-        (B, T, S, C, M). Returns None, None to skip a batch.
-    max_timesteps: int | None, optional
-        Cap the number of timesteps (uses min over batches otherwise).
-
-    Returns
-    -------
-    dict[str, np.ndarray]
+    Args:
+        dataloader: DataLoader that yields batches (e.g. rollout test dataloader).
+        metric_fns: Metric factory functions. Metrics should return (1, C) when updated with
+            (B, 1, S, C) and reduce_all=False (deterministic metrics) or be
+            MultiCoverage (expanded to one key per alpha).
+        predict_fn: (batch) -> (preds, trues) returning tensors of shape (B, T, S, C) or
+            (B, T, S, C, M). Returns None, None to skip a batch.
+        max_timesteps: Cap the number of timesteps (uses min over batches otherwise).
+    Returns:
         Keys are metric names (and coverage_0.05, coverage_0.10, ... for
-        MultiCoverage). Values are arrays of shape (T, C), batch-averaged.
+            MultiCoverage). Values are arrays of shape (T, C), batch-averaged.
     """
     with torch.no_grad():
         T_min: int | None = None
@@ -857,30 +819,17 @@ def compute_coverage_scores_from_dataloader(
     """
     Compute coverage scores from a dataloader by running model forward passes.
 
-    Parameters
-    ----------
-    dataloader: DataLoader
-        DataLoader that yields batches.
-    model: nn.Module, optional
-        Model with forward(batch) that returns predictions with ensemble dimension.
-        Either model or predict_fn must be provided.
-    predict_fn: Callable, optional
-        Custom function (batch) -> (preds, trues) for cases like rollout.
-        Either model or predict_fn must be provided.
-    coverage_levels: list[float], optional
-        Coverage levels to evaluate (default: 0.05 to 0.95).
-    windows: list[tuple[int, int] | None], optional
-        List of (t_start, t_end) windows to evaluate. None means use all timesteps.
-        If multiple windows provided, evaluates each independently.
-    return_tensors: bool
-        If True, also return concatenated (pred, true) tensors.
-
-    Returns
-    -------
-    tuple[
-        dict[None | tuple[int, int], MultiCoverage],
-        tuple[TensorBTSCM, TensorBTSC] | None,
-    ]
+    Args:
+        dataloader: DataLoader that yields batches.
+        model: Model with forward(batch) that returns predictions with ensemble dimension.
+            Either model or predict_fn must be provided.
+        predict_fn: Custom function (batch) -> (preds, trues) for cases like rollout.
+            Either model or predict_fn must be provided.
+        coverage_levels: Coverage levels to evaluate (default: 0.05 to 0.95).
+        windows: List of (t_start, t_end) windows to evaluate. None means use all timesteps.
+            If multiple windows provided, evaluates each independently.
+        return_tensors: If True, also return concatenated (pred, true) tensors.
+    Returns:
         The populated MultiCoverage metric and optionally the tensors.
     """
     coverage_levels_ = (
@@ -916,22 +865,14 @@ def plot_coverage(
 
     This is a convenience wrapper around MultiCoverage.plot().
 
-    Parameters
-    ----------
-    pred: TensorBTSCM
-        Ensemble predictions (last dimension is ensemble members).
-    true: TensorBTSC
-        Ground truth tensor.
-    coverage_levels: list[float], optional
-        Coverage levels to evaluate (default: 0.05 to 0.95).
-    save_path: str, optional
-        Path to save the plot.
-    title: str
-        Plot title.
-
-    Returns
-    -------
-    matplotlib.figure.Figure
+    Args:
+        pred: Ensemble predictions (last dimension is ensemble members).
+        true: Ground truth tensor.
+        coverage_levels: Coverage levels to evaluate (default: 0.05 to 0.95).
+        save_path: Path to save the plot.
+        title: Plot title.
+    Returns:
+        matplotlib.figure.Figure
     """
     coverage_levels_ = (
         coverage_levels or np.linspace(0.05, 0.95, 10, endpoint=True).tolist()

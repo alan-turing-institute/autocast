@@ -27,16 +27,10 @@ class DenormMixin(L.LightningModule):
         """
         Denormalize a tensor (e.g., a prediction).
 
-        Parameters
-        ----------
-        tensor : Tensor
-            The normalized tensor to be denormalized.
-        delta : bool, optional
-            Whether to apply delta denormalization. Default is False.
-
-        Returns
-        -------
-        Tensor
+        Args:
+            tensor: The normalized tensor to be denormalized.
+            delta: Whether to apply delta denormalization. Default is False.
+        Returns:
             The denormalized tensor.
         """
         if self.norm is None:
@@ -57,16 +51,10 @@ class DenormMixin(L.LightningModule):
         """
         Override predict_step to include denormalization.
 
-        Parameters
-        ----------
-        batch : Batch
-            The input batch.
-        batch_idx : int
-            The index of the batch.
-
-        Returns
-        -------
-        Tensor
+        Args:
+            batch: The input batch.
+            batch_idx: The index of the batch.
+        Returns:
             The (optionally denormalized) predictions.
         """
         predictions = self(batch)
