@@ -24,6 +24,8 @@ dependencies = [
     "torch>=2.9.1",
     "wandb>=0.18.7",
     "nvidia-ml-py>=13.595.45",
+    "openpyxl>=3.1.5",
+    "tabulate>=0.10.0",
 ]
 
 [project.optional-dependencies]
@@ -42,6 +44,7 @@ train_encoder_processor_decoder = "autocast.scripts.train.encoder_processor_deco
 train_autoencoder = "autocast.scripts.train.autoencoder:main"
 evaluate_encoder_processor_decoder = "autocast.scripts.eval.encoder_processor_decoder:main"
 cache_latents = "autocast.scripts.cache_latents:main"
+autocast-plots = "autocast.scripts.plot_dataset_comparisons:main"
 
 [build-system]
 requires = ["uv_build>=0.8.15,<0.9.0"]

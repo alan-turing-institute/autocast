@@ -121,7 +121,7 @@ class MultiCoverage(Metric):
         save_csv: bool = True,
     ):
         """
-        Plot reliability diagram showing expected vs observed coverage.
+        Plot reliability diagram showing nominal vs empirical coverage.
 
         Parameters
         ----------
@@ -159,7 +159,7 @@ class MultiCoverage(Metric):
         fig, ax = plt.subplots(figsize=(8, 8))
 
         # Optimal line (y=x)
-        ax.plot([0, 1], [0, 1], "k:", label="Expected", linewidth=2)
+        ax.plot([0, 1], [0, 1], "k:", label="Nominal", linewidth=2)
 
         # Plot channels
         observed_arr = np.stack(observed_channels)  # (L, C)
@@ -189,8 +189,8 @@ class MultiCoverage(Metric):
 
         # Plot mean coverage in bold
         ax.plot(levels, observed_means, "k-", linewidth=3, label="Mean")
-        ax.set_xlabel(r"Coverage level, $\alpha$")
-        ax.set_ylabel("Observed Coverage")
+        ax.set_xlabel(r"Nominal coverage (1 - $\alpha$)")
+        ax.set_ylabel("Empirical coverage")
         ax.set_title(title)
         ax.set_xlim(0, 1)
         ax.set_ylim(0, 1)
@@ -229,7 +229,7 @@ class MultiCoverage(Metric):
         save_path: Path or str
             Path for the PNG file. CSV will use the same path with .csv extension.
         levels: list of float
-            Coverage levels (expected coverage values).
+            Coverage levels (nominal coverage values).
         observed_means: list of float
             Mean observed coverage across all channels for each level.
         observed_channels: np.ndarray, shape (L, C)
