@@ -34,10 +34,11 @@ COMMON_ARGS=(
 	--metrics vrmse_v2 coverage crps ssr \
 	--error-yscale linear \
 	--error-ylim 1e-5 1 \
-	--lead-time-error-metrics vrmse_v2 \
-	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
+	--lead-time-error-metrics vrmse_v2 psrmse_low psrmse_mid psrmse_high \
+	--lead-time-coverage-metrics spread_skill_lola \
 	--lead-time-coverage-delta \
 	--combined-lead-time \
+	--paper-rb-mosaic \
 	--training-metrics val_loss train_loss \
 	--training-yscale log \
 	--panel-figure \
@@ -82,6 +83,7 @@ plot_group 24hrs \
 plot_group 4096 \
 	--run "$RB_FM_NON_MASKED" "FM non-masked (4096, eff_bs=256)" "$HUE_FM_NON_MASKED" \
 	--run "$RB_FM_MASKED" "FM masked (4096, eff_bs=256)" "$HUE_FM_MASKED" \
-	--run "$RB_DIFFUSION_4096" "Diffusion LoLA (4096, eff_bs=256, AB)" "$HUE_DIFFUSION" eval=eval_encode_once_ab16 \
-	--run "$RB_DIFFUSION_4096" "Diffusion LoLA (4096, eff_bs=256, DDPM)" "$HUE_DIFFUSION" eval=eval_encode_once_ddpm50
-	# --run "$RB_DIFFUSION_4096" "Diffusion LoLA (4096, eff_bs=256)" "$HUE_DIFFUSION" eval=eval_encode_once \
+	--run "$RB_DIFFUSION_4096" "Diffusion LoLA (4096, eff_bs=256)" "$HUE_DIFFUSION" eval=eval_encode_once \
+	--run "$RB_DIFFUSION_4096" "Diffusion LoLA (4096, eff_bs=256, DDPM)" "$HUE_DIFFUSION" eval=eval_encode_once_ddpm50 \
+	--run "$RB_DIFFUSION_4096" "Diffusion LoLA (4096, eff_bs=256, ABo3)" "$HUE_DIFFUSION" eval=eval_encode_once_ab16_o3_relative
+	# --run "$RB_DIFFUSION_4096" "Diffusion LoLA (4096, eff_bs=256, AB)" "$HUE_DIFFUSION" eval=eval_encode_once_ab16 \

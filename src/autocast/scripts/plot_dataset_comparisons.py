@@ -116,7 +116,10 @@ WINDOW_ROWS_ROLLOUT_ONLY = ["0-4", "6-12", "13-30", "31-99"]
 MODEL_SCALE_PARAM_COL = "params_processor_total"
 DEFAULT_EVAL_SUBDIR = "eval"
 DEFAULT_PLOT_METRICS: tuple[str, ...] = ("vrmse", "coverage", "crps", "ssr")
-DISPERSION_METRICS: set[str] = {"ssr"}
+LOLA_SPREAD_SKILL_METRIC = "spread_skill_lola"
+LOLA_SPREAD_SKILL_EPS = 1e-3
+DEFAULT_COVERAGE_DISPERSION_METRICS: tuple[str, ...] = (LOLA_SPREAD_SKILL_METRIC,)
+DISPERSION_METRICS: set[str] = {"ssr", LOLA_SPREAD_SKILL_METRIC}
 DEFAULT_TICK_LABEL_FONT_SIZE = 10.0
 DEFAULT_AXIS_LABEL_FONT_SIZE = 10.0
 DEFAULT_LEGEND_FONT_SIZE = 8.0
@@ -234,7 +237,7 @@ def _overall_or_window_bar_yscale(metric: str, error_yscale: str = "log") -> str
 
 def _overall_or_window_bar_ref_value(metric: str) -> float | None:
     """Return the expected reference value for scalar bar charts."""
-    if metric == "ssr":
+    if _is_dispersion_metric(metric):
         return 1.0
     return None
 
@@ -337,10 +340,64 @@ def _scaled_figsize(width: float, height: float, figure_scale: float = 1.0):
 
 def _metric_axis_label(metric: str) -> str:
     """Format metric keys as publication-facing axis labels."""
+    if metric == LOLA_SPREAD_SKILL_METRIC:
+        return "LOLA SPREAD/SKILL"
     if metric.startswith("coverage_"):
         level = metric.split("_", 1)[1]
         return f"COVERAGE {level}"
     return metric.upper()
+
+
+def _channel_metric_paths(per_timestep_path: Path | None) -> list[Path]:
+    """Return per-channel CSV siblings for a channel_all lead-time CSV."""
+    if per_timestep_path is None:
+        return []
+    pattern = per_timestep_path.name.replace("_channel_all.csv", "_channel_*.csv")
+    if pattern == per_timestep_path.name:
+        return []
+    return sorted(
+        p
+        for p in per_timestep_path.parent.glob(pattern)
+        if not p.name.endswith("_channel_all.csv")
+    )
+
+
+def _lola_spread_skill_from_channel_files(
+    per_timestep_path: Path | None,
+) -> pd.Series | None:
+    """Average per-channel LOLA-style spread/skill ratios when available."""
+    ratios: list[pd.Series] = []
+    for channel_path in _channel_metric_paths(per_timestep_path):
+        channel = pd.read_csv(channel_path, index_col=0)
+        if not {"spread", "skill"}.issubset(set(channel.index)):
+            continue
+        spread = pd.to_numeric(channel.loc["spread"], errors="coerce")
+        skill = pd.to_numeric(channel.loc["skill"], errors="coerce")
+        ratios.append(
+            (spread + LOLA_SPREAD_SKILL_EPS) / (skill + LOLA_SPREAD_SKILL_EPS)
+        )
+    if not ratios:
+        return None
+    return pd.concat(ratios, axis=1).mean(axis=1)
+
+
+def _add_derived_lead_time_metrics(
+    raw: pd.DataFrame,
+    per_timestep_path: Path | None = None,
+) -> pd.DataFrame:
+    """Add plotting-only rows derived from per-timestep metrics."""
+    if LOLA_SPREAD_SKILL_METRIC in raw.index:
+        return raw
+    if not {"spread", "skill"}.issubset(set(raw.index)):
+        return raw
+    out = raw.copy()
+    ratio = _lola_spread_skill_from_channel_files(per_timestep_path)
+    if ratio is None:
+        spread = pd.to_numeric(out.loc["spread"], errors="coerce")
+        skill = pd.to_numeric(out.loc["skill"], errors="coerce")
+        ratio = (spread + LOLA_SPREAD_SKILL_EPS) / (skill + LOLA_SPREAD_SKILL_EPS)
+    out.loc[LOLA_SPREAD_SKILL_METRIC] = ratio.reindex(out.columns)
+    return out
 
 
 def _coverage_window_axis_label(window: str, short: bool = False) -> str:
@@ -425,9 +482,9 @@ METRIC_GROUP_PRESETS: dict[str, dict[str, object]] = {
         "ref": None,
     },
     "dispersion": {
-        "metrics": ["ssr"],
+        "metrics": [LOLA_SPREAD_SKILL_METRIC],
         "name": "lead_time_panel_dispersion.png",
-        "title": "Dispersion (Spread-Skill Ratio, ideal=1.0)",
+        "title": "Dispersion (LOLA-style spread/skill, ideal=1.0)",
         "yscale": "linear",
         "ref": 1.0,
     },
@@ -458,7 +515,7 @@ METRIC_GROUP_PRESETS: dict[str, dict[str, object]] = {
     "summary": {
         "metrics": [
             "crps",
-            "ssr",
+            LOLA_SPREAD_SKILL_METRIC,
             "energy",
             "winkler",
             "psrmse_high",
@@ -467,7 +524,7 @@ METRIC_GROUP_PRESETS: dict[str, dict[str, object]] = {
         ],
         "name": "lead_time_panel_summary.png",
         "title": (
-            "Summary: CRPS, SSR, Energy Score, Winkler, "
+            "Summary: CRPS, spread/skill, Energy Score, Winkler, "
             "Power-spectrum RMSE (high/mid/low)"
         ),
         "yscale": "log",
@@ -2451,7 +2508,7 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
         )
         if not p.exists():
             continue
-        raw = pd.read_csv(p, index_col=0)
+        raw = _add_derived_lead_time_metrics(pd.read_csv(p, index_col=0), p)
         if raw.empty:
             continue
         long = raw.reset_index().rename(columns={raw.index.name or "index": "metric"})
@@ -2525,7 +2582,7 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
             ax = axes[r][c]
             ds = sub[sub["dataset_label"] == ds_label]
             is_cov = metric.startswith("coverage_")
-            is_ssr = metric == "ssr"
+            is_dispersion = _is_dispersion_metric(metric)
             is_cov_delta = bool(coverage_delta and is_cov)
             cov_target: float | None = None
             if is_cov_delta:
@@ -2536,11 +2593,10 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
                     # fall back to the raw coverage series.
                     is_cov_delta = False
                     cov_target = None
-            # Per-metric y treatment: SSR is a dimensionless reliability
-            # diagnostic with ideal=1.0, so it renders on a linear axis with
-            # a dashed reference line regardless of the panel-wide settings.
-            row_yscale = "linear" if (is_ssr or is_cov_delta) else yscale
-            row_ref = 1.0 if (is_ssr and ref_value is None) else ref_value
+            # Per-metric y treatment: dispersion diagnostics are
+            # dimensionless reliability ratios with ideal=1.0.
+            row_yscale = "linear" if (is_dispersion or is_cov_delta) else yscale
+            row_ref = 1.0 if (is_dispersion and ref_value is None) else ref_value
             if is_cov_delta:
                 row_ref = 0.0
             vals: list[float] = []
@@ -2663,8 +2719,8 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
                     linewidth=ref_line_width,
                     alpha=0.6,
                 )
-            # Apply user override for error rows (skip SSR: ratio diagnostic)
-            if not is_cov and not is_ssr and error_ylim is not None:
+            # Apply user override for error rows, but skip ratio diagnostics.
+            if not is_cov and not is_dispersion and error_ylim is not None:
                 lo, hi = error_ylim
                 cur_lo, cur_hi = ax.get_ylim()
                 next_lo = lo if lo is not None else cur_lo
@@ -3292,9 +3348,9 @@ def plot_panel_figure(  # noqa: PLR0915
         lo, hi = coverage_ylim
         rb_arr = np.asarray(rb_axes)
         for r, metric in enumerate(coverage_metrics):
-            # SSR is a ratio diagnostic (linear, ref=1.0) mixed into the
-            # coverage panel; do not squash it onto the coverage [0, 1] axis.
-            if metric == "ssr":
+            # Ratio diagnostics are mixed into the coverage panel; do not
+            # squash them onto the coverage [0, 1] axis.
+            if _is_dispersion_metric(metric):
                 continue
             for ax in rb_arr[r]:
                 cur_lo, cur_hi = ax.get_ylim()
@@ -3782,6 +3838,7 @@ def _paper_summary_metric_label(metric: str) -> str:
         "vrmse": "VRMSE",
         "crps": "CRPS",
         "ssr": "SSR",
+        LOLA_SPREAD_SKILL_METRIC: "LOLA S/S",
         "energy": "Energy",
         "winkler": "Winkler",
         "psrmse_high": "PSRMSE-H",
@@ -3891,6 +3948,129 @@ def plot_paper_lead_time_summary_figure(
             hspace=0.22,
         )
         _align_left_column_ylabels(fig, axes)
+        save_fig(fig, out_dir, name)
+
+
+def plot_paper_rb_mosaic_figure(
+    df_in: pd.DataFrame,
+    results_root: Path,
+    out_dir: Path,
+    styles: dict,
+    dataset_order: list[str] | None = None,
+    hue_order: list[str] | None = None,
+    name: str = "paper_rb_mosaic.png",
+) -> None:
+    """Render a temporary RB lead-time mosaic matching the LOLA notebook."""
+    datasets = _paper_datasets(df_in, dataset_order)
+    if not datasets:
+        return
+    rb_dataset_order = [datasets[0]]
+
+    with mpl.rc_context(PAPER_RC_PARAMS):
+        fig, mosaic_axes = plt.subplot_mosaic(
+            [
+                [0, 2],
+                [0, 2],
+                [0, 3],
+                [1, 3],
+                [1, 4],
+                [1, 4],
+            ],
+            figsize=(6.8, 3.75),
+            sharex=True,
+            sharey=False,
+        )
+        left_axes = np.asarray([[mosaic_axes[0]], [mosaic_axes[1]]], dtype=object)
+        right_axes = np.asarray(
+            [[mosaic_axes[2]], [mosaic_axes[3]], [mosaic_axes[4]]],
+            dtype=object,
+        )
+        paper_kwargs = _paper_style_kwargs(shared_axis_labels=False)
+
+        plot_lead_time_panel(
+            df_in,
+            ["vrmse_v2", LOLA_SPREAD_SKILL_METRIC],
+            results_root,
+            out_dir,
+            "paper_rb_mosaic_left_inner.png",
+            styles,
+            dataset_order=rb_dataset_order,
+            hue_order=hue_order,
+            axes=left_axes,
+            fig=fig,
+            save=False,
+            show_legend=False,
+            yscale="linear",
+            **paper_kwargs,
+        )
+        plot_lead_time_panel(
+            df_in,
+            ["psrmse_low", "psrmse_mid", "psrmse_high"],
+            results_root,
+            out_dir,
+            "paper_rb_mosaic_right_inner.png",
+            styles,
+            dataset_order=rb_dataset_order,
+            hue_order=hue_order,
+            axes=right_axes,
+            fig=fig,
+            save=False,
+            show_legend=False,
+            error_ylim=(-0.05, 0.65),
+            yscale="linear",
+            **paper_kwargs,
+        )
+
+        mosaic_axes[0].set_title("")
+        mosaic_axes[0].set_ylabel("VRMSE")
+        mosaic_axes[1].set_ylabel("Spread/Skill")
+        for ax, band in zip(
+            [mosaic_axes[2], mosaic_axes[3], mosaic_axes[4]],
+            ["Low", "Mid", "High"],
+            strict=True,
+        ):
+            ax.set_ylabel(band)
+            ax.yaxis.set_label_position("right")
+            ax.yaxis.label.set(rotation=-90, va="center")
+            ax.yaxis.labelpad = 8
+            ax.yaxis.tick_right()
+        mosaic_axes[2].set_title("Power spectrum RMSE", pad=3)
+
+        for ax in mosaic_axes.values():
+            ax.set_xlim(-5, 100)
+            ax.tick_params(direction="in")
+            ax.set_xlabel("")
+        mosaic_axes[0].set_ylim(-0.1, 1.1)
+        mosaic_axes[1].set_ylim(-0.1, 1.4)
+        mosaic_axes[1].set_xlabel("Lead time")
+        mosaic_axes[4].set_xlabel("Lead time")
+
+        groups = _order_groups_by_label(
+            list(df_in["plot_group"].dropna().unique()),
+            styles,
+            hue_order,
+        )
+        handles = _dedup_legend_handles(groups, styles)
+        fig.legend(
+            handles,
+            [str(h.get_label()) for h in handles],
+            loc="upper center",
+            ncol=3,
+            frameon=False,
+            bbox_to_anchor=(0.5, 0.995),
+            fontsize=PAPER_LEGEND_FONT_SIZE * 0.9,
+            columnspacing=1.1,
+            handlelength=2.0,
+        )
+        fig.align_labels()
+        fig.subplots_adjust(
+            left=0.08,
+            right=0.90,
+            bottom=0.13,
+            top=0.74,
+            wspace=0.16,
+            hspace=0.26,
+        )
         save_fig(fig, out_dir, name)
 
 
@@ -4469,8 +4649,8 @@ def main():  # noqa: PLR0912, PLR0915
         action="store_false",
         default=True,
         help=(
-            "Suppress the default inclusion of 'ssr' as a row in "
-            "the lead-time coverage panel (ssr renders with a linear axis "
+            "Suppress the default inclusion of dispersion rows in "
+            "the lead-time coverage panel (they render with a linear axis "
             "and a reference line at 1.0)."
         ),
     )
@@ -4607,6 +4787,14 @@ def main():  # noqa: PLR0912, PLR0915
         help=(
             "Also render paper-width main-result figures: single-step coverage, "
             "rollout UQ reliability, lead-time error, and summary metrics."
+        ),
+    )
+    parser.add_argument(
+        "--paper-rb-mosaic",
+        action="store_true",
+        help=(
+            "Also render the temporary Rayleigh-Benard lead-time mosaic used "
+            "for comparison with the LOLA paper figure."
         ),
     )
     parser.add_argument(
@@ -5130,10 +5318,24 @@ def main():  # noqa: PLR0912, PLR0915
         err_metric = list(args.lead_time_error_metrics)
     if args.lead_time_coverage_metrics:
         cov_metric = list(args.lead_time_coverage_metrics)
-    if args.include_ssr_in_coverage and "ssr" not in cov_metric:
-        cov_metric = [*cov_metric, "ssr"]
+    else:
+        cov_metric = [
+            LOLA_SPREAD_SKILL_METRIC if metric == "ssr" else metric
+            for metric in cov_metric
+        ]
+    if args.include_ssr_in_coverage:
+        cov_metric = [
+            *cov_metric,
+            *[
+                metric
+                for metric in DEFAULT_COVERAGE_DISPERSION_METRICS
+                if metric not in cov_metric
+            ],
+        ]
     elif not args.include_ssr_in_coverage:
-        cov_metric = [m for m in cov_metric if m != "ssr"]
+        cov_metric = [
+            m for m in cov_metric if m not in DEFAULT_COVERAGE_DISPERSION_METRICS
+        ]
     paper_cov_metric = _paper_coverage_metrics(cov_metric)
 
     write_single_step_results_table(
@@ -5207,6 +5409,15 @@ def main():  # noqa: PLR0912, PLR0915
                 dataset_order=ds_order,
                 hue_order=hu_order,
                 panel_labels=args.paper_panel_labels,
+            )
+        if args.paper_rb_mosaic:
+            plot_paper_rb_mosaic_figure(
+                df,
+                results_dir,
+                out_dir,
+                styles,
+                dataset_order=ds_order,
+                hue_order=hu_order,
             )
         print("Finished generating paper plots.")
         return
@@ -5328,13 +5539,27 @@ def main():  # noqa: PLR0912, PLR0915
         err_metric = list(args.lead_time_error_metrics)
     if args.lead_time_coverage_metrics:
         cov_metric = list(args.lead_time_coverage_metrics)
+    else:
+        cov_metric = [
+            LOLA_SPREAD_SKILL_METRIC if metric == "ssr" else metric
+            for metric in cov_metric
+        ]
 
-    # SSR is a dimensionless dispersion diagnostic (ideal=1.0) that belongs
-    # alongside the coverage rows in the lead-time coverage panel by default.
-    if args.include_ssr_in_coverage and "ssr" not in cov_metric:
-        cov_metric = [*cov_metric, "ssr"]
+    # Dispersion diagnostics (ideal=1.0) belong alongside the coverage rows
+    # in the lead-time coverage panel by default.
+    if args.include_ssr_in_coverage:
+        cov_metric = [
+            *cov_metric,
+            *[
+                metric
+                for metric in DEFAULT_COVERAGE_DISPERSION_METRICS
+                if metric not in cov_metric
+            ],
+        ]
     elif not args.include_ssr_in_coverage:
-        cov_metric = [m for m in cov_metric if m != "ssr"]
+        cov_metric = [
+            m for m in cov_metric if m not in DEFAULT_COVERAGE_DISPERSION_METRICS
+        ]
 
     if err_metric:
         plot_lead_time_panel(
@@ -5458,6 +5683,15 @@ def main():  # noqa: PLR0912, PLR0915
             dataset_order=ds_order,
             hue_order=hu_order,
             panel_labels=args.paper_panel_labels,
+        )
+    if args.paper_rb_mosaic:
+        plot_paper_rb_mosaic_figure(
+            df,
+            results_dir,
+            out_dir,
+            styles,
+            dataset_order=ds_order,
+            hue_order=hu_order,
         )
 
     # Per-group lead-time panels (SSR, coherence, balancing coverage, physics)
