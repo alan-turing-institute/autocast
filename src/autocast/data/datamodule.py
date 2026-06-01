@@ -268,7 +268,7 @@ class SpatioTemporalDataModule(LightningDataModule):
         if not self.autoencoder_mode:
             self.rollout_val_dataset = dataset_cls(
                 data_path=str(train_path) if train_path is not None else None,
-                data=data["train"] if data is not None else None,
+                data=data["valid"] if data is not None else None,
                 n_steps_input=n_steps_input,
                 n_steps_output=n_steps_output,
                 stride=stride,
