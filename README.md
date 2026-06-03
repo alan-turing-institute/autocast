@@ -16,7 +16,7 @@ If you'd just like to use the code in autocast:
 
 ```
 # Clone the repo
-git clone git@github.com:alan-turing-institute/autocast.git
+git clone https://github.com/alan-turing-institute/autocast.git
 cd autocast
 
 # Install dependencies
@@ -31,7 +31,7 @@ If you want to contribute to the autocast codebase, the following will get you s
 
 ```bash
 # Clone the repo
-git clone git@github.com:alan-turing-institute/autocast.git
+git clone https://github.com/alan-turing-institute/autocast.git
 cd autocast
 
 # Install development dependencies
@@ -43,7 +43,7 @@ uv run pre-commit install
 
 ## Introduction
 
-`autocast` is primarily meant to be used as a command-line tool.
+`autocast` is primarily meant to be used as a CLI tool.
 
 The `autocast` CLI is built on top of [Hydra](https://hydra.cc/).
 This means that configurations are specified in YAML files and can be composed together to quickly switch between different datasets and model architectures.
@@ -56,8 +56,10 @@ In particular, `autocast` comes with some subcommands for training standard mode
 | Command                     | Description                                | Default config                                                                                               |
 | --------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
 | `uv run autocast ae`        | Train an autoencoder                       | [`src/autocast/configs/autoencoder.yaml`](src/autocast/configs/autoencoder.yaml)
+| `uv run autocast cache-latents` | Cache latents from an encoder | [`src/autocast/configs/cache_latents.yaml`](src/autocast/configs/cache_latents.yaml)                                 |
 | `uv run autocast processor` | Train a processor (frozen encoder/decoder) | [`src/autocast/configs/processor.yaml`](src/autocast/configs/processor.yaml)                                 |
 | `uv run autocast epd`       | Train an encoder-processor-decoder         | [`src/autocast/configs/encoder_processor_decoder.yaml`](src/autocast/configs/encoder_processor_decoder.yaml) |
+| `uv run autocast eval`       | Evaluate a trained model         | [`src/autocast/configs/eval/encoder_processor_decoder.yaml`](src/autocast/configs/eval/encoder_processor_decoder.yaml) |
 
 Notice that each of these YAML files in turn refer to a number of _other_ YAML files.
 For example, `src/autocast/configs/autoencoder.yaml` specifies (amongst other things)
@@ -103,8 +105,8 @@ The data module configurations are stored in `src/autocast/configs/datamodule/`.
 
 | Format                                                                       | Appropriate setting for `datamodule` | Override...                                                    |
 | ------                                                                       | ------------------------------------ | -----------                                                    |
-| HDF5 files from [The Well](https://polymathic-ai.org/the_well/)              | `datamodule=the_well`                | `datamodule.well_base_path` and `datamodule.well_dataset_name` |
 | `.pt` files from [autosim](https://github.com/alan-turing-institute/autosim) | `datamodule=advection_diffusion`     | `datamodule.data_path`                                         |
+| HDF5 files from [The Well](https://polymathic-ai.org/the_well/)              | `datamodule=the_well`                | `datamodule.well_base_path` and `datamodule.well_dataset_name` |
 
 For example, let's say that you have used `autosim` to generate a dataset of advection-diffusion simulations.
 We'll keep the size of the spatial grid (`simulator.n`) and the number of trajectories (`dataset.n_...`) small for this example.
