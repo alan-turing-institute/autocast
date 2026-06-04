@@ -253,7 +253,7 @@ class VRMSE(BTSCMetric):
     """Variance-Scaled Root Mean Squared Error over spatial dims.
 
     Computes VRMSE = sqrt(MSE) / (std(y_true) + eps). Preserved for comparability
-    with prior runs. Differs from the LoLA / The Well canonical form
+    with prior runs. Differs from the LOLA / The Well canonical form
     sqrt(MSE / (var + eps)) only in the regularization regime (small std);
     for non-degenerate fields the two agree to <<1%.
     """
@@ -283,7 +283,7 @@ class VRMSE(BTSCMetric):
 
 
 class VMSE2(BTSCMetric):
-    """Variance-Scaled MSE matching LoLA's evaluator.
+    """Variance-Scaled MSE matching LOLA's evaluator.
 
     Computes VMSE = MSE / (var(y_true) + eps) with eps = 1e-6, matching
     https://github.com/francois-rozet/lola/blob/main/experiments/eval.py.
@@ -317,7 +317,7 @@ class VMSE2(BTSCMetric):
 
 
 class VRMSE2(BTSCMetric):
-    """Variance-Scaled RMSE matching LoLA's evaluator.
+    """Variance-Scaled RMSE matching LOLA's evaluator.
 
     Computes VRMSE = sqrt(MSE / (var(y_true) + eps)) with eps = 1e-6, matching
     https://github.com/francois-rozet/lola/blob/main/experiments/eval.py.
@@ -412,7 +412,7 @@ def _isotropic_binning(
 def _lola_eval_power_band_masks(
     freq_bins: Tensor,
 ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
-    """Build the four power-spectrum masks used in Lola eval.py."""
+    """Build the four power-spectrum masks used in LOLA eval.py."""
     # bins = torch.logspace(k[0].log2(), -1.0, steps=4, base=2)
     bins = torch.logspace(
         freq_bins[0].log2().item(),
@@ -430,14 +430,19 @@ def _lola_eval_power_band_masks(
 
 
 def _isotropic_spectral_components(
-    y_pred: TensorBTSC, y_true: TensorBTSC, n_spatial_dims: int
+    y_pred: TensorBTSC | TensorBTSCM, y_true: TensorBTSC, n_spatial_dims: int
 ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
-    """Compute isotropic power and cross-power spectra from a single FFT pair.
+    """Compute LOLA-style isotropic power and cross-power spectra.
 
-    Returns (pred_spec, true_spec, cross_spec, freq_bins), each with shape
-    (B, T, C, bins) except freq_bins which has shape (bins,).
+    For ensembles, compute spectra per member and average spectra afterward,
+    matching LOLA eval.py. This is not equivalent to taking the ensemble mean
+    in physical space before the FFT.
     """
-    y_pred_btc = rearrange(y_pred, "b t ... c -> b t c ...")
+    has_ensemble = y_pred.ndim == y_true.ndim + 1
+    if has_ensemble:
+        y_pred_btc = rearrange(y_pred, "b t ... c m -> b t c m ...")
+    else:
+        y_pred_btc = rearrange(y_pred, "b t ... c -> b t c ...")
     y_true_btc = rearrange(y_true, "b t ... c -> b t c ...")
     spatial_shape = tuple(y_pred_btc.shape[-n_spatial_dims:])
 
@@ -447,31 +452,86 @@ def _isotropic_spectral_components(
     spec_pred = torch.fft.fftn(y_pred_btc, dim=fft_dims, norm="ortho")
     spec_true = torch.fft.fftn(y_true_btc, dim=fft_dims, norm="ortho")
 
-    power_pred = rearrange(torch.abs(spec_pred).square(), "b t c ... -> b t c (...)")
     power_true = rearrange(torch.abs(spec_true).square(), "b t c ... -> b t c (...)")
-    cross = rearrange(
-        torch.abs(spec_pred * torch.conj(spec_true)), "b t c ... -> b t c (...)"
-    )
+    if has_ensemble:
+        power_pred = rearrange(
+            torch.abs(spec_pred).square(), "b t c m ... -> b t c m (...)"
+        )
+        cross = rearrange(
+            torch.abs(spec_pred * torch.conj(spec_true).unsqueeze(3)),
+            "b t c m ... -> b t c m (...)",
+        )
+    else:
+        power_pred = rearrange(
+            torch.abs(spec_pred).square(), "b t c ... -> b t c (...)"
+        )
+        cross = rearrange(
+            torch.abs(spec_pred * torch.conj(spec_true)), "b t c ... -> b t c (...)"
+        )
 
     counts_clamped = torch.clamp(counts, min=1).to(dtype=y_pred.dtype)
-    counts_view = rearrange(counts_clamped, "bins -> 1 1 1 bins")
 
     def _bin(p: Tensor) -> Tensor:
         iso = torch.zeros(
             (*p.shape[:-1], edges.numel()), dtype=y_pred.dtype, device=y_pred.device
         )
         iso = iso.scatter_add(dim=-1, index=indices.expand_as(p), src=p)
+        counts_view = counts_clamped.view(*([1] * (p.ndim - 1)), -1)
         return (iso / counts_view)[..., 1:]
 
-    return _bin(power_pred), _bin(power_true), _bin(cross), edges[1:]
+    pred_spec = _bin(power_pred)
+    cross_spec = _bin(cross)
+    if has_ensemble:
+        pred_spec = pred_spec.mean(dim=3)
+        cross_spec = cross_spec.mean(dim=3)
+
+    return pred_spec, _bin(power_true), cross_spec, edges[1:]
+
+
+def _check_spectral_input(
+    y_pred: ArrayLike,
+    y_true: ArrayLike,
+) -> tuple[TensorBTSC | TensorBTSCM, TensorBTSC]:
+    if isinstance(y_pred, np.ndarray):
+        y_pred = torch.from_numpy(y_pred)
+    if isinstance(y_true, np.ndarray):
+        y_true = torch.from_numpy(y_true)
+
+    if not isinstance(y_pred, Tensor):
+        raise TypeError(f"y_pred must be a Tensor or np.ndarray, got {type(y_pred)}")
+    if not isinstance(y_true, Tensor):
+        raise TypeError(f"y_true must be a Tensor or np.ndarray, got {type(y_true)}")
+
+    if y_pred.ndim == y_true.ndim and y_pred.shape != y_true.shape:
+        raise ValueError(
+            f"y_pred and y_true must have the same shape, "
+            f"got {y_pred.shape} and {y_true.shape}"
+        )
+    if y_pred.ndim == y_true.ndim + 1 and y_pred.shape[:-1] != y_true.shape:
+        raise ValueError(
+            f"y_pred (ensemble) and y_true must have the same shape along "
+            f"non-ensemble dims, got {y_pred.shape} and {y_true.shape}"
+        )
+    if y_pred.ndim not in (y_true.ndim, y_true.ndim + 1):
+        raise ValueError(
+            f"y_pred must match y_true shape or add one ensemble axis, "
+            f"got {y_pred.shape} and {y_true.shape}"
+        )
+    if y_pred.ndim < 4:
+        raise ValueError(
+            f"y_pred has {y_pred.ndim} dimensions, should be at least 4, "
+            f"following the pattern (B, T, S, C)"
+        )
+
+    return y_pred, y_true
 
 
 def _power_spectrum_rmse_bands(
-    y_pred: TensorBTSC,
+    y_pred: TensorBTSC | TensorBTSCM,
     y_true: TensorBTSC,
     eps: float,
 ) -> tuple[TensorBTC, TensorBTC, TensorBTC, TensorBTC]:
-    """Compute Lola-style per-band RMSE of relative isotropic power spectra."""
+    """Compute LOLA-style per-band RMSE of relative isotropic power spectra."""
     n_spatial_dims = y_true.ndim - 3
     pred_spec, true_spec, _, freq_bins = _isotropic_spectral_components(
         y_pred, y_true, n_spatial_dims
@@ -497,11 +557,11 @@ def _power_spectrum_rmse_bands(
 
 
 def _cross_correlation_rmse_bands(
-    y_pred: TensorBTSC,
+    y_pred: TensorBTSC | TensorBTSCM,
     y_true: TensorBTSC,
     eps: float,
 ) -> tuple[TensorBTC, TensorBTC, TensorBTC, TensorBTC]:
-    """Compute Lola-style per-band RMSE of cross-correlation spectra."""
+    """Compute LOLA-style per-band RMSE of cross-correlation spectra."""
     n_spatial_dims = y_true.ndim - 3
     pred_spec, true_spec, cross_spec, freq_bins = _isotropic_spectral_components(
         y_pred, y_true, n_spatial_dims
@@ -526,7 +586,7 @@ def _cross_correlation_rmse_bands(
 
 
 class PowerSpectrumRMSE(BTSCMetric):
-    """Average power spectrum RMSE across first three Lola eval bands."""
+    """Average power spectrum RMSE across first three LOLA eval bands."""
 
     name: str = "psrmse"
 
@@ -542,7 +602,12 @@ class PowerSpectrumRMSE(BTSCMetric):
         )
         self.eps = eps
 
-    def _score(self, y_pred: TensorBTSC, y_true: TensorBTSC) -> TensorBTC:
+    def _check_input(
+        self, y_pred: ArrayLike, y_true: ArrayLike
+    ) -> tuple[TensorBTSC | TensorBTSCM, TensorBTSC]:
+        return _check_spectral_input(y_pred, y_true)
+
+    def _score(self, y_pred: TensorBTSC | TensorBTSCM, y_true: TensorBTSC) -> TensorBTC:
         low, mid, high, _tail = _power_spectrum_rmse_bands(y_pred, y_true, eps=self.eps)
         return (low + mid + high) / 3.0
 
@@ -552,7 +617,7 @@ class PowerSpectrumRMSELow(PowerSpectrumRMSE):
 
     name: str = "psrmse_low"
 
-    def _score(self, y_pred: TensorBTSC, y_true: TensorBTSC) -> TensorBTC:
+    def _score(self, y_pred: TensorBTSC | TensorBTSCM, y_true: TensorBTSC) -> TensorBTC:
         low, _, _, _ = _power_spectrum_rmse_bands(y_pred, y_true, eps=self.eps)
         return low
 
@@ -562,7 +627,7 @@ class PowerSpectrumRMSEMid(PowerSpectrumRMSE):
 
     name: str = "psrmse_mid"
 
-    def _score(self, y_pred: TensorBTSC, y_true: TensorBTSC) -> TensorBTC:
+    def _score(self, y_pred: TensorBTSC | TensorBTSCM, y_true: TensorBTSC) -> TensorBTC:
         _, mid, _, _ = _power_spectrum_rmse_bands(y_pred, y_true, eps=self.eps)
         return mid
 
@@ -572,23 +637,23 @@ class PowerSpectrumRMSEHigh(PowerSpectrumRMSE):
 
     name: str = "psrmse_high"
 
-    def _score(self, y_pred: TensorBTSC, y_true: TensorBTSC) -> TensorBTC:
+    def _score(self, y_pred: TensorBTSC | TensorBTSCM, y_true: TensorBTSC) -> TensorBTC:
         _, _, high, _ = _power_spectrum_rmse_bands(y_pred, y_true, eps=self.eps)
         return high
 
 
 class PowerSpectrumRMSETail(PowerSpectrumRMSE):
-    """Power spectrum RMSE in the Lola high-frequency tail band."""
+    """Power spectrum RMSE in the LOLA high-frequency tail band."""
 
     name: str = "psrmse_tail"
 
-    def _score(self, y_pred: TensorBTSC, y_true: TensorBTSC) -> TensorBTC:
+    def _score(self, y_pred: TensorBTSC | TensorBTSCM, y_true: TensorBTSC) -> TensorBTC:
         _, _, _, tail = _power_spectrum_rmse_bands(y_pred, y_true, eps=self.eps)
         return tail
 
 
 class PowerSpectrumCCRMSE(BTSCMetric):
-    """Average cross-correlation RMSE across first three Lola eval bands."""
+    """Average cross-correlation RMSE across first three LOLA eval bands."""
 
     name: str = "pscc"
 
@@ -604,7 +669,12 @@ class PowerSpectrumCCRMSE(BTSCMetric):
         )
         self.eps = eps
 
-    def _score(self, y_pred: TensorBTSC, y_true: TensorBTSC) -> TensorBTC:
+    def _check_input(
+        self, y_pred: ArrayLike, y_true: ArrayLike
+    ) -> tuple[TensorBTSC | TensorBTSCM, TensorBTSC]:
+        return _check_spectral_input(y_pred, y_true)
+
+    def _score(self, y_pred: TensorBTSC | TensorBTSCM, y_true: TensorBTSC) -> TensorBTC:
         low, mid, high, _tail = _cross_correlation_rmse_bands(
             y_pred, y_true, eps=self.eps
         )
@@ -616,7 +686,7 @@ class PowerSpectrumCCRMSELow(PowerSpectrumCCRMSE):
 
     name: str = "pscc_low"
 
-    def _score(self, y_pred: TensorBTSC, y_true: TensorBTSC) -> TensorBTC:
+    def _score(self, y_pred: TensorBTSC | TensorBTSCM, y_true: TensorBTSC) -> TensorBTC:
         low, _, _, _ = _cross_correlation_rmse_bands(y_pred, y_true, eps=self.eps)
         return low
 
@@ -626,7 +696,7 @@ class PowerSpectrumCCRMSEMid(PowerSpectrumCCRMSE):
 
     name: str = "pscc_mid"
 
-    def _score(self, y_pred: TensorBTSC, y_true: TensorBTSC) -> TensorBTC:
+    def _score(self, y_pred: TensorBTSC | TensorBTSCM, y_true: TensorBTSC) -> TensorBTC:
         _, mid, _, _ = _cross_correlation_rmse_bands(y_pred, y_true, eps=self.eps)
         return mid
 
@@ -636,16 +706,16 @@ class PowerSpectrumCCRMSEHigh(PowerSpectrumCCRMSE):
 
     name: str = "pscc_high"
 
-    def _score(self, y_pred: TensorBTSC, y_true: TensorBTSC) -> TensorBTC:
+    def _score(self, y_pred: TensorBTSC | TensorBTSCM, y_true: TensorBTSC) -> TensorBTC:
         _, _, high, _ = _cross_correlation_rmse_bands(y_pred, y_true, eps=self.eps)
         return high
 
 
 class PowerSpectrumCCRMSETail(PowerSpectrumCCRMSE):
-    """Cross-correlation RMSE in the Lola high-frequency tail band."""
+    """Cross-correlation RMSE in the LOLA high-frequency tail band."""
 
     name: str = "pscc_tail"
 
-    def _score(self, y_pred: TensorBTSC, y_true: TensorBTSC) -> TensorBTC:
+    def _score(self, y_pred: TensorBTSC | TensorBTSCM, y_true: TensorBTSC) -> TensorBTC:
         _, _, _, tail = _cross_correlation_rmse_bands(y_pred, y_true, eps=self.eps)
         return tail
