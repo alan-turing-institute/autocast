@@ -114,7 +114,7 @@ def _resolve_local_experiment_parent(item: object) -> Path | None:
     if item.startswith("/local_experiment/"):
         rel = item.removeprefix("/local_experiment/")
         return Path.cwd() / "local_hydra" / "local_experiment" / f"{rel}.yaml"
-    if item.startswith("_") or item.startswith("/"):
+    if item.startswith(("_", "/")):
         return None
     return Path.cwd() / "local_hydra" / "local_experiment" / f"{item}.yaml"
 

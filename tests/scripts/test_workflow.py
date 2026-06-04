@@ -317,9 +317,7 @@ def test_load_preset_launcher_cfg_walks_relative_parent_reference(
     )
 
     monkeypatch.chdir(tmp_path)
-    launcher_cfg = _load_preset_launcher_cfg(
-        ["local_experiment=epd/128x128/child"]
-    )
+    launcher_cfg = _load_preset_launcher_cfg(["local_experiment=epd/128x128/child"])
 
     assert launcher_cfg.get("gpus_per_node") == 4
     assert launcher_cfg.get("tasks_per_node") == 4
@@ -345,9 +343,7 @@ def test_load_preset_launcher_cfg_recognises_override_distributed(
     )
 
     monkeypatch.chdir(tmp_path)
-    launcher_cfg = _load_preset_launcher_cfg(
-        ["local_experiment=with_override"]
-    )
+    launcher_cfg = _load_preset_launcher_cfg(["local_experiment=with_override"])
 
     assert launcher_cfg.get("nodes") == 2
     assert launcher_cfg.get("gpus_per_node") == 4
