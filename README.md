@@ -184,26 +184,21 @@ uv run autocast ae --mode slurm \
 
 ## Evaluating models
 
-To run training plus evaluation in a single command, use the `train-eval` subcommand:
+To run a series of preset evaluation tests on a saved model checkpoint, including single-step predictions and autoregressive rollout, you can use the `eval` subcommand and set `--workdir` to the run folder containing the configuration and model checkpoint to evaluate.
 
 ```bash
-uv run autocast train-eval \
-    datamodule=advection_diffusion \
-    datamodule.data_path=/path/to/dataset \
-    +trainer.max_epochs=5
+uv run autocast eval \
+    --workdir /path/to/outputs
 ```
 
-For `train-eval`, evaluation will start only after training has completed successfully (including in `--mode slurm`).
+Some useful Hydra options for further controlling the evaluation are:
 
-Note that `train-eval` accepts both training and evaluation configuration overrides.
-These must be separated with the `--eval-overrides` flag, which tells Hydra which overrides are meant for training and which are meant for evaluation.
-Overrides _before_ `--eval-overrides` are passed to the training configuration, and overrides _after_ `--eval-overrides` are passed to the evaluation configuration.
+- `autoencoder_checkpoint`: the path to the autoencoder checkpoint to use for evaluation (if applicable).
+  This is used if you trained a standalone processor (i.e., `uv run autocast processor`) in latent space.
+  If you trained a full encoder-processor-decoder stack (i.e., `uv run autocast epd`), the autoencoder is already part of the model checkpoint, so does not need to be supplied separately.
+- `eval.metrics`: a list of metrics to compute during evaluation.
+- `eval.n_members`: the number of members to use for ensemble evaluation. Increasing this allows you to get a smoother estimate of the model's uncertainty.
 
-To run  `eval` on a previously trained model, use the `eval` subcommand and set `--workdir` to the run folder containing the configuration and checkpoint to evaluate:
-
-```bash
-uv run autocast eval --workdir outputs/rd/00
-```
 
 ## Other useful configuration flags
 
