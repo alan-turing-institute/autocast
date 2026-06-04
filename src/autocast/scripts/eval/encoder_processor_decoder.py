@@ -241,14 +241,19 @@ def _build_encode_once_rollout_predict(
     free_running_only: bool,
     n_members: int | None,
     device: Any,
+    compare_to_autoencoded_target: bool = False,
+    rollout_start: int = 0,
 ) -> Callable[[Any], tuple[torch.Tensor, torch.Tensor | None]]:
     """Build a rollout closure that encodes once and compares against raw truth.
 
     Encoder runs once on the raw ``Batch``, the processor rolls out in latent
     space via ``ProcessorModel.rollout`` (keeping teacher-forcing / stride
     semantics identical to native processor training), then the decoder maps
-    each predicted latent back to data space for metrics against denormalized
-    ``batch.output_fields``. Not used for full EPD checkpoints; see
+    each predicted latent back to data space. By default metrics are computed
+    against denormalized ``batch.output_fields``. When
+    ``compare_to_autoencoded_target`` is true, metrics use decoded
+    ``encode(batch.output_fields)`` targets instead, matching LOLA's relative
+    autoencoder-target evaluation. Not used for full EPD checkpoints; see
     ``_resolve_eval_path``.
     """
     underlying = _unwrap_module(model)
@@ -277,8 +282,9 @@ def _build_encode_once_rollout_predict(
         batch: Any,
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
         with torch.no_grad():
+            batch = _crop_rollout_batch_start(batch, rollout_start)
             encoded_batch = encoder_decoder.encoder.encode_batch(batch)
-            preds_latent, _ = processor_wrapper.rollout(
+            preds_latent, trues_latent = processor_wrapper.rollout(
                 encoded_batch,
                 stride=rollout_stride,
                 max_rollout_steps=max_rollout_steps,
@@ -290,12 +296,78 @@ def _build_encode_once_rollout_predict(
                 _decode_to_raw,
                 n_members=n_members if n_members and n_members > 1 else None,
             )
-            trues = underlying.denormalize_tensor(batch.output_fields)
+            if compare_to_autoencoded_target:
+                trues = (
+                    None
+                    if trues_latent is None
+                    else _decode_tensor(trues_latent, _decode_to_raw, n_members=None)
+                )
+            else:
+                trues = underlying.denormalize_tensor(batch.output_fields)
+
+        if trues is None:
+            return preds, None
 
         min_len = min(preds.shape[1], trues.shape[1])
         return preds[:, :min_len], trues[:, :min_len]
 
     return rollout_predict_encode_once
+
+
+def _crop_rollout_batch_start(batch: Any, rollout_start: int) -> Any:
+    """Shift full-trajectory batches to a later rollout initial state.
+
+    ``rollout_start`` follows LOLA's evaluation convention: it is the absolute
+    trajectory timestep of the final conditioning frame. Multi-frame contexts
+    therefore include the preceding ``n_steps_input - 1`` frames.
+    """
+    if rollout_start <= 0:
+        return batch
+
+    start = int(rollout_start)
+    if isinstance(batch, Batch):
+        n_steps_input = int(batch.input_fields.shape[1])
+        trajectory = torch.cat([batch.input_fields, batch.output_fields], dim=1)
+        input_start = max(0, start - n_steps_input + 1)
+        target_start = input_start + n_steps_input
+        if target_start >= trajectory.shape[1]:
+            msg = (
+                f"eval.rollout_start={start} leaves no target frames for a "
+                f"trajectory of length {trajectory.shape[1]} with "
+                f"n_steps_input={n_steps_input}."
+            )
+            raise ValueError(msg)
+        return Batch(
+            input_fields=trajectory[:, input_start:target_start, ...],
+            output_fields=trajectory[:, target_start:, ...],
+            constant_scalars=batch.constant_scalars,
+            constant_fields=batch.constant_fields,
+            boundary_conditions=batch.boundary_conditions,
+        )
+
+    if isinstance(batch, EncodedBatch):
+        n_steps_input = int(batch.encoded_inputs.shape[1])
+        trajectory = torch.cat(
+            [batch.encoded_inputs, batch.encoded_output_fields],
+            dim=1,
+        )
+        input_start = max(0, start - n_steps_input + 1)
+        target_start = input_start + n_steps_input
+        if target_start >= trajectory.shape[1]:
+            msg = (
+                f"eval.rollout_start={start} leaves no target frames for an "
+                f"encoded trajectory of length {trajectory.shape[1]} with "
+                f"n_steps_input={n_steps_input}."
+            )
+            raise ValueError(msg)
+        return EncodedBatch(
+            encoded_inputs=trajectory[:, input_start:target_start, ...],
+            encoded_output_fields=trajectory[:, target_start:, ...],
+            global_cond=batch.global_cond,
+            encoded_info=batch.encoded_info,
+        )
+
+    return batch
 
 
 def _resolve_csv_path(eval_cfg: DictConfig, work_dir: Path) -> Path:
@@ -2759,6 +2831,10 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
 
     if batch_indices or compute_rollout_coverage or compute_rollout_metrics:
         max_rollout_steps = eval_cfg.get("max_rollout_steps", 10)
+        rollout_start = int(eval_cfg.get("rollout_start", 0) or 0)
+        if rollout_start < 0:
+            msg = f"eval.rollout_start must be >= 0, got {rollout_start}."
+            raise ValueError(msg)
 
         # Use rollout_stride config or fallback to n_steps_output (from stats)
         data_config = cfg.get("datamodule", {})
@@ -2810,6 +2886,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                     free_running_only=eval_cfg.get("free_running_only", True),
                     n_members=n_members if n_members and n_members > 1 else None,
                     device=fabric.device,
+                    rollout_start=rollout_start,
                 )
                 if resolved_eval_path == EVAL_PATH_ENCODE_ONCE
                 else None
@@ -2894,6 +2971,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
             )
 
             def _standard_rollout_predict(batch):
+                batch = _crop_rollout_batch_start(batch, rollout_start)
                 preds, trues = model.rollout(
                     batch,
                     stride=rollout_stride,
@@ -2918,65 +2996,22 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 min_len = min(preds.shape[1], trues.shape[1])
                 return preds[:, :min_len], trues[:, :min_len]
 
-            rollout_predict: Callable[[Any], Any]
-            if resolved_eval_path == EVAL_PATH_ENCODE_ONCE:
-                rollout_predict = _build_encode_once_rollout_predict(
-                    model,
-                    rollout_stride=rollout_stride,
-                    max_rollout_steps=max_rollout_steps,
-                    free_running_only=eval_cfg.get("free_running_only", True),
-                    n_members=n_members if n_members and n_members > 1 else None,
-                    device=fabric.device,
-                )
-            else:
-                rollout_predict = _standard_rollout_predict
-
-            rollout_metrics_loader = _limit_batches(
-                fabric.setup_dataloaders(
-                    datamodule.rollout_test_dataloader(batch_size=eval_batch_size)
-                ),
-                max_rollout_batches,
-            )
-
-            rollout_metrics_per_window, _, rollout_per_batch_rows = (
-                compute_metrics_from_dataloader(
-                    dataloader=rollout_metrics_loader,
-                    metric_fns=rollout_metric_fns,
-                    predict_fn=rollout_predict,
-                    windows=windows,
-                    return_per_batch=True,
-                    device=fabric.device,
-                )
-            )
-            if rollout_per_batch_rows:
-                rollout_per_batch_rows = _gather_per_batch_rows(
-                    rollout_per_batch_rows,
-                    fabric=fabric,
-                )
-
-            # Process and log results
-            rollout_csv_rows = _process_metrics_results(
-                rollout_metrics_per_window,
-                per_batch_rows=rollout_per_batch_rows,  # pyright: ignore[reportArgumentType]
-                log_prefix="Rollout",
-                plot_dir=csv_path.parent,
-            )
-
-            # Save rollout metrics to CSV
-            rollout_csv_path = csv_path.parent / "rollout_metrics.csv"
-            rollout_combined_rows = [*rollout_csv_rows]
-            rollout_metric_rows, rollout_metadata_rows = (
-                _split_metric_and_metadata_rows(rollout_combined_rows)
-            )
-
-            if fabric.global_rank == 0 and rollout_metric_rows:
-                _write_csv(rollout_metric_rows, rollout_csv_path)
-                log.info("Wrote rollout metrics to %s", rollout_csv_path)
-
-            rollout_metadata_csv_path = csv_path.parent / "rollout_metadata.csv"
-            if fabric.global_rank == 0 and rollout_metadata_rows:
-                _write_csv(rollout_metadata_rows, rollout_metadata_csv_path)
-                log.info("Wrote rollout metadata to %s", rollout_metadata_csv_path)
+            def _build_rollout_predict(
+                *,
+                compare_to_autoencoded_target: bool = False,
+            ) -> Callable[[Any], Any]:
+                if resolved_eval_path == EVAL_PATH_ENCODE_ONCE:
+                    return _build_encode_once_rollout_predict(
+                        model,
+                        rollout_stride=rollout_stride,
+                        max_rollout_steps=max_rollout_steps,
+                        free_running_only=eval_cfg.get("free_running_only", True),
+                        n_members=n_members if n_members and n_members > 1 else None,
+                        device=fabric.device,
+                        compare_to_autoencoded_target=compare_to_autoencoded_target,
+                        rollout_start=rollout_start,
+                    )
+                return _standard_rollout_predict
 
             # Per-timestep, per-channel rollout metrics (rows=metrics, cols=timestep)
             per_timestep_metric_fns: dict[str, Callable[[], Metric]] = {}
@@ -3018,7 +3053,62 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                             )
                         )
 
-            if per_timestep_metric_fns:
+            def _write_rollout_metric_outputs(
+                *,
+                rollout_predict: Callable[[Any], Any],
+                csv_name: str,
+                metadata_csv_name: str,
+                per_timestep_stem: str,
+                log_prefix: str,
+            ) -> None:
+                rollout_metrics_loader = _limit_batches(
+                    fabric.setup_dataloaders(
+                        datamodule.rollout_test_dataloader(batch_size=eval_batch_size)
+                    ),
+                    max_rollout_batches,
+                )
+
+                rollout_metrics_per_window, _, rollout_per_batch_rows = (
+                    compute_metrics_from_dataloader(
+                        dataloader=rollout_metrics_loader,
+                        metric_fns=rollout_metric_fns,
+                        predict_fn=rollout_predict,
+                        windows=windows,
+                        return_per_batch=True,
+                        device=fabric.device,
+                    )
+                )
+                if rollout_per_batch_rows:
+                    rollout_per_batch_rows = _gather_per_batch_rows(
+                        rollout_per_batch_rows,
+                        fabric=fabric,
+                    )
+
+                rollout_csv_rows = _process_metrics_results(
+                    rollout_metrics_per_window,
+                    per_batch_rows=rollout_per_batch_rows,  # pyright: ignore[reportArgumentType]
+                    log_prefix=log_prefix,
+                    plot_dir=csv_path.parent,
+                )
+
+                rollout_combined_rows = [*rollout_csv_rows]
+                rollout_metric_rows, rollout_metadata_rows = (
+                    _split_metric_and_metadata_rows(rollout_combined_rows)
+                )
+
+                rollout_csv_path = csv_path.parent / csv_name
+                if fabric.global_rank == 0 and rollout_metric_rows:
+                    _write_csv(rollout_metric_rows, rollout_csv_path)
+                    log.info("Wrote rollout metrics to %s", rollout_csv_path)
+
+                rollout_metadata_csv_path = csv_path.parent / metadata_csv_name
+                if fabric.global_rank == 0 and rollout_metadata_rows:
+                    _write_csv(rollout_metadata_rows, rollout_metadata_csv_path)
+                    log.info("Wrote rollout metadata to %s", rollout_metadata_csv_path)
+
+                if not per_timestep_metric_fns:
+                    return
+
                 max_rollout_timesteps = _resolve_rollout_timestep_limit(
                     max_rollout_steps=max_rollout_steps,
                     rollout_stride=int(rollout_stride),
@@ -3050,8 +3140,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                             columns=timestep_index,
                         )
                         out_path = (
-                            csv_path.parent
-                            / f"rollout_metrics_per_timestep_channel_{c}.csv"
+                            csv_path.parent / f"{per_timestep_stem}_channel_{c}.csv"
                         )
                         df.to_csv(out_path)
                         log.info(
@@ -3067,13 +3156,43 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                         orient="index",
                         columns=timestep_index,
                     )
-                    out_path_all = (
-                        csv_path.parent / "rollout_metrics_per_timestep_channel_all.csv"
+                    out_path_all = csv_path.parent / (
+                        f"{per_timestep_stem}_channel_all.csv"
                     )
                     df_all.to_csv(out_path_all)
                     log.info(
                         "Wrote rollout metrics per timestep (channel all) to %s",
                         out_path_all,
+                    )
+
+            rollout_predict = _build_rollout_predict()
+            _write_rollout_metric_outputs(
+                rollout_predict=rollout_predict,
+                csv_name="rollout_metrics.csv",
+                metadata_csv_name="rollout_metadata.csv",
+                per_timestep_stem="rollout_metrics_per_timestep",
+                log_prefix="Rollout",
+            )
+
+            if eval_cfg.get("compute_rollout_autoencoded_target_metrics", False):
+                if resolved_eval_path == EVAL_PATH_ENCODE_ONCE:
+                    rollout_predict_ae_target = _build_rollout_predict(
+                        compare_to_autoencoded_target=True
+                    )
+                    _write_rollout_metric_outputs(
+                        rollout_predict=rollout_predict_ae_target,
+                        csv_name="rollout_metrics_autoencoded_target.csv",
+                        metadata_csv_name="rollout_metadata_autoencoded_target.csv",
+                        per_timestep_stem=(
+                            "rollout_metrics_per_timestep_autoencoded_target"
+                        ),
+                        log_prefix="Rollout AE-target",
+                    )
+                else:
+                    log.warning(
+                        "Skipping rollout autoencoded-target metrics for eval path %s; "
+                        "this diagnostic is only defined for encode_once raw batches.",
+                        resolved_eval_path,
                     )
 
     metric_rows, metadata_rows = _split_metric_and_metadata_rows(evaluation_rows)

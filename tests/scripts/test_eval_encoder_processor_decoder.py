@@ -15,6 +15,7 @@ from autocast.external.lola.wrapped_decoder import WrappedDecoder
 from autocast.external.lola.wrapped_encoder import ChannelsFirstEncoder, WrappedEncoder
 from autocast.metrics.deterministic import MSE
 from autocast.metrics.ensemble import CRPS, AlphaFairCRPS, SpreadSkillRatio
+from autocast.processors.base import Processor
 from autocast.scripts.eval.encoder_processor_decoder import (
     DEFAULT_EVAL_METRICS,
     DEFAULT_EVAL_MODE,
@@ -25,11 +26,13 @@ from autocast.scripts.eval.encoder_processor_decoder import (
     LOLA_WRAPPED_DECODER_TARGET,
     LOLA_WRAPPED_ENCODER_TARGET,
     THE_WELL_DATAMODULE_TARGET,
+    _build_encode_once_rollout_predict,
     _build_eval_predict_fn,
     _build_lola_autoencoder_config_nodes,
     _build_member_average_metric_factory,
     _build_metric_factory,
     _build_per_timestep_metric_factory,
+    _crop_rollout_batch_start,
     _decode_tensor,
     _deterministic_member_average_metric_name,
     _deterministic_member_metric_name,
@@ -82,6 +85,71 @@ def test_resolve_rollout_batch_limit_prefers_explicit_rollout_limit():
     )
 
     assert _resolve_rollout_batch_limit(eval_cfg) == 5
+
+
+def test_crop_rollout_batch_start_shifts_raw_full_trajectory_batch():
+    fields = torch.arange(6, dtype=torch.float32).view(1, 6, 1, 1, 1)
+    batch = Batch(
+        input_fields=fields[:, :1],
+        output_fields=fields[:, 1:],
+        constant_scalars=torch.ones(1, 1),
+        constant_fields=torch.ones(1, 1, 1, 1),
+    )
+
+    cropped = _crop_rollout_batch_start(batch, 2)
+
+    assert isinstance(cropped, Batch)
+    assert cropped.input_fields.flatten().tolist() == [2.0]
+    assert cropped.output_fields.flatten().tolist() == [3.0, 4.0, 5.0]
+    assert cropped.constant_scalars is batch.constant_scalars
+    assert cropped.constant_fields is batch.constant_fields
+
+
+def test_crop_rollout_batch_start_uses_start_as_context_endpoint():
+    fields = torch.arange(8, dtype=torch.float32).view(1, 8, 1, 1, 1)
+    batch = Batch(
+        input_fields=fields[:, :3],
+        output_fields=fields[:, 3:],
+        constant_scalars=None,
+        constant_fields=None,
+    )
+
+    cropped = _crop_rollout_batch_start(batch, 5)
+
+    assert isinstance(cropped, Batch)
+    assert cropped.input_fields.flatten().tolist() == [3.0, 4.0, 5.0]
+    assert cropped.output_fields.flatten().tolist() == [6.0, 7.0]
+
+
+def test_crop_rollout_batch_start_shifts_encoded_full_trajectory_batch():
+    fields = torch.arange(6, dtype=torch.float32).view(1, 6, 1)
+    batch = EncodedBatch(
+        encoded_inputs=fields[:, :1],
+        encoded_output_fields=fields[:, 1:],
+        global_cond=torch.ones(1, 1),
+        encoded_info={"x": torch.ones(1, 1)},
+    )
+
+    cropped = _crop_rollout_batch_start(batch, 2)
+
+    assert isinstance(cropped, EncodedBatch)
+    assert cropped.encoded_inputs.flatten().tolist() == [2.0]
+    assert cropped.encoded_output_fields.flatten().tolist() == [3.0, 4.0, 5.0]
+    assert cropped.global_cond is batch.global_cond
+    assert cropped.encoded_info is batch.encoded_info
+
+
+def test_crop_rollout_batch_start_requires_target_frames():
+    fields = torch.arange(3, dtype=torch.float32).view(1, 3, 1, 1, 1)
+    batch = Batch(
+        input_fields=fields[:, :1],
+        output_fields=fields[:, 1:],
+        constant_scalars=None,
+        constant_fields=None,
+    )
+
+    with pytest.raises(ValueError, match="leaves no target frames"):
+        _crop_rollout_batch_start(batch, 2)
 
 
 def test_build_eval_predict_fn_uses_predict_for_wrapped_processor_model():
@@ -152,6 +220,73 @@ def test_decode_tensor_preserves_ensemble_axis():
     decoded = _decode_tensor(x, decode_fn, n_members=5)
 
     assert decoded.shape == (2, 4, 8, 8, 2, 5)
+
+
+def test_encode_once_rollout_predict_can_use_autoencoded_targets():
+    input_fields = torch.tensor([1.0]).reshape(1, 1, 1, 1, 1)
+    raw_outputs = torch.tensor([20.0, 30.0]).reshape(1, 2, 1, 1, 1)
+    encoded_outputs = torch.tensor([2.0, 3.0]).reshape(1, 2, 1, 1, 1)
+    batch = Batch(
+        input_fields=input_fields,
+        output_fields=raw_outputs,
+        constant_scalars=None,
+        constant_fields=None,
+    )
+
+    class FakeEncoder:
+        def encode_batch(self, raw_batch):
+            return EncodedBatch(
+                encoded_inputs=raw_batch.input_fields,
+                encoded_output_fields=encoded_outputs,
+                global_cond=None,
+                encoded_info={},
+            )
+
+    class FakeDecoder:
+        def decode(self, x):
+            return x * 2
+
+    class FakeProcessor(Processor):
+        def loss(self, batch):  # noqa: ARG002
+            return torch.zeros(())
+
+        def map(self, x, global_cond):  # noqa: ARG002
+            return x + 1
+
+    model = SimpleNamespace(
+        encoder_decoder=SimpleNamespace(
+            encoder=FakeEncoder(),
+            decoder=FakeDecoder(),
+        ),
+        processor=FakeProcessor(),
+        denormalize_tensor=lambda x: x,
+    )
+    raw_predict = _build_encode_once_rollout_predict(
+        model,
+        rollout_stride=1,
+        max_rollout_steps=2,
+        free_running_only=True,
+        n_members=None,
+        device="cpu",
+    )
+    ae_target_predict = _build_encode_once_rollout_predict(
+        model,
+        rollout_stride=1,
+        max_rollout_steps=2,
+        free_running_only=True,
+        n_members=None,
+        device="cpu",
+        compare_to_autoencoded_target=True,
+    )
+
+    preds_raw, trues_raw = raw_predict(batch)
+    preds_relative, trues_relative = ae_target_predict(batch)
+
+    assert trues_raw is not None
+    assert trues_relative is not None
+    assert torch.allclose(preds_raw, preds_relative)
+    assert torch.allclose(trues_raw, raw_outputs)
+    assert torch.allclose(trues_relative, encoded_outputs * 2)
 
 
 def test_resolve_rollout_timestep_limit_multiplies_by_stride():
