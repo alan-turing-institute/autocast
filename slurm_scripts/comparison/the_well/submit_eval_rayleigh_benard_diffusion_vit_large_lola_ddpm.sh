@@ -1,37 +1,43 @@
 #!/bin/bash
 
 set -euo pipefail
-# Evaluate Rayleigh-Benard LOLA diffusion ViT-large cached-latent runs using
-# eval.mode=encode_once.
+# Evaluate the Rayleigh-Benard LOLA diffusion ViT-large cached-latent run with
+# a stochastic reverse sampler.
 #
-# These runs are processor-only diffusion ViTs trained on cached LOLA latents.
-# There is no Lightning autoencoder.ckpt: the LOLA autoencoder is discovered
-# automatically by the eval pipeline by walking up from datamodule.data_path
-# until it finds config.yaml + state.pth. The wrapped encoder/decoder carry
-# their own mean/std internally, and the eval pipeline substitutes the cached
-# latents datamodule for an unnormalized raw TheWellDataModule.
+# This is the stochastic counterpart to
+# submit_eval_rayleigh_benard_diffusion_vit_large_lola_ab.sh. It does not
+# retrain the model; it only overrides model.processor.sampler at eval time.
+# DDPM injects fresh noise at each reverse step, unlike Euler/AB probability
+# flow ODE samplers, so this tests whether the poor SSR is caused by a
+# near-deterministic sampling path.
 #
-# Single-GPU on purpose: matches the comparison/eval/ scripts, avoids DDP
-# tail-padding bias for aggregate metrics, and keeps rollout rendering safe on
-# shared output paths. For a faster split, use a 4-GPU metrics-only job plus a
-# 1-GPU render-only job rather than enabling DDP here.
+# Outputs go to a distinct subdir (eval_encode_once_ddpm50 by default) with
+# explicit csv_path/video_dir so this does not clobber Euler or AB evals.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 cd "${REPO_ROOT}"
 
+# Sampler knobs. DDPM is stochastic. Keep 50 steps by default to compare against
+# the Euler-50 baseline; set EVAL_SAMPLER_STEPS=16 to compare wall-clock / step
+# count against the AB16 run.
+EVAL_SAMPLER="${EVAL_SAMPLER:-ddpm}"
+EVAL_SAMPLER_STEPS="${EVAL_SAMPLER_STEPS:-50}"
+
 EVAL_BATCH_SIZE="${EVAL_BATCH_SIZE:-1}"
+# Baseline Euler/AB evals used 10 members; keep 10 for a clean sampler-only diff.
 EVAL_N_MEMBERS="${EVAL_N_MEMBERS:-10}"
 EVAL_CHUNK_SIZE="${EVAL_CHUNK_SIZE:-8}"
 EVAL_DIAGNOSTIC_MEMBER_INDICES="${EVAL_DIAGNOSTIC_MEMBER_INDICES:-[0]}"
 EVAL_ROLLOUT_MEMBER_RENDER_MODE="${EVAL_ROLLOUT_MEMBER_RENDER_MODE:-both}"
 # LOLA RB paper figures use start=16 as the final conditioning timestep.
 EVAL_ROLLOUT_START="${EVAL_ROLLOUT_START:-16}"
-EVAL_SUBDIR="${EVAL_SUBDIR:-eval_encode_once_start${EVAL_ROLLOUT_START}}"
+EVAL_SUBDIR="${EVAL_SUBDIR:-eval_encode_once_${EVAL_SAMPLER}${EVAL_SAMPLER_STEPS}_start${EVAL_ROLLOUT_START}}"
 EVAL_BENCHMARK_ENABLED="${EVAL_BENCHMARK_ENABLED:-true}"
 EVAL_BENCHMARK_ROLLOUT_ENABLED="${EVAL_BENCHMARK_ROLLOUT_ENABLED:-true}"
 TIMEOUT_MIN="${TIMEOUT_MIN:-1439}"
 CPUS_PER_TASK="${CPUS_PER_TASK:-8}"
+SLURM_MEM="${SLURM_MEM:-115G}"
 DRY_RUN_ONLY="${DRY_RUN_ONLY:-false}"
 if [[ "${DRY_RUN_ONLY}" == "true" ]]; then
     RUN_DRY_STATES=("true")
@@ -69,6 +75,9 @@ for run_dir in "${RUN_DIRS[@]}"; do
         continue
     fi
 
+    run_dir_abs="$(cd "${run_dir}" && pwd)"
+    eval_output_dir="${run_dir_abs}/${EVAL_SUBDIR}"
+
     for run_dry in "${RUN_DRY_STATES[@]}"; do
         dry_run_arg=()
         run_label="slurm"
@@ -77,10 +86,12 @@ for run_dir in "${RUN_DIRS[@]}"; do
             run_label="slurm --dry-run"
         fi
 
-        echo "Submitting RB LOLA diffusion ViT-large cached-latent eval"
+        echo "Submitting RB LOLA diffusion ViT-large cached-latent eval (DDPM sampler)"
         echo "  mode: ${run_label}"
         echo "  run_dir: ${run_dir}"
         echo "  output_subdir: ${EVAL_SUBDIR}"
+        echo "  model.processor.sampler: ${EVAL_SAMPLER}"
+        echo "  model.processor.sampler_steps: ${EVAL_SAMPLER_STEPS}"
         echo "  eval.mode: encode_once"
         echo "  eval.batch_size: ${EVAL_BATCH_SIZE}"
         echo "  eval.n_members: ${EVAL_N_MEMBERS}"
@@ -89,6 +100,7 @@ for run_dir in "${RUN_DIRS[@]}"; do
         echo "  eval.transpose_spatial: true"
         echo "  eval.benchmark.enabled: ${EVAL_BENCHMARK_ENABLED}"
         echo "  eval.benchmark_rollout.enabled: ${EVAL_BENCHMARK_ROLLOUT_ENABLED}"
+        echo "  hydra.launcher.mem: ${SLURM_MEM}"
         echo "  eval.metrics: ${EVAL_METRICS}"
 
         uv run autocast eval --mode slurm "${dry_run_arg[@]}" \
@@ -96,6 +108,10 @@ for run_dir in "${RUN_DIRS[@]}"; do
             --output-subdir "${EVAL_SUBDIR}" \
             eval.checkpoint=processor.ckpt \
             eval.mode=encode_once \
+            model.processor.sampler="${EVAL_SAMPLER}" \
+            model.processor.sampler_steps="${EVAL_SAMPLER_STEPS}" \
+            eval.csv_path="${eval_output_dir}/evaluation_metrics.csv" \
+            eval.video_dir="${eval_output_dir}/videos" \
             eval.metrics="${EVAL_METRICS}" \
             eval.batch_size="${EVAL_BATCH_SIZE}" \
             eval.n_members="${EVAL_N_MEMBERS}" \
@@ -107,6 +123,7 @@ for run_dir in "${RUN_DIRS[@]}"; do
             eval.benchmark.enabled="${EVAL_BENCHMARK_ENABLED}" \
             eval.benchmark_rollout.enabled="${EVAL_BENCHMARK_ROLLOUT_ENABLED}" \
             hydra.launcher.cpus_per_task="${CPUS_PER_TASK}" \
+            hydra.launcher.additional_parameters.mem="${SLURM_MEM}" \
             hydra.launcher.timeout_min="${TIMEOUT_MIN}"
     done
 done
