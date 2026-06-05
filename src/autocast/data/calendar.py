@@ -92,3 +92,56 @@ def month_start_indices(
             init_dates.append(dates[init_day])
         i += 1
     return start_idxs, init_dates
+
+
+def fixed_interval_indices(
+    n_timesteps: int,
+    n_steps_input: int,
+    max_rollout_steps: int,
+    init_interval: int,
+    init_offset: int = 0,
+) -> list[int]:
+    """Input-window start indices for initialisations on a fixed-period grid.
+
+    The calendar-agnostic counterpart to :func:`month_start_indices`: forecasts are
+    launched at a regular cadence (every ``init_interval`` steps), covering
+    environmental use cases without a month anchor (e.g. an init every 5 days).
+
+    Initialisation ``k`` is at step ``init_offset + k * init_interval`` — the last
+    input frame — so its input-window start is
+    ``init_offset + k * init_interval - (n_steps_input - 1)``. A start is kept only
+    when the input window fits before it (``start >= 0``) and the rollout horizon
+    fits after it (``init_day + max_rollout_steps < n_timesteps``).
+
+    Parameters
+    ----------
+    n_timesteps:
+        Number of time steps in the trajectory.
+    n_steps_input:
+        Input window length.
+    max_rollout_steps:
+        Rollout horizon required beyond each initialisation. Pass the dataset's
+        ``n_steps_output`` so the starts line up with the subtrajectory window
+        length ``n_steps_input + n_steps_output``.
+    init_interval:
+        Spacing between consecutive initialisations, in time steps.
+    init_offset:
+        Step of the first candidate initialisation. Defaults to 0.
+
+    Returns
+    -------
+    list[int]
+        Input-window start indices, ready to feed straight into
+        ``SpatioTemporalDataset(subtrajectory_start_idxs=...)``.
+    """
+    if init_interval <= 0:
+        msg = f"init_interval must be positive, got {init_interval}."
+        raise ValueError(msg)
+    start_idxs: list[int] = []
+    init_day = init_offset
+    while init_day + max_rollout_steps < n_timesteps:
+        start = init_day - (n_steps_input - 1)
+        if init_day >= 0 and start >= 0:
+            start_idxs.append(start)
+        init_day += init_interval
+    return start_idxs

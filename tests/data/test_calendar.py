@@ -2,7 +2,13 @@
 
 from datetime import date
 
-from autocast.data.calendar import calendar_dates, month_start_indices
+import pytest
+
+from autocast.data.calendar import (
+    calendar_dates,
+    fixed_interval_indices,
+    month_start_indices,
+)
 
 # First-of-month indices for a 365-day no-leap year (Jan 1 == index 0).
 _NO_LEAP_MONTH_STARTS = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334]
@@ -55,3 +61,30 @@ def test_month_start_indices_leap_handling_shifts_post_february():
     standard, _ = month_start_indices([2004], 1, 1, drop_leap_day=False)
     # March is the 3rd kept month start (Jan, Feb, Mar, ...).
     assert standard[2] == no_leap[2] + 1
+
+
+def test_fixed_interval_indices_regular_cadence():
+    n_timesteps, n_steps_input, horizon, interval = 100, 3, 10, 5
+    starts = fixed_interval_indices(n_timesteps, n_steps_input, horizon, interval)
+    # Init days on the 0,5,10,... grid; init day 0 is dropped (no lead-in for a
+    # 3-step input window). start = init_day - (n_steps_input - 1).
+    assert starts == list(range(3, 84, 5))
+    # Horizon must fit: last init day 85 (85 + 10 < 100); 90 would not.
+    assert starts[-1] == 85 - (n_steps_input - 1)
+
+
+def test_fixed_interval_indices_offset_and_single_input():
+    starts = fixed_interval_indices(
+        n_timesteps=50,
+        n_steps_input=1,
+        max_rollout_steps=5,
+        init_interval=10,
+        init_offset=2,
+    )
+    # n_steps_input=1 -> start == init day; grid 2,12,...; keep while +5 < 50.
+    assert starts == [2, 12, 22, 32, 42]
+
+
+def test_fixed_interval_indices_rejects_nonpositive_interval():
+    with pytest.raises(ValueError, match="init_interval must be positive"):
+        fixed_interval_indices(100, 3, 10, 0)
