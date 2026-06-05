@@ -37,8 +37,11 @@ def resolve_work_dir(
     3. If ``run_id`` is missing, generate a short default.
 
     Args:
+        output_base: Root directory under which run folders are created.
         run_group: Preferred top-level output folder grouping label.
         run_id: Preferred run folder identifier.
+        work_dir: If provided, used directly as the output path.
+        prefix: Fallback prefix for auto-generated run IDs.
     """
     if work_dir is not None:
         resolved = Path(work_dir).expanduser().resolve()
@@ -63,6 +66,7 @@ def get_default_config_path() -> str:
 
     Returns:
         Absolute path to the configs directory.
+
     Raises:
         FileNotFoundError: If no valid config directory can be resolved.
     """
@@ -110,6 +114,7 @@ class RunCollator:
             - Exact paths: "model.encoder._target_"
             - Wildcards: "model.*.hidden_dim" (matches any single key)
             - End wildcards: "model.processor.hidden_*" (matches any suffix)
+
     Examples:
         >>> # Use with wildcard patterns
         >>> collator = RunCollator(
@@ -177,6 +182,7 @@ class RunCollator:
 
         Args:
             run_dir: Path to the run directory.
+
         Returns:
             Dictionary with run_path, run_name, date, and category.
         """
@@ -274,6 +280,7 @@ class RunCollator:
             path: Dot-separated path with optional wildcards
                 (e.g., "model.encoder._target_" or "model.*.hidden_dim").
             default: Default value if path not found.
+
         Returns:
             Value at the first matching path, or default if not found.
         """
@@ -287,6 +294,7 @@ class RunCollator:
 
         Args:
             target: Full target path (e.g., "autocast.models.encoder.Encoder").
+
         Returns:
             Simplified name (e.g., "Encoder"), or "Unknown" if empty.
         """
@@ -299,6 +307,7 @@ class RunCollator:
 
         Args:
             config: Loaded configuration dictionary.
+
         Returns:
             Dictionary with extracted parameter values.
         """
@@ -320,6 +329,7 @@ class RunCollator:
 
         Args:
             run_dir: Path to the run directory.
+
         Returns:
             Dictionary with overall metrics and windowed metrics.
         """
@@ -369,6 +379,7 @@ class RunCollator:
 
         Args:
             run_dir: Path to the run directory.
+
         Returns:
             Dictionary of run data, or None if processing fails.
         """
@@ -430,6 +441,7 @@ class RunCollator:
         Args:
             output_csv: Path where the CSV file will be saved.
             save_csv: Whether to save the DataFrame to CSV.
+
         Returns:
             DataFrame with columns for run metadata and metrics.
         """
@@ -471,8 +483,9 @@ def collate_run_results(
         outputs_dir: Path to the outputs directory containing runs.
         output_csv: Path where the CSV file will be saved.
         save_csv: Whether to save the DataFrame to CSV.
-        config_params: Dictionary mapping output column names to config paths (dot notation).
-            If None, uses default parameters.
+        config_params: Dictionary mapping output column names to config paths
+            (dot notation). If None, uses default parameters.
+
     Returns:
         DataFrame with columns for run metadata and metrics.
     """

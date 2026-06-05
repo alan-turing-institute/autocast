@@ -67,7 +67,7 @@ class MetricsMixin:
 
         Args:
             model: The Lightning module to log metrics to.
-            metric_collection: The metric collection to update and log. If None, this method does nothing.
+            metrics: The metric collection to update and log. If None, does nothing.
             y_pred: Model predictions.
             y_true: Ground truth targets.
             batch_size: Batch size.

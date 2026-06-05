@@ -131,6 +131,7 @@ def cache_latents(
             sections, plus ``autoencoder_checkpoint``).
         output_dir: Directory to write cached latent files into.
         device: Device to run encoding on (``"auto"``, ``"cpu"``, ``"cuda"``, etc.).
+
     Returns:
         The output directory containing cached latents.
     """

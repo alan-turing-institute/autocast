@@ -55,6 +55,7 @@ class FlowMatchingProcessor(Processor):
 
         Args:
             x: Conditioning inputs of shape (B, T_in, *spatial, C_in).
+            global_cond: Optional non-spatial conditioning/modulation tensor.
 
         Returns:
             Generated outputs of shape (B, T_out, *spatial, C_out).

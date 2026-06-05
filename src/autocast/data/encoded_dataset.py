@@ -237,6 +237,7 @@ class EncodedDataModule(LightningDataModule):
             num_workers: Number of workers for dataloaders. Default 0 for
                 h5py compatibility.
             dataset_cls: Dataset class to use. Defaults to MiniWellInputOutput.
+            in_memory: Whether to load the full dataset into memory.
             **dataset_kwargs: Additional kwargs passed to dataset constructor.
         """
         super().__init__()

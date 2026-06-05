@@ -29,15 +29,20 @@ class RolloutMixin(ABC, Generic[BatchT]):
 
         Args:
             batch: Input batch containing initial data for rollout.
-            free_running_only: If True, disables teacher forcing during rollout. By default False.
-            return_windows: If True, returns the true outputs in windows matching the model's output
-                shape. By default False.
-            detach: If True, detaches the output from the graph before feeding it back in
-                as input. Set to False for autoregressive loss calculation. By default True.
-            n_members: Number of ensemble members for ensemble models. By default None.
+            stride: Number of steps to advance the batch window each iteration.
+            max_rollout_steps: Number of rollout windows to generate.
+            teacher_forcing_ratio: Probability of using ground-truth inputs each step.
+            free_running_only: If True, disables teacher forcing during rollout.
+            return_windows: If True, returns the true outputs in windows matching
+                the model's output shape.
+            detach: If True, detaches the output from the graph before feeding it
+                back as input. Set to False for autoregressive loss calculation.
+            n_members: Number of ensemble members for ensemble models.
+
         Note:
-            The outputs stack along a new axis after batch representing number of rollout
-            windows R. Each window R contains n_steps_output time steps T.
+            The outputs stack along a new axis after batch representing
+            number of rollout windows R. Each window R contains n_steps_output
+            time steps T.
             For example with:
             - batch size B=16
             - rollout windows R=10

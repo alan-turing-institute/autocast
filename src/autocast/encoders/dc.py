@@ -35,17 +35,19 @@ class DCEncoder(EncoderWithCond):
         dropout: Dropout rate.
         checkpointing: Whether to use gradient checkpointing.
         identity_init: Initialize down/upsampling convolutions as identity.
-        ffn_out_scale: Optional multiplicative scale applied to each ResBlock FFN output conv.
-        saturation: Optional latent saturation mode. Supported: {"softclip2", "softclip",
-            "tanh", "arcsinh", "rmsnorm"}.
+        ffn_out_scale: Optional multiplicative scale applied to each ResBlock
+            FFN output conv.
+        saturation: Optional latent saturation mode. Supported: {"softclip2",
+            "softclip", "tanh", "arcsinh", "rmsnorm"}.
         saturation_scale: Saturation scale B used by soft clipping/tanh variants.
+
     Note:
         Based on the implementation from:
         - Deep Compression Autoencoder for Efficient High-Resolution Diffusion Models
         (Chen et al., 2024), https://arxiv.org/abs/2410.10733v1
-        - Lost in Latent Space: An Empirical Study of Latent Diffusion Models for Physics
-        Emulation (Rozet et al., 2024), https://arxiv.org/abs/2507.02608,
-        https://github.com/PolymathicAI/lola
+        - Lost in Latent Space: An Empirical Study of Latent Diffusion Models
+          for Physics Emulation (Rozet et al., 2024),
+          https://arxiv.org/abs/2507.02608, https://github.com/PolymathicAI/lola
     """
 
     encoder_model: nn.Module
@@ -186,7 +188,9 @@ class DCEncoder(EncoderWithCond):
         """Encode input batch to latent representation.
 
         Args:
-            batch: Input batch containing input_fields with shape (B, T, spatial..., C_i).
+            batch: Input batch containing input_fields with shape
+                (B, T, spatial..., C_i).
+
         Returns:
             Encoded latent tensor with shape (B, T, spatial_reduced..., C_o).
         """
@@ -197,6 +201,7 @@ class DCEncoder(EncoderWithCond):
 
         Args:
             x: Input tensor with shape (B, T, spatial..., C_i).
+
         Returns:
             Encoded latent tensor.
         """

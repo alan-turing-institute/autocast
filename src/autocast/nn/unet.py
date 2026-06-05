@@ -73,11 +73,14 @@ class TemporalUNetBackbone(TemporalBackboneBase):
             tcn_kernel_size: Kernel size for TCN
             tcn_num_layers: Number of TCN layers
             stride: Stride for UNet downsampling/upsampling
+            norm: Normalisation type for UNet blocks (e.g. "layer").
+            groups: Number of groups for group normalisation.
             dropout: Dropout rate in UNet blocks
             ffn_factor: Feedforward network expansion factor in UNet blocks
             identity_init: Whether to use identity initialization in UNet blocks
             attention_heads: Mapping of UNet levels to number of attention heads
             checkpointing: Whether to use gradient checkpointing in UNet
+            use_precomputed_modulation: Whether to use precomputed modulation tensors.
         """
         # Initialize base class with common parameters
         super().__init__(

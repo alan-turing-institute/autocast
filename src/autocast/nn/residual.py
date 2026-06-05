@@ -20,6 +20,7 @@ class Residual(nn.Sequential):
 
         Args:
             input: Input tensor.
+
         Returns:
             Input + output from sequential layers.
         """
@@ -38,7 +39,8 @@ class ResBlock(nn.Module):
         spatial: Number of spatial dimensions.
         dropout: Dropout rate.
         checkpointing: Whether to use gradient checkpointing.
-        ffn_out_scale: Optional multiplicative scale applied to the final FFN conv weights.
+        ffn_out_scale: Optional multiplicative scale applied to the final
+            FFN conv weights.
         **kwargs: Additional arguments for convolution layers.
     """
 
@@ -100,6 +102,7 @@ class ResBlock(nn.Module):
 
         Args:
             x: Input tensor with shape (B, C, L_1, ..., L_N).
+
         Returns:
             Output tensor with shape (B, C, L_1, ..., L_N).
         """
@@ -113,6 +116,7 @@ class ResBlock(nn.Module):
 
         Args:
             x: Input tensor.
+
         Returns:
             Output tensor with same shape as input.
         """

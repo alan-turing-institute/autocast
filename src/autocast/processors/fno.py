@@ -24,7 +24,8 @@ class FNOProcessor(Processor[EncodedBatch]):
         in_channels: Number of input channels.
         out_channels: Number of output channels.
         n_modes: Number of Fourier modes to keep in each spatial dimension.
-        hidden_channels: Width of the FNO (number of channels in hidden layers). Default is 64.
+        hidden_channels: Width of the FNO (number of channels in hidden
+            layers). Default is 64.
         n_layers: Number of FNO layers. Default is 4.
         channels: Which channels from input_fields to use. Default is (0,).
         with_constants: Whether to include constant fields in input. Default is False.

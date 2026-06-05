@@ -59,6 +59,7 @@ class TemporalBackboneBase(nn.Module, ABC):
             temporal_attention_hidden_dim: Hidden dimension for attention methods
             tcn_kernel_size: Kernel size for TCN
             tcn_num_layers: Number of TCN layers
+            use_precomputed_modulation: Whether to use precomputed modulation tensors.
         """
         super().__init__()
 

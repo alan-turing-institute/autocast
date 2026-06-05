@@ -24,6 +24,7 @@ class Decoder(nn.Module, ABC):
 
         Args:
             z: Latent tensor to be decoded.
+
         Returns:
             Decoded tensor in the original space.
         """

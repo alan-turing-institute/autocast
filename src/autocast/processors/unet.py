@@ -43,8 +43,8 @@ class UNetClassic(nn.Module):
         n_spatial_dims: Number of spatial dimensions (1, 2, or 3).
         spatial_resolution: Spatial resolution of the input data.
         init_features: Number of features in the first encoder block. Default is 32.
-        gradient_checkpointing: Whether to use gradient checkpointing to reduce memory usage.
-            Default is False.
+        gradient_checkpointing: Whether to use gradient checkpointing to
+            reduce memory usage. Default is False.
     """
 
     def __init__(
@@ -118,6 +118,7 @@ class UNetClassic(nn.Module):
 
         Args:
             x: Input tensor of shape (B, C_in, *spatial_dims).
+
         Returns:
             Output tensor of shape (B, C_out, *spatial_dims).
         """
@@ -160,6 +161,7 @@ class UNetClassic(nn.Module):
             in_channels: Number of input channels.
             features: Number of output channels.
             name: Name prefix for the layers in this block.
+
         Returns:
             Sequential module containing the block layers.
         """
@@ -221,11 +223,12 @@ class UNetProcessor(Processor[EncodedBatch]):
     Args:
         in_channels: Number of input channels.
         out_channels: Number of output channels.
-        spatial_resolution: Spatial resolution of the input data (e.g., [64, 64] for 2D).
+        spatial_resolution: Spatial resolution of the input data
+            (e.g., [64, 64] for 2D).
         n_spatial_dims: Number of spatial dimensions (1, 2, or 3). Default is 2.
         init_features: Number of features in the first encoder block. Default is 32.
-        gradient_checkpointing: Whether to use gradient checkpointing to reduce memory usage.
-            Default is False.
+        gradient_checkpointing: Whether to use gradient checkpointing to
+            reduce memory usage. Default is False.
         loss_func: Loss function. Defaults to MSELoss.
     """
 
@@ -261,6 +264,7 @@ class UNetProcessor(Processor[EncodedBatch]):
         Args:
             x: Input tensor of shape (B, T_in, *spatial_dims).
             global_cond: Optional conditioning tensor (currently unused).
+
         Returns:
             Output tensor of shape (B, T_out, *spatial_dims).
         """
@@ -272,6 +276,7 @@ class UNetProcessor(Processor[EncodedBatch]):
 
         Args:
             batch: Batch containing encoded inputs and output fields.
+
         Returns:
             Loss value.
         """
@@ -299,8 +304,8 @@ class AzulaUNetProcessor(Processor[EncodedBatch]):
         periodic: Whether to use periodic boundary conditions. Default is False.
         gradient_checkpointing: Whether to use gradient checkpointing. Default is False.
         loss_func: Loss function. Defaults to MSELoss.
-        n_noise_channels: Number of noise channels for conditional normalization. If None, no
-            noise conditioning is used. Default is None.
+        n_noise_channels: Number of noise channels for conditional
+            normalization. If None, no noise conditioning is used. Default is None.
         global_cond_channels: Width of the optional global conditioning vector.
         include_global_cond: Whether to inject global conditioning into modulation.
             Uses the same two-layer embedding pattern as ViT temporal backbones.
@@ -370,6 +375,7 @@ class AzulaUNetProcessor(Processor[EncodedBatch]):
             x_noise: Optional noise conditioning tensor of shape (B, n_noise_channels).
             global_cond: Optional global conditioning tensor of shape (B, C_global).
                 Used only when include_global_cond=True.
+
         Returns:
             Output tensor of shape (B, C_out, *spatial_dims).
         """
@@ -428,7 +434,9 @@ class AzulaUNetProcessor(Processor[EncodedBatch]):
 
         Args:
             x: Input tensor of shape (B, C_in, *spatial_dims).
-            global_cond: Optional conditioning vector. Used when include_global_cond=True.
+            global_cond: Optional conditioning vector. Used when
+                include_global_cond=True.
+
         Returns:
             Output tensor of shape (B, C_out, *spatial_dims).
         """
@@ -447,6 +455,7 @@ class AzulaUNetProcessor(Processor[EncodedBatch]):
 
         Args:
             batch: Batch containing encoded inputs and output fields.
+
         Returns:
             Loss value.
         """

@@ -48,8 +48,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         normalization_path: str | None = None,
         normalization_stats: dict | DictConfig | None = None,
     ):
-        """
-        Initialize the dataset.
+        """Initialize the dataset.
 
         Args:
             data_path: Path to the HDF5 file containing the dataset.
@@ -58,17 +57,21 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             n_steps_output: Number of output time steps.
             stride: Stride for sampling the data.
             data: Preloaded data. Defaults to None.
-            channel_idxs: Indices of channels to select from the raw data (applied to both
-                input and output). If None, all channels are used. Defaults to None.
-            full_trajectory_mode: If True, use full trajectories without creating subtrajectories.
-            autoencoder_mode: If True, return (input, input) pairs for autoencoder training.
-                Defaults to False.
+            channel_idxs: Indices of channels to select from the raw data
+                (applied to both input and output). If None, all channels are
+                used. Defaults to None.
+            full_trajectory_mode: If True, use full trajectories without
+                creating subtrajectories.
+            autoencoder_mode: If True, return (input, input) pairs for
+                autoencoder training. Defaults to False.
             dtype: Data type for tensors. Defaults to torch.float32.
             verbose: If True, print dataset information.
-            use_normalization: Whether to apply Z-score normalization. Defaults to False.
-            normalization_type: Normalization object (computed from training data). Defaults to
-                ZScoreNormalization.
-            normalization_path: Path to normalization statistics file (yaml). Defaults to None.
+            use_normalization: Whether to apply Z-score normalization.
+                Defaults to False.
+            normalization_type: Normalization object (computed from training
+                data). Defaults to ZScoreNormalization.
+            normalization_path: Path to normalization statistics file (yaml).
+                Defaults to None.
             normalization_stats: Preloaded normalization statistics. Defaults to None.
         """
         self.dtype = dtype

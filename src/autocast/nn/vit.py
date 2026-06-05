@@ -69,6 +69,7 @@ class TemporalViTBackbone(TemporalBackboneBase):
             dropout: Dropout rate in ViT blocks
             ffn_factor: Feedforward network expansion factor in ViT blocks
             checkpointing: Whether to use gradient checkpointing in ViT
+            use_precomputed_modulation: Whether to use precomputed modulation tensors.
         """
         # Initialize base class with common parameters
         super().__init__(

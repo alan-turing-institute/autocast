@@ -30,6 +30,7 @@ class GenericEncoder(nn.Module, ABC, Generic[BatchT, BatchTEncoded]):
 
         Args:
             batch: Input batch to be encoded.
+
         Returns:
             Encoded tensor in the latent space with shape (B, *, C_latent) or a tuple of
                 (encoded tensor, optional conditioning tensor of shape (B, D)).
@@ -43,7 +44,9 @@ class GenericEncoder(nn.Module, ABC, Generic[BatchT, BatchTEncoded]):
 
         Args:
             batch: Input batch to be encoded.
-            encoded_info: Optional dictionary of additional encoded information to include.
+            encoded_info: Optional dictionary of additional encoded
+                information to include.
+
         Returns:
             Encoded batch containing encoded inputs and original output fields.
         """
@@ -63,6 +66,8 @@ class _Encoder(GenericEncoder[Batch, EncodedBatch]):
 
         Args:
             batch: Input batch to be encoded.
+            encoded_info: Optional dictionary of additional encoded information.
+
         Returns:
             Encoded batch containing encoded inputs and original output fields.
         """
@@ -107,7 +112,8 @@ class Encoder(_Encoder):
         """Encode the input tensor into the latent space.
 
         Args:
-            x: Input batch to be encoded.
+            batch: Input batch to be encoded.
+
         Returns:
             Encoded tensor in the latent space with shape (B, *, C_latent).
         """
@@ -138,7 +144,8 @@ class EncoderWithCond(Encoder):
         """Encode the input tensor into the latent space.
 
         Args:
-            x: Input batch to be encoded.
+            batch: Input batch to be encoded.
+
         Returns:
             Encoded tensor in the latent space with shape (B, *, C_latent) with optional
                 conditioning tensor of shape (B, D).

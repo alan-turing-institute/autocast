@@ -35,14 +35,16 @@ class DCDecoder(Decoder):
         dropout: Dropout rate.
         checkpointing: Whether to use gradient checkpointing.
         identity_init: Initialize up/downsampling convolutions as identity.
-        ffn_out_scale: Optional multiplicative scale applied to each ResBlock FFN output conv.
+        ffn_out_scale: Optional multiplicative scale applied to each ResBlock
+            FFN output conv.
+
     Note:
         Based on the implementation from:
-        - Deep Compression Autoencoder for Efficient High-Resolution Diffusion Models
-        (Chen et al., 2024), https://arxiv.org/abs/2410.10733v1
-        - Lost in Latent Space: An Empirical Study of Latent Diffusion Models for Physics
-        Emulation (Rozet et al., 2024), https://arxiv.org/abs/2507.02608,
-        https://github.com/PolymathicAI/lola
+        - Deep Compression Autoencoder for Efficient High-Resolution Diffusion
+          Models (Chen et al., 2024), https://arxiv.org/abs/2410.10733v1
+        - Lost in Latent Space: An Empirical Study of Latent Diffusion Models
+          for Physics Emulation (Rozet et al., 2024),
+          https://arxiv.org/abs/2507.02608, https://github.com/PolymathicAI/lola
 
     """
 
@@ -158,6 +160,7 @@ class DCDecoder(Decoder):
 
         Args:
             z: Latent tensor with shape (B, T, spatial..., C_i) where C_i is last dim.
+
         Returns:
             Decoded tensor with shape (B, T, spatial_expanded..., C_o).
         """

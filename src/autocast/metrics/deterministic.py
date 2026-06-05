@@ -22,8 +22,7 @@ from autocast.types.types import ArrayLike, TensorBTSCM
 
 
 class BTSCMetric(BaseMetric[TensorBTSC | TensorBTSCM, TensorBTSC]):
-    """
-    Base class for metrics that operate on spatial tensors.
+    """Base class for metrics that operate on spatial tensors.
 
     Checks input types and shapes and converts to Tensor.
 
@@ -35,8 +34,7 @@ class BTSCMetric(BaseMetric[TensorBTSC | TensorBTSCM, TensorBTSC]):
     def _check_input(
         self, y_pred: ArrayLike, y_true: ArrayLike
     ) -> tuple[TensorBTSC, TensorBTSC]:
-        """
-        Check types and shapes and converts inputs to Tensor.
+        """Check types and shapes and converts inputs to Tensor.
 
         Args:
             y_pred: Predictions of shape (B, T, S, C)
@@ -88,6 +86,7 @@ class BTSCMetric(BaseMetric[TensorBTSC | TensorBTSCM, TensorBTSC]):
 
         Args:
             y_pred: Predictions with ensemble dim, shape (B, T, C, M)
+
         Returns:
             Aggregated predictions, shape (B, T, S, C)
         """
@@ -96,8 +95,7 @@ class BTSCMetric(BaseMetric[TensorBTSC | TensorBTSCM, TensorBTSC]):
     def _score(
         self, y_pred: TensorBTSC | TensorBTSCM, y_true: TensorBTSC | TensorBTSCM
     ) -> TensorBTC:
-        """
-        Compute metric reduced over spatial dims only.
+        """Compute metric reduced over spatial dims only.
 
         Expected input shape: (B, T, S, C)
         Expected output shape: (B, T, C)
@@ -289,7 +287,7 @@ def _isotropic_binning_cpu(
 ) -> tuple[Tensor, Tensor, Tensor]:
     """Isotropic frequency binning over FFT domain on CPU (cached).
 
-    References
+    References:
     ----------
     - https://github.com/PolymathicAI/lola/blob/bd4bdf2a9fc024e6b2aa95eb4e24a800fec98dae/lola/fourier.py
     """

@@ -32,6 +32,7 @@ class VAELoss(nn.Module):
             encoded: Encoded tensor containing mean and log variance.
                 Shape: [B, 2*C, H, W, ...] for spatial or
                 [B, 2*latent_channels] for flat.
+
         Returns:
             KL divergence loss.
         """
@@ -72,9 +73,10 @@ class VAE(EncoderDecoder):
             decoder: Decoder network.
             spatial: Number of spatial dimensions in latent space (e.g., 2 for images).
                 If None, assumes flat 1D latent representation.
-            norm: Optional normalizer. If passed, it will be used to denormalize predictions
-                and targets before computing metrics during evaluation. It is also
-                used to denormalize prediction returned when calling predict_step().
+            norm: Optional normalizer. If passed, it will be used to
+                denormalize predictions and targets before computing metrics
+                during evaluation. It is also used to denormalize prediction
+                returned when calling predict_step().
         """
         super().__init__(encoder=encoder, decoder=decoder, norm=norm)
         self.spatial = spatial

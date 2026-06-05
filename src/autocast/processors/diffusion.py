@@ -159,8 +159,7 @@ class DiffusionProcessor(Processor):
         silent: bool = True,
         **sampler_kwargs,
     ) -> Tensor:
-        """
-        Generate samples via reverse diffusion using Azula's samplers.
+        """Generate samples via reverse diffusion using Azula's samplers.
 
         Args:
             x_t: Starting noise (B, T, C, W, H)

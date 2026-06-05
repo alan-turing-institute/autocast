@@ -205,16 +205,17 @@ def get_datamodule(
         n_train: Number of training samples to generate (if not using The Well).
         n_valid: Number of validation samples to generate (if not using The Well).
         n_test: Number of test samples to generate (if not using The Well).
-        simulation_datasets_path: Base path to store and load temporary datasets from running simulations.
+        simulation_datasets_path: Base path to store and load temporary
+            datasets from running simulations.
         the_well_dataset_path: Base path to The Well datasets.
         overwrite_tmp: Whether to overwrite existing temporary datasets.
         num_workers: Number of workers for data loading.
         batch_size: Batch size for the datamodule.
         use_normalization: Whether to use normalization.
         normalization_path: Path to normalization statistics.
-        normalization_stats: Preloaded normalization statistics (e.g. from Hydra config). Only
-            supported for non-The Well datasets; when provided, used instead of
-            normalization_path.
+        normalization_stats: Preloaded normalization statistics (e.g. from
+            Hydra config). Only supported for non-The Well datasets; when
+            provided, used instead of normalization_path.
     """
     if the_well and normalization_stats is not None:
         msg = (

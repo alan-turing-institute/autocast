@@ -17,8 +17,8 @@ class ChannelsLast(Decoder):
 
         Args:
             output_channels: Number of output channels (C).
-            time_steps: Number of time steps (T) to be unmerged from the channel dimension to
-                reconstruct the time dimension. Default is 1.
+            time_steps: Number of time steps (T) to be unmerged from the
+                channel dimension to reconstruct the time dimension. Default is 1.
         """
         super().__init__()
         self.output_channels = output_channels

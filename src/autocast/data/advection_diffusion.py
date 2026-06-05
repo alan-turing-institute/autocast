@@ -1,5 +1,4 @@
-"""
-Advection-diffusion simulator with multi-channel outputs.
+"""Advection-diffusion simulator with multi-channel outputs.
 
 Returns channels: [vorticity, u, v, streamfunction].
 
@@ -24,15 +23,19 @@ class AdvectionDiffusion(Simulator):
     r"""Differentiable advection-diffusion simulator exposing multi-channel outputs.
 
     Args:
-        parameters_range: Bounds on the sampled viscosity (`nu`) and advection strength (`mu`).
+        parameters_range: Bounds on the sampled viscosity (`nu`) and advection
+            strength (`mu`).
         output_names: Human-readable names for the returned channels.
-        return_timeseries: Whether `forward` returns the entire trajectory instead of a single snapshot.
+        return_timeseries: Whether `forward` returns the entire trajectory instead
+            of a single snapshot.
         log_level: Logging verbosity passed to the base `Simulator`.
         n: Number of spatial points per dimension.
         L: Domain length in each spatial direction.
         T: Total integration time.
         dt: Temporal resolution used for the ODE solver outputs.
-        integrator_kwargs: Extra keyword arguments forwarded to `scipy.integrate.solve_ivp`.
+        integrator_kwargs: Extra keyword arguments forwarded to
+            `scipy.integrate.solve_ivp`.
+
     Note:
         Each grid point emits four channels `[vorticity, u, v, streamfunction]`.
     """
@@ -96,6 +99,7 @@ class AdvectionDiffusion(Simulator):
         Args:
             n: Number of trajectories to sample.
             random_seed: Seed for reproducible parameter draws.
+
         Returns:
             Dictionary with keys:
                 ``data``
@@ -145,6 +149,7 @@ def _spectral_poisson_solver(w2d: np.ndarray, K3: np.ndarray) -> np.ndarray:
         w2d: Two-dimensional vorticity field with shape ``(n, n)``.
         K3: Pre-computed spectral multiplier ``1 / (k_x^2 + k_y^2)`` with the zero mode
             handled to keep the mean streamfunction at zero.
+
     Returns:
         Real-valued streamfunction with shape ``(n, n)``.
     """
@@ -159,6 +164,7 @@ def _laplacian_periodic(w2d: np.ndarray, dx: float) -> np.ndarray:
     Args:
         w2d: Input field of shape ``(n, n)``.
         dx: Grid spacing.
+
     Returns:
         Field after applying the Laplacian, matching the input shape.
     """
@@ -173,6 +179,7 @@ def _gradient_periodic(f2d: np.ndarray, dx: float) -> tuple[np.ndarray, np.ndarr
     Args:
         f2d: Scalar field of shape ``(n, n)``.
         dx: Grid spacing.
+
     Returns:
         ``(df/dx, df/dy)`` each with shape ``(n, n)``.
     """
@@ -200,8 +207,10 @@ def advection_diffusion_rhs(
         nu: Diffusion coefficient.
         mu: Advection strength.
         K3: Spectral multiplier used for the Poisson solve.
+
     Returns:
         Flattened ``dw/dt`` matching the shape of ``w_flat``.
+
     Note:
         Implements ``dw/dt = nu * laplacian(w) - mu * (u * d/dx + v * d/dy)`` where
         ``(u, v)`` is recovered from the streamfunction via ``u = dpsi/dy`` and
@@ -243,12 +252,14 @@ def simulate_advection_diffusion(
 
     Args:
         x: Two-element vector ``[nu, mu]`` with viscosity and advection parameters.
-        return_timeseries: If ``True``, return the entire trajectory; otherwise only the terminal state.
+        return_timeseries: If ``True``, return the entire trajectory; otherwise
+            only the terminal state.
         n: Grid resolution per spatial dimension.
         L: Domain size along each axis.
         T: End time for integration.
         dt: Step between recorded solver outputs.
         integrator_kwargs: Extra keyword arguments forwarded to `solve_ivp`.
+
     Returns:
         If `return_timeseries` is ``True``, an array of shape ``(n_time, n, n, 4)``;
             otherwise shape ``(n, n, 4)``. Channels are ordered

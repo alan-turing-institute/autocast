@@ -26,6 +26,7 @@ class SpatialAttentionWrapper(nn.Module):
 
         Args:
             x: Input tensor with shape (B, C, spatial_dims...).
+
         Returns:
             Output tensor with shape (B, C, spatial_dims...).
         """
@@ -56,6 +57,7 @@ class Residual(nn.Sequential):
 
         Args:
             input: Input tensor.
+
         Returns:
             Input + output from sequential layers.
         """

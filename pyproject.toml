@@ -96,10 +96,10 @@ ignore = [
     "PLR2004", # Magic value used in comparison
     "EM102",   # Exception must not use an f-string literal, assign to variable first
     "ISC001",  # Conflicts with formatter
-    # "D417",    # Missing trailing new line in docstring
     "D100",    # Missing docstring in public module
-    "D102",    # Missing docstring in public class, TODO: remove in future
+    "D102",    # Missing docstring in public method, TODO: remove in future
     "D104",    # Missing docstring in public package
+    "D107",    # Missing docstring in __init__ (documented at class level in Google style)
     "PLR0913", # too many arguments
     "RET504",  # Allow assignment to variable before return
 ]
