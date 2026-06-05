@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 
-from azula.nn.layers import SineEncoding
+from azula.nn.embedding import SineEncoding  # pyright: ignore[reportMissingImports]
 from einops import rearrange
 from torch import nn
 
