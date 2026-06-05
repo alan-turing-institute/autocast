@@ -1,3 +1,3 @@
 # Models
 
-Lightning model architectures for training and inference.
+Lightning models.

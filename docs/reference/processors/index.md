@@ -1,3 +1,3 @@
 # Processors
 
-Latent space processor implementations for evolving spatiotemporal states.
+Processor implementations for evolving spatiotemporal states.

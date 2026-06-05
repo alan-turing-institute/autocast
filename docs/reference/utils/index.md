@@ -1,3 +1,3 @@
 # Utilities
 
-Utility functions for optimizers and plotting.
+Utility functions (e.g., for optimizer configs and plotting).
