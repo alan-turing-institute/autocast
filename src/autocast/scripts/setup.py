@@ -165,6 +165,11 @@ def _resolve_processor_temporal_steps(
     return n_steps_input, n_steps_output
 
 
+def _uses_masked_window_flow_matching(processor_config: DictConfig) -> bool:
+    target = str(processor_config.get("_target_", ""))
+    return target.endswith("FlowMatchingMaskedWindowProcessor")
+
+
 def _apply_processor_channel_defaults(
     processor_config: DictConfig | None,
     *,
@@ -196,12 +201,19 @@ def _apply_processor_channel_defaults(
     if backbone_config is None:
         return
 
+    use_masked_window = _uses_masked_window_flow_matching(processor_config)
+    backbone_n_steps = (
+        n_steps_input + n_steps_output if use_masked_window else n_steps_output
+    )
+    backbone_cond_steps = backbone_n_steps if use_masked_window else n_steps_input
+    backbone_cond_channels = n_channels_out if use_masked_window else in_channels
+
     # Backbone applies steps multiplier internally, so we pass per-step channels
     _set_if_auto(backbone_config, "in_channels", n_channels_out)  # z has n_channels_out
     _set_if_auto(backbone_config, "out_channels", n_channels_out)
-    _set_if_auto(backbone_config, "cond_channels", in_channels)  # x has in_channels
-    _set_if_auto(backbone_config, "n_steps_input", n_steps_input)
-    _set_if_auto(backbone_config, "n_steps_output", n_steps_output)
+    _set_if_auto(backbone_config, "cond_channels", backbone_cond_channels)
+    _set_if_auto(backbone_config, "n_steps_input", backbone_cond_steps)
+    _set_if_auto(backbone_config, "n_steps_output", backbone_n_steps)
     if global_cond_channels is not None:
         _set_if_auto(backbone_config, "global_cond_channels", global_cond_channels)
     else:
@@ -314,6 +326,7 @@ def setup_autoencoder_components(
     if (
         encoder_config
         and isinstance(input_channels, int)
+        and "in_channels" in encoder_config
         and encoder_config.get("in_channels") in (None, "auto")
     ):
         # TODO: add more robust approach to inlcuding extra constant channels
