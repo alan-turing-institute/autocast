@@ -16,11 +16,17 @@ class PermuteConcat(EncoderWithCond):
     outputs_time_channel_concat: bool = True
 
     def __init__(
-        self, in_channels: int, n_steps_input: int, with_constants: bool = False
+        self,
+        in_channels: int,
+        n_steps_input: int,
+        with_constants: bool = False,
+        n_tvs_steps: int = 1,
     ) -> None:
         super().__init__()
         self.with_constants = with_constants
         self.latent_channels = in_channels * n_steps_input
+        # Number of time_varying_scalars steps to flatten into global_cond.
+        self.n_tvs_steps = n_tvs_steps
 
     def encode(self, batch: Batch) -> TensorBNC:
         # Destructure batch, time, space, channels

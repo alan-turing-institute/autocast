@@ -3,6 +3,7 @@ from dataclasses import replace
 from typing import Generic, TypeVar
 
 import torch
+from einops import rearrange
 from torch import nn
 
 from autocast.types import Batch, EncodedBatch, TensorBNC
@@ -137,14 +138,21 @@ class Encoder(_Encoder):
 class EncoderWithCond(Encoder):
     """Encoder that returns encoded tensor and optional conditioning."""
 
+    #: Number of `time_varying_scalars` time steps (ending at the current input
+    #: window) to flatten into `global_cond`. The resulting contribution has
+    #: width `n_tvs_steps * C_tvs`. Default 1 uses only the most recent step.
+    n_tvs_steps: int = 1
+
     def encode_cond(self, batch: Batch) -> Tensor | None:
         """Encode global conditioning tensor from the batch.
 
         Default implementation flattens constant scalars and boundary conditions.
-        When `time_varying_scalars` are provided, the slice corresponding to the
-        current prediction step (index 0 along the time axis) is concatenated to
-        the conditioning vector. The rollout/training loop is responsible for
-        advancing this tensor (see `EncoderProcessorDecoder._advance_batch`).
+        When `time_varying_scalars` are provided, the last `n_tvs_steps` steps of
+        the current input window are flattened (`b t c -> b (t c)`) and
+        concatenated to the conditioning vector. The rollout/training loop is
+        responsible for advancing this tensor (see
+        `EncoderProcessorDecoder._advance_batch`), which keeps index 0 aligned to
+        the start of the current input window.
         """
         global_cond = None
         if batch.constant_scalars is not None:
@@ -157,20 +165,33 @@ class EncoderWithCond(Encoder):
             else:
                 global_cond = torch.cat([global_cond, bc], dim=1)
         if batch.time_varying_scalars is not None:
-            if batch.time_varying_scalars.shape[1] == 0:
+            n_steps_input = batch.input_fields.shape[1]
+            available = batch.time_varying_scalars.shape[1]
+            if self.n_tvs_steps > n_steps_input:
                 msg = (
-                    "time_varying_scalars is exhausted (shape[1] == 0). "
-                    "The autoregressive rollout has consumed all pre-computed "
-                    "steps. Increase `n_tvs_extra_steps` in the datamodule "
-                    "config so the dataset stores enough future steps."
+                    f"n_tvs_steps ({self.n_tvs_steps}) cannot exceed the input "
+                    f"window length n_steps_input ({n_steps_input})."
+                )
+                raise ValueError(msg)
+            if available < n_steps_input:
+                msg = (
+                    f"time_varying_scalars is exhausted (has {available} steps, "
+                    f"needs {n_steps_input} to cover the input window). The "
+                    "autoregressive rollout has consumed all pre-computed steps; "
+                    "increase n_steps_output (the rollout horizon) on the dataset "
+                    "so enough future steps are stored."
                 )
                 raise RuntimeError(msg)
-            # Slice the current prediction step (index 0 along time axis).
-            tvs = batch.time_varying_scalars[:, 0, :]  # (B, C_tvs)
+            # Last `n_tvs_steps` steps of the current input window. Index 0 is
+            # kept aligned to the input-window start by `_advance_batch`.
+            window = batch.time_varying_scalars[
+                :, n_steps_input - self.n_tvs_steps : n_steps_input, :
+            ]
+            time_varying_scalars = rearrange(window, "b t c -> b (t c)")
             if global_cond is None:
-                global_cond = tvs
+                global_cond = time_varying_scalars
             else:
-                global_cond = torch.cat([global_cond, tvs], dim=1)
+                global_cond = torch.cat([global_cond, time_varying_scalars], dim=1)
 
         return global_cond
 

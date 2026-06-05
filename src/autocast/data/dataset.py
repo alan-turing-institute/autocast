@@ -48,7 +48,8 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         normalization_type: type[ZScoreNormalization] | None = ZScoreNormalization,
         normalization_path: str | None = None,
         normalization_stats: dict | DictConfig | None = None,
-        n_tvs_extra_steps: int = 0,
+        subtrajectory_mode: bool = False,
+        subtrajectory_start_idxs: list[int] | None = None,
     ):
         """
         Initialize the dataset.
@@ -88,12 +89,20 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             Path to normalization statistics file (yaml). Defaults to None.
         normalization_stats: dict | None
             Preloaded normalization statistics. Defaults to None.
-        n_tvs_extra_steps: int
-            Number of additional `time_varying_scalars` steps to keep beyond
-            `n_steps_output` so that autoregressive rollouts can read a fresh
-            scalar slice at every step. Set to `autoregressive_train_steps *
-            stride` (or larger) to cover the full rollout horizon. Defaults to
-            0 (single-step inference only).
+        subtrajectory_mode: bool
+            If True, build rollout subtrajectories at explicit start indices
+            (`subtrajectory_start_idxs`) instead of sliding a window at every
+            stride. Each subtrajectory spans `n_steps_input + n_steps_output`
+            steps; `n_steps_output` is the rollout horizon and is *not*
+            auto-expanded to the full trajectory (unlike `full_trajectory_mode`).
+            Use `data.calendar.month_start_indices` to generate month-anchored
+            starts. Cannot be combined with `full_trajectory_mode` or
+            `autoencoder_mode`. Defaults to False.
+        subtrajectory_start_idxs: list[int] | None
+            Input-window start indices for `subtrajectory_mode`. Each start `s`
+            selects the window `data[traj, s : s + n_steps_input + n_steps_output]`
+            (applied to every trajectory). Required when `subtrajectory_mode` is
+            True. Defaults to None.
         """
         self.dtype = dtype
         self.verbose = verbose
@@ -123,6 +132,15 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         if autoencoder_mode and full_trajectory_mode:
             msg = "autoencoder_mode and full_trajectory_mode cannot both be True."
             raise ValueError(msg)
+        if subtrajectory_mode and full_trajectory_mode:
+            msg = "subtrajectory_mode and full_trajectory_mode cannot both be True."
+            raise ValueError(msg)
+        if subtrajectory_mode and autoencoder_mode:
+            msg = "subtrajectory_mode and autoencoder_mode cannot both be True."
+            raise ValueError(msg)
+        if subtrajectory_mode and not subtrajectory_start_idxs:
+            msg = "subtrajectory_mode requires non-empty subtrajectory_start_idxs."
+            raise ValueError(msg)
         if autoencoder_mode:
             # In autoencoder mode, input and output steps are overridde
             n_steps_input = 1
@@ -135,11 +153,16 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
 
         self.full_trajectory_mode = full_trajectory_mode
         self.autoencoder_mode = autoencoder_mode
+        self.subtrajectory_mode = subtrajectory_mode
+        self.subtrajectory_start_idxs = (
+            list(subtrajectory_start_idxs)
+            if subtrajectory_start_idxs is not None
+            else None
+        )
         self.n_steps_input = n_steps_input
         self.n_steps_output = n_steps_output
         self.stride = stride
         self.channel_idxs = channel_idxs
-        self.n_tvs_extra_steps = n_tvs_extra_steps
 
         # Destructured here
         (
@@ -157,15 +180,12 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         self.all_constant_fields = []
         self.all_time_varying_scalars: list[torch.Tensor] = []
 
+        # Each sample spans `n_steps_input + n_steps_output` steps.
+        window_size = self.n_steps_input + self.n_steps_output
+
         # Create input-output pairs
         for traj_idx in range(self.n_trajectories):
-            # Create subtrajectories for this trajectory
-            fields = (
-                self.data[traj_idx]
-                .unfold(0, self.n_steps_input + self.n_steps_output, self.stride)
-                # [num_subtrajectories, T_in + T_out, W, H, C]
-                .permute(0, -1, 1, 2, 3)
-            )
+            fields, starts = self._build_windows(traj_idx, window_size)
 
             # Split into input and output
             input_fields = fields[:, : self.n_steps_input, ...]
@@ -176,12 +196,12 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             )
 
             # Store each subtrajectory separately
-            for sub_idx in range(input_fields.shape[0]):
+            for local_idx, start in enumerate(starts):
                 self.all_input_fields.append(
-                    input_fields[sub_idx].to(self.dtype)
+                    input_fields[local_idx].to(self.dtype)
                 )  # [T_in, W, H, C]
                 self.all_output_fields.append(
-                    output_fields[sub_idx].to(self.dtype)
+                    output_fields[local_idx].to(self.dtype)
                 )  # [T_out, W, H, C]
 
                 # Handle constant scalars
@@ -196,19 +216,23 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
                         self.constant_fields[traj_idx].to(self.dtype)
                     )
 
-                # Slice time-varying scalars: `n_steps_output + n_tvs_extra_steps`
-                # steps total starting at the first prediction timestep. The
-                # rollout consumes one slice per step; `n_tvs_extra_steps` must
-                # be large enough to cover the autoregressive horizon.
+                # Time-varying scalars are aligned 1:1 with frames: index 0 is
+                # input frame 0, so `encode_cond` only ever reads the current
+                # input window (the last `n_tvs_steps` of it) and never looks
+                # ahead of it. In full-trajectory / subtrajectory mode the buffer
+                # is extended across the rollout-horizon frames so that, as the
+                # input window slides forward (`_advance_batch`), each new window
+                # position still has its own per-frame scalars — those frames are
+                # "past" relative to each rollout step, not look-ahead.
                 if self.time_varying_scalars is not None:
-                    t_out_start = sub_idx * self.stride + self.n_steps_input
-                    t_out_end = (
-                        t_out_start + self.n_steps_output + self.n_tvs_extra_steps
-                    )
+                    t_start = start
+                    t_end = start + self.n_steps_input
+                    if self.full_trajectory_mode or self.subtrajectory_mode:
+                        t_end = t_end + self.n_steps_output
                     self.all_time_varying_scalars.append(
-                        self.time_varying_scalars[
-                            traj_idx, t_out_start:t_out_end, :
-                        ].to(self.dtype)
+                        self.time_varying_scalars[traj_idx, t_start:t_end, :].to(
+                            self.dtype
+                        )
                     )
 
         if self.verbose:
@@ -216,6 +240,38 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             print(f"Each input sample shape: {self.all_input_fields[0].shape}")
             print(f"Each output sample shape: {self.all_output_fields[0].shape}")
             print(f"Data type: {self.all_input_fields[0].dtype}")
+
+    def _build_windows(
+        self, traj_idx: int, window_size: int
+    ) -> tuple[torch.Tensor, list[int]]:
+        """Return `(windows, start_idxs)` for one trajectory.
+
+        `windows` has shape `[n_windows, window_size, W, H, C]`; `start_idxs[i]`
+        is the raw time-step index where window `i` begins.
+        """
+        if self.subtrajectory_mode:
+            starts = self.subtrajectory_start_idxs or []
+            for s in starts:
+                if s < 0 or s + window_size > self.n_timesteps:
+                    msg = (
+                        f"subtrajectory_start_idxs contains out-of-range start "
+                        f"{s}: window [{s}, {s + window_size}) does not fit in a "
+                        f"trajectory of length {self.n_timesteps}."
+                    )
+                    raise ValueError(msg)
+            windows = torch.stack(
+                [self.data[traj_idx, s : s + window_size] for s in starts], dim=0
+            )
+            return windows, list(starts)
+
+        windows = (
+            self.data[traj_idx]
+            .unfold(0, window_size, self.stride)
+            # [n_windows, window_size, W, H, C]
+            .permute(0, -1, 1, 2, 3)
+        )
+        starts = [i * self.stride for i in range(windows.shape[0])]
+        return windows, starts
 
     def _from_f(self, f):
         assert "data" in f, "HDF5 file must contain 'data' dataset"
