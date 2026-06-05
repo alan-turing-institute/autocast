@@ -32,7 +32,15 @@ dev = [
     "pytest-cov>=7.0.0",
     "ruff==0.14.4",
     "pyright==1.1.407",
-    "pre-commit>=4.4.0",
+    "prek>=0.4.2",
+]
+docs = [
+    "jupyter-book>=1.0.0,<2.0.0",
+    "sphinx>=7.2.6",
+    "myst-parser>=2.0.0",
+    "furo>=2023.9.10",
+    "sphinx-copybutton>=0.5.2",
+    "sphinx-autodoc-typehints>=1.24.0",
 ]
 
 [project.scripts]
@@ -102,7 +110,7 @@ unfixable = [
 flake8-unused-arguments.ignore-variadic-names = true # allow unused *args/**kwargs
 
 [tool.ruff.lint.pydocstyle]
-convention = "numpy"
+convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*.py" = ["D"]

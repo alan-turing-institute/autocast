@@ -1,0 +1,82 @@
+# Table of contents
+# Learn more at https://jupyterbook.org/customize/toc.html
+
+format: jb-book
+root: index
+chapters:
+
+- file: installation
+- file: tutorials/index
+  sections:
+  - file: tutorials/quickstart
+  - file: tutorials/encoder_decoder
+  - file: tutorials/end_to_end
+
+- file: community/index
+  sections:
+  - file: community/contributing
+  - file: community/contributing-docs
+  - file: community/release
+
+- file: reference/index
+  sections:
+  - file: reference/models/index
+    sections:
+    - file: reference/models/encoder_decoder
+    - file: reference/models/encoder_processor_decoder
+    - file: reference/models/autoencoder
+    - file: reference/models/variational_autoencoder
+    - file: reference/models/processor
+  - file: reference/processors/index
+    sections:
+    - file: reference/processors/base
+    - file: reference/processors/unet
+    - file: reference/processors/swin_vit
+    - file: reference/processors/vit
+    - file: reference/processors/flow_matching
+    - file: reference/processors/diffusion
+    - file: reference/processors/noise
+  - file: reference/encoders/index
+    sections:
+    - file: reference/encoders/base
+    - file: reference/encoders/dc
+    - file: reference/encoders/unet
+    - file: reference/encoders/identity
+  - file: reference/decoders/index
+    sections:
+    - file: reference/decoders/base
+    - file: reference/decoders/dc
+    - file: reference/decoders/identity
+  - file: reference/data/index
+    sections:
+    - file: reference/data/datamodule
+    - file: reference/data/dataset
+    - file: reference/data/encoded_dataset
+    - file: reference/data/metadata
+  - file: reference/metrics/index
+    sections:
+    - file: reference/metrics/base
+    - file: reference/metrics/deterministic
+    - file: reference/metrics/ensemble
+    - file: reference/metrics/coverage
+  - file: reference/losses/index
+    sections:
+    - file: reference/losses/ensemble
+  - file: reference/types/index
+    sections:
+    - file: reference/types/types
+    - file: reference/types/batch
+  - file: reference/nn/index
+    sections:
+    - file: reference/nn/residual
+    - file: reference/nn/spatial_attention
+  - file: reference/utils/index
+    sections:
+    - file: reference/utils/optimizer
+    - file: reference/utils/plots
+  - file: reference/benchmarking/index
+    sections:
+    - file: reference/benchmarking/inference
+  - file: reference/logging/index
+    sections:
+    - file: reference/logging/wandb
