@@ -2,11 +2,15 @@ name: "${.optimizer}_${.learning_rate}_${.scheduler}"
 optimizer: "adamw"
 betas: [0.9, 0.99]
 learning_rate: 1e-4
+# Defaults preserve reproducibility with existing runs. For tuned starting
+# points (weight_decay, warmup) opt in with optimizer=updated_defaults/adamw.
 weight_decay: 0.0
+# Warmup: integer = absolute steps/epochs; float in (0, 1) = fraction of the
+# cosine horizon.
 warmup: 0
 scheduler: "cosine"
 # Optional scheduler controls:
-# scheduler_interval: "epoch"     # "epoch" or "step"
+# scheduler_interval: "epoch"     # "epoch", "step", or "time"
 # cosine_epochs: null              # Used when scheduler_interval="epoch"
 # cosine_steps: null               # Used when scheduler_interval="step"
 # cosine_t_max: 1                  # Fallback horizon if trainer values are unavailable
@@ -16,4 +20,10 @@ scheduler: "cosine"
 # 3) cosine_t_max
 # min_lr_ratio: 0.0                # Final LR ratio in [0, 1]
 # scheduler: "cosine_with_restarts"
-grad_clip: 1
+#
+# scheduler_interval: "time" anneals the cosine over trainer.max_time
+# (wall-clock) instead of a step/epoch horizon: no timing run needed, the LR
+# reaches min_lr_ratio exactly as the budget runs out, and it self-corrects
+# for throughput. In this mode `warmup` is a fraction of the budget, and the
+# schedule reads Lightning's resume-aware Timer (so it follows max_time across
+# resumes; reset_resume_time_budget resets it too). Requires trainer.max_time.
