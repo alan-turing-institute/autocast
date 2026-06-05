@@ -1859,6 +1859,26 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     # Setup datamodule and resolve config
     datamodule, cfg, stats = setup_datamodule(cfg)
 
+    # Stateless encoders/decoders (e.g. PermuteConcat/ChannelsLast, Identity)
+    # contribute no `encoder_decoder.*` params, so a full EPD checkpoint can
+    # look processor-only. Reclassify *before* resolving eval.mode=auto so
+    # the auto resolution sees the true checkpoint type; otherwise such
+    # checkpoints get auto-resolved to `latent` and then fail validation
+    # once the resolved eval path comes back as `ambient_epd`.
+    if (
+        processor_only
+        and isinstance(stats.get("example_batch"), Batch)
+        and not cfg.get("autoencoder_checkpoint")
+        and cfg.get("model", {}).get("encoder") is not None
+        and cfg.get("model", {}).get("decoder") is not None
+    ):
+        log.info(
+            "Checkpoint contains no encoder_decoder.* params, but datamodule "
+            "returns raw Batch and model has encoder+decoder config. "
+            "Assuming full EPD checkpoint with stateless encoder/decoder."
+        )
+        processor_only = False
+
     # Resolve `auto` once we know the checkpoint/datamodule shape, then
     # swap to the autoencoder's raw-data datamodule if ambient/encode_once
     # is about to run on cached-latent inputs (explicit `datamodule=...`
@@ -1898,22 +1918,6 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     #                        (data-space metrics) or opt-in latent-only.
 
     example_batch = stats.get("example_batch")
-
-    # Stateless encoders/decoders (e.g. PermuteConcat/ChannelsLast) contribute no
-    # `encoder_decoder.*` params, so a full EPD checkpoint can look processor-only.
-    if (
-        processor_only
-        and isinstance(example_batch, Batch)
-        and not cfg.get("autoencoder_checkpoint")
-        and cfg.get("model", {}).get("encoder") is not None
-        and cfg.get("model", {}).get("decoder") is not None
-    ):
-        log.info(
-            "Checkpoint contains no encoder_decoder.* params, but datamodule "
-            "returns raw Batch and model has encoder+decoder config. "
-            "Assuming full EPD checkpoint with stateless encoder/decoder."
-        )
-        processor_only = False
 
     log.info(
         "Checkpoint type: %s",
