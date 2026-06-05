@@ -49,12 +49,18 @@ All eval configs support these parameters:
   `auto` dispatches to a concrete mode at run time based on the checkpoint
   and datamodule, so omitting the flag gives the fair default for every
   run. See [Evaluation modes](#evaluation-modes) below.
+- `compute_test_metrics`: When `false`, skip the single-step test-set metric
+  pass entirely (no `evaluation_metrics.csv` written). Useful for re-rendering
+  rollout videos/snapshots without paying for metrics. Rollout metrics are
+  gated separately via `compute_rollout_metrics`.
 - `metrics`: List of metrics to compute (default includes mse/mae/rmse/vrmse,
   power spectrum scores `psrmse*`, cross-correlation spectrum scores `pscc*`,
   and ensemble scores `crps`, `fcrps`, `afcrps`, `energy`, `spread`, `skill`,
   `ssr`; `variogram` remains available via explicit opt-in. Note that for
   ensemble predictions, `skill` is the RMSE of the ensemble mean, so it matches
   `rmse` numerically and is included for explicit spread/skill reporting.)
+- Deterministic metrics on ensemble predictions are scored on the ensemble
+  mean by default, matching LOLA's VRMSE/skill evaluation.
 - `csv_path`: Custom path for metrics CSV (default: work_dir/evaluation_metrics.csv)
 - `video_dir`: Custom directory for rollout videos (default: work_dir/videos)
 - `batch_indices`: List of rollout sample indices to visualize (resolved across
@@ -62,6 +68,8 @@ All eval configs support these parameters:
 - `video_format`: Video format (mp4 or gif)
 - `video_sample_index`: Sample index within batch to visualize
 - `fps`: Frames per second for videos
+- `preserve_aspect`: Preserve spatial aspect ratio in rollout plots
+- `transpose_spatial`: Swap the two spatial axes in rollout plots
 - `save_rollout_snapshots`: Save still rollout panels from raw tensors
 - `rollout_snapshot_timesteps`: Timestep indices shown in each still panel
 - `rollout_snapshot_channels`: Channel indices to render (`null` means all)
@@ -69,6 +77,17 @@ All eval configs support these parameters:
   work_dir/videos/snapshots)
 - `rollout_snapshot_dataset_label`: Optional row label for data-only snapshots
   (default: infer from the rollout dataset when possible)
+- `rollout_member_indices`: Additional ensemble members to render beside the
+  default ensemble-mean rollout videos/snapshots.
+- `rollout_member_render_mode`: How requested member diagnostics are rendered:
+  `inline` adds member rows to the main mean plot, `separate` writes
+  `_member_<idx>` files, and `both` does both.
+- `deterministic_metric_member_indices`: Additional ensemble members to score
+  with deterministic metrics beside the default ensemble-mean scores. CSV
+  columns are suffixed as `<metric>_member_<idx>`.
+- `deterministic_metric_member_average`: Also score each ensemble member
+  independently with deterministic metrics and average over members. CSV
+  columns are suffixed as `<metric>_member_avg`.
 - `accelerator`: Accelerator for evaluation (auto, cpu, cuda, mps)
 - `devices`: Number of GPUs for DDP evaluation (default: 1; set explicitly,
   e.g. 4, for multi-GPU runs)

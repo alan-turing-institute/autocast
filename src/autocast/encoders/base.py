@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import replace
 from typing import Generic, TypeVar
 
@@ -15,6 +16,31 @@ BatchTEncoded = TypeVar("BatchTEncoded")
 
 class GenericEncoder(nn.Module, ABC, Generic[BatchT, BatchTEncoded]):
     """Base encoder interface."""
+
+    # Optional batch-chunking knob for the heavy forward pass. Concrete
+    # encoders opt in by calling ``self._chunked_apply(fn, x)`` around the
+    # flattened-batch compute. Eval pipelines may set this attribute on an
+    # instantiated encoder via ``eval.chunk_size``; default ``None`` means
+    # no chunking (full batch in one shot).
+    chunk_size: int | None = None
+
+    def _chunked_apply(
+        self, fn: Callable[[torch.Tensor], torch.Tensor], x: torch.Tensor
+    ) -> torch.Tensor:
+        """Apply ``fn`` to ``x`` in chunks along the leading batch dim.
+
+        Numerically identical to ``fn(x)`` when ``chunk_size`` is unset or the
+        input already fits. Used to cap activation memory on large-resolution
+        + ensemble batches without changing the math (per-sample-independent
+        ops only).
+        """
+        chunk_size = self.chunk_size
+        if chunk_size is None or chunk_size <= 0 or x.shape[0] <= chunk_size:
+            return fn(x)
+        return torch.cat(
+            [fn(x[i : i + chunk_size]) for i in range(0, x.shape[0], chunk_size)],
+            dim=0,
+        )
 
     def preprocess(self, batch: BatchT) -> BatchT:
         """Optionally transform a batch before encoding.

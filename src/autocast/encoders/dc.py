@@ -237,11 +237,15 @@ class DCEncoder(EncoderWithCond):
         b, t, *_, _ = x.shape
         # Concatenate batch and time for processing
         x = rearrange(x, "B T ... C -> (B T) C ...")
-        x = self.patch(x)
-        for blocks in self.descent:
-            for block in cast(nn.ModuleList, blocks):  # ModuleList in construction
-                x = block(x)
-        x = self._saturate(x)
+
+        def _heavy(x_chunk: TensorBTSC) -> TensorBTSC:
+            x_chunk = self.patch(x_chunk)
+            for blocks in self.descent:
+                for block in cast(nn.ModuleList, blocks):  # ModuleList in construction
+                    x_chunk = block(x_chunk)
+            return self._saturate(x_chunk)
+
+        x = self._chunked_apply(_heavy, x)
         return rearrange(
             x, "(B T) C ... -> B T ... C", B=b, T=t, C=self.latent_channels
         )

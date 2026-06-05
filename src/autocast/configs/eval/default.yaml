@@ -14,6 +14,11 @@ mode: auto
 # metrics are not meaningful -- leave as `false` for real evals.
 latent_space_metrics: false
 
+# Whether to compute single-step test metrics. Set to false to skip the test-set
+# metric pass entirely (e.g. when only re-rendering videos/snapshots). Rollout
+# metrics are controlled separately via `compute_rollout_metrics`.
+compute_test_metrics: true
+
 # Evaluation metrics to compute
 metrics:
   - mse
@@ -24,6 +29,8 @@ metrics:
   - nrmse
   - vmse
   - vrmse
+  - vmse_v2
+  - vrmse_v2
   - linf
   - psrmse
   - psrmse_low
@@ -53,6 +60,8 @@ batch_indices: []
 video_format: mp4  # gif or mp4
 video_sample_index: 0
 fps: 5
+preserve_aspect: false
+transpose_spatial: false
 
 # Rollout snapshot settings. When enabled, eval saves still panels for the
 # requested rollout samples using raw tensors rather than extracting MP4 frames.
@@ -62,6 +71,20 @@ rollout_snapshot_timesteps: [0, 4, 12, 30, 99]
 rollout_snapshot_channels: null  # null means all channels
 rollout_snapshot_format: png
 rollout_snapshot_dataset_label: null  # optional label for data-only snapshot rows
+
+# Ensemble diagnostics. By default, deterministic metrics score the ensemble
+# mean (matching LOLA's VRMSE/skill eval) and rollout visualizations plot the
+# ensemble mean. Add member indices here to also emit single-member metric
+# columns (e.g. vrmse_v2_member_0) and member rollout diagnostics.
+# rollout_member_render_mode controls whether requested members are added as
+# rows in the main mean plot, rendered as separate files, or both.
+# Set deterministic_metric_member_average=true to also emit columns like
+# vrmse_v2_member_avg, where each ensemble member is scored independently and
+# the metric state is averaged over members.
+deterministic_metric_member_average: false
+deterministic_metric_member_indices: []
+rollout_member_indices: []
+rollout_member_render_mode: inline  # inline, separate, or both
 
 # Accelerator for evaluation (mirrors Lightning Fabric API)
 accelerator: auto  # auto, cpu, cuda, or mps
