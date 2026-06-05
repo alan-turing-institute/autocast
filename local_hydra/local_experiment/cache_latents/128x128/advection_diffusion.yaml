@@ -1,0 +1,22 @@
+# @package _global_
+defaults:
+  - /distributed: single_gpu_slurm
+  - override /datamodule: 128x128/advection_diffusion
+  - override /encoder@model.encoder: 128x128/dc_cout8
+  - override /decoder@model.decoder: 128x128/dc_cout8
+  - _self_
+
+experiment_name: cache_latents_ad_128
+
+datamodule:
+  use_normalization: true
+  # default batch_size of 16 will OOM (unsure why)
+  batch_size: 4
+
+model:
+  encoder:
+    periodic: true
+    pixel_shuffle: true
+  decoder:
+    periodic: true
+    pixel_shuffle: true

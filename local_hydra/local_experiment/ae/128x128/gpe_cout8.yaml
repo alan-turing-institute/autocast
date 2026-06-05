@@ -1,0 +1,22 @@
+# @package _global_
+defaults:
+  - ae/gpe_laser_wake_only/ae_dc_large
+  - /distributed: ddp_4gpu_2node_slurm
+  - override /datamodule: 128x128/gpe_laser_only_wake
+  - override /model: autoencoder_dc_large
+  - override /encoder@model.encoder: 128x128/dc_cout8
+  - override /decoder@model.decoder: 128x128/dc_cout8
+  - override /optimizer: psgd
+  - _self_
+
+experiment_name: ae_gpe128_cout8
+
+trainer:
+  num_nodes: 3
+
+eval:
+  num_nodes: 3
+
+hydra:
+  launcher:
+    nodes: 3

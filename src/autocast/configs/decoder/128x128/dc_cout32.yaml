@@ -1,0 +1,10 @@
+# Decodes (16 x 16 x 32) to (128 x 128 x C_in), corresponding
+# to compression rate of 6x for CNS (C_in = 3). This matches
+# the compression rate for the 64x64 decoders.
+defaults:
+  - dc_large
+  - _self_
+
+in_channels: 32
+hid_channels: [512, 256, 128, 64]
+hid_blocks: [3, 3, 3, 3]
