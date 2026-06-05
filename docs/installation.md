@@ -41,22 +41,6 @@ pre-commit install
 
 This will setup the pre-commit checks so any pushed commits will pass the CI.
 
-## Environment variables
-
-AutoCast supports the following environment variables:
-
-- `AUTOCAST_DATASETS` — Path to the datasets directory.
-- `AUTOCAST_CONFIG_PATH` — Path to an external config directory (useful for packaged installs).
-- `RUNTIME_TYPECHECKING` — Enable runtime type checking with beartype.
-
-## Verify installation
-
-After installation, verify that AutoCast is working:
-
-```bash
-uv run autocast --help
-```
-
 ## Building the documentation
 
 To build the documentation locally, install development dependencies and run:
