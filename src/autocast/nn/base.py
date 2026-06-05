@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 
-from azula.nn.embedding import SineEncoding
+from azula.nn.layers import SineEncoding
 from einops import rearrange
 from torch import nn
 
