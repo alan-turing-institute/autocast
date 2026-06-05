@@ -6,11 +6,6 @@ root: index
 chapters:
 
 - file: installation
-- file: tutorials/index
-  sections:
-  - file: tutorials/quickstart
-  - file: tutorials/encoder_decoder
-  - file: tutorials/end_to_end
 
 - file: community/index
   sections:
