@@ -653,7 +653,7 @@ class SwinViTProcessor(Processor[EncodedBatch]):
     - Patch Splitting for hierarchical expansion (decoder upsampling).
     - Ada-LN conditioning from noise embeddings (post-norm or per-block scaled).
 
-    References
+    References:
     ----------
     - Liu, Z. et al. "Swin Transformer: Hierarchical Vision Transformer using Shifted
       Windows." ICCV 2021.

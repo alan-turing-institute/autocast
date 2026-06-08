@@ -187,23 +187,22 @@ def benchmark_rollout(
     discarded and CUDA synchronisation is applied on GPU for accurate
     wall-clock timings.  tqdm progress output is suppressed during the run.
 
-    Returns
-    -------
-    dict[str, float]
-        throughput_samples_per_sec
-            Batch elements (samples) processed per second: ``n * batch_size / t``.
-            One "sample" is one batch element completing the full rollout.
-            Use ``latency_ms_per_step`` to compare per-step cost against
-            :func:`benchmark_model`.
-        latency_ms_per_batch
-            Mean wall-clock time in ms for one full rollout call (analogous to
-            ``latency_ms_per_batch`` in :func:`benchmark_model`).
-        latency_ms_per_sample
-            ``latency_ms_per_batch / batch_size``.
-        latency_ms_per_step
-            Mean time in ms per autoregressive step.
-        peak_gpu_memory_mb
-            Peak GPU memory allocated in MB (CUDA only).
+    Returns:
+        Dictionary with keys:
+            ``throughput_samples_per_sec``
+                Batch elements (samples) processed per second: ``n * batch_size / t``.
+                One "sample" is one batch element completing the full rollout.
+                Use ``latency_ms_per_step`` to compare per-step cost against
+                :func:`benchmark_model`.
+                latency_ms_per_batch
+                Mean wall-clock time in ms for one full rollout call (analogous to
+                ``latency_ms_per_batch`` in :func:`benchmark_model`).
+            ``latency_ms_per_sample``
+                ``latency_ms_per_batch / batch_size``.
+            ``latency_ms_per_step``
+                Mean time in ms per autoregressive step.
+            ``peak_gpu_memory_mb``
+                Peak GPU memory allocated in MB (CUDA only).
     """
     if n_benchmark <= 0:
         msg = "n_benchmark must be > 0"

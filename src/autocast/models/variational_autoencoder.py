@@ -28,16 +28,12 @@ class VAELoss(nn.Module):
     def kl_divergence(self, encoded: TensorBNC) -> Tensor:
         """Compute the KL divergence loss.
 
-        Parameters
-        ----------
-        encoded: Tensor
-            Encoded tensor containing mean and log variance.
-            Shape: [B, 2*C, H, W, ...] for spatial or
-            [B, 2*latent_channels] for flat.
+        Args:
+            encoded: Encoded tensor containing mean and log variance.
+                Shape: [B, 2*C, H, W, ...] for spatial or
+                [B, 2*latent_channels] for flat.
 
-        Returns
-        -------
-        Tensor
+        Returns:
             KL divergence loss.
         """
         # Split along the appropriate dimension
@@ -72,19 +68,15 @@ class VAE(EncoderDecoder):
     ):
         """Initialize VAE.
 
-        Parameters
-        ----------
-        encoder : Encoder
-            Encoder network.
-        decoder : Decoder
-            Decoder network.
-        spatial : int | None
-            Number of spatial dimensions in latent space (e.g., 2 for images).
-            If None, assumes flat 1D latent representation.
-        norm : ZScoreNormalization | None
-            Optional normalizer. If passed, it will be used to denormalize predictions
-            and targets before computing metrics during evaluation. It is also
-            used to denormalize prediction returned when calling predict_step().
+        Args:
+            encoder: Encoder network.
+            decoder: Decoder network.
+            spatial: Number of spatial dimensions in latent space (e.g., 2 for images).
+                If None, assumes flat 1D latent representation.
+            norm: Optional normalizer. If passed, it will be used to
+                denormalize predictions and targets before computing metrics
+                during evaluation. It is also used to denormalize prediction
+                returned when calling predict_step().
         """
         super().__init__(encoder=encoder, decoder=decoder, norm=norm)
         self.spatial = spatial
