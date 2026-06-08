@@ -39,7 +39,7 @@ html:
   use_repository_button: true
   default_mode: dark
   extra_footer: |
-    Copyright &copy; 2025
+    Copyright &copy; 2026
 
 sphinx:
   extra_extensions:
