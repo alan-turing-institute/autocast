@@ -105,13 +105,18 @@ def _extract_local_experiment_name(overrides: list[str]) -> str | None:
 
 
 def _resolve_local_experiment_parent(item: object) -> Path | None:
-    # Map a defaults-list entry of the form
-    # ``- /local_experiment/<rel/path>`` to its YAML file, so we can
-    # follow the inheritance chain when looking up ``/distributed``.
-    if isinstance(item, str) and item.startswith("/local_experiment/"):
-        rel = item[len("/local_experiment/") :]
+    # Map a defaults-list entry to its YAML file so we can follow the
+    # inheritance chain when looking up ``/distributed``.
+    # Handles both absolute (``/local_experiment/foo``) and relative
+    # (``foo/bar``) references within the local_experiment config group.
+    if not isinstance(item, str):
+        return None
+    if item.startswith("/local_experiment/"):
+        rel = item.removeprefix("/local_experiment/")
         return Path.cwd() / "local_hydra" / "local_experiment" / f"{rel}.yaml"
-    return None
+    if item.startswith(("_", "/")):
+        return None
+    return Path.cwd() / "local_hydra" / "local_experiment" / f"{item}.yaml"
 
 
 def _extract_distributed_preset_name(
@@ -125,7 +130,11 @@ def _extract_distributed_preset_name(
     for item in defaults:
         if not isinstance(item, dict):
             continue
-        val = item.get("/distributed") or item.get("distributed")
+        val = (
+            item.get("/distributed")
+            or item.get("distributed")
+            or item.get("override /distributed")
+        )
         if isinstance(val, str) and val:
             return val
     for item in defaults:
