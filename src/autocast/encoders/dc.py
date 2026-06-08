@@ -200,7 +200,7 @@ class DCEncoder(EncoderWithCond):
         """Forward pass through encoder (for direct tensor input).
 
         Args:
-            x: Input tensor with shape (B, T, spatial..., C_i).
+            x: Input tensor with shape ``(B, T, spatial..., C_i)``.
 
         Returns:
             Encoded latent tensor.
