@@ -36,7 +36,7 @@ uv sync --extra dev
 If contributing to the codebase, set up pre-commit hooks:
 
 ```bash
-pre-commit install
+prek install
 ```
 
 This will setup the pre-commit checks so any pushed commits will pass the CI.
