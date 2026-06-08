@@ -82,6 +82,7 @@ class EncoderProcessorDecoder(
                 output_fields=batch.output_fields,
                 constant_scalars=batch.constant_scalars,
                 constant_fields=batch.constant_fields,
+                boundary_conditions=batch.boundary_conditions,
             )
         return batch
 
