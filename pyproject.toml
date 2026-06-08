@@ -22,6 +22,7 @@ dependencies = [
     "the-well>=1.1.0",
     "timm>=0.9",
     "torch>=2.9.1",
+    "torchvision>=0.24.1",
     "wandb>=0.18.7",
     "nvidia-ml-py>=13.595.45",
 ]
