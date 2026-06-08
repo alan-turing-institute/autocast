@@ -12,8 +12,6 @@ execute:
   execute_notebooks: cache
   allow_errors: false
   timeout: 3600
-  exclude_patterns:
-    - "case_studies/*.ipynb"
 
 # Define the name of the latex output file for PDF builds
 latex:
