@@ -68,9 +68,9 @@ class AdvectionDiffusion(Simulator):
 
     def _forward(self, x: TensorLike) -> TensorLike:
         # Expect single input sample in batch
-        assert (
-            x.shape[0] == 1
-        ), f"Simulator._forward expects a single input, got {x.shape[0]}"
+        assert x.shape[0] == 1, (
+            f"Simulator._forward expects a single input, got {x.shape[0]}"
+        )
 
         # x contains the physical parameters [nu, mu]
         sample = x.cpu().numpy()[0]
