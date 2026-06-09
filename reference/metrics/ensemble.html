@@ -1,0 +1,1410 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>autocast.metrics.ensemble &#8212; AutoCast: Spatiotemporal Forecasting</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../../_static/styles/theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+<link href="../../_static/styles/pydata-sphinx-theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
+    <link rel="stylesheet" type="text/css" href="../../_static/styles/sphinx-book-theme.css?v=3c74b3bc" />
+    <link rel="stylesheet" type="text/css" href="../../_static/togglebutton.css?v=9c3e77be" />
+    <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../_static/mystnb.11b39860a7a0cbfd473a3ad8a317855267ff0bd372690045ca344a6b62be495e.css" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sphinx-thebe.css?v=4fa983c6" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sphinx-design.min.css?v=95c83b7e" />
+  
+  <!-- So that users can add custom icons -->
+  <script src="../../_static/scripts/fontawesome.js?digest=8878045cc6db502f8baf"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../../_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf" />
+<link rel="preload" as="script" href="../../_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf" />
+
+    <script src="../../_static/documentation_options.js?v=9eb32ce0"></script>
+    <script src="../../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../../_static/copybutton.js?v=7f8ff830"></script>
+    <script src="../../_static/scripts/sphinx-book-theme.js?v=fab101a9"></script>
+    <script>let toggleHintShow = 'Click to show';</script>
+    <script>let toggleHintHide = 'Click to hide';</script>
+    <script>let toggleOpenOnPrint = 'true';</script>
+    <script src="../../_static/togglebutton.js?v=b8b12719"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script src="../../_static/design-tabs.js?v=f930bc37"></script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script async="async" src="../../_static/sphinx-thebe.js?v=c100c467"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script>window.MathJax = {"options": {"processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+    <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'reference/metrics/ensemble';</script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="autocast.metrics.coverage" href="coverage.html" />
+    <link rel="prev" title="autocast.metrics.deterministic" href="deterministic.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="" />
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search this book..."
+         aria-label="Search this book..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../../_static/AC.png" class="logo__image only-light" alt="AutoCast: Spatiotemporal Forecasting - Home"/>
+    <img src="../../_static/AC.png" class="logo__image only-dark pst-js-only" alt="AutoCast: Spatiotemporal Forecasting - Home"/>
+  
+  
+</a></div>
+        <div class="sidebar-primary-item">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button></div>
+        <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item navbar-nav active">
+        
+        <ul class="nav bd-sidenav bd-sidenav__home-link">
+            <li class="toctree-l1">
+                <a class="reference internal" href="../../index.html">
+                    Welcome to AutoCast
+                </a>
+            </li>
+        </ul>
+        <ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="../index.html">API Reference</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2 has-children"><a class="reference internal" href="../models/index.html">Models</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../models/encoder_decoder.html">autocast.models.encoder_decoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../models/encoder_processor_decoder.html">autocast.models.encoder_processor_decoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../models/autoencoder.html">autocast.models.autoencoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../models/variational_autoencoder.html">autocast.models.variational_autoencoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../models/processor.html">autocast.models.processor</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../processors/index.html">Processors</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../processors/base.html">autocast.processors.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../processors/unet.html">autocast.processors.unet</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../processors/swin_vit.html">autocast.processors.swin_vit</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../processors/vit.html">autocast.processors.vit</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../processors/flow_matching.html">autocast.processors.flow_matching</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../processors/diffusion.html">autocast.processors.diffusion</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../processors/noise.html">autocast.processors.noise</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../encoders/index.html">Encoders</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../encoders/base.html">autocast.encoders.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../encoders/dc.html">autocast.encoders.dc</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../encoders/unet.html">autocast.encoders.unet</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../encoders/identity.html">autocast.encoders.identity</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../decoders/index.html">Decoders</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../decoders/base.html">autocast.decoders.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../decoders/dc.html">autocast.decoders.dc</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../decoders/identity.html">autocast.decoders.identity</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../data/index.html">Data</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../data/datamodule.html">autocast.data.datamodule</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../data/dataset.html">autocast.data.dataset</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../data/encoded_dataset.html">autocast.data.encoded_dataset</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../data/metadata.html">autocast.data.metadata</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 current active has-children"><a class="reference internal" href="index.html">Metrics</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="base.html">autocast.metrics.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="deterministic.html">autocast.metrics.deterministic</a></li>
+<li class="toctree-l3 current active"><a class="current reference internal" href="#">autocast.metrics.ensemble</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coverage.html">autocast.metrics.coverage</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../losses/index.html">Losses</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../losses/ensemble.html">autocast.losses.ensemble</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../types/index.html">Types</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../types/types.html">autocast.types.types</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../types/batch.html">autocast.types.batch</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../nn/index.html">Neural Network Utilities</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../nn/residual.html">autocast.nn.residual</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../nn/spatial_attention.html">autocast.nn.spatial_attention</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../utils/index.html">Utilities</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../utils/optimizer.html">autocast.utils.optimizer</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../utils/plots.html">autocast.utils.plots</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../benchmarking/index.html">Benchmarking</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../benchmarking/inference.html">autocast.benchmarking.inference</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../logging/index.html">Logging</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../logging/wandb.html">autocast.logging.wandb</a></li>
+</ul>
+</details></li>
+</ul>
+</details></li>
+</ul>
+
+    </div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+      <div class="sidebar-primary-item">
+<div id="ethical-ad-placement"
+      class="flat"
+      data-ea-publisher="readthedocs"
+      data-ea-type="readthedocs-sidebar"
+      data-ea-manual="true">
+</div></div>
+  </div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+
+<div class="sbt-scroll-pixel-helper"></div>
+
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item"><button class="sidebar-toggle primary-toggle btn btn-sm" title="Toggle primary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <span class="fa-solid fa-bars"></span>
+</button></div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+
+<div class="article-header-buttons">
+
+
+
+
+
+<div class="dropdown dropdown-source-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Source repositories">
+    <i class="fab fa-github"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="https://github.com/alan-turing-institute/autocast" target="_blank"
+   class="btn btn-sm btn-source-repository-button dropdown-item"
+   title="Source repository"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fab fa-github"></i>
+  </span>
+<span class="btn__text-container">Repository</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/alan-turing-institute/autocast/issues/new?title=Issue%20on%20page%20%2Freference/metrics/ensemble.html&body=Your%20issue%20content%20here." target="_blank"
+   class="btn btn-sm btn-source-issues-button dropdown-item"
+   title="Open an issue"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-lightbulb"></i>
+  </span>
+<span class="btn__text-container">Open issue</span>
+</a>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+
+
+<div class="dropdown dropdown-download-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Download this page">
+    <i class="fas fa-download"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="../../_sources/reference/metrics/ensemble.rst" target="_blank"
+   class="btn btn-sm btn-download-source-button dropdown-item"
+   title="Download source file"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file"></i>
+  </span>
+<span class="btn__text-container">.rst</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li>
+<button onclick="window.print()"
+  class="btn btn-sm btn-download-pdf-button dropdown-item"
+  title="Print to PDF"
+  data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file-pdf"></i>
+  </span>
+<span class="btn__text-container">.pdf</span>
+</button>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+<button onclick="toggleFullScreen()"
+  class="btn btn-sm btn-fullscreen-button pst-navbar-icon"
+  title="Fullscreen mode"
+  data-bs-placement="bottom" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+
+
+<button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button pst-js-only" aria-label="Color mode" data-bs-title="Color mode"  data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <i class="theme-switch fa-solid fa-sun                fa-lg" data-mode="light" title="Light"></i>
+  <i class="theme-switch fa-solid fa-moon               fa-lg" data-mode="dark"  title="Dark"></i>
+  <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"  title="System Settings"></i>
+</button>
+
+
+<button class="btn btn-sm pst-navbar-icon search-button search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+</button>
+<button class="sidebar-toggle secondary-toggle btn btn-sm pst-navbar-icon" title="Toggle secondary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <span class="fa-solid fa-list"></span>
+</button>
+</div></div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="jb-print-docs-body" class="onlyprint">
+    <h1>autocast.metrics.ensemble</h1>
+    <!-- Table of contents -->
+    <div id="print-main-content">
+        <div id="jb-print-toc">
+            
+            <div>
+                <h2> Contents </h2>
+            </div>
+            <nav aria-label="Page">
+                <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.BTSCMMetric"><code class="docutils literal notranslate"><span class="pre">BTSCMMetric</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.BTSCMMetric.score"><code class="docutils literal notranslate"><span class="pre">BTSCMMetric.score()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.CRPS"><code class="docutils literal notranslate"><span class="pre">CRPS</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.CRPS.name"><code class="docutils literal notranslate"><span class="pre">CRPS.name</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.CRPSMAETerm"><code class="docutils literal notranslate"><span class="pre">CRPSMAETerm</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.CRPSMAETerm.name"><code class="docutils literal notranslate"><span class="pre">CRPSMAETerm.name</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.CRPSSpreadTerm"><code class="docutils literal notranslate"><span class="pre">CRPSSpreadTerm</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.CRPSSpreadTerm.name"><code class="docutils literal notranslate"><span class="pre">CRPSSpreadTerm.name</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.FairCRPS"><code class="docutils literal notranslate"><span class="pre">FairCRPS</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.FairCRPS.name"><code class="docutils literal notranslate"><span class="pre">FairCRPS.name</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.FairCRPSMAETerm"><code class="docutils literal notranslate"><span class="pre">FairCRPSMAETerm</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.FairCRPSMAETerm.name"><code class="docutils literal notranslate"><span class="pre">FairCRPSMAETerm.name</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.FairCRPSSpreadTerm"><code class="docutils literal notranslate"><span class="pre">FairCRPSSpreadTerm</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.FairCRPSSpreadTerm.name"><code class="docutils literal notranslate"><span class="pre">FairCRPSSpreadTerm.name</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.AlphaFairCRPS"><code class="docutils literal notranslate"><span class="pre">AlphaFairCRPS</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.AlphaFairCRPS.name"><code class="docutils literal notranslate"><span class="pre">AlphaFairCRPS.name</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.AlphaFairCRPSMAETerm"><code class="docutils literal notranslate"><span class="pre">AlphaFairCRPSMAETerm</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.AlphaFairCRPSMAETerm.name"><code class="docutils literal notranslate"><span class="pre">AlphaFairCRPSMAETerm.name</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.AlphaFairCRPSSpreadTerm"><code class="docutils literal notranslate"><span class="pre">AlphaFairCRPSSpreadTerm</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.AlphaFairCRPSSpreadTerm.name"><code class="docutils literal notranslate"><span class="pre">AlphaFairCRPSSpreadTerm.name</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.EnergyScore"><code class="docutils literal notranslate"><span class="pre">EnergyScore</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.EnergyScore.name"><code class="docutils literal notranslate"><span class="pre">EnergyScore.name</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.EnergyScore.vector_dims"><code class="docutils literal notranslate"><span class="pre">EnergyScore.vector_dims</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.VariogramScore"><code class="docutils literal notranslate"><span class="pre">VariogramScore</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.VariogramScore.name"><code class="docutils literal notranslate"><span class="pre">VariogramScore.name</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.VariogramScore.vector_dims"><code class="docutils literal notranslate"><span class="pre">VariogramScore.vector_dims</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.SpreadSkillRatio"><code class="docutils literal notranslate"><span class="pre">SpreadSkillRatio</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.SpreadSkillRatio.name"><code class="docutils literal notranslate"><span class="pre">SpreadSkillRatio.name</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.SpreadSkillRatio.score"><code class="docutils literal notranslate"><span class="pre">SpreadSkillRatio.score()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.EnsembleSpread"><code class="docutils literal notranslate"><span class="pre">EnsembleSpread</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.EnsembleSpread.name"><code class="docutils literal notranslate"><span class="pre">EnsembleSpread.name</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.EnsembleSpread.score"><code class="docutils literal notranslate"><span class="pre">EnsembleSpread.score()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.EnsembleSkill"><code class="docutils literal notranslate"><span class="pre">EnsembleSkill</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.EnsembleSkill.name"><code class="docutils literal notranslate"><span class="pre">EnsembleSkill.name</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.EnsembleSkill.score"><code class="docutils literal notranslate"><span class="pre">EnsembleSkill.score()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.WinklerScore"><code class="docutils literal notranslate"><span class="pre">WinklerScore</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.WinklerScore.name"><code class="docutils literal notranslate"><span class="pre">WinklerScore.name</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.MultiWinkler"><code class="docutils literal notranslate"><span class="pre">MultiWinkler</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.MultiWinkler.name"><code class="docutils literal notranslate"><span class="pre">MultiWinkler.name</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.MultiWinkler.update"><code class="docutils literal notranslate"><span class="pre">MultiWinkler.update()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.MultiWinkler.compute"><code class="docutils literal notranslate"><span class="pre">MultiWinkler.compute()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.MultiWinkler.reset"><code class="docutils literal notranslate"><span class="pre">MultiWinkler.reset()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.MultiWinkler.score"><code class="docutils literal notranslate"><span class="pre">MultiWinkler.score()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.MultiWinkler.plot"><code class="docutils literal notranslate"><span class="pre">MultiWinkler.plot()</span></code></a></li>
+</ul>
+</li>
+</ul>
+            </nav>
+        </div>
+    </div>
+</div>
+
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section id="module-autocast.metrics.ensemble">
+<span id="autocast-metrics-ensemble"></span><h1>autocast.metrics.ensemble<a class="headerlink" href="#module-autocast.metrics.ensemble" title="Link to this heading">#</a></h1>
+<dl class="py class">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.BTSCMMetric">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">BTSCMMetric</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">score_dims</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'spatial'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reduce_all</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dist_sync_on_step</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/metrics/ensemble.html#BTSCMMetric"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.metrics.ensemble.BTSCMMetric" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference internal" href="base.html#autocast.metrics.base.BaseMetric" title="autocast.metrics.base.BaseMetric"><code class="xref py py-class docutils literal notranslate"><span class="pre">BaseMetric</span></code></a>[<code class="xref py py-class docutils literal notranslate"><span class="pre">Float[Tensor,</span> <span class="pre">'batch</span> <span class="pre">time</span> <span class="pre">spatial</span> <span class="pre">*spatial</span> <span class="pre">channel</span> <span class="pre">ensemble']</span></code>, <code class="xref py py-class docutils literal notranslate"><span class="pre">Float[Tensor,</span> <span class="pre">'batch</span> <span class="pre">time</span> <span class="pre">spatial</span> <span class="pre">*spatial</span> <span class="pre">channel']</span></code>]</p>
+<p>Base class for ensemble metrics that operate on spatial tensors.</p>
+<p>Checks input types and shapes and converts to Tensor.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>score_dims</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><em>Literal</em></a><em>[</em><em>'spatial'</em><em>, </em><em>'temporal'</em><em>] </em><em>| </em><em>None</em>) – Which dimension to compute the score.
+‘spatial’: average over spatial dims → (B, T, C)
+‘temporal’: average over temporal dim → (B, S, C)
+None: no reduction → (B, T, S, C)
+These are the respective dimensions after calling .score()
+This works in conjunction with the reduce_all parameter that is
+applied in the compute() method to determine the final output shape</p></li>
+<li><p><strong>reduce_all</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – If True, return scalar by averaging over all non-batch dims</p></li>
+<li><p><strong>dist_sync_on_step</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – Synchronize metric state across processes at each forward()</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.BTSCMMetric.score">
+<span class="sig-name descname"><span class="pre">score</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">y_pred</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">y_true</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/metrics/ensemble.html#BTSCMMetric.score"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.metrics.ensemble.BTSCMMetric.score" title="Link to this definition">#</a></dt>
+<dd><p>Compute metric score, then reduce according to self.score_dims.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>y_pred</strong> (<a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a><em> | </em><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.4)"><em>ndarray</em></a>) – Predictions of shape (B, T, S, C, M)</p></li>
+<li><p><strong>y_true</strong> (<a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a><em> | </em><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.4)"><em>ndarray</em></a>) – Ground truth of shape (B, T, S, C)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Tensor of shape (B, T, C) if reduce_over=’spatial’,
+(B, S, C) if reduce_over=’temporal’, or (B, T, S, C) if None.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><em>Float</em>[Tensor, ‘batch time channel’] | <em>Float</em>[Tensor, ‘batch spatial *spatial channel’] | <em>Float</em>[Tensor, ‘batch time spatial *spatial channel’]</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.CRPS">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">CRPS</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">score_dims</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'spatial'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reduce_all</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dist_sync_on_step</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/metrics/ensemble.html#CRPS"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.metrics.ensemble.CRPS" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#autocast.metrics.ensemble.BTSCMMetric" title="autocast.metrics.ensemble.BTSCMMetric"><code class="xref py py-class docutils literal notranslate"><span class="pre">BTSCMMetric</span></code></a></p>
+<p>Continuous Ranked Probability Score (CRPS) for ensemble forecasts.</p>
+<section id="references">
+<h2>References:<a class="headerlink" href="#references" title="Link to this heading">#</a></h2>
+<p>Hersbach, H., 2000: Decomposition of the Continuous Ranked Probability Score for
+Ensemble Prediction Systems. Wea. Forecasting, 15, 559-570,
+<a class="reference external" href="https://doi.org/10.1175/1520-0434(2000">https://doi.org/10.1175/1520-0434(2000</a>)015&lt;0559:DOTCRP&gt;2.0.CO;2.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.CRPS.name">
+<span class="sig-name descname"><span class="pre">name</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'crps'</span></em><a class="headerlink" href="#autocast.metrics.ensemble.CRPS.name" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+</section>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>score_dims</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><em>Literal</em></a><em>[</em><em>'spatial'</em><em>, </em><em>'temporal'</em><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>reduce_all</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+<li><p><strong>dist_sync_on_step</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.CRPSMAETerm">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">CRPSMAETerm</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">score_dims</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'spatial'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reduce_all</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dist_sync_on_step</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/metrics/ensemble.html#CRPSMAETerm"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.metrics.ensemble.CRPSMAETerm" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#autocast.metrics.ensemble.BTSCMMetric" title="autocast.metrics.ensemble.BTSCMMetric"><code class="xref py py-class docutils literal notranslate"><span class="pre">BTSCMMetric</span></code></a></p>
+<p>Mean-absolute-error term in the CRPS decomposition.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>This is the first CRPS term,</p>
+<div class="math notranslate nohighlight">
+\[\frac{1}{M}\sum_{m=1}^{M} |x_m - y|,\]</div>
+<p>so it is MAE-like, but it is <strong>not</strong> the deterministic MAE of the ensemble mean.</p>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>score_dims</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><em>Literal</em></a><em>[</em><em>'spatial'</em><em>, </em><em>'temporal'</em><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>reduce_all</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+<li><p><strong>dist_sync_on_step</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.CRPSMAETerm.name">
+<span class="sig-name descname"><span class="pre">name</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'crps_mae_term'</span></em><a class="headerlink" href="#autocast.metrics.ensemble.CRPSMAETerm.name" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.CRPSSpreadTerm">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">CRPSSpreadTerm</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">score_dims</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'spatial'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reduce_all</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dist_sync_on_step</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/metrics/ensemble.html#CRPSSpreadTerm"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.metrics.ensemble.CRPSSpreadTerm" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#autocast.metrics.ensemble.BTSCMMetric" title="autocast.metrics.ensemble.BTSCMMetric"><code class="xref py py-class docutils literal notranslate"><span class="pre">BTSCMMetric</span></code></a></p>
+<p>Pairwise spread term in the CRPS decomposition.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>This is the second CRPS term,</p>
+<div class="math notranslate nohighlight">
+\[\frac{1}{2M^2}\sum_{j=1}^{M}\sum_{k=1}^{M}|x_j - x_k|,\]</div>
+<p>represented via the sort-based identity used elsewhere in this module.</p>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>score_dims</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><em>Literal</em></a><em>[</em><em>'spatial'</em><em>, </em><em>'temporal'</em><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>reduce_all</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+<li><p><strong>dist_sync_on_step</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.CRPSSpreadTerm.name">
+<span class="sig-name descname"><span class="pre">name</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'crps_spread_term'</span></em><a class="headerlink" href="#autocast.metrics.ensemble.CRPSSpreadTerm.name" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.FairCRPS">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">FairCRPS</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">score_dims</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'spatial'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reduce_all</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dist_sync_on_step</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/metrics/ensemble.html#FairCRPS"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.metrics.ensemble.FairCRPS" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#autocast.metrics.ensemble.BTSCMMetric" title="autocast.metrics.ensemble.BTSCMMetric"><code class="xref py py-class docutils literal notranslate"><span class="pre">BTSCMMetric</span></code></a></p>
+<p>Fair Continuous Ranked Probability Score (fCRPS) for ensemble forecasts.</p>
+<section id="id1">
+<h2>References:<a class="headerlink" href="#id1" title="Link to this heading">#</a></h2>
+<p>Ferro, C.A.T. (2014), Fair scores for ensemble forecasts. Q.J.R. Meteorol. Soc.,
+140: 1917-1923. <a class="reference external" href="https://doi.org/10.1002/qj.2270">https://doi.org/10.1002/qj.2270</a></p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.FairCRPS.name">
+<span class="sig-name descname"><span class="pre">name</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'fcrps'</span></em><a class="headerlink" href="#autocast.metrics.ensemble.FairCRPS.name" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+</section>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>score_dims</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><em>Literal</em></a><em>[</em><em>'spatial'</em><em>, </em><em>'temporal'</em><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>reduce_all</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+<li><p><strong>dist_sync_on_step</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.FairCRPSMAETerm">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">FairCRPSMAETerm</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">score_dims</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'spatial'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reduce_all</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dist_sync_on_step</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/metrics/ensemble.html#FairCRPSMAETerm"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.metrics.ensemble.FairCRPSMAETerm" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#autocast.metrics.ensemble.BTSCMMetric" title="autocast.metrics.ensemble.BTSCMMetric"><code class="xref py py-class docutils literal notranslate"><span class="pre">BTSCMMetric</span></code></a></p>
+<p>Mean-absolute-error term in the fCRPS decomposition.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>score_dims</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><em>Literal</em></a><em>[</em><em>'spatial'</em><em>, </em><em>'temporal'</em><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>reduce_all</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+<li><p><strong>dist_sync_on_step</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.FairCRPSMAETerm.name">
+<span class="sig-name descname"><span class="pre">name</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'fcrps_mae_term'</span></em><a class="headerlink" href="#autocast.metrics.ensemble.FairCRPSMAETerm.name" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.FairCRPSSpreadTerm">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">FairCRPSSpreadTerm</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">score_dims</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'spatial'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reduce_all</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dist_sync_on_step</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/metrics/ensemble.html#FairCRPSSpreadTerm"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.metrics.ensemble.FairCRPSSpreadTerm" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#autocast.metrics.ensemble.BTSCMMetric" title="autocast.metrics.ensemble.BTSCMMetric"><code class="xref py py-class docutils literal notranslate"><span class="pre">BTSCMMetric</span></code></a></p>
+<p>Pairwise spread term in the fCRPS decomposition.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>score_dims</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><em>Literal</em></a><em>[</em><em>'spatial'</em><em>, </em><em>'temporal'</em><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>reduce_all</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+<li><p><strong>dist_sync_on_step</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.FairCRPSSpreadTerm.name">
+<span class="sig-name descname"><span class="pre">name</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'fcrps_spread_term'</span></em><a class="headerlink" href="#autocast.metrics.ensemble.FairCRPSSpreadTerm.name" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.AlphaFairCRPS">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">AlphaFairCRPS</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">alpha</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.95</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">score_dims</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'spatial'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reduce_all</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dist_sync_on_step</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/metrics/ensemble.html#AlphaFairCRPS"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.metrics.ensemble.AlphaFairCRPS" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#autocast.metrics.ensemble.BTSCMMetric" title="autocast.metrics.ensemble.BTSCMMetric"><code class="xref py py-class docutils literal notranslate"><span class="pre">BTSCMMetric</span></code></a></p>
+<p>Almost Fair Continuous Ranked Probability Score (afCRPS) (stable form).</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Definition:
+.. math:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>\<span class="n">text</span><span class="p">{</span><span class="n">afCRPS</span><span class="p">}</span><span class="n">_</span>\<span class="n">alpha</span> <span class="o">:=</span> \<span class="n">alpha</span> \<span class="n">text</span><span class="p">{</span><span class="n">fCRPS</span><span class="p">}</span> <span class="o">+</span> <span class="p">(</span><span class="mi">1</span><span class="o">-</span>\<span class="n">alpha</span><span class="p">)</span> \<span class="n">text</span><span class="p">{</span><span class="n">CRPS</span><span class="p">}</span>
+</pre></div>
+</div>
+<p>Implementation follows eq. (4) in the AIFS-CRPS paper: rearranged
+sum of positive terms to avoid instability.</p>
+</div>
+<p class="rubric">References</p>
+<p>Lang, S., Alexe, M., Clare, M. C., Roberts, C., Adewoyin, R., Bouallègue, Z. B.,
+… &amp; Leutbecher, M. (2024).
+AIFS-CRPS: ensemble forecasting using a model trained with a loss
+function based on the continuous ranked probability score.
+arXiv preprint arXiv:2412.15832.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>alpha</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>)</p></li>
+<li><p><strong>score_dims</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><em>Literal</em></a><em>[</em><em>'spatial'</em><em>, </em><em>'temporal'</em><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>reduce_all</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+<li><p><strong>dist_sync_on_step</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.AlphaFairCRPS.name">
+<span class="sig-name descname"><span class="pre">name</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'afcrps'</span></em><a class="headerlink" href="#autocast.metrics.ensemble.AlphaFairCRPS.name" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.AlphaFairCRPSMAETerm">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">AlphaFairCRPSMAETerm</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">alpha</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.95</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">score_dims</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'spatial'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reduce_all</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dist_sync_on_step</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/metrics/ensemble.html#AlphaFairCRPSMAETerm"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.metrics.ensemble.AlphaFairCRPSMAETerm" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#autocast.metrics.ensemble.BTSCMMetric" title="autocast.metrics.ensemble.BTSCMMetric"><code class="xref py py-class docutils literal notranslate"><span class="pre">BTSCMMetric</span></code></a></p>
+<p>Mean-absolute-error term paired with afCRPS monitoring.</p>
+<p>The MAE-like term itself does not depend on <code class="docutils literal notranslate"><span class="pre">alpha</span></code>, but this class accepts
+it so experiment configs can keep the afCRPS diagnostic bundle parameterized
+consistently.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>alpha</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>)</p></li>
+<li><p><strong>score_dims</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><em>Literal</em></a><em>[</em><em>'spatial'</em><em>, </em><em>'temporal'</em><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>reduce_all</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+<li><p><strong>dist_sync_on_step</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.AlphaFairCRPSMAETerm.name">
+<span class="sig-name descname"><span class="pre">name</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'afcrps_mae_term'</span></em><a class="headerlink" href="#autocast.metrics.ensemble.AlphaFairCRPSMAETerm.name" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.AlphaFairCRPSSpreadTerm">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">AlphaFairCRPSSpreadTerm</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">alpha</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.95</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">score_dims</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'spatial'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reduce_all</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dist_sync_on_step</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/metrics/ensemble.html#AlphaFairCRPSSpreadTerm"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.metrics.ensemble.AlphaFairCRPSSpreadTerm" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#autocast.metrics.ensemble.BTSCMMetric" title="autocast.metrics.ensemble.BTSCMMetric"><code class="xref py py-class docutils literal notranslate"><span class="pre">BTSCMMetric</span></code></a></p>
+<p>Pairwise spread term in the afCRPS decomposition.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>alpha</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>)</p></li>
+<li><p><strong>score_dims</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><em>Literal</em></a><em>[</em><em>'spatial'</em><em>, </em><em>'temporal'</em><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>reduce_all</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+<li><p><strong>dist_sync_on_step</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.AlphaFairCRPSSpreadTerm.name">
+<span class="sig-name descname"><span class="pre">name</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'afcrps_spread_term'</span></em><a class="headerlink" href="#autocast.metrics.ensemble.AlphaFairCRPSSpreadTerm.name" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.EnergyScore">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">EnergyScore</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">alpha</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">vector_dims</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'spatial_temporal'</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/metrics/ensemble.html#EnergyScore"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.metrics.ensemble.EnergyScore" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#autocast.metrics.ensemble.BTSCMMetric" title="autocast.metrics.ensemble.BTSCMMetric"><code class="xref py py-class docutils literal notranslate"><span class="pre">BTSCMMetric</span></code></a></p>
+<p>Energy score (multivariate CRPS) for ensemble forecasts.</p>
+<p>For a vector-valued forecast with ensemble members <span class="math notranslate nohighlight">\(x_m \in \mathbb{R}^d\)</span>
+and observation <span class="math notranslate nohighlight">\(y \in \mathbb{R}^d\)</span>, this computes</p>
+<div class="math notranslate nohighlight">
+\[ES_\alpha(F, y) = \frac{1}{M} \sum_{m=1}^M \lVert x_m - y \rVert_2^\alpha
+- \frac{1}{2M^2} \sum_{m=1}^M \sum_{j=1}^M \lVert x_m - x_j \rVert_2^\alpha,\]</div>
+<p>with <span class="math notranslate nohighlight">\(\alpha \in (0, 2)\)</span>.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">vector_dims</span></code> argument controls which dimensions define the multivariate
+vector used in the norm.</p>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>alpha</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>)</p></li>
+<li><p><strong>vector_dims</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><em>Literal</em></a><em>[</em><em>'spatial'</em><em>, </em><em>'temporal'</em><em>, </em><em>'spatial_temporal'</em><em>, </em><em>'spatial_temporal_channels'</em><em>]</em>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.EnergyScore.name">
+<span class="sig-name descname"><span class="pre">name</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'energy'</span></em><a class="headerlink" href="#autocast.metrics.ensemble.EnergyScore.name" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.EnergyScore.vector_dims">
+<span class="sig-name descname"><span class="pre">vector_dims</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="s"><span class="pre">'spatial'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'temporal'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'spatial_temporal'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'spatial_temporal_channels'</span></span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#autocast.metrics.ensemble.EnergyScore.vector_dims" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.VariogramScore">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">VariogramScore</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">p</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">weights</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">vector_dims</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'spatial_temporal'</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/metrics/ensemble.html#VariogramScore"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.metrics.ensemble.VariogramScore" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#autocast.metrics.ensemble.BTSCMMetric" title="autocast.metrics.ensemble.BTSCMMetric"><code class="xref py py-class docutils literal notranslate"><span class="pre">BTSCMMetric</span></code></a></p>
+<p>Variogram score for multivariate ensemble forecasts.</p>
+<p>For vector-valued forecast members <span class="math notranslate nohighlight">\(x_m \in \mathbb{R}^d\)</span> and
+observation <span class="math notranslate nohighlight">\(y \in \mathbb{R}^d\)</span>, this computes</p>
+<div class="math notranslate nohighlight">
+\[VS_p(F, y) = \sum_{i,j=1}^d w_{ij}
+\left(\frac{1}{M}\sum_{m=1}^M |x_{m,i} - x_{m,j}|^p - |y_i - y_j|^p\right)^2,\]</div>
+<p>with <span class="math notranslate nohighlight">\(p &gt; 0\)</span> and non-negative weights <span class="math notranslate nohighlight">\(w_{ij}\)</span>.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">vector_dims</span></code> argument controls which dimensions define the multivariate
+vector used by the variogram transformation.</p>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>p</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>)</p></li>
+<li><p><strong>weights</strong> (<a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a><em> | </em><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.4)"><em>ndarray</em></a><em> | </em><em>None</em>)</p></li>
+<li><p><strong>vector_dims</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><em>Literal</em></a><em>[</em><em>'spatial'</em><em>, </em><em>'temporal'</em><em>, </em><em>'spatial_temporal'</em><em>, </em><em>'spatial_temporal_channels'</em><em>]</em>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.VariogramScore.name">
+<span class="sig-name descname"><span class="pre">name</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'variogram'</span></em><a class="headerlink" href="#autocast.metrics.ensemble.VariogramScore.name" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.VariogramScore.vector_dims">
+<span class="sig-name descname"><span class="pre">vector_dims</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="s"><span class="pre">'spatial'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'temporal'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'spatial_temporal'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'spatial_temporal_channels'</span></span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#autocast.metrics.ensemble.VariogramScore.vector_dims" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.SpreadSkillRatio">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">SpreadSkillRatio</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">eps</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1e-06</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/metrics/ensemble.html#SpreadSkillRatio"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.metrics.ensemble.SpreadSkillRatio" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#autocast.metrics.ensemble.BTSCMMetric" title="autocast.metrics.ensemble.BTSCMMetric"><code class="xref py py-class docutils literal notranslate"><span class="pre">BTSCMMetric</span></code></a></p>
+<p>Corrected spread-to-skill ratio (SSR) for ensemble forecasts.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Uses the corrected finite-ensemble form:
+.. math:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>\<span class="n">text</span><span class="p">{</span><span class="n">SSR</span><span class="p">}</span><span class="n">_</span><span class="p">{</span>\<span class="n">text</span><span class="p">{</span><span class="n">corrected</span><span class="p">}}</span> <span class="o">=</span> \<span class="n">frac</span><span class="p">{</span>\<span class="n">text</span><span class="p">{</span><span class="n">Spread</span><span class="p">}}{</span>\<span class="n">text</span><span class="p">{</span><span class="n">Skill</span><span class="p">}}</span>
+\<span class="n">sqrt</span><span class="p">{</span>\<span class="n">frac</span><span class="p">{</span><span class="n">M</span> <span class="o">+</span> <span class="mi">1</span><span class="p">}{</span><span class="n">M</span><span class="p">}},</span>
+</pre></div>
+</div>
+<p>where skill is the pointwise RMSE of the ensemble mean and spread is the
+pointwise ensemble standard deviation. Spatial/temporal reductions are then
+handled by the base class according to score_dims.</p>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>eps</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>)</p>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.SpreadSkillRatio.name">
+<span class="sig-name descname"><span class="pre">name</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'ssr'</span></em><a class="headerlink" href="#autocast.metrics.ensemble.SpreadSkillRatio.name" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.SpreadSkillRatio.score">
+<span class="sig-name descname"><span class="pre">score</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">y_pred</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">y_true</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/metrics/ensemble.html#SpreadSkillRatio.score"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.metrics.ensemble.SpreadSkillRatio.score" title="Link to this definition">#</a></dt>
+<dd><p>Compute corrected spread-to-skill ratio.</p>
+<p>Reductions (spatial/temporal) are applied to the variance and MSE before
+taking the square root and computing the ratio (i.e., reduce variance/MSE
+first, then sqrt, then divide).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>y_pred</strong> (<a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a><em> | </em><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.4)"><em>ndarray</em></a>) – (B, T, S, C, M)</p></li>
+<li><p><strong>y_true</strong> (<a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a><em> | </em><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.4)"><em>ndarray</em></a>) – (B, T, S, C)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>(B, T, C) if score_dims=’spatial’, (B, S, C) if temporal,</dt><dd><p>or (B, T, S, C) if None.</p>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>SSR</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.EnsembleSpread">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">EnsembleSpread</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">corrected</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">score_dims</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'spatial'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reduce_all</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dist_sync_on_step</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/metrics/ensemble.html#EnsembleSpread"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.metrics.ensemble.EnsembleSpread" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#autocast.metrics.ensemble.BTSCMMetric" title="autocast.metrics.ensemble.BTSCMMetric"><code class="xref py py-class docutils literal notranslate"><span class="pre">BTSCMMetric</span></code></a></p>
+<p>Ensemble spread for probabilistic forecasts.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>By default, returns a <strong>finite-ensemble corrected spread</strong>:</p>
+<div class="math notranslate nohighlight">
+\[\text{Spread}_{\text{corr}} =
+    \sqrt{\left\langle \mathrm{Var}_{m,\text{unbiased}}(x_m)\right\rangle}
+    \sqrt{\frac{M + 1}{M}}.\]</div>
+<p>This correction is commonly used so that spread and skill are comparable for
+finite ensemble sizes when using unbiased sample variance. It matches the
+form used in LoLA/paper evaluations (Appendix “Spread / Skill”) where:
+<code class="docutils literal notranslate"><span class="pre">spread</span> <span class="pre">=</span> <span class="pre">sqrt((M+1)/(M-1)</span> <span class="pre">*</span> <span class="pre">mean((x_m</span> <span class="pre">-</span> <span class="pre">mean_m)^2))</span></code>, since
+<code class="docutils literal notranslate"><span class="pre">Var_unbiased</span> <span class="pre">=</span> <span class="pre">(M/(M-1))</span> <span class="pre">*</span> <span class="pre">mean((x_m</span> <span class="pre">-</span> <span class="pre">mean_m)^2)</span></code>.</p>
+<p>If <code class="docutils literal notranslate"><span class="pre">corrected=False</span></code>, returns the uncorrected macroscopic ensemble standard
+deviation computed from the unbiased variance estimator:</p>
+<div class="math notranslate nohighlight">
+\[\sqrt{\left\langle \mathrm{Var}_{m,\text{unbiased}}(x_m)\right\rangle}.\]</div>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>corrected</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+<li><p><strong>score_dims</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><em>Literal</em></a><em>[</em><em>'spatial'</em><em>, </em><em>'temporal'</em><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>reduce_all</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+<li><p><strong>dist_sync_on_step</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.EnsembleSpread.name">
+<span class="sig-name descname"><span class="pre">name</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'spread'</span></em><a class="headerlink" href="#autocast.metrics.ensemble.EnsembleSpread.name" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.EnsembleSpread.score">
+<span class="sig-name descname"><span class="pre">score</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">y_pred</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">y_true</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/metrics/ensemble.html#EnsembleSpread.score"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.metrics.ensemble.EnsembleSpread.score" title="Link to this definition">#</a></dt>
+<dd><p>Compute metric score, then reduce according to self.score_dims.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>y_pred</strong> (<a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a><em> | </em><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.4)"><em>ndarray</em></a>) – Predictions of shape (B, T, S, C, M)</p></li>
+<li><p><strong>y_true</strong> (<a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a><em> | </em><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.4)"><em>ndarray</em></a>) – Ground truth of shape (B, T, S, C)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Tensor of shape (B, T, C) if reduce_over=’spatial’,
+(B, S, C) if reduce_over=’temporal’, or (B, T, S, C) if None.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><em>Float</em>[Tensor, ‘batch time channel’] | <em>Float</em>[Tensor, ‘batch spatial *spatial channel’] | <em>Float</em>[Tensor, ‘batch time spatial *spatial channel’]</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.EnsembleSkill">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">EnsembleSkill</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">score_dims</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'spatial'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reduce_all</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dist_sync_on_step</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/metrics/ensemble.html#EnsembleSkill"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.metrics.ensemble.EnsembleSkill" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#autocast.metrics.ensemble.BTSCMMetric" title="autocast.metrics.ensemble.BTSCMMetric"><code class="xref py py-class docutils literal notranslate"><span class="pre">BTSCMMetric</span></code></a></p>
+<p>Ensemble skill defined as RMSE of the ensemble mean.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Skill is defined as the RMSE of the ensemble mean:</p>
+<div class="math notranslate nohighlight">
+\[\text{Skill} = \sqrt{\left\langle (\bar{x} - y)^2 \right\rangle},\]</div>
+<p>where <span class="math notranslate nohighlight">\(\langle \cdot \rangle\)</span> denotes the spatial mean.</p>
+<p>This metric reduces the squared error over spatial/temporal dimensions <em>before</em>
+taking the square root (macroscopic RMSE), as is commonly done in ensemble
+forecast evaluation (and in LoLA/paper appendices).</p>
+<p>In the default spatial-reduction evaluation path, this is numerically
+equivalent to the deterministic <code class="docutils literal notranslate"><span class="pre">RMSE</span></code> metric applied to an ensemble
+prediction tensor, because <code class="docutils literal notranslate"><span class="pre">RMSE</span></code> first averages over the ensemble
+dimension and then computes RMSE.</p>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>score_dims</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><em>Literal</em></a><em>[</em><em>'spatial'</em><em>, </em><em>'temporal'</em><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>reduce_all</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+<li><p><strong>dist_sync_on_step</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.EnsembleSkill.name">
+<span class="sig-name descname"><span class="pre">name</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'skill'</span></em><a class="headerlink" href="#autocast.metrics.ensemble.EnsembleSkill.name" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.EnsembleSkill.score">
+<span class="sig-name descname"><span class="pre">score</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">y_pred</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">y_true</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/metrics/ensemble.html#EnsembleSkill.score"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.metrics.ensemble.EnsembleSkill.score" title="Link to this definition">#</a></dt>
+<dd><p>Compute metric score, then reduce according to self.score_dims.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>y_pred</strong> (<a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a><em> | </em><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.4)"><em>ndarray</em></a>) – Predictions of shape (B, T, S, C, M)</p></li>
+<li><p><strong>y_true</strong> (<a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a><em> | </em><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.4)"><em>ndarray</em></a>) – Ground truth of shape (B, T, S, C)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Tensor of shape (B, T, C) if reduce_over=’spatial’,
+(B, S, C) if reduce_over=’temporal’, or (B, T, S, C) if None.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><em>Float</em>[Tensor, ‘batch time channel’] | <em>Float</em>[Tensor, ‘batch spatial *spatial channel’] | <em>Float</em>[Tensor, ‘batch time spatial *spatial channel’]</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.WinklerScore">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">WinklerScore</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">alpha</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.1</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/metrics/ensemble.html#WinklerScore"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.metrics.ensemble.WinklerScore" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#autocast.metrics.ensemble.BTSCMMetric" title="autocast.metrics.ensemble.BTSCMMetric"><code class="xref py py-class docutils literal notranslate"><span class="pre">BTSCMMetric</span></code></a></p>
+<p>Winkler interval score for central prediction intervals.</p>
+<p>For significance level <span class="math notranslate nohighlight">\(\alpha \in (0, 1)\)</span>, this metric computes
+central <span class="math notranslate nohighlight">\((1-\alpha)\)</span> prediction intervals from ensemble quantiles and
+returns the per-point interval score</p>
+<div class="math notranslate nohighlight">
+\[ \begin{align}\begin{aligned}W_\alpha = (u - l)
++ \frac{2}{\alpha}(l - y)\mathbf{1}(y &lt; l)
++ \frac{2}{\alpha}(y - u)\mathbf{1}(y &gt; u),\\where :math:`l` and :math:`u` are the lower/upper interval bounds.\\Shape conventions
+-----------------
+- Input prediction tensor: y_pred has shape (B, T, S..., C, M)
+- Input truth tensor: y_true has shape (B, T, S..., C)
+- Quantiles are computed along ensemble dim M:
+    - l (lower): ``q_{alpha/2}``, shape (B, T, S..., C)
+    - u (upper): ``q_{1-alpha/2}``, shape (B, T, S..., C)
+    - y corresponds to y_true, same shape (B, T, S..., C).\\The internal ``_score`` returns pointwise Winkler scores with shape
+``(B, T, S..., C)``. The base class then applies ``score_dims`` and
+``reduce_all`` reductions:
+- ``score_dims='spatial'`` (default) -&gt; ``(B, T, C)``
+- ``score_dims='temporal'`` -&gt; ``(B, S..., C)``
+- ``score_dims=None`` -&gt; ``(B, T, S..., C)``
+- if ``reduce_all=True`` (default), ``compute()`` returns a scalar.\end{aligned}\end{align} \]</div>
+<p>Lower values are better: narrow intervals are rewarded, and misses are
+penalized in proportion to their distance outside the interval.</p>
+<section id="id2">
+<h2>References:<a class="headerlink" href="#id2" title="Link to this heading">#</a></h2>
+<p>Winkler, R. L. (1972). A Decision-Theoretic Approach to Interval Estimation.
+Journal of the American Statistical Association, 67(337), 187-191.
+<a class="reference external" href="https://doi.org/10.1080/01621459.1972.10481224">https://doi.org/10.1080/01621459.1972.10481224</a></p>
+<p>Gneiting, T., &amp; Raftery, A. E. (2007). Strictly Proper Scoring Rules,
+Prediction, and Estimation. Journal of the American Statistical Association,
+102(477), 359-378. <a class="reference external" href="https://doi.org/10.1198/016214506000001437">https://doi.org/10.1198/016214506000001437</a></p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.WinklerScore.name">
+<span class="sig-name descname"><span class="pre">name</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'winkler'</span></em><a class="headerlink" href="#autocast.metrics.ensemble.WinklerScore.name" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+</section>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>alpha</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.MultiWinkler">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">MultiWinkler</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">coverage_levels</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">score_dims</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'spatial'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dist_sync_on_step</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/metrics/ensemble.html#MultiWinkler"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.metrics.ensemble.MultiWinkler" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Metric</span></code></p>
+<p>Average Winkler interval score across multiple central coverage levels.</p>
+<p>This is the interval-score analogue of <code class="docutils literal notranslate"><span class="pre">MultiCoverage</span></code>: it evaluates a
+grid of nominal central prediction intervals and returns one scalar by
+averaging the Winkler score across interval levels, time, space, channels,
+and samples. Lower values are better.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>This is an unweighted average of central interval scores across the chosen
+coverage grid. The weighted interval score (WIS) uses a related multi-level
+interval-score construction with prescribed weights.</p>
+</div>
+<p class="rubric">References</p>
+<p>Bracher, J., Ray, E. L., Gneiting, T., &amp; Reich, N. G. (2021). Evaluating
+epidemic forecasts in an interval format. PLOS Computational Biology,
+17(2), e1008618. <a class="reference external" href="https://doi.org/10.1371/journal.pcbi.1008618">https://doi.org/10.1371/journal.pcbi.1008618</a></p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>coverage_levels</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><em>list</em></a><em>[</em><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>score_dims</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><em>Literal</em></a><em>[</em><em>'spatial'</em><em>, </em><em>'temporal'</em><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>dist_sync_on_step</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.MultiWinkler.name">
+<span class="sig-name descname"><span class="pre">name</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'multiwinkler'</span></em><a class="headerlink" href="#autocast.metrics.ensemble.MultiWinkler.name" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.MultiWinkler.update">
+<span class="sig-name descname"><span class="pre">update</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">y_pred</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">y_true</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/metrics/ensemble.html#MultiWinkler.update"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.metrics.ensemble.MultiWinkler.update" title="Link to this definition">#</a></dt>
+<dd><p>Update metric state with one validation batch.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>y_pred</strong> (<a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a><em> | </em><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.4)"><em>ndarray</em></a>)</p></li>
+<li><p><strong>y_true</strong> (<a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a><em> | </em><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.4)"><em>ndarray</em></a>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.MultiWinkler.compute">
+<span class="sig-name descname"><span class="pre">compute</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/metrics/ensemble.html#MultiWinkler.compute"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.metrics.ensemble.MultiWinkler.compute" title="Link to this definition">#</a></dt>
+<dd><p>Return average Winkler score across levels and reduced dimensions.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.MultiWinkler.reset">
+<span class="sig-name descname"><span class="pre">reset</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/metrics/ensemble.html#MultiWinkler.reset"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.metrics.ensemble.MultiWinkler.reset" title="Link to this definition">#</a></dt>
+<dd><p>Reset metric state and dynamic state-shape flag.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.MultiWinkler.score">
+<span class="sig-name descname"><span class="pre">score</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">y_pred</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">y_true</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/metrics/ensemble.html#MultiWinkler.score"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.metrics.ensemble.MultiWinkler.score" title="Link to this definition">#</a></dt>
+<dd><p>Compute per-level Winkler scores before batch aggregation.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>y_pred</strong> (<a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a><em> | </em><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.4)"><em>ndarray</em></a>)</p></li>
+<li><p><strong>y_true</strong> (<a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a><em> | </em><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.4)"><em>ndarray</em></a>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="autocast.metrics.ensemble.MultiWinkler.plot">
+<span class="sig-name descname"><span class="pre">plot</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">save_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">title</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'Winkler</span> <span class="pre">Interval</span> <span class="pre">Scores'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cmap_str</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'viridis'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">save_csv</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/metrics/ensemble.html#MultiWinkler.plot"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.metrics.ensemble.MultiWinkler.plot" title="Link to this definition">#</a></dt>
+<dd><p>Plot Winkler score against nominal interval coverage.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>save_path</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em> | </em><em>None</em>)</p></li>
+<li><p><strong>title</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>)</p></li>
+<li><p><strong>cmap_str</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>)</p></li>
+<li><p><strong>save_csv</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+
+    <script type="text/x-thebe-config">
+    {
+        requestKernel: true,
+        binderOptions: {
+            repo: "binder-examples/jupyter-stacks-datascience",
+            ref: "master",
+        },
+        codeMirrorConfig: {
+            theme: "abcdef",
+            mode: "python"
+        },
+        kernelOptions: {
+            name: "python3",
+            path: "./reference/metrics"
+        },
+        predefinedOutput: true
+    }
+    </script>
+    <script>kernelName = 'python3'</script>
+
+                </article>
+              
+
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="deterministic.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">autocast.metrics.deterministic</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="coverage.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">autocast.metrics.coverage</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item"><div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> Contents
+  </div>
+  <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.BTSCMMetric"><code class="docutils literal notranslate"><span class="pre">BTSCMMetric</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.BTSCMMetric.score"><code class="docutils literal notranslate"><span class="pre">BTSCMMetric.score()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.CRPS"><code class="docutils literal notranslate"><span class="pre">CRPS</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.CRPS.name"><code class="docutils literal notranslate"><span class="pre">CRPS.name</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.CRPSMAETerm"><code class="docutils literal notranslate"><span class="pre">CRPSMAETerm</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.CRPSMAETerm.name"><code class="docutils literal notranslate"><span class="pre">CRPSMAETerm.name</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.CRPSSpreadTerm"><code class="docutils literal notranslate"><span class="pre">CRPSSpreadTerm</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.CRPSSpreadTerm.name"><code class="docutils literal notranslate"><span class="pre">CRPSSpreadTerm.name</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.FairCRPS"><code class="docutils literal notranslate"><span class="pre">FairCRPS</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.FairCRPS.name"><code class="docutils literal notranslate"><span class="pre">FairCRPS.name</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.FairCRPSMAETerm"><code class="docutils literal notranslate"><span class="pre">FairCRPSMAETerm</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.FairCRPSMAETerm.name"><code class="docutils literal notranslate"><span class="pre">FairCRPSMAETerm.name</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.FairCRPSSpreadTerm"><code class="docutils literal notranslate"><span class="pre">FairCRPSSpreadTerm</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.FairCRPSSpreadTerm.name"><code class="docutils literal notranslate"><span class="pre">FairCRPSSpreadTerm.name</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.AlphaFairCRPS"><code class="docutils literal notranslate"><span class="pre">AlphaFairCRPS</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.AlphaFairCRPS.name"><code class="docutils literal notranslate"><span class="pre">AlphaFairCRPS.name</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.AlphaFairCRPSMAETerm"><code class="docutils literal notranslate"><span class="pre">AlphaFairCRPSMAETerm</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.AlphaFairCRPSMAETerm.name"><code class="docutils literal notranslate"><span class="pre">AlphaFairCRPSMAETerm.name</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.AlphaFairCRPSSpreadTerm"><code class="docutils literal notranslate"><span class="pre">AlphaFairCRPSSpreadTerm</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.AlphaFairCRPSSpreadTerm.name"><code class="docutils literal notranslate"><span class="pre">AlphaFairCRPSSpreadTerm.name</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.EnergyScore"><code class="docutils literal notranslate"><span class="pre">EnergyScore</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.EnergyScore.name"><code class="docutils literal notranslate"><span class="pre">EnergyScore.name</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.EnergyScore.vector_dims"><code class="docutils literal notranslate"><span class="pre">EnergyScore.vector_dims</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.VariogramScore"><code class="docutils literal notranslate"><span class="pre">VariogramScore</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.VariogramScore.name"><code class="docutils literal notranslate"><span class="pre">VariogramScore.name</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.VariogramScore.vector_dims"><code class="docutils literal notranslate"><span class="pre">VariogramScore.vector_dims</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.SpreadSkillRatio"><code class="docutils literal notranslate"><span class="pre">SpreadSkillRatio</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.SpreadSkillRatio.name"><code class="docutils literal notranslate"><span class="pre">SpreadSkillRatio.name</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.SpreadSkillRatio.score"><code class="docutils literal notranslate"><span class="pre">SpreadSkillRatio.score()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.EnsembleSpread"><code class="docutils literal notranslate"><span class="pre">EnsembleSpread</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.EnsembleSpread.name"><code class="docutils literal notranslate"><span class="pre">EnsembleSpread.name</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.EnsembleSpread.score"><code class="docutils literal notranslate"><span class="pre">EnsembleSpread.score()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.EnsembleSkill"><code class="docutils literal notranslate"><span class="pre">EnsembleSkill</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.EnsembleSkill.name"><code class="docutils literal notranslate"><span class="pre">EnsembleSkill.name</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.EnsembleSkill.score"><code class="docutils literal notranslate"><span class="pre">EnsembleSkill.score()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.WinklerScore"><code class="docutils literal notranslate"><span class="pre">WinklerScore</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.WinklerScore.name"><code class="docutils literal notranslate"><span class="pre">WinklerScore.name</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.MultiWinkler"><code class="docutils literal notranslate"><span class="pre">MultiWinkler</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.MultiWinkler.name"><code class="docutils literal notranslate"><span class="pre">MultiWinkler.name</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.MultiWinkler.update"><code class="docutils literal notranslate"><span class="pre">MultiWinkler.update()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.MultiWinkler.compute"><code class="docutils literal notranslate"><span class="pre">MultiWinkler.compute()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.MultiWinkler.reset"><code class="docutils literal notranslate"><span class="pre">MultiWinkler.reset()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.MultiWinkler.score"><code class="docutils literal notranslate"><span class="pre">MultiWinkler.score()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.ensemble.MultiWinkler.plot"><code class="docutils literal notranslate"><span class="pre">MultiWinkler.plot()</span></code></a></li>
+</ul>
+</li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+<div class="bd-footer-content__inner container">
+  
+  <div class="footer-item">
+    
+<p class="component-author">
+By AI for Physical Systems Team at The Alan Turing Institute
+</p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+  <div class="footer-item">
+    
+<div class="extra_footer">
+  Copyright &copy; 2026
+
+</div>
+  </div>
+  
+</div>
+          </footer>
+        
+
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="../../_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf"></script>
+<script defer src="../../_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf"></script>
+
+  <footer class="bd-footer">
+  </footer>
+  </body>
+</html>

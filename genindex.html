@@ -1,0 +1,1793 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="./" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Index &#8212; AutoCast: Spatiotemporal Forecasting</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="_static/styles/theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+<link href="_static/styles/pydata-sphinx-theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=03e43079" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/sphinx-book-theme.css?v=3c74b3bc" />
+    <link rel="stylesheet" type="text/css" href="_static/togglebutton.css?v=9c3e77be" />
+    <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="_static/mystnb.11b39860a7a0cbfd473a3ad8a317855267ff0bd372690045ca344a6b62be495e.css" />
+    <link rel="stylesheet" type="text/css" href="_static/sphinx-thebe.css?v=4fa983c6" />
+    <link rel="stylesheet" type="text/css" href="_static/sphinx-design.min.css?v=95c83b7e" />
+  
+  <!-- So that users can add custom icons -->
+  <script src="_static/scripts/fontawesome.js?digest=8878045cc6db502f8baf"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf" />
+<link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf" />
+
+    <script src="_static/documentation_options.js?v=9eb32ce0"></script>
+    <script src="_static/doctools.js?v=9a2dae69"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="_static/copybutton.js?v=7f8ff830"></script>
+    <script src="_static/scripts/sphinx-book-theme.js?v=fab101a9"></script>
+    <script>let toggleHintShow = 'Click to show';</script>
+    <script>let toggleHintHide = 'Click to hide';</script>
+    <script>let toggleOpenOnPrint = 'true';</script>
+    <script src="_static/togglebutton.js?v=b8b12719"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script src="_static/design-tabs.js?v=f930bc37"></script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script async="async" src="_static/sphinx-thebe.js?v=c100c467"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'genindex';</script>
+    <link rel="index" title="Index" href="#" />
+    <link rel="search" title="Search" href="search.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="" />
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search this book..."
+         aria-label="Search this book..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+        
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="_static/AC.png" class="logo__image only-light" alt="AutoCast: Spatiotemporal Forecasting - Home"/>
+    <img src="_static/AC.png" class="logo__image only-dark pst-js-only" alt="AutoCast: Spatiotemporal Forecasting - Home"/>
+  
+  
+</a></div>
+        <div class="sidebar-primary-item">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button></div>
+        <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item navbar-nav active">
+        
+        <ul class="nav bd-sidenav bd-sidenav__home-link">
+            <li class="toctree-l1">
+                <a class="reference internal" href="index.html">
+                    Welcome to AutoCast
+                </a>
+            </li>
+        </ul>
+        <ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="reference/index.html">API Reference</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="reference/models/index.html">Models</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="reference/models/encoder_decoder.html">autocast.models.encoder_decoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="reference/models/encoder_processor_decoder.html">autocast.models.encoder_processor_decoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="reference/models/autoencoder.html">autocast.models.autoencoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="reference/models/variational_autoencoder.html">autocast.models.variational_autoencoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="reference/models/processor.html">autocast.models.processor</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="reference/processors/index.html">Processors</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="reference/processors/base.html">autocast.processors.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="reference/processors/unet.html">autocast.processors.unet</a></li>
+<li class="toctree-l3"><a class="reference internal" href="reference/processors/swin_vit.html">autocast.processors.swin_vit</a></li>
+<li class="toctree-l3"><a class="reference internal" href="reference/processors/vit.html">autocast.processors.vit</a></li>
+<li class="toctree-l3"><a class="reference internal" href="reference/processors/flow_matching.html">autocast.processors.flow_matching</a></li>
+<li class="toctree-l3"><a class="reference internal" href="reference/processors/diffusion.html">autocast.processors.diffusion</a></li>
+<li class="toctree-l3"><a class="reference internal" href="reference/processors/noise.html">autocast.processors.noise</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="reference/encoders/index.html">Encoders</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="reference/encoders/base.html">autocast.encoders.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="reference/encoders/dc.html">autocast.encoders.dc</a></li>
+<li class="toctree-l3"><a class="reference internal" href="reference/encoders/unet.html">autocast.encoders.unet</a></li>
+<li class="toctree-l3"><a class="reference internal" href="reference/encoders/identity.html">autocast.encoders.identity</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="reference/decoders/index.html">Decoders</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="reference/decoders/base.html">autocast.decoders.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="reference/decoders/dc.html">autocast.decoders.dc</a></li>
+<li class="toctree-l3"><a class="reference internal" href="reference/decoders/identity.html">autocast.decoders.identity</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="reference/data/index.html">Data</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="reference/data/datamodule.html">autocast.data.datamodule</a></li>
+<li class="toctree-l3"><a class="reference internal" href="reference/data/dataset.html">autocast.data.dataset</a></li>
+<li class="toctree-l3"><a class="reference internal" href="reference/data/encoded_dataset.html">autocast.data.encoded_dataset</a></li>
+<li class="toctree-l3"><a class="reference internal" href="reference/data/metadata.html">autocast.data.metadata</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="reference/metrics/index.html">Metrics</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="reference/metrics/base.html">autocast.metrics.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="reference/metrics/deterministic.html">autocast.metrics.deterministic</a></li>
+<li class="toctree-l3"><a class="reference internal" href="reference/metrics/ensemble.html">autocast.metrics.ensemble</a></li>
+<li class="toctree-l3"><a class="reference internal" href="reference/metrics/coverage.html">autocast.metrics.coverage</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="reference/losses/index.html">Losses</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="reference/losses/ensemble.html">autocast.losses.ensemble</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="reference/types/index.html">Types</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="reference/types/types.html">autocast.types.types</a></li>
+<li class="toctree-l3"><a class="reference internal" href="reference/types/batch.html">autocast.types.batch</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="reference/nn/index.html">Neural Network Utilities</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="reference/nn/residual.html">autocast.nn.residual</a></li>
+<li class="toctree-l3"><a class="reference internal" href="reference/nn/spatial_attention.html">autocast.nn.spatial_attention</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="reference/utils/index.html">Utilities</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="reference/utils/optimizer.html">autocast.utils.optimizer</a></li>
+<li class="toctree-l3"><a class="reference internal" href="reference/utils/plots.html">autocast.utils.plots</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="reference/benchmarking/index.html">Benchmarking</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="reference/benchmarking/inference.html">autocast.benchmarking.inference</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="reference/logging/index.html">Logging</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="reference/logging/wandb.html">autocast.logging.wandb</a></li>
+</ul>
+</details></li>
+</ul>
+</details></li>
+</ul>
+
+    </div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+      <div class="sidebar-primary-item">
+<div id="ethical-ad-placement"
+      class="flat"
+      data-ea-publisher="readthedocs"
+      data-ea-type="readthedocs-sidebar"
+      data-ea-manual="true">
+</div></div>
+  </div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+
+<div class="sbt-scroll-pixel-helper"></div>
+
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item"><button class="sidebar-toggle primary-toggle btn btn-sm" title="Toggle primary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <span class="fa-solid fa-bars"></span>
+</button></div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+
+<div class="article-header-buttons">
+
+
+
+
+
+<div class="dropdown dropdown-source-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Source repositories">
+    <i class="fab fa-github"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="https://github.com/alan-turing-institute/autocast" target="_blank"
+   class="btn btn-sm btn-source-repository-button dropdown-item"
+   title="Source repository"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fab fa-github"></i>
+  </span>
+<span class="btn__text-container">Repository</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/alan-turing-institute/autocast/issues/new?title=Issue%20on%20page%20%2Fgenindex.html&body=Your%20issue%20content%20here." target="_blank"
+   class="btn btn-sm btn-source-issues-button dropdown-item"
+   title="Open an issue"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-lightbulb"></i>
+  </span>
+<span class="btn__text-container">Open issue</span>
+</a>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+<button onclick="toggleFullScreen()"
+  class="btn btn-sm btn-fullscreen-button pst-navbar-icon"
+  title="Fullscreen mode"
+  data-bs-placement="bottom" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+
+
+<button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button pst-js-only" aria-label="Color mode" data-bs-title="Color mode"  data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <i class="theme-switch fa-solid fa-sun                fa-lg" data-mode="light" title="Light"></i>
+  <i class="theme-switch fa-solid fa-moon               fa-lg" data-mode="dark"  title="Dark"></i>
+  <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"  title="System Settings"></i>
+</button>
+
+
+<button class="btn btn-sm pst-navbar-icon search-button search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+</button>
+
+</div></div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="jb-print-docs-body" class="onlyprint">
+    <h1></h1>
+    <!-- Table of contents -->
+    <div id="print-main-content">
+        <div id="jb-print-toc">
+            
+        </div>
+    </div>
+</div>
+
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+
+<h1 id="index">Index</h1>
+
+<div class="genindex-jumpbox">
+ <a href="#A"><strong>A</strong></a>
+ | <a href="#B"><strong>B</strong></a>
+ | <a href="#C"><strong>C</strong></a>
+ | <a href="#D"><strong>D</strong></a>
+ | <a href="#E"><strong>E</strong></a>
+ | <a href="#F"><strong>F</strong></a>
+ | <a href="#G"><strong>G</strong></a>
+ | <a href="#I"><strong>I</strong></a>
+ | <a href="#K"><strong>K</strong></a>
+ | <a href="#L"><strong>L</strong></a>
+ | <a href="#M"><strong>M</strong></a>
+ | <a href="#N"><strong>N</strong></a>
+ | <a href="#O"><strong>O</strong></a>
+ | <a href="#P"><strong>P</strong></a>
+ | <a href="#R"><strong>R</strong></a>
+ | <a href="#S"><strong>S</strong></a>
+ | <a href="#T"><strong>T</strong></a>
+ | <a href="#U"><strong>U</strong></a>
+ | <a href="#V"><strong>V</strong></a>
+ | <a href="#W"><strong>W</strong></a>
+ 
+</div>
+<h2 id="A">A</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="reference/processors/swin_vit.html#autocast.processors.swin_vit.AdaLNGenerator">AdaLNGenerator (class in autocast.processors.swin_vit)</a>
+</li>
+      <li><a href="reference/data/dataset.html#autocast.data.dataset.AdvectionDiffusionDataset">AdvectionDiffusionDataset (class in autocast.data.dataset)</a>
+</li>
+      <li><a href="reference/models/autoencoder.html#autocast.models.autoencoder.AE">AE (class in autocast.models.autoencoder)</a>
+</li>
+      <li><a href="reference/models/autoencoder.html#autocast.models.autoencoder.AELoss">AELoss (class in autocast.models.autoencoder)</a>
+</li>
+      <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.AlphaFairCRPS">AlphaFairCRPS (class in autocast.metrics.ensemble)</a>
+</li>
+      <li><a href="reference/losses/ensemble.html#autocast.losses.ensemble.AlphaFairCRPSLoss">AlphaFairCRPSLoss (class in autocast.losses.ensemble)</a>
+</li>
+      <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.AlphaFairCRPSMAETerm">AlphaFairCRPSMAETerm (class in autocast.metrics.ensemble)</a>
+</li>
+      <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.AlphaFairCRPSSpreadTerm">AlphaFairCRPSSpreadTerm (class in autocast.metrics.ensemble)</a>
+</li>
+      <li><a href="reference/processors/swin_vit.html#autocast.processors.swin_vit.apply_gate">apply_gate() (in module autocast.processors.swin_vit)</a>
+</li>
+      <li>
+    autocast.benchmarking.inference
+
+      <ul>
+        <li><a href="reference/benchmarking/inference.html#module-autocast.benchmarking.inference">module</a>
+</li>
+      </ul></li>
+      <li>
+    autocast.data.datamodule
+
+      <ul>
+        <li><a href="reference/data/datamodule.html#module-autocast.data.datamodule">module</a>
+</li>
+      </ul></li>
+      <li>
+    autocast.data.dataset
+
+      <ul>
+        <li><a href="reference/data/dataset.html#module-autocast.data.dataset">module</a>
+</li>
+      </ul></li>
+      <li>
+    autocast.data.encoded_dataset
+
+      <ul>
+        <li><a href="reference/data/encoded_dataset.html#module-autocast.data.encoded_dataset">module</a>
+</li>
+      </ul></li>
+      <li>
+    autocast.data.metadata
+
+      <ul>
+        <li><a href="reference/data/metadata.html#module-autocast.data.metadata">module</a>
+</li>
+      </ul></li>
+      <li>
+    autocast.decoders.base
+
+      <ul>
+        <li><a href="reference/decoders/base.html#module-autocast.decoders.base">module</a>
+</li>
+      </ul></li>
+      <li>
+    autocast.decoders.dc
+
+      <ul>
+        <li><a href="reference/decoders/dc.html#module-autocast.decoders.dc">module</a>
+</li>
+      </ul></li>
+      <li>
+    autocast.decoders.identity
+
+      <ul>
+        <li><a href="reference/decoders/identity.html#module-autocast.decoders.identity">module</a>
+</li>
+      </ul></li>
+      <li>
+    autocast.encoders.base
+
+      <ul>
+        <li><a href="reference/encoders/base.html#module-autocast.encoders.base">module</a>
+</li>
+      </ul></li>
+      <li>
+    autocast.encoders.dc
+
+      <ul>
+        <li><a href="reference/encoders/dc.html#module-autocast.encoders.dc">module</a>
+</li>
+      </ul></li>
+      <li>
+    autocast.encoders.identity
+
+      <ul>
+        <li><a href="reference/encoders/identity.html#module-autocast.encoders.identity">module</a>
+</li>
+      </ul></li>
+      <li>
+    autocast.encoders.unet
+
+      <ul>
+        <li><a href="reference/encoders/unet.html#module-autocast.encoders.unet">module</a>
+</li>
+      </ul></li>
+      <li>
+    autocast.logging.wandb
+
+      <ul>
+        <li><a href="reference/logging/wandb.html#module-autocast.logging.wandb">module</a>
+</li>
+      </ul></li>
+      <li>
+    autocast.losses.ensemble
+
+      <ul>
+        <li><a href="reference/losses/ensemble.html#module-autocast.losses.ensemble">module</a>
+</li>
+      </ul></li>
+      <li>
+    autocast.metrics.base
+
+      <ul>
+        <li><a href="reference/metrics/base.html#module-autocast.metrics.base">module</a>
+</li>
+      </ul></li>
+      <li>
+    autocast.metrics.coverage
+
+      <ul>
+        <li><a href="reference/metrics/coverage.html#module-autocast.metrics.coverage">module</a>
+</li>
+      </ul></li>
+      <li>
+    autocast.metrics.deterministic
+
+      <ul>
+        <li><a href="reference/metrics/deterministic.html#module-autocast.metrics.deterministic">module</a>
+</li>
+      </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li>
+    autocast.metrics.ensemble
+
+      <ul>
+        <li><a href="reference/metrics/ensemble.html#module-autocast.metrics.ensemble">module</a>
+</li>
+      </ul></li>
+      <li>
+    autocast.models.autoencoder
+
+      <ul>
+        <li><a href="reference/models/autoencoder.html#module-autocast.models.autoencoder">module</a>
+</li>
+      </ul></li>
+      <li>
+    autocast.models.encoder_decoder
+
+      <ul>
+        <li><a href="reference/models/encoder_decoder.html#module-autocast.models.encoder_decoder">module</a>
+</li>
+      </ul></li>
+      <li>
+    autocast.models.encoder_processor_decoder
+
+      <ul>
+        <li><a href="reference/models/encoder_processor_decoder.html#module-autocast.models.encoder_processor_decoder">module</a>
+</li>
+      </ul></li>
+      <li>
+    autocast.models.processor
+
+      <ul>
+        <li><a href="reference/models/processor.html#module-autocast.models.processor">module</a>
+</li>
+      </ul></li>
+      <li>
+    autocast.models.variational_autoencoder
+
+      <ul>
+        <li><a href="reference/models/variational_autoencoder.html#module-autocast.models.variational_autoencoder">module</a>
+</li>
+      </ul></li>
+      <li>
+    autocast.nn.residual
+
+      <ul>
+        <li><a href="reference/nn/residual.html#module-autocast.nn.residual">module</a>
+</li>
+      </ul></li>
+      <li>
+    autocast.nn.spatial_attention
+
+      <ul>
+        <li><a href="reference/nn/spatial_attention.html#module-autocast.nn.spatial_attention">module</a>
+</li>
+      </ul></li>
+      <li>
+    autocast.processors.base
+
+      <ul>
+        <li><a href="reference/processors/base.html#module-autocast.processors.base">module</a>
+</li>
+      </ul></li>
+      <li>
+    autocast.processors.diffusion
+
+      <ul>
+        <li><a href="reference/processors/diffusion.html#module-autocast.processors.diffusion">module</a>
+</li>
+      </ul></li>
+      <li>
+    autocast.processors.flow_matching
+
+      <ul>
+        <li><a href="reference/processors/flow_matching.html#module-autocast.processors.flow_matching">module</a>
+</li>
+      </ul></li>
+      <li>
+    autocast.processors.noise
+
+      <ul>
+        <li><a href="reference/processors/noise.html#module-autocast.processors.noise">module</a>
+</li>
+      </ul></li>
+      <li>
+    autocast.processors.swin_vit
+
+      <ul>
+        <li><a href="reference/processors/swin_vit.html#module-autocast.processors.swin_vit">module</a>
+</li>
+      </ul></li>
+      <li>
+    autocast.processors.unet
+
+      <ul>
+        <li><a href="reference/processors/unet.html#module-autocast.processors.unet">module</a>
+</li>
+      </ul></li>
+      <li>
+    autocast.processors.vit
+
+      <ul>
+        <li><a href="reference/processors/vit.html#module-autocast.processors.vit">module</a>
+</li>
+      </ul></li>
+      <li>
+    autocast.types.batch
+
+      <ul>
+        <li><a href="reference/types/batch.html#module-autocast.types.batch">module</a>
+</li>
+      </ul></li>
+      <li>
+    autocast.types.types
+
+      <ul>
+        <li><a href="reference/types/types.html#module-autocast.types.types">module</a>
+</li>
+      </ul></li>
+      <li>
+    autocast.utils.optimizer
+
+      <ul>
+        <li><a href="reference/utils/optimizer.html#module-autocast.utils.optimizer">module</a>
+</li>
+      </ul></li>
+      <li>
+    autocast.utils.plots
+
+      <ul>
+        <li><a href="reference/utils/plots.html#module-autocast.utils.plots">module</a>
+</li>
+      </ul></li>
+      <li><a href="reference/processors/vit.html#autocast.processors.vit.AViT">AViT (class in autocast.processors.vit)</a>
+</li>
+      <li><a href="reference/processors/vit.html#autocast.processors.vit.AViTProcessor">AViTProcessor (class in autocast.processors.vit)</a>
+</li>
+      <li><a href="reference/processors/vit.html#autocast.processors.vit.AxialAttentionBlock">AxialAttentionBlock (class in autocast.processors.vit)</a>
+</li>
+      <li><a href="reference/processors/unet.html#autocast.processors.unet.AzulaUNetProcessor">AzulaUNetProcessor (class in autocast.processors.unet)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="B">B</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="reference/metrics/base.html#autocast.metrics.base.BaseMetric">BaseMetric (class in autocast.metrics.base)</a>
+</li>
+      <li><a href="reference/processors/swin_vit.html#autocast.processors.swin_vit.BasicSwinLayer">BasicSwinLayer (class in autocast.processors.swin_vit)</a>
+</li>
+      <li><a href="reference/types/batch.html#autocast.types.batch.Batch">Batch (class in autocast.types.batch)</a>
+</li>
+      <li><a href="reference/data/dataset.html#autocast.data.dataset.BatchMixin">BatchMixin (class in autocast.data.dataset)</a>
+</li>
+      <li><a href="reference/benchmarking/inference.html#autocast.benchmarking.inference.benchmark_model">benchmark_model() (in module autocast.benchmarking.inference)</a>
+</li>
+      <li><a href="reference/benchmarking/inference.html#autocast.benchmarking.inference.benchmark_rollout">benchmark_rollout() (in module autocast.benchmarking.inference)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="reference/data/metadata.html#autocast.data.metadata.Metadata.boundary_condition_types">boundary_condition_types (Metadata attribute)</a>
+</li>
+      <li><a href="reference/types/batch.html#autocast.types.batch.Batch.boundary_conditions">boundary_conditions (Batch attribute)</a>
+
+      <ul>
+        <li><a href="reference/types/batch.html#autocast.types.batch.Sample.boundary_conditions">(Sample attribute)</a>
+</li>
+      </ul></li>
+      <li><a href="reference/data/dataset.html#autocast.data.dataset.BOUTDataset">BOUTDataset (class in autocast.data.dataset)</a>
+</li>
+      <li><a href="reference/metrics/deterministic.html#autocast.metrics.deterministic.BTSCMetric">BTSCMetric (class in autocast.metrics.deterministic)</a>
+</li>
+      <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.BTSCMMetric">BTSCMMetric (class in autocast.metrics.ensemble)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="C">C</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="reference/data/encoded_dataset.html#autocast.data.encoded_dataset.CachedLatentDataset">CachedLatentDataset (class in autocast.data.encoded_dataset)</a>
+</li>
+      <li><a href="reference/encoders/dc.html#autocast.encoders.dc.DCEncoder.channel_axis">channel_axis (DCEncoder attribute)</a>
+
+      <ul>
+        <li><a href="reference/encoders/base.html#autocast.encoders.base.Encoder.channel_axis">(Encoder attribute)</a>
+</li>
+        <li><a href="reference/encoders/identity.html#autocast.encoders.identity.IdentityEncoder.channel_axis">(IdentityEncoder attribute)</a>
+</li>
+      </ul></li>
+      <li><a href="reference/metrics/base.html#autocast.metrics.base.BaseMetric.compute">compute() (BaseMetric method)</a>
+
+      <ul>
+        <li><a href="reference/metrics/coverage.html#autocast.metrics.coverage.MultiCoverage.compute">(MultiCoverage method)</a>
+</li>
+        <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.MultiWinkler.compute">(MultiWinkler method)</a>
+</li>
+      </ul></li>
+      <li><a href="reference/utils/plots.html#autocast.utils.plots.compute_coverage_scores_from_dataloader">compute_coverage_scores_from_dataloader() (in module autocast.utils.plots)</a>
+</li>
+      <li><a href="reference/metrics/coverage.html#autocast.metrics.coverage.MultiCoverage.compute_detailed">compute_detailed() (MultiCoverage method)</a>
+</li>
+      <li><a href="reference/utils/plots.html#autocast.utils.plots.compute_metrics_from_dataloader">compute_metrics_from_dataloader() (in module autocast.utils.plots)</a>
+</li>
+      <li><a href="reference/utils/plots.html#autocast.utils.plots.compute_metrics_per_timestep_from_dataloader">compute_metrics_per_timestep_from_dataloader() (in module autocast.utils.plots)</a>
+</li>
+      <li><a href="reference/data/metadata.html#autocast.data.metadata.Metadata.constant_field_names">constant_field_names (Metadata attribute)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="reference/types/batch.html#autocast.types.batch.Batch.constant_fields">constant_fields (Batch attribute)</a>
+
+      <ul>
+        <li><a href="reference/types/batch.html#autocast.types.batch.Sample.constant_fields">(Sample attribute)</a>
+</li>
+      </ul></li>
+      <li><a href="reference/data/metadata.html#autocast.data.metadata.Metadata.constant_scalar_names">constant_scalar_names (Metadata attribute)</a>
+</li>
+      <li><a href="reference/types/batch.html#autocast.types.batch.Batch.constant_scalars">constant_scalars (Batch attribute)</a>
+
+      <ul>
+        <li><a href="reference/types/batch.html#autocast.types.batch.Sample.constant_scalars">(Sample attribute)</a>
+</li>
+      </ul></li>
+      <li><a href="reference/metrics/coverage.html#autocast.metrics.coverage.Coverage">Coverage (class in autocast.metrics.coverage)</a>
+</li>
+      <li><a href="reference/logging/wandb.html#autocast.logging.wandb.create_notebook_logger">create_notebook_logger() (in module autocast.logging.wandb)</a>
+</li>
+      <li><a href="reference/logging/wandb.html#autocast.logging.wandb.create_wandb_logger">create_wandb_logger() (in module autocast.logging.wandb)</a>
+</li>
+      <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.CRPS">CRPS (class in autocast.metrics.ensemble)</a>
+</li>
+      <li><a href="reference/losses/ensemble.html#autocast.losses.ensemble.CRPSLoss">CRPSLoss (class in autocast.losses.ensemble)</a>
+</li>
+      <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.CRPSMAETerm">CRPSMAETerm (class in autocast.metrics.ensemble)</a>
+</li>
+      <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.CRPSSpreadTerm">CRPSSpreadTerm (class in autocast.metrics.ensemble)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="D">D</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="reference/data/metadata.html#autocast.data.metadata.Metadata.dataset_name">dataset_name (Metadata attribute)</a>
+</li>
+      <li><a href="reference/decoders/dc.html#autocast.decoders.dc.DCDecoder">DCDecoder (class in autocast.decoders.dc)</a>
+</li>
+      <li><a href="reference/encoders/dc.html#autocast.encoders.dc.DCEncoder">DCEncoder (class in autocast.encoders.dc)</a>
+</li>
+      <li><a href="reference/decoders/dc.html#autocast.decoders.dc.DCDecoder.decode">decode() (DCDecoder method)</a>
+
+      <ul>
+        <li><a href="reference/decoders/base.html#autocast.decoders.base.Decoder.decode">(Decoder method)</a>
+</li>
+        <li><a href="reference/models/encoder_decoder.html#autocast.models.encoder_decoder.EncoderDecoder.decode">(EncoderDecoder method)</a>
+</li>
+        <li><a href="reference/decoders/identity.html#autocast.decoders.identity.IdentityDecoder.decode">(IdentityDecoder method)</a>
+</li>
+      </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="reference/models/autoencoder.html#autocast.models.autoencoder.AE.decoder">decoder (AE attribute)</a>
+</li>
+      <li><a href="reference/decoders/base.html#autocast.decoders.base.Decoder">Decoder (class in autocast.decoders.base)</a>
+</li>
+      <li><a href="reference/models/encoder_decoder.html#autocast.models.encoder_decoder.EncoderDecoder.decoder">decoder (EncoderDecoder attribute)</a>
+
+      <ul>
+        <li><a href="reference/models/variational_autoencoder.html#autocast.models.variational_autoencoder.VAE.decoder">(VAE attribute)</a>
+</li>
+      </ul></li>
+      <li><a href="reference/decoders/dc.html#autocast.decoders.dc.DCDecoder.decoder_model">decoder_model (DCDecoder attribute)</a>
+</li>
+      <li><a href="reference/processors/diffusion.html#autocast.processors.diffusion.DiffusionProcessor">DiffusionProcessor (class in autocast.processors.diffusion)</a>
+</li>
+      <li><a href="reference/models/processor.html#autocast.models.processor.DiscreteProcessor">DiscreteProcessor (class in autocast.models.processor)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="E">E</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="reference/encoders/dc.html#autocast.encoders.dc.DCEncoder.encode">encode() (DCEncoder method)</a>
+
+      <ul>
+        <li><a href="reference/encoders/base.html#autocast.encoders.base.Encoder.encode">(Encoder method)</a>
+</li>
+        <li><a href="reference/models/encoder_decoder.html#autocast.models.encoder_decoder.EncoderDecoder.encode">(EncoderDecoder method)</a>
+</li>
+        <li><a href="reference/encoders/base.html#autocast.encoders.base.GenericEncoder.encode">(GenericEncoder method)</a>
+</li>
+        <li><a href="reference/encoders/identity.html#autocast.encoders.identity.IdentityEncoder.encode">(IdentityEncoder method)</a>
+</li>
+        <li><a href="reference/encoders/unet.html#autocast.encoders.unet.UNetEncoder.encode">(UNetEncoder method)</a>
+</li>
+        <li><a href="reference/models/variational_autoencoder.html#autocast.models.variational_autoencoder.VAE.encode">(VAE method)</a>
+</li>
+      </ul></li>
+      <li><a href="reference/encoders/base.html#autocast.encoders.base.EncoderWithCond.encode_batch">encode_batch() (EncoderWithCond method)</a>
+
+      <ul>
+        <li><a href="reference/encoders/base.html#autocast.encoders.base.GenericEncoder.encode_batch">(GenericEncoder method)</a>
+</li>
+      </ul></li>
+      <li><a href="reference/encoders/base.html#autocast.encoders.base.EncoderWithCond.encode_cond">encode_cond() (EncoderWithCond method)</a>
+</li>
+      <li><a href="reference/encoders/dc.html#autocast.encoders.dc.DCEncoder.encode_tensor">encode_tensor() (DCEncoder method)</a>
+</li>
+      <li><a href="reference/encoders/base.html#autocast.encoders.base.EncoderWithCond.encode_with_cond">encode_with_cond() (EncoderWithCond method)</a>
+</li>
+      <li><a href="reference/types/batch.html#autocast.types.batch.EncodedBatch.encoded_info">encoded_info (EncodedBatch attribute)</a>
+
+      <ul>
+        <li><a href="reference/types/batch.html#autocast.types.batch.EncodedSample.encoded_info">(EncodedSample attribute)</a>
+</li>
+      </ul></li>
+      <li><a href="reference/types/batch.html#autocast.types.batch.EncodedBatch.encoded_inputs">encoded_inputs (EncodedBatch attribute)</a>
+
+      <ul>
+        <li><a href="reference/types/batch.html#autocast.types.batch.EncodedSample.encoded_inputs">(EncodedSample attribute)</a>
+</li>
+      </ul></li>
+      <li><a href="reference/types/batch.html#autocast.types.batch.EncodedBatch.encoded_output_fields">encoded_output_fields (EncodedBatch attribute)</a>
+
+      <ul>
+        <li><a href="reference/types/batch.html#autocast.types.batch.EncodedSample.encoded_output_fields">(EncodedSample attribute)</a>
+</li>
+      </ul></li>
+      <li><a href="reference/types/batch.html#autocast.types.batch.EncodedBatch">EncodedBatch (class in autocast.types.batch)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="reference/data/encoded_dataset.html#autocast.data.encoded_dataset.EncodedBatchMixin">EncodedBatchMixin (class in autocast.data.encoded_dataset)</a>
+</li>
+      <li><a href="reference/data/encoded_dataset.html#autocast.data.encoded_dataset.EncodedDataModule">EncodedDataModule (class in autocast.data.encoded_dataset)</a>
+</li>
+      <li><a href="reference/data/encoded_dataset.html#autocast.data.encoded_dataset.EncodedDataset">EncodedDataset (class in autocast.data.encoded_dataset)</a>
+</li>
+      <li><a href="reference/types/batch.html#autocast.types.batch.EncodedSample">EncodedSample (class in autocast.types.batch)</a>
+</li>
+      <li><a href="reference/models/autoencoder.html#autocast.models.autoencoder.AE.encoder">encoder (AE attribute)</a>
+</li>
+      <li><a href="reference/encoders/base.html#autocast.encoders.base.Encoder">Encoder (class in autocast.encoders.base)</a>
+</li>
+      <li><a href="reference/models/encoder_decoder.html#autocast.models.encoder_decoder.EncoderDecoder.encoder">encoder (EncoderDecoder attribute)</a>
+
+      <ul>
+        <li><a href="reference/models/variational_autoencoder.html#autocast.models.variational_autoencoder.VAE.encoder">(VAE attribute)</a>
+</li>
+      </ul></li>
+      <li><a href="reference/models/encoder_processor_decoder.html#autocast.models.encoder_processor_decoder.EncoderProcessorDecoder.encoder_decoder">encoder_decoder (EncoderProcessorDecoder attribute)</a>
+</li>
+      <li><a href="reference/encoders/dc.html#autocast.encoders.dc.DCEncoder.encoder_model">encoder_model (DCEncoder attribute)</a>
+
+      <ul>
+        <li><a href="reference/encoders/base.html#autocast.encoders.base.Encoder.encoder_model">(Encoder attribute)</a>
+</li>
+        <li><a href="reference/encoders/unet.html#autocast.encoders.unet.UNetEncoder.encoder_model">(UNetEncoder attribute)</a>
+</li>
+      </ul></li>
+      <li><a href="reference/models/encoder_decoder.html#autocast.models.encoder_decoder.EncoderDecoder">EncoderDecoder (class in autocast.models.encoder_decoder)</a>
+</li>
+      <li><a href="reference/models/encoder_processor_decoder.html#autocast.models.encoder_processor_decoder.EncoderProcessorDecoder">EncoderProcessorDecoder (class in autocast.models.encoder_processor_decoder)</a>
+</li>
+      <li><a href="reference/encoders/base.html#autocast.encoders.base.EncoderWithCond">EncoderWithCond (class in autocast.encoders.base)</a>
+</li>
+      <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.EnergyScore">EnergyScore (class in autocast.metrics.ensemble)</a>
+</li>
+      <li><a href="reference/losses/ensemble.html#autocast.losses.ensemble.EnsembleLoss">EnsembleLoss (class in autocast.losses.ensemble)</a>
+</li>
+      <li><a href="reference/losses/ensemble.html#autocast.losses.ensemble.EnsembleMAELoss">EnsembleMAELoss (class in autocast.losses.ensemble)</a>
+</li>
+      <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.EnsembleSkill">EnsembleSkill (class in autocast.metrics.ensemble)</a>
+</li>
+      <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.EnsembleSpread">EnsembleSpread (class in autocast.metrics.ensemble)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="F">F</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.FairCRPS">FairCRPS (class in autocast.metrics.ensemble)</a>
+</li>
+      <li><a href="reference/losses/ensemble.html#autocast.losses.ensemble.FairCRPSLoss">FairCRPSLoss (class in autocast.losses.ensemble)</a>
+</li>
+      <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.FairCRPSMAETerm">FairCRPSMAETerm (class in autocast.metrics.ensemble)</a>
+</li>
+      <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.FairCRPSSpreadTerm">FairCRPSSpreadTerm (class in autocast.metrics.ensemble)</a>
+</li>
+      <li><a href="reference/models/variational_autoencoder.html#autocast.models.variational_autoencoder.VAE.fc_log_var">fc_log_var (VAE attribute)</a>
+</li>
+      <li><a href="reference/models/variational_autoencoder.html#autocast.models.variational_autoencoder.VAE.fc_mean">fc_mean (VAE attribute)</a>
+</li>
+      <li><a href="reference/data/metadata.html#autocast.data.metadata.Metadata.field_names">field_names (Metadata attribute)</a>
+</li>
+      <li><a href="reference/processors/flow_matching.html#autocast.processors.flow_matching.FlowMatchingProcessor.flow_field">flow_field() (FlowMatchingProcessor method)</a>
+</li>
+      <li><a href="reference/models/processor.html#autocast.models.processor.FlowBasedGenerativeProcessor">FlowBasedGenerativeProcessor (class in autocast.models.processor)</a>
+</li>
+      <li><a href="reference/processors/flow_matching.html#autocast.processors.flow_matching.FlowMatchingProcessor">FlowMatchingProcessor (class in autocast.processors.flow_matching)</a>
+</li>
+      <li><a href="reference/processors/swin_vit.html#autocast.processors.swin_vit.AdaLNGenerator.forward">forward() (AdaLNGenerator method)</a>
+
+      <ul>
+        <li><a href="reference/models/autoencoder.html#autocast.models.autoencoder.AE.forward">(AE method)</a>
+</li>
+        <li><a href="reference/models/autoencoder.html#autocast.models.autoencoder.AELoss.forward">(AELoss method)</a>
+</li>
+        <li><a href="reference/processors/vit.html#autocast.processors.vit.AViT.forward">(AViT method)</a>
+</li>
+        <li><a href="reference/processors/vit.html#autocast.processors.vit.AViTProcessor.forward">(AViTProcessor method)</a>
+</li>
+        <li><a href="reference/processors/vit.html#autocast.processors.vit.AxialAttentionBlock.forward">(AxialAttentionBlock method)</a>
+</li>
+        <li><a href="reference/processors/unet.html#autocast.processors.unet.AzulaUNetProcessor.forward">(AzulaUNetProcessor method)</a>
+</li>
+        <li><a href="reference/processors/swin_vit.html#autocast.processors.swin_vit.BasicSwinLayer.forward">(BasicSwinLayer method)</a>
+</li>
+        <li><a href="reference/decoders/base.html#autocast.decoders.base.Decoder.forward">(Decoder method)</a>
+</li>
+        <li><a href="reference/processors/diffusion.html#autocast.processors.diffusion.DiffusionProcessor.forward">(DiffusionProcessor method)</a>
+</li>
+        <li><a href="reference/models/encoder_decoder.html#autocast.models.encoder_decoder.EncoderDecoder.forward">(EncoderDecoder method)</a>
+</li>
+        <li><a href="reference/models/encoder_processor_decoder.html#autocast.models.encoder_processor_decoder.EncoderProcessorDecoder.forward">(EncoderProcessorDecoder method)</a>
+</li>
+        <li><a href="reference/encoders/base.html#autocast.encoders.base.EncoderWithCond.forward">(EncoderWithCond method)</a>
+</li>
+        <li><a href="reference/losses/ensemble.html#autocast.losses.ensemble.EnsembleLoss.forward">(EnsembleLoss method)</a>
+</li>
+        <li><a href="reference/processors/flow_matching.html#autocast.processors.flow_matching.FlowMatchingProcessor.forward">(FlowMatchingProcessor method)</a>
+</li>
+        <li><a href="reference/encoders/base.html#autocast.encoders.base.GenericEncoder.forward">(GenericEncoder method)</a>
+</li>
+        <li><a href="reference/processors/noise.html#autocast.processors.noise.LogLinearSchedule.forward">(LogLinearSchedule method)</a>
+</li>
+        <li><a href="reference/processors/noise.html#autocast.processors.noise.NoiseSchedule.forward">(NoiseSchedule method)</a>
+</li>
+        <li><a href="reference/processors/vit.html#autocast.processors.vit.PatchEmbedding.forward">(PatchEmbedding method)</a>
+</li>
+        <li><a href="reference/processors/swin_vit.html#autocast.processors.swin_vit.PatchMerging.forward">(PatchMerging method)</a>
+</li>
+        <li><a href="reference/processors/swin_vit.html#autocast.processors.swin_vit.PatchSplitting.forward">(PatchSplitting method)</a>
+</li>
+        <li><a href="reference/processors/vit.html#autocast.processors.vit.PatchUnembedding.forward">(PatchUnembedding method)</a>
+</li>
+        <li><a href="reference/models/processor.html#autocast.models.processor.ProcessorModel.forward">(ProcessorModel method)</a>
+</li>
+        <li><a href="reference/nn/residual.html#autocast.nn.residual.ResBlock.forward">(ResBlock method)</a>
+</li>
+        <li><a href="reference/nn/residual.html#autocast.nn.residual.Residual.forward">(Residual method)</a>, <a href="reference/nn/spatial_attention.html#autocast.nn.spatial_attention.Residual.forward">[1]</a>
+</li>
+        <li><a href="reference/nn/residual.html#autocast.nn.residual.SpatialAttentionWrapper.forward">(SpatialAttentionWrapper method)</a>, <a href="reference/nn/spatial_attention.html#autocast.nn.spatial_attention.SpatialAttentionWrapper.forward">[1]</a>
+</li>
+        <li><a href="reference/processors/swin_vit.html#autocast.processors.swin_vit.SwinViTBlock.forward">(SwinViTBlock method)</a>
+</li>
+        <li><a href="reference/processors/swin_vit.html#autocast.processors.swin_vit.SwinViTProcessor.forward">(SwinViTProcessor method)</a>
+</li>
+        <li><a href="reference/processors/unet.html#autocast.processors.unet.UNetClassic.forward">(UNetClassic method)</a>
+</li>
+        <li><a href="reference/processors/unet.html#autocast.processors.unet.UNetProcessor.forward">(UNetProcessor method)</a>
+</li>
+        <li><a href="reference/models/encoder_decoder.html#autocast.models.encoder_decoder.VAE.forward">(VAE method)</a>, <a href="reference/models/variational_autoencoder.html#autocast.models.variational_autoencoder.VAE.forward">[1]</a>
+</li>
+        <li><a href="reference/models/variational_autoencoder.html#autocast.models.variational_autoencoder.VAELoss.forward">(VAELoss method)</a>
+</li>
+        <li><a href="reference/models/autoencoder.html#autocast.models.autoencoder.VMSELoss.forward">(VMSELoss method)</a>
+</li>
+      </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="reference/models/autoencoder.html#autocast.models.autoencoder.AE.forward_with_latent">forward_with_latent() (AE method)</a>
+
+      <ul>
+        <li><a href="reference/models/encoder_decoder.html#autocast.models.encoder_decoder.EncoderDecoder.forward_with_latent">(EncoderDecoder method)</a>
+</li>
+        <li><a href="reference/models/variational_autoencoder.html#autocast.models.variational_autoencoder.VAE.forward_with_latent">(VAE method)</a>
+</li>
+      </ul></li>
+      <li><a href="reference/data/encoded_dataset.html#autocast.data.encoded_dataset.MiniWellDataset.from_files">from_files() (MiniWellDataset static method)</a>
+
+      <ul>
+        <li><a href="reference/data/encoded_dataset.html#autocast.data.encoded_dataset.MiniWellInputOutput.from_files">(MiniWellInputOutput static method)</a>
+</li>
+      </ul></li>
+  </ul></td>
+</tr></table>
+
+<h2 id="G">G</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="reference/encoders/base.html#autocast.encoders.base.GenericEncoder">GenericEncoder (class in autocast.encoders.base)</a>
+</li>
+      <li><a href="reference/processors/swin_vit.html#autocast.processors.swin_vit.SwinViTProcessor.get_encoder_specs">get_encoder_specs() (SwinViTProcessor method)</a>
+</li>
+      <li><a href="reference/models/autoencoder.html#autocast.models.autoencoder.AELoss.get_loss">get_loss() (AELoss static method)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="reference/utils/optimizer.html#autocast.utils.optimizer.get_optimizer_config">get_optimizer_config() (in module autocast.utils.optimizer)</a>
+</li>
+      <li><a href="reference/types/batch.html#autocast.types.batch.EncodedBatch.global_cond">global_cond (EncodedBatch attribute)</a>
+
+      <ul>
+        <li><a href="reference/types/batch.html#autocast.types.batch.EncodedSample.global_cond">(EncodedSample attribute)</a>
+</li>
+      </ul></li>
+      <li><a href="reference/data/metadata.html#autocast.data.metadata.Metadata.grid_type">grid_type (Metadata attribute)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="I">I</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="reference/decoders/identity.html#autocast.decoders.identity.IdentityDecoder">IdentityDecoder (class in autocast.decoders.identity)</a>
+</li>
+      <li><a href="reference/encoders/identity.html#autocast.encoders.identity.IdentityEncoder">IdentityEncoder (class in autocast.encoders.identity)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="reference/types/batch.html#autocast.types.batch.Batch.input_fields">input_fields (Batch attribute)</a>
+
+      <ul>
+        <li><a href="reference/types/batch.html#autocast.types.batch.Sample.input_fields">(Sample attribute)</a>
+</li>
+      </ul></li>
+  </ul></td>
+</tr></table>
+
+<h2 id="K">K</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="reference/models/variational_autoencoder.html#autocast.models.variational_autoencoder.VAELoss.kl_divergence">kl_divergence() (VAELoss method)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="L">L</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="reference/decoders/base.html#autocast.decoders.base.Decoder.latent_channels">latent_channels (Decoder attribute)</a>
+
+      <ul>
+        <li><a href="reference/encoders/base.html#autocast.encoders.base.Encoder.latent_channels">(Encoder attribute)</a>
+</li>
+      </ul></li>
+      <li><a href="reference/processors/base.html#autocast.processors.base.Processor.learning_rate">learning_rate (Processor attribute)</a>
+</li>
+      <li><a href="reference/metrics/deterministic.html#autocast.metrics.deterministic.LInfinity">LInfinity (class in autocast.metrics.deterministic)</a>
+</li>
+      <li><a href="reference/logging/wandb.html#autocast.logging.wandb.log_metrics">log_metrics() (in module autocast.logging.wandb)</a>
+</li>
+      <li><a href="reference/processors/noise.html#autocast.processors.noise.LogLinearSchedule">LogLinearSchedule (class in autocast.processors.noise)</a>
+</li>
+      <li><a href="reference/processors/vit.html#autocast.processors.vit.AViTProcessor.loss">loss() (AViTProcessor method)</a>
+
+      <ul>
+        <li><a href="reference/processors/unet.html#autocast.processors.unet.AzulaUNetProcessor.loss">(AzulaUNetProcessor method)</a>
+</li>
+        <li><a href="reference/processors/diffusion.html#autocast.processors.diffusion.DiffusionProcessor.loss">(DiffusionProcessor method)</a>
+</li>
+        <li><a href="reference/models/encoder_processor_decoder.html#autocast.models.encoder_processor_decoder.EncoderProcessorDecoder.loss">(EncoderProcessorDecoder method)</a>
+</li>
+        <li><a href="reference/processors/flow_matching.html#autocast.processors.flow_matching.FlowMatchingProcessor.loss">(FlowMatchingProcessor method)</a>
+</li>
+        <li><a href="reference/processors/base.html#autocast.processors.base.Processor.loss">(Processor method)</a>
+</li>
+        <li><a href="reference/models/processor.html#autocast.models.processor.ProcessorModel.loss">(ProcessorModel method)</a>
+</li>
+        <li><a href="reference/processors/swin_vit.html#autocast.processors.swin_vit.SwinViTProcessor.loss">(SwinViTProcessor method)</a>
+</li>
+        <li><a href="reference/processors/unet.html#autocast.processors.unet.UNetProcessor.loss">(UNetProcessor method)</a>
+</li>
+      </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="reference/models/encoder_decoder.html#autocast.models.encoder_decoder.EncoderDecoder.loss_func">loss_func (EncoderDecoder attribute)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="M">M</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="reference/metrics/deterministic.html#autocast.metrics.deterministic.MAE">MAE (class in autocast.metrics.deterministic)</a>
+</li>
+      <li><a href="reference/benchmarking/inference.html#autocast.benchmarking.inference.make_synthetic_batch">make_synthetic_batch() (in module autocast.benchmarking.inference)</a>
+</li>
+      <li><a href="reference/processors/vit.html#autocast.processors.vit.AViTProcessor.map">map() (AViTProcessor method)</a>
+
+      <ul>
+        <li><a href="reference/processors/unet.html#autocast.processors.unet.AzulaUNetProcessor.map">(AzulaUNetProcessor method)</a>
+</li>
+        <li><a href="reference/processors/diffusion.html#autocast.processors.diffusion.DiffusionProcessor.map">(DiffusionProcessor method)</a>
+</li>
+        <li><a href="reference/processors/flow_matching.html#autocast.processors.flow_matching.FlowMatchingProcessor.map">(FlowMatchingProcessor method)</a>
+</li>
+        <li><a href="reference/processors/base.html#autocast.processors.base.Processor.map">(Processor method)</a>
+</li>
+        <li><a href="reference/models/processor.html#autocast.models.processor.ProcessorModel.map">(ProcessorModel method)</a>
+</li>
+        <li><a href="reference/processors/swin_vit.html#autocast.processors.swin_vit.SwinViTProcessor.map">(SwinViTProcessor method)</a>
+</li>
+        <li><a href="reference/processors/unet.html#autocast.processors.unet.UNetProcessor.map">(UNetProcessor method)</a>
+</li>
+      </ul></li>
+      <li><a href="reference/logging/wandb.html#autocast.logging.wandb.maybe_watch_model">maybe_watch_model() (in module autocast.logging.wandb)</a>
+</li>
+      <li><a href="reference/benchmarking/inference.html#autocast.benchmarking.inference.measure_flops">measure_flops() (in module autocast.benchmarking.inference)</a>
+</li>
+      <li><a href="reference/data/metadata.html#autocast.data.metadata.Metadata">Metadata (class in autocast.data.metadata)</a>
+</li>
+      <li><a href="reference/data/encoded_dataset.html#autocast.data.encoded_dataset.MiniWellInputOutput.miniwell_dataset">miniwell_dataset (MiniWellInputOutput attribute)</a>
+</li>
+      <li><a href="reference/data/encoded_dataset.html#autocast.data.encoded_dataset.MiniWellDataModule">MiniWellDataModule (class in autocast.data.encoded_dataset)</a>
+</li>
+      <li><a href="reference/data/encoded_dataset.html#autocast.data.encoded_dataset.MiniWellDataset">MiniWellDataset (class in autocast.data.encoded_dataset)</a>
+</li>
+      <li><a href="reference/data/encoded_dataset.html#autocast.data.encoded_dataset.MiniWellInputOutput">MiniWellInputOutput (class in autocast.data.encoded_dataset)</a>
+</li>
+      <li><a href="reference/processors/swin_vit.html#autocast.processors.swin_vit.modulate">modulate() (in module autocast.processors.swin_vit)</a>
+</li>
+      <li>
+    module
+
+      <ul>
+        <li><a href="reference/benchmarking/inference.html#module-autocast.benchmarking.inference">autocast.benchmarking.inference</a>
+</li>
+        <li><a href="reference/data/datamodule.html#module-autocast.data.datamodule">autocast.data.datamodule</a>
+</li>
+        <li><a href="reference/data/dataset.html#module-autocast.data.dataset">autocast.data.dataset</a>
+</li>
+        <li><a href="reference/data/encoded_dataset.html#module-autocast.data.encoded_dataset">autocast.data.encoded_dataset</a>
+</li>
+        <li><a href="reference/data/metadata.html#module-autocast.data.metadata">autocast.data.metadata</a>
+</li>
+        <li><a href="reference/decoders/base.html#module-autocast.decoders.base">autocast.decoders.base</a>
+</li>
+        <li><a href="reference/decoders/dc.html#module-autocast.decoders.dc">autocast.decoders.dc</a>
+</li>
+        <li><a href="reference/decoders/identity.html#module-autocast.decoders.identity">autocast.decoders.identity</a>
+</li>
+        <li><a href="reference/encoders/base.html#module-autocast.encoders.base">autocast.encoders.base</a>
+</li>
+        <li><a href="reference/encoders/dc.html#module-autocast.encoders.dc">autocast.encoders.dc</a>
+</li>
+        <li><a href="reference/encoders/identity.html#module-autocast.encoders.identity">autocast.encoders.identity</a>
+</li>
+        <li><a href="reference/encoders/unet.html#module-autocast.encoders.unet">autocast.encoders.unet</a>
+</li>
+        <li><a href="reference/logging/wandb.html#module-autocast.logging.wandb">autocast.logging.wandb</a>
+</li>
+        <li><a href="reference/losses/ensemble.html#module-autocast.losses.ensemble">autocast.losses.ensemble</a>
+</li>
+        <li><a href="reference/metrics/base.html#module-autocast.metrics.base">autocast.metrics.base</a>
+</li>
+        <li><a href="reference/metrics/coverage.html#module-autocast.metrics.coverage">autocast.metrics.coverage</a>
+</li>
+        <li><a href="reference/metrics/deterministic.html#module-autocast.metrics.deterministic">autocast.metrics.deterministic</a>
+</li>
+        <li><a href="reference/metrics/ensemble.html#module-autocast.metrics.ensemble">autocast.metrics.ensemble</a>
+</li>
+        <li><a href="reference/models/autoencoder.html#module-autocast.models.autoencoder">autocast.models.autoencoder</a>
+</li>
+        <li><a href="reference/models/encoder_decoder.html#module-autocast.models.encoder_decoder">autocast.models.encoder_decoder</a>
+</li>
+        <li><a href="reference/models/encoder_processor_decoder.html#module-autocast.models.encoder_processor_decoder">autocast.models.encoder_processor_decoder</a>
+</li>
+        <li><a href="reference/models/processor.html#module-autocast.models.processor">autocast.models.processor</a>
+</li>
+        <li><a href="reference/models/variational_autoencoder.html#module-autocast.models.variational_autoencoder">autocast.models.variational_autoencoder</a>
+</li>
+        <li><a href="reference/nn/residual.html#module-autocast.nn.residual">autocast.nn.residual</a>
+</li>
+        <li><a href="reference/nn/spatial_attention.html#module-autocast.nn.spatial_attention">autocast.nn.spatial_attention</a>
+</li>
+        <li><a href="reference/processors/base.html#module-autocast.processors.base">autocast.processors.base</a>
+</li>
+        <li><a href="reference/processors/diffusion.html#module-autocast.processors.diffusion">autocast.processors.diffusion</a>
+</li>
+        <li><a href="reference/processors/flow_matching.html#module-autocast.processors.flow_matching">autocast.processors.flow_matching</a>
+</li>
+        <li><a href="reference/processors/noise.html#module-autocast.processors.noise">autocast.processors.noise</a>
+</li>
+        <li><a href="reference/processors/swin_vit.html#module-autocast.processors.swin_vit">autocast.processors.swin_vit</a>
+</li>
+        <li><a href="reference/processors/unet.html#module-autocast.processors.unet">autocast.processors.unet</a>
+</li>
+        <li><a href="reference/processors/vit.html#module-autocast.processors.vit">autocast.processors.vit</a>
+</li>
+        <li><a href="reference/types/batch.html#module-autocast.types.batch">autocast.types.batch</a>
+</li>
+        <li><a href="reference/types/types.html#module-autocast.types.types">autocast.types.types</a>
+</li>
+        <li><a href="reference/utils/optimizer.html#module-autocast.utils.optimizer">autocast.utils.optimizer</a>
+</li>
+        <li><a href="reference/utils/plots.html#module-autocast.utils.plots">autocast.utils.plots</a>
+</li>
+      </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="reference/metrics/deterministic.html#autocast.metrics.deterministic.MSE">MSE (class in autocast.metrics.deterministic)</a>
+</li>
+      <li><a href="reference/metrics/coverage.html#autocast.metrics.coverage.MultiCoverage">MultiCoverage (class in autocast.metrics.coverage)</a>
+</li>
+      <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.MultiWinkler">MultiWinkler (class in autocast.metrics.ensemble)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="N">N</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="reference/data/metadata.html#autocast.data.metadata.Metadata.n_files">n_files (Metadata attribute)</a>
+</li>
+      <li><a href="reference/data/metadata.html#autocast.data.metadata.Metadata.n_spatial_dims">n_spatial_dims (Metadata attribute)</a>
+</li>
+      <li><a href="reference/data/metadata.html#autocast.data.metadata.Metadata.n_steps_per_trajectory">n_steps_per_trajectory (Metadata attribute)</a>
+</li>
+      <li><a href="reference/data/metadata.html#autocast.data.metadata.Metadata.n_trajectories_per_file">n_trajectories_per_file (Metadata attribute)</a>
+</li>
+      <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.AlphaFairCRPS.name">name (AlphaFairCRPS attribute)</a>
+
+      <ul>
+        <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.AlphaFairCRPSMAETerm.name">(AlphaFairCRPSMAETerm attribute)</a>
+</li>
+        <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.AlphaFairCRPSSpreadTerm.name">(AlphaFairCRPSSpreadTerm attribute)</a>
+</li>
+        <li><a href="reference/metrics/coverage.html#autocast.metrics.coverage.Coverage.name">(Coverage attribute)</a>
+</li>
+        <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.CRPS.name">(CRPS attribute)</a>
+</li>
+        <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.CRPSMAETerm.name">(CRPSMAETerm attribute)</a>
+</li>
+        <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.CRPSSpreadTerm.name">(CRPSSpreadTerm attribute)</a>
+</li>
+        <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.EnergyScore.name">(EnergyScore attribute)</a>
+</li>
+        <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.EnsembleSkill.name">(EnsembleSkill attribute)</a>
+</li>
+        <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.EnsembleSpread.name">(EnsembleSpread attribute)</a>
+</li>
+        <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.FairCRPS.name">(FairCRPS attribute)</a>
+</li>
+        <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.FairCRPSMAETerm.name">(FairCRPSMAETerm attribute)</a>
+</li>
+        <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.FairCRPSSpreadTerm.name">(FairCRPSSpreadTerm attribute)</a>
+</li>
+        <li><a href="reference/metrics/deterministic.html#autocast.metrics.deterministic.LInfinity.name">(LInfinity attribute)</a>
+</li>
+        <li><a href="reference/metrics/deterministic.html#autocast.metrics.deterministic.MAE.name">(MAE attribute)</a>
+</li>
+        <li><a href="reference/metrics/deterministic.html#autocast.metrics.deterministic.MSE.name">(MSE attribute)</a>
+</li>
+        <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.MultiWinkler.name">(MultiWinkler attribute)</a>
+</li>
+        <li><a href="reference/metrics/deterministic.html#autocast.metrics.deterministic.NMAE.name">(NMAE attribute)</a>
+</li>
+        <li><a href="reference/metrics/deterministic.html#autocast.metrics.deterministic.NMSE.name">(NMSE attribute)</a>
+</li>
+        <li><a href="reference/metrics/deterministic.html#autocast.metrics.deterministic.NRMSE.name">(NRMSE attribute)</a>
+</li>
+        <li><a href="reference/metrics/deterministic.html#autocast.metrics.deterministic.PowerSpectrumCCRMSE.name">(PowerSpectrumCCRMSE attribute)</a>
+</li>
+        <li><a href="reference/metrics/deterministic.html#autocast.metrics.deterministic.PowerSpectrumCCRMSEHigh.name">(PowerSpectrumCCRMSEHigh attribute)</a>
+</li>
+        <li><a href="reference/metrics/deterministic.html#autocast.metrics.deterministic.PowerSpectrumCCRMSELow.name">(PowerSpectrumCCRMSELow attribute)</a>
+</li>
+        <li><a href="reference/metrics/deterministic.html#autocast.metrics.deterministic.PowerSpectrumCCRMSEMid.name">(PowerSpectrumCCRMSEMid attribute)</a>
+</li>
+        <li><a href="reference/metrics/deterministic.html#autocast.metrics.deterministic.PowerSpectrumCCRMSETail.name">(PowerSpectrumCCRMSETail attribute)</a>
+</li>
+        <li><a href="reference/metrics/deterministic.html#autocast.metrics.deterministic.PowerSpectrumRMSE.name">(PowerSpectrumRMSE attribute)</a>
+</li>
+        <li><a href="reference/metrics/deterministic.html#autocast.metrics.deterministic.PowerSpectrumRMSEHigh.name">(PowerSpectrumRMSEHigh attribute)</a>
+</li>
+        <li><a href="reference/metrics/deterministic.html#autocast.metrics.deterministic.PowerSpectrumRMSELow.name">(PowerSpectrumRMSELow attribute)</a>
+</li>
+        <li><a href="reference/metrics/deterministic.html#autocast.metrics.deterministic.PowerSpectrumRMSEMid.name">(PowerSpectrumRMSEMid attribute)</a>
+</li>
+        <li><a href="reference/metrics/deterministic.html#autocast.metrics.deterministic.PowerSpectrumRMSETail.name">(PowerSpectrumRMSETail attribute)</a>
+</li>
+        <li><a href="reference/metrics/deterministic.html#autocast.metrics.deterministic.RMSE.name">(RMSE attribute)</a>
+</li>
+        <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.SpreadSkillRatio.name">(SpreadSkillRatio attribute)</a>
+</li>
+        <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.VariogramScore.name">(VariogramScore attribute)</a>
+</li>
+        <li><a href="reference/metrics/deterministic.html#autocast.metrics.deterministic.VMSE.name">(VMSE attribute)</a>
+</li>
+        <li><a href="reference/metrics/deterministic.html#autocast.metrics.deterministic.VRMSE.name">(VRMSE attribute)</a>
+</li>
+        <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.WinklerScore.name">(WinklerScore attribute)</a>
+</li>
+      </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="reference/metrics/deterministic.html#autocast.metrics.deterministic.NMAE">NMAE (class in autocast.metrics.deterministic)</a>
+</li>
+      <li><a href="reference/metrics/deterministic.html#autocast.metrics.deterministic.NMSE">NMSE (class in autocast.metrics.deterministic)</a>
+</li>
+      <li><a href="reference/processors/noise.html#autocast.processors.noise.NoiseSchedule">NoiseSchedule (class in autocast.processors.noise)</a>
+</li>
+      <li><a href="reference/metrics/deterministic.html#autocast.metrics.deterministic.NRMSE">NRMSE (class in autocast.metrics.deterministic)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="O">O</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="reference/models/encoder_processor_decoder.html#autocast.models.encoder_processor_decoder.EncoderProcessorDecoder.on_load_checkpoint">on_load_checkpoint() (EncoderProcessorDecoder method)</a>
+</li>
+      <li><a href="reference/models/encoder_decoder.html#autocast.models.encoder_decoder.EncoderDecoder.optimizer_config">optimizer_config (EncoderDecoder attribute)</a>
+
+      <ul>
+        <li><a href="reference/models/processor.html#autocast.models.processor.ProcessorModel.optimizer_config">(ProcessorModel attribute)</a>
+</li>
+      </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="reference/processors/unet.html#autocast.processors.unet.UNetClassic.optional_checkpointing">optional_checkpointing() (UNetClassic method)</a>
+</li>
+      <li><a href="reference/types/batch.html#autocast.types.batch.Batch.output_fields">output_fields (Batch attribute)</a>
+
+      <ul>
+        <li><a href="reference/types/batch.html#autocast.types.batch.Sample.output_fields">(Sample attribute)</a>
+</li>
+      </ul></li>
+      <li><a href="reference/encoders/base.html#autocast.encoders.base.Encoder.outputs_time_channel_concat">outputs_time_channel_concat (Encoder attribute)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="P">P</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="reference/data/dataset.html#autocast.data.dataset.SpatioTemporalDataset.parse_data">parse_data() (SpatioTemporalDataset method)</a>
+</li>
+      <li><a href="reference/processors/vit.html#autocast.processors.vit.PatchEmbedding">PatchEmbedding (class in autocast.processors.vit)</a>
+</li>
+      <li><a href="reference/processors/swin_vit.html#autocast.processors.swin_vit.PatchMerging">PatchMerging (class in autocast.processors.swin_vit)</a>
+</li>
+      <li><a href="reference/processors/swin_vit.html#autocast.processors.swin_vit.PatchSplitting">PatchSplitting (class in autocast.processors.swin_vit)</a>
+</li>
+      <li><a href="reference/processors/vit.html#autocast.processors.vit.PatchUnembedding">PatchUnembedding (class in autocast.processors.vit)</a>
+</li>
+      <li><a href="reference/metrics/coverage.html#autocast.metrics.coverage.MultiCoverage.plot">plot() (MultiCoverage method)</a>
+
+      <ul>
+        <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.MultiWinkler.plot">(MultiWinkler method)</a>
+</li>
+      </ul></li>
+      <li><a href="reference/utils/plots.html#autocast.utils.plots.plot_coverage">plot_coverage() (in module autocast.utils.plots)</a>
+</li>
+      <li><a href="reference/utils/plots.html#autocast.utils.plots.plot_spatiotemporal_snapshots">plot_spatiotemporal_snapshots() (in module autocast.utils.plots)</a>
+</li>
+      <li><a href="reference/utils/plots.html#autocast.utils.plots.plot_spatiotemporal_snapshots_data_only">plot_spatiotemporal_snapshots_data_only() (in module autocast.utils.plots)</a>
+</li>
+      <li><a href="reference/utils/plots.html#autocast.utils.plots.plot_spatiotemporal_video">plot_spatiotemporal_video() (in module autocast.utils.plots)</a>
+</li>
+      <li><a href="reference/decoders/base.html#autocast.decoders.base.Decoder.postprocess">postprocess() (Decoder method)</a>
+</li>
+      <li><a href="reference/metrics/deterministic.html#autocast.metrics.deterministic.PowerSpectrumCCRMSE">PowerSpectrumCCRMSE (class in autocast.metrics.deterministic)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="reference/metrics/deterministic.html#autocast.metrics.deterministic.PowerSpectrumCCRMSEHigh">PowerSpectrumCCRMSEHigh (class in autocast.metrics.deterministic)</a>
+</li>
+      <li><a href="reference/metrics/deterministic.html#autocast.metrics.deterministic.PowerSpectrumCCRMSELow">PowerSpectrumCCRMSELow (class in autocast.metrics.deterministic)</a>
+</li>
+      <li><a href="reference/metrics/deterministic.html#autocast.metrics.deterministic.PowerSpectrumCCRMSEMid">PowerSpectrumCCRMSEMid (class in autocast.metrics.deterministic)</a>
+</li>
+      <li><a href="reference/metrics/deterministic.html#autocast.metrics.deterministic.PowerSpectrumCCRMSETail">PowerSpectrumCCRMSETail (class in autocast.metrics.deterministic)</a>
+</li>
+      <li><a href="reference/metrics/deterministic.html#autocast.metrics.deterministic.PowerSpectrumRMSE">PowerSpectrumRMSE (class in autocast.metrics.deterministic)</a>
+</li>
+      <li><a href="reference/metrics/deterministic.html#autocast.metrics.deterministic.PowerSpectrumRMSEHigh">PowerSpectrumRMSEHigh (class in autocast.metrics.deterministic)</a>
+</li>
+      <li><a href="reference/metrics/deterministic.html#autocast.metrics.deterministic.PowerSpectrumRMSELow">PowerSpectrumRMSELow (class in autocast.metrics.deterministic)</a>
+</li>
+      <li><a href="reference/metrics/deterministic.html#autocast.metrics.deterministic.PowerSpectrumRMSEMid">PowerSpectrumRMSEMid (class in autocast.metrics.deterministic)</a>
+</li>
+      <li><a href="reference/metrics/deterministic.html#autocast.metrics.deterministic.PowerSpectrumRMSETail">PowerSpectrumRMSETail (class in autocast.metrics.deterministic)</a>
+</li>
+      <li><a href="reference/encoders/base.html#autocast.encoders.base.GenericEncoder.preprocess">preprocess() (GenericEncoder method)</a>
+</li>
+      <li><a href="reference/processors/base.html#autocast.processors.base.Processor">Processor (class in autocast.processors.base)</a>
+</li>
+      <li><a href="reference/models/encoder_processor_decoder.html#autocast.models.encoder_processor_decoder.EncoderProcessorDecoder.processor">processor (EncoderProcessorDecoder attribute)</a>
+
+      <ul>
+        <li><a href="reference/models/processor.html#autocast.models.processor.ProcessorModel.processor">(ProcessorModel attribute)</a>
+</li>
+      </ul></li>
+      <li><a href="reference/models/processor.html#autocast.models.processor.ProcessorModel">ProcessorModel (class in autocast.models.processor)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="R">R</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="reference/data/dataset.html#autocast.data.dataset.ReactionDiffusionDataset">ReactionDiffusionDataset (class in autocast.data.dataset)</a>
+</li>
+      <li><a href="reference/data/dataset.html#autocast.data.dataset.SpatioTemporalDataset.read_data">read_data() (SpatioTemporalDataset method)</a>
+</li>
+      <li><a href="reference/models/encoder_decoder.html#autocast.models.encoder_decoder.VAE.reparametrize">reparametrize() (VAE method)</a>, <a href="reference/models/variational_autoencoder.html#autocast.models.variational_autoencoder.VAE.reparametrize">[1]</a>
+</li>
+      <li><a href="reference/types/batch.html#autocast.types.batch.Batch.repeat">repeat() (Batch method)</a>
+
+      <ul>
+        <li><a href="reference/types/batch.html#autocast.types.batch.EncodedBatch.repeat">(EncodedBatch method)</a>
+</li>
+      </ul></li>
+      <li><a href="reference/nn/residual.html#autocast.nn.residual.ResBlock">ResBlock (class in autocast.nn.residual)</a>
+</li>
+      <li><a href="reference/metrics/base.html#autocast.metrics.base.BaseMetric.reset">reset() (BaseMetric method)</a>
+
+      <ul>
+        <li><a href="reference/metrics/coverage.html#autocast.metrics.coverage.MultiCoverage.reset">(MultiCoverage method)</a>
+</li>
+        <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.MultiWinkler.reset">(MultiWinkler method)</a>
+</li>
+      </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="reference/nn/residual.html#autocast.nn.residual.Residual">Residual (class in autocast.nn.residual)</a>
+
+      <ul>
+        <li><a href="reference/nn/spatial_attention.html#autocast.nn.spatial_attention.Residual">(class in autocast.nn.spatial_attention)</a>
+</li>
+      </ul></li>
+      <li><a href="reference/metrics/deterministic.html#autocast.metrics.deterministic.RMSE">RMSE (class in autocast.metrics.deterministic)</a>
+</li>
+      <li><a href="reference/data/encoded_dataset.html#autocast.data.encoded_dataset.EncodedDataModule.rollout_test_dataloader">rollout_test_dataloader() (EncodedDataModule method)</a>
+
+      <ul>
+        <li><a href="reference/data/datamodule.html#autocast.data.datamodule.SpatioTemporalDataModule.rollout_test_dataloader">(SpatioTemporalDataModule method)</a>
+</li>
+        <li><a href="reference/data/datamodule.html#autocast.data.datamodule.TheWellDataModule.rollout_test_dataloader">(TheWellDataModule method)</a>
+</li>
+      </ul></li>
+      <li><a href="reference/data/datamodule.html#autocast.data.datamodule.SpatioTemporalDataModule.rollout_val_dataloader">rollout_val_dataloader() (SpatioTemporalDataModule method)</a>
+
+      <ul>
+        <li><a href="reference/data/datamodule.html#autocast.data.datamodule.TheWellDataModule.rollout_val_dataloader">(TheWellDataModule method)</a>
+</li>
+      </ul></li>
+  </ul></td>
+</tr></table>
+
+<h2 id="S">S</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="reference/types/batch.html#autocast.types.batch.Sample">Sample (class in autocast.types.batch)</a>
+</li>
+      <li><a href="reference/processors/diffusion.html#autocast.processors.diffusion.DiffusionProcessor.sample">sample() (DiffusionProcessor method)</a>
+</li>
+      <li><a href="reference/data/metadata.html#autocast.data.metadata.Metadata.scalar_names">scalar_names (Metadata attribute)</a>
+</li>
+      <li><a href="reference/metrics/base.html#autocast.metrics.base.BaseMetric.score">score() (BaseMetric method)</a>
+
+      <ul>
+        <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.BTSCMMetric.score">(BTSCMMetric method)</a>
+</li>
+        <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.EnsembleSkill.score">(EnsembleSkill method)</a>
+</li>
+        <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.EnsembleSpread.score">(EnsembleSpread method)</a>
+</li>
+        <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.MultiWinkler.score">(MultiWinkler method)</a>
+</li>
+        <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.SpreadSkillRatio.score">(SpreadSkillRatio method)</a>
+</li>
+      </ul></li>
+      <li><a href="reference/data/dataset.html#autocast.data.dataset.SpatioTemporalDataset.set_up_normalization">set_up_normalization() (SpatioTemporalDataset method)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="reference/data/encoded_dataset.html#autocast.data.encoded_dataset.EncodedDataModule.setup">setup() (EncodedDataModule method)</a>
+
+      <ul>
+        <li><a href="reference/data/encoded_dataset.html#autocast.data.encoded_dataset.MiniWellDataModule.setup">(MiniWellDataModule method)</a>
+</li>
+      </ul></li>
+      <li><a href="reference/data/metadata.html#autocast.data.metadata.Metadata.spatial_resolution">spatial_resolution (Metadata attribute)</a>
+</li>
+      <li><a href="reference/nn/residual.html#autocast.nn.residual.SpatialAttentionWrapper">SpatialAttentionWrapper (class in autocast.nn.residual)</a>
+
+      <ul>
+        <li><a href="reference/nn/spatial_attention.html#autocast.nn.spatial_attention.SpatialAttentionWrapper">(class in autocast.nn.spatial_attention)</a>
+</li>
+      </ul></li>
+      <li><a href="reference/data/datamodule.html#autocast.data.datamodule.SpatioTemporalDataModule">SpatioTemporalDataModule (class in autocast.data.datamodule)</a>
+</li>
+      <li><a href="reference/data/dataset.html#autocast.data.dataset.SpatioTemporalDataset">SpatioTemporalDataset (class in autocast.data.dataset)</a>
+</li>
+      <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.SpreadSkillRatio">SpreadSkillRatio (class in autocast.metrics.ensemble)</a>
+</li>
+      <li><a href="reference/processors/swin_vit.html#autocast.processors.swin_vit.SwinViTBlock">SwinViTBlock (class in autocast.processors.swin_vit)</a>
+</li>
+      <li><a href="reference/processors/swin_vit.html#autocast.processors.swin_vit.SwinViTProcessor">SwinViTProcessor (class in autocast.processors.swin_vit)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="T">T</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="reference/data/encoded_dataset.html#autocast.data.encoded_dataset.EncodedDataModule.test_dataloader">test_dataloader() (EncodedDataModule method)</a>
+
+      <ul>
+        <li><a href="reference/data/encoded_dataset.html#autocast.data.encoded_dataset.MiniWellDataModule.test_dataloader">(MiniWellDataModule method)</a>
+</li>
+        <li><a href="reference/data/datamodule.html#autocast.data.datamodule.SpatioTemporalDataModule.test_dataloader">(SpatioTemporalDataModule method)</a>
+</li>
+        <li><a href="reference/data/datamodule.html#autocast.data.datamodule.TheWellDataModule.test_dataloader">(TheWellDataModule method)</a>
+</li>
+      </ul></li>
+      <li><a href="reference/models/encoder_processor_decoder.html#autocast.models.encoder_processor_decoder.EncoderProcessorDecoder.test_metrics">test_metrics (EncoderProcessorDecoder attribute)</a>
+</li>
+      <li><a href="reference/models/autoencoder.html#autocast.models.autoencoder.AE.test_step">test_step() (AE method)</a>
+
+      <ul>
+        <li><a href="reference/models/encoder_decoder.html#autocast.models.encoder_decoder.EncoderDecoder.test_step">(EncoderDecoder method)</a>
+</li>
+        <li><a href="reference/models/encoder_processor_decoder.html#autocast.models.encoder_processor_decoder.EncoderProcessorDecoder.test_step">(EncoderProcessorDecoder method)</a>
+</li>
+        <li><a href="reference/models/processor.html#autocast.models.processor.ProcessorModel.test_step">(ProcessorModel method)</a>
+</li>
+      </ul></li>
+      <li><a href="reference/data/dataset.html#autocast.data.dataset.TheWell">TheWell (class in autocast.data.dataset)</a>
+</li>
+      <li><a href="reference/data/datamodule.html#autocast.data.datamodule.TheWellDataModule">TheWellDataModule (class in autocast.data.datamodule)</a>
+</li>
+      <li><a href="reference/types/batch.html#autocast.types.batch.Batch.to">to() (Batch method)</a>
+
+      <ul>
+        <li><a href="reference/types/batch.html#autocast.types.batch.EncodedBatch.to">(EncodedBatch method)</a>
+</li>
+      </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="reference/data/dataset.html#autocast.data.dataset.BatchMixin.to_sample">to_sample() (BatchMixin static method)</a>
+
+      <ul>
+        <li><a href="reference/data/encoded_dataset.html#autocast.data.encoded_dataset.EncodedBatchMixin.to_sample">(EncodedBatchMixin static method)</a>
+</li>
+      </ul></li>
+      <li><a href="reference/data/encoded_dataset.html#autocast.data.encoded_dataset.EncodedDataModule.train_dataloader">train_dataloader() (EncodedDataModule method)</a>
+
+      <ul>
+        <li><a href="reference/data/encoded_dataset.html#autocast.data.encoded_dataset.MiniWellDataModule.train_dataloader">(MiniWellDataModule method)</a>
+</li>
+        <li><a href="reference/data/datamodule.html#autocast.data.datamodule.SpatioTemporalDataModule.train_dataloader">(SpatioTemporalDataModule method)</a>
+</li>
+        <li><a href="reference/data/datamodule.html#autocast.data.datamodule.TheWellDataModule.train_dataloader">(TheWellDataModule method)</a>
+</li>
+      </ul></li>
+      <li><a href="reference/models/encoder_processor_decoder.html#autocast.models.encoder_processor_decoder.EncoderProcessorDecoder.train_metrics">train_metrics (EncoderProcessorDecoder attribute)</a>
+</li>
+      <li><a href="reference/models/autoencoder.html#autocast.models.autoencoder.AE.training_step">training_step() (AE method)</a>
+
+      <ul>
+        <li><a href="reference/models/encoder_decoder.html#autocast.models.encoder_decoder.EncoderDecoder.training_step">(EncoderDecoder method)</a>
+</li>
+        <li><a href="reference/models/encoder_processor_decoder.html#autocast.models.encoder_processor_decoder.EncoderProcessorDecoder.training_step">(EncoderProcessorDecoder method)</a>
+</li>
+        <li><a href="reference/models/processor.html#autocast.models.processor.ProcessorModel.training_step">(ProcessorModel method)</a>
+</li>
+        <li><a href="reference/models/variational_autoencoder.html#autocast.models.variational_autoencoder.VAE.training_step">(VAE method)</a>
+</li>
+      </ul></li>
+  </ul></td>
+</tr></table>
+
+<h2 id="U">U</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="reference/processors/unet.html#autocast.processors.unet.UNetClassic">UNetClassic (class in autocast.processors.unet)</a>
+</li>
+      <li><a href="reference/encoders/unet.html#autocast.encoders.unet.UNetEncoder">UNetEncoder (class in autocast.encoders.unet)</a>
+</li>
+      <li><a href="reference/processors/unet.html#autocast.processors.unet.UNetProcessor">UNetProcessor (class in autocast.processors.unet)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="reference/metrics/base.html#autocast.metrics.base.BaseMetric.update">update() (BaseMetric method)</a>
+
+      <ul>
+        <li><a href="reference/metrics/coverage.html#autocast.metrics.coverage.MultiCoverage.update">(MultiCoverage method)</a>
+</li>
+        <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.MultiWinkler.update">(MultiWinkler method)</a>
+</li>
+      </ul></li>
+  </ul></td>
+</tr></table>
+
+<h2 id="V">V</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="reference/models/encoder_decoder.html#autocast.models.encoder_decoder.VAE">VAE (class in autocast.models.encoder_decoder)</a>
+
+      <ul>
+        <li><a href="reference/models/variational_autoencoder.html#autocast.models.variational_autoencoder.VAE">(class in autocast.models.variational_autoencoder)</a>
+</li>
+      </ul></li>
+      <li><a href="reference/models/variational_autoencoder.html#autocast.models.variational_autoencoder.VAELoss">VAELoss (class in autocast.models.variational_autoencoder)</a>
+</li>
+      <li><a href="reference/data/encoded_dataset.html#autocast.data.encoded_dataset.EncodedDataModule.val_dataloader">val_dataloader() (EncodedDataModule method)</a>
+
+      <ul>
+        <li><a href="reference/data/encoded_dataset.html#autocast.data.encoded_dataset.MiniWellDataModule.val_dataloader">(MiniWellDataModule method)</a>
+</li>
+        <li><a href="reference/data/datamodule.html#autocast.data.datamodule.SpatioTemporalDataModule.val_dataloader">(SpatioTemporalDataModule method)</a>
+</li>
+        <li><a href="reference/data/datamodule.html#autocast.data.datamodule.TheWellDataModule.val_dataloader">(TheWellDataModule method)</a>
+</li>
+      </ul></li>
+      <li><a href="reference/models/encoder_processor_decoder.html#autocast.models.encoder_processor_decoder.EncoderProcessorDecoder.val_metrics">val_metrics (EncoderProcessorDecoder attribute)</a>
+</li>
+      <li><a href="reference/models/autoencoder.html#autocast.models.autoencoder.AE.validation_step">validation_step() (AE method)</a>
+
+      <ul>
+        <li><a href="reference/models/encoder_decoder.html#autocast.models.encoder_decoder.EncoderDecoder.validation_step">(EncoderDecoder method)</a>
+</li>
+        <li><a href="reference/models/encoder_processor_decoder.html#autocast.models.encoder_processor_decoder.EncoderProcessorDecoder.validation_step">(EncoderProcessorDecoder method)</a>
+</li>
+        <li><a href="reference/models/processor.html#autocast.models.processor.ProcessorModel.validation_step">(ProcessorModel method)</a>
+</li>
+      </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.VariogramScore">VariogramScore (class in autocast.metrics.ensemble)</a>
+</li>
+      <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.EnergyScore.vector_dims">vector_dims (EnergyScore attribute)</a>
+
+      <ul>
+        <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.VariogramScore.vector_dims">(VariogramScore attribute)</a>
+</li>
+      </ul></li>
+      <li><a href="reference/metrics/deterministic.html#autocast.metrics.deterministic.VMSE">VMSE (class in autocast.metrics.deterministic)</a>
+</li>
+      <li><a href="reference/models/autoencoder.html#autocast.models.autoencoder.VMSELoss">VMSELoss (class in autocast.models.autoencoder)</a>
+</li>
+      <li><a href="reference/metrics/deterministic.html#autocast.metrics.deterministic.VRMSE">VRMSE (class in autocast.metrics.deterministic)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="W">W</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="reference/data/dataset.html#autocast.data.dataset.TheWell.well_dataset">well_dataset (TheWell attribute)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="reference/metrics/ensemble.html#autocast.metrics.ensemble.WinklerScore">WinklerScore (class in autocast.metrics.ensemble)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+
+
+                </article>
+              
+
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+<div class="bd-footer-content__inner container">
+  
+  <div class="footer-item">
+    
+<p class="component-author">
+By AI for Physical Systems Team at The Alan Turing Institute
+</p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+  <div class="footer-item">
+    
+<div class="extra_footer">
+  Copyright &copy; 2026
+
+</div>
+  </div>
+  
+</div>
+          </footer>
+        
+
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf"></script>
+<script defer src="_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf"></script>
+
+  <footer class="bd-footer">
+  </footer>
+  </body>
+</html>
