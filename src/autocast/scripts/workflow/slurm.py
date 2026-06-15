@@ -130,10 +130,7 @@ def _extract_distributed_preset_name(
     for item in defaults:
         if not isinstance(item, dict):
             continue
-        val = (
-            item.get("/distributed")
-            or item.get("override /distributed")
-        )
+        val = item.get("/distributed") or item.get("override /distributed")
         if isinstance(val, str) and val:
             return val
     for item in defaults:
