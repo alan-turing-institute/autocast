@@ -132,7 +132,6 @@ def _extract_distributed_preset_name(
             continue
         val = (
             item.get("/distributed")
-            or item.get("distributed")
             or item.get("override /distributed")
         )
         if isinstance(val, str) and val:
