@@ -1,7 +1,15 @@
 import torch
 from azula.denoise import Denoiser, GaussianPosterior, KarrasDenoiser, SimpleDenoiser
 from azula.noise import Schedule
-from azula.sample import DDIMSampler, DDPMSampler, EulerSampler, HeunSampler, Sampler
+from azula.sample import (
+    DDIMSampler,
+    DDPMSampler,
+    EulerSampler,
+    HeunSampler,
+    Sampler,
+    vABSampler,
+    zABSampler,
+)
 from torch import nn
 
 from autocast.processors.base import Processor
@@ -69,6 +77,7 @@ class DiffusionProcessor(Processor):
         n_channels_out: int = 1,
         sampler_steps: int = 50,
         sampler: str = "euler",
+        sampler_order: int = 2,
     ):
         super().__init__()
         self.learning_rate = learning_rate
@@ -76,6 +85,8 @@ class DiffusionProcessor(Processor):
         self.n_channels_out = n_channels_out
         self.sampler_steps = sampler_steps
         self.sampler = sampler
+        # Multistep order for Adams-Bashforth samplers ("ab"/"vab")
+        self.sampler_order = sampler_order
 
         # Create Azula denoiser with chosen preconditioning
         if denoiser_type == "simple":
@@ -99,17 +110,39 @@ class DiffusionProcessor(Processor):
         device = x.device
         sampler = self._get_sampler(self.sampler_steps, dtype=dtype, device=device)
         B, _, W, H, _ = x.shape
+        sample_shape = (B, self.n_steps_output, W, H, self.n_channels_out)
 
-        # if we start from zero at every autoregressive step, the model is asked to
-        # denoise using t=0, which is a point it has never been trained on.
-        # self.inference_t = 1e-5
-        # using azula sampler init to create noise at t=1
-        x_1 = sampler.init(
-            (B, self.n_steps_output, W, H, self.n_channels_out),
+        # Azula 0.7 init uses stop for descending timesteps; start directly.
+        x_1 = self._init_at_sampler_start(
+            sampler,
+            sample_shape,
             dtype=dtype,
             device=device,
-        )  # Fully noised
+        )
         return sampler(x_1, cond=x, global_cond=global_cond)
+
+    def _init_at_sampler_start(
+        self,
+        sampler: Sampler,
+        shape: tuple[int, ...],
+        *,
+        dtype: torch.dtype,
+        device: torch.device,
+    ) -> Tensor:
+        start = torch.as_tensor(sampler.start, dtype=dtype, device=device)
+        alpha_start, sigma_start = self.denoiser.schedule(start)
+        alpha_start = alpha_start.to(dtype=dtype, device=device)
+        sigma_start = sigma_start.to(dtype=dtype, device=device)
+
+        std_start = torch.sqrt(alpha_start.square() + sigma_start.square())
+        while std_start.ndim < len(shape):
+            std_start = std_start[..., None]
+
+        return std_start.expand(shape) * torch.randn(
+            shape,
+            dtype=dtype,
+            device=device,
+        )
 
     def forward(self, x: Tensor, global_cond: Tensor | None = None) -> Tensor:
         return self.map(x, global_cond)
@@ -194,10 +227,32 @@ class DiffusionProcessor(Processor):
                 silent=silent,
                 **sampler_kwargs,
             )
+        elif sampler == "ab":
+            # Adams-Bashforth multistep ODE solver with noise (z) prediction.
+            azula_sampler = zABSampler(
+                denoiser=self.denoiser,
+                order=self.sampler_order,
+                start=1.0,
+                stop=0.0,
+                steps=num_steps,
+                silent=silent,
+                **sampler_kwargs,
+            )
+        elif sampler == "vab":
+            # Adams-Bashforth multistep ODE solver with velocity (v) prediction.
+            azula_sampler = vABSampler(
+                denoiser=self.denoiser,
+                order=self.sampler_order,
+                start=1.0,
+                stop=0.0,
+                steps=num_steps,
+                silent=silent,
+                **sampler_kwargs,
+            )
         else:
             raise ValueError(
-                f"Unknown sampler: {sampler}. Choose from: 'euler', 'heun', 'ddim',"
-                "'ddpm'"
+                f"Unknown sampler: {sampler}. Choose from: 'euler', 'heun', 'ddim', "
+                "'ddpm', 'ab', 'vab'"
             )
         return azula_sampler
 
