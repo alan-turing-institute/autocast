@@ -1,12 +1,12 @@
 # @package _global_
 defaults:
   - /distributed: single_gpu_slurm
-  - override /datamodule: 128x128/conditioned_navier_stokes
+  - override /datamodule: 128x128/gpe_laser_only_wake
   - override /encoder@model.encoder: 128x128/dc_cout8
   - override /decoder@model.decoder: 128x128/dc_cout8
   - _self_
 
-experiment_name: cache_latents_cns_128
+experiment_name: cache_latents_gpe_128
 
 datamodule:
   use_normalization: true
