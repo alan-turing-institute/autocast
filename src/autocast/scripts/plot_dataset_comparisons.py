@@ -371,14 +371,20 @@ def _lola_spread_skill_from_channel_files(
         channel = pd.read_csv(channel_path, index_col=0)
         if not {"spread", "skill"}.issubset(set(channel.index)):
             continue
-        spread = pd.to_numeric(channel.loc["spread"], errors="coerce")
-        skill = pd.to_numeric(channel.loc["skill"], errors="coerce")
+        spread = cast(
+            pd.Series,
+            pd.to_numeric(cast(pd.Series, channel.loc["spread"]), errors="coerce"),
+        )
+        skill = cast(
+            pd.Series,
+            pd.to_numeric(cast(pd.Series, channel.loc["skill"]), errors="coerce"),
+        )
         ratios.append(
-            (spread + LOLA_SPREAD_SKILL_EPS) / (skill + LOLA_SPREAD_SKILL_EPS)
+            spread.add(LOLA_SPREAD_SKILL_EPS).div(skill.add(LOLA_SPREAD_SKILL_EPS))
         )
     if not ratios:
         return None
-    return pd.concat(ratios, axis=1).mean(axis=1)
+    return cast(pd.Series, pd.concat(ratios, axis=1).mean(axis=1))
 
 
 def _add_derived_lead_time_metrics(
@@ -393,9 +399,15 @@ def _add_derived_lead_time_metrics(
     out = raw.copy()
     ratio = _lola_spread_skill_from_channel_files(per_timestep_path)
     if ratio is None:
-        spread = pd.to_numeric(out.loc["spread"], errors="coerce")
-        skill = pd.to_numeric(out.loc["skill"], errors="coerce")
-        ratio = (spread + LOLA_SPREAD_SKILL_EPS) / (skill + LOLA_SPREAD_SKILL_EPS)
+        spread = cast(
+            pd.Series,
+            pd.to_numeric(cast(pd.Series, out.loc["spread"]), errors="coerce"),
+        )
+        skill = cast(
+            pd.Series,
+            pd.to_numeric(cast(pd.Series, out.loc["skill"]), errors="coerce"),
+        )
+        ratio = spread.add(LOLA_SPREAD_SKILL_EPS).div(skill.add(LOLA_SPREAD_SKILL_EPS))
     out.loc[LOLA_SPREAD_SKILL_METRIC] = ratio.reindex(out.columns)
     return out
 
@@ -3986,6 +3998,8 @@ def plot_paper_rb_mosaic_figure(
             dtype=object,
         )
         paper_kwargs = _paper_style_kwargs(shared_axis_labels=False)
+        power_rmse_ylim = (0.0, 0.65)
+        power_rmse_yticks = [0.0, 0.2, 0.4, 0.6]
 
         plot_lead_time_panel(
             df_in,
@@ -4016,7 +4030,7 @@ def plot_paper_rb_mosaic_figure(
             fig=fig,
             save=False,
             show_legend=False,
-            error_ylim=(-0.05, 0.65),
+            error_ylim=power_rmse_ylim,
             yscale="linear",
             **paper_kwargs,
         )
@@ -4034,6 +4048,8 @@ def plot_paper_rb_mosaic_figure(
             ax.yaxis.label.set(rotation=-90, va="center")
             ax.yaxis.labelpad = 8
             ax.yaxis.tick_right()
+            ax.set_ylim(*power_rmse_ylim)
+            ax.set_yticks(power_rmse_yticks)
         mosaic_axes[2].set_title("Power spectrum RMSE", pad=3)
 
         for ax in mosaic_axes.values():

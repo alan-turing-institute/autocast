@@ -51,6 +51,7 @@ build-backend = "uv_build"
 [tool.pyright]
 venvPath = "."
 venv = ".venv"
+ignore = ["src/autocast/external"]
 
 [tool.ruff]
 line-length = 88
