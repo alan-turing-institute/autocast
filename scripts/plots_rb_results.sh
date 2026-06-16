@@ -35,7 +35,7 @@ COMMON_ARGS=(
 	--error-yscale linear \
 	--error-ylim 1e-5 1 \
 	--lead-time-error-metrics vrmse_v2 psrmse_low psrmse_mid psrmse_high \
-	--lead-time-coverage-metrics spread_skill_lola \
+	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 spread_skill_lola \
 	--lead-time-coverage-delta \
 	--combined-lead-time \
 	--paper-rb-mosaic \
