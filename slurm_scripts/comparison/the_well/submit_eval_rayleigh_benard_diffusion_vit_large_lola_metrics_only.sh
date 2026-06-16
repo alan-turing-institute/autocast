@@ -25,6 +25,7 @@ EVAL_SAMPLER_STEPS="${EVAL_SAMPLER_STEPS:-}"
 EVAL_SAMPLER_ORDER="${EVAL_SAMPLER_ORDER:-}"
 # LOLA RB paper figures use start=16 as the final conditioning timestep.
 EVAL_ROLLOUT_START="${EVAL_ROLLOUT_START:-16}"
+EVAL_MAX_ROLLOUT_STEPS="${EVAL_MAX_ROLLOUT_STEPS:-46}"
 if [[ -z "${EVAL_SUBDIR:-}" ]]; then
     if [[ -n "${EVAL_SAMPLER}" ]]; then
         sampler_suffix="${EVAL_SAMPLER}${EVAL_SAMPLER_STEPS}"
@@ -36,9 +37,10 @@ if [[ -z "${EVAL_SUBDIR:-}" ]]; then
         EVAL_SUBDIR="eval_encode_once_metrics_only_start${EVAL_ROLLOUT_START}"
     fi
 fi
+EVAL_AUTOENCODED_TARGET_METRICS="${EVAL_AUTOENCODED_TARGET_METRICS:-true}"
 TIMEOUT_MIN="${TIMEOUT_MIN:-1439}"
 CPUS_PER_TASK="${CPUS_PER_TASK:-8}"
-SLURM_MEM="${SLURM_MEM:-115G}"
+SLURM_MEM="${SLURM_MEM:-256G}"
 DRY_RUN_ONLY="${DRY_RUN_ONLY:-false}"
 if [[ "${DRY_RUN_ONLY}" == "true" ]]; then
     RUN_DRY_STATES=("true")
@@ -117,9 +119,11 @@ for run_dir in "${RUN_DIRS[@]}"; do
         echo "  eval.n_members: ${EVAL_N_MEMBERS}"
         echo "  eval.chunk_size: ${EVAL_CHUNK_SIZE}"
         echo "  eval.rollout_start: ${EVAL_ROLLOUT_START}"
+        echo "  eval.max_rollout_steps: ${EVAL_MAX_ROLLOUT_STEPS}"
         echo "  eval.batch_indices: []"
         echo "  eval.compute_rollout_metrics: true"
         echo "  eval.compute_rollout_coverage: true"
+        echo "  eval.compute_rollout_autoencoded_target_metrics: ${EVAL_AUTOENCODED_TARGET_METRICS}"
         echo "  hydra.launcher.mem: ${SLURM_MEM}"
         echo "  eval.metrics: ${EVAL_METRICS}"
 
@@ -135,12 +139,13 @@ for run_dir in "${RUN_DIRS[@]}"; do
             eval.n_members="${EVAL_N_MEMBERS}" \
             +eval.chunk_size="${EVAL_CHUNK_SIZE}" \
             eval.rollout_start="${EVAL_ROLLOUT_START}" \
+            eval.max_rollout_steps="${EVAL_MAX_ROLLOUT_STEPS}" \
             eval.transpose_spatial=true \
             'eval.batch_indices=[]' \
             eval.save_rollout_snapshots=false \
             eval.compute_rollout_metrics=true \
             eval.compute_rollout_coverage=true \
-            eval.compute_rollout_autoencoded_target_metrics=false \
+            eval.compute_rollout_autoencoded_target_metrics="${EVAL_AUTOENCODED_TARGET_METRICS}" \
             eval.benchmark.enabled=false \
             eval.benchmark_rollout.enabled=false \
             hydra.launcher.cpus_per_task="${CPUS_PER_TASK}" \

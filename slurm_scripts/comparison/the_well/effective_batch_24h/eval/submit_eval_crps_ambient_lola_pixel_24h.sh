@@ -24,18 +24,22 @@ EVAL_BATCH_SIZE="${EVAL_BATCH_SIZE:-1}"
 EVAL_N_MEMBERS="${EVAL_N_MEMBERS:-10}"
 EVAL_DIAGNOSTIC_MEMBER_INDICES="${EVAL_DIAGNOSTIC_MEMBER_INDICES:-[0]}"
 EVAL_ROLLOUT_MEMBER_RENDER_MODE="${EVAL_ROLLOUT_MEMBER_RENDER_MODE:-both}"
+# LOLA RB paper figures use start=16 as the final conditioning timestep.
+EVAL_ROLLOUT_START="${EVAL_ROLLOUT_START:-16}"
+EVAL_MAX_ROLLOUT_STEPS="${EVAL_MAX_ROLLOUT_STEPS:-46}"
+EVAL_SUBDIR="${EVAL_SUBDIR:-eval_ambient_start${EVAL_ROLLOUT_START}}"
 EVAL_BENCHMARK_ENABLED="${EVAL_BENCHMARK_ENABLED:-true}"
 EVAL_BENCHMARK_ROLLOUT_ENABLED="${EVAL_BENCHMARK_ROLLOUT_ENABLED:-true}"
 TIMEOUT_MIN="${TIMEOUT_MIN:-720}"
 CPUS_PER_TASK="${CPUS_PER_TASK:-8}"
-SLURM_MEM="${SLURM_MEM:-115G}"
+SLURM_MEM="${SLURM_MEM:-256G}"
 DRY_RUN_ONLY="${DRY_RUN_ONLY:-false}"
 if [[ "${DRY_RUN_ONLY}" == "true" ]]; then
     RUN_DRY_STATES=("true")
 else
     RUN_DRY_STATES=("true" "false")
 fi
-EVAL_METRICS="${EVAL_METRICS:-[mse,mae,nmse,nmae,rmse,nrmse,vmse,vrmse,vmse_v2,vrmse_v2,linf,psrmse,psrmse_low,psrmse_mid,psrmse_high,psrmse_tail,pscc,pscc_low,pscc_mid,pscc_high,pscc_tail,crps,fcrps,afcrps,energy,ssr,winkler]}"
+EVAL_METRICS="${EVAL_METRICS:-[mse,mae,nmse,nmae,rmse,nrmse,vmse,vrmse,vmse_v2,vrmse_v2,linf,psrmse,psrmse_low,psrmse_mid,psrmse_high,psrmse_tail,pscc,pscc_low,pscc_mid,pscc_high,pscc_tail,crps,fcrps,afcrps,energy,spread,skill,ssr,winkler]}"
 
 RUN_DIR="outputs/2026-05-22/the_well_rayleigh_benard_effbatch_crps_ambient_lola_pixel_b32_m8_24hr"
 
@@ -59,9 +63,12 @@ for run_dry in "${RUN_DRY_STATES[@]}"; do
     echo "Submitting RB eff-batch 24h CRPS ambient LoLA-pixel eval"
     echo "  mode: ${run_label}"
     echo "  run_dir: ${RUN_DIR}"
+    echo "  output_subdir: ${EVAL_SUBDIR}"
     echo "  eval.mode: ambient"
     echo "  eval.batch_size: ${EVAL_BATCH_SIZE}"
     echo "  eval.n_members: ${EVAL_N_MEMBERS}"
+    echo "  eval.rollout_start: ${EVAL_ROLLOUT_START}"
+    echo "  eval.max_rollout_steps: ${EVAL_MAX_ROLLOUT_STEPS}"
     echo "  eval.transpose_spatial: true"
     echo "  eval.benchmark.enabled: ${EVAL_BENCHMARK_ENABLED}"
     echo "  eval.benchmark_rollout.enabled: ${EVAL_BENCHMARK_ROLLOUT_ENABLED}"
@@ -70,11 +77,14 @@ for run_dry in "${RUN_DRY_STATES[@]}"; do
 
     uv run autocast eval --mode slurm "${dry_run_arg[@]}" \
         --workdir "${RUN_DIR}" \
+        --output-subdir "${EVAL_SUBDIR}" \
         eval.checkpoint=encoder_processor_decoder.ckpt \
         eval.mode=ambient \
         eval.metrics="${EVAL_METRICS}" \
         eval.batch_size="${EVAL_BATCH_SIZE}" \
         eval.n_members="${EVAL_N_MEMBERS}" \
+        eval.rollout_start="${EVAL_ROLLOUT_START}" \
+        eval.max_rollout_steps="${EVAL_MAX_ROLLOUT_STEPS}" \
         eval.transpose_spatial=true \
         eval.rollout_member_indices="${EVAL_DIAGNOSTIC_MEMBER_INDICES}" \
         eval.rollout_member_render_mode="${EVAL_ROLLOUT_MEMBER_RENDER_MODE}" \

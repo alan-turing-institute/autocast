@@ -43,13 +43,14 @@ EVAL_DIAGNOSTIC_MEMBER_INDICES="${EVAL_DIAGNOSTIC_MEMBER_INDICES:-[0]}"
 EVAL_ROLLOUT_MEMBER_RENDER_MODE="${EVAL_ROLLOUT_MEMBER_RENDER_MODE:-both}"
 # LOLA RB paper figures use start=16 as the final conditioning timestep.
 EVAL_ROLLOUT_START="${EVAL_ROLLOUT_START:-16}"
+EVAL_MAX_ROLLOUT_STEPS="${EVAL_MAX_ROLLOUT_STEPS:-46}"
 EVAL_SUBDIR="${EVAL_SUBDIR:-eval_encode_once_${EVAL_SAMPLER}${EVAL_SAMPLER_STEPS}_o${EVAL_SAMPLER_ORDER}_start${EVAL_ROLLOUT_START}}"
 EVAL_BENCHMARK_ENABLED="${EVAL_BENCHMARK_ENABLED:-true}"
 EVAL_BENCHMARK_ROLLOUT_ENABLED="${EVAL_BENCHMARK_ROLLOUT_ENABLED:-true}"
 EVAL_AUTOENCODED_TARGET_METRICS="${EVAL_AUTOENCODED_TARGET_METRICS:-true}"
 TIMEOUT_MIN="${TIMEOUT_MIN:-1439}"
 CPUS_PER_TASK="${CPUS_PER_TASK:-8}"
-SLURM_MEM="${SLURM_MEM:-115G}"
+SLURM_MEM="${SLURM_MEM:-256G}"
 DRY_RUN_ONLY="${DRY_RUN_ONLY:-false}"
 if [[ "${DRY_RUN_ONLY}" == "true" ]]; then
     RUN_DRY_STATES=("true")
@@ -109,6 +110,7 @@ for run_dir in "${RUN_DIRS[@]}"; do
         echo "  eval.n_members: ${EVAL_N_MEMBERS}"
         echo "  eval.chunk_size: ${EVAL_CHUNK_SIZE}"
         echo "  eval.rollout_start: ${EVAL_ROLLOUT_START}"
+        echo "  eval.max_rollout_steps: ${EVAL_MAX_ROLLOUT_STEPS}"
         echo "  eval.transpose_spatial: true"
         echo "  eval.compute_rollout_autoencoded_target_metrics: ${EVAL_AUTOENCODED_TARGET_METRICS}"
         echo "  eval.benchmark.enabled: ${EVAL_BENCHMARK_ENABLED}"
@@ -131,6 +133,7 @@ for run_dir in "${RUN_DIRS[@]}"; do
             eval.n_members="${EVAL_N_MEMBERS}" \
             +eval.chunk_size="${EVAL_CHUNK_SIZE}" \
             eval.rollout_start="${EVAL_ROLLOUT_START}" \
+            eval.max_rollout_steps="${EVAL_MAX_ROLLOUT_STEPS}" \
             eval.transpose_spatial=true \
             eval.compute_rollout_autoencoded_target_metrics="${EVAL_AUTOENCODED_TARGET_METRICS}" \
             eval.rollout_member_indices="${EVAL_DIAGNOSTIC_MEMBER_INDICES}" \
