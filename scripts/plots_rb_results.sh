@@ -87,3 +87,10 @@ plot_group 4096 \
 	--run "$RB_DIFFUSION_4096" "Diffusion LoLA (4096, eff_bs=256, DDPM)" "$HUE_DIFFUSION" eval=eval_encode_once_ddpm50 \
 	--run "$RB_DIFFUSION_4096" "Diffusion LoLA (4096, eff_bs=256, ABo3)" "$HUE_DIFFUSION" eval=eval_encode_once_ab16_o3_relative
 	# --run "$RB_DIFFUSION_4096" "Diffusion LoLA (4096, eff_bs=256, AB)" "$HUE_DIFFUSION" eval=eval_encode_once_ab16 \
+
+plot_group 4096_start16 \
+	--run "$RB_DIFFUSION_4096" "Diffusion LoLA (4096, eff_bs=256)" "$HUE_DIFFUSION" eval=eval_encode_once_start16 \
+	--run "$RB_DIFFUSION_4096" "Diffusion LoLA (4096, eff_bs=256, DDPM)" "$HUE_DIFFUSION" eval=eval_encode_once_ddpm50_start16 \
+	--run "$RB_DIFFUSION_4096" "Diffusion LoLA (4096, eff_bs=256, ABo3)" "$HUE_DIFFUSION" eval=eval_encode_once_ab16_o3_start16
+	# --run "$RB_FM_NON_MASKED" "FM non-masked (4096, eff_bs=256)" "$HUE_FM_NON_MASKED" \
+	# --run "$RB_FM_MASKED" "FM masked (4096, eff_bs=256)" "$HUE_FM_MASKED" \
