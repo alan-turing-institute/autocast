@@ -40,6 +40,8 @@ EVAL_ROLLOUT_MEMBER_RENDER_MODE="${EVAL_ROLLOUT_MEMBER_RENDER_MODE:-both}"
 EVAL_ROLLOUT_START="${EVAL_ROLLOUT_START:-16}"
 EVAL_MAX_ROLLOUT_STEPS="${EVAL_MAX_ROLLOUT_STEPS:-46}"
 EVAL_SUBDIR="${EVAL_SUBDIR:-eval_ambient_start${EVAL_ROLLOUT_START}}"
+EVAL_BENCHMARK_ENABLED="${EVAL_BENCHMARK_ENABLED:-true}"
+EVAL_BENCHMARK_ROLLOUT_ENABLED="${EVAL_BENCHMARK_ROLLOUT_ENABLED:-true}"
 TIMEOUT_MIN="${TIMEOUT_MIN:-720}"
 CPUS_PER_TASK="${CPUS_PER_TASK:-8}"
 SLURM_MEM="${SLURM_MEM:-256G}"
@@ -95,6 +97,8 @@ for run_dir in "${RUN_DIRS[@]}"; do
         echo "  eval.rollout_start: ${EVAL_ROLLOUT_START}"
         echo "  eval.max_rollout_steps: ${EVAL_MAX_ROLLOUT_STEPS}"
         echo "  eval.transpose_spatial: true"
+        echo "  eval.benchmark.enabled: ${EVAL_BENCHMARK_ENABLED}"
+        echo "  eval.benchmark_rollout.enabled: ${EVAL_BENCHMARK_ROLLOUT_ENABLED}"
         echo "  hydra.launcher.mem: ${SLURM_MEM}"
         echo "  eval.metrics: ${EVAL_METRICS}"
 
@@ -111,8 +115,8 @@ for run_dir in "${RUN_DIRS[@]}"; do
             eval.transpose_spatial=true \
             eval.rollout_member_indices="${EVAL_DIAGNOSTIC_MEMBER_INDICES}" \
             eval.rollout_member_render_mode="${EVAL_ROLLOUT_MEMBER_RENDER_MODE}" \
-            eval.benchmark.enabled=false \
-            eval.benchmark_rollout.enabled=false \
+            eval.benchmark.enabled="${EVAL_BENCHMARK_ENABLED}" \
+            eval.benchmark_rollout.enabled="${EVAL_BENCHMARK_ROLLOUT_ENABLED}" \
             hydra.launcher.cpus_per_task="${CPUS_PER_TASK}" \
             hydra.launcher.additional_parameters.mem="${SLURM_MEM}" \
             hydra.launcher.timeout_min="${TIMEOUT_MIN}"

@@ -10,9 +10,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Plot refreshes only need metrics/coverage outputs, not timing benchmark CSVs.
-export EVAL_BENCHMARK_ENABLED="${EVAL_BENCHMARK_ENABLED:-false}"
-export EVAL_BENCHMARK_ROLLOUT_ENABLED="${EVAL_BENCHMARK_ROLLOUT_ENABLED:-false}"
+# Keep timing benchmark CSVs with the metrics/coverage reruns so the whole
+# comparison refresh can be done in one submission sweep.
+export EVAL_BENCHMARK_ENABLED="${EVAL_BENCHMARK_ENABLED:-true}"
+export EVAL_BENCHMARK_ROLLOUT_ENABLED="${EVAL_BENCHMARK_ROLLOUT_ENABLED:-true}"
 
 RUN_SCRIPTS=(
     "${SCRIPT_DIR}/submit_eval_rayleigh_benard_fm_vit.sh"
@@ -20,8 +21,6 @@ RUN_SCRIPTS=(
     "${SCRIPT_DIR}/effective_batch_24h/eval/submit_eval_fm_latent_24h.sh"
     "${SCRIPT_DIR}/effective_batch_24h/eval/submit_eval_crps_ambient_24h.sh"
     "${SCRIPT_DIR}/effective_batch_24h/eval/submit_eval_crps_ambient_lola_pixel_24h.sh"
-    "${SCRIPT_DIR}/submit_eval_rayleigh_benard_diffusion_vit_large_lola.sh"
-    "${SCRIPT_DIR}/submit_eval_rayleigh_benard_diffusion_vit_large_lola_ddpm.sh"
     "${SCRIPT_DIR}/submit_eval_rayleigh_benard_diffusion_vit_large_lola_ab.sh"
 )
 
