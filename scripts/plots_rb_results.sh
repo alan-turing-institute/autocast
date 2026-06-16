@@ -6,6 +6,7 @@ PLOTS_PATH=${PLOTS_PATH:-2026-05-18_plots_rb}
 OUTPUT_ROOT=${OUTPUT_ROOT:-${OUTPUT_DIR:-$RESULTS_DIR/$PLOTS_PATH}}
 FIGURE_FORMATS=${FIGURE_FORMATS:-png}
 PLOT_CMD=${PLOT_CMD:-"uv run autocast-plots"}
+LEAD_TIME_OFFSET=${LEAD_TIME_OFFSET:-1}
 
 FIGURE_FORMAT_ARRAY=()
 read -r -a FIGURE_FORMAT_ARRAY <<< "${FIGURE_FORMATS//,/ }"
@@ -37,6 +38,7 @@ COMMON_ARGS=(
 	--lead-time-error-metrics vrmse_v2 psrmse_low psrmse_mid psrmse_high \
 	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 spread_skill_lola \
 	--lead-time-coverage-delta \
+	--lead-time-offset "$LEAD_TIME_OFFSET" \
 	--combined-lead-time \
 	--paper-rb-mosaic \
 	--training-metrics val_loss train_loss \
@@ -92,5 +94,5 @@ plot_group 4096_start16 \
 	--run "$RB_DIFFUSION_4096" "Diffusion LoLA (4096, eff_bs=256)" "$HUE_DIFFUSION" eval=eval_encode_once_start16 \
 	--run "$RB_DIFFUSION_4096" "Diffusion LoLA (4096, eff_bs=256, DDPM)" "$HUE_DIFFUSION" eval=eval_encode_once_ddpm50_start16 \
 	--run "$RB_DIFFUSION_4096" "Diffusion LoLA (4096, eff_bs=256, ABo3)" "$HUE_DIFFUSION" eval=eval_encode_once_ab16_o3_start16
-	# --run "$RB_FM_NON_MASKED" "FM non-masked (4096, eff_bs=256)" "$HUE_FM_NON_MASKED" \
-	# --run "$RB_FM_MASKED" "FM masked (4096, eff_bs=256)" "$HUE_FM_MASKED" \
+	# --run "$RB_FM_NON_MASKED" "FM non-masked (4096, eff_bs=256, start16)" "$HUE_FM_NON_MASKED" eval=eval_encode_once_start16 \
+	# --run "$RB_FM_MASKED" "FM masked (4096, eff_bs=256, start16)" "$HUE_FM_MASKED" eval=eval_encode_once_start16 \

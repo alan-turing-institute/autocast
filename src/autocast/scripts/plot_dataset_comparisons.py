@@ -2488,6 +2488,7 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
     coverage_delta_row_labels: bool = False,
     line_width: float = 2.0,
     ref_line_width: float = 1.0,
+    lead_time_offset: float = 0.0,
 ) -> FigureBase | None:
     """Plot per-metric, per-dataset lead-time curves as a panel figure.
 
@@ -2500,6 +2501,8 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
     ``'linear'``). When omitted, the historical default of log-scale is used.
     ``ref_value`` draws a dashed horizontal reference line at that y value on
     every non-coverage subplot (e.g. 1.0 for SSR's ideal dispersion).
+    ``lead_time_offset`` shifts the plotted x coordinates without changing
+    the source per-timestep metrics.
     """
     rows: list[pd.DataFrame] = []
     base = df_in.dropna(
@@ -2625,6 +2628,7 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
                     .reset_index(),
                 )
                 st = styles.get(fam, {"color": "k"})
+                lead_time = cast(pd.Series, agg["timestep"]) + lead_time_offset
                 mean = cast(pd.Series, agg["mean"])
                 std = cast(pd.Series, agg["std"]).fillna(0)
 
@@ -2640,7 +2644,7 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
                 if (not is_cov) and (not is_cov_delta):
                     vals.extend(m.dropna().tolist())
                 ax.plot(
-                    agg["timestep"],
+                    lead_time,
                     m,
                     color=st["color"],
                     lw=line_width,
@@ -2661,9 +2665,7 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
                     if (not is_cov) and (not is_cov_delta):
                         vals.extend(y1.dropna().tolist())
                         vals.extend(y2.dropna().tolist())
-                    ax.fill_between(
-                        agg["timestep"], y1, y2, color=st["color"], alpha=0.15
-                    )
+                    ax.fill_between(lead_time, y1, y2, color=st["color"], alpha=0.15)
 
             if r == 0:
                 ax.set_title(ds_label)
@@ -3171,6 +3173,7 @@ def plot_panel_figure(  # noqa: PLR0915
     short_axis_labels: bool = False,
     shared_axis_labels: bool = False,
     lead_time_coverage_delta: bool = False,
+    lead_time_offset: float = 0.0,
     error_yscale: str = "log",
 ) -> None:
     """Render a panel composite figure with a reserved notes area.
@@ -3336,6 +3339,7 @@ def plot_panel_figure(  # noqa: PLR0915
         error_ylim=error_ylim,
         yscale=error_yscale,
         show_legend=False,
+        lead_time_offset=lead_time_offset,
         **plot_style_kwargs,
     )
     rb_axes = right_bot.subplots(n_cov, n_ds, sharex=True, sharey=False, squeeze=False)
@@ -3354,6 +3358,7 @@ def plot_panel_figure(  # noqa: PLR0915
         error_ylim=None,
         coverage_delta=lead_time_coverage_delta,
         show_legend=False,
+        lead_time_offset=lead_time_offset,
         **plot_style_kwargs,
     )
     if coverage_ylim is not None:
@@ -3534,6 +3539,7 @@ def _plot_paper_combined_lead_time_panel(
     name_stem: str = "paper_combined_lead_time",
     delta_ylabel_x: float = -0.065,
     lead_time_y: float = 0.07,
+    lead_time_offset: float = 0.0,
 ) -> None:
     """Draw coverage-delta rows and VRMSE rows in one shared lead-time grid."""
     datasets = _paper_datasets(df_in, dataset_order)
@@ -3566,6 +3572,7 @@ def _plot_paper_combined_lead_time_panel(
             coverage_delta=True,
             sharey=True,
             coverage_delta_row_labels=True,
+            lead_time_offset=lead_time_offset,
             **_paper_style_kwargs(),
         )
         _replace_figure_text(
@@ -3595,6 +3602,7 @@ def _plot_paper_combined_lead_time_panel(
             show_legend=False,
             error_ylim=error_ylim,
             sharey=True,
+            lead_time_offset=lead_time_offset,
             **_paper_style_kwargs(),
         )
         for ax in error_axes.flat:
@@ -3678,6 +3686,7 @@ def plot_paper_uq_reliability_figure(
     hue_order: list[str] | None = None,
     name: str = "paper_uq_reliability_by_lead_time.png",
     panel_labels: bool = True,
+    lead_time_offset: float = 0.0,
 ) -> None:
     """Render rollout-window calibration and coverage-delta panels together."""
     datasets = _paper_datasets(df_in, dataset_order)
@@ -3758,6 +3767,7 @@ def plot_paper_uq_reliability_figure(
             coverage_delta=True,
             sharey=True,
             coverage_delta_row_labels=True,
+            lead_time_offset=lead_time_offset,
             **_paper_style_kwargs(),
         )
         _replace_figure_text(
@@ -3794,6 +3804,7 @@ def plot_paper_lead_time_error_figure(
     dataset_order: list[str] | None = None,
     hue_order: list[str] | None = None,
     name: str = "paper_lead_time_panel_error.png",
+    lead_time_offset: float = 0.0,
 ) -> None:
     """Render lead-time error curves at paper linewidth."""
     if not error_metrics:
@@ -3825,6 +3836,7 @@ def plot_paper_lead_time_error_figure(
             show_legend=False,
             error_ylim=error_ylim,
             sharey=True,
+            lead_time_offset=lead_time_offset,
             **_paper_style_kwargs(),
         )
         _paper_legend(
@@ -3894,6 +3906,7 @@ def plot_paper_lead_time_summary_figure(
     dataset_order: list[str] | None = None,
     hue_order: list[str] | None = None,
     name: str = "paper_lead_time_panel_summary.png",
+    lead_time_offset: float = 0.0,
 ) -> None:
     """Render the multi-metric lead-time summary at paper linewidth."""
     preset = METRIC_GROUP_PRESETS["summary"]
@@ -3934,6 +3947,7 @@ def plot_paper_lead_time_summary_figure(
             show_legend=False,
             yscale=cast(str, preset.get("yscale", "log")),
             ref_value=cast("float | None", preset.get("ref")),
+            lead_time_offset=lead_time_offset,
             **_paper_style_kwargs(),
         )
         for metric, ax in zip(metrics, axes[:, 0], strict=False):
@@ -3971,6 +3985,7 @@ def plot_paper_rb_mosaic_figure(
     dataset_order: list[str] | None = None,
     hue_order: list[str] | None = None,
     name: str = "paper_rb_mosaic.png",
+    lead_time_offset: float = 0.0,
 ) -> None:
     """Render a temporary RB lead-time mosaic matching the LOLA notebook."""
     datasets = _paper_datasets(df_in, dataset_order)
@@ -4015,6 +4030,7 @@ def plot_paper_rb_mosaic_figure(
             save=False,
             show_legend=False,
             yscale="linear",
+            lead_time_offset=lead_time_offset,
             **paper_kwargs,
         )
         plot_lead_time_panel(
@@ -4032,6 +4048,7 @@ def plot_paper_rb_mosaic_figure(
             show_legend=False,
             error_ylim=power_rmse_ylim,
             yscale="linear",
+            lead_time_offset=lead_time_offset,
             **paper_kwargs,
         )
 
@@ -4105,6 +4122,7 @@ def plot_four_ds_ablation_figure(
     hue_order: list[str] | None = None,
     name: str = "paper_four_ds_ablation.png",
     panel_labels: bool = True,
+    lead_time_offset: float = 0.0,
 ) -> None:
     """Render the four-dataset ablation as a single paper-width figure."""
     datasets = _paper_datasets(df_in, dataset_order)
@@ -4172,6 +4190,7 @@ def plot_four_ds_ablation_figure(
             name_stem="four_ds_ablation",
             delta_ylabel_x=-0.090,
             lead_time_y=0.03,
+            lead_time_offset=lead_time_offset,
         )
 
         if panel_labels:
@@ -4201,6 +4220,7 @@ def plot_one_ds_ablation_figure_a(
     hue_order: list[str] | None = None,
     name: str = "paper_one_ds_ablation_a.png",
     panel_labels: bool = True,
+    lead_time_offset: float = 0.0,
 ) -> None:
     """Render a vertical one-dataset ablation panel without the all row."""
     datasets = _paper_datasets(df_in, dataset_order)
@@ -4268,6 +4288,7 @@ def plot_one_ds_ablation_figure_a(
             name_stem="one_ds_ablation_a",
             delta_ylabel_x=-0.073,
             lead_time_y=0.03,
+            lead_time_offset=lead_time_offset,
         )
 
         if panel_labels:
@@ -4297,6 +4318,7 @@ def plot_one_ds_ablation_figure_b(
     hue_order: list[str] | None = None,
     name: str = "paper_one_ds_ablation_b.png",
     panel_labels: bool = True,
+    lead_time_offset: float = 0.0,
 ) -> None:
     """Render a transposed one-dataset ablation panel."""
     delta_metrics = _paper_coverage_metrics(coverage_metrics)
@@ -4370,6 +4392,7 @@ def plot_one_ds_ablation_figure_b(
             show_legend=False,
             coverage_delta=True,
             sharey=True,
+            lead_time_offset=lead_time_offset,
             **_paper_style_kwargs(shared_axis_labels=False),
         )
         _remove_figure_text(bottom, {r"Rel. $\Delta$ empirical coverage"})
@@ -4404,6 +4427,7 @@ def plot_one_ds_ablation_figure_b(
             show_legend=False,
             error_ylim=error_ylim,
             sharey=True,
+            lead_time_offset=lead_time_offset,
             **_paper_style_kwargs(shared_axis_labels=False),
         )
         for i, _metric in enumerate(error_metrics):
@@ -4437,6 +4461,7 @@ def plot_one_ds_ablation_figures(
     dataset_order: list[str] | None = None,
     hue_order: list[str] | None = None,
     panel_labels: bool = True,
+    lead_time_offset: float = 0.0,
 ) -> None:
     """Render the selected one-dataset ablation layout."""
     plot_one_ds_ablation_figure_a(
@@ -4450,6 +4475,7 @@ def plot_one_ds_ablation_figures(
         dataset_order=dataset_order,
         hue_order=hue_order,
         panel_labels=panel_labels,
+        lead_time_offset=lead_time_offset,
     )
 
 
@@ -4663,6 +4689,16 @@ def main():  # noqa: PLR0912, PLR0915
         ),
     )
     parser.add_argument(
+        "--lead-time-offset",
+        type=float,
+        default=0.0,
+        help=(
+            "Add this offset to lead-time x coordinates in all lead-time panels. "
+            "Use 1 to align with plots that include the first conditioning "
+            "frame at lead time 0."
+        ),
+    )
+    parser.add_argument(
         "--no-ssr-in-coverage",
         dest="include_ssr_in_coverage",
         action="store_false",
@@ -4848,6 +4884,7 @@ def main():  # noqa: PLR0912, PLR0915
     )
     args = parser.parse_args()
     FIGURE_FORMATS[:] = list(dict.fromkeys(args.figure_formats))
+    lead_time_offset = float(args.lead_time_offset)
     if args.paper_use_tex:
         PAPER_RC_PARAMS.update(
             {
@@ -5384,6 +5421,7 @@ def main():  # noqa: PLR0912, PLR0915
                 dataset_order=ds_order,
                 hue_order=hu_order,
                 panel_labels=args.paper_panel_labels,
+                lead_time_offset=lead_time_offset,
             )
             plot_paper_lead_time_error_figure(
                 df,
@@ -5394,6 +5432,7 @@ def main():  # noqa: PLR0912, PLR0915
                 error_ylim=error_ylim,
                 dataset_order=ds_order,
                 hue_order=hu_order,
+                lead_time_offset=lead_time_offset,
             )
             plot_paper_lead_time_summary_figure(
                 df,
@@ -5402,6 +5441,7 @@ def main():  # noqa: PLR0912, PLR0915
                 styles,
                 dataset_order=ds_order,
                 hue_order=hu_order,
+                lead_time_offset=lead_time_offset,
             )
         if args.four_ds_ablation:
             plot_four_ds_ablation_figure(
@@ -5415,6 +5455,7 @@ def main():  # noqa: PLR0912, PLR0915
                 dataset_order=ds_order,
                 hue_order=hu_order,
                 panel_labels=args.paper_panel_labels,
+                lead_time_offset=lead_time_offset,
             )
         if args.one_ds_ablation:
             plot_one_ds_ablation_figures(
@@ -5428,6 +5469,7 @@ def main():  # noqa: PLR0912, PLR0915
                 dataset_order=ds_order,
                 hue_order=hu_order,
                 panel_labels=args.paper_panel_labels,
+                lead_time_offset=lead_time_offset,
             )
         if args.paper_rb_mosaic:
             plot_paper_rb_mosaic_figure(
@@ -5437,6 +5479,7 @@ def main():  # noqa: PLR0912, PLR0915
                 styles,
                 dataset_order=ds_order,
                 hue_order=hu_order,
+                lead_time_offset=lead_time_offset,
             )
         print("Finished generating paper plots.")
         return
@@ -5592,6 +5635,7 @@ def main():  # noqa: PLR0912, PLR0915
             hue_order=hu_order,
             error_ylim=error_ylim,
             yscale=args.error_yscale,
+            lead_time_offset=lead_time_offset,
             **plot_style_kwargs,
         )
     if cov_metric:
@@ -5604,6 +5648,7 @@ def main():  # noqa: PLR0912, PLR0915
             styles,
             dataset_order=ds_order,
             hue_order=hu_order,
+            lead_time_offset=lead_time_offset,
             **plot_style_kwargs,
         )
         if args.lead_time_coverage_delta:
@@ -5619,6 +5664,7 @@ def main():  # noqa: PLR0912, PLR0915
                     dataset_order=ds_order,
                     hue_order=hu_order,
                     coverage_delta=True,
+                    lead_time_offset=lead_time_offset,
                     **plot_style_kwargs,
                 )
 
@@ -5636,6 +5682,7 @@ def main():  # noqa: PLR0912, PLR0915
             hue_order=hu_order,
             error_ylim=error_ylim,
             yscale=args.error_yscale,
+            lead_time_offset=lead_time_offset,
             **plot_style_kwargs,
         )
 
@@ -5658,6 +5705,7 @@ def main():  # noqa: PLR0912, PLR0915
             dataset_order=ds_order,
             hue_order=hu_order,
             panel_labels=args.paper_panel_labels,
+            lead_time_offset=lead_time_offset,
         )
         plot_paper_lead_time_error_figure(
             df,
@@ -5668,6 +5716,7 @@ def main():  # noqa: PLR0912, PLR0915
             error_ylim=error_ylim,
             dataset_order=ds_order,
             hue_order=hu_order,
+            lead_time_offset=lead_time_offset,
         )
         plot_paper_lead_time_summary_figure(
             df,
@@ -5676,6 +5725,7 @@ def main():  # noqa: PLR0912, PLR0915
             styles,
             dataset_order=ds_order,
             hue_order=hu_order,
+            lead_time_offset=lead_time_offset,
         )
     if args.four_ds_ablation:
         plot_four_ds_ablation_figure(
@@ -5689,6 +5739,7 @@ def main():  # noqa: PLR0912, PLR0915
             dataset_order=ds_order,
             hue_order=hu_order,
             panel_labels=args.paper_panel_labels,
+            lead_time_offset=lead_time_offset,
         )
     if args.one_ds_ablation:
         plot_one_ds_ablation_figures(
@@ -5702,6 +5753,7 @@ def main():  # noqa: PLR0912, PLR0915
             dataset_order=ds_order,
             hue_order=hu_order,
             panel_labels=args.paper_panel_labels,
+            lead_time_offset=lead_time_offset,
         )
     if args.paper_rb_mosaic:
         plot_paper_rb_mosaic_figure(
@@ -5711,6 +5763,7 @@ def main():  # noqa: PLR0912, PLR0915
             styles,
             dataset_order=ds_order,
             hue_order=hu_order,
+            lead_time_offset=lead_time_offset,
         )
 
     # Per-group lead-time panels (SSR, coherence, balancing coverage, physics)
@@ -5746,6 +5799,7 @@ def main():  # noqa: PLR0912, PLR0915
             error_ylim=None,
             yscale=group_yscale,
             ref_value=group_ref,
+            lead_time_offset=lead_time_offset,
             **plot_style_kwargs,
         )
 
@@ -5781,6 +5835,7 @@ def main():  # noqa: PLR0912, PLR0915
         "error_ylim": error_ylim,
         "coverage_ylim": coverage_ylim,
         "error_yscale": args.error_yscale,
+        "lead_time_offset": lead_time_offset,
         **plot_style_kwargs,
     }
     if args.panel_figure:
