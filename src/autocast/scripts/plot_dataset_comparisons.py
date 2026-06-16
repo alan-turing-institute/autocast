@@ -4053,11 +4053,14 @@ def plot_paper_rb_mosaic_figure(
         mosaic_axes[2].set_title("Power spectrum RMSE", pad=3)
 
         for ax in mosaic_axes.values():
-            ax.set_xlim(-5, 100)
+            ax.set_xlim(-5, 190)
+            ax.set_xticks(np.arange(0, 191, 25))
             ax.tick_params(direction="in")
             ax.set_xlabel("")
         mosaic_axes[0].set_ylim(-0.1, 1.1)
-        mosaic_axes[1].set_ylim(-0.1, 1.4)
+        mosaic_axes[0].set_yticks(np.arange(0.0, 1.01, 0.25))
+        mosaic_axes[1].set_ylim(-0.1, 1.1)
+        mosaic_axes[1].set_yticks(np.arange(0.0, 1.01, 0.25))
         mosaic_axes[1].set_xlabel("Lead time")
         mosaic_axes[4].set_xlabel("Lead time")
 
