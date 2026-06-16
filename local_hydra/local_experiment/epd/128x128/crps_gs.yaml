@@ -1,7 +1,6 @@
 # @package _global_
 defaults:
   - epd/gray_scott/crps_vit_azula_large
-  - /distributed: ddp_4gpu_slurm
   - override /datamodule: 128x128/gray_scott
   - _self_
 

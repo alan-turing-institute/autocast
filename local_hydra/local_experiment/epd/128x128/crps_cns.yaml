@@ -1,7 +1,6 @@
 # @package _global_
 defaults:
   - epd/conditioned_navier_stokes/crps_vit_azula_large
-  - /distributed: ddp_4gpu_slurm
   - override /datamodule: 128x128/conditioned_navier_stokes
   - _self_
 
