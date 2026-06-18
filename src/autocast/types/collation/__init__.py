@@ -1,6 +1,7 @@
 from collections.abc import Sequence
 
 import torch
+from einops import repeat
 
 from autocast.types.batch import (
     Batch,
@@ -109,8 +110,17 @@ def collate_list_batches(samples: Sequence[ListSample]) -> ListBatch:
     else:
         masks = torch.stack([sample.mask for sample in samples], dim=1)
 
+    output_fields = inner_batches[0].output_fields
+
+    # When masks are active, MultiEncoder folds M scenarios into the batch axis,
+    # producing encoder output of shape (B*M, ...). Expand output_fields to match
+    # so the loss computation sees tensors of the same shape.
+    if masks is not None and output_fields is not None:
+        M = masks.shape[2]
+        output_fields = repeat(output_fields, "b ... -> (b m) ...", m=M)
+
     return ListBatch(
         inner=inner_batches,
         mask=masks,
-        output_fields=inner_batches[0].output_fields,
+        output_fields=output_fields,
     )
