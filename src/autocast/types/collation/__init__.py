@@ -107,6 +107,6 @@ def collate_list_batches(samples: Sequence[ListSample]) -> ListBatch:
     if any(s.mask is None for s in samples):
         masks = None
     else:
-        masks = torch.stack([sample.mask for sample in samples], dim=0)
+        masks = torch.stack([sample.mask for sample in samples], dim=1)
 
     return ListBatch(inner=inner_batches, mask=masks)
