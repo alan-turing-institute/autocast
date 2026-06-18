@@ -102,7 +102,11 @@ def collate_list_batches(samples: Sequence[ListSample]) -> ListBatch:
         batch = collate_batches(dataset_samples)
         inner_batches.append(batch)
 
-    # Stack masks along the batch dimension (TensorDM -> TensorDBM)
-    masks = torch.stack([sample.mask for sample in samples], dim=0)
+    # Stack masks along the batch dimension (TensorDM -> TensorDBM).
+    # Masks are optional; if any sample has no mask, return None.
+    if any(s.mask is None for s in samples):
+        masks = None
+    else:
+        masks = torch.stack([sample.mask for sample in samples], dim=0)
 
     return ListBatch(inner=inner_batches, mask=masks)
