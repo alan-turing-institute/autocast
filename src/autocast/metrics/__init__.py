@@ -23,10 +23,20 @@ from .deterministic import (
 from .ensemble import (
     CRPS,
     AlphaFairCRPS,
+    AlphaFairCRPSMAETerm,
+    AlphaFairCRPSSpreadTerm,
+    CRPSMAETerm,
+    CRPSSpreadTerm,
     EnergyScore,
+    EnsembleSkill,
+    EnsembleSpread,
     FairCRPS,
+    FairCRPSMAETerm,
+    FairCRPSSpreadTerm,
+    MultiWinkler,
     SpreadSkillRatio,
     VariogramScore,
+    WinklerScore,
 )
 
 __all__ = [
@@ -40,11 +50,20 @@ __all__ = [
     "VMSE",
     "VRMSE",
     "AlphaFairCRPS",
+    "AlphaFairCRPSMAETerm",
+    "AlphaFairCRPSSpreadTerm",
+    "CRPSMAETerm",
+    "CRPSSpreadTerm",
     "Coverage",
     "EnergyScore",
+    "EnsembleSkill",
+    "EnsembleSpread",
     "FairCRPS",
+    "FairCRPSMAETerm",
+    "FairCRPSSpreadTerm",
     "LInfinity",
     "MultiCoverage",
+    "MultiWinkler",
     "PowerSpectrumCCRMSE",
     "PowerSpectrumCCRMSEHigh",
     "PowerSpectrumCCRMSELow",
@@ -57,6 +76,7 @@ __all__ = [
     "PowerSpectrumRMSETail",
     "SpreadSkillRatio",
     "VariogramScore",
+    "WinklerScore",
 ]
 
 ALL_DETERMINISTIC_METRICS = (
@@ -82,11 +102,21 @@ ALL_DETERMINISTIC_METRICS = (
 )
 ALL_ENSEMBLE_METRICS = (
     CRPS,
+    CRPSMAETerm,
+    CRPSSpreadTerm,
     AlphaFairCRPS,
+    AlphaFairCRPSMAETerm,
+    AlphaFairCRPSSpreadTerm,
     FairCRPS,
+    FairCRPSMAETerm,
+    FairCRPSSpreadTerm,
     EnergyScore,
     VariogramScore,
+    EnsembleSpread,
+    EnsembleSkill,
     SpreadSkillRatio,
+    WinklerScore,
+    MultiWinkler,
     Coverage,
     MultiCoverage,
 )

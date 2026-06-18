@@ -1,0 +1,35 @@
+# @package _global_
+defaults:
+  - /distributed: single_gpu_slurm
+  - override /datamodule: advection_diffusion_multichannel_64_64
+  - override /encoder@model.encoder: permute_concat
+  - override /decoder@model.decoder: channels_last
+  - _self_
+
+experiment_name: epd_crps_vit_azula
+
+datamodule:
+  use_normalization: true
+  batch_size: 32
+
+logging:
+  wandb:
+    enabled: true
+
+optimizer:
+  learning_rate: 0.0002
+
+model:
+  train_in_latent_space: false
+  n_members: 10
+  encoder:
+    with_constants: true
+  processor:
+    hidden_dim: 608
+    n_noise_channels: 1024
+    n_noise_input_channels: 4096
+  loss_func:
+    _target_: autocast.losses.ensemble.CRPSLoss
+  train_metrics:
+    crps:
+      _target_: autocast.metrics.ensemble.CRPS

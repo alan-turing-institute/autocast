@@ -40,6 +40,7 @@ class TemporalViTBackbone(TemporalBackboneBase):
         dropout: float = 0.0,
         ffn_factor: int = 4,
         checkpointing: bool = False,
+        use_precomputed_modulation: bool = False,
     ):
         """Initialize Temporal ViT Backbone.
 
@@ -68,6 +69,7 @@ class TemporalViTBackbone(TemporalBackboneBase):
             dropout: Dropout rate in ViT blocks
             ffn_factor: Feedforward network expansion factor in ViT blocks
             checkpointing: Whether to use gradient checkpointing in ViT
+            use_precomputed_modulation: Whether to use precomputed modulation tensors.
         """
         # Initialize base class with common parameters
         super().__init__(
@@ -84,6 +86,7 @@ class TemporalViTBackbone(TemporalBackboneBase):
             temporal_attention_hidden_dim=temporal_attention_hidden_dim,
             tcn_kernel_size=tcn_kernel_size,
             tcn_num_layers=tcn_num_layers,
+            use_precomputed_modulation=use_precomputed_modulation,
         )
 
         self.patch_size = patch_size
@@ -119,8 +122,7 @@ class TemporalViTBackbone(TemporalBackboneBase):
                 - dropout: The dropout rate in :math:`[0, 1]`.
                 - checkpointing: Whether to use gradient checkpointing or not.
 
-        Returns
-        -------
+        Returns:
             ViT module
         """
         return ViT(

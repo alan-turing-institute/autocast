@@ -9,7 +9,7 @@ exploratory/data
 outputs
 lightning_logs
 datasets
-slurm_scripts
+run_scripts
 logs
 local_hydra/local_experiment/*.yaml
 !local_hydra/local_experiment/README.md
@@ -19,3 +19,5 @@ core
 .cursorrules
 .github/copilot-instructions.md
 .agent
+.codex
+.claude

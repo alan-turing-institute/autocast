@@ -31,16 +31,14 @@ class BatchMixin:
 class SpatioTemporalDataset(Dataset, BatchMixin):
     """A class for spatio-temporal datasets."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0915
         self,
         data_path: str | None,
         data: dict | None = None,
         n_steps_input: int = 1,
         n_steps_output: int = 1,
         stride: int = 1,
-        # TODO: support for passing data from dict
-        input_channel_idxs: tuple[int, ...] | None = None,
-        output_channel_idxs: tuple[int, ...] | None = None,
+        channel_idxs: tuple[int, ...] | None = None,
         full_trajectory_mode: bool = False,
         autoencoder_mode: bool = False,
         dtype: torch.dtype = torch.float32,
@@ -50,45 +48,31 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         normalization_path: str | None = None,
         normalization_stats: dict | DictConfig | None = None,
     ):
-        """
-        Initialize the dataset.
+        """Initialize the dataset.
 
-        Parameters
-        ----------
-        data_path: str
-            Path to the HDF5 file containing the dataset.
-        data: dict | None
-            Preloaded data. Defaults to None.
-        n_steps_input: int
-            Number of input time steps.
-        n_steps_output: int
-            Number of output time steps.
-        stride: int
-            Stride for sampling the data.
-        data: dict | None
-            Preloaded data. Defaults to None.
-        input_channel_idxs: tuple[int, ...] | None
-            Indices of input channels to use. Defaults to None.
-        output_channel_idxs: tuple[int, ...] | None
-            Indices of output channels to use. Defaults to None.
-        full_trajectory_mode: bool
-            If True, use full trajectories without creating subtrajectories.
-        autoencoder_mode: bool
-            If True, return (input, input) pairs for autoencoder training.
-            Defaults to False.
-        dtype: torch.dtype
-            Data type for tensors. Defaults to torch.float32.
-        verbose: bool
-            If True, print dataset information.
-        use_normalization: bool
-            Whether to apply Z-score normalization. Defaults to False.
-        normalization_type: type[ZScoreNormalization] | None
-            Normalization object (computed from training data). Defaults to
-            ZScoreNormalization.
-        normalization_path: str | None
-            Path to normalization statistics file (yaml). Defaults to None.
-        normalization_stats: dict | None
-            Preloaded normalization statistics. Defaults to None.
+        Args:
+            data_path: Path to the HDF5 file containing the dataset.
+            data: Preloaded data. Defaults to None.
+            n_steps_input: Number of input time steps.
+            n_steps_output: Number of output time steps.
+            stride: Stride for sampling the data.
+            data: Preloaded data. Defaults to None.
+            channel_idxs: Indices of channels to select from the raw data
+                (applied to both input and output). If None, all channels are
+                used. Defaults to None.
+            full_trajectory_mode: If True, use full trajectories without
+                creating subtrajectories.
+            autoencoder_mode: If True, return (input, input) pairs for
+                autoencoder training. Defaults to False.
+            dtype: Data type for tensors. Defaults to torch.float32.
+            verbose: If True, print dataset information.
+            use_normalization: Whether to apply Z-score normalization.
+                Defaults to False.
+            normalization_type: Normalization object (computed from training
+                data). Defaults to ZScoreNormalization.
+            normalization_path: Path to normalization statistics file (yaml).
+                Defaults to None.
+            normalization_stats: Preloaded normalization statistics. Defaults to None.
         """
         self.dtype = dtype
         self.verbose = verbose
@@ -97,6 +81,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         self.normalization_path = normalization_path
         self.normalization_stats = normalization_stats
         self.autoencoder_mode = autoencoder_mode
+        self._channel_idxs_applied = False
 
         if data_path is not None:
             self.read_data(data_path)
@@ -104,7 +89,17 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         if data is not None:
             self.parse_data(data)
 
+        if channel_idxs is not None and not self._channel_idxs_applied:
+            self.data = self.data[..., list(channel_idxs)]
+            self._channel_idxs_applied = True
+
         self.set_up_normalization()
+
+        if channel_idxs is not None and self.norm is not None:
+            self.norm.core_field_names = [
+                self.norm.core_field_names[i] for i in channel_idxs
+            ]
+            self.norm._precompute_flattened_stats()
 
         if autoencoder_mode and full_trajectory_mode:
             msg = "autoencoder_mode and full_trajectory_mode cannot both be True."
@@ -124,8 +119,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         self.n_steps_input = n_steps_input
         self.n_steps_output = n_steps_output
         self.stride = stride
-        self.input_channel_idxs = input_channel_idxs
-        self.output_channel_idxs = output_channel_idxs
+        self.channel_idxs = channel_idxs
 
         # Destructured here
         (
@@ -211,6 +205,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             and f["constant_fields"] != {}
             else None
         )
+        self._channel_idxs_applied = bool(f.get("_channel_idxs_applied", False))
 
     def read_data(self, data_path: str):
         """Read data.
@@ -234,9 +229,19 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             )
             self.constant_scalars = data.get("constant_scalars", None)
             self.constant_fields = data.get("constant_fields", None)
+            self._channel_idxs_applied = bool(data.get("_channel_idxs_applied", False))
             return
         msg = "No data provided to parse."
         raise ValueError(msg)
+
+    def to_preloaded_data(self) -> dict[str, Any]:
+        """Return the in-memory payload accepted by ``data=`` without copying."""
+        return {
+            "data": self.data,
+            "constant_scalars": self.constant_scalars,
+            "constant_fields": self.constant_fields,
+            "_channel_idxs_applied": self._channel_idxs_applied,
+        }
 
     def __len__(self):  # noqa: D105
         return len(self.all_input_fields)

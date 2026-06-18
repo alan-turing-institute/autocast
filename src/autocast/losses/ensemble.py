@@ -19,8 +19,7 @@ class EnsembleLoss(nn.Module):
             preds: Predictions of shape (B, ..., M)
             targets: Targets of shape (B, ...)
 
-        Returns
-        -------
+        Returns:
             Scalar loss (or tensor if reduction is 'none')
         """
         # Ensure targets do not have the ensemble dimension
@@ -75,3 +74,11 @@ class AlphaFairCRPSLoss(EnsembleLoss):
 
     def _compute_score(self, preds: TensorBTSCM, targets: TensorBTSC) -> Tensor:
         return _alpha_fair_crps_score(preds, targets, alpha=self.alpha)
+
+
+class EnsembleMAELoss(EnsembleLoss):
+    """Mean absolute error computed from the ensemble mean forecast."""
+
+    def _compute_score(self, preds: TensorBTSCM, targets: TensorBTSC) -> Tensor:
+        ensemble_mean = preds.mean(dim=-1)
+        return (ensemble_mean - targets).abs()

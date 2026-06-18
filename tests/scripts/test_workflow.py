@@ -42,6 +42,9 @@ from autocast.scripts.workflow.overrides import (
     strip_hydra_sweep_controls,
 )
 from autocast.scripts.workflow.slurm import (
+    _build_sbatch_command,
+    _load_direct_distributed_launcher_cfg,
+    _load_preset_launcher_cfg,
     _parse_override_scalar,
     _should_use_srun,
     submit_manifest_via_sbatch,
@@ -171,6 +174,14 @@ def test_should_use_srun_auto_for_multi_task_or_gpu():
     assert _should_use_srun({"tasks_per_node": 1, "gpus_per_node": 2}) is True
 
 
+def test_should_use_srun_auto_for_multinode():
+    assert _should_use_srun({"nodes": 2, "tasks_per_node": 1}) is True
+    assert (
+        _should_use_srun({"additional_parameters": {"nodes": 2}, "tasks_per_node": 1})
+        is True
+    )
+
+
 def test_should_use_srun_auto_false_for_single_task_single_gpu():
     assert _should_use_srun({"tasks_per_node": 1, "gpus_per_node": 1}) is False
 
@@ -184,6 +195,168 @@ def test_should_use_srun_respects_explicit_override():
         _should_use_srun({"tasks_per_node": 2, "gpus_per_node": 2, "use_srun": False})
         is False
     )
+
+
+def test_build_sbatch_command_includes_nodes(tmp_path: Path):
+    batch_script = tmp_path / "submit.sh"
+    cmd = _build_sbatch_command(
+        job_name="autocast-test",
+        log_dir=tmp_path,
+        launcher_cfg={
+            "nodes": 2,
+            "gpus_per_node": 4,
+            "tasks_per_node": 4,
+            "additional_parameters": {"mem": 0, "nodes": 99},
+        },
+        batch_script_path=batch_script,
+    )
+
+    assert "--nodes=2" in cmd
+    assert "--gpus-per-node=4" in cmd
+    assert "--ntasks-per-node=4" in cmd
+    assert "--mem=0" in cmd
+    assert "--nodes=99" not in cmd
+
+
+def test_load_preset_launcher_cfg_ignores_unrelated_interpolation(
+    tmp_path: Path, monkeypatch
+):
+    local_cfg = tmp_path / "local_hydra" / "local_experiment" / "repro.yaml"
+    local_cfg.parent.mkdir(parents=True, exist_ok=True)
+    local_cfg.write_text(
+        "\n".join(
+            [
+                "defaults:",
+                "  - /distributed: ddp_4gpu_slurm",
+                "model:",
+                "  processor:",
+                "    n_steps_input: ${datamodule.n_steps_input}",
+                "hydra:",
+                "  launcher:",
+                "    partition: gpu",
+                "    timeout_min: 120",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(tmp_path)
+    launcher_cfg = _load_preset_launcher_cfg(["local_experiment=repro"])
+
+    assert launcher_cfg.get("partition") == "gpu"
+    assert launcher_cfg.get("timeout_min") == 120
+
+
+def test_load_preset_launcher_cfg_walks_local_experiment_parent_chain(
+    tmp_path: Path, monkeypatch
+):
+    # Child references a parent local_experiment that declares /distributed:
+    # — the loader must walk the chain so SLURM allocates the right resources.
+    local_root = tmp_path / "local_hydra" / "local_experiment"
+    parent_cfg = local_root / "parent.yaml"
+    parent_cfg.parent.mkdir(parents=True, exist_ok=True)
+    parent_cfg.write_text(
+        "\n".join(
+            [
+                "defaults:",
+                "  - /distributed: ddp_4gpu_slurm",
+                "  - _self_",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    child_cfg = local_root / "child.yaml"
+    child_cfg.write_text(
+        "\n".join(
+            [
+                "defaults:",
+                "  - /local_experiment/parent",
+                "  - _self_",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(tmp_path)
+    launcher_cfg = _load_preset_launcher_cfg(["local_experiment=child"])
+
+    assert launcher_cfg.get("gpus_per_node") == 4
+    assert launcher_cfg.get("tasks_per_node") == 4
+
+
+def test_load_preset_launcher_cfg_walks_relative_parent_reference(
+    tmp_path: Path, monkeypatch
+):
+    # Child uses a relative reference (no /local_experiment/ prefix) to a
+    # parent that declares /distributed: — the loader must resolve the
+    # relative path from the config group root.
+    local_root = tmp_path / "local_hydra" / "local_experiment"
+    parent_cfg = local_root / "epd" / "base.yaml"
+    parent_cfg.parent.mkdir(parents=True, exist_ok=True)
+    parent_cfg.write_text(
+        "\n".join(
+            [
+                "defaults:",
+                "  - /distributed: ddp_4gpu_slurm",
+                "  - _self_",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    child_cfg = local_root / "epd" / "128x128" / "child.yaml"
+    child_cfg.parent.mkdir(parents=True, exist_ok=True)
+    child_cfg.write_text(
+        "\n".join(
+            [
+                "defaults:",
+                "  - epd/base",
+                "  - _self_",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(tmp_path)
+    launcher_cfg = _load_preset_launcher_cfg(["local_experiment=epd/128x128/child"])
+
+    assert launcher_cfg.get("gpus_per_node") == 4
+    assert launcher_cfg.get("tasks_per_node") == 4
+
+
+def test_load_preset_launcher_cfg_recognises_override_distributed(
+    tmp_path: Path, monkeypatch
+):
+    # When a config uses `override /distributed:` (needed when a parent
+    # already set the group), the CLI must still find the preset name.
+    local_root = tmp_path / "local_hydra" / "local_experiment"
+    cfg = local_root / "with_override.yaml"
+    cfg.parent.mkdir(parents=True, exist_ok=True)
+    cfg.write_text(
+        "\n".join(
+            [
+                "defaults:",
+                "  - override /distributed: ddp_4gpu_2node_slurm",
+                "  - _self_",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(tmp_path)
+    launcher_cfg = _load_preset_launcher_cfg(["local_experiment=with_override"])
+
+    assert launcher_cfg.get("nodes") == 2
+    assert launcher_cfg.get("gpus_per_node") == 4
+
+
+def test_load_direct_distributed_launcher_cfg_supports_multinode():
+    launcher_cfg = _load_direct_distributed_launcher_cfg(
+        ["+distributed=ddp_4gpu_2node_slurm"]
+    )
+
+    assert launcher_cfg.get("nodes") == 2
+    assert launcher_cfg.get("gpus_per_node") == 4
+    assert launcher_cfg.get("tasks_per_node") == 4
 
 
 # ---------------------------------------------------------------------------
@@ -218,6 +391,29 @@ def test_dataset_name_token_unknown_passthrough():
 def test_dataset_name_token_datamodule_override_takes_precedence():
     overrides = ["datamodule=reaction_diffusion"]
     assert dataset_name_token("something_else", overrides) == "rd64"
+
+
+def test_dataset_name_token_handles_gpe_laser_only_wake_alias():
+    assert dataset_name_token("gpe_laser_only_wake", []) == "gpe64"
+
+
+def test_dataset_name_token_ignores_data_path_when_not_cached_latents():
+    overrides = ["datamodule.data_path=/tmp/datasets/reaction_diffusion_e3e8515"]
+    assert dataset_name_token("something_else", overrides) == "something_else"
+
+
+def test_dataset_name_token_cached_latents_uses_saved_autoencoder_dataset(tmp_path):
+    cached_dir = tmp_path / "cached"
+    cached_dir.mkdir(parents=True)
+    (cached_dir / "autoencoder_config.yaml").write_text(
+        "datamodule:\n  data_path: /tmp/datasets/reaction_diffusion_e3e8515\n",
+        encoding="utf-8",
+    )
+    overrides = [
+        "datamodule=cached_latents",
+        f"datamodule.data_path={cached_dir}",
+    ]
+    assert dataset_name_token("cached_latents", overrides) == "rd64"
 
 
 def test_auto_run_name_ae():
@@ -277,6 +473,40 @@ def test_auto_run_name_hidden_dim_included():
             ["processor@model.processor=fno", "model.processor.hidden_channels=256"],
         )
     assert "256" in name
+
+
+def test_auto_run_name_local_experiment_ignores_unresolved_interpolation(
+    tmp_path: Path, monkeypatch
+):
+    local_cfg = tmp_path / "local_hydra" / "local_experiment" / "repro.yaml"
+    local_cfg.parent.mkdir(parents=True, exist_ok=True)
+    local_cfg.write_text(
+        "\n".join(
+            [
+                "model:",
+                "  processor:",
+                "    _target_: autocast.nn.vit.TemporalViTBackbone",
+                "    n_steps_input: ${datamodule.n_steps_input}",
+                "  loss_func:",
+                "    _target_: autocast.losses.ensemble.CRPSLoss",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(tmp_path)
+
+    with (
+        patch("autocast.scripts.workflow.naming._git_hash", return_value="abc1234"),
+        patch("autocast.scripts.workflow.naming._short_uuid", return_value="xyz7890"),
+    ):
+        name = auto_run_name(
+            "epd",
+            "reaction_diffusion",
+            ["local_experiment=repro"],
+        )
+
+    assert name == "crps_rd64_vit_abc1234_xyz7890"
 
 
 # ---------------------------------------------------------------------------
@@ -473,6 +703,40 @@ def test_eval_command_auto_infers_hydra_config(monkeypatch, tmp_path):
     assert any(o.startswith("eval.checkpoint=") for o in overrides)
 
 
+def test_eval_command_adds_snapshot_defaults_for_stale_resolved_config(
+    monkeypatch, tmp_path
+):
+    (tmp_path / "resolved_config.yaml").write_text(
+        "eval:\n  checkpoint: encoder_processor_decoder.ckpt\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "encoder_processor_decoder.ckpt").touch()
+    captured: dict[str, object] = {}
+
+    def _fake_run_module(_module, overrides, dry_run=False, mode="local", **_kwargs):
+        captured["overrides"] = overrides
+        del dry_run, mode, _kwargs  # accept run_module's keyword args
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.commands.run_module", _fake_run_module
+    )
+
+    user_override = "eval.rollout_snapshot_dir=/tmp/snapshots"
+    eval_command(
+        mode="local",
+        dataset=None,
+        work_dir=str(tmp_path),
+        overrides=[user_override],
+        dry_run=True,
+    )
+
+    overrides = captured["overrides"]
+    assert isinstance(overrides, list)
+    default_override = "+eval.rollout_snapshot_dir=null"
+    assert default_override in overrides
+    assert overrides.index(default_override) < overrides.index(user_override)
+
+
 def test_eval_command_includes_defaults_without_resolved_config(monkeypatch, tmp_path):
     # No resolved_config.yaml in workdir
     (tmp_path / "encoder_processor_decoder.ckpt").touch()
@@ -618,6 +882,33 @@ def test_eval_command_quotes_inferred_checkpoint_with_equals(monkeypatch, tmp_pa
     overrides = captured["overrides"]
     assert isinstance(overrides, list)
     assert f'eval.checkpoint="{ckpt.resolve()}"' in overrides
+
+
+def test_eval_command_uses_custom_output_subdir(monkeypatch, tmp_path):
+    (tmp_path / "resolved_config.yaml").write_text("x: 1\n", encoding="utf-8")
+    (tmp_path / "encoder_processor_decoder.ckpt").touch()
+    captured: dict[str, object] = {}
+
+    def _fake_run_module(_module, overrides, dry_run=False, mode="local", **_kwargs):
+        captured["overrides"] = overrides
+        del dry_run, mode, _kwargs  # accept run_module's keyword args
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.commands.run_module", _fake_run_module
+    )
+
+    eval_command(
+        mode="local",
+        dataset="reaction_diffusion",
+        work_dir=str(tmp_path),
+        overrides=[],
+        output_subdir="eval_0p75",
+        dry_run=True,
+    )
+
+    overrides = captured["overrides"]
+    assert isinstance(overrides, list)
+    assert f"hydra.run.dir={(tmp_path / 'eval_0p75').resolve()}" in overrides
 
 
 def test_benchmark_command_quotes_inferred_checkpoint_with_equals(
@@ -970,6 +1261,7 @@ def test_build_parser_eval_basic(parser: argparse.ArgumentParser):
     args = parser.parse_args(["eval", "--workdir", "/tmp/w"])
     assert args.command == "eval"
     assert args.workdir == "/tmp/w"
+    assert args.output_subdir == "eval"
 
 
 def test_build_parser_benchmark_basic(parser: argparse.ArgumentParser):
@@ -1240,7 +1532,7 @@ def test_main_unknown_dashed_flag_still_errors(monkeypatch):
         workflow_cli.main()
 
 
-def test_main_eval_dispatches_inferred_dataset_from_workdir(monkeypatch, tmp_path):
+def test_main_eval_does_not_infer_dataset_from_workdir(monkeypatch, tmp_path):
     (tmp_path / "resolved_config.yaml").write_text(
         "datamodule:\n  data_path: /tmp/datasets/reaction_diffusion\n",
         encoding="utf-8",
@@ -1263,11 +1555,46 @@ def test_main_eval_dispatches_inferred_dataset_from_workdir(monkeypatch, tmp_pat
 
     workflow_cli.main()
 
-    assert captured["dataset"] == "reaction_diffusion"
+    assert captured["dataset"] is None
     assert captured["work_dir"] == str(tmp_path)
+    assert captured["output_subdir"] == "eval"
 
 
-def test_main_benchmark_dispatches_inferred_dataset_from_workdir(monkeypatch, tmp_path):
+def test_main_eval_forwards_output_subdir(monkeypatch, tmp_path):
+    (tmp_path / "resolved_config.yaml").write_text(
+        "datamodule:\n  data_path: /tmp/datasets/reaction_diffusion\n",
+        encoding="utf-8",
+    )
+
+    captured = {}
+
+    def _fake_eval_command(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.cli.eval_command",
+        _fake_eval_command,
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "autocast",
+            "eval",
+            "--workdir",
+            str(tmp_path),
+            "--output-subdir",
+            "eval_0p75",
+            "--dry-run",
+        ],
+    )
+
+    workflow_cli.main()
+
+    assert captured["output_subdir"] == "eval_0p75"
+
+
+def test_main_benchmark_does_not_infer_dataset_from_workdir(monkeypatch, tmp_path):
     (tmp_path / "resolved_config.yaml").write_text(
         "datamodule:\n  data_path: /tmp/datasets/reaction_diffusion\n",
         encoding="utf-8",
@@ -1290,7 +1617,7 @@ def test_main_benchmark_dispatches_inferred_dataset_from_workdir(monkeypatch, tm
 
     workflow_cli.main()
 
-    assert captured["dataset"] == "reaction_diffusion"
+    assert captured["dataset"] is None
     assert captured["work_dir"] == str(tmp_path)
 
 

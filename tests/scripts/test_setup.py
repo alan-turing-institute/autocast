@@ -8,10 +8,12 @@ from autocast.encoders.base import Encoder
 from autocast.scripts.setup import (
     _apply_processor_channel_defaults,
     _build_loss_func,
+    _build_processor,
     _filter_kwargs_for_target,
     _get_latent_channels,
     _get_module_device,
     _resolve_module_device,
+    _resolve_processor_temporal_steps,
     _set_if_auto,
     resolve_auto_params,
     setup_autoencoder_components,
@@ -139,6 +141,108 @@ def test_apply_processor_handles_none_config():
         n_steps_output=2,
         n_channels_out=16,
     )
+
+
+def test_build_processor_prefers_explicit_processor_step_counts():
+    model_cfg = OmegaConf.create(
+        {
+            "processor": {
+                "_target_": "autocast.processors.vit_latent.AViTLatentProcessor",
+                "global_cond_channels": 0,
+                "include_global_cond": False,
+                "n_steps_input": 7,
+                "n_steps_output": 9,
+                "hidden_dim": 8,
+                "num_heads": 2,
+                "n_layers": 1,
+            }
+        }
+    )
+    proc_kwargs = {
+        "in_channels": 3,
+        "out_channels": 3,
+        "n_steps_input": 2,
+        "n_steps_output": 4,
+        "n_channels_out": 3,
+        "spatial_resolution": (8, 8),
+    }
+
+    processor = _build_processor(model_cfg, proc_kwargs)
+
+    assert processor.n_steps_input == 7
+    assert processor.n_steps_output == 9
+
+
+def test_build_processor_uses_inferred_steps_when_processor_steps_not_explicit():
+    model_cfg = OmegaConf.create(
+        {
+            "processor": {
+                "_target_": "autocast.processors.vit_latent.AViTLatentProcessor",
+                "global_cond_channels": 0,
+                "include_global_cond": False,
+                "n_steps_input": "auto",
+                "n_steps_output": None,
+                "hidden_dim": 8,
+                "num_heads": 2,
+                "n_layers": 1,
+            }
+        }
+    )
+    proc_kwargs = {
+        "in_channels": 3,
+        "out_channels": 3,
+        "n_steps_input": 2,
+        "n_steps_output": 4,
+        "n_channels_out": 3,
+        "spatial_resolution": (8, 8),
+    }
+
+    processor = _build_processor(model_cfg, proc_kwargs)
+
+    assert processor.n_steps_input == 2
+    assert processor.n_steps_output == 4
+
+
+def test_resolve_processor_temporal_steps_for_time_concatenating_encoder():
+    class TimeConcatEncoder:
+        outputs_time_channel_concat = True
+
+    steps_in, steps_out = _resolve_processor_temporal_steps(
+        TimeConcatEncoder(),  # type: ignore - just testing resolution logic, not actual encoder behavior
+        n_steps_input=4,
+        n_steps_output=2,
+    )
+
+    assert steps_in == 1
+    assert steps_out == 1
+
+
+def test_resolve_processor_temporal_steps_for_regular_encoder():
+    class RegularEncoder:
+        outputs_time_channel_concat = False
+
+    steps_in, steps_out = _resolve_processor_temporal_steps(
+        RegularEncoder(),  # type: ignore - just testing resolution logic, not actual encoder behavior
+        n_steps_input=4,
+        n_steps_output=2,
+    )
+
+    assert steps_in == 4
+    assert steps_out == 2
+
+
+def test_resolve_processor_temporal_steps_defaults_to_non_concat_when_missing_attr():
+    class EncoderWithoutFlag:
+        pass
+
+    steps_in, steps_out = _resolve_processor_temporal_steps(
+        EncoderWithoutFlag(),  # type: ignore - just testing resolution logic, not actual encoder behavior
+        n_steps_input=4,
+        n_steps_output=2,
+    )
+
+    assert steps_in == 4
+    assert steps_out == 2
 
 
 # --- resolve_auto_params ---

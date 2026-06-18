@@ -1,17 +1,54 @@
 from collections.abc import Callable, Iterable
-from typing import Literal, cast
+from pathlib import Path
+from typing import Literal, TypeAlias, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from einops import rearrange
 from matplotlib import animation
-from matplotlib.colors import Normalize, TwoSlopeNorm
+from matplotlib.colors import LogNorm, Normalize, SymLogNorm, TwoSlopeNorm
+from matplotlib.figure import Figure
 from matplotlib.gridspec import GridSpec
 from torchmetrics import Metric
 
 from autocast.metrics.coverage import Coverage, MultiCoverage
 from autocast.types import Tensor, TensorBTSC, TensorBTSCM
+
+# A4 typeset linewidth (~160mm of text width with 25mm side margins) in inches.
+A4_LINEWIDTH_IN = 6.3
+
+# Paper-ready Matplotlib rc settings: Times serif at 10pt, used for the
+# spatiotemporal snapshot panels so they sit at \linewidth in LaTeX figures.
+_SNAPSHOT_PAPER_RC: dict[str, object] = {
+    "font.family": "serif",
+    "font.serif": ["Times", "Times New Roman", "DejaVu Serif", "serif"],
+    "font.size": 10,
+    "axes.titlesize": 10,
+    "axes.labelsize": 10,
+    "xtick.labelsize": 9,
+    "ytick.labelsize": 9,
+    "legend.fontsize": 9,
+    "figure.titlesize": 10,
+    "mathtext.fontset": "stix",
+}
+
+NormLike: TypeAlias = Normalize | TwoSlopeNorm | LogNorm | SymLogNorm | None
+
+
+def _panel_size_for_width(
+    target_width_in: float,
+    ncols: int,
+    spatial: tuple[int, ...],
+    preserve_aspect: bool,
+) -> tuple[float, float]:
+    panel_width = max(target_width_in / max(ncols, 1), 0.5)
+    if preserve_aspect and len(spatial) == 2 and spatial[0] > 0 and spatial[1] > 0:
+        rows, cols = spatial
+        panel_height = panel_width * (rows / cols)
+    else:
+        panel_height = panel_width
+    return panel_width, panel_height
 
 
 def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
@@ -35,43 +72,34 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
 ):
     """Create a video comparing ground truth and predicted spatiotemporal time series.
 
-    Parameters
-    ----------
-    true: array_like (B, T, W, H, C)
-        Ground-truth tensor.
-    pred: array_like
-        Optional predicted tensor of shape (B, T, W, H, C).
-    batch_idx: int
-        Which batch index to visualize (default: 0).
-    fps: int, optional
-        Frames per second for the video (default: 5).
-    vmin: float, optional
-        Minimum value for color scale (default: auto from data).
-    vmax: float, optional
-        Maximum value for color scale (default: auto from data).
-    cmap: str, optional
-        Colormap to use (default: "viridis").
-    save_path: str, optional
-        Optional path to save the video (e.g., "output.mp4").
-    title: str, optional
-        Title for the video (default: "Ground Truth vs Prediction").
-    colorbar_mode: {"none", "row", "column", "all"}
-        Select how colorbars (and underlying color scales) are shared for the
-        first two rows (true vs prediction):
-        - "none": every subplot gets its own colorbar (default).
-        - "row": a single colorbar per row (first two rows only).
-        - "column": a single colorbar per column (true/pred share per channel).
-        - "all": one colorbar shared across the first two rows.
-    channel_names: list[str] | None
-        Optional list of channel names for titles.
-    preserve_aspect: bool
-        If True, resize each subplot panel to match the spatial WxH ratio of the
-        data so the image fills the panel without distortion. If False (default),
-        panels are square and the image is stretched to fill via ``aspect='auto'``.
+    Args:
+        true: Ground-truth tensor of shape (B, T, W, H, C).
+        pred: Optional predicted tensor of shape (B, T, W, H, C).
+        pred_uq: Optional predicted uncertainty tensor of shape (B, T, W, H, C).
+        coverage: Optional coverage tensor of shape (B, T, W, H, C).
+        batch_idx: Which batch index to visualize (default: 0).
+        fps: Frames per second for the video (default: 5).
+        vmin: Minimum value for color scale (default: auto from data).
+        vmax: Maximum value for color scale (default: auto from data).
+        cmap: Colormap to use (default: "viridis").
+        save_path: Optional path to save the video (e.g., "output.mp4").
+        title: Title for the video (default: "Ground Truth vs Prediction").
+        pred_uq_label: Label for the prediction uncertainty row.
+        coverage_label: Label for the coverage row.
+        colorbar_mode: Select how colorbars (and underlying color scales) are
+            shared for the first two rows (true vs prediction):
+            - "none": every subplot gets its own colorbar (default).
+            - "row": a single colorbar per row (first two rows only).
+            - "column": a single colorbar per column (true/pred share per channel).
+            - "all": one colorbar shared across the first two rows.
+        colorbar_mode_uq: Colorbar sharing mode for the UQ/coverage rows.
+        channel_names: Optional list of channel names for titles.
+        preserve_aspect: If True, resize each subplot panel to match the spatial
+            WxH ratio of the data so the image fills the panel without distortion.
+            If False (default), panels are square and the image is stretched to
+            fill via ``aspect='auto'``.
 
-    Returns
-    -------
-    animation.FuncAnimation
+    Returns:
         Animation object that can be displayed in notebooks.
     """
     colorbar_mode_str = colorbar_mode.lower()
@@ -301,6 +329,262 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     return anim
 
 
+def plot_spatiotemporal_snapshots(  # noqa: PLR0912, PLR0915
+    true: TensorBTSC,
+    pred: TensorBTSC | None = None,
+    pred_uq: TensorBTSC | None = None,
+    *,
+    timesteps: Iterable[int],
+    channel: int = 0,
+    batch_idx: int = 0,
+    vmin: float | None = None,
+    vmax: float | None = None,
+    cmap: str = "viridis",
+    save_path: str | None = None,
+    extra_formats: Iterable[str] | None = None,
+    title: str = "Ground Truth vs Prediction",
+    pred_uq_label: str = "Std Dev",
+    channel_names: list[str] | None = None,
+    preserve_aspect: bool = False,
+    target_width_in: float = A4_LINEWIDTH_IN,
+    diff_log: bool = False,
+    uq_log: bool = False,
+) -> Figure:
+    """Create a still panel at selected timesteps for one spatial channel."""
+    true_batch = true[batch_idx]
+    pred_batch = pred[batch_idx] if pred is not None else None
+    pred_uq_batch = pred_uq[batch_idx] if pred_uq is not None else None
+
+    T, *spatial, C = true_batch.shape
+    if len(spatial) != 2:
+        msg = (
+            "plot_spatiotemporal_snapshots expects exactly two spatial "
+            f"dimensions, got shape {tuple(true_batch.shape)}."
+        )
+        raise ValueError(msg)
+    if not 0 <= channel < C:
+        msg = f"channel must be in [0, {C - 1}], got {channel}."
+        raise ValueError(msg)
+
+    selected_timesteps = [int(t) for t in timesteps]
+    invalid_timesteps = [t for t in selected_timesteps if t < 0 or t >= T]
+    if invalid_timesteps:
+        msg = (
+            f"timesteps must be in [0, {T - 1}], got invalid values "
+            f"{invalid_timesteps}."
+        )
+        raise ValueError(msg)
+    if not selected_timesteps:
+        msg = "At least one timestep is required for snapshot plotting."
+        raise ValueError(msg)
+
+    true_np = true_batch.detach().cpu().numpy()
+    pred_np = pred_batch.detach().cpu().numpy() if pred_batch is not None else None
+    pred_uq_np = (
+        pred_uq_batch.detach().cpu().numpy() if pred_uq_batch is not None else None
+    )
+    true_channel = true_np[:, :, :, channel]
+    pred_channel = pred_np[:, :, :, channel] if pred_np is not None else None
+    pred_uq_channel = pred_uq_np[:, :, :, channel] if pred_uq_np is not None else None
+
+    primary_arrays = [true_channel]
+    if pred_channel is not None:
+        primary_arrays.append(pred_channel)
+
+    min_val = (
+        vmin if vmin is not None else min(float(arr.min()) for arr in primary_arrays)
+    )
+    max_val = (
+        vmax if vmax is not None else max(float(arr.max()) for arr in primary_arrays)
+    )
+    primary_norm = Normalize(vmin=min_val, vmax=max_val)
+
+    diff_channel = None
+    diff_norm: Normalize | TwoSlopeNorm | SymLogNorm | None = None
+    if pred_channel is not None:
+        diff_channel = true_channel - pred_channel
+        diff_max = float(np.abs(diff_channel).max())
+        diff_span = diff_max if diff_max > 0 else 1e-9
+        if diff_log:
+            linthresh = max(diff_span * 1e-3, 1e-12)
+            diff_norm = SymLogNorm(
+                linthresh=linthresh,
+                vmin=-diff_span,
+                vmax=diff_span,
+                base=10,
+            )
+        else:
+            diff_norm = TwoSlopeNorm(vmin=-diff_span, vcenter=0, vmax=diff_span)
+
+    rows_to_plot: list[tuple[np.ndarray, str, str, NormLike]] = [
+        (true_channel, "Ground Truth", cmap, primary_norm),
+    ]
+    if pred_channel is not None:
+        rows_to_plot.append((pred_channel, "Prediction", cmap, primary_norm))
+        assert diff_channel is not None
+        rows_to_plot.append((diff_channel, "Difference", "RdBu", diff_norm))
+    if pred_uq_channel is not None:
+        uq_finite = pred_uq_channel[np.isfinite(pred_uq_channel)]
+        uq_positive = uq_finite[uq_finite > 0]
+        if uq_log and uq_positive.size > 0:
+            uq_vmin = float(uq_positive.min())
+            uq_vmax = float(uq_finite.max())
+            if uq_vmax <= uq_vmin:
+                uq_vmax = uq_vmin * 10.0 + 1e-12
+            uq_norm: Normalize | LogNorm = LogNorm(vmin=uq_vmin, vmax=uq_vmax)
+        else:
+            uq_norm = Normalize(
+                vmin=float(pred_uq_channel.min()),
+                vmax=float(pred_uq_channel.max()),
+            )
+        rows_to_plot.append((pred_uq_channel, pred_uq_label, "inferno", uq_norm))
+
+    nrows = len(rows_to_plot)
+    ncols = len(selected_timesteps)
+    panel_width, panel_height = _panel_size_for_width(
+        target_width_in, ncols, tuple(spatial), preserve_aspect
+    )
+
+    with plt.rc_context(_SNAPSHOT_PAPER_RC):
+        fig, axes = plt.subplots(
+            nrows,
+            ncols,
+            figsize=(ncols * panel_width, nrows * panel_height),
+            squeeze=False,
+            constrained_layout=True,
+        )
+        image_rows = []
+        for row_idx, (data, row_label, row_cmap, norm) in enumerate(rows_to_plot):
+            row_images = []
+            for col_idx, timestep in enumerate(selected_timesteps):
+                ax = axes[row_idx][col_idx]
+                # LogNorm warns on non-positive values; clip to positive floor.
+                if isinstance(norm, LogNorm):
+                    floor = float(norm.vmin) if norm.vmin is not None else 1e-12
+                    plot_data = np.clip(data[timestep], floor, None)
+                else:
+                    plot_data = data[timestep]
+                im = ax.imshow(plot_data, cmap=row_cmap, aspect="auto", norm=norm)
+                row_images.append(im)
+                ax.set_xticks([])
+                ax.set_yticks([])
+                if row_idx == 0:
+                    ax.set_title(f"$i={timestep}$")
+                if col_idx == 0:
+                    ax.set_ylabel(row_label)
+            image_rows.append(row_images)
+
+        for row_idx, row_images in enumerate(image_rows):
+            fig.colorbar(
+                row_images[-1],
+                ax=axes[row_idx, :].tolist(),
+                fraction=0.025,
+                pad=0.02,
+            )
+
+        channel_label = (
+            f"channel {channel}"
+            if channel_names is None
+            else f"{channel_names[channel]} (channel {channel})"
+        )
+        fig.suptitle(f"{title} - {channel_label}", fontweight="bold")
+
+        if save_path:
+            fig.savefig(save_path, dpi=300, bbox_inches="tight")
+            for ext in extra_formats or ():
+                ext_clean = ext.lstrip(".")
+                alt_path = str(Path(save_path).with_suffix(f".{ext_clean}"))
+                if alt_path != str(save_path):
+                    fig.savefig(alt_path, dpi=300, bbox_inches="tight")
+            plt.close(fig)
+
+    return fig
+
+
+def plot_spatiotemporal_snapshots_data_only(
+    true: TensorBTSC,
+    *,
+    timesteps: Iterable[int],
+    channel: int = 0,
+    batch_idx: int = 0,
+    vmin: float | None = None,
+    vmax: float | None = None,
+    cmap: str = "viridis",
+    save_path: str | None = None,
+    extra_formats: Iterable[str] | None = None,
+    ylabel: str | None = None,
+    preserve_aspect: bool = False,
+    target_width_in: float = A4_LINEWIDTH_IN,
+) -> Figure:
+    r"""Single-row snapshot panel of ground-truth data with no axis ticks.
+
+    Each panel is titled ``$i={t}$``. The leftmost panel carries ``ylabel`` if
+    provided (typically a dataset short label, e.g. ``AD``, ``CNS``, ``GS``,
+    ``GPE``). Sized for A4 ``\linewidth`` with Times 10pt.
+    """
+    true_batch = true[batch_idx]
+    T, *spatial, C = true_batch.shape
+    if len(spatial) != 2:
+        msg = (
+            "plot_spatiotemporal_snapshots_data_only expects exactly two "
+            f"spatial dimensions, got shape {tuple(true_batch.shape)}."
+        )
+        raise ValueError(msg)
+    if not 0 <= channel < C:
+        msg = f"channel must be in [0, {C - 1}], got {channel}."
+        raise ValueError(msg)
+
+    selected_timesteps = [int(t) for t in timesteps]
+    invalid_timesteps = [t for t in selected_timesteps if t < 0 or t >= T]
+    if invalid_timesteps:
+        msg = (
+            f"timesteps must be in [0, {T - 1}], got invalid values "
+            f"{invalid_timesteps}."
+        )
+        raise ValueError(msg)
+    if not selected_timesteps:
+        msg = "At least one timestep is required for snapshot plotting."
+        raise ValueError(msg)
+
+    true_np = true_batch.detach().cpu().numpy()[:, :, :, channel]
+    min_val = vmin if vmin is not None else float(true_np.min())
+    max_val = vmax if vmax is not None else float(true_np.max())
+    norm = Normalize(vmin=min_val, vmax=max_val)
+
+    ncols = len(selected_timesteps)
+    panel_width, panel_height = _panel_size_for_width(
+        target_width_in, ncols, tuple(spatial), preserve_aspect
+    )
+
+    with plt.rc_context(_SNAPSHOT_PAPER_RC):
+        fig, axes = plt.subplots(
+            1,
+            ncols,
+            figsize=(ncols * panel_width, panel_height),
+            squeeze=False,
+            constrained_layout=True,
+        )
+        for col_idx, timestep in enumerate(selected_timesteps):
+            ax = axes[0][col_idx]
+            ax.imshow(true_np[timestep], cmap=cmap, aspect="auto", norm=norm)
+            ax.set_xticks([])
+            ax.set_yticks([])
+            ax.set_title(f"$i={timestep}$")
+            if col_idx == 0 and ylabel:
+                ax.set_ylabel(ylabel)
+
+        if save_path:
+            fig.savefig(save_path, dpi=300, bbox_inches="tight")
+            for ext in extra_formats or ():
+                ext_clean = ext.lstrip(".")
+                alt_path = str(Path(save_path).with_suffix(f".{ext_clean}"))
+                if alt_path != str(save_path):
+                    fig.savefig(alt_path, dpi=300, bbox_inches="tight")
+            plt.close(fig)
+
+    return fig
+
+
 def compute_metrics_from_dataloader(
     dataloader: Iterable,
     metric_fns: dict[str, Callable[[], Metric]],
@@ -314,35 +598,23 @@ def compute_metrics_from_dataloader(
     tuple[TensorBTSCM, TensorBTSC] | None,
     list[dict[str, float | str]] | None,
 ]:
-    """
-    Compute metrics from a dataloader by running model forward passes.
+    """Compute metrics from a dataloader by running model forward passes.
 
-    Parameters
-    ----------
-    dataloader: Iterable
-        DataLoader that yields batches.
-    metric_fns: dict[str, Callable[[], Metric]]
-        Dictionary of functions that return fresh metric instances, keyed by metric
-        name.
-    predict_fn: Callable
-        Custom function (batch) -> (preds, trues) for cases like rollout or simply
-        the model forward. Should return a tuple of (preds, trues) tensors or a
-        single tensor of predictions (in which case trues will be taken from batch).
-    windows: list[tuple[int, int] | None], optional
-        List of (t_start, t_end) windows to evaluate. None means use all timesteps.
-        If multiple windows provided, evaluates each independently.
-    return_tensors: bool
-        If True, also return concatenated (pred, true) tensors.
-    return_per_batch: bool
-        If True, also return a list of dictionaries containing metrics for each batch.
+    Args:
+        dataloader: DataLoader that yields batches.
+        metric_fns: Dictionary of functions that return fresh metric instances,
+            keyed by metric name.
+        predict_fn: Custom function (batch) -> (preds, trues) for cases like
+            rollout or simply the model forward. Should return a tuple of
+            (preds, trues) tensors or a
+            single tensor of predictions (in which case trues will be taken from batch).
+        windows: List of (t_start, t_end) windows to evaluate. None means use
+            all timesteps. If multiple windows provided, evaluates each independently.
+        return_tensors: If True, also return concatenated (pred, true) tensors.
+        return_per_batch: If True, also return per-batch metric dictionaries.
+        device: Device to move metrics to before updating.
 
-    Returns
-    -------
-    tuple[
-        dict[None | tuple[int, int], dict[str, Metric]],
-        tuple[TensorBTSCM, TensorBTSC] | None,
-        list[dict[str, float | str]] | None,
-    ]
+    Returns:
         The populated metrics, optionally the tensors, and optionally per-batch metrics.
     """
     metrics_per_window = {
@@ -438,8 +710,7 @@ def compute_metrics_per_timestep_from_dataloader(  # noqa: PLR0912, PLR0915
     max_timesteps: int | None = None,
     device: str | torch.device | None = None,
 ) -> dict[str, np.ndarray]:
-    """
-    Compute metrics at each rollout timestep, batch-averaged, with per-channel values.
+    """Compute per-channel, per-timestep metrics from a dataloader, batch-averaged.
 
     For each timestep t, metrics are computed on the slice (B, t:t+1, ...) and
     averaged over batches. Returns one (T, C) array per metric (T = timesteps,
@@ -447,30 +718,24 @@ def compute_metrics_per_timestep_from_dataloader(  # noqa: PLR0912, PLR0915
     (e.g. coverage_0.05, coverage_0.10, ...) so reliability curves can be built
     per timestep.
 
-    Parameters
-    ----------
-    dataloader: Iterable
-        DataLoader that yields batches (e.g. rollout test dataloader).
-    metric_fns: dict[str, Callable[[], Metric]]
-        Metric factory functions. Metrics should return (1, C) when updated with
-        (B, 1, S, C) and reduce_all=False (deterministic metrics) or be
-        MultiCoverage (expanded to one key per alpha).
-    predict_fn: Callable
-        (batch) -> (preds, trues) returning tensors of shape (B, T, S, C) or
-        (B, T, S, C, M). Returns None, None to skip a batch.
-    max_timesteps: int | None, optional
-        Cap the number of timesteps (uses min over batches otherwise).
+    Args:
+        dataloader: DataLoader that yields batches (e.g. rollout test dataloader).
+        metric_fns: Metric factory functions. Metrics should return (1, C) when
+            updated with (B, 1, S, C) and reduce_all=False (deterministic metrics)
+            or be MultiCoverage (expanded to one key per alpha).
+        predict_fn: (batch) -> (preds, trues) returning tensors of shape
+            (B, T, S, C) or (B, T, S, C, M). Returns None, None to skip a batch.
+        max_timesteps: Cap the number of timesteps (uses min over batches otherwise).
+        device: Device to move metrics to before updating.
 
-    Returns
-    -------
-    dict[str, np.ndarray]
+    Returns:
         Keys are metric names (and coverage_0.05, coverage_0.10, ... for
-        MultiCoverage). Values are arrays of shape (T, C), batch-averaged.
+            MultiCoverage). Values are arrays of shape (T, C), batch-averaged.
     """
     with torch.no_grad():
-        # First pass: get min rollout length T and n_channels
         T_min: int | None = None
         n_channels: int | None = None
+        metrics_per_t: list[dict[str, Metric]] = []
         for batch in dataloader:
             result = predict_fn(batch)
             if result is None:
@@ -489,47 +754,32 @@ def compute_metrics_per_timestep_from_dataloader(  # noqa: PLR0912, PLR0915
             T_batch = min(preds.shape[1], trues.shape[1])
             if max_timesteps is not None:
                 T_batch = min(T_batch, max_timesteps)
+
             if T_min is None:
                 T_min = T_batch
                 n_channels = int(trues.shape[-1])
+                metrics_per_t = [
+                    {
+                        name: fn().to(device) if device is not None else fn()
+                        for name, fn in metric_fns.items()
+                    }
+                    for _ in range(T_min)
+                ]
             else:
                 T_min = min(T_min, T_batch)
-        if T_min is None or n_channels is None or T_min == 0:
-            return {}
 
-        metrics_per_t: list[dict[str, Metric]] = [
-            {
-                name: fn().to(device) if device is not None else fn()
-                for name, fn in metric_fns.items()
-            }
-            for _ in range(T_min)
-        ]
-
-        for batch in dataloader:
-            result = predict_fn(batch)
-            if result is None:
-                continue
-            preds, trues = (
-                result
-                if isinstance(result, tuple) and len(result) == 2
-                else (result, getattr(batch, "output_fields", None))
-            )
-            if not (
-                isinstance(preds, torch.Tensor) and isinstance(trues, torch.Tensor)
-            ):
-                continue
-            if device is None:
-                preds, trues = preds.cpu(), trues.cpu()
-            T_batch = min(preds.shape[1], trues.shape[1], T_min)
-            if max_timesteps is not None:
-                T_batch = min(T_batch, max_timesteps)
-            for t in range(T_batch):
+            for t in range(T_min):
                 p = preds[:, t : t + 1]
                 t_slice = trues[:, t : t + 1]
                 if p.numel() == 0 or t_slice.numel() == 0:
                     continue
                 for metric in metrics_per_t[t].values():
                     metric.update(p, t_slice)
+
+        if T_min is None or n_channels is None or T_min == 0:
+            return {}
+
+        metrics_per_t = metrics_per_t[:T_min]
 
     # Build result: dict[str, (T, C)]
     out: dict[str, np.ndarray] = {}
@@ -576,33 +826,20 @@ def compute_coverage_scores_from_dataloader(
 ) -> tuple[
     dict[None | tuple[int, int], MultiCoverage], tuple[TensorBTSCM, TensorBTSC] | None
 ]:
-    """
-    Compute coverage scores from a dataloader by running model forward passes.
+    """Compute coverage scores from a dataloader by running model forward passes.
 
-    Parameters
-    ----------
-    dataloader: DataLoader
-        DataLoader that yields batches.
-    model: nn.Module, optional
-        Model with forward(batch) that returns predictions with ensemble dimension.
-        Either model or predict_fn must be provided.
-    predict_fn: Callable, optional
-        Custom function (batch) -> (preds, trues) for cases like rollout.
-        Either model or predict_fn must be provided.
-    coverage_levels: list[float], optional
-        Coverage levels to evaluate (default: 0.05 to 0.95).
-    windows: list[tuple[int, int] | None], optional
-        List of (t_start, t_end) windows to evaluate. None means use all timesteps.
-        If multiple windows provided, evaluates each independently.
-    return_tensors: bool
-        If True, also return concatenated (pred, true) tensors.
+    Args:
+        dataloader: DataLoader that yields batches.
+        model: Model with forward(batch) that returns predictions with ensemble
+            dimension. Either model or predict_fn must be provided.
+        predict_fn: Custom function (batch) -> (preds, trues) for cases like rollout.
+            Either model or predict_fn must be provided.
+        coverage_levels: Coverage levels to evaluate (default: 0.05 to 0.95).
+        windows: List of (t_start, t_end) windows to evaluate. None means use
+            all timesteps. If multiple windows provided, evaluates each independently.
+        return_tensors: If True, also return concatenated (pred, true) tensors.
 
-    Returns
-    -------
-    tuple[
-        dict[None | tuple[int, int], MultiCoverage],
-        tuple[TensorBTSCM, TensorBTSC] | None,
-    ]
+    Returns:
         The populated MultiCoverage metric and optionally the tensors.
     """
     coverage_levels_ = (
@@ -633,27 +870,19 @@ def plot_coverage(
     save_path: str | None = None,
     title: str = "Coverage plot",
 ):
-    """
-    Plot reliability diagram showing expected vs observed coverage.
+    """Plot reliability diagram showing expected vs observed coverage.
 
     This is a convenience wrapper around MultiCoverage.plot().
 
-    Parameters
-    ----------
-    pred: TensorBTSCM
-        Ensemble predictions (last dimension is ensemble members).
-    true: TensorBTSC
-        Ground truth tensor.
-    coverage_levels: list[float], optional
-        Coverage levels to evaluate (default: 0.05 to 0.95).
-    save_path: str, optional
-        Path to save the plot.
-    title: str
-        Plot title.
+    Args:
+        pred: Ensemble predictions (last dimension is ensemble members).
+        true: Ground truth tensor.
+        coverage_levels: Coverage levels to evaluate (default: 0.05 to 0.95).
+        save_path: Path to save the plot.
+        title: Plot title.
 
-    Returns
-    -------
-    matplotlib.figure.Figure
+    Returns:
+        matplotlib.figure.Figure
     """
     coverage_levels_ = (
         coverage_levels or np.linspace(0.05, 0.95, 10, endpoint=True).tolist()

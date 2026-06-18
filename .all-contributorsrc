@@ -95,6 +95,39 @@
         "code",
         "bug"
       ]
+    },
+    {
+      "login": "penelopeysm",
+      "name": "Penelope Yong",
+      "avatar_url": "https://avatars.githubusercontent.com/u/122629585?v=4",
+      "profile": "https://github.com/penelopeysm",
+      "contributions": [
+        "ideas",
+        "code",
+        "bug",
+        "review"
+      ]
+    },
+    {
+      "login": "farhanferoz",
+      "name": "farhanferoz",
+      "avatar_url": "https://avatars.githubusercontent.com/u/34422685?v=4",
+      "profile": "https://github.com/farhanferoz",
+      "contributions": [
+        "ideas",
+        "code",
+        "bug",
+        "review"
+      ]
+    },
+    {
+      "login": "acocac",
+      "name": "Alejandro ©",
+      "avatar_url": "https://avatars.githubusercontent.com/u/13321552?v=4",
+      "profile": "https://github.com/acocac",
+      "contributions": [
+        "bug"
+      ]
     }
   ],
   "contributorsPerLine": 7,

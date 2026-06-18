@@ -38,6 +38,7 @@ class TemporalBackboneBase(nn.Module, ABC):
         # TCN parameters
         tcn_kernel_size: int = 3,
         tcn_num_layers: int = 2,
+        use_precomputed_modulation: bool = False,
     ):
         """Initialize Temporal Backbone Base.
 
@@ -58,6 +59,7 @@ class TemporalBackboneBase(nn.Module, ABC):
             temporal_attention_hidden_dim: Hidden dimension for attention methods
             tcn_kernel_size: Kernel size for TCN
             tcn_num_layers: Number of TCN layers
+            use_precomputed_modulation: Whether to use precomputed modulation tensors.
         """
         super().__init__()
 
@@ -68,6 +70,7 @@ class TemporalBackboneBase(nn.Module, ABC):
         self.n_steps_output = n_steps_output
         self.n_steps_input = n_steps_input
         self.mod_features = mod_features
+        self.use_precomputed_modulation = use_precomputed_modulation
 
         # Validate global conditioning configuration
         if include_global_cond and (
@@ -78,12 +81,18 @@ class TemporalBackboneBase(nn.Module, ABC):
         self.global_cond_channels = global_cond_channels
         self.include_global_cond = include_global_cond
 
-        # Time embedding for diffusion timestep
-        self.time_embedding = nn.Sequential(
-            SineEncoding(mod_features),
-            nn.Linear(mod_features, mod_features),
-            nn.SiLU(),
-            nn.Linear(mod_features, mod_features),
+        # Time embedding for scalar diffusion timesteps. Some models pass
+        # precomputed modulation vectors directly and should not register
+        # unused embedding parameters under strict DDP.
+        self.time_embedding = (
+            None
+            if self.use_precomputed_modulation
+            else nn.Sequential(
+                SineEncoding(mod_features),
+                nn.Linear(mod_features, mod_features),
+                nn.SiLU(),
+                nn.Linear(mod_features, mod_features),
+            )
         )
 
         self.global_cond_embedding = (
@@ -136,8 +145,7 @@ class TemporalBackboneBase(nn.Module, ABC):
             tcn_kernel_size: Kernel size for TCN
             tcn_num_layers: Number of TCN layers
 
-        Returns
-        -------
+        Returns:
             Temporal processing module
         """
         if temporal_method == "attention":
@@ -169,8 +177,7 @@ class TemporalBackboneBase(nn.Module, ABC):
             x_t: Input tensor (B, T, W, H, C)
             cond: Conditioning tensor (B, T_cond, W, H, C), or None
 
-        Returns
-        -------
+        Returns:
             Tuple of (processed_input, processed_cond)
         """
         x_t_temporal = self.temporal_proc_input(x_t)
@@ -184,8 +191,7 @@ class TemporalBackboneBase(nn.Module, ABC):
         This method should be implemented by subclasses to instantiate
         their specific backbone architecture.
 
-        Returns
-        -------
+        Returns:
             The backbone module (e.g., UNet or ViT)
         """
 
@@ -215,14 +221,19 @@ class TemporalBackboneBase(nn.Module, ABC):
             cond: Conditioning input (B, T_cond, W, H, C)
             global_cond: Optional global conditioning/modulation vector (B, D)
 
-        Returns
-        -------
+        Returns:
             Denoised output (B, T, W, H, C)
         """
         # Accept either scalar timesteps (B,) or precomputed modulation vectors (B, D).
         if t.ndim == 2 and t.shape[-1] == self.mod_features:
             t_emb = t
         else:
+            if self.time_embedding is None:
+                msg = (
+                    "Expected precomputed modulation vectors with shape "
+                    "(B, mod_features), but received scalar timesteps."
+                )
+                raise ValueError(msg)
             t_emb = self.time_embedding(t)
 
         # Combine with global conditioning embedding if provided

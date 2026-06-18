@@ -15,6 +15,13 @@ experiment_name: epd
 autoencoder_checkpoint: null
 umask: "0002"
 
+# torch.set_float32_matmul_precision: one of {highest, high, medium} or null.
+# - null (default): leave PyTorch default ("highest", pure f32 matmul).
+# - "high": TF32 matmul with f32 accumulate (~2-3x throughput on Ampere+, safer
+#   than bf16-mixed since accumulation stays f32).
+# - "medium": TF32 matmul + TF32 accumulate (faster still, less safe).
+float32_matmul_precision: null
+
 train_eval:
   checkpoint: null
   eval_subdir: eval

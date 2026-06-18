@@ -61,8 +61,7 @@ class TemporalAttention(nn.Module):
         Args:
             x: (B, T, W, H, C)
 
-        Returns
-        -------
+        Returns:
             (B, T, W, H, C) with temporal attention applied
         """
         B, _, W, H, _ = x.shape
@@ -153,8 +152,7 @@ class TemporalConvNet(nn.Module):
         Args:
             x: (B, T, W, H, C)
 
-        Returns
-        -------
+        Returns:
             (B, T, W, H, C) with temporal convolutions applied
         """
         B, T, W, H, _ = x.shape

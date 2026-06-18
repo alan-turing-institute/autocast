@@ -9,10 +9,11 @@ authors = [
 requires-python = ">=3.11,<3.13"
 dependencies = [
     "autoemulate>=1.2.0",
+    "autosim",
     "azula>=0.7.0",
     "beartype>=0.22.8",
     "einops>=0.8.1",
-    "heavyball>=1.4.3",
+    "heavyball==1.4.3",
     "hydra-core>=1.3.2",
     "h5py>=3.15.1",
     "jaxtyping>=0.3.3",
@@ -21,7 +22,9 @@ dependencies = [
     "the-well>=1.1.0",
     "timm>=0.9",
     "torch>=2.9.1",
+    "torchvision>=0.24.1",
     "wandb>=0.18.7",
+    "nvidia-ml-py>=13.595.45",
 ]
 
 [project.optional-dependencies]
@@ -31,7 +34,15 @@ dev = [
     "pytest-cov>=7.0.0",
     "ruff==0.14.4",
     "pyright==1.1.407",
-    "pre-commit>=4.4.0",
+    "prek>=0.4.2",
+]
+docs = [
+    "jupyter-book>=1.0.0,<2.0.0",
+    "sphinx>=7.2.6",
+    "myst-parser>=2.0.0",
+    "furo>=2023.9.10",
+    "sphinx-copybutton>=0.5.2",
+    "sphinx-autodoc-typehints>=1.24.0",
 ]
 
 [project.scripts]
@@ -39,6 +50,7 @@ autocast = "autocast.scripts.workflow:main"
 train_encoder_processor_decoder = "autocast.scripts.train.encoder_processor_decoder:main"
 train_autoencoder = "autocast.scripts.train.autoencoder:main"
 evaluate_encoder_processor_decoder = "autocast.scripts.eval.encoder_processor_decoder:main"
+cache_latents = "autocast.scripts.cache_latents:main"
 
 [build-system]
 requires = ["uv_build>=0.8.15,<0.9.0"]
@@ -85,10 +97,10 @@ ignore = [
     "PLR2004", # Magic value used in comparison
     "EM102",   # Exception must not use an f-string literal, assign to variable first
     "ISC001",  # Conflicts with formatter
-    # "D417",    # Missing trailing new line in docstring
     "D100",    # Missing docstring in public module
-    "D102",    # Missing docstring in public class, TODO: remove in future
+    "D102",    # Missing docstring in public method, TODO: remove in future
     "D104",    # Missing docstring in public package
+    "D107",    # Missing docstring in __init__ (documented at class level in Google style)
     "PLR0913", # too many arguments
     "RET504",  # Allow assignment to variable before return
 ]
@@ -100,7 +112,7 @@ unfixable = [
 flake8-unused-arguments.ignore-variadic-names = true # allow unused *args/**kwargs
 
 [tool.ruff.lint.pydocstyle]
-convention = "numpy"
+convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*.py" = ["D"]
@@ -114,14 +126,18 @@ explicit = true
 
 [tool.uv.sources]
 autoemulate = { git = "https://github.com/alan-turing-institute/autoemulate.git" }
+autosim = { git = "https://github.com/alan-turing-institute/autosim.git" }
 torch = [
-  { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
 ]
 torchvision = [
-  { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
 ]
 
 [tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tests"]
+norecursedirs = ["outputs", "slurm_scripts"]
 filterwarnings = [
     # Ignore Lightning warnings that are expected/benign in test environment
     "ignore:You are trying to `self.log\\(\\)` but the `self.trainer` reference is not registered:UserWarning",

@@ -61,6 +61,7 @@ def build_datamodule(
                 "Simulator config provided; ignoring datamodule.data_path and "
                 "using generated data instead."
             )
+            dm_container["data_path"] = None
         simulator = instantiate(simulator_cfg)
 
         # Generate data splits from simulator and assign to datamodule config

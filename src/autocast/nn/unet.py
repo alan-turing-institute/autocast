@@ -39,11 +39,14 @@ class TemporalUNetBackbone(TemporalBackboneBase):
         tcn_num_layers: int = 2,
         # UNet parameters
         stride: int | Sequence[int] = 2,
+        norm: str = "layer",
+        groups: int = 8,
         dropout: float = 0.0,
         ffn_factor: int = 1,
         identity_init: bool = False,
         attention_heads: Mapping[int, int] | None = None,
         checkpointing: bool = False,
+        use_precomputed_modulation: bool = False,
     ):
         """Initialize Temporal UNet Backbone.
 
@@ -70,11 +73,14 @@ class TemporalUNetBackbone(TemporalBackboneBase):
             tcn_kernel_size: Kernel size for TCN
             tcn_num_layers: Number of TCN layers
             stride: Stride for UNet downsampling/upsampling
+            norm: Normalisation type for UNet blocks (e.g. "layer").
+            groups: Number of groups for group normalisation.
             dropout: Dropout rate in UNet blocks
             ffn_factor: Feedforward network expansion factor in UNet blocks
             identity_init: Whether to use identity initialization in UNet blocks
             attention_heads: Mapping of UNet levels to number of attention heads
             checkpointing: Whether to use gradient checkpointing in UNet
+            use_precomputed_modulation: Whether to use precomputed modulation tensors.
         """
         # Initialize base class with common parameters
         super().__init__(
@@ -91,6 +97,7 @@ class TemporalUNetBackbone(TemporalBackboneBase):
             temporal_attention_hidden_dim=temporal_attention_hidden_dim,
             tcn_kernel_size=tcn_kernel_size,
             tcn_num_layers=tcn_num_layers,
+            use_precomputed_modulation=use_precomputed_modulation,
         )
 
         # Build UNet backbone
@@ -99,6 +106,8 @@ class TemporalUNetBackbone(TemporalBackboneBase):
             hid_blocks=hid_blocks,
             kernel_size=kernel_size,
             stride=stride,
+            norm=norm,
+            groups=groups,
             spatial=spatial,
             periodic=periodic,
             dropout=dropout,
@@ -123,8 +132,7 @@ class TemporalUNetBackbone(TemporalBackboneBase):
                 - spatial: Spatial dimensionality (2 for 2D)
                 - periodic: Whether to use periodic boundary conditions
 
-        Returns
-        -------
+        Returns:
             UNet module
         """
         hid_channels = kwargs.pop("hid_channels")
@@ -133,6 +141,8 @@ class TemporalUNetBackbone(TemporalBackboneBase):
         periodic = kwargs.pop("periodic")
         kernel_size = kwargs.pop("kernel_size", 3)
         stride = kwargs.pop("stride", 2)
+        norm = kwargs.pop("norm", "layer")
+        groups = kwargs.pop("groups", 8)
         dropout = kwargs.pop("dropout", 0.0)
         ffn_factor = kwargs.pop("ffn_factor", 4)
         identity_init = kwargs.pop("identity_init", False)
@@ -150,6 +160,8 @@ class TemporalUNetBackbone(TemporalBackboneBase):
             stride=stride,
             spatial=spatial,
             periodic=periodic,
+            norm=norm,
+            groups=groups,
             dropout=dropout,
             ffn_factor=ffn_factor,
             identity_init=identity_init,

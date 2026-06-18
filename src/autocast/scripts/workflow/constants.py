@@ -11,6 +11,7 @@ TRAIN_MODULES: dict[str, str] = {
 EVAL_MODULE = "autocast.scripts.eval.encoder_processor_decoder"
 BENCHMARK_MODULE = "autocast.scripts.benchmark.encoder_processor_decoder"
 TRAIN_EVAL_MODULE = "autocast.scripts.train_eval.encoder_processor_decoder"
+CACHE_LATENTS_MODULE = "autocast.scripts.cache_latents"
 
 NAMING_DEFAULT_KEYS: set[str] = {
     "processor@model.processor",
@@ -27,6 +28,7 @@ DATASET_NAME_TOKENS: dict[str, str] = {
     "conditioned_navier_stokes": "cns64",
     "gpe_low_complexity": "gpelc64",
     "gpe_high_complexity": "gpehc64",
+    "gpe_laser_only_wake": "gpe64",
     "shallow_water2d": "sw2d64",
     "shallow_water2d_4": "sw2d464",
 }

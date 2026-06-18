@@ -9,17 +9,36 @@ from omegaconf import OmegaConf
 
 from autocast.metrics.ensemble import CRPS, AlphaFairCRPS, SpreadSkillRatio
 from autocast.scripts.eval.encoder_processor_decoder import (
+    DEFAULT_EVAL_METRICS,
+    DEFAULT_EVAL_MODE,
+    EVAL_PATH_AMBIENT_EPD,
+    EVAL_PATH_ENCODE_ONCE,
+    EVAL_PATH_LATENT_CACHED_LATENT_ONLY,
+    EVAL_PATH_LATENT_CACHED_WITH_DECODER,
+    _build_eval_predict_fn,
     _build_per_timestep_metric_factory,
+    _decode_tensor,
+    _maybe_swap_to_ambient_datamodule,
+    _normalize_eval_mode,
     _normalize_per_batch_rows,
     _reindex_per_batch_rows_by_rank,
     _render_rollouts,
+    _require_decoder_unless_latent_metrics_opt_in,
+    _resolve_auto_eval_mode,
+    _resolve_eval_path,
     _resolve_rollout_batch_limit,
     _resolve_rollout_channel_names,
     _resolve_rollout_timestep_limit,
+    _save_rollout_snapshot_panels,
     _should_skip_metric,
     _split_metric_and_metadata_rows,
     _training_runtime_rows,
+    _validate_latent_space_metrics_flag,
+    _validate_resolved_eval_path,
+    run_evaluation,
 )
+from autocast.types import Batch, EncodedBatch
+from autocast.utils.plots import _panel_size_for_width
 
 
 def test_resolve_rollout_batch_limit_falls_back_to_test_limit_when_null():
@@ -42,6 +61,76 @@ def test_resolve_rollout_batch_limit_prefers_explicit_rollout_limit():
     )
 
     assert _resolve_rollout_batch_limit(eval_cfg) == 5
+
+
+def test_build_eval_predict_fn_uses_predict_for_wrapped_processor_model():
+    batch = SimpleNamespace(
+        encoded_output_fields=torch.randn(2, 4, 8, 8, 3),
+    )
+    expected = torch.randn(2, 4, 8, 8, 3, 10)
+
+    class WrappedProcessorModel:
+        def _predict(self, arg):
+            assert arg is batch
+            return expected
+
+        def __call__(self, _arg):
+            msg = "predict_fn should not call wrapped model directly"
+            raise AssertionError(msg)
+
+    predict_fn = _build_eval_predict_fn(
+        WrappedProcessorModel(),
+        is_processor_model=True,
+        decode_fn=None,
+    )
+
+    preds, trues = predict_fn(batch)
+
+    assert preds is expected
+    assert trues is batch.encoded_output_fields
+
+
+def test_build_eval_predict_fn_ensemble_expansion():
+    """When n_members > 1, predict_fn expands the batch and adds ensemble dim."""
+
+    inputs = torch.randn(2, 1, 8, 8, 3)
+    targets = torch.randn(2, 4, 8, 8, 3)
+    batch = EncodedBatch(
+        encoded_inputs=inputs,
+        encoded_output_fields=targets,
+        global_cond=None,
+        encoded_info={},
+    )
+
+    class FakeProcessorModel:
+        def _predict(self, b):
+            # Just return a tensor of the right batch shape
+            return torch.randn(b.encoded_inputs.shape[0], 4, 8, 8, 3)
+
+    predict_fn = _build_eval_predict_fn(
+        FakeProcessorModel(),
+        is_processor_model=True,
+        decode_fn=None,
+        n_members=5,
+    )
+
+    preds, trues = predict_fn(batch)
+
+    # preds should have ensemble dim: (B, T, H, W, C, M)
+    assert preds.shape == (2, 4, 8, 8, 3, 5)
+    # trues should remain unchanged
+    assert trues.shape == (2, 4, 8, 8, 3)
+
+
+def test_decode_tensor_preserves_ensemble_axis():
+    x = torch.randn(2, 4, 8, 8, 3, 5)
+
+    def decode_fn(tensor):
+        return tensor[..., :2]
+
+    decoded = _decode_tensor(x, decode_fn, n_members=5)
+
+    assert decoded.shape == (2, 4, 8, 8, 2, 5)
 
 
 def test_resolve_rollout_timestep_limit_multiplies_by_stride():
@@ -202,16 +291,32 @@ def test_build_per_timestep_metric_factory_sets_reduce_all_false_for_ssr():
     assert getattr(metric, "reduce_all", None) is False
 
 
+def test_default_eval_metrics_include_spread_and_skill_for_lola_comparison():
+    assert "spread" in DEFAULT_EVAL_METRICS
+    assert "skill" in DEFAULT_EVAL_METRICS
+    assert "ssr" in DEFAULT_EVAL_METRICS
+
+
 def test_should_skip_metric_variogram_only():
     assert _should_skip_metric("variogram") is True
     assert _should_skip_metric("crps") is False
     assert _should_skip_metric("ssr") is False
 
 
-def test_resolve_rollout_channel_names_from_norm_with_output_selection():
+def test_resolve_rollout_channel_names_from_norm_already_subset():
     dataset = SimpleNamespace(
-        norm=SimpleNamespace(core_field_names=["u", "v", "p"]),
-        output_channel_idxs=(2, 0),
+        norm=SimpleNamespace(core_field_names=["p", "u"]),
+        channel_idxs=(2, 0),
+    )
+
+    assert _resolve_rollout_channel_names(dataset) == ["p", "u"]
+
+
+def test_resolve_rollout_channel_names_from_stats_applies_idxs():
+    dataset = SimpleNamespace(
+        norm=None,
+        normalization_stats={"core_field_names": ["u", "v", "p"]},
+        channel_idxs=(2, 0),
     )
 
     assert _resolve_rollout_channel_names(dataset) == ["p", "u"]
@@ -221,7 +326,7 @@ def test_resolve_rollout_channel_names_returns_none_without_norm_names():
     dataset = SimpleNamespace(
         norm=None,
         metadata=SimpleNamespace(field_names={0: ["velocity_x", "velocity_y"]}),
-        output_channel_idxs=None,
+        channel_idxs=None,
     )
 
     assert _resolve_rollout_channel_names(dataset) is None
@@ -229,8 +334,9 @@ def test_resolve_rollout_channel_names_returns_none_without_norm_names():
 
 def test_resolve_rollout_channel_names_returns_none_on_invalid_output_indices():
     dataset = SimpleNamespace(
-        norm=SimpleNamespace(core_field_names=["u", "v"]),
-        output_channel_idxs=(0, 3),
+        norm=None,
+        normalization_stats={"core_field_names": ["u", "v"]},
+        channel_idxs=(0, 3),
     )
 
     assert _resolve_rollout_channel_names(dataset) is None
@@ -330,3 +436,533 @@ def test_render_rollouts_resolves_indices_within_batched_samples(tmp_path, monke
     assert len(captured_paths) == 4
     for idx in range(4):
         assert any(f"batch_{idx}_sample_{idx}.mp4" in p for p in captured_paths)
+
+
+def test_snapshot_panel_size_preserves_imshow_row_col_aspect():
+    panel_width, panel_height = _panel_size_for_width(
+        target_width_in=6.0,
+        ncols=3,
+        spatial=(8, 4),
+        preserve_aspect=True,
+    )
+
+    assert panel_width == pytest.approx(2.0)
+    assert panel_height == pytest.approx(4.0)
+
+
+def test_save_rollout_snapshot_panels_uses_snapshot_extension_for_data_only(
+    tmp_path,
+    monkeypatch,
+):
+    calls: list[tuple[str, str, tuple[str, ...]]] = []
+
+    def _fake_snapshots(**kwargs):
+        calls.append(
+            (
+                "full",
+                kwargs["save_path"],
+                tuple(kwargs.get("extra_formats") or ()),
+            )
+        )
+
+    def _fake_data_only(**kwargs):
+        calls.append(
+            (
+                "data",
+                kwargs["save_path"],
+                tuple(kwargs.get("extra_formats") or ()),
+            )
+        )
+
+    monkeypatch.setattr(
+        "autocast.scripts.eval.encoder_processor_decoder.plot_spatiotemporal_snapshots",
+        _fake_snapshots,
+    )
+    monkeypatch.setattr(
+        "autocast.scripts.eval.encoder_processor_decoder."
+        "plot_spatiotemporal_snapshots_data_only",
+        _fake_data_only,
+    )
+
+    saved_paths = []
+    values = torch.zeros(1, 3, 2, 2, 1)
+    _save_rollout_snapshot_panels(
+        trues_mean=values,
+        preds_mean=values,
+        preds_uq=None,
+        local_idx=0,
+        target_idx=2,
+        snapshot_dir=tmp_path,
+        snapshot_timesteps=[0, 1],
+        snapshot_channels=[0],
+        snapshot_ext="jpg",
+        saved_paths=saved_paths,
+        names_for_plot=None,
+        preserve_aspect=True,
+        dataset_short_label="AD",
+    )
+
+    full_base = tmp_path / "batch_2_sample_0_channel_0_snapshots"
+    data_base = tmp_path / "batch_2_sample_0_channel_0_snapshots_data"
+    assert calls == [
+        ("full", str(full_base.with_suffix(".jpg")), ("pdf",)),
+        ("data", str(data_base.with_suffix(".jpg")), ("pdf",)),
+    ]
+    assert saved_paths == [
+        full_base.with_suffix(".jpg"),
+        full_base.with_suffix(".pdf"),
+        data_base.with_suffix(".jpg"),
+        data_base.with_suffix(".pdf"),
+    ]
+
+
+# ---------------------------------------------------------------------------
+# eval.mode + ambient/latent path resolution
+# ---------------------------------------------------------------------------
+
+
+def test_default_eval_mode_is_auto():
+    assert DEFAULT_EVAL_MODE == "auto"
+
+
+def test_normalize_eval_mode_accepts_known_values_and_none():
+    assert _normalize_eval_mode(None) == "auto"
+    assert _normalize_eval_mode("Auto") == "auto"
+    assert _normalize_eval_mode("Encode_Once") == "encode_once"
+    assert _normalize_eval_mode("Ambient") == "ambient"
+    assert _normalize_eval_mode("LATENT") == "latent"
+
+
+def test_normalize_eval_mode_rejects_unknown():
+    with pytest.raises(ValueError, match=r"Unknown eval\.mode"):
+        _normalize_eval_mode("something-else")
+
+
+def _example_batch(kind):
+    if kind == "batch":
+        return Batch(
+            input_fields=torch.zeros(1, 1, 2, 2, 1),
+            output_fields=torch.zeros(1, 1, 2, 2, 1),
+            constant_scalars=None,
+            constant_fields=None,
+        )
+    return EncodedBatch(
+        encoded_inputs=torch.zeros(1, 1, 2, 2, 1),
+        encoded_output_fields=torch.zeros(1, 1, 2, 2, 1),
+        global_cond=None,
+        encoded_info={},
+    )
+
+
+@pytest.mark.parametrize(
+    ("processor_only", "batch_type", "ae_ckpt", "expected"),
+    [
+        # Full EPD (or stateless AE baked into processor) -> ambient.
+        (False, "batch", False, "ambient"),
+        (False, "encoded", False, "ambient"),
+        (False, "batch", True, "ambient"),
+        # Processor-only on raw Batch with AE -> encode_once.
+        (True, "batch", True, "encode_once"),
+        # Processor-only on cached latents with AE -> encode_once (a swap will
+        # happen downstream); without AE -> latent.
+        (True, "encoded", True, "encode_once"),
+        (True, "encoded", False, "latent"),
+        # Processor-only on raw Batch without AE: falls back to latent.
+        (True, "batch", False, "latent"),
+    ],
+)
+def test_resolve_auto_eval_mode_picks_faithful_default(
+    processor_only, batch_type, ae_ckpt, expected
+):
+    resolved = _resolve_auto_eval_mode(
+        processor_only=processor_only,
+        example_batch=_example_batch(batch_type),
+        has_autoencoder_checkpoint=ae_ckpt,
+    )
+
+    assert resolved == expected
+
+
+_RESOLVE_EVAL_PATH_CASES = [
+    # Full EPD: always resolves to ambient_epd regardless of mode.
+    ("ambient", False, "batch", False, False, EVAL_PATH_AMBIENT_EPD),
+    ("encode_once", False, "batch", False, False, EVAL_PATH_AMBIENT_EPD),
+    ("ambient", False, "encoded", False, False, EVAL_PATH_AMBIENT_EPD),
+    # Processor-only + raw Batch + AE ckpt: mode selects the path.
+    ("ambient", True, "batch", True, False, EVAL_PATH_AMBIENT_EPD),
+    ("encode_once", True, "batch", True, False, EVAL_PATH_ENCODE_ONCE),
+    # Processor-only + cached latents: latent paths, independent of mode.
+    ("latent", True, "encoded", False, True, EVAL_PATH_LATENT_CACHED_WITH_DECODER),
+    ("latent", True, "encoded", False, False, EVAL_PATH_LATENT_CACHED_LATENT_ONLY),
+    # encode_once on cached latents still maps to the latent paths here;
+    # _validate_resolved_eval_path is what rejects the combination.
+    (
+        "encode_once",
+        True,
+        "encoded",
+        False,
+        True,
+        EVAL_PATH_LATENT_CACHED_WITH_DECODER,
+    ),
+    (
+        "encode_once",
+        True,
+        "encoded",
+        False,
+        False,
+        EVAL_PATH_LATENT_CACHED_LATENT_ONLY,
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    (
+        "eval_mode",
+        "processor_only",
+        "batch_type",
+        "ae_ckpt",
+        "decoder_loaded",
+        "expected",
+    ),
+    _RESOLVE_EVAL_PATH_CASES,
+)
+def test_resolve_eval_path_matches_run_evaluation_branches(
+    eval_mode, processor_only, batch_type, ae_ckpt, decoder_loaded, expected
+):
+    resolved = _resolve_eval_path(
+        eval_mode=eval_mode,
+        processor_only=processor_only,
+        example_batch=_example_batch(batch_type),
+        has_autoencoder_checkpoint=ae_ckpt,
+        decode_fn_loaded=decoder_loaded,
+    )
+
+    assert resolved == expected
+
+
+def test_validate_resolved_eval_path_ambient_rejects_latent_path():
+    with pytest.raises(ValueError, match=r"eval\.mode=ambient"):
+        _validate_resolved_eval_path(
+            eval_mode="ambient",
+            resolved_path=EVAL_PATH_LATENT_CACHED_WITH_DECODER,
+        )
+
+
+def test_validate_resolved_eval_path_latent_rejects_ambient_path():
+    with pytest.raises(ValueError, match=r"eval\.mode=latent"):
+        _validate_resolved_eval_path(
+            eval_mode="latent",
+            resolved_path=EVAL_PATH_AMBIENT_EPD,
+        )
+
+
+def test_validate_resolved_eval_path_latent_rejects_encode_once_path():
+    with pytest.raises(ValueError, match=r"eval\.mode=latent"):
+        _validate_resolved_eval_path(
+            eval_mode="latent",
+            resolved_path=EVAL_PATH_ENCODE_ONCE,
+        )
+
+
+def test_validate_resolved_eval_path_encode_once_rejects_latent_paths():
+    for path in (
+        EVAL_PATH_LATENT_CACHED_WITH_DECODER,
+        EVAL_PATH_LATENT_CACHED_LATENT_ONLY,
+    ):
+        with pytest.raises(ValueError, match=r"eval\.mode=encode_once"):
+            _validate_resolved_eval_path(eval_mode="encode_once", resolved_path=path)
+
+
+def test_validate_resolved_eval_path_happy_paths():
+    _validate_resolved_eval_path(
+        eval_mode="ambient",
+        resolved_path=EVAL_PATH_AMBIENT_EPD,
+    )
+    _validate_resolved_eval_path(
+        eval_mode="encode_once",
+        resolved_path=EVAL_PATH_AMBIENT_EPD,
+    )
+    _validate_resolved_eval_path(
+        eval_mode="encode_once",
+        resolved_path=EVAL_PATH_ENCODE_ONCE,
+    )
+    _validate_resolved_eval_path(
+        eval_mode="latent",
+        resolved_path=EVAL_PATH_LATENT_CACHED_WITH_DECODER,
+    )
+    _validate_resolved_eval_path(
+        eval_mode="latent",
+        resolved_path=EVAL_PATH_LATENT_CACHED_LATENT_ONLY,
+    )
+
+
+@pytest.mark.parametrize("mode", ["auto", "ambient", "encode_once"])
+def test_validate_latent_space_metrics_flag_rejects_non_latent_modes(mode):
+    with pytest.raises(ValueError, match=r"eval\.latent_space_metrics"):
+        _validate_latent_space_metrics_flag(
+            requested_eval_mode=mode,
+            latent_space_metrics=True,
+        )
+    # flag=False is always a no-op, regardless of mode.
+    _validate_latent_space_metrics_flag(
+        requested_eval_mode=mode,
+        latent_space_metrics=False,
+    )
+
+
+def test_validate_latent_space_metrics_flag_allows_explicit_latent():
+    _validate_latent_space_metrics_flag(
+        requested_eval_mode="latent",
+        latent_space_metrics=True,
+    )
+
+
+def test_require_decoder_fails_fast_without_opt_in():
+    with pytest.raises(RuntimeError, match=r"latent_space_metrics=true"):
+        _require_decoder_unless_latent_metrics_opt_in(
+            resolved_path=EVAL_PATH_LATENT_CACHED_LATENT_ONLY,
+            latent_space_metrics=False,
+        )
+
+
+def test_require_decoder_allows_opt_in_and_warns(caplog):
+    with caplog.at_level("WARNING"):
+        _require_decoder_unless_latent_metrics_opt_in(
+            resolved_path=EVAL_PATH_LATENT_CACHED_LATENT_ONLY,
+            latent_space_metrics=True,
+        )
+    # Decoded paths are no-ops whether or not the flag is set.
+    for path in (
+        EVAL_PATH_AMBIENT_EPD,
+        EVAL_PATH_ENCODE_ONCE,
+        EVAL_PATH_LATENT_CACHED_WITH_DECODER,
+    ):
+        _require_decoder_unless_latent_metrics_opt_in(
+            resolved_path=path, latent_space_metrics=False
+        )
+        _require_decoder_unless_latent_metrics_opt_in(
+            resolved_path=path, latent_space_metrics=True
+        )
+
+    assert any(
+        "latent_space_metrics=true" in record.message for record in caplog.records
+    ), "expected a prominent warning about latent-only metrics"
+
+
+def test_maybe_swap_to_ambient_datamodule_is_noop_for_raw_batch(tmp_path):
+    cfg = OmegaConf.create(
+        {"datamodule": {"_target_": "raw.DataModule", "data_path": str(tmp_path)}}
+    )
+    raw_batch = Batch(
+        input_fields=torch.zeros(1, 1, 2, 2, 1),
+        output_fields=torch.zeros(1, 1, 2, 2, 1),
+        constant_scalars=None,
+        constant_fields=None,
+    )
+
+    result = _maybe_swap_to_ambient_datamodule(
+        cfg, eval_mode="ambient", example_batch=raw_batch
+    )
+
+    assert result is cfg
+    assert cfg.datamodule._target_ == "raw.DataModule"
+
+
+def test_maybe_swap_to_ambient_datamodule_is_noop_for_non_ambient(tmp_path):
+    cfg = OmegaConf.create(
+        {
+            "datamodule": {
+                "_target_": "cached.LatentDataModule",
+                "data_path": str(tmp_path),
+            }
+        }
+    )
+    encoded = EncodedBatch(
+        encoded_inputs=torch.zeros(1, 1, 2, 2, 1),
+        encoded_output_fields=torch.zeros(1, 1, 2, 2, 1),
+        global_cond=None,
+        encoded_info={},
+    )
+
+    result = _maybe_swap_to_ambient_datamodule(
+        cfg, eval_mode="latent", example_batch=encoded
+    )
+
+    assert result is cfg
+    assert cfg.datamodule._target_ == "cached.LatentDataModule"
+
+
+def test_maybe_swap_to_ambient_datamodule_swaps_for_encode_once(tmp_path):
+    # encode_once also needs raw inputs (encoder runs once); same swap as ambient.
+    ae_cfg_path = tmp_path / "autoencoder_config.yaml"
+    OmegaConf.save(
+        OmegaConf.create(
+            {
+                "datamodule": {
+                    "_target_": "raw.TheWellDataModule",
+                    "data_path": "/path/to/raw",
+                    "use_normalization": True,
+                }
+            }
+        ),
+        ae_cfg_path,
+    )
+    cfg = OmegaConf.create(
+        {
+            "datamodule": {
+                "_target_": "cached.LatentDataModule",
+                "data_path": str(tmp_path),
+            }
+        }
+    )
+    encoded = EncodedBatch(
+        encoded_inputs=torch.zeros(1, 1, 2, 2, 1),
+        encoded_output_fields=torch.zeros(1, 1, 2, 2, 1),
+        global_cond=None,
+        encoded_info={},
+    )
+
+    _maybe_swap_to_ambient_datamodule(
+        cfg, eval_mode="encode_once", example_batch=encoded
+    )
+
+    assert cfg.datamodule._target_ == "raw.TheWellDataModule"
+    assert cfg.datamodule.data_path == "/path/to/raw"
+
+
+def test_maybe_swap_to_ambient_datamodule_loads_from_cache_dir(tmp_path):
+    ae_cfg_path = tmp_path / "autoencoder_config.yaml"
+    OmegaConf.save(
+        OmegaConf.create(
+            {
+                "datamodule": {
+                    "_target_": "raw.TheWellDataModule",
+                    "data_path": "/path/to/raw",
+                    "use_normalization": True,
+                }
+            }
+        ),
+        ae_cfg_path,
+    )
+    cfg = OmegaConf.create(
+        {
+            "datamodule": {
+                "_target_": "cached.LatentDataModule",
+                "data_path": str(tmp_path),
+            }
+        }
+    )
+    encoded = EncodedBatch(
+        encoded_inputs=torch.zeros(1, 1, 2, 2, 1),
+        encoded_output_fields=torch.zeros(1, 1, 2, 2, 1),
+        global_cond=None,
+        encoded_info={},
+    )
+
+    result = _maybe_swap_to_ambient_datamodule(
+        cfg, eval_mode="ambient", example_batch=encoded
+    )
+
+    assert result is cfg
+    assert cfg.datamodule._target_ == "raw.TheWellDataModule"
+    assert cfg.datamodule.data_path == "/path/to/raw"
+    assert cfg.datamodule.use_normalization is True
+
+
+def test_maybe_swap_to_ambient_datamodule_errors_without_ae_config(tmp_path):
+    cfg = OmegaConf.create(
+        {
+            "datamodule": {
+                "_target_": "cached.LatentDataModule",
+                "data_path": str(tmp_path),
+            }
+        }
+    )
+    encoded = EncodedBatch(
+        encoded_inputs=torch.zeros(1, 1, 2, 2, 1),
+        encoded_output_fields=torch.zeros(1, 1, 2, 2, 1),
+        global_cond=None,
+        encoded_info={},
+    )
+
+    with pytest.raises(FileNotFoundError, match=r"autoencoder_config\.yaml"):
+        _maybe_swap_to_ambient_datamodule(
+            cfg, eval_mode="ambient", example_batch=encoded
+        )
+
+
+def test_maybe_swap_to_ambient_datamodule_errors_without_data_path():
+    cfg = OmegaConf.create({"datamodule": {"_target_": "cached.LatentDataModule"}})
+    encoded = EncodedBatch(
+        encoded_inputs=torch.zeros(1, 1, 2, 2, 1),
+        encoded_output_fields=torch.zeros(1, 1, 2, 2, 1),
+        global_cond=None,
+        encoded_info={},
+    )
+
+    with pytest.raises(ValueError, match="no data_path"):
+        _maybe_swap_to_ambient_datamodule(
+            cfg, eval_mode="ambient", example_batch=encoded
+        )
+
+
+def test_run_evaluation_auto_resolves_stateless_epd_to_ambient(tmp_path, monkeypatch):
+    """Regression: a full EPD checkpoint with a stateless encoder/decoder.
+
+    Stateless encoders/decoders (PermuteConcat/ChannelsLast, Identity, ...)
+    contribute no ``encoder_decoder.*`` params, so the checkpoint initially
+    looks processor-only. ``run_evaluation`` must reclassify it as full EPD
+    *before* resolving ``eval.mode=auto`` so the auto resolution returns
+    ``ambient``; otherwise it picks ``latent`` (no autoencoder reachable) and
+    later fails ``_validate_resolved_eval_path`` against the ``ambient_epd``
+    path. We drive ``run_evaluation`` far enough to capture the resolved mode,
+    then abort before any model is built.
+    """
+    eval_mod = "autocast.scripts.eval.encoder_processor_decoder"
+
+    cfg = OmegaConf.create(
+        {
+            "eval": {"mode": "auto", "checkpoint": str(tmp_path / "ckpt.ckpt")},
+            "model": {
+                # Stateless encoder/decoder: present in config, no learned params.
+                "encoder": {"_target_": "autocast.models.encoders.PermuteConcat"},
+                "decoder": {"_target_": "autocast.models.decoders.ChannelsLast"},
+            },
+        }
+    )
+    raw_batch = _example_batch("batch")
+
+    # Checkpoint with only processor weights -> _is_processor_only_checkpoint True.
+    monkeypatch.setattr(
+        f"{eval_mod}.load_checkpoint_payload",
+        lambda _path: {"state_dict": {"processor.layer.weight": torch.zeros(1)}},
+    )
+    monkeypatch.setattr(
+        f"{eval_mod}.resolve_checkpoint_path",
+        lambda *_args, **_kwargs: tmp_path / "ckpt.ckpt",
+    )
+    # Datamodule yields a raw Batch (the ambient/full-EPD signal).
+    monkeypatch.setattr(
+        f"{eval_mod}.setup_datamodule",
+        lambda config: (object(), config, {"example_batch": raw_batch}),
+    )
+
+    class _StopAfterResolve(Exception):
+        pass
+
+    captured: dict[str, str] = {}
+
+    def _capture_and_stop(_cfg, *, eval_mode, **_kwargs):
+        # First call after eval.mode=auto is resolved; record and bail out
+        # before the heavy model-setup path runs.
+        captured["eval_mode"] = eval_mode
+        raise _StopAfterResolve
+
+    monkeypatch.setattr(
+        f"{eval_mod}._maybe_swap_to_ambient_datamodule", _capture_and_stop
+    )
+
+    with pytest.raises(_StopAfterResolve):
+        run_evaluation(cast(Any, cfg), work_dir=tmp_path)
+
+    assert captured["eval_mode"] == "ambient"

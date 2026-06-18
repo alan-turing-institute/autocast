@@ -3,7 +3,5 @@ defaults:
   - /input_noise_injector: null
   - _self_
 
-stride: ${training.stride}
-rollout_stride: ${training.rollout_stride}
 loss_func:
   _target_: torch.nn.MSELoss

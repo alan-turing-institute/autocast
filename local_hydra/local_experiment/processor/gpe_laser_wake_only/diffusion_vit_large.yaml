@@ -1,0 +1,38 @@
+# @package _global_
+defaults:
+  - /distributed: ddp_4gpu_slurm
+  - override /datamodule: cached_latents
+  - override /processor@model.processor: diffusion_vit
+  - override /backbone@model.processor.backbone: vit
+  - override /optimizer: adamw_half
+  - _self_
+
+experiment_name: processor_diffusion_vit_large_gpe_laser_only_wake
+
+datamodule:
+  batch_size: 256
+  # data_path supplied at runtime (points at <ae_run_dir>/cached_latents)
+
+float32_matmul_precision: high
+
+logging:
+  wandb:
+    enabled: true
+
+output:
+  skip_test: true
+
+optimizer:
+  learning_rate: 1e-4
+  warmup: 0
+
+model:
+  processor:
+    denoiser_type: karras
+    sampler: euler
+    sampler_steps: 50
+    backbone:
+      hid_channels: 704
+      hid_blocks: 12
+      attention_heads: 8
+  val_metrics: []

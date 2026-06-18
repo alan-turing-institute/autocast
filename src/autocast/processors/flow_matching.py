@@ -39,8 +39,7 @@ class FlowMatchingProcessor(Processor):
             x: Conditioning inputs of shape (B, T_in, *spatial, C_in).
             global_cond: Optional non-spatial conditioning/modulation tensor.
 
-        Returns
-        -------
+        Returns:
             Time derivative of output states with the same shape as `z`.
         """
         return self.flow_matching_model(z, t=t, cond=x, global_cond=global_cond)
@@ -56,9 +55,9 @@ class FlowMatchingProcessor(Processor):
 
         Args:
             x: Conditioning inputs of shape (B, T_in, *spatial, C_in).
+            global_cond: Optional non-spatial conditioning/modulation tensor.
 
-        Returns
-        -------
+        Returns:
             Generated outputs of shape (B, T_out, *spatial, C_out).
         """
         batch_size = x.shape[0]
