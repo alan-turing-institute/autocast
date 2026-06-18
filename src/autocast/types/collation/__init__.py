@@ -109,4 +109,8 @@ def collate_list_batches(samples: Sequence[ListSample]) -> ListBatch:
     else:
         masks = torch.stack([sample.mask for sample in samples], dim=1)
 
-    return ListBatch(inner=inner_batches, mask=masks)
+    return ListBatch(
+        inner=inner_batches,
+        mask=masks,
+        output_fields=inner_batches[0].output_fields,
+    )
