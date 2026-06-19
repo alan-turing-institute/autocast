@@ -7,6 +7,14 @@ chapters:
 
 - file: installation
 
+- file: tutorial/index
+  sections:
+  - file: tutorial/commands
+  - file: tutorial/configs
+  - file: tutorial/eval
+
+- file: other-commands
+
 - file: contributing
 
 - file: reference/index

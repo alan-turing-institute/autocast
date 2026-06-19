@@ -41,10 +41,12 @@ uv run pytest
 ```
 
 Pull requests on GitHub additionally include checks for linting.
-The easiest way to run all these checks locally is to use [`pre-commit`](https://pre-commit.com/).
-First install `pre-commit` following the instructions on their website, then run:
+The easiest way to run all these checks locally is to use [`prek`](https://prek.j178.dev/), which is a modern replacement for `pre-commit`.
+Running `uv sync --extra dev` will have installed `prek` for you so you can directly run:
 
 ```bash
-pre-commit install
-pre-commit run --all-files
+# Set up pre-commit hooks
+uv run prek install
+# Perform checks
+uv run prek run -a
 ```
