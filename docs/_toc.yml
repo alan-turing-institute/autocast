@@ -7,11 +7,7 @@ chapters:
 
 - file: installation
 
-- file: community/index
-  sections:
-  - file: community/contributing
-  - file: community/contributing-docs
-  - file: community/release
+- file: contributing
 
 - file: reference/index
   sections:
