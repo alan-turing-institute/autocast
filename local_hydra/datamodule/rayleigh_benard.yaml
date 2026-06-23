@@ -1,0 +1,32 @@
+# Rayleigh-Benard The Well dataset configuration.
+_target_: autocast.data.datamodule.TheWellDataModule
+
+well_dataset_name: rayleigh_benard
+well_base_path: ${oc.env:AUTOCAST_DATASETS,./datasets}
+
+n_steps_input: 1
+n_steps_output: 4
+min_dt_stride: 1
+max_dt_stride: 1
+
+batch_size: 16
+num_workers: 8
+
+use_normalization: true
+normalization_path: ${.well_base_path}/${.well_dataset_name}/stats.yaml
+
+# Deterministic LOLA-style conditioning transform. This runs through
+# WellDataset(transform=...) for every split, including eval/rollout loaders.
+transform:
+  _target_: autocast.data.transforms.LogScalars
+  # Match the LOLA latent cache labels for Rayleigh-Benard:
+  # [log(Rayleigh), log(Prandtl), flattened boundary conditions].
+  scalar_names: [Rayleigh, Prandtl]
+
+autoencoder_mode: false
+max_rollout_steps: 100
+flatten_tensors: true
+cache_small: true
+max_cache_size: 1.0e9
+return_grid: true
+boundary_return_type: padding
