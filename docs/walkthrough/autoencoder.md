@@ -3,7 +3,7 @@
 We'll begin by training an autoencoder on the AD dataset we just simulated.
 
 `autocast` provides a high-level tool for training autoencoders: `uv run autocast ae <options>`.
-The default options are stored in YAML configuration files, which can be found in `src/autocast/configs` directory.
+The default options are stored in YAML configuration files, which can be found in the `src/autocast/configs` directory.
 For example, the default configuration for autoencoders is [here](https://github.com/alan-turing-institute/autocast/blob/main/src/autocast/configs/autoencoder.yaml).
 
 :::{note}
@@ -23,7 +23,7 @@ We'll specify this by providing the `datamodule.data_path` field as a command-li
 
 ## Autoencoder hyperparameters
 
-The autoencoder configuration also points to a `model: autoencoder` ([here](https://github.com/alan-turing-institute/autocast/blob/main/src/autocast/configs/model/autoencoder.yaml)), which in turn points to an `encoder: ddc_deep_256_v2` ([here](https://github.com/alan-turing-institute/autocast/blob/main/src/autocast/configs/encoder/dc_deep_256_v2.yaml)).
+The autoencoder configuration also points to a `model: autoencoder` ([here](https://github.com/alan-turing-institute/autocast/blob/main/src/autocast/configs/model/autoencoder.yaml)), which in turn points to an `encoder: dc_deep_256_v2` ([here](https://github.com/alan-turing-institute/autocast/blob/main/src/autocast/configs/encoder/dc_deep_256_v2.yaml)).
 These configurations specify the architecture of the encoder and decoder networks, as well as the loss function (mean-squared error loss).
 
 ## Training
@@ -32,7 +32,7 @@ Additionally, to make this process quick, we'll train only for 10 epochs.
 We'll also provide the `workdir` option to specify where the output of the training should be saved.
 
 ```bash
-uv run autocast ae
+uv run autocast ae \
     --workdir ../ae_output \
     ++datamodule.data_path=/path/to/parent_folder/advection_diffusion_toy_data \
     ++trainer.max_epochs=10
@@ -73,23 +73,7 @@ parent_folder
 │   │       ├── checkpoints
 │   │       │   ├── best-val-0009-0.0008.ckpt
 │   │       │   ├── last.ckpt
-│   │       │   ├── snapshot-0p06-0000-00000004.ckpt
-│   │       │   ├── snapshot-0p11-0001-00000008.ckpt
-│   │       │   ├── snapshot-0p17-0001-00000012.ckpt
-│   │       │   ├── snapshot-0p23-0002-00000016.ckpt
-│   │       │   ├── snapshot-0p29-0002-00000020.ckpt
-│   │       │   ├── snapshot-0p34-0003-00000024.ckpt
-│   │       │   ├── snapshot-0p40-0003-00000028.ckpt
-│   │       │   ├── snapshot-0p46-0004-00000032.ckpt
-│   │       │   ├── snapshot-0p51-0005-00000036.ckpt
-│   │       │   ├── snapshot-0p57-0005-00000040.ckpt
-│   │       │   ├── snapshot-0p63-0006-00000044.ckpt
-│   │       │   ├── snapshot-0p69-0006-00000048.ckpt
-│   │       │   ├── snapshot-0p74-0007-00000052.ckpt
-│   │       │   ├── snapshot-0p80-0007-00000056.ckpt
-│   │       │   ├── snapshot-0p86-0008-00000060.ckpt
-│   │       │   ├── snapshot-0p91-0009-00000064.ckpt
-│   │       │   └── snapshot-0p97-0009-00000068.ckpt
+│   │       │   └── ...  (periodic snapshot checkpoints)
 │   │       └── metrics.csv
 │   ├── reconstructions
 │   │   ├── batch_00.png
@@ -103,6 +87,7 @@ parent_folder
 ```
 
 The most important file here is `autoencoder.ckpt`, which contains the trained model weights; although a variety of other checkpoints are also saved which may be useful for debugging or analysis.
+The `reconstructions` folder contains some example reconstructions of the input data (i.e. a roundtrip through the encoder), and the `validation_metrics` folder contains plots of different kinds of validation loss metrics over the course of training.
 
 ## Generating latent representations
 
@@ -115,8 +100,8 @@ It's by far easiest to set the `--workdir` flag to be the autoencoder's output d
 uv run autocast cache-latents \
     --workdir ../ae_output \
     --output-dir ../ae_output/cached_latents \
-    ++datamodule.data_path=/Users/pyong/test/advection_diffusion_toy_data \
-    ++autoencoder_checkpoint=/Users/pyong/test/ae_output/autoencoder.ckpt
+    ++datamodule.data_path=/path/to/parent_folder/advection_diffusion_toy_data \
+    ++autoencoder_checkpoint=/path/to/parent_folder/ae_output/autoencoder.ckpt
 ```
 
 This will generate a new folder `ae_output/cached_latents`:
@@ -171,3 +156,5 @@ Because each trajectory has been split into its own `.pt` file, we only have fou
 - 2 latent channels
 
 The time steps are the same as before, but the spatial dimensions have been reduced from 16×16 to 4×4, and instead of 1 input channel we now have 2 latent channels: this is a result of the autoencoder architecture.
+The encoder has three depth levels (configured via `hid_channels`) with a stride of 2 between each pair, so there are two downsampling steps giving a total spatial reduction of 2^2 = 4 in each dimension.
+The number of latent channels is controlled by the `out_channels` setting in the encoder config.
