@@ -7,6 +7,11 @@ chapters:
 
 - file: installation
 
+- file: walkthrough/index
+  sections:
+  - file: walkthrough/simulate-data
+  - file: walkthrough/autoencoder
+
 - file: tutorial/index
   sections:
   - file: tutorial/commands
