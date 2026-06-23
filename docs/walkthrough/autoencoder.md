@@ -118,3 +118,56 @@ uv run autocast cache-latents \
     ++datamodule.data_path=/Users/pyong/test/advection_diffusion_toy_data \
     ++autoencoder_checkpoint=/Users/pyong/test/ae_output/autoencoder.ckpt
 ```
+
+This will generate a new folder `ae_output/cached_latents`:
+
+```
+parent_folder
+├── advection_diffusion_toy_data
+├── ae_output
+│   ├── autoencoder.ckpt
+│   ├── autoencoder.log
+│   ├── cache_latents.log
+│   ├── cached_latents
+│   │   ├── autoencoder_config.yaml
+│   │   ├── metadata.json
+│   │   ├── test
+│   │   │   ├── traj_000000.pt
+│   │   │   ├── traj_000001.pt
+│   │   │   └── traj_000002.pt
+│   │   ├── train
+│   │   │   ├── traj_000000.pt
+│   │   │   ├── traj_000001.pt
+│   │   │   ├── traj_000002.pt
+│   │   │   ├── traj_000003.pt
+│   │   │   ├── traj_000004.pt
+│   │   │   ├── traj_000005.pt
+│   │   │   ├── traj_000006.pt
+│   │   │   ├── traj_000007.pt
+│   │   │   ├── traj_000008.pt
+│   │   │   └── traj_000009.pt
+│   │   └── valid
+│   │       ├── traj_000000.pt
+│   │       ├── traj_000001.pt
+│   │       └── traj_000002.pt
+│   └── ...
+├── autocast
+└── autosim
+```
+
+We can check the sizes of the latent representations by loading one of the `.pt` files in the `cached_latents` folder:
+
+```python
+>>> import torch
+
+>>> torch.load("../ae_output/cached_latents/train/traj_000000.pt")["encoded_fields"].shape
+torch.Size([11, 4, 4, 2])
+```
+
+Because each trajectory has been split into its own `.pt` file, we only have four dimensions remaining:
+
+- 11 time steps
+- 4x4 spatial grid
+- 2 latent channels
+
+The time steps are the same as before, but the spatial dimensions have been reduced from 16×16 to 4×4, and instead of 1 input channel we now have 2 latent channels: this is a result of the autoencoder architecture.
