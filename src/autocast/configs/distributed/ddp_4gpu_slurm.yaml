@@ -3,21 +3,27 @@ defaults:
   - override /hydra/launcher: slurm
   - _self_
 
+devices_per_node: 4
+num_nodes: 1
+
 trainer:
   max_time: "00:12:00:00"
   accelerator: gpu
-  devices: 4
   strategy: ddp
-  num_nodes: 1
+  devices: ${devices_per_node}
+  num_nodes: ${num_nodes}
 
 eval:
   accelerator: auto
-  devices: 4  # Match gpus_per_node for DDP evaluation
+  strategy: ddp
+  devices: ${devices_per_node}
+  num_nodes: ${num_nodes}
 
 hydra:
   launcher:
-    gpus_per_node: 4
-    tasks_per_node: 4
+    nodes: ${num_nodes}
+    gpus_per_node: ${devices_per_node}
+    tasks_per_node: ${devices_per_node}
     additional_parameters:
-      # Since 4 GPUs are on the same node, we don't need to allocate memory.
+      # Since each process is bound to a GPU, avoid requesting CPU memory per GPU.
       mem: 0
