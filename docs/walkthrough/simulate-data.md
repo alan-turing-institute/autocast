@@ -92,4 +92,20 @@ You won't need to handle any of them manually, but it's good to know what they a
   This includes both the custom settings we used in the command-line invocation above, as well as other defaults that we didn't override.
   This is useful if you want to later see what settings were used to generate the dataset, or if you want to reproduce the dataset exactly.
 
+We can load the data with PyTorch to see what it looks like:
+
+```python
+>>> import torch
+
+>>> torch.load("advection_diffusion_toy_data/train/data.pt")["data"].shape
+torch.Size([10, 11, 16, 16, 1])
+```
+
+The dimensions here are:
+
+- 10 trajectories
+- 11 time steps (including the initial state)
+- 16×16 spatial grid
+- 1 input channel (the concentration)
+
 Now that we have some data in hand, let's move on to training a model on it!
