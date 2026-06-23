@@ -55,7 +55,7 @@ def test_multinode_distributed_config_sets_trainer_nodes(config_dir: str):
     cfg = _load_config(
         config_dir,
         "encoder_processor_decoder",
-        overrides=["+distributed=ddp_4gpu_2node_slurm"],
+        overrides=["+distributed=ddp_4gpu_slurm", "num_nodes=2"],
     )
 
     assert cfg.trainer.devices == 4

@@ -335,7 +335,7 @@ def test_load_preset_launcher_cfg_recognises_override_distributed(
         "\n".join(
             [
                 "defaults:",
-                "  - override /distributed: ddp_4gpu_2node_slurm",
+                "  - override /distributed: ddp_4gpu_slurm",
                 "  - _self_",
             ]
         ),
@@ -345,13 +345,13 @@ def test_load_preset_launcher_cfg_recognises_override_distributed(
     monkeypatch.chdir(tmp_path)
     launcher_cfg = _load_preset_launcher_cfg(["local_experiment=with_override"])
 
-    assert launcher_cfg.get("nodes") == 2
+    assert launcher_cfg.get("nodes") == 1
     assert launcher_cfg.get("gpus_per_node") == 4
 
 
 def test_load_direct_distributed_launcher_cfg_supports_multinode():
     launcher_cfg = _load_direct_distributed_launcher_cfg(
-        ["+distributed=ddp_4gpu_2node_slurm"]
+        ["+distributed=ddp_4gpu_slurm", "num_nodes=2"]
     )
 
     assert launcher_cfg.get("nodes") == 2
