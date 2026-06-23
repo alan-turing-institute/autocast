@@ -423,8 +423,12 @@ def _lola_eval_power_band_masks(
 
 
 def _isotropic_spectral_components(
-    y_pred: TensorBTSC | TensorBTSCM, y_true: TensorBTSC, n_spatial_dims: int
-) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+    y_pred: TensorBTSC | TensorBTSCM,
+    y_true: TensorBTSC,
+    n_spatial_dims: int,
+    *,
+    compute_cross: bool = True,
+) -> tuple[Tensor, Tensor, Tensor | None, Tensor]:
     """Compute LOLA-style isotropic power and cross-power spectra.
 
     For ensembles, compute spectra per member and average spectra afterward,
@@ -446,21 +450,25 @@ def _isotropic_spectral_components(
     spec_true = torch.fft.fftn(y_true_btc, dim=fft_dims, norm="ortho")
 
     power_true = rearrange(torch.abs(spec_true).square(), "b t c ... -> b t c (...)")
+    cross = None
     if has_ensemble:
         power_pred = rearrange(
             torch.abs(spec_pred).square(), "b t c m ... -> b t c m (...)"
         )
-        cross = rearrange(
-            torch.abs(spec_pred * torch.conj(spec_true).unsqueeze(3)),
-            "b t c m ... -> b t c m (...)",
-        )
+        if compute_cross:
+            cross = rearrange(
+                torch.abs(spec_pred * torch.conj(spec_true).unsqueeze(3)),
+                "b t c m ... -> b t c m (...)",
+            )
     else:
         power_pred = rearrange(
             torch.abs(spec_pred).square(), "b t c ... -> b t c (...)"
         )
-        cross = rearrange(
-            torch.abs(spec_pred * torch.conj(spec_true)), "b t c ... -> b t c (...)"
-        )
+        if compute_cross:
+            cross = rearrange(
+                torch.abs(spec_pred * torch.conj(spec_true)),
+                "b t c ... -> b t c (...)",
+            )
 
     counts_clamped = torch.clamp(counts, min=1).to(dtype=y_pred.dtype)
 
@@ -473,10 +481,11 @@ def _isotropic_spectral_components(
         return (iso / counts_view)[..., 1:]
 
     pred_spec = _bin(power_pred)
-    cross_spec = _bin(cross)
+    cross_spec = _bin(cross) if cross is not None else None
     if has_ensemble:
         pred_spec = pred_spec.mean(dim=3)
-        cross_spec = cross_spec.mean(dim=3)
+        if cross_spec is not None:
+            cross_spec = cross_spec.mean(dim=3)
 
     return pred_spec, _bin(power_true), cross_spec, edges[1:]
 
@@ -527,7 +536,7 @@ def _power_spectrum_rmse_bands(
     """Compute LOLA-style per-band RMSE of relative isotropic power spectra."""
     n_spatial_dims = y_true.ndim - 3
     pred_spec, true_spec, _, freq_bins = _isotropic_spectral_components(
-        y_pred, y_true, n_spatial_dims
+        y_pred, y_true, n_spatial_dims, compute_cross=False
     )
 
     m0, m1, m2, m3 = _lola_eval_power_band_masks(freq_bins)
@@ -559,6 +568,9 @@ def _cross_correlation_rmse_bands(
     pred_spec, true_spec, cross_spec, freq_bins = _isotropic_spectral_components(
         y_pred, y_true, n_spatial_dims
     )
+    if cross_spec is None:
+        msg = "Cross spectrum was not computed."
+        raise RuntimeError(msg)
 
     m0, m1, m2, m3 = _lola_eval_power_band_masks(freq_bins)
 
