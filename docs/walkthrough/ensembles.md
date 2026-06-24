@@ -20,7 +20,7 @@ uv run autocast processor \
     --workdir ../ensemble_proc_output \
     datamodule=cached_latents \
     ++datamodule.data_path=/path/to/parent_folder/ae_output/cached_latents \
-    ++trainer.max_epochs=10
+    ++trainer.max_epochs=10 \
     ++model.n_members=10 \
     ++model.loss_func._target_=autocast.losses.ensemble.CRPSLoss
 ```
