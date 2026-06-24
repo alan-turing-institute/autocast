@@ -10,7 +10,7 @@ experiment_name: the_well_rayleigh_benard_crps_vit_azula_large_latent
 
 # CRPS directly in the cached LOLA latent space used by the RB FM baseline.
 # Batch 32/GPU with 8 ensemble members gives an effective per-GPU objective
-# batch of 256 for the effective-batch 24h scripts. The older equal-data LOLA
+# batch of 256 for the 24h comparison scripts. The older equal-data LOLA
 # scripts may still add gradient accumulation when matching their 4096-epoch
 # accounting.
 datamodule:
