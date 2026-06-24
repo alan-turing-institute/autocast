@@ -38,7 +38,7 @@ EVAL_DIAGNOSTIC_MEMBER_INDICES="[0]"
 EVAL_ROLLOUT_MEMBER_RENDER_MODE=both
 TIMEOUT_MIN=1439
 RUN_DRY_STATES=("true" "false")
-EVAL_METRICS="[mse,mae,nmse,nmae,rmse,nrmse,vmse,vrmse,vmse_v2,vrmse_v2,linf,psrmse,psrmse_low,psrmse_mid,psrmse_high,psrmse_tail,pscc,pscc_low,pscc_mid,pscc_high,pscc_tail,crps,fcrps,afcrps,energy,ssr,winkler]"
+EVAL_METRICS="[mse,mae,nmse,nmae,rmse,nrmse,vmse,vrmse,vmse_v2,vrmse_v2,linf,psrmse,psrmse_low,psrmse_mid,psrmse_high,psrmse_tail,pscc,pscc_low,pscc_mid,pscc_high,pscc_tail,crps,fcrps,afcrps,energy,spread,skill,ssr,winkler]"
 
 RUN_PATTERNS=(
     # "outputs/2026-05-12/diff_rayleigh_benard_flow_matching_vit_5ee7659_1a0afcd"
@@ -91,9 +91,6 @@ for run_dir in "${RUN_DIRS[@]}"; do
         echo "  eval.rollout_member_render_mode: ${EVAL_ROLLOUT_MEMBER_RENDER_MODE}"
         echo "  eval.metrics: ${EVAL_METRICS}"
 
-        # TEMP: video/snapshot-only rerun -- skip every metric pass (test +
-        # rollout + coverage) and both benchmark blocks. Revert when the next
-        # full eval is needed.
         uv run autocast eval --mode slurm "${dry_run_arg[@]}" \
             --workdir "${run_dir}" \
             eval.checkpoint=processor.ckpt \
@@ -105,11 +102,6 @@ for run_dir in "${RUN_DIRS[@]}"; do
             eval.transpose_spatial=true \
             eval.rollout_member_indices="${EVAL_DIAGNOSTIC_MEMBER_INDICES}" \
             eval.rollout_member_render_mode="${EVAL_ROLLOUT_MEMBER_RENDER_MODE}" \
-            eval.compute_test_metrics=false \
-            eval.compute_rollout_metrics=false \
-            eval.compute_rollout_coverage=false \
-            eval.benchmark.enabled=false \
-            eval.benchmark_rollout.enabled=false \
             hydra.launcher.cpus_per_task=8 \
             hydra.launcher.timeout_min="${TIMEOUT_MIN}"
     done
