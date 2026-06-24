@@ -21,7 +21,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 DATASETS_ROOT="${AUTOCAST_DATASETS:-${REPO_ROOT}/datasets}"
 
-EXPERIMENT="the_well/rayleigh_benard/fm_vit_large"
+EXPERIMENT="the_well/rayleigh_benard/fm_vit_large_masked_window"
 EXPERIMENT_NAME="the_well_rayleigh_benard_fm_vit_large_masked_window_lola4096"
 CACHE_DIR="${DATASETS_ROOT}/rayleigh_benard/1e3z5x2c_rayleigh_benard_dcae_f32c64_large/cache/rayleigh_benard"
 MAX_EPOCHS="${MAX_EPOCHS:-4096}"
@@ -78,8 +78,6 @@ for run_dry in "${RUN_DRY_STATES[@]}"; do
     uv run autocast processor --mode slurm "${dry_run_arg[@]}" \
         local_experiment="${EXPERIMENT}" \
         experiment_name="${EXPERIMENT_NAME}" \
-        processor@model.processor=flow_matching_masked_window_vit \
-        backbone@model.processor.backbone=vit \
         datamodule.data_path="${CACHE_DIR}" \
         datamodule.batch_size="${PER_GPU_BATCH_SIZE}" \
         datamodule.num_workers="${DATALOADER_NUM_WORKERS}" \
