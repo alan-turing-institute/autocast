@@ -7,7 +7,7 @@ RB_REPO_ROOT="$(cd "${RB_SCRIPT_DIR}/../../../.." && pwd)"
 RB_DATASETS_ROOT="${AUTOCAST_DATASETS:-${RB_REPO_ROOT}/datasets}"
 RB_CACHE_DIR="${RB_CACHE_DIR:-${RB_DATASETS_ROOT}/rayleigh_benard/1e3z5x2c_rayleigh_benard_dcae_f32c64_large/cache/rayleigh_benard}"
 
-RB_EVAL_METRICS_DEFAULT="[mse,mae,nmse,nmae,rmse,nrmse,vmse,vrmse,vmse_v2,vrmse_v2,linf,psrmse,psrmse_low,psrmse_mid,psrmse_high,psrmse_tail,pscc,pscc_low,pscc_mid,pscc_high,pscc_tail,crps,fcrps,afcrps,energy,spread,skill,ssr,winkler]"
+RB_EVAL_METRICS_DEFAULT="[mse,mae,nmse,nmae,rmse,nrmse,vmse,vrmse,vmse_v2,vrmse_v2,linf,psrmse,psrmse_low,psrmse_mid,psrmse_high,psrmse_tail,pscc,pscc_low,pscc_mid,pscc_high,pscc_tail,crps,fcrps,afcrps,spread,skill,ssr,winkler]"
 
 rb_has_hdf5_split() {
     local split_dir="$1"
