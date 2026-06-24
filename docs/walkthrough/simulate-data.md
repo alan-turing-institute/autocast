@@ -46,7 +46,7 @@ uv run autosim \
     seed=42 \
     simulator.T=1.0 simulator.dt=0.1 \
     dataset.n_train=10 dataset.n_valid=3 dataset.n_test=3 \
-    dataset.output_dir=../advection_diffusion_toy_data
+    dataset.output_dir=../ad_data
 ```
 
 This will generate a dataset with a spatial grid of size 16×16, with 10 trajectories (i.e. different sets of forward simulations) in the test set, 3 in the validation set, and 3 in the test set.
@@ -60,7 +60,7 @@ Your directory structure should now look similar to this:
 
 ```
 parent_folder
-├── advection_diffusion_toy_data
+├── ad_data
 │   ├── cli.log
 │   ├── examples
 │   │   └── train
@@ -92,12 +92,13 @@ You won't need to handle any of them manually, but it's good to know what they a
   This includes both the custom settings we used in the command-line invocation above, as well as other defaults that we didn't override.
   This is useful if you want to later see what settings were used to generate the dataset, or if you want to reproduce the dataset exactly.
 
-We can load the data with PyTorch to see what it looks like:
+We can load the data with PyTorch to see what it looks like.
+You can run `uv run python` from the `autocast` directory to get a Python shell with the correct environment set up, and then run:
 
 ```python
 >>> import torch
 
->>> torch.load("advection_diffusion_toy_data/train/data.pt")["data"].shape
+>>> torch.load("../ad_data/train/data.pt")["data"].shape
 torch.Size([10, 11, 16, 16, 1])
 ```
 

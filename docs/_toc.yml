@@ -11,6 +11,9 @@ chapters:
   sections:
   - file: walkthrough/simulate-data
   - file: walkthrough/autoencoder
+  - file: walkthrough/processor
+  - file: walkthrough/epd
+  - file: walkthrough/ensembles
 
 - file: tutorial/index
   sections:

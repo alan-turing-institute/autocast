@@ -34,7 +34,7 @@ We'll also provide the `workdir` option to specify where the output of the train
 ```bash
 uv run autocast ae \
     --workdir ../ae_output \
-    ++datamodule.data_path=/path/to/parent_folder/advection_diffusion_toy_data \
+    ++datamodule.data_path=/path/to/parent_folder/ad_data \
     ++trainer.max_epochs=10
 ```
 
@@ -64,7 +64,7 @@ Once the training is complete, we can find the trained model in the `ae_output` 
 
 ```
 parent_folder
-├── advection_diffusion_toy_data
+├── ad_data
 ├── ae_output
 │   ├── autoencoder.ckpt
 │   ├── autoencoder.log
@@ -100,7 +100,7 @@ It's by far easiest to set the `--workdir` flag to be the autoencoder's output d
 uv run autocast cache-latents \
     --workdir ../ae_output \
     --output-dir ../ae_output/cached_latents \
-    ++datamodule.data_path=/path/to/parent_folder/advection_diffusion_toy_data \
+    ++datamodule.data_path=/path/to/parent_folder/ad_data \
     ++autoencoder_checkpoint=/path/to/parent_folder/ae_output/autoencoder.ckpt
 ```
 
@@ -108,7 +108,7 @@ This will generate a new folder `ae_output/cached_latents`:
 
 ```
 parent_folder
-├── advection_diffusion_toy_data
+├── ad_data
 ├── ae_output
 │   ├── autoencoder.ckpt
 │   ├── autoencoder.log
