@@ -4,6 +4,7 @@ import lightning as L
 import pytest
 import torch
 from azula.noise import VPSchedule
+from azula.sample import EulerSampler
 from conftest import get_optimizer_config
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
@@ -210,6 +211,28 @@ def test_diffusion_sampler_grid_runs_start_to_stop(sampler_name: str):
     assert timesteps[-1].item() == pytest.approx(0.0)
     assert time_pairs[0, 0].item() == pytest.approx(1.0)
     assert time_pairs[-1, 1].item() == pytest.approx(0.0)
+
+
+def test_diffusion_get_sampler_accepts_explicit_override():
+    processor = DiffusionProcessor(
+        backbone=_CaptureBackbone(),
+        schedule=LogLogitSchedule(),
+        denoiser_type="lola",
+        n_steps_output=1,
+        n_channels_out=1,
+        sampler="ddpm",
+        sampler_steps=4,
+    )
+
+    sampler = processor._get_sampler(
+        processor.sampler_steps,
+        sampler="euler",
+        dtype=torch.float32,
+        device=torch.device("cpu"),
+    )
+
+    assert isinstance(sampler, EulerSampler)
+    assert processor.sampler == "ddpm"
 
 
 def test_lola_diffusion_processor_loss_is_finite():

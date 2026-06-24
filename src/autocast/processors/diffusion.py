@@ -184,13 +184,14 @@ class DiffusionProcessor(Processor):
     def _get_sampler(
         self,
         num_steps: int = 100,
+        sampler: str | None = None,
         eta: float = 0.0,
         silent: bool = True,
         **sampler_kwargs,
     ) -> Sampler:
-        sampler = self.sampler
+        sampler_name = self.sampler if sampler is None else sampler
         # Create appropriate Azula sampler
-        if sampler == "euler":
+        if sampler_name == "euler":
             azula_sampler = EulerSampler(
                 denoiser=self.denoiser,
                 start=1.0,
@@ -199,7 +200,7 @@ class DiffusionProcessor(Processor):
                 silent=silent,
                 **sampler_kwargs,
             )
-        elif sampler == "heun":
+        elif sampler_name == "heun":
             azula_sampler = HeunSampler(
                 denoiser=self.denoiser,
                 start=1.0,
@@ -208,7 +209,7 @@ class DiffusionProcessor(Processor):
                 silent=silent,
                 **sampler_kwargs,
             )
-        elif sampler == "ddim":
+        elif sampler_name == "ddim":
             azula_sampler = DDIMSampler(
                 denoiser=self.denoiser,
                 eta=eta,
@@ -218,7 +219,7 @@ class DiffusionProcessor(Processor):
                 silent=silent,
                 **sampler_kwargs,
             )
-        elif sampler == "ddpm":
+        elif sampler_name == "ddpm":
             azula_sampler = DDPMSampler(
                 denoiser=self.denoiser,
                 start=1.0,
@@ -227,7 +228,7 @@ class DiffusionProcessor(Processor):
                 silent=silent,
                 **sampler_kwargs,
             )
-        elif sampler == "ab":
+        elif sampler_name == "ab":
             # Adams-Bashforth multistep ODE solver with noise (z) prediction.
             azula_sampler = zABSampler(
                 denoiser=self.denoiser,
@@ -238,7 +239,7 @@ class DiffusionProcessor(Processor):
                 silent=silent,
                 **sampler_kwargs,
             )
-        elif sampler == "vab":
+        elif sampler_name == "vab":
             # Adams-Bashforth multistep ODE solver with velocity (v) prediction.
             azula_sampler = vABSampler(
                 denoiser=self.denoiser,
@@ -251,8 +252,8 @@ class DiffusionProcessor(Processor):
             )
         else:
             raise ValueError(
-                f"Unknown sampler: {sampler}. Choose from: 'euler', 'heun', 'ddim', "
-                "'ddpm', 'ab', 'vab'"
+                f"Unknown sampler: {sampler_name}. Choose from: 'euler', 'heun', "
+                "'ddim', 'ddpm', 'ab', 'vab'"
             )
         return azula_sampler
 
@@ -261,7 +262,7 @@ class DiffusionProcessor(Processor):
         x_t: Tensor,
         cond: Tensor,
         num_steps: int = 100,
-        sampler: str = "euler",
+        sampler: str | None = None,
         eta: float = 0.0,
         return_trajectory: bool = False,
         silent: bool = True,
@@ -273,11 +274,14 @@ class DiffusionProcessor(Processor):
             x_t: Starting noise (B, T, C, W, H)
             cond: Conditioning input (B, T_cond, C_cond, W, H)
             num_steps: Number of denoising steps
-            sampler: Type of sampler to use:
+            sampler: Type of sampler to use. Defaults to the configured
+                `self.sampler` when unset.
                 - 'euler': Euler ODE solver (fast, deterministic)
                 - 'heun': Heun's method (more accurate, deterministic)
                 - 'ddim': DDIM sampler (eta controls stochasticity)
                 - 'ddpm': DDPM sampler (stochastic)
+                - 'ab': Adams-Bashforth ODE solver with z-prediction
+                - 'vab': Adams-Bashforth ODE solver with v-prediction
             eta: Stochasticity parameter for DDIM (0=deterministic, 1=stochastic)
             return_trajectory: If True, return all intermediate steps
             silent: If True, hide progress bar
@@ -291,7 +295,6 @@ class DiffusionProcessor(Processor):
             num_steps=num_steps,
             sampler=sampler,
             eta=eta,
-            return_trajectory=return_trajectory,
             silent=silent,
             **sampler_kwargs,
         )
