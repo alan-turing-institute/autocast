@@ -17,6 +17,10 @@ EVAL_CHUNK_SIZE="${EVAL_CHUNK_SIZE:-8}"
 EVAL_DIAGNOSTIC_MEMBER_INDICES="${EVAL_DIAGNOSTIC_MEMBER_INDICES:-[0]}"
 EVAL_ROLLOUT_MEMBER_RENDER_MODE="${EVAL_ROLLOUT_MEMBER_RENDER_MODE:-both}"
 EVAL_ROLLOUT_START="${EVAL_ROLLOUT_START:-16}"
+EVAL_MAX_ROLLOUT_STEPS="${EVAL_MAX_ROLLOUT_STEPS:-46}"
+# With RB n_steps_output=4, 46 rollout windows gives 184 predicted timesteps.
+# Starting at timestep 16 therefore needs 200 truth frames from the datamodule.
+DATAMODULE_MAX_ROLLOUT_STEPS="${DATAMODULE_MAX_ROLLOUT_STEPS:-$((EVAL_ROLLOUT_START + EVAL_MAX_ROLLOUT_STEPS * 4))}"
 EVAL_BENCHMARK_ENABLED="${EVAL_BENCHMARK_ENABLED:-true}"
 EVAL_BENCHMARK_ROLLOUT_ENABLED="${EVAL_BENCHMARK_ROLLOUT_ENABLED:-true}"
 EVAL_AUTOENCODED_TARGET_METRICS="${EVAL_AUTOENCODED_TARGET_METRICS:-true}"
@@ -111,6 +115,8 @@ submit_one_eval() {
     echo "  model.processor.sampler_steps: ${EVAL_SAMPLER_STEPS}"
     echo "  eval.n_members: ${EVAL_N_MEMBERS}"
     echo "  eval.rollout_start: ${EVAL_ROLLOUT_START}"
+    echo "  eval.max_rollout_steps: ${EVAL_MAX_ROLLOUT_STEPS}"
+    echo "  datamodule.max_rollout_steps: ${DATAMODULE_MAX_ROLLOUT_STEPS}"
 
     rb_submit eval "${run_dry}" \
         --workdir "${run_dir}" \
@@ -126,6 +132,8 @@ submit_one_eval() {
         "eval.n_members=${EVAL_N_MEMBERS}" \
         "+eval.chunk_size=${EVAL_CHUNK_SIZE}" \
         "eval.rollout_start=${EVAL_ROLLOUT_START}" \
+        "eval.max_rollout_steps=${EVAL_MAX_ROLLOUT_STEPS}" \
+        "datamodule.max_rollout_steps=${DATAMODULE_MAX_ROLLOUT_STEPS}" \
         "eval.transpose_spatial=true" \
         "eval.compute_rollout_autoencoded_target_metrics=${EVAL_AUTOENCODED_TARGET_METRICS}" \
         "eval.rollout_member_indices=${EVAL_DIAGNOSTIC_MEMBER_INDICES}" \

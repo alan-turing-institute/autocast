@@ -39,3 +39,8 @@ bash slurm_scripts/comparison/the_well/rayleigh_benard/submit_diffusion_eval.sh 
 Each entrypoint also accepts individual run keys, for example
 `submit_24h.sh final crps_latent fm_latent` or
 `submit_diffusion_eval.sh ab_o3`.
+
+For diffusion eval, `EVAL_MAX_ROLLOUT_STEPS` controls the requested rollout
+windows. The script derives `DATAMODULE_MAX_ROLLOUT_STEPS` from that value and
+`EVAL_ROLLOUT_START` so the rollout dataloader exposes enough truth frames for
+the requested horizon.
