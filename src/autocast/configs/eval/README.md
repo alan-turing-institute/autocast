@@ -55,10 +55,14 @@ All eval configs support these parameters:
   gated separately via `compute_rollout_metrics`.
 - `metrics`: List of metrics to compute (default includes mse/mae/rmse/vrmse,
   power spectrum scores `psrmse*`, cross-correlation spectrum scores `pscc*`,
-  and ensemble scores `crps`, `fcrps`, `afcrps`, `energy`, `spread`, `skill`,
-  `ssr`; `variogram` remains available via explicit opt-in. Note that for
-  ensemble predictions, `skill` is the RMSE of the ensemble mean, so it matches
-  `rmse` numerically and is included for explicit spread/skill reporting.)
+  and ensemble scores `crps`, `fcrps`, `afcrps`, `spread`, `skill`, `ssr`,
+  `winkler`. Note that for ensemble predictions, `skill` is the RMSE of the
+  ensemble mean, so it matches `rmse` numerically and is included for explicit
+  spread/skill reporting.)
+- `skip_memory_intensive_metrics`: When `true` (default), skip high-memory
+  metrics such as `energy` and `variogram` even if they are listed in
+  `metrics`. Opt in with `eval.metrics=[...,energy]`
+  `eval.skip_memory_intensive_metrics=false`.
 - Deterministic metrics on ensemble predictions are scored on the ensemble
   mean by default, matching LOLA's VRMSE/skill evaluation.
 - `csv_path`: Custom path for metrics CSV (default: work_dir/evaluation_metrics.csv)
@@ -75,8 +79,6 @@ All eval configs support these parameters:
 - `rollout_snapshot_channels`: Channel indices to render (`null` means all)
 - `rollout_snapshot_dir`: Custom snapshot directory (default:
   work_dir/videos/snapshots)
-- `rollout_snapshot_dataset_label`: Optional row label for data-only snapshots
-  (default: infer from the rollout dataset when possible)
 - `rollout_member_indices`: Additional ensemble members to render beside the
   default ensemble-mean rollout videos/snapshots.
 - `rollout_member_render_mode`: How requested member diagnostics are rendered:
@@ -92,7 +94,8 @@ All eval configs support these parameters:
 - `devices`: Number of GPUs for DDP evaluation (default: 1; set explicitly,
   e.g. 4, for multi-GPU runs)
 - Ensemble-only metrics (`crps`, `fcrps`, `afcrps`, `energy`, `variogram`,
-  `ssr`) are skipped automatically when `model.n_members <= 1`
+  `spread`, `skill`, `ssr`, `winkler`) are skipped automatically when
+  `model.n_members <= 1`
 
 ## Multi-GPU Evaluation
 

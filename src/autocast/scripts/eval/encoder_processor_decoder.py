@@ -143,7 +143,6 @@ DEFAULT_EVAL_METRICS = [
     "crps",
     "fcrps",
     "afcrps",
-    "energy",
     "spread",
     "skill",
     "ssr",
@@ -1213,9 +1212,9 @@ def _normalize_rollout_member_render_mode(value: str | None) -> str:
     return normalized
 
 
-def _should_skip_metric(name: str) -> bool:
+def _should_skip_metric(name: str, *, skip_memory_intensive: bool = True) -> bool:
     """Return True when a metric should be excluded due to memory cost."""
-    return name in MEMORY_INTENSIVE_METRICS
+    return skip_memory_intensive and name in MEMORY_INTENSIVE_METRICS
 
 
 def _normalize_per_batch_rows(rows: Any) -> list[dict[str, float | str]]:
@@ -2559,7 +2558,6 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
 
     example_batch = stats.get("example_batch")
     has_model_autoencoder_components = _has_autoencoder_components(cfg)
-    has_lola_autoencoder_components = _has_lola_autoencoder_components(cfg)
 
     log.info(
         "Checkpoint type: %s",
@@ -2719,6 +2717,9 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
 
     evaluation_rows: list[dict[str, float | str]] = []
     compute_test_metrics = eval_cfg.get("compute_test_metrics", True)
+    skip_memory_intensive_metrics = bool(
+        eval_cfg.get("skip_memory_intensive_metrics", True)
+    )
 
     if compute_test_metrics:
         compute_coverage = eval_cfg.get("compute_coverage", False)
@@ -2729,7 +2730,9 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
             metric_registry.update(AVAILABLE_METRICS_ENSEMBLE)
 
         for name in metrics_list:
-            if _should_skip_metric(name):
+            if _should_skip_metric(
+                name, skip_memory_intensive=skip_memory_intensive_metrics
+            ):
                 log.info("Skipping metric '%s' due to memory cost.", name)
                 continue
             if name in AVAILABLE_METRICS:
@@ -2921,7 +2924,9 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
 
         if compute_rollout_metrics:
             for name in metrics_list:
-                if _should_skip_metric(name):
+                if _should_skip_metric(
+                    name, skip_memory_intensive=skip_memory_intensive_metrics
+                ):
                     log.info("Skipping rollout metric '%s' due to memory cost.", name)
                     continue
                 if name in AVAILABLE_METRICS:
@@ -3016,7 +3021,9 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
             # Per-timestep, per-channel rollout metrics (rows=metrics, cols=timestep)
             per_timestep_metric_fns: dict[str, Callable[[], Metric]] = {}
             for name, metric_factory in rollout_metric_fns.items():
-                if _should_skip_metric(name):
+                if _should_skip_metric(
+                    name, skip_memory_intensive=skip_memory_intensive_metrics
+                ):
                     log.info(
                         "Skipping rollout per-timestep metric '%s' due to memory cost.",
                         name,

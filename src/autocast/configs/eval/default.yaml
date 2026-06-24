@@ -45,11 +45,14 @@ metrics:
   - crps
   - fcrps
   - afcrps
-  - energy
   - spread
   - skill
   - ssr
   - winkler
+
+# Skip high-memory metrics such as energy score and variogram unless explicitly
+# opted in with `eval.skip_memory_intensive_metrics=false`.
+skip_memory_intensive_metrics: true
 
 # Output paths (default to work_dir if not specified)
 csv_path: null
@@ -72,7 +75,6 @@ rollout_snapshot_dir: null  # default: <video_dir>/snapshots
 rollout_snapshot_timesteps: [0, 4, 12, 30, 99]
 rollout_snapshot_channels: null  # null means all channels
 rollout_snapshot_format: png
-rollout_snapshot_dataset_label: null  # optional label for data-only snapshot rows
 
 # Ensemble diagnostics. By default, deterministic metrics score the ensemble
 # mean (matching LOLA's VRMSE/skill eval) and rollout visualizations plot the

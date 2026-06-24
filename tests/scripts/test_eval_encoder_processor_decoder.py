@@ -510,6 +510,7 @@ def test_default_eval_metrics_include_spread_and_skill_for_lola_comparison():
     assert "spread" in DEFAULT_EVAL_METRICS
     assert "skill" in DEFAULT_EVAL_METRICS
     assert "ssr" in DEFAULT_EVAL_METRICS
+    assert "energy" not in DEFAULT_EVAL_METRICS
 
 
 def test_should_skip_metric_skips_memory_intensive_ones():
@@ -517,6 +518,11 @@ def test_should_skip_metric_skips_memory_intensive_ones():
     assert _should_skip_metric("energy") is True
     assert _should_skip_metric("crps") is False
     assert _should_skip_metric("ssr") is False
+
+
+def test_should_skip_metric_can_opt_in_to_memory_intensive_ones():
+    assert _should_skip_metric("variogram", skip_memory_intensive=False) is False
+    assert _should_skip_metric("energy", skip_memory_intensive=False) is False
 
 
 def test_resolve_rollout_channel_names_from_norm_already_subset():
