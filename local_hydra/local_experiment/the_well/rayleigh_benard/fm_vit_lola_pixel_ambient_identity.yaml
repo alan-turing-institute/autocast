@@ -30,6 +30,8 @@ optimizer:
   warmup: 0
 
 model:
+  # Identity encoder/decoder keep FM in normalized ambient RB space while
+  # EncoderWithCond still passes log-scaled scalars and boundary conditions.
   train_in_latent_space: true
   freeze_encoder_decoder: true
   processor:
