@@ -2725,10 +2725,6 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
         compute_coverage = eval_cfg.get("compute_coverage", False)
         test_metric_fns: dict[str, Callable[[], Metric]] = {}
 
-        metric_registry = dict(AVAILABLE_METRICS)
-        if has_ensemble:
-            metric_registry.update(AVAILABLE_METRICS_ENSEMBLE)
-
         for name in metrics_list:
             if _should_skip_metric(
                 name, skip_memory_intensive=skip_memory_intensive_metrics
