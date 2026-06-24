@@ -18,6 +18,11 @@ branches have all landed on `main`.
 | LOLA 4096-step comparison | FM latent, masked window | `the_well/rayleigh_benard/fm_vit_large_masked_window` |
 | LOLA 4096-step comparison | Diffusion latent | `the_well/rayleigh_benard/diffusion_vit_large_lola` |
 
+Additional ambient FM presets are available under
+`local_hydra/local_experiment/the_well/rayleigh_benard/` for future ablations,
+but are not part of these maintained submitters because they are expected to be
+more computationally expensive than the selected 24h comparison matrix.
+
 ## Entry points
 
 Use `DRY_RUN_ONLY=true` to only emit SLURM dry runs. By default each submitter

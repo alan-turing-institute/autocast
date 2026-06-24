@@ -11,3 +11,8 @@ mirroring every historical submitter from
 [#369](https://github.com/alan-turing-institute/autocast/pull/369); the scripts
 there are grouped by the two active comparison questions instead of by
 recovered run history.
+
+The ambient FM configs are kept as optional presets for future ablations. They
+complete the ambient/latent method matrix, but are not wired into the maintained
+comparison submitters because ambient-space FM is expected to be substantially
+more expensive than the selected 24h comparison runs.
