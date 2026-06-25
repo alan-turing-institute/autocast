@@ -1,7 +1,5 @@
-# This is a the noise base schedule module
-# for now we will be using Azula but if we want to avoid that dependency
-# we can implement our own schedules here
-# 03/12/2025
+"""Noise schedules for diffusion processors."""
+
 import math
 
 import torch
