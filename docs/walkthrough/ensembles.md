@@ -1,6 +1,6 @@
 # Training model ensembles
 
-`autocast` also provides functionality for training model ensembles.
+AutoCast also provides functionality for training model ensembles.
 This can be done with a very simple override.
 Consider our [original processor training command](./processor.md):
 

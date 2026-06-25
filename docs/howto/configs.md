@@ -1,6 +1,6 @@
 # Configurations
 
-The `autocast` CLI is built on top of [Hydra](https://hydra.cc/).
+The AutoCast CLI is built on top of [Hydra](https://hydra.cc/).
 This means that configurations are specified in YAML files and can be composed together to quickly switch between different datasets and model architectures.
 
 ## Command-line overrides
@@ -69,4 +69,4 @@ Some of the configurations we used for our experiments are stored in the `local_
 These are not in the main `src/autocast/configs` folder because they are not meant to be distributed as part of the package.
 These configuration files can, however, still be used by setting `local_experiment=<name>` on the command line.
 
-(This works because `autocast` makes sure to add `local_hydra` to Hydra's search path, allowing you to load configurations from there even though they are outside the package.)
+(This works because AutoCast makes sure to add `local_hydra` to Hydra's search path, allowing you to load configurations from there even though they are outside the package.)

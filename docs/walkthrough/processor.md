@@ -18,7 +18,7 @@ Processor models can be trained with the `uv run autocast processor` command.
 Much like before, we're going to have to specify some overrides.
 
 First of all, we want to point the processor to the cached latents we generated in the previous step.
-`autocast` already provides [a helpful `cached_latents` datamodule configuration file](https://github.com/alan-turing-institute/autocast/blob/main/src/autocast/configs/datamodule/cached_latents.yaml), which we can go ahead and directly use: we additionally need to specify the path to the actual files.
+AutoCast already provides [a helpful `cached_latents` datamodule configuration file](https://github.com/alan-turing-institute/autocast/blob/main/src/autocast/configs/datamodule/cached_latents.yaml), which we can go ahead and directly use: we additionally need to specify the path to the actual files.
 
 Like before, we'll restrict training to 10 epochs to make it quick.
 
@@ -69,7 +69,7 @@ parent_folder
 The structure of this directory is very similar to the autoencoder output: there are trained model checkpoints, validation metrics, and configuration files which help with reproducibility.
 
 On a successful run, `processor.ckpt` always contains the last checkpoint.
-We can check this again by running Python from the `autocast` directory:
+We can check this again by running Python from the AutoCast directory:
 
 ```python
 >>> import torch
@@ -84,7 +84,7 @@ If you instead want to load the best checkpoint according to validation metrics,
 
 ## Processors in ambient space
 
-The processor models in `autocast` are designed to operate in the latent space, i.e., with encoded data.
+The processor models in AutoCast are designed to operate in the latent space, i.e., with encoded data.
 If you want to run a processor in the original ambient space, you can do so by training a full `encoder_processor_decoder` stack and setting both `encoder` and `decoder` to no-ops.
 
 Here is the full command (explained later):

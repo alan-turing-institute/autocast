@@ -2,12 +2,12 @@
 
 We'll begin by training an autoencoder on the AD dataset we just simulated.
 
-`autocast` provides a high-level tool for training autoencoders: `uv run autocast ae <options>`.
+AutoCast provides a high-level tool for training autoencoders: `uv run autocast ae <options>`.
 The default options are stored in YAML configuration files, which can be found in the `src/autocast/configs` directory.
 For example, the default configuration for autoencoders is [here](https://github.com/alan-turing-institute/autocast/blob/main/src/autocast/configs/autoencoder.yaml).
 
 :::{note}
-Both `autocast` and `autosim` use Hydra, a library which allows you to compose YAML configurations to form full specifications for experiments.
+Both AutoCast and AutoSim use Hydra, a library which allows you to compose YAML configurations to form full specifications for experiments.
 You can read more about Hydra in [its docs](https://hydra.cc/).
 :::
 
@@ -16,7 +16,7 @@ You can read more about Hydra in [its docs](https://hydra.cc/).
 If you look at the default configuration linked above, it points to a `datamodule` called `autosim`, which is itself a configuration file [here](https://github.com/alan-turing-institute/autocast/blob/main/src/autocast/configs/datamodule/autosim.yaml).
 
 The datamodule is a specification of where the dataset is, how to load it, and other details such as normalisation.
-In this case, the `autosim` datamodule is a blank slate which lets us pass the path to any `autosim`-generated dataset.
+In this case, the `autosim` datamodule is a blank slate which lets us pass the path to any AutoSim-generated dataset.
 It has a `data_path` field which we can set to the path of the dataset we generated in the previous section.
 
 We'll specify this by providing the `datamodule.data_path` field as a command-line override.
@@ -42,7 +42,7 @@ uv run autocast ae \
     ++trainer.max_epochs=10
 ```
 
-Notice that there are two different kinds of options here: the `--workdir` option is a standard command-line option that is directly passed to and used by `autocast`, whereas the `++` options are Hydra configuration overrides.
+Notice that there are two different kinds of options here: the `--workdir` option is a standard command-line option that is directly passed to and used by AutoCast, whereas the `++` options are Hydra configuration overrides.
 
 :::{warning}
 `datamodule.data_path` has to be provided as an absolute path, not a relative path.
@@ -98,7 +98,7 @@ The `reconstructions` folder contains some example reconstructions of the input 
 Once the autoencoder has been trained, we can use it to generate latent representations of the data.
 This is done with the `uv run autocast cache-latents` command.
 
-It's by far easiest to set the `--workdir` flag to be the autoencoder's output directory: that way, `autocast` will automatically pick up the configuration file `resolved_autoencoder_config.yaml` and use that when generating the latents.
+It's by far easiest to set the `--workdir` flag to be the autoencoder's output directory: that way, AutoCast will automatically pick up the configuration file `resolved_autoencoder_config.yaml` and use that when generating the latents.
 
 ```
 uv run autocast cache-latents \

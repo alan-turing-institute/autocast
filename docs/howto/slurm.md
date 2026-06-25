@@ -1,6 +1,6 @@
-# Running `autocast` on SLURM
+# Running AutoCast on SLURM
 
-`autocast` supports running experiments on SLURM clusters by adding the `--mode slurm` flag.
+AutoCast supports running experiments on SLURM clusters by adding the `--mode slurm` flag.
 This automatically generates a submission Bash script and submits it to the cluster, so you don't have to worry about writing your own submission scripts.
 
 There are also a few [`distributed` configurations](https://github.com/alan-turing-institute/autocast/tree/main/src/autocast/configs/distributed) which allow you to specify the number of nodes/GPUs to use.

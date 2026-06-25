@@ -25,7 +25,7 @@ When we [trained the autoencoder](./autoencoder.md), we simply went with the def
 We thus set both `encoder` and `decoder` to this.
 Finally we provide the path to the trained autoencoder checkpoint.
 
-By default, `autocast` freezes the encoder and decoder weights: they aren't updated in tandem with the processor.
+By default, AutoCast freezes the encoder and decoder weights: they aren't updated in tandem with the processor.
 We can see this in the model summary that's printed before training starts:
 
 ```

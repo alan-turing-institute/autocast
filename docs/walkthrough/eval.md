@@ -5,7 +5,7 @@ With a trained model checkpoint in hand, you can run the `eval` command to compu
 ## Basic usage
 
 The simplest invocation points `--workdir` at a training run's output folder.
-`autocast` will pick up the saved configuration and checkpoint automatically.
+AutoCast will pick up the saved configuration and checkpoint automatically.
 For example, to evaluate the EPD model we trained [previously](./epd.md):
 
 ```
@@ -15,7 +15,7 @@ uv run autocast eval \
 
 Evaluation has two main 'modes'.
 
-The first is to perform single-step predictions, i.e., given a test set input at time `t`, the model predicts the output at time `{t+1, ..., t+N}` (where `N` is the number of output time steps; this is the `n_steps_output` parameter in the datamodule, which is 4 for many datasets in `autocast`).
+The first is to perform single-step predictions, i.e., given a test set input at time `t`, the model predicts the output at time `{t+1, ..., t+N}` (where `N` is the number of output time steps; this is the `n_steps_output` parameter in the datamodule, which is 4 for many datasets in AutoCast).
 Then, the predictions are compared to the ground truth and a suite of metrics is computed.
 This is averaged over all time points and all trajectories in the test set.
 
@@ -49,7 +49,7 @@ full_epd_output
 
 The CSV files `evaluation_metrics.csv` and `rollout_metrics.csv` contain the single-step and rollout metrics.
 
-Furthermore, `autocast` will time model inference and report this in `benchmark_metrics.csv`.
+Furthermore, AutoCast will time model inference and report this in `benchmark_metrics.csv`.
 
 ## Coverage
 

@@ -4,12 +4,12 @@ To begin with, we're going to need some spatiotemporal data to work with.
 
 You can get large-scale datasets from sources such as [The Well](https://polymathic-ai.org/the_well/), but these are too large to work with in this tutorial!
 Instead of that, we'll generate some synthetic data by forward simulation of a partial differential equation (PDE).
-Our sister tool [`autosim`](https://alan-turing-institute.github.io/autosim/) provides this functionality, with several built-in PDEs.
+Our sister tool [AutoSim](https://alan-turing-institute.github.io/autosim/) provides this functionality, with several built-in PDEs.
 
 For this example we'll choose the advection–diffusion (AD) equation, which models the transport of a substance due to both diffusion (movement from high to low concentration) and advection (movement due to flow of the medium that the substance is in).
 Details of the actual equation can be found on, e.g., [Wikipedia](https://en.wikipedia.org/wiki/Convection%E2%80%93diffusion_equation).
 
-First, install `autosim`.
+First, install AutoSim:
 
 ```bash
 git clone https://github.com/alan-turing-institute/autosim.git
@@ -17,7 +17,7 @@ cd autosim
 uv sync
 ```
 
-For the purposes of this tutorial, we'll assume that you've already [installed `autocast`](../installation.md), and that `autosim` and `autocast` have been cloned to the same parent folder.
+For the purposes of this tutorial, we'll assume that you've already [installed AutoCast](../installation.md), and that AutoSim and AutoCast have been cloned to the same parent folder.
 In other words, your directory structure looks like the following.
 This isn't mandatory: you can have a different directory structure, but you will need to adjust the paths in the later commands accordingly.
 
