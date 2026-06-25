@@ -21,3 +21,4 @@ core
 .agent
 .codex
 .claude
+docs/_build

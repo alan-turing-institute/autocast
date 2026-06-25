@@ -1,53 +1,26 @@
 # Installation
 
-`AutoCast` is a Python package that can be installed using [uv](https://github.com/astral-sh/uv).
-
-## Prerequisites
-
-**Python Version:** `AutoCast` requires Python `>=3.11` and `<3.13`.
-
-**uv:** We use [uv](https://docs.astral.sh/uv/getting-started/installation/) for dependency management and running scripts.
-
-**ffmpeg** (optional): Required for video generation during evaluation. Install via your system package manager (e.g. `brew install ffmpeg` on macOS).
-
-## Install from source
-
-Clone the repository:
+Autocast is currently not on PyPI, so to install the library you will need to clone it from GitHub.
+Installation is most easily done using [uv](https://docs.astral.sh/uv/getting-started/installation/):
 
 ```bash
+# Clone the repo
 git clone https://github.com/alan-turing-institute/autocast.git
 cd autocast
-```
 
-Install with uv:
-
-```bash
+# Install dependencies
 uv sync
 ```
 
-## Install for development
+[`ffmpeg`](https://ffmpeg.org) is an optional binary dependency that is used to generate videos during model evaluation.
+Running `uv sync` will not install `ffmpeg` for you.
+If you want to use this feature, you will need to install `ffmpeg` via your system package manager (for example, `brew install ffmpeg` on macOS).
 
-For development, install with dev dependencies:
-
-```bash
-uv sync --extra dev
-```
-
-If contributing to the codebase, set up pre-commit hooks:
+Once you have the dependencies set up, you should be able to run the `autocast` command:
 
 ```bash
-prek install
+uv run autocast --help
 ```
 
-This will setup the pre-commit checks so any pushed commits will pass the CI.
-
-## Building the documentation
-
-To build the documentation locally, install development dependencies and run:
-
-```bash
-uv sync --extra docs
-jupyter-book build docs --all
-```
-
-Then open `docs/_build/html/index.html` in your browser to preview.
+If you are also interested in contributing to the codebase, there are optional development dependencies that can be installed.
+Please see the [Contributing](contributing.md) guide for more information.

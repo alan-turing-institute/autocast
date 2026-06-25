@@ -7,11 +7,15 @@ chapters:
 
 - file: installation
 
-- file: community/index
+- file: tutorial/index
   sections:
-  - file: community/contributing
-  - file: community/contributing-docs
-  - file: community/release
+  - file: tutorial/commands
+  - file: tutorial/configs
+  - file: tutorial/eval
+
+- file: other-commands
+
+- file: contributing
 
 - file: reference/index
   sections:
