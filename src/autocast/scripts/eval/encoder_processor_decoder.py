@@ -1675,6 +1675,14 @@ def _load_autoencoder_config_from_cache(cache_dir: Path) -> DictConfig | None:
         return None
 
 
+def _load_autoencoder_config_from_datamodule(cfg: DictConfig) -> DictConfig | None:
+    """Load standard cached-latent autoencoder metadata from cfg.datamodule."""
+    data_path = cfg.get("datamodule", {}).get("data_path")
+    if not data_path:
+        return None
+    return _load_autoencoder_config_from_cache(Path(str(data_path)).expanduser())
+
+
 def _lola_autoencoder_run_candidates(cache_dir: Path) -> list[Path]:
     """Return nearby directories that may hold a LoLA autoencoder run.
 
@@ -2494,6 +2502,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     has_reachable_autoencoder = (
         bool(cfg.get("autoencoder_checkpoint"))
         or _has_autoencoder_components(cfg)
+        or _load_autoencoder_config_from_datamodule(cfg) is not None
         or _load_lola_autoencoder_config_from_datamodule(cfg) is not None
     )
 

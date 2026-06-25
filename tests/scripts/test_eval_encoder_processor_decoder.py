@@ -1568,6 +1568,64 @@ def test_run_evaluation_auto_resolves_stateless_epd_to_ambient(tmp_path, monkeyp
     assert captured["eval_mode"] == "ambient"
 
 
+def test_run_evaluation_auto_uses_standard_cached_latent_metadata(
+    tmp_path, monkeypatch
+):
+    eval_mod = "autocast.scripts.eval.encoder_processor_decoder"
+    OmegaConf.save(
+        OmegaConf.create(
+            {
+                "datamodule": {
+                    "_target_": "raw.TheWellDataModule",
+                    "data_path": "/path/to/raw",
+                }
+            }
+        ),
+        tmp_path / "autoencoder_config.yaml",
+    )
+    cfg = OmegaConf.create(
+        {
+            "eval": {"mode": "auto", "checkpoint": str(tmp_path / "ckpt.ckpt")},
+            "datamodule": {
+                "_target_": "cached.LatentDataModule",
+                "data_path": str(tmp_path),
+            },
+        }
+    )
+    encoded_batch = _example_batch("encoded")
+
+    monkeypatch.setattr(
+        f"{eval_mod}.load_checkpoint_payload",
+        lambda _path: {"state_dict": {"processor.layer.weight": torch.zeros(1)}},
+    )
+    monkeypatch.setattr(
+        f"{eval_mod}.resolve_checkpoint_path",
+        lambda *_args, **_kwargs: tmp_path / "ckpt.ckpt",
+    )
+    monkeypatch.setattr(
+        f"{eval_mod}.setup_datamodule",
+        lambda config: (object(), config, {"example_batch": encoded_batch}),
+    )
+
+    class _StopAfterResolve(Exception):
+        pass
+
+    captured: dict[str, str] = {}
+
+    def _capture_and_stop(_cfg, *, eval_mode, **_kwargs):
+        captured["eval_mode"] = eval_mode
+        raise _StopAfterResolve
+
+    monkeypatch.setattr(
+        f"{eval_mod}._maybe_swap_to_ambient_datamodule", _capture_and_stop
+    )
+
+    with pytest.raises(_StopAfterResolve):
+        run_evaluation(cast(Any, cfg), work_dir=tmp_path)
+
+    assert captured["eval_mode"] == "encode_once"
+
+
 def test_read_eval_chunk_size_returns_none_when_absent():
     cfg = OmegaConf.create({"eval": {}})
     assert _read_eval_chunk_size(cfg) is None
