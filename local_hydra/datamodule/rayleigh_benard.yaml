@@ -15,7 +15,7 @@ num_workers: 8
 use_normalization: true
 normalization_path: ${.well_base_path}/${.well_dataset_name}/stats.yaml
 
-# Deterministic LOLA-style conditioning transform. This runs through
+# Deterministic conditioning transform. This runs through
 # WellDataset(transform=...) for every split, including eval/rollout loaders.
 transform:
   _target_: autocast.data.transforms.LogScalars
