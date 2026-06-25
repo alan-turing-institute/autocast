@@ -20,6 +20,12 @@ from autocast.types.types import (
 BatchT = TypeVar("BatchT")
 
 
+def _pin_memory_if_available(tensor: Tensor) -> Tensor:
+    if not torch.cuda.is_available():
+        return tensor
+    return tensor.pin_memory()
+
+
 @dataclass
 class Sample:
     """A batch in input data space."""
@@ -106,20 +112,20 @@ class Batch:
     def pin_memory(self) -> "Batch":
         """Pin CPU tensors for faster host-to-device transfer."""
         return Batch(
-            input_fields=self.input_fields.pin_memory(),
-            output_fields=self.output_fields.pin_memory(),
+            input_fields=_pin_memory_if_available(self.input_fields),
+            output_fields=_pin_memory_if_available(self.output_fields),
             constant_scalars=(
-                self.constant_scalars.pin_memory()
+                _pin_memory_if_available(self.constant_scalars)
                 if self.constant_scalars is not None
                 else None
             ),
             constant_fields=(
-                self.constant_fields.pin_memory()
+                _pin_memory_if_available(self.constant_fields)
                 if self.constant_fields is not None
                 else None
             ),
             boundary_conditions=(
-                self.boundary_conditions.pin_memory()
+                _pin_memory_if_available(self.boundary_conditions)
                 if self.boundary_conditions is not None
                 else None
             ),
@@ -175,10 +181,14 @@ class EncodedBatch:
     def pin_memory(self) -> "EncodedBatch":
         """Pin CPU tensors for faster host-to-device transfer."""
         return EncodedBatch(
-            encoded_inputs=self.encoded_inputs.pin_memory(),
-            encoded_output_fields=self.encoded_output_fields.pin_memory(),
+            encoded_inputs=_pin_memory_if_available(self.encoded_inputs),
+            encoded_output_fields=_pin_memory_if_available(self.encoded_output_fields),
             global_cond=(
-                self.global_cond.pin_memory() if self.global_cond is not None else None
+                _pin_memory_if_available(self.global_cond)
+                if self.global_cond is not None
+                else None
             ),
-            encoded_info={k: v.pin_memory() for k, v in self.encoded_info.items()},
+            encoded_info={
+                k: _pin_memory_if_available(v) for k, v in self.encoded_info.items()
+            },
         )
