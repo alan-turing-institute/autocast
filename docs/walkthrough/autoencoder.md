@@ -31,6 +31,10 @@ These configurations specify the architecture of the encoder and decoder network
 Additionally, to make this process quick, we'll train only for 10 epochs.
 We'll also provide the `workdir` option to specify where the output of the training should be saved.
 
+:::{note}
+You can also see the [Output paths](../howto/output-paths.md) page for more details about how to specify the output path.
+:::
+
 ```bash
 uv run autocast ae \
     --workdir ../ae_output \

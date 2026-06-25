@@ -16,11 +16,13 @@ chapters:
   - file: walkthrough/ensembles
   - file: walkthrough/eval
 
-- file: tutorial/index
+- file: howto/index
   sections:
-  - file: tutorial/commands
-  - file: tutorial/configs
-  - file: tutorial/eval
+  - file: howto/output-paths
+  - file: howto/slurm
+  - file: howto/wandb
+  - file: howto/resume
+  - file: howto/configs
 
 - file: other-commands
 
