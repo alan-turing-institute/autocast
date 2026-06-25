@@ -259,11 +259,15 @@ def test_processor_config_training_step_smoke(config_dir: str, dummy_datamodule)
 
 def test_masked_window_flow_matching_config_smoke(config_dir: str, dummy_datamodule):
     processor_cfg = _load_config(
-        config_dir, "processor/flow_matching_masked_window"
+        config_dir, "processor/flow_matching_masked_window_vit"
     ).processor
     with open_dict(processor_cfg):
+        processor_cfg.flow_ode_steps = 1
         processor_cfg.backbone.include_global_cond = False
         processor_cfg.backbone.global_cond_channels = 0
+        processor_cfg.backbone.hid_channels = 32
+        processor_cfg.backbone.hid_blocks = 1
+        processor_cfg.backbone.mod_features = 16
 
     encoded_inputs = torch.randn(2, 1, 4, 4, 1)
     encoded_outputs = torch.randn(2, 4, 4, 4, 1)
