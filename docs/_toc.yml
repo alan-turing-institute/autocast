@@ -23,6 +23,7 @@ chapters:
   - file: howto/wandb
   - file: howto/resume
   - file: howto/configs
+  - file: howto/other-commands
 
 - file: other-commands
 
