@@ -1,13 +1,21 @@
 """Unit tests for evaluation batch-limit resolution."""
 
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
+import matplotlib.pyplot as plt
 import pytest
 import torch
 from omegaconf import OmegaConf
 
+from autocast.decoders.base import Decoder
+from autocast.encoders.base import GenericEncoder
+from autocast.external.lola.wrapped_decoder import WrappedDecoder
+from autocast.external.lola.wrapped_encoder import ChannelsFirstEncoder, WrappedEncoder
+from autocast.metrics.deterministic import MSE
 from autocast.metrics.ensemble import CRPS, AlphaFairCRPS, SpreadSkillRatio
+from autocast.processors.base import Processor
 from autocast.scripts.eval.encoder_processor_decoder import (
     DEFAULT_EVAL_METRICS,
     DEFAULT_EVAL_MODE,
@@ -15,12 +23,27 @@ from autocast.scripts.eval.encoder_processor_decoder import (
     EVAL_PATH_ENCODE_ONCE,
     EVAL_PATH_LATENT_CACHED_LATENT_ONLY,
     EVAL_PATH_LATENT_CACHED_WITH_DECODER,
+    LOLA_WRAPPED_DECODER_TARGET,
+    LOLA_WRAPPED_ENCODER_TARGET,
+    THE_WELL_DATAMODULE_TARGET,
+    _build_encode_once_rollout_predict,
     _build_eval_predict_fn,
+    _build_lola_autoencoder_config_nodes,
+    _build_member_average_metric_factory,
+    _build_metric_factory,
     _build_per_timestep_metric_factory,
+    _crop_rollout_batch_start,
     _decode_tensor,
+    _deterministic_member_average_metric_name,
+    _deterministic_member_metric_name,
+    _load_lola_autoencoder_config_from_cache,
     _maybe_swap_to_ambient_datamodule,
+    _normalize_ensemble_member_indices,
     _normalize_eval_mode,
     _normalize_per_batch_rows,
+    _parse_deterministic_member_average_metric_name,
+    _parse_deterministic_member_metric_name,
+    _read_eval_chunk_size,
     _reindex_per_batch_rows_by_rank,
     _render_rollouts,
     _require_decoder_unless_latent_metrics_opt_in,
@@ -29,16 +52,17 @@ from autocast.scripts.eval.encoder_processor_decoder import (
     _resolve_rollout_batch_limit,
     _resolve_rollout_channel_names,
     _resolve_rollout_timestep_limit,
-    _save_rollout_snapshot_panels,
     _should_skip_metric,
     _split_metric_and_metadata_rows,
     _training_runtime_rows,
+    _try_build_decode_fn,
     _validate_latent_space_metrics_flag,
     _validate_resolved_eval_path,
     run_evaluation,
 )
+from autocast.scripts.setup import _apply_eval_chunk_size
 from autocast.types import Batch, EncodedBatch
-from autocast.utils.plots import _panel_size_for_width
+from autocast.utils import plot_spatiotemporal_snapshots
 
 
 def test_resolve_rollout_batch_limit_falls_back_to_test_limit_when_null():
@@ -61,6 +85,71 @@ def test_resolve_rollout_batch_limit_prefers_explicit_rollout_limit():
     )
 
     assert _resolve_rollout_batch_limit(eval_cfg) == 5
+
+
+def test_crop_rollout_batch_start_shifts_raw_full_trajectory_batch():
+    fields = torch.arange(6, dtype=torch.float32).view(1, 6, 1, 1, 1)
+    batch = Batch(
+        input_fields=fields[:, :1],
+        output_fields=fields[:, 1:],
+        constant_scalars=torch.ones(1, 1),
+        constant_fields=torch.ones(1, 1, 1, 1),
+    )
+
+    cropped = _crop_rollout_batch_start(batch, 2)
+
+    assert isinstance(cropped, Batch)
+    assert cropped.input_fields.flatten().tolist() == [2.0]
+    assert cropped.output_fields.flatten().tolist() == [3.0, 4.0, 5.0]
+    assert cropped.constant_scalars is batch.constant_scalars
+    assert cropped.constant_fields is batch.constant_fields
+
+
+def test_crop_rollout_batch_start_uses_start_as_context_endpoint():
+    fields = torch.arange(8, dtype=torch.float32).view(1, 8, 1, 1, 1)
+    batch = Batch(
+        input_fields=fields[:, :3],
+        output_fields=fields[:, 3:],
+        constant_scalars=None,
+        constant_fields=None,
+    )
+
+    cropped = _crop_rollout_batch_start(batch, 5)
+
+    assert isinstance(cropped, Batch)
+    assert cropped.input_fields.flatten().tolist() == [3.0, 4.0, 5.0]
+    assert cropped.output_fields.flatten().tolist() == [6.0, 7.0]
+
+
+def test_crop_rollout_batch_start_shifts_encoded_full_trajectory_batch():
+    fields = torch.arange(6, dtype=torch.float32).view(1, 6, 1)
+    batch = EncodedBatch(
+        encoded_inputs=fields[:, :1],
+        encoded_output_fields=fields[:, 1:],
+        global_cond=torch.ones(1, 1),
+        encoded_info={"x": torch.ones(1, 1)},
+    )
+
+    cropped = _crop_rollout_batch_start(batch, 2)
+
+    assert isinstance(cropped, EncodedBatch)
+    assert cropped.encoded_inputs.flatten().tolist() == [2.0]
+    assert cropped.encoded_output_fields.flatten().tolist() == [3.0, 4.0, 5.0]
+    assert cropped.global_cond is batch.global_cond
+    assert cropped.encoded_info is batch.encoded_info
+
+
+def test_crop_rollout_batch_start_requires_target_frames():
+    fields = torch.arange(3, dtype=torch.float32).view(1, 3, 1, 1, 1)
+    batch = Batch(
+        input_fields=fields[:, :1],
+        output_fields=fields[:, 1:],
+        constant_scalars=None,
+        constant_fields=None,
+    )
+
+    with pytest.raises(ValueError, match="leaves no target frames"):
+        _crop_rollout_batch_start(batch, 2)
 
 
 def test_build_eval_predict_fn_uses_predict_for_wrapped_processor_model():
@@ -131,6 +220,73 @@ def test_decode_tensor_preserves_ensemble_axis():
     decoded = _decode_tensor(x, decode_fn, n_members=5)
 
     assert decoded.shape == (2, 4, 8, 8, 2, 5)
+
+
+def test_encode_once_rollout_predict_can_use_autoencoded_targets():
+    input_fields = torch.tensor([1.0]).reshape(1, 1, 1, 1, 1)
+    raw_outputs = torch.tensor([20.0, 30.0]).reshape(1, 2, 1, 1, 1)
+    encoded_outputs = torch.tensor([2.0, 3.0]).reshape(1, 2, 1, 1, 1)
+    batch = Batch(
+        input_fields=input_fields,
+        output_fields=raw_outputs,
+        constant_scalars=None,
+        constant_fields=None,
+    )
+
+    class FakeEncoder:
+        def encode_batch(self, raw_batch):
+            return EncodedBatch(
+                encoded_inputs=raw_batch.input_fields,
+                encoded_output_fields=encoded_outputs,
+                global_cond=None,
+                encoded_info={},
+            )
+
+    class FakeDecoder:
+        def decode(self, x):
+            return x * 2
+
+    class FakeProcessor(Processor):
+        def loss(self, batch):  # noqa: ARG002
+            return torch.zeros(())
+
+        def map(self, x, global_cond):  # noqa: ARG002
+            return x + 1
+
+    model = SimpleNamespace(
+        encoder_decoder=SimpleNamespace(
+            encoder=FakeEncoder(),
+            decoder=FakeDecoder(),
+        ),
+        processor=FakeProcessor(),
+        denormalize_tensor=lambda x: x,
+    )
+    raw_predict = _build_encode_once_rollout_predict(
+        model,
+        rollout_stride=1,
+        max_rollout_steps=2,
+        free_running_only=True,
+        n_members=None,
+        device="cpu",
+    )
+    ae_target_predict = _build_encode_once_rollout_predict(
+        model,
+        rollout_stride=1,
+        max_rollout_steps=2,
+        free_running_only=True,
+        n_members=None,
+        device="cpu",
+        compare_to_autoencoded_target=True,
+    )
+
+    preds_raw, trues_raw = raw_predict(batch)
+    preds_relative, trues_relative = ae_target_predict(batch)
+
+    assert trues_raw is not None
+    assert trues_relative is not None
+    assert torch.allclose(preds_raw, preds_relative)
+    assert torch.allclose(trues_raw, raw_outputs)
+    assert torch.allclose(trues_relative, encoded_outputs * 2)
 
 
 def test_resolve_rollout_timestep_limit_multiplies_by_stride():
@@ -291,16 +447,82 @@ def test_build_per_timestep_metric_factory_sets_reduce_all_false_for_ssr():
     assert getattr(metric, "reduce_all", None) is False
 
 
+def test_build_metric_factory_can_score_single_ensemble_member():
+    preds = torch.tensor([[[[[0.0, 3.0]]]]])
+    trues = torch.zeros(1, 1, 1, 1)
+
+    mean_metric = _build_metric_factory(MSE)()
+    mean_metric.update(preds, trues)
+
+    member_metric = _build_metric_factory(MSE, ensemble_member_index=0)()
+    member_metric.update(preds, trues)
+
+    assert float(mean_metric.compute()) == pytest.approx(2.25)
+    assert float(member_metric.compute()) == pytest.approx(0.0)
+
+
+def test_build_member_average_metric_factory_scores_members_independently():
+    preds = torch.tensor([[[[[0.0, 4.0]]]]])
+    trues = torch.zeros(1, 1, 1, 1)
+
+    mean_metric = _build_metric_factory(MSE)()
+    mean_metric.update(preds, trues)
+
+    member_avg_metric = _build_member_average_metric_factory(MSE)()
+    member_avg_metric.update(preds, trues)
+
+    assert float(mean_metric.compute()) == pytest.approx(4.0)
+    assert float(member_avg_metric.compute()) == pytest.approx(8.0)
+
+
+def test_deterministic_member_metric_name_round_trips():
+    name = _deterministic_member_metric_name("vrmse_v2", 3)
+
+    assert name == "vrmse_v2_member_3"
+    assert _parse_deterministic_member_metric_name(name) == ("vrmse_v2", 3)
+    assert _parse_deterministic_member_metric_name("crps_member_3") is None
+
+
+def test_deterministic_member_average_metric_name_round_trips():
+    name = _deterministic_member_average_metric_name("vrmse_v2")
+
+    assert name == "vrmse_v2_member_avg"
+    assert _parse_deterministic_member_average_metric_name(name) == "vrmse_v2"
+    assert _parse_deterministic_member_average_metric_name("crps_member_avg") is None
+
+
+def test_normalize_ensemble_member_indices_validates_bounds():
+    assert _normalize_ensemble_member_indices(
+        [0, 2, 0],
+        n_members=3,
+        field_name="eval.rollout_member_indices",
+    ) == [0, 2]
+
+    with pytest.raises(ValueError, match="invalid values"):
+        _normalize_ensemble_member_indices(
+            [3],
+            n_members=3,
+            field_name="eval.rollout_member_indices",
+        )
+
+
 def test_default_eval_metrics_include_spread_and_skill_for_lola_comparison():
     assert "spread" in DEFAULT_EVAL_METRICS
     assert "skill" in DEFAULT_EVAL_METRICS
     assert "ssr" in DEFAULT_EVAL_METRICS
+    assert "energy" not in DEFAULT_EVAL_METRICS
 
 
-def test_should_skip_metric_variogram_only():
+def test_should_skip_metric_skips_memory_intensive_ones():
     assert _should_skip_metric("variogram") is True
+    assert _should_skip_metric("energy") is True
     assert _should_skip_metric("crps") is False
     assert _should_skip_metric("ssr") is False
+
+
+def test_should_skip_metric_can_opt_in_to_memory_intensive_ones():
+    assert _should_skip_metric("variogram", skip_memory_intensive=False) is False
+    assert _should_skip_metric("energy", skip_memory_intensive=False) is False
 
 
 def test_resolve_rollout_channel_names_from_norm_already_subset():
@@ -438,82 +660,252 @@ def test_render_rollouts_resolves_indices_within_batched_samples(tmp_path, monke
         assert any(f"batch_{idx}_sample_{idx}.mp4" in p for p in captured_paths)
 
 
-def test_snapshot_panel_size_preserves_imshow_row_col_aspect():
-    panel_width, panel_height = _panel_size_for_width(
-        target_width_in=6.0,
-        ncols=3,
-        spatial=(8, 4),
-        preserve_aspect=True,
+def test_render_rollouts_can_use_custom_rollout_predict(tmp_path, monkeypatch):
+    class DummyModel:
+        def rollout(self, *_args, **_kwargs):
+            msg = "standard rollout should not be called"
+            raise AssertionError(msg)
+
+    captured_true: list[torch.Tensor] = []
+
+    def _fake_plot_spatiotemporal_video(**kwargs):
+        captured_true.append(kwargs["true"])
+
+    monkeypatch.setattr(
+        "autocast.scripts.eval.encoder_processor_decoder.plot_spatiotemporal_video",
+        _fake_plot_spatiotemporal_video,
     )
 
-    assert panel_width == pytest.approx(2.0)
-    assert panel_height == pytest.approx(4.0)
+    trues = torch.full((2, 3, 2, 2, 1), 7.0)
+
+    def _custom_predict(_batch):
+        preds = torch.zeros_like(trues)
+        return preds, trues
+
+    out_paths = _render_rollouts(
+        model=cast(Any, DummyModel()),
+        dataloader=[object()],
+        batch_indices=[1],
+        video_dir=tmp_path,
+        sample_index=0,
+        fmt="mp4",
+        fps=5,
+        stride=1,
+        max_rollout_steps=2,
+        free_running_only=True,
+        n_members=None,
+        rollout_predict_fn=_custom_predict,
+    )
+
+    assert len(out_paths) == 1
+    assert torch.equal(captured_true[0], trues[1:2])
 
 
-def test_save_rollout_snapshot_panels_uses_snapshot_extension_for_data_only(
-    tmp_path,
-    monkeypatch,
+def test_render_rollouts_can_emit_single_member_diagnostics(tmp_path, monkeypatch):
+    class DummyModel:
+        def rollout(self, *_args, **_kwargs):
+            member0 = torch.zeros(1, 2, 2, 2, 1)
+            member1 = torch.full_like(member0, 4.0)
+            preds = torch.stack((member0, member1), dim=-1)
+            trues = torch.ones_like(member0)
+            return preds, trues
+
+    captured: list[tuple[str, torch.Tensor, list[tuple[torch.Tensor, str]] | None]] = []
+
+    def _fake_plot_spatiotemporal_video(**kwargs):
+        captured.append(
+            (kwargs["save_path"], kwargs["pred"], kwargs.get("extra_preds"))
+        )
+
+    monkeypatch.setattr(
+        "autocast.scripts.eval.encoder_processor_decoder.plot_spatiotemporal_video",
+        _fake_plot_spatiotemporal_video,
+    )
+
+    out_paths = _render_rollouts(
+        model=cast(Any, DummyModel()),
+        dataloader=[object()],
+        batch_indices=[0],
+        video_dir=tmp_path,
+        sample_index=0,
+        fmt="mp4",
+        fps=5,
+        stride=1,
+        max_rollout_steps=2,
+        free_running_only=True,
+        n_members=2,
+        member_indices=[1],
+    )
+
+    assert len(out_paths) == 1
+    assert [Path(path).name for path, _, _ in captured] == ["batch_0_sample_0.mp4"]
+    assert float(captured[0][1].mean()) == pytest.approx(2.0)
+    assert captured[0][2] is not None
+    member_pred, member_label = captured[0][2][0]
+    assert member_label == "Member 1"
+    assert float(member_pred.mean()) == pytest.approx(4.0)
+
+
+def test_render_rollouts_can_emit_separate_member_files(tmp_path, monkeypatch):
+    class DummyModel:
+        def rollout(self, *_args, **_kwargs):
+            member0 = torch.zeros(1, 2, 2, 2, 1)
+            member1 = torch.full_like(member0, 4.0)
+            preds = torch.stack((member0, member1), dim=-1)
+            trues = torch.ones_like(member0)
+            return preds, trues
+
+    captured: list[tuple[str, torch.Tensor, list[tuple[torch.Tensor, str]] | None]] = []
+
+    def _fake_plot_spatiotemporal_video(**kwargs):
+        captured.append(
+            (kwargs["save_path"], kwargs["pred"], kwargs.get("extra_preds"))
+        )
+
+    monkeypatch.setattr(
+        "autocast.scripts.eval.encoder_processor_decoder.plot_spatiotemporal_video",
+        _fake_plot_spatiotemporal_video,
+    )
+
+    out_paths = _render_rollouts(
+        model=cast(Any, DummyModel()),
+        dataloader=[object()],
+        batch_indices=[0],
+        video_dir=tmp_path,
+        sample_index=0,
+        fmt="mp4",
+        fps=5,
+        stride=1,
+        max_rollout_steps=2,
+        free_running_only=True,
+        n_members=2,
+        member_indices=[1],
+        member_render_mode="separate",
+    )
+
+    assert len(out_paths) == 2
+    assert [Path(path).name for path, _, _ in captured] == [
+        "batch_0_sample_0.mp4",
+        "batch_0_sample_0_member_1.mp4",
+    ]
+    assert captured[0][2] is None
+    assert float(captured[0][1].mean()) == pytest.approx(2.0)
+    assert float(captured[1][1].mean()) == pytest.approx(4.0)
+
+
+def test_render_rollouts_can_emit_inline_and_separate_member_files(
+    tmp_path, monkeypatch
 ):
-    calls: list[tuple[str, str, tuple[str, ...]]] = []
+    class DummyModel:
+        def rollout(self, *_args, **_kwargs):
+            member0 = torch.zeros(1, 2, 2, 2, 1)
+            member1 = torch.full_like(member0, 4.0)
+            preds = torch.stack((member0, member1), dim=-1)
+            trues = torch.ones_like(member0)
+            return preds, trues
 
-    def _fake_snapshots(**kwargs):
-        calls.append(
-            (
-                "full",
-                kwargs["save_path"],
-                tuple(kwargs.get("extra_formats") or ()),
-            )
+    captured: list[tuple[str, torch.Tensor, list[tuple[torch.Tensor, str]] | None]] = []
+
+    def _fake_plot_spatiotemporal_video(**kwargs):
+        captured.append(
+            (kwargs["save_path"], kwargs["pred"], kwargs.get("extra_preds"))
         )
 
-    def _fake_data_only(**kwargs):
-        calls.append(
-            (
-                "data",
-                kwargs["save_path"],
-                tuple(kwargs.get("extra_formats") or ()),
-            )
-        )
+    monkeypatch.setattr(
+        "autocast.scripts.eval.encoder_processor_decoder.plot_spatiotemporal_video",
+        _fake_plot_spatiotemporal_video,
+    )
 
+    out_paths = _render_rollouts(
+        model=cast(Any, DummyModel()),
+        dataloader=[object()],
+        batch_indices=[0],
+        video_dir=tmp_path,
+        sample_index=0,
+        fmt="mp4",
+        fps=5,
+        stride=1,
+        max_rollout_steps=2,
+        free_running_only=True,
+        n_members=2,
+        member_indices=[1],
+        member_render_mode="both",
+    )
+
+    assert len(out_paths) == 2
+    assert [Path(path).name for path, _, _ in captured] == [
+        "batch_0_sample_0.mp4",
+        "batch_0_sample_0_member_1.mp4",
+    ]
+    assert captured[0][2] is not None
+    assert captured[0][2][0][1] == "Member 1"
+    assert captured[1][2] is None
+
+
+def test_render_rollouts_forwards_transpose_spatial_to_plots(tmp_path, monkeypatch):
+    class DummyModel:
+        def rollout(self, *_args, **_kwargs):
+            preds = torch.zeros(1, 2, 2, 3, 1)
+            trues = torch.ones_like(preds)
+            return preds, trues
+
+    captured_video: list[bool] = []
+    captured_snapshots: list[bool] = []
+
+    def _fake_plot_spatiotemporal_video(**kwargs):
+        captured_video.append(kwargs["transpose_spatial"])
+
+    def _fake_plot_spatiotemporal_snapshots(**kwargs):
+        captured_snapshots.append(kwargs["transpose_spatial"])
+
+    monkeypatch.setattr(
+        "autocast.scripts.eval.encoder_processor_decoder.plot_spatiotemporal_video",
+        _fake_plot_spatiotemporal_video,
+    )
     monkeypatch.setattr(
         "autocast.scripts.eval.encoder_processor_decoder.plot_spatiotemporal_snapshots",
-        _fake_snapshots,
-    )
-    monkeypatch.setattr(
-        "autocast.scripts.eval.encoder_processor_decoder."
-        "plot_spatiotemporal_snapshots_data_only",
-        _fake_data_only,
+        _fake_plot_spatiotemporal_snapshots,
     )
 
-    saved_paths = []
-    values = torch.zeros(1, 3, 2, 2, 1)
-    _save_rollout_snapshot_panels(
-        trues_mean=values,
-        preds_mean=values,
-        preds_uq=None,
-        local_idx=0,
-        target_idx=2,
-        snapshot_dir=tmp_path,
-        snapshot_timesteps=[0, 1],
+    out_paths = _render_rollouts(
+        model=cast(Any, DummyModel()),
+        dataloader=[object()],
+        batch_indices=[0],
+        video_dir=tmp_path / "videos",
+        sample_index=0,
+        fmt="mp4",
+        fps=5,
+        stride=1,
+        max_rollout_steps=2,
+        free_running_only=True,
+        n_members=None,
+        transpose_spatial=True,
+        snapshot_timesteps=[0],
+        snapshot_dir=tmp_path / "snapshots",
         snapshot_channels=[0],
-        snapshot_ext="jpg",
-        saved_paths=saved_paths,
-        names_for_plot=None,
-        preserve_aspect=True,
-        dataset_short_label="AD",
     )
 
-    full_base = tmp_path / "batch_2_sample_0_channel_0_snapshots"
-    data_base = tmp_path / "batch_2_sample_0_channel_0_snapshots_data"
-    assert calls == [
-        ("full", str(full_base.with_suffix(".jpg")), ("pdf",)),
-        ("data", str(data_base.with_suffix(".jpg")), ("pdf",)),
-    ]
-    assert saved_paths == [
-        full_base.with_suffix(".jpg"),
-        full_base.with_suffix(".pdf"),
-        data_base.with_suffix(".jpg"),
-        data_base.with_suffix(".pdf"),
-    ]
+    assert len(out_paths) == 2
+    assert captured_video == [True]
+    assert captured_snapshots == [True]
+
+
+def test_snapshot_plot_transposes_spatial_axes():
+    tensor = torch.arange(6, dtype=torch.float32).reshape(1, 1, 2, 3, 1)
+
+    fig = plot_spatiotemporal_snapshots(
+        true=tensor,
+        timesteps=[0],
+        channel=0,
+        transpose_spatial=True,
+    )
+    try:
+        plotted = fig.axes[0].images[0].get_array()
+        assert plotted is not None
+        assert plotted.shape == (3, 2)
+        assert float(plotted[0, 1]) == 3.0
+    finally:
+        plt.close(fig)
 
 
 # ---------------------------------------------------------------------------
@@ -583,6 +975,17 @@ def test_resolve_auto_eval_mode_picks_faithful_default(
     assert resolved == expected
 
 
+def test_resolve_auto_eval_mode_uses_configured_autoencoder_components():
+    resolved = _resolve_auto_eval_mode(
+        processor_only=True,
+        example_batch=_example_batch("encoded"),
+        has_autoencoder_checkpoint=False,
+        has_autoencoder_components=True,
+    )
+
+    assert resolved == "encode_once"
+
+
 _RESOLVE_EVAL_PATH_CASES = [
     # Full EPD: always resolves to ambient_epd regardless of mode.
     ("ambient", False, "batch", False, False, EVAL_PATH_AMBIENT_EPD),
@@ -638,6 +1041,19 @@ def test_resolve_eval_path_matches_run_evaluation_branches(
     )
 
     assert resolved == expected
+
+
+def test_resolve_eval_path_accepts_raw_batch_with_autoencoder_components():
+    resolved = _resolve_eval_path(
+        eval_mode="encode_once",
+        processor_only=True,
+        example_batch=_example_batch("batch"),
+        has_autoencoder_checkpoint=False,
+        has_autoencoder_components=True,
+        decode_fn_loaded=False,
+    )
+
+    assert resolved == EVAL_PATH_ENCODE_ONCE
 
 
 def test_validate_resolved_eval_path_ambient_rejects_latent_path():
@@ -747,6 +1163,190 @@ def test_require_decoder_allows_opt_in_and_warns(caplog):
     assert any(
         "latent_space_metrics=true" in record.message for record in caplog.records
     ), "expected a prominent warning about latent-only metrics"
+
+
+def test_load_lola_autoencoder_config_from_cache_finds_run_parent(tmp_path):
+    run_dir = tmp_path / "lola_ae"
+    cache_dir = run_dir / "cache" / "rayleigh_benard"
+    cache_dir.mkdir(parents=True)
+    (run_dir / "state.pth").touch()
+    OmegaConf.save(
+        OmegaConf.create(
+            {
+                "ae": {"pix_channels": 4, "lat_channels": 64},
+                "dataset": {"stats": {"mean": [0.0], "std": [1.0]}},
+            }
+        ),
+        run_dir / "config.yaml",
+    )
+
+    loaded = _load_lola_autoencoder_config_from_cache(cache_dir)
+
+    assert loaded is not None
+    cfg, discovered_run_dir = loaded
+    assert discovered_run_dir == run_dir
+    assert cfg.ae.lat_channels == 64
+
+
+def test_try_build_decode_fn_falls_back_to_lola_autoencoder_run(tmp_path, monkeypatch):
+    run_dir = tmp_path / "lola_ae"
+    cache_dir = run_dir / "cache" / "rayleigh_benard"
+    cache_dir.mkdir(parents=True)
+    (run_dir / "state.pth").touch()
+    OmegaConf.save(
+        OmegaConf.create(
+            {
+                "ae": {
+                    "pix_channels": 4,
+                    "lat_channels": 64,
+                    "loss": {"losses": ["mse"], "weights": [1.0]},
+                },
+                "dataset": {"stats": {"mean": [0.5], "std": [2.0]}},
+            }
+        ),
+        run_dir / "config.yaml",
+    )
+    captured = {}
+
+    class FakeWrappedDecoder:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+        def eval(self):
+            return self
+
+        def decode(self, x):
+            return x + 1
+
+    monkeypatch.setattr(
+        "autocast.scripts.eval.encoder_processor_decoder.WrappedDecoder",
+        FakeWrappedDecoder,
+    )
+    cfg = OmegaConf.create({"datamodule": {"data_path": str(cache_dir)}})
+
+    decoder, decode_fn = _try_build_decode_fn(cfg)
+
+    assert isinstance(decoder, FakeWrappedDecoder)
+    assert decode_fn is not None
+    assert captured["runpath"] == run_dir
+    assert torch.allclose(captured["mean"], torch.tensor([0.5]))
+    assert torch.allclose(captured["std"], torch.tensor([2.0]))
+    assert torch.equal(decode_fn(torch.zeros(1)), torch.ones(1))
+
+
+def test_maybe_swap_to_ambient_datamodule_wires_lola_autoencoder(tmp_path):
+    dataset_dir = tmp_path / "rayleigh_benard"
+    run_dir = dataset_dir / "lola_ae"
+    cache_dir = run_dir / "cache" / "rayleigh_benard"
+    cache_dir.mkdir(parents=True)
+    (run_dir / "state.pth").touch()
+    (dataset_dir / "stats.yaml").write_text("stats: {}\n")
+    OmegaConf.save(
+        OmegaConf.create(
+            {
+                "ae": {
+                    "pix_channels": 4,
+                    "lat_channels": 64,
+                    "loss": {"losses": ["mse"], "weights": [1.0]},
+                },
+                "dataset": {
+                    "name": "rayleigh_benard",
+                    "include_filters": [],
+                    "stats": {"mean": [0.5], "std": [2.0]},
+                },
+            }
+        ),
+        run_dir / "config.yaml",
+    )
+    cfg = OmegaConf.create(
+        {
+            "datamodule": {
+                "_target_": "cached.LatentDataModule",
+                "data_path": str(cache_dir),
+                "n_steps_input": 2,
+                "n_steps_output": 5,
+                "stride": 3,
+                "batch_size": 7,
+                "num_workers": 0,
+            },
+            "model": {"processor": {"_target_": "fake.Processor"}},
+        }
+    )
+    encoded = EncodedBatch(
+        encoded_inputs=torch.zeros(1, 1, 2, 2, 1),
+        encoded_output_fields=torch.zeros(1, 1, 2, 2, 1),
+        global_cond=None,
+        encoded_info={},
+    )
+
+    _maybe_swap_to_ambient_datamodule(
+        cfg, eval_mode="encode_once", example_batch=encoded
+    )
+
+    assert cfg.datamodule._target_ == THE_WELL_DATAMODULE_TARGET
+    assert cfg.datamodule.well_dataset_name == "rayleigh_benard"
+    assert cfg.datamodule.well_base_path == str(tmp_path)
+    assert cfg.datamodule.use_normalization is False
+    assert cfg.datamodule.n_steps_input == 2
+    assert cfg.datamodule.n_steps_output == 5
+    assert cfg.datamodule.min_dt_stride == 3
+    assert cfg.datamodule.max_dt_stride == 3
+    assert cfg.datamodule.batch_size == 7
+    assert "stride" not in cfg.datamodule
+    assert cfg.model.encoder._target_ == LOLA_WRAPPED_ENCODER_TARGET
+    assert cfg.model.decoder._target_ == LOLA_WRAPPED_DECODER_TARGET
+    assert cfg.model.encoder.runpath == str(run_dir)
+    assert cfg.model.decoder.runpath == str(run_dir)
+    assert list(cfg.model.encoder.mean) == [0.5]
+    assert list(cfg.model.decoder.std) == [2.0]
+
+
+def test_lola_raw_datamodule_wires_log_scalar_conditioning(tmp_path):
+    dataset_dir = tmp_path / "rayleigh_benard"
+    run_dir = dataset_dir / "lola_ae"
+    cache_dir = run_dir / "cache" / "rayleigh_benard"
+    cache_dir.mkdir(parents=True)
+    (run_dir / "state.pth").touch()
+    (dataset_dir / "stats.yaml").write_text("stats: {}\n")
+    OmegaConf.save(
+        OmegaConf.create(
+            {
+                "ae": {
+                    "pix_channels": 4,
+                    "lat_channels": 64,
+                    "loss": {"losses": ["mse"], "weights": [1.0]},
+                },
+                "dataset": {
+                    "name": "rayleigh_benard",
+                    "augment": ["log_scalars", "random_axis_roll"],
+                    "stats": {"mean": [0.5], "std": [2.0]},
+                },
+            }
+        ),
+        run_dir / "config.yaml",
+    )
+    cfg = OmegaConf.create(
+        {
+            "datamodule": {
+                "_target_": "cached.LatentDataModule",
+                "data_path": str(cache_dir),
+            },
+            "model": {"processor": {"_target_": "fake.Processor"}},
+        }
+    )
+    encoded = EncodedBatch(
+        encoded_inputs=torch.zeros(1, 1, 2, 2, 1),
+        encoded_output_fields=torch.zeros(1, 1, 2, 2, 1),
+        global_cond=None,
+        encoded_info={},
+    )
+
+    _maybe_swap_to_ambient_datamodule(
+        cfg, eval_mode="encode_once", example_batch=encoded
+    )
+
+    assert cfg.model.encoder.log_scalars is True
+    assert "log_scalars" not in cfg.model.decoder
 
 
 def test_maybe_swap_to_ambient_datamodule_is_noop_for_raw_batch(tmp_path):
@@ -966,3 +1566,306 @@ def test_run_evaluation_auto_resolves_stateless_epd_to_ambient(tmp_path, monkeyp
         run_evaluation(cast(Any, cfg), work_dir=tmp_path)
 
     assert captured["eval_mode"] == "ambient"
+
+
+def test_run_evaluation_auto_uses_standard_cached_latent_metadata(
+    tmp_path, monkeypatch
+):
+    eval_mod = "autocast.scripts.eval.encoder_processor_decoder"
+    OmegaConf.save(
+        OmegaConf.create(
+            {
+                "datamodule": {
+                    "_target_": "raw.TheWellDataModule",
+                    "data_path": "/path/to/raw",
+                }
+            }
+        ),
+        tmp_path / "autoencoder_config.yaml",
+    )
+    cfg = OmegaConf.create(
+        {
+            "eval": {"mode": "auto", "checkpoint": str(tmp_path / "ckpt.ckpt")},
+            "datamodule": {
+                "_target_": "cached.LatentDataModule",
+                "data_path": str(tmp_path),
+            },
+        }
+    )
+    encoded_batch = _example_batch("encoded")
+
+    monkeypatch.setattr(
+        f"{eval_mod}.load_checkpoint_payload",
+        lambda _path: {"state_dict": {"processor.layer.weight": torch.zeros(1)}},
+    )
+    monkeypatch.setattr(
+        f"{eval_mod}.resolve_checkpoint_path",
+        lambda *_args, **_kwargs: tmp_path / "ckpt.ckpt",
+    )
+    monkeypatch.setattr(
+        f"{eval_mod}.setup_datamodule",
+        lambda config: (object(), config, {"example_batch": encoded_batch}),
+    )
+
+    class _StopAfterResolve(Exception):
+        pass
+
+    captured: dict[str, str] = {}
+
+    def _capture_and_stop(_cfg, *, eval_mode, **_kwargs):
+        captured["eval_mode"] = eval_mode
+        raise _StopAfterResolve
+
+    monkeypatch.setattr(
+        f"{eval_mod}._maybe_swap_to_ambient_datamodule", _capture_and_stop
+    )
+
+    with pytest.raises(_StopAfterResolve):
+        run_evaluation(cast(Any, cfg), work_dir=tmp_path)
+
+    assert captured["eval_mode"] == "encode_once"
+
+
+def test_run_evaluation_passes_distributed_eval_config_to_fabric(tmp_path, monkeypatch):
+    eval_mod = "autocast.scripts.eval.encoder_processor_decoder"
+    cfg = OmegaConf.create(
+        {
+            "eval": {
+                "mode": "latent",
+                "latent_space_metrics": True,
+                "checkpoint": str(tmp_path / "ckpt.ckpt"),
+                "compute_test_metrics": False,
+                "accelerator": "gpu",
+                "strategy": "ddp",
+                "devices": 4,
+                "num_nodes": 2,
+            },
+            "model": {"n_members": 1},
+        }
+    )
+    encoded_batch = _example_batch("encoded")
+
+    monkeypatch.setattr(
+        f"{eval_mod}.load_checkpoint_payload",
+        lambda _path: {"state_dict": {"processor.layer.weight": torch.zeros(1)}},
+    )
+    monkeypatch.setattr(
+        f"{eval_mod}.resolve_checkpoint_path",
+        lambda *_args, **_kwargs: tmp_path / "ckpt.ckpt",
+    )
+    monkeypatch.setattr(
+        f"{eval_mod}.setup_datamodule",
+        lambda config: (
+            object(),
+            config,
+            {"example_batch": encoded_batch, "n_steps_output": 1},
+        ),
+    )
+
+    class _FakeModel:
+        def load_state_dict(self, *_args, **_kwargs):
+            return SimpleNamespace(missing_keys=[], unexpected_keys=[])
+
+    monkeypatch.setattr(
+        f"{eval_mod}.setup_processor_model",
+        lambda *_args, **_kwargs: _FakeModel(),
+    )
+
+    class _StopAfterFabric(Exception):
+        pass
+
+    captured: dict[str, Any] = {}
+
+    class _FakeFabric:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+            raise _StopAfterFabric
+
+    monkeypatch.setattr(f"{eval_mod}.L.Fabric", _FakeFabric)
+
+    with pytest.raises(_StopAfterFabric):
+        run_evaluation(cast(Any, cfg), work_dir=tmp_path)
+
+    assert captured == {
+        "accelerator": "gpu",
+        "strategy": "ddp",
+        "devices": 4,
+        "num_nodes": 2,
+    }
+
+
+def test_read_eval_chunk_size_returns_none_when_absent():
+    cfg = OmegaConf.create({"eval": {}})
+    assert _read_eval_chunk_size(cfg) is None
+
+
+def test_read_eval_chunk_size_returns_none_for_non_positive():
+    cfg = OmegaConf.create({"eval": {"chunk_size": 0}})
+    assert _read_eval_chunk_size(cfg) is None
+
+
+def test_read_eval_chunk_size_parses_positive_int():
+    cfg = OmegaConf.create({"eval": {"chunk_size": 8}})
+    assert _read_eval_chunk_size(cfg) == 8
+
+
+def test_build_lola_autoencoder_config_nodes_omits_chunk_size_when_none(tmp_path):
+    ae_cfg = OmegaConf.create(
+        {
+            "ae": {"pix_channels": 4, "lat_channels": 64},
+            "dataset": {"stats": {"mean": [0.0], "std": [1.0]}},
+        }
+    )
+    encoder_cfg, decoder_cfg = _build_lola_autoencoder_config_nodes(
+        ae_cfg, tmp_path, chunk_size=None
+    )
+    assert "chunk_size" not in encoder_cfg
+    assert "chunk_size" not in decoder_cfg
+
+
+def test_build_lola_autoencoder_config_nodes_propagates_chunk_size(tmp_path):
+    ae_cfg = OmegaConf.create(
+        {
+            "ae": {"pix_channels": 4, "lat_channels": 64},
+            "dataset": {"stats": {"mean": [0.0], "std": [1.0]}},
+        }
+    )
+    encoder_cfg, decoder_cfg = _build_lola_autoencoder_config_nodes(
+        ae_cfg, tmp_path, chunk_size=8
+    )
+    assert encoder_cfg.chunk_size == 8
+    assert decoder_cfg.chunk_size == 8
+
+
+def test_wrapped_encoder_encode_cond_can_log_scalars():
+    encoder = WrappedEncoder.__new__(WrappedEncoder)
+    object.__setattr__(encoder, "log_scalars", True)
+    scalars = torch.tensor([[1.0e7, 5.0]])
+    boundary_conditions = torch.tensor([[[2.0, 2.0], [0.0, 0.0]]])
+    batch = Batch(
+        input_fields=torch.zeros(1, 1, 2, 2, 1),
+        output_fields=torch.zeros(1, 1, 2, 2, 1),
+        constant_scalars=scalars,
+        constant_fields=None,
+        boundary_conditions=boundary_conditions,
+    )
+
+    cond = encoder.encode_cond(batch)
+
+    assert cond is not None
+    expected = torch.cat([torch.log(scalars), boundary_conditions.flatten(1)], dim=1)
+    assert torch.allclose(cond, expected)
+
+
+def test_wrapped_encoder_chunked_apply_matches_unchunked():
+    encoder = ChannelsFirstEncoder.__new__(ChannelsFirstEncoder)
+    x = torch.randn(10, 3, 4, 4)
+
+    def fn(t: torch.Tensor) -> torch.Tensor:
+        return t * 2.5 + 1.0
+
+    object.__setattr__(encoder, "chunk_size", None)
+    out_unchunked = encoder._chunked_apply(fn, x)
+
+    object.__setattr__(encoder, "chunk_size", 3)
+    out_chunked = encoder._chunked_apply(fn, x)
+
+    assert torch.allclose(out_chunked, out_unchunked)
+    assert out_chunked.shape == x.shape
+
+
+def test_wrapped_encoder_chunked_apply_handles_partial_final_chunk():
+    encoder = ChannelsFirstEncoder.__new__(ChannelsFirstEncoder)
+    object.__setattr__(encoder, "chunk_size", 4)
+    x = torch.randn(7, 2, 3, 3)
+    out = encoder._chunked_apply(lambda t: t, x)
+    assert torch.equal(out, x)
+
+
+def test_wrapped_decoder_chunked_apply_matches_unchunked():
+    decoder = WrappedDecoder.__new__(WrappedDecoder)
+    object.__setattr__(decoder, "chunk_size", None)
+    x = torch.randn(12, 4, 8, 8)
+
+    def fn(t: torch.Tensor) -> torch.Tensor:
+        return t.flip(dims=(-1,)) - 0.25
+
+    out_unchunked = decoder._chunked_apply(fn, x)
+
+    object.__setattr__(decoder, "chunk_size", 5)
+    out_chunked = decoder._chunked_apply(fn, x)
+
+    assert torch.allclose(out_chunked, out_unchunked)
+    assert out_chunked.shape == x.shape
+
+
+def test_apply_eval_chunk_size_sets_attribute_on_module_when_configured():
+    module = torch.nn.Linear(3, 3)
+    cfg = OmegaConf.create({"eval": {"chunk_size": 16}})
+    _apply_eval_chunk_size(module, cfg)
+    assert module.chunk_size == 16
+
+
+def test_apply_eval_chunk_size_noop_when_absent():
+    module = torch.nn.Linear(3, 3)
+    cfg = OmegaConf.create({"eval": {}})
+    _apply_eval_chunk_size(module, cfg)
+    assert not hasattr(module, "chunk_size") or module.chunk_size is None
+
+
+def test_encoder_and_decoder_bases_define_chunked_apply():
+    """``_chunked_apply`` and ``chunk_size`` live on the abstract bases so any
+    subclass inherits them. The concrete behavior is exercised via the LoLA
+    wrappers above; this just guards the base-class contract.
+    """
+    assert callable(getattr(GenericEncoder, "_chunked_apply", None))
+    assert callable(getattr(Decoder, "_chunked_apply", None))
+    # Default chunk_size is None (no chunking) on both bases.
+    assert GenericEncoder.chunk_size is None
+    assert Decoder.chunk_size is None
+
+
+def test_try_build_decode_fn_passes_chunk_size_to_lola_decoder(tmp_path, monkeypatch):
+    run_dir = tmp_path / "lola_ae"
+    cache_dir = run_dir / "cache" / "rayleigh_benard"
+    cache_dir.mkdir(parents=True)
+    (run_dir / "state.pth").touch()
+    OmegaConf.save(
+        OmegaConf.create(
+            {
+                "ae": {
+                    "pix_channels": 4,
+                    "lat_channels": 64,
+                    "loss": {"losses": ["mse"], "weights": [1.0]},
+                },
+                "dataset": {"stats": {"mean": [0.5], "std": [2.0]}},
+            }
+        ),
+        run_dir / "config.yaml",
+    )
+    captured: dict[str, Any] = {}
+
+    class FakeWrappedDecoder:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+        def eval(self):
+            return self
+
+        def decode(self, x):
+            return x
+
+    monkeypatch.setattr(
+        "autocast.scripts.eval.encoder_processor_decoder.WrappedDecoder",
+        FakeWrappedDecoder,
+    )
+    cfg = OmegaConf.create(
+        {
+            "datamodule": {"data_path": str(cache_dir)},
+            "eval": {"chunk_size": 8},
+        }
+    )
+
+    decoder, _ = _try_build_decode_fn(cfg)
+    assert isinstance(decoder, FakeWrappedDecoder)
+    assert captured.get("chunk_size") == 8

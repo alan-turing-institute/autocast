@@ -290,6 +290,32 @@ def setup_datamodule(
     return datamodule, config, logic_stats
 
 
+def _read_eval_chunk_size(config: DictConfig) -> int | None:
+    """Read the optional ``eval.chunk_size`` knob, returning ``None`` if absent.
+
+    Encoders/decoders that opt into chunking via ``_chunked_apply`` honor this
+    attribute to cap activation memory on large-resolution + ensemble batches.
+    """
+    eval_cfg = config.get("eval") if isinstance(config, DictConfig) else None
+    if not isinstance(eval_cfg, DictConfig):
+        return None
+    value = eval_cfg.get("chunk_size")
+    if value is None:
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+def _apply_eval_chunk_size(module: nn.Module, config: DictConfig) -> None:
+    """Set ``chunk_size`` on an encoder/decoder module if eval.chunk_size is set."""
+    chunk_size = _read_eval_chunk_size(config)
+    if chunk_size is not None:
+        object.__setattr__(module, "chunk_size", chunk_size)
+
+
 def setup_autoencoder_components(
     config: DictConfig, stats: dict, extra_input_channels: int = 0
 ) -> tuple[EncoderWithCond, Decoder]:
@@ -314,6 +340,7 @@ def setup_autoencoder_components(
     if (
         encoder_config
         and isinstance(input_channels, int)
+        and "in_channels" in encoder_config
         and encoder_config.get("in_channels") in (None, "auto")
     ):
         # TODO: add more robust approach to inlcuding extra constant channels
@@ -352,6 +379,7 @@ def setup_autoencoder_components(
         decoder_config,
     )
     encoder = instantiate(encoder_config)
+    _apply_eval_chunk_size(encoder, config)
 
     if (
         decoder_config
@@ -370,6 +398,7 @@ def setup_autoencoder_components(
             raise ValueError(msg)
 
     decoder = instantiate(decoder_config)
+    _apply_eval_chunk_size(decoder, config)
     checkpoint = config.get("autoencoder_checkpoint")
 
     if checkpoint is None:

@@ -5,6 +5,7 @@ import logging
 import os
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
+from types import MethodType
 from typing import Any
 
 import hydra
@@ -18,6 +19,7 @@ from the_well.data.normalization import ZScoreNormalization
 from torchmetrics import Metric
 
 from autocast.benchmarking import benchmark_model, benchmark_rollout
+from autocast.external.lola.wrapped_decoder import WrappedDecoder
 from autocast.metrics import (
     MAE,
     MSE,
@@ -26,7 +28,9 @@ from autocast.metrics import (
     NRMSE,
     RMSE,
     VMSE,
+    VMSE2,
     VRMSE,
+    VRMSE2,
     LInfinity,
     PowerSpectrumCCRMSE,
     PowerSpectrumCCRMSEHigh,
@@ -67,6 +71,7 @@ from autocast.scripts.execution import (
     resolve_hydra_work_dir,
 )
 from autocast.scripts.setup import (
+    _read_eval_chunk_size,
     setup_autoencoder_components,
     setup_datamodule,
     setup_epd_model,
@@ -75,11 +80,7 @@ from autocast.scripts.setup import (
 from autocast.scripts.training import apply_float32_matmul_precision
 from autocast.scripts.utils import get_default_config_path
 from autocast.types.batch import Batch, EncodedBatch
-from autocast.utils import (
-    plot_spatiotemporal_snapshots,
-    plot_spatiotemporal_snapshots_data_only,
-    plot_spatiotemporal_video,
-)
+from autocast.utils import plot_spatiotemporal_snapshots, plot_spatiotemporal_video
 from autocast.utils.plots import (
     compute_metrics_from_dataloader,
     compute_metrics_per_timestep_from_dataloader,
@@ -96,6 +97,8 @@ AVAILABLE_METRICS = {
     "nrmse": NRMSE,
     "vmse": VMSE,
     "vrmse": VRMSE,
+    "vmse_v2": VMSE2,
+    "vrmse_v2": VRMSE2,
     "linf": LInfinity,
     "psrmse": PowerSpectrumRMSE,
     "psrmse_low": PowerSpectrumRMSELow,
@@ -126,6 +129,7 @@ DEFAULT_EVAL_METRICS = [
     "mae",
     "rmse",
     "vrmse",
+    "vrmse_v2",
     "psrmse",
     "psrmse_low",
     "psrmse_mid",
@@ -139,17 +143,18 @@ DEFAULT_EVAL_METRICS = [
     "crps",
     "fcrps",
     "afcrps",
-    "energy",
     "spread",
     "skill",
     "ssr",
     "winkler",
 ]
 
-MEMORY_INTENSIVE_METRICS = {"variogram"}
+MEMORY_INTENSIVE_METRICS = {"variogram", "energy"}
 
 EVAL_MODES = ("auto", "encode_once", "ambient", "latent")
 DEFAULT_EVAL_MODE = "auto"
+ROLLOUT_MEMBER_RENDER_MODES = ("inline", "separate", "both")
+DEFAULT_ROLLOUT_MEMBER_RENDER_MODE = "inline"
 
 # Resolved eval paths exposed for validation / testing. Each corresponds to
 # exactly one branch in `run_evaluation`'s model-selection / rollout block.
@@ -160,6 +165,10 @@ EVAL_PATH_LATENT_CACHED_WITH_DECODER = "latent_cached_with_decoder"
 # Opt-in dev sense check: metrics in raw latent space. Only reachable when
 # `eval.mode=latent` is paired with `eval.latent_space_metrics=true`.
 EVAL_PATH_LATENT_CACHED_LATENT_ONLY = "latent_cached_latent_only"
+
+LOLA_WRAPPED_ENCODER_TARGET = "autocast.external.lola.wrapped_encoder.WrappedEncoder"
+LOLA_WRAPPED_DECODER_TARGET = "autocast.external.lola.wrapped_decoder.WrappedDecoder"
+THE_WELL_DATAMODULE_TARGET = "autocast.data.datamodule.TheWellDataModule"
 
 
 def _decode_tensor(
@@ -231,14 +240,19 @@ def _build_encode_once_rollout_predict(
     free_running_only: bool,
     n_members: int | None,
     device: Any,
+    compare_to_autoencoded_target: bool = False,
+    rollout_start: int = 0,
 ) -> Callable[[Any], tuple[torch.Tensor, torch.Tensor | None]]:
     """Build a rollout closure that encodes once and compares against raw truth.
 
     Encoder runs once on the raw ``Batch``, the processor rolls out in latent
     space via ``ProcessorModel.rollout`` (keeping teacher-forcing / stride
     semantics identical to native processor training), then the decoder maps
-    each predicted latent back to data space for metrics against denormalized
-    ``batch.output_fields``. Not used for full EPD checkpoints; see
+    each predicted latent back to data space. By default metrics are computed
+    against denormalized ``batch.output_fields``. When
+    ``compare_to_autoencoded_target`` is true, metrics use decoded
+    ``encode(batch.output_fields)`` targets instead, matching LOLA's relative
+    autoencoder-target evaluation. Not used for full EPD checkpoints; see
     ``_resolve_eval_path``.
     """
     underlying = _unwrap_module(model)
@@ -267,8 +281,9 @@ def _build_encode_once_rollout_predict(
         batch: Any,
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
         with torch.no_grad():
+            batch = _crop_rollout_batch_start(batch, rollout_start)
             encoded_batch = encoder_decoder.encoder.encode_batch(batch)
-            preds_latent, _ = processor_wrapper.rollout(
+            preds_latent, trues_latent = processor_wrapper.rollout(
                 encoded_batch,
                 stride=rollout_stride,
                 max_rollout_steps=max_rollout_steps,
@@ -280,12 +295,78 @@ def _build_encode_once_rollout_predict(
                 _decode_to_raw,
                 n_members=n_members if n_members and n_members > 1 else None,
             )
-            trues = underlying.denormalize_tensor(batch.output_fields)
+            if compare_to_autoencoded_target:
+                trues = (
+                    None
+                    if trues_latent is None
+                    else _decode_tensor(trues_latent, _decode_to_raw, n_members=None)
+                )
+            else:
+                trues = underlying.denormalize_tensor(batch.output_fields)
+
+        if trues is None:
+            return preds, None
 
         min_len = min(preds.shape[1], trues.shape[1])
         return preds[:, :min_len], trues[:, :min_len]
 
     return rollout_predict_encode_once
+
+
+def _crop_rollout_batch_start(batch: Any, rollout_start: int) -> Any:
+    """Shift full-trajectory batches to a later rollout initial state.
+
+    ``rollout_start`` follows LOLA's evaluation convention: it is the absolute
+    trajectory timestep of the final conditioning frame. Multi-frame contexts
+    therefore include the preceding ``n_steps_input - 1`` frames.
+    """
+    if rollout_start <= 0:
+        return batch
+
+    start = int(rollout_start)
+    if isinstance(batch, Batch):
+        n_steps_input = int(batch.input_fields.shape[1])
+        trajectory = torch.cat([batch.input_fields, batch.output_fields], dim=1)
+        input_start = max(0, start - n_steps_input + 1)
+        target_start = input_start + n_steps_input
+        if target_start >= trajectory.shape[1]:
+            msg = (
+                f"eval.rollout_start={start} leaves no target frames for a "
+                f"trajectory of length {trajectory.shape[1]} with "
+                f"n_steps_input={n_steps_input}."
+            )
+            raise ValueError(msg)
+        return Batch(
+            input_fields=trajectory[:, input_start:target_start, ...],
+            output_fields=trajectory[:, target_start:, ...],
+            constant_scalars=batch.constant_scalars,
+            constant_fields=batch.constant_fields,
+            boundary_conditions=batch.boundary_conditions,
+        )
+
+    if isinstance(batch, EncodedBatch):
+        n_steps_input = int(batch.encoded_inputs.shape[1])
+        trajectory = torch.cat(
+            [batch.encoded_inputs, batch.encoded_output_fields],
+            dim=1,
+        )
+        input_start = max(0, start - n_steps_input + 1)
+        target_start = input_start + n_steps_input
+        if target_start >= trajectory.shape[1]:
+            msg = (
+                f"eval.rollout_start={start} leaves no target frames for an "
+                f"encoded trajectory of length {trajectory.shape[1]} with "
+                f"n_steps_input={n_steps_input}."
+            )
+            raise ValueError(msg)
+        return EncodedBatch(
+            encoded_inputs=trajectory[:, input_start:target_start, ...],
+            encoded_output_fields=trajectory[:, target_start:, ...],
+            global_cond=batch.global_cond,
+            encoded_info=batch.encoded_info,
+        )
+
+    return batch
 
 
 def _resolve_csv_path(eval_cfg: DictConfig, work_dir: Path) -> Path:
@@ -404,49 +485,6 @@ def _resolve_rollout_channel_names(dataset: Any) -> list[str] | None:
             return None
 
     return channel_names
-
-
-_DATASET_SHORT_LABELS: tuple[tuple[str, str], ...] = (
-    # Order matters: longer/more-specific keys first.
-    ("advection_diffusion_multichannel", "ADM"),
-    ("advection_diffusion", "AD"),
-    ("conditioned_navier_stokes", "CNS"),
-    ("gray_scott", "GS"),
-    ("gpe", "GPE"),
-    ("reaction_diffusion", "RD"),
-    ("shallow_water2d", "SW"),
-    ("lattice_boltzmann", "LB"),
-)
-
-
-def _resolve_dataset_short_label(dataset: Any) -> str | None:
-    """Best-effort short label (e.g. ``AD``, ``CNS``, ``GS``, ``GPE``) for a dataset."""
-    if dataset is None:
-        return None
-
-    candidates: list[str] = []
-    for attr_chain in (
-        ("well_dataset", "dataset_name"),
-        ("well_dataset", "well_dataset_name"),
-        ("well_metadata", "dataset_name"),
-        ("dataset_name",),
-        ("well_dataset_name",),
-    ):
-        obj: Any = dataset
-        for attr in attr_chain:
-            obj = getattr(obj, attr, None)
-            if obj is None:
-                break
-        if isinstance(obj, str) and obj:
-            candidates.append(obj)
-
-    for raw in candidates:
-        normalized = raw.lower()
-        for key, label in _DATASET_SHORT_LABELS:
-            if key in normalized:
-                return label
-
-    return None
 
 
 def _process_metrics_results(
@@ -638,6 +676,7 @@ def _save_rollout_snapshot_panels(
     trues_mean: torch.Tensor,
     preds_mean: torch.Tensor,
     preds_uq: torch.Tensor | None,
+    extra_preds: Sequence[tuple[torch.Tensor, str]] | None,
     local_idx: int,
     target_idx: int,
     snapshot_dir: Path,
@@ -647,14 +686,15 @@ def _save_rollout_snapshot_panels(
     saved_paths: list[Path],
     names_for_plot: list[str] | None,
     preserve_aspect: bool,
-    dataset_short_label: str | None = None,
+    transpose_spatial: bool,
+    filename_suffix: str = "",
+    title: str = "Rollout snapshots",
+    pred_label: str = "Prediction",
 ) -> None:
-    # Always emit PDF alongside the configured raster format.
-    extra_formats = ["pdf"] if snapshot_ext.lower() != "pdf" else []
     for channel_idx in snapshot_channels:
         snapshot_filename = snapshot_dir / (
             f"batch_{target_idx}_sample_{local_idx}_"
-            f"channel_{channel_idx}_snapshots.{snapshot_ext}"
+            f"channel_{channel_idx}{filename_suffix}_snapshots.{snapshot_ext}"
         )
         plot_spatiotemporal_snapshots(
             true=trues_mean[local_idx : local_idx + 1].cpu(),
@@ -665,42 +705,28 @@ def _save_rollout_snapshot_panels(
                 else None
             ),
             timesteps=snapshot_timesteps,
+            extra_preds=(
+                [
+                    (extra_pred[local_idx : local_idx + 1].cpu(), label)
+                    for extra_pred, label in extra_preds
+                ]
+                if extra_preds
+                else None
+            ),
             channel=channel_idx,
             batch_idx=0,
             save_path=str(snapshot_filename),
-            extra_formats=extra_formats,
-            title="Rollout snapshots",
+            title=title,
+            pred_label=pred_label,
             channel_names=names_for_plot,
             preserve_aspect=preserve_aspect,
+            transpose_spatial=transpose_spatial,
         )
         saved_paths.append(snapshot_filename)
-        for ext in extra_formats:
-            saved_paths.append(snapshot_filename.with_suffix(f".{ext}"))
         log.info("Saved rollout snapshot panel to %s", snapshot_filename)
 
-        data_only_base = snapshot_dir / (
-            f"batch_{target_idx}_sample_{local_idx}_"
-            f"channel_{channel_idx}_snapshots_data"
-        )
-        data_only_filename = data_only_base.with_suffix(f".{snapshot_ext}")
-        data_only_extra_formats = ["pdf"] if snapshot_ext.lower() != "pdf" else []
-        plot_spatiotemporal_snapshots_data_only(
-            true=trues_mean[local_idx : local_idx + 1].cpu(),
-            timesteps=snapshot_timesteps,
-            channel=channel_idx,
-            batch_idx=0,
-            save_path=str(data_only_filename),
-            extra_formats=data_only_extra_formats,
-            ylabel=dataset_short_label,
-            preserve_aspect=preserve_aspect,
-        )
-        saved_paths.append(data_only_filename)
-        for ext in data_only_extra_formats:
-            saved_paths.append(data_only_base.with_suffix(f".{ext}"))
-        log.info("Saved data-only rollout snapshot panel to %s", data_only_filename)
 
-
-def _render_rollouts(  # noqa: PLR0912
+def _render_rollouts(  # noqa: PLR0912, PLR0915
     model: (
         EncoderProcessorDecoder
         | EncoderProcessorDecoderEnsemble
@@ -719,12 +745,16 @@ def _render_rollouts(  # noqa: PLR0912
     n_members: int | None = None,
     channel_names: list[str] | None = None,
     preserve_aspect: bool = False,
+    transpose_spatial: bool = False,
     decode_fn: Callable | None = None,
+    rollout_predict_fn: Callable[[Any], tuple[torch.Tensor, torch.Tensor | None]]
+    | None = None,
     snapshot_timesteps: Sequence[int] | None = None,
     snapshot_dir: Path | None = None,
     snapshot_format: str = "png",
     snapshot_channels: Sequence[int] | None = None,
-    dataset_short_label: str | None = None,
+    member_indices: Sequence[int] | None = None,
+    member_render_mode: str = DEFAULT_ROLLOUT_MEMBER_RENDER_MODE,
 ) -> list[Path]:
     # Return early if no rollout indices are requested
     if not batch_indices:
@@ -739,6 +769,9 @@ def _render_rollouts(  # noqa: PLR0912
     global_sample_offset = 0
     video_dir.mkdir(parents=True, exist_ok=True)
     snapshot_ext = snapshot_format.removeprefix(".") or "png"
+    member_render_mode = _normalize_rollout_member_render_mode(member_render_mode)
+    include_members_inline = member_render_mode in ("inline", "both")
+    include_member_files = member_render_mode in ("separate", "both")
 
     # Perform rollouts and save videos for requested target indices.
     with torch.no_grad():
@@ -746,13 +779,16 @@ def _render_rollouts(  # noqa: PLR0912
             if rendered_targets == targets:
                 break
 
-            preds, trues = model.rollout(
-                batch,
-                stride=stride,
-                max_rollout_steps=max_rollout_steps,
-                free_running_only=free_running_only,
-                n_members=n_members if n_members and n_members > 1 else None,
-            )
+            if rollout_predict_fn is None:
+                preds, trues = model.rollout(
+                    batch,
+                    stride=stride,
+                    max_rollout_steps=max_rollout_steps,
+                    free_running_only=free_running_only,
+                    n_members=n_members if n_members and n_members > 1 else None,
+                )
+            else:
+                preds, trues = rollout_predict_fn(batch)
             if decode_fn is not None:
                 with torch.no_grad():
                     preds = _decode_tensor(
@@ -776,14 +812,21 @@ def _render_rollouts(  # noqa: PLR0912
 
             # Reduce ensemble dimension for plotting if present.
             # When n_members > 1, the rollout output has shape (B, T, ..., C, M).
+            extra_preds: list[tuple[torch.Tensor, str]] = []
             if n_members is not None and n_members > 1:
                 preds_mean = preds.mean(dim=-1)
                 preds_uq = preds.std(dim=-1)
                 trues_mean = trues
+                pred_label = "Ensemble Mean"
+                for member_index in member_indices or []:
+                    extra_preds.append(
+                        (preds[..., int(member_index)], f"Member {member_index}")
+                    )
             else:
                 preds_mean = preds
                 trues_mean = trues
                 preds_uq = None
+                pred_label = "Prediction"
 
             names_for_plot = channel_names
             n_channels = int(trues_mean.shape[-1])
@@ -822,6 +865,7 @@ def _render_rollouts(  # noqa: PLR0912
                     continue
 
                 filename = video_dir / f"batch_{target_idx}_sample_{local_idx}.{fmt}"
+                inline_extra_preds = extra_preds if include_members_inline else []
 
                 # Plot one sample at a time for deterministic target-to-file mapping.
                 plot_spatiotemporal_video(
@@ -832,16 +876,26 @@ def _render_rollouts(  # noqa: PLR0912
                         if preds_uq is not None
                         else None
                     ),
+                    extra_preds=(
+                        [
+                            (extra_pred[local_idx : local_idx + 1].cpu(), label)
+                            for extra_pred, label in inline_extra_preds
+                        ]
+                        if inline_extra_preds
+                        else None
+                    ),
                     batch_idx=0,
                     fps=fps,
                     save_path=str(filename),
+                    title="Rollout",
+                    pred_label=pred_label,
                     colorbar_mode="column",
-                    pred_uq_label="Std Dev",
+                    pred_uq_label="Ensemble Std Dev",
                     channel_names=names_for_plot,
                     preserve_aspect=preserve_aspect,
+                    transpose_spatial=transpose_spatial,
                 )
                 saved_paths.append(filename)
-                rendered_targets.add(target_idx)
                 log.info("Saved rollout visualization to %s", filename)
 
                 if snapshot_dir_for_batch is not None:
@@ -849,6 +903,7 @@ def _render_rollouts(  # noqa: PLR0912
                         trues_mean=trues_mean,
                         preds_mean=preds_mean,
                         preds_uq=preds_uq,
+                        extra_preds=inline_extra_preds,
                         local_idx=local_idx,
                         target_idx=target_idx,
                         snapshot_dir=snapshot_dir_for_batch,
@@ -858,8 +913,65 @@ def _render_rollouts(  # noqa: PLR0912
                         saved_paths=saved_paths,
                         names_for_plot=names_for_plot,
                         preserve_aspect=preserve_aspect,
-                        dataset_short_label=dataset_short_label,
+                        transpose_spatial=transpose_spatial,
+                        title="Rollout snapshots",
+                        pred_label=pred_label,
                     )
+
+                if include_member_files:
+                    for member_pred, member_label in extra_preds:
+                        member_suffix = f"_{member_label.lower().replace(' ', '_')}"
+                        member_filename = video_dir / (
+                            f"batch_{target_idx}_sample_{local_idx}"
+                            f"{member_suffix}.{fmt}"
+                        )
+                        plot_spatiotemporal_video(
+                            true=trues_mean[local_idx : local_idx + 1].cpu(),
+                            pred=member_pred[local_idx : local_idx + 1].cpu(),
+                            pred_uq=(
+                                preds_uq[local_idx : local_idx + 1].cpu()
+                                if preds_uq is not None
+                                else None
+                            ),
+                            batch_idx=0,
+                            fps=fps,
+                            save_path=str(member_filename),
+                            title=f"Rollout {member_label}",
+                            pred_label=member_label,
+                            colorbar_mode="column",
+                            pred_uq_label="Ensemble Std Dev",
+                            channel_names=names_for_plot,
+                            preserve_aspect=preserve_aspect,
+                            transpose_spatial=transpose_spatial,
+                        )
+                        saved_paths.append(member_filename)
+                        log.info(
+                            "Saved rollout member visualization to %s",
+                            member_filename,
+                        )
+
+                        if snapshot_dir_for_batch is not None:
+                            _save_rollout_snapshot_panels(
+                                trues_mean=trues_mean,
+                                preds_mean=member_pred,
+                                preds_uq=preds_uq,
+                                extra_preds=None,
+                                local_idx=local_idx,
+                                target_idx=target_idx,
+                                snapshot_dir=snapshot_dir_for_batch,
+                                snapshot_timesteps=snapshot_timesteps_for_batch,
+                                snapshot_channels=snapshot_channels_for_batch,
+                                snapshot_ext=snapshot_ext,
+                                saved_paths=saved_paths,
+                                names_for_plot=names_for_plot,
+                                preserve_aspect=preserve_aspect,
+                                transpose_spatial=transpose_spatial,
+                                filename_suffix=member_suffix,
+                                title=f"Rollout {member_label} snapshots",
+                                pred_label=member_label,
+                            )
+
+                rendered_targets.add(target_idx)
 
             global_sample_offset += batch_size
 
@@ -907,6 +1019,9 @@ def _normalize_row_values_for_csv(row: Mapping[str, Any]) -> dict[str, Any]:
 
 def _build_per_timestep_metric_factory(
     metric_cls: type[Metric],
+    *,
+    ensemble_member_index: int | None = None,
+    ensemble_member_average: bool = False,
 ) -> Callable[[], Metric]:
     """Build a metric factory configured for per-timestep outputs.
 
@@ -914,22 +1029,192 @@ def _build_per_timestep_metric_factory(
     constructor args. We first try ``reduce_all=False`` and then fall back to
     setting ``metric.reduce_all`` directly when available.
     """
+    if ensemble_member_average:
+        return _build_member_average_metric_factory(metric_cls, reduce_all=False)
+    return _build_metric_factory(
+        metric_cls,
+        reduce_all=False,
+        ensemble_member_index=ensemble_member_index,
+    )
+
+
+class EnsembleMemberAverageMetric(Metric):
+    """Score each ensemble member independently and average the metric state."""
+
+    def __init__(self, metric_factory: Callable[[], Metric]) -> None:
+        super().__init__()
+        self.metric = metric_factory()
+
+    def update(self, y_pred: torch.Tensor, y_true: torch.Tensor) -> None:
+        if y_pred.ndim == y_true.ndim + 1 and y_pred.shape[:-1] == y_true.shape:
+            for member_index in range(y_pred.shape[-1]):
+                self.metric.update(y_pred[..., member_index], y_true)
+            return
+        self.metric.update(y_pred, y_true)
+
+    def compute(self) -> torch.Tensor:
+        return self.metric.compute()
+
+    def reset(self) -> None:
+        super().reset()
+        self.metric.reset()
+
+
+def _build_metric_factory(
+    metric_cls: type[Metric],
+    *,
+    reduce_all: bool | None = None,
+    ensemble_member_index: int | None = None,
+) -> Callable[[], Metric]:
+    """Build a metric factory with optional single-member ensemble scoring."""
 
     def _factory(cls: type[Metric] = metric_cls) -> Metric:
-        try:
-            return cls(reduce_all=False)
-        except TypeError:
+        if reduce_all is None:
             metric = cls()
-            if hasattr(metric, "reduce_all"):
-                metric.reduce_all = False
-            return metric
+        else:
+            try:
+                metric = cls(reduce_all=reduce_all)
+            except TypeError:
+                metric = cls()
+                if hasattr(metric, "reduce_all"):
+                    metric.reduce_all = reduce_all
+
+        if ensemble_member_index is not None:
+            member_index = int(ensemble_member_index)
+
+            def _select_member(_self, y_pred: torch.Tensor) -> torch.Tensor:
+                if not 0 <= member_index < y_pred.shape[-1]:
+                    msg = (
+                        f"Configured ensemble member index {member_index} is outside "
+                        f"the prediction ensemble axis of size {y_pred.shape[-1]}."
+                    )
+                    raise IndexError(msg)
+                return y_pred[..., member_index]
+
+            metric._ensemble_aggregation = MethodType(  # type: ignore[attr-defined]
+                _select_member,
+                metric,
+            )
+        return metric
 
     return _factory
 
 
-def _should_skip_metric(name: str) -> bool:
+def _build_member_average_metric_factory(
+    metric_cls: type[Metric],
+    *,
+    reduce_all: bool | None = None,
+) -> Callable[[], Metric]:
+    """Build a factory that averages deterministic metric scores over members."""
+
+    def _factory(cls: type[Metric] = metric_cls) -> Metric:
+        base_factory = _build_metric_factory(cls, reduce_all=reduce_all)
+        return EnsembleMemberAverageMetric(base_factory)
+
+    return _factory
+
+
+def _deterministic_member_metric_name(name: str, member_index: int) -> str:
+    return f"{name}_member_{member_index}"
+
+
+def _deterministic_member_average_metric_name(name: str) -> str:
+    return f"{name}_member_avg"
+
+
+def _parse_deterministic_member_metric_name(name: str) -> tuple[str, int] | None:
+    base_name, separator, raw_index = name.rpartition("_member_")
+    if not separator or base_name not in AVAILABLE_METRICS:
+        return None
+    try:
+        member_index = int(raw_index)
+    except ValueError:
+        return None
+    return base_name, member_index
+
+
+def _parse_deterministic_member_average_metric_name(name: str) -> str | None:
+    suffix = "_member_avg"
+    if not name.endswith(suffix):
+        return None
+    base_name = name[: -len(suffix)]
+    if base_name not in AVAILABLE_METRICS:
+        return None
+    return base_name
+
+
+def _normalize_ensemble_member_indices(
+    indices: int | Sequence[int] | None,
+    *,
+    n_members: int | None,
+    field_name: str,
+) -> list[int]:
+    """Validate and de-duplicate configured ensemble member indices."""
+    if indices is None:
+        return []
+
+    if isinstance(indices, bool):
+        raw_indices: list[Any] = [indices]
+    elif isinstance(indices, int):
+        raw_indices = [indices]
+    else:
+        try:
+            raw_indices = list(indices)
+        except TypeError as exc:
+            msg = (
+                f"{field_name} must be null, an integer, or a sequence of integers; "
+                f"got {indices!r}."
+            )
+            raise TypeError(msg) from exc
+
+    if not raw_indices:
+        return []
+
+    if n_members is None or n_members <= 1:
+        msg = f"{field_name} requires eval/model n_members > 1."
+        raise ValueError(msg)
+
+    selected: list[int] = []
+    seen: set[int] = set()
+    invalid: list[Any] = []
+    for raw_index in raw_indices:
+        if isinstance(raw_index, bool) or not isinstance(raw_index, int):
+            invalid.append(raw_index)
+            continue
+        if not 0 <= raw_index < n_members:
+            invalid.append(raw_index)
+            continue
+        if raw_index not in seen:
+            selected.append(raw_index)
+            seen.add(raw_index)
+
+    if invalid:
+        msg = (
+            f"{field_name} entries must be integer ensemble indices in "
+            f"[0, {n_members - 1}], got invalid values {invalid}."
+        )
+        raise ValueError(msg)
+
+    return selected
+
+
+def _normalize_rollout_member_render_mode(value: str | None) -> str:
+    """Normalize how requested rollout member diagnostics are rendered."""
+    if value is None:
+        return DEFAULT_ROLLOUT_MEMBER_RENDER_MODE
+    normalized = str(value).strip().lower()
+    if normalized not in ROLLOUT_MEMBER_RENDER_MODES:
+        msg = (
+            "eval.rollout_member_render_mode must be one of "
+            f"{ROLLOUT_MEMBER_RENDER_MODES}, got {value!r}."
+        )
+        raise ValueError(msg)
+    return normalized
+
+
+def _should_skip_metric(name: str, *, skip_memory_intensive: bool = True) -> bool:
     """Return True when a metric should be excluded due to memory cost."""
-    return name in MEMORY_INTENSIVE_METRICS
+    return skip_memory_intensive and name in MEMORY_INTENSIVE_METRICS
 
 
 def _normalize_per_batch_rows(rows: Any) -> list[dict[str, float | str]]:
@@ -1390,6 +1675,259 @@ def _load_autoencoder_config_from_cache(cache_dir: Path) -> DictConfig | None:
         return None
 
 
+def _load_autoencoder_config_from_datamodule(cfg: DictConfig) -> DictConfig | None:
+    """Load standard cached-latent autoencoder metadata from cfg.datamodule."""
+    data_path = cfg.get("datamodule", {}).get("data_path")
+    if not data_path:
+        return None
+    return _load_autoencoder_config_from_cache(Path(str(data_path)).expanduser())
+
+
+def _lola_autoencoder_run_candidates(cache_dir: Path) -> list[Path]:
+    """Return nearby directories that may hold a LoLA autoencoder run.
+
+    Rayleigh-Benard cached-latent runs are laid out as
+    ``<ae_run>/cache/<dataset>`` with ``config.yaml`` and ``state.pth`` in
+    ``<ae_run>`` instead of an ``autoencoder_config.yaml`` beside the cache.
+    Keep the search deliberately local so unrelated parent directories are
+    not treated as model runs.
+    """
+    candidates = [cache_dir, *list(cache_dir.parents)[:4]]
+    unique: list[Path] = []
+    seen: set[Path] = set()
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        unique.append(candidate)
+    return unique
+
+
+def _load_lola_autoencoder_config_from_cache(
+    cache_dir: Path,
+) -> tuple[DictConfig, Path] | None:
+    """Load a LoLA autoencoder config near a cached-latent directory."""
+    for run_dir in _lola_autoencoder_run_candidates(cache_dir):
+        config_path = run_dir / "config.yaml"
+        state_path = run_dir / "state.pth"
+        if not config_path.exists() or not state_path.exists():
+            continue
+        try:
+            loaded = OmegaConf.load(config_path)
+        except Exception as exc:
+            log.warning(
+                "Could not load LoLA autoencoder config from %s: %s",
+                config_path,
+                exc,
+            )
+            continue
+        if isinstance(loaded, DictConfig) and loaded.get("ae") is not None:
+            return loaded, run_dir
+        log.debug(
+            "Ignoring %s because it does not look like a LoLA AE config.", config_path
+        )
+    return None
+
+
+def _load_lola_autoencoder_config_from_datamodule(
+    cfg: DictConfig,
+) -> tuple[DictConfig, Path] | None:
+    """Load a LoLA autoencoder config using ``cfg.datamodule.data_path``."""
+    data_path = cfg.get("datamodule", {}).get("data_path")
+    if not data_path:
+        return None
+    return _load_lola_autoencoder_config_from_cache(Path(str(data_path)).expanduser())
+
+
+def _lola_autoencoder_kwargs(ae_cfg: DictConfig, run_dir: Path) -> dict[str, Any]:
+    """Return LoLA AE kwargs in the format accepted by the wrapped modules."""
+    ae_node = ae_cfg.get("ae")
+    ae_kwargs_raw = OmegaConf.to_container(ae_node, resolve=True)
+    if not isinstance(ae_kwargs_raw, dict):
+        msg = f"Expected mapping under 'ae' in {run_dir / 'config.yaml'}."
+        raise TypeError(msg)
+    ae_kwargs: dict[str, Any] = {
+        str(key): value for key, value in ae_kwargs_raw.items()
+    }
+    if isinstance(ae_node, DictConfig) and "loss" in ae_node:
+        # Keep the historical DictConfig value accepted by LoLA helpers.
+        ae_kwargs["loss"] = ae_node.loss
+    return ae_kwargs
+
+
+def _lola_autoencoder_stats(
+    ae_cfg: DictConfig,
+    run_dir: Path,
+) -> tuple[Any, Any]:
+    """Return LoLA dataset mean/std from the autoencoder run config."""
+    stats = ae_cfg.get("dataset", {}).get("stats", {})
+    mean = stats.get("mean")
+    std = stats.get("std")
+    if mean is None or std is None:
+        msg = (
+            f"LoLA autoencoder config at {run_dir / 'config.yaml'} is missing "
+            "dataset.stats.mean/std."
+        )
+        raise ValueError(msg)
+    return mean, std
+
+
+def _build_lola_autoencoder_config_nodes(
+    ae_cfg: DictConfig,
+    run_dir: Path,
+    chunk_size: int | None = None,
+) -> tuple[DictConfig, DictConfig]:
+    """Build Hydra config nodes for the LoLA encoder/decoder wrappers."""
+    mean, std = _lola_autoencoder_stats(ae_cfg, run_dir)
+    augmentations_raw = ae_cfg.get("dataset", {}).get("augment", [])
+    if isinstance(augmentations_raw, str):
+        augmentations = {augmentations_raw}
+    else:
+        augmentations = {str(item) for item in augmentations_raw or []}
+    log_scalars = "log_scalars" in augmentations
+    base_kwargs: dict[str, Any] = {
+        **_lola_autoencoder_kwargs(ae_cfg, run_dir),
+        "device": "cpu",
+        "runpath": str(run_dir),
+        "mean": mean,
+        "std": std,
+    }
+    if chunk_size is not None:
+        base_kwargs["chunk_size"] = int(chunk_size)
+    encoder_cfg = OmegaConf.create(
+        {
+            "_target_": LOLA_WRAPPED_ENCODER_TARGET,
+            **base_kwargs,
+            "log_scalars": log_scalars,
+        }
+    )
+    decoder_cfg = OmegaConf.create(
+        {
+            "_target_": LOLA_WRAPPED_DECODER_TARGET,
+            **base_kwargs,
+        }
+    )
+    return encoder_cfg, decoder_cfg
+
+
+def _positive_int(value: Any, default: int) -> int:
+    if isinstance(value, bool):
+        return default
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
+
+
+def _infer_lola_well_base_path(ae_cfg: DictConfig, run_dir: Path) -> str:
+    dataset_name = str(ae_cfg.get("dataset", {}).get("name") or "")
+    if dataset_name and run_dir.parent.name == dataset_name:
+        return str(run_dir.parent.parent)
+    return "${oc.env:AUTOCAST_DATASETS,./datasets}"
+
+
+def _lola_stats_path(ae_cfg: DictConfig, run_dir: Path) -> str:
+    dataset_name = str(ae_cfg.get("dataset", {}).get("name") or "")
+    candidate = run_dir.parent / "stats.yaml"
+    if candidate.exists():
+        return str(candidate)
+    if dataset_name:
+        return f"${{oc.env:AUTOCAST_DATASETS,./datasets}}/{dataset_name}/stats.yaml"
+    return "${oc.env:AUTOCAST_DATASETS,./datasets}/stats.yaml"
+
+
+def _build_lola_raw_datamodule_config(
+    ae_cfg: DictConfig,
+    run_dir: Path,
+    original_datamodule: Mapping[str, Any],
+) -> DictConfig:
+    """Build an unnormalized raw TheWell datamodule for LoLA encode-once eval."""
+    dataset_cfg = ae_cfg.get("dataset", {})
+    dataset_name = dataset_cfg.get("name")
+    if not dataset_name:
+        msg = (
+            f"LoLA autoencoder config at {run_dir / 'config.yaml'} has no dataset.name."
+        )
+        raise ValueError(msg)
+
+    stride = _positive_int(original_datamodule.get("stride"), 1)
+    datamodule_cfg: dict[str, Any] = {
+        "_target_": THE_WELL_DATAMODULE_TARGET,
+        "well_dataset_name": str(dataset_name),
+        "well_base_path": _infer_lola_well_base_path(ae_cfg, run_dir),
+        "n_steps_input": _positive_int(original_datamodule.get("n_steps_input"), 1),
+        "n_steps_output": _positive_int(original_datamodule.get("n_steps_output"), 1),
+        "min_dt_stride": stride,
+        "max_dt_stride": stride,
+        "batch_size": _positive_int(original_datamodule.get("batch_size"), 1),
+        "num_workers": _positive_int(original_datamodule.get("num_workers"), 0),
+        "use_normalization": False,
+        "normalization_path": _lola_stats_path(ae_cfg, run_dir),
+        "autoencoder_mode": False,
+        "max_rollout_steps": _positive_int(
+            original_datamodule.get("max_rollout_steps"), 100
+        ),
+        "flatten_tensors": True,
+        "cache_small": True,
+        "max_cache_size": 1.0e9,
+        "return_grid": True,
+        "boundary_return_type": "padding",
+    }
+    for key in ("include_filters", "exclude_filters"):
+        value = dataset_cfg.get(key)
+        if value is not None:
+            datamodule_cfg[key] = list(value)
+
+    return OmegaConf.create(datamodule_cfg)
+
+
+def _inject_lola_autoencoder_components(
+    cfg: DictConfig,
+    ae_cfg: DictConfig,
+    run_dir: Path,
+) -> DictConfig:
+    """Backfill model.encoder/decoder with LoLA wrappers when absent."""
+    encoder_cfg, decoder_cfg = _build_lola_autoencoder_config_nodes(
+        ae_cfg,
+        run_dir,
+        chunk_size=_read_eval_chunk_size(cfg),
+    )
+    with open_dict(cfg):
+        if cfg.get("model") is None:
+            cfg.model = OmegaConf.create({})
+    model_cfg = cfg.get("model")
+    if not isinstance(model_cfg, DictConfig):
+        return cfg
+    with open_dict(model_cfg):
+        if model_cfg.get("encoder") is None:
+            model_cfg["encoder"] = encoder_cfg
+        if model_cfg.get("decoder") is None:
+            model_cfg["decoder"] = decoder_cfg
+    return cfg
+
+
+def _has_autoencoder_components(cfg: DictConfig) -> bool:
+    model_cfg = cfg.get("model", {})
+    return model_cfg.get("encoder") is not None and model_cfg.get("decoder") is not None
+
+
+def _has_lola_autoencoder_components(cfg: DictConfig) -> bool:
+    model_cfg = cfg.get("model", {})
+    encoder_cfg = model_cfg.get("encoder")
+    decoder_cfg = model_cfg.get("decoder")
+    encoder_target = (
+        encoder_cfg.get("_target_") if hasattr(encoder_cfg, "get") else None
+    )
+    decoder_target = (
+        decoder_cfg.get("_target_") if hasattr(decoder_cfg, "get") else None
+    )
+    return (
+        str(encoder_target) == LOLA_WRAPPED_ENCODER_TARGET
+        and str(decoder_target) == LOLA_WRAPPED_DECODER_TARGET
+    )
+
+
 def _load_autoencoder_run_config_from_checkpoint(
     autoencoder_checkpoint: Any,
 ) -> DictConfig | None:
@@ -1496,6 +2034,7 @@ def _resolve_auto_eval_mode(
     processor_only: bool,
     example_batch: Any,
     has_autoencoder_checkpoint: bool,
+    has_autoencoder_components: bool = False,
 ) -> str:
     """Map ``eval.mode=auto`` to a concrete mode for the current run.
 
@@ -1509,7 +2048,9 @@ def _resolve_auto_eval_mode(
     """
     if not processor_only:
         return "ambient"
-    if has_autoencoder_checkpoint and isinstance(example_batch, (Batch, EncodedBatch)):
+    if (has_autoencoder_checkpoint or has_autoencoder_components) and isinstance(
+        example_batch, (Batch, EncodedBatch)
+    ):
         return "encode_once"
     return "latent"
 
@@ -1544,17 +2085,38 @@ def _maybe_swap_to_ambient_datamodule(
         )
         raise ValueError(msg)
 
-    ae_cfg = _load_autoencoder_config_from_cache(Path(data_path))
-    if ae_cfg is None:
-        msg = (
-            f"eval.mode={eval_mode} requested but the cached-latents directory "
-            f"{data_path} has no 'autoencoder_config.yaml'. Either regenerate "
-            "the cache with a recent `autocast cache-latents` (which saves the "
-            "autoencoder config), or pass datamodule=<raw> explicitly."
-        )
-        raise FileNotFoundError(msg)
-
     original_datamodule = cfg.get("datamodule", {})
+    cache_dir = Path(str(data_path)).expanduser()
+    ae_cfg = _load_autoencoder_config_from_cache(cache_dir)
+    if ae_cfg is None:
+        lola_loaded = _load_lola_autoencoder_config_from_cache(cache_dir)
+        if lola_loaded is None:
+            msg = (
+                f"eval.mode={eval_mode} requested but the cached-latents directory "
+                f"{data_path} has no 'autoencoder_config.yaml' and no nearby LoLA "
+                "autoencoder config.yaml/state.pth. Either regenerate the cache "
+                "with a recent `autocast cache-latents` (which saves the "
+                "autoencoder config), or pass datamodule=<raw> explicitly."
+            )
+            raise FileNotFoundError(msg)
+        lola_cfg, run_dir = lola_loaded
+        swapped_datamodule = _build_lola_raw_datamodule_config(
+            lola_cfg,
+            run_dir,
+            original_datamodule,
+        )
+        cfg = _inject_lola_autoencoder_components(cfg, lola_cfg, run_dir)
+        with open_dict(cfg):
+            cfg.datamodule = swapped_datamodule
+        log.info(
+            "eval.mode=%s: substituting cached_latents datamodule with an "
+            "unnormalized raw TheWell datamodule inferred from LoLA autoencoder "
+            "run %s. LoLA mean/std remain in the wrapped encoder/decoder.",
+            eval_mode,
+            run_dir,
+        )
+        return cfg
+
     ae_datamodule = ae_cfg.get("datamodule")
     if ae_datamodule is None:
         msg = (
@@ -1569,10 +2131,16 @@ def _maybe_swap_to_ambient_datamodule(
     # matching processor training (n_steps_input / n_steps_output), otherwise
     # metric shapes become incompatible.
     swapped_datamodule = OmegaConf.create(ae_datamodule)
+    if not isinstance(swapped_datamodule, DictConfig):
+        msg = (
+            f"autoencoder_config.yaml at {data_path} contains a non-mapping "
+            "'datamodule' section; cannot auto-wire eval datamodule swap."
+        )
+        raise TypeError(msg)
     with open_dict(swapped_datamodule):
         OmegaConf.update(swapped_datamodule, "autoencoder_mode", False, merge=True)
         OmegaConf.update(swapped_datamodule, "full_trajectory_mode", False, merge=True)
-        for step_key in ("n_steps_input", "n_steps_output", "stride"):
+        for step_key in ("n_steps_input", "n_steps_output"):
             step_value = (
                 original_datamodule.get(step_key)
                 if isinstance(original_datamodule, Mapping)
@@ -1580,6 +2148,24 @@ def _maybe_swap_to_ambient_datamodule(
             )
             if isinstance(step_value, int) and step_value > 0:
                 OmegaConf.update(swapped_datamodule, step_key, step_value, merge=True)
+        stride_value = (
+            original_datamodule.get("stride")
+            if isinstance(original_datamodule, Mapping)
+            else None
+        )
+        if isinstance(stride_value, int) and stride_value > 0:
+            target = str(OmegaConf.select(swapped_datamodule, "_target_") or "")
+            if target.endswith("TheWellDataModule"):
+                OmegaConf.update(
+                    swapped_datamodule, "min_dt_stride", stride_value, merge=True
+                )
+                OmegaConf.update(
+                    swapped_datamodule, "max_dt_stride", stride_value, merge=True
+                )
+                if "stride" in swapped_datamodule:
+                    del swapped_datamodule["stride"]
+            else:
+                OmegaConf.update(swapped_datamodule, "stride", stride_value, merge=True)
 
     log.info(
         "eval.mode=%s: substituting cached_latents datamodule with the "
@@ -1599,6 +2185,7 @@ def _resolve_eval_path(
     processor_only: bool,
     example_batch: Any,
     has_autoencoder_checkpoint: bool,
+    has_autoencoder_components: bool = False,
     decode_fn_loaded: bool,
 ) -> str:
     """Map the (eval.mode, checkpoint, datamodule) combination to a code path.
@@ -1612,7 +2199,9 @@ def _resolve_eval_path(
     """
     if not processor_only:
         return EVAL_PATH_AMBIENT_EPD
-    if isinstance(example_batch, Batch) and has_autoencoder_checkpoint:
+    if isinstance(example_batch, Batch) and (
+        has_autoencoder_checkpoint or has_autoencoder_components
+    ):
         if eval_mode == "encode_once":
             return EVAL_PATH_ENCODE_ONCE
         return EVAL_PATH_AMBIENT_EPD
@@ -1628,7 +2217,8 @@ def _validate_resolved_eval_path(*, eval_mode: str, resolved_path: str) -> None:
             "eval.mode=ambient but the resolved eval path is "
             f"{resolved_path!r}. Ambient eval requires a full EPD checkpoint, "
             "OR a processor-only checkpoint combined with "
-            "autoencoder_checkpoint=<ae.ckpt> AND a raw-Batch datamodule. "
+            "autoencoder_checkpoint=<ae.ckpt> or LoLA encoder/decoder config "
+            "AND a raw-Batch datamodule. "
             "Double-check eval.checkpoint, autoencoder_checkpoint, and "
             "datamodule=."
         )
@@ -1653,7 +2243,8 @@ def _validate_resolved_eval_path(*, eval_mode: str, resolved_path: str) -> None:
             f"eval.mode=encode_once but the resolved eval path is "
             f"{resolved_path!r}. encode_once needs both encoder and decoder "
             "to score decoded rollouts against raw ground truth. Pass "
-            "autoencoder_checkpoint=<ae.ckpt> or switch to eval.mode=latent."
+            "autoencoder_checkpoint=<ae.ckpt>, use a cached LoLA autoencoder "
+            "run, or switch to eval.mode=latent."
         )
         raise ValueError(msg)
 
@@ -1718,9 +2309,11 @@ def _try_build_decode_fn(
     if not data_path:
         return None, None
 
-    ae_cfg = _load_autoencoder_config_from_cache(Path(data_path))
+    cache_dir = Path(str(data_path)).expanduser()
+    chunk_size = _read_eval_chunk_size(cfg)
+    ae_cfg = _load_autoencoder_config_from_cache(cache_dir)
     if ae_cfg is None:
-        return None, None
+        return _try_build_lola_decode_fn(cache_dir, chunk_size=chunk_size)
 
     try:
         _, decoder = setup_autoencoder_components(ae_cfg, {})
@@ -1773,6 +2366,54 @@ def _try_build_decode_fn(
     except Exception as exc:
         log.warning(
             "Could not build decoder from autoencoder config — "
+            "falling back to latent-space evaluation: %s",
+            exc,
+        )
+        lola_decoder, lola_decode_fn = _try_build_lola_decode_fn(
+            cache_dir, chunk_size=chunk_size
+        )
+        if lola_decode_fn is not None:
+            return lola_decoder, lola_decode_fn
+        return None, None
+
+
+def _try_build_lola_decode_fn(
+    cache_dir: Path,
+    chunk_size: int | None = None,
+) -> "tuple[Any, Any] | tuple[None, None]":
+    """Build a decoder for LoLA cached latents when metadata is absent."""
+    loaded = _load_lola_autoencoder_config_from_cache(cache_dir)
+    if loaded is None:
+        return None, None
+    ae_cfg, run_dir = loaded
+
+    try:
+        ae_kwargs = _lola_autoencoder_kwargs(ae_cfg, run_dir)
+        mean, std = _lola_autoencoder_stats(ae_cfg, run_dir)
+
+        decoder_kwargs: dict[str, Any] = {
+            "device": "cpu",
+            "runpath": run_dir,
+            "mean": torch.as_tensor(mean, dtype=torch.float32),
+            "std": torch.as_tensor(std, dtype=torch.float32),
+            **ae_kwargs,
+        }
+        if chunk_size is not None:
+            decoder_kwargs["chunk_size"] = int(chunk_size)
+        decoder = WrappedDecoder(**decoder_kwargs)
+        decoder.eval()
+        log.info(
+            "Loaded LoLA autoencoder decoder from %s for data-space evaluation.",
+            run_dir,
+        )
+
+        def decode_fn(x):
+            return decoder.decode(x)
+
+        return decoder, decode_fn
+    except Exception as exc:
+        log.warning(
+            "Could not build decoder from LoLA autoencoder config — "
             "falling back to latent-space evaluation: %s",
             exc,
         )
@@ -1858,6 +2499,12 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
 
     # Setup datamodule and resolve config
     datamodule, cfg, stats = setup_datamodule(cfg)
+    has_reachable_autoencoder = (
+        bool(cfg.get("autoencoder_checkpoint"))
+        or _has_autoencoder_components(cfg)
+        or _load_autoencoder_config_from_datamodule(cfg) is not None
+        or _load_lola_autoencoder_config_from_datamodule(cfg) is not None
+    )
 
     # Stateless encoders/decoders (e.g. PermuteConcat/ChannelsLast, Identity)
     # contribute no `encoder_decoder.*` params, so a full EPD checkpoint can
@@ -1888,6 +2535,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
             processor_only=processor_only,
             example_batch=stats.get("example_batch"),
             has_autoencoder_checkpoint=bool(cfg.get("autoencoder_checkpoint")),
+            has_autoencoder_components=has_reachable_autoencoder,
         )
         log.info("eval.mode=auto resolved to %s for this run", eval_mode)
 
@@ -1918,6 +2566,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     #                        (data-space metrics) or opt-in latent-only.
 
     example_batch = stats.get("example_batch")
+    has_model_autoencoder_components = _has_autoencoder_components(cfg)
 
     log.info(
         "Checkpoint type: %s",
@@ -1928,13 +2577,17 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     decoder_module = None  # keep reference for device placement
 
     if processor_only:
-        if isinstance(example_batch, Batch) and cfg.get("autoencoder_checkpoint"):
-            # Mode 1: reconstruct full EPD; encoder+decoder from autoencoder_checkpoint
+        if isinstance(example_batch, Batch) and (
+            cfg.get("autoencoder_checkpoint") or has_model_autoencoder_components
+        ):
+            # Mode 1: reconstruct full EPD; encoder+decoder from checkpoint config
+            # or LoLA wrapper config, then load processor weights only.
             log.info(
-                "Mode 1 eval: reconstructing full EPD from autoencoder checkpoint "
+                "Mode 1 eval: reconstructing full EPD from encoder/decoder config "
                 "+ processor checkpoint."
             )
-            cfg = _maybe_inject_encoder_decoder_from_autoencoder_checkpoint(cfg)
+            if cfg.get("autoencoder_checkpoint"):
+                cfg = _maybe_inject_encoder_decoder_from_autoencoder_checkpoint(cfg)
             model = setup_epd_model(cfg, stats, datamodule=datamodule)
             processor_sd = _extract_processor_state_dict(
                 checkpoint_payload, use_ema=use_ema
@@ -1976,6 +2629,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
         processor_only=processor_only,
         example_batch=example_batch,
         has_autoencoder_checkpoint=bool(cfg.get("autoencoder_checkpoint")),
+        has_autoencoder_components=has_model_autoencoder_components,
         decode_fn_loaded=decode_fn is not None,
     )
     log.info("Resolved eval path: %s", resolved_eval_path)
@@ -2003,6 +2657,39 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
 
     # Get number of ensemble members from config if available
     n_members = cfg.get("model", {}).get("n_members", 1)
+    has_ensemble = bool(n_members and n_members > 1)
+    rollout_member_indices = _normalize_ensemble_member_indices(
+        eval_cfg.get("rollout_member_indices", []),
+        n_members=n_members,
+        field_name="eval.rollout_member_indices",
+    )
+    rollout_member_render_mode = _normalize_rollout_member_render_mode(
+        eval_cfg.get("rollout_member_render_mode")
+    )
+    deterministic_metric_member_indices = _normalize_ensemble_member_indices(
+        eval_cfg.get("deterministic_metric_member_indices", []),
+        n_members=n_members,
+        field_name="eval.deterministic_metric_member_indices",
+    )
+    deterministic_metric_member_average = bool(
+        eval_cfg.get("deterministic_metric_member_average", False)
+    )
+    if deterministic_metric_member_average and not has_ensemble:
+        msg = "eval.deterministic_metric_member_average requires n_members > 1."
+        raise ValueError(msg)
+    if rollout_member_indices:
+        log.info(
+            "Rendering rollout diagnostics for ensemble member(s) %s in %s mode.",
+            rollout_member_indices,
+            rollout_member_render_mode,
+        )
+    if deterministic_metric_member_indices:
+        log.info(
+            "Adding deterministic single-member metric diagnostics for member(s): %s",
+            deterministic_metric_member_indices,
+        )
+    if deterministic_metric_member_average:
+        log.info("Adding deterministic member-averaged metric diagnostics.")
 
     # Setup Fabric accelerator/device management.
     # Prefer eval.accelerator to mirror Lightning API, while keeping
@@ -2044,78 +2731,99 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
 
     # Evaluation
 
-    compute_coverage = eval_cfg.get("compute_coverage", False)
-    test_metric_fns: dict[str, Callable[[], Metric]] = {}
-
-    metric_registry = dict(AVAILABLE_METRICS)
-    has_ensemble = bool(n_members and n_members > 1)
-    if has_ensemble:
-        metric_registry.update(AVAILABLE_METRICS_ENSEMBLE)
-
-    for name in metrics_list:
-        if _should_skip_metric(name):
-            log.info("Skipping metric '%s' due to memory cost.", name)
-            continue
-        if name in AVAILABLE_METRICS:
-            test_metric_fns[name] = AVAILABLE_METRICS[name]
-        elif name in AVAILABLE_METRICS_ENSEMBLE:
-            if has_ensemble:
-                test_metric_fns[name] = AVAILABLE_METRICS_ENSEMBLE[name]
-            else:
-                log.info(
-                    "Skipping ensemble metric '%s' because n_members <= 1.",
-                    name,
-                )
-        else:
-            log.warning("Metric %s not found in available metrics", name)
-
-    if (n_members > 1) or compute_coverage:
-
-        def coverage_factory() -> Metric:
-            return MultiCoverage(coverage_levels=eval_cfg.get("coverage_levels", None))
-
-        test_metric_fns["coverage"] = coverage_factory
-
-    log.info("Computing test metrics: %s", list(test_metric_fns.keys()))
-
-    # Use metric_windows from config (apply to all metrics)
-    test_windows = _map_windows(eval_cfg.get("metric_windows", None))
-
-    # Build predict_fn.
-    # - Mode 1 / plain EPD: model(batch) already returns decoded tensor; trues
-    #   are taken from batch.output_fields by compute_metrics_from_dataloader.
-    # - Mode 2: decode both latent predictions and latent ground truth so
-    #   metrics are computed in data space.
-    # - Latent fallback: return (latent_pred, latent_true) directly.
-    predict_fn = _build_eval_predict_fn(
-        model,
-        is_processor_model=is_processor_model,
-        decode_fn=decode_fn,
-        n_members=n_members if n_members and n_members > 1 else None,
-    )
-
-    test_metrics_results, _, test_per_batch_rows = compute_metrics_from_dataloader(
-        dataloader=test_loader,
-        metric_fns=test_metric_fns,
-        predict_fn=predict_fn,
-        windows=test_windows,
-        return_per_batch=True,
-        device=fabric.device,
-    )
-
-    if test_per_batch_rows:
-        test_per_batch_rows = _gather_per_batch_rows(test_per_batch_rows, fabric=fabric)
-
-    # Process and save test metrics
-    test_rows = _process_metrics_results(
-        test_metrics_results,
-        per_batch_rows=test_per_batch_rows,  # pyright: ignore[reportArgumentType]
-        log_prefix="Test",
-        plot_dir=work_dir,
-    )
-
     evaluation_rows: list[dict[str, float | str]] = []
-    evaluation_rows.extend(test_rows)
+    compute_test_metrics = eval_cfg.get("compute_test_metrics", True)
+    skip_memory_intensive_metrics = bool(
+        eval_cfg.get("skip_memory_intensive_metrics", True)
+    )
+
+    if compute_test_metrics:
+        compute_coverage = eval_cfg.get("compute_coverage", False)
+        test_metric_fns: dict[str, Callable[[], Metric]] = {}
+
+        for name in metrics_list:
+            if _should_skip_metric(
+                name, skip_memory_intensive=skip_memory_intensive_metrics
+            ):
+                log.info("Skipping metric '%s' due to memory cost.", name)
+                continue
+            if name in AVAILABLE_METRICS:
+                test_metric_fns[name] = _build_metric_factory(AVAILABLE_METRICS[name])
+                if deterministic_metric_member_average:
+                    test_metric_fns[_deterministic_member_average_metric_name(name)] = (
+                        _build_member_average_metric_factory(AVAILABLE_METRICS[name])
+                    )
+                for member_index in deterministic_metric_member_indices:
+                    test_metric_fns[
+                        _deterministic_member_metric_name(name, member_index)
+                    ] = _build_metric_factory(
+                        AVAILABLE_METRICS[name],
+                        ensemble_member_index=member_index,
+                    )
+            elif name in AVAILABLE_METRICS_ENSEMBLE:
+                if has_ensemble:
+                    test_metric_fns[name] = AVAILABLE_METRICS_ENSEMBLE[name]
+                else:
+                    log.info(
+                        "Skipping ensemble metric '%s' because n_members <= 1.",
+                        name,
+                    )
+            else:
+                log.warning("Metric %s not found in available metrics", name)
+
+        if (n_members > 1) or compute_coverage:
+
+            def coverage_factory() -> Metric:
+                return MultiCoverage(
+                    coverage_levels=eval_cfg.get("coverage_levels", None)
+                )
+
+            test_metric_fns["coverage"] = coverage_factory
+
+        log.info("Computing test metrics: %s", list(test_metric_fns.keys()))
+
+        # Use metric_windows from config (apply to all metrics)
+        test_windows = _map_windows(eval_cfg.get("metric_windows", None))
+
+        # Build predict_fn.
+        # - Mode 1 / plain EPD: model(batch) already returns decoded tensor; trues
+        #   are taken from batch.output_fields by compute_metrics_from_dataloader.
+        # - Mode 2: decode both latent predictions and latent ground truth so
+        #   metrics are computed in data space.
+        # - Latent fallback: return (latent_pred, latent_true) directly.
+        predict_fn = _build_eval_predict_fn(
+            model,
+            is_processor_model=is_processor_model,
+            decode_fn=decode_fn,
+            n_members=n_members if n_members and n_members > 1 else None,
+        )
+
+        test_metrics_results, _, test_per_batch_rows = compute_metrics_from_dataloader(
+            dataloader=test_loader,
+            metric_fns=test_metric_fns,
+            predict_fn=predict_fn,
+            windows=test_windows,
+            return_per_batch=True,
+            device=fabric.device,
+        )
+
+        if test_per_batch_rows:
+            test_per_batch_rows = _gather_per_batch_rows(
+                test_per_batch_rows, fabric=fabric
+            )
+
+        # Process and save test metrics
+        test_rows = _process_metrics_results(
+            test_metrics_results,
+            per_batch_rows=test_per_batch_rows,  # pyright: ignore[reportArgumentType]
+            log_prefix="Test",
+            plot_dir=work_dir,
+        )
+
+        evaluation_rows.extend(test_rows)
+    else:
+        log.info("Skipping test metrics computation (eval.compute_test_metrics=false).")
+
     evaluation_rows.extend(
         _evaluation_metadata_rows(
             checkpoint_payload=checkpoint_payload,
@@ -2138,6 +2846,10 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
 
     if batch_indices or compute_rollout_coverage or compute_rollout_metrics:
         max_rollout_steps = eval_cfg.get("max_rollout_steps", 10)
+        rollout_start = int(eval_cfg.get("rollout_start", 0) or 0)
+        if rollout_start < 0:
+            msg = f"eval.rollout_start must be >= 0, got {rollout_start}."
+            raise ValueError(msg)
 
         # Use rollout_stride config or fallback to n_steps_output (from stats)
         data_config = cfg.get("datamodule", {})
@@ -2147,9 +2859,8 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
             rollout_test_loader = fabric.setup_dataloaders(
                 datamodule.rollout_test_dataloader(batch_size=eval_batch_size)
             )
-            rollout_dataset_for_labels = getattr(rollout_test_loader, "dataset", None)
             rollout_channel_names = _resolve_rollout_channel_names(
-                rollout_dataset_for_labels
+                getattr(rollout_test_loader, "dataset", None)
             )
             if rollout_channel_names is not None:
                 log.info(
@@ -2160,14 +2871,6 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 log.info(
                     "No rollout video channel labels found in core_field_names; "
                     "falling back to generic channel indices."
-                )
-            rollout_dataset_short_label = eval_cfg.get(
-                "rollout_snapshot_dataset_label"
-            ) or _resolve_dataset_short_label(rollout_dataset_for_labels)
-            if rollout_dataset_short_label is not None:
-                log.info(
-                    "Using dataset short label for data-only snapshots: %s",
-                    rollout_dataset_short_label,
                 )
 
             rollout_loader = _limit_batches(
@@ -2190,6 +2893,19 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 if save_rollout_snapshots
                 else None
             )
+            render_rollout_predict = (
+                _build_encode_once_rollout_predict(
+                    model,
+                    rollout_stride=rollout_stride,
+                    max_rollout_steps=max_rollout_steps,
+                    free_running_only=eval_cfg.get("free_running_only", True),
+                    n_members=n_members if n_members and n_members > 1 else None,
+                    device=fabric.device,
+                    rollout_start=rollout_start,
+                )
+                if resolved_eval_path == EVAL_PATH_ENCODE_ONCE
+                else None
+            )
             _render_rollouts(
                 model,  # pyright: ignore[reportArgumentType]
                 rollout_loader,
@@ -2204,12 +2920,15 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 n_members=n_members,
                 channel_names=rollout_channel_names,
                 preserve_aspect=eval_cfg.get("preserve_aspect", False),
+                transpose_spatial=eval_cfg.get("transpose_spatial", False),
                 decode_fn=decode_fn,
+                rollout_predict_fn=render_rollout_predict,
                 snapshot_timesteps=rollout_snapshot_timesteps,
                 snapshot_dir=rollout_snapshot_dir,
                 snapshot_format=eval_cfg.get("rollout_snapshot_format", "png"),
                 snapshot_channels=rollout_snapshot_channels,
-                dataset_short_label=rollout_dataset_short_label,
+                member_indices=rollout_member_indices,
+                member_render_mode=rollout_member_render_mode,
             )
 
         # Prepare metric functions for rollouts
@@ -2217,11 +2936,28 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
 
         if compute_rollout_metrics:
             for name in metrics_list:
-                if _should_skip_metric(name):
+                if _should_skip_metric(
+                    name, skip_memory_intensive=skip_memory_intensive_metrics
+                ):
                     log.info("Skipping rollout metric '%s' due to memory cost.", name)
                     continue
                 if name in AVAILABLE_METRICS:
-                    rollout_metric_fns[name] = AVAILABLE_METRICS[name]
+                    rollout_metric_fns[name] = _build_metric_factory(
+                        AVAILABLE_METRICS[name]
+                    )
+                    if deterministic_metric_member_average:
+                        rollout_metric_fns[
+                            _deterministic_member_average_metric_name(name)
+                        ] = _build_member_average_metric_factory(
+                            AVAILABLE_METRICS[name]
+                        )
+                    for member_index in deterministic_metric_member_indices:
+                        rollout_metric_fns[
+                            _deterministic_member_metric_name(name, member_index)
+                        ] = _build_metric_factory(
+                            AVAILABLE_METRICS[name],
+                            ensemble_member_index=member_index,
+                        )
                 elif name in AVAILABLE_METRICS_ENSEMBLE:
                     if has_ensemble:
                         rollout_metric_fns[name] = AVAILABLE_METRICS_ENSEMBLE[name]
@@ -2252,6 +2988,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
             )
 
             def _standard_rollout_predict(batch):
+                batch = _crop_rollout_batch_start(batch, rollout_start)
                 preds, trues = model.rollout(
                     batch,
                     stride=rollout_stride,
@@ -2276,70 +3013,29 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 min_len = min(preds.shape[1], trues.shape[1])
                 return preds[:, :min_len], trues[:, :min_len]
 
-            rollout_predict: Callable[[Any], Any]
-            if resolved_eval_path == EVAL_PATH_ENCODE_ONCE:
-                rollout_predict = _build_encode_once_rollout_predict(
-                    model,
-                    rollout_stride=rollout_stride,
-                    max_rollout_steps=max_rollout_steps,
-                    free_running_only=eval_cfg.get("free_running_only", True),
-                    n_members=n_members if n_members and n_members > 1 else None,
-                    device=fabric.device,
-                )
-            else:
-                rollout_predict = _standard_rollout_predict
-
-            rollout_metrics_loader = _limit_batches(
-                fabric.setup_dataloaders(
-                    datamodule.rollout_test_dataloader(batch_size=eval_batch_size)
-                ),
-                max_rollout_batches,
-            )
-
-            rollout_metrics_per_window, _, rollout_per_batch_rows = (
-                compute_metrics_from_dataloader(
-                    dataloader=rollout_metrics_loader,
-                    metric_fns=rollout_metric_fns,
-                    predict_fn=rollout_predict,
-                    windows=windows,
-                    return_per_batch=True,
-                    device=fabric.device,
-                )
-            )
-            if rollout_per_batch_rows:
-                rollout_per_batch_rows = _gather_per_batch_rows(
-                    rollout_per_batch_rows,
-                    fabric=fabric,
-                )
-
-            # Process and log results
-            rollout_csv_rows = _process_metrics_results(
-                rollout_metrics_per_window,
-                per_batch_rows=rollout_per_batch_rows,  # pyright: ignore[reportArgumentType]
-                log_prefix="Rollout",
-                plot_dir=csv_path.parent,
-            )
-
-            # Save rollout metrics to CSV
-            rollout_csv_path = csv_path.parent / "rollout_metrics.csv"
-            rollout_combined_rows = [*rollout_csv_rows]
-            rollout_metric_rows, rollout_metadata_rows = (
-                _split_metric_and_metadata_rows(rollout_combined_rows)
-            )
-
-            if fabric.global_rank == 0 and rollout_metric_rows:
-                _write_csv(rollout_metric_rows, rollout_csv_path)
-                log.info("Wrote rollout metrics to %s", rollout_csv_path)
-
-            rollout_metadata_csv_path = csv_path.parent / "rollout_metadata.csv"
-            if fabric.global_rank == 0 and rollout_metadata_rows:
-                _write_csv(rollout_metadata_rows, rollout_metadata_csv_path)
-                log.info("Wrote rollout metadata to %s", rollout_metadata_csv_path)
+            def _build_rollout_predict(
+                *,
+                compare_to_autoencoded_target: bool = False,
+            ) -> Callable[[Any], Any]:
+                if resolved_eval_path == EVAL_PATH_ENCODE_ONCE:
+                    return _build_encode_once_rollout_predict(
+                        model,
+                        rollout_stride=rollout_stride,
+                        max_rollout_steps=max_rollout_steps,
+                        free_running_only=eval_cfg.get("free_running_only", True),
+                        n_members=n_members if n_members and n_members > 1 else None,
+                        device=fabric.device,
+                        compare_to_autoencoded_target=compare_to_autoencoded_target,
+                        rollout_start=rollout_start,
+                    )
+                return _standard_rollout_predict
 
             # Per-timestep, per-channel rollout metrics (rows=metrics, cols=timestep)
             per_timestep_metric_fns: dict[str, Callable[[], Metric]] = {}
             for name, metric_factory in rollout_metric_fns.items():
-                if _should_skip_metric(name):
+                if _should_skip_metric(
+                    name, skip_memory_intensive=skip_memory_intensive_metrics
+                ):
                     log.info(
                         "Skipping rollout per-timestep metric '%s' due to memory cost.",
                         name,
@@ -2349,14 +3045,89 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                     per_timestep_metric_fns[name] = metric_factory
                 else:
                     metric_cls = AVAILABLE_METRICS.get(name)
+                    member_index = None
+                    member_average = False
+                    if metric_cls is None:
+                        parsed_member_metric = _parse_deterministic_member_metric_name(
+                            name
+                        )
+                        if parsed_member_metric is not None:
+                            base_name, member_index = parsed_member_metric
+                            metric_cls = AVAILABLE_METRICS.get(base_name)
+                    if metric_cls is None:
+                        base_name = _parse_deterministic_member_average_metric_name(
+                            name
+                        )
+                        if base_name is not None:
+                            member_average = True
+                            metric_cls = AVAILABLE_METRICS.get(base_name)
                     if metric_cls is None:
                         metric_cls = AVAILABLE_METRICS_ENSEMBLE.get(name)
                     if metric_cls is not None:
                         per_timestep_metric_fns[name] = (
-                            _build_per_timestep_metric_factory(metric_cls)
+                            _build_per_timestep_metric_factory(
+                                metric_cls,
+                                ensemble_member_index=member_index,
+                                ensemble_member_average=member_average,
+                            )
                         )
 
-            if per_timestep_metric_fns:
+            def _write_rollout_metric_outputs(
+                *,
+                rollout_predict: Callable[[Any], Any],
+                csv_name: str,
+                metadata_csv_name: str,
+                per_timestep_stem: str,
+                log_prefix: str,
+            ) -> None:
+                rollout_metrics_loader = _limit_batches(
+                    fabric.setup_dataloaders(
+                        datamodule.rollout_test_dataloader(batch_size=eval_batch_size)
+                    ),
+                    max_rollout_batches,
+                )
+
+                rollout_metrics_per_window, _, rollout_per_batch_rows = (
+                    compute_metrics_from_dataloader(
+                        dataloader=rollout_metrics_loader,
+                        metric_fns=rollout_metric_fns,
+                        predict_fn=rollout_predict,
+                        windows=windows,
+                        return_per_batch=True,
+                        device=fabric.device,
+                    )
+                )
+                if rollout_per_batch_rows:
+                    rollout_per_batch_rows = _gather_per_batch_rows(
+                        rollout_per_batch_rows,
+                        fabric=fabric,
+                    )
+
+                rollout_csv_rows = _process_metrics_results(
+                    rollout_metrics_per_window,
+                    per_batch_rows=rollout_per_batch_rows,  # pyright: ignore[reportArgumentType]
+                    log_prefix=log_prefix,
+                    plot_dir=csv_path.parent,
+                )
+
+                rollout_combined_rows = [*rollout_csv_rows]
+                rollout_metric_rows, rollout_metadata_rows = (
+                    _split_metric_and_metadata_rows(rollout_combined_rows)
+                )
+
+                rollout_csv_path = csv_path.parent / csv_name
+                if fabric.global_rank == 0 and rollout_metric_rows:
+                    _write_csv(rollout_metric_rows, rollout_csv_path)
+                    log.info("Wrote rollout metrics to %s", rollout_csv_path)
+
+                rollout_metadata_csv_path = csv_path.parent / metadata_csv_name
+                if fabric.global_rank == 0 and rollout_metadata_rows:
+                    _write_csv(rollout_metadata_rows, rollout_metadata_csv_path)
+                    log.info("Wrote rollout metadata to %s", rollout_metadata_csv_path)
+
+                if not per_timestep_metric_fns:
+                    return
+
                 max_rollout_timesteps = _resolve_rollout_timestep_limit(
                     max_rollout_steps=max_rollout_steps,
                     rollout_stride=int(rollout_stride),
@@ -2388,8 +3159,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                             columns=timestep_index,
                         )
                         out_path = (
-                            csv_path.parent
-                            / f"rollout_metrics_per_timestep_channel_{c}.csv"
+                            csv_path.parent / f"{per_timestep_stem}_channel_{c}.csv"
                         )
                         df.to_csv(out_path)
                         log.info(
@@ -2405,13 +3175,43 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                         orient="index",
                         columns=timestep_index,
                     )
-                    out_path_all = (
-                        csv_path.parent / "rollout_metrics_per_timestep_channel_all.csv"
+                    out_path_all = csv_path.parent / (
+                        f"{per_timestep_stem}_channel_all.csv"
                     )
                     df_all.to_csv(out_path_all)
                     log.info(
                         "Wrote rollout metrics per timestep (channel all) to %s",
                         out_path_all,
+                    )
+
+            rollout_predict = _build_rollout_predict()
+            _write_rollout_metric_outputs(
+                rollout_predict=rollout_predict,
+                csv_name="rollout_metrics.csv",
+                metadata_csv_name="rollout_metadata.csv",
+                per_timestep_stem="rollout_metrics_per_timestep",
+                log_prefix="Rollout",
+            )
+
+            if eval_cfg.get("compute_rollout_autoencoded_target_metrics", False):
+                if resolved_eval_path == EVAL_PATH_ENCODE_ONCE:
+                    rollout_predict_ae_target = _build_rollout_predict(
+                        compare_to_autoencoded_target=True
+                    )
+                    _write_rollout_metric_outputs(
+                        rollout_predict=rollout_predict_ae_target,
+                        csv_name="rollout_metrics_autoencoded_target.csv",
+                        metadata_csv_name="rollout_metadata_autoencoded_target.csv",
+                        per_timestep_stem=(
+                            "rollout_metrics_per_timestep_autoencoded_target"
+                        ),
+                        log_prefix="Rollout AE-target",
+                    )
+                else:
+                    log.warning(
+                        "Skipping rollout autoencoded-target metrics for eval path %s; "
+                        "this diagnostic is only defined for encode_once raw batches.",
+                        resolved_eval_path,
                     )
 
     metric_rows, metadata_rows = _split_metric_and_metadata_rows(evaluation_rows)
