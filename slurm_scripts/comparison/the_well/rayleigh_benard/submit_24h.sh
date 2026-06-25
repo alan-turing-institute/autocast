@@ -35,6 +35,8 @@ set_run_defaults() {
 
     EXTRA_OVERRIDES=()
     USE_CACHE_DIR=false
+    TRAIN_COMMAND=processor
+    TIMING_KIND=processor
 
     case "${key}" in
         crps_lola_pixel_ambient)
@@ -45,6 +47,8 @@ set_run_defaults() {
             PER_GPU_BATCH_SIZE_DEFAULT=32
             N_MEMBERS=8
             DEFAULT_COSINE_EPOCHS=272
+            TRAIN_COMMAND=epd
+            TIMING_KIND=epd
             ;;
         crps_ambient)
             METHOD_LABEL="CRPS ambient"
@@ -54,6 +58,8 @@ set_run_defaults() {
             PER_GPU_BATCH_SIZE_DEFAULT=32
             N_MEMBERS=8
             DEFAULT_COSINE_EPOCHS=1642
+            TRAIN_COMMAND=epd
+            TIMING_KIND=epd
             ;;
         crps_latent)
             METHOD_LABEL="CRPS latent"
@@ -136,6 +142,7 @@ submit_one_run() {
     echo "Submitting RB 24h comparison ${MODE} run"
     echo "  mode: ${mode_label}"
     echo "  method: ${METHOD_LABEL}"
+    echo "  train command: ${TRAIN_COMMAND}"
     echo "  local_experiment: ${EXPERIMENT}"
     echo "  experiment_name: ${EXPERIMENT_NAME}"
     echo "  datamodule.batch_size: ${per_gpu_batch_size} per GPU"
@@ -144,7 +151,7 @@ submit_one_run() {
 
     if [[ "${MODE}" == "timing" ]]; then
         rb_submit time-epochs "${run_dry}" \
-            --kind processor \
+            --kind "${TIMING_KIND}" \
             --run-group "timing/rb_24h_comparison" \
             --run-id "${RUN_ID}" \
             -n "${TIMING_EPOCHS}" \
@@ -160,7 +167,7 @@ submit_one_run() {
         echo "  cosine_epochs: ${cosine_epochs}"
         echo "  trainer.max_time: ${BUDGET_MAX_TIME}"
 
-        rb_submit processor "${run_dry}" \
+        rb_submit "${TRAIN_COMMAND}" "${run_dry}" \
             --run-id "${EXPERIMENT_NAME}" \
             "${COMMON_OVERRIDES[@]}" \
             "optimizer.cosine_epochs=${cosine_epochs}" \
