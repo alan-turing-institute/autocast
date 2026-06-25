@@ -120,15 +120,17 @@ submit_one_run() {
         "experiment_name=${EXPERIMENT_NAME}"
         "datamodule.batch_size=${per_gpu_batch_size}"
         "datamodule.num_workers=${DATALOADER_NUM_WORKERS}"
-        "datamodule.pin_memory=true"
-        "datamodule.persistent_workers=true"
-        "datamodule.prefetch_factor=2"
         "logging.wandb.enabled=true"
         "hydra.launcher.cpus_per_task=${CPUS_PER_TASK}"
         "hydra.launcher.timeout_min=${TIMEOUT_MIN}"
     )
     if [[ "${USE_CACHE_DIR}" == "true" ]]; then
-        COMMON_OVERRIDES+=("datamodule.data_path=${RB_CACHE_DIR}")
+        COMMON_OVERRIDES+=(
+            "datamodule.data_path=${RB_CACHE_DIR}"
+            "datamodule.pin_memory=true"
+            "datamodule.persistent_workers=true"
+            "datamodule.prefetch_factor=2"
+        )
     fi
 
     echo "Submitting RB 24h comparison ${MODE} run"
