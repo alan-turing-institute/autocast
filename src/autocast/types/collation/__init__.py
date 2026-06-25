@@ -1,8 +1,16 @@
 from collections.abc import Sequence
 
 import torch
+from einops import repeat
 
-from autocast.types.batch import Batch, EncodedBatch, EncodedSample, Sample
+from autocast.types.batch import (
+    Batch,
+    EncodedBatch,
+    EncodedSample,
+    ListBatch,
+    ListSample,
+    Sample,
+)
 from autocast.types.types import Tensor
 
 
@@ -70,4 +78,49 @@ def collate_encoded_samples(samples: Sequence[EncodedSample]) -> EncodedBatch:
         encoded_output_fields=encoded_output_fields,
         global_cond=global_cond,
         encoded_info=encoded_info,
+    )
+
+
+def collate_list_batches(samples: Sequence[ListSample]) -> ListBatch:
+    """Stack a sequence of `ListSample` instances along the batch dimension.
+
+    Each ListSample contains a list of Samples (one per dataset) and a mask.
+    This function collates across the batch dimension, producing a ListBatch
+    containing a list of Batches (one per dataset) and a stacked mask.
+    """
+    if len(samples) == 0:
+        msg = "collate_list_batches expects at least one sample"
+        raise ValueError(msg)
+
+    # Collate each dataset batch separately
+    num_datasets = len(samples[0].inner)
+    inner_batches: list[Batch] = []
+    for dataset_idx in range(num_datasets):
+        # Get all samples for this dataset across the batch
+        dataset_samples = [sample.inner[dataset_idx] for sample in samples]
+
+        # Use the existing collate_batches function
+        batch = collate_batches(dataset_samples)
+        inner_batches.append(batch)
+
+    # Stack masks along the batch dimension (TensorDM -> TensorDBM).
+    # Masks are optional; if any sample has no mask, return None.
+    if any(s.mask is None for s in samples):
+        masks = None
+    else:
+        masks = torch.stack([sample.mask for sample in samples], dim=1)
+
+    output_fields = inner_batches[0].output_fields
+
+    # When masks are active, MultiEncoder folds M scenarios into the batch axis,
+    # producing encoder output of shape (B*M, ...). Expand output_fields to match
+    # so the loss computation sees tensors of the same shape.
+    if masks is not None and output_fields is not None:
+        M = masks.shape[2]
+        output_fields = repeat(output_fields, "b ... -> (b m) ...", m=M)
+
+    return ListBatch(
+        inner=inner_batches,
+        mask=masks,
+        output_fields=output_fields,
     )

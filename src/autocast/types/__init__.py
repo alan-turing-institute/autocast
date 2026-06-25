@@ -5,6 +5,8 @@ from .batch import (
     BatchT,
     EncodedBatch,
     EncodedSample,
+    ListBatch,
+    ListSample,
     Sample,
 )
 from .types import (
@@ -34,6 +36,8 @@ __all__ = [
     "EncodedBatch",
     "EncodedSample",
     "Input",
+    "ListBatch",
+    "ListSample",
     "RolloutOutput",
     "Sample",
     "Tensor",

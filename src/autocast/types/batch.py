@@ -10,6 +10,8 @@ from autocast.types.types import (
     TensorBSC,
     TensorBTSC,
     TensorC,
+    TensorDBM,
+    TensorDM,
     TensorNC,
     TensorS,
     TensorSC,
@@ -63,7 +65,11 @@ class Batch:
         """
         return Batch(
             input_fields=self.input_fields.repeat_interleave(m, dim=0),
-            output_fields=self.output_fields.repeat_interleave(m, dim=0),
+            output_fields=(
+                self.output_fields.repeat_interleave(m, dim=0)
+                if self.output_fields is not None
+                else self.output_fields
+            ),  # type: ignore[arg-type]
             constant_scalars=(
                 self.constant_scalars.repeat_interleave(m, dim=0)
                 if self.constant_scalars is not None
@@ -85,7 +91,11 @@ class Batch:
         """Move batch to device."""
         return Batch(
             input_fields=self.input_fields.to(device),
-            output_fields=self.output_fields.to(device),
+            output_fields=(
+                self.output_fields.to(device)
+                if self.output_fields is not None
+                else self.output_fields
+            ),  # type: ignore[arg-type]
             constant_scalars=(
                 self.constant_scalars.to(device)
                 if self.constant_scalars is not None
@@ -148,4 +158,46 @@ class EncodedBatch:
                 self.global_cond.to(device) if self.global_cond is not None else None
             ),
             encoded_info={k: v.to(device) for k, v in self.encoded_info.items()},
+        )
+
+
+@dataclass
+class ListSample:
+    """A sample containing a list of Samples (one per dataset) and a mask."""
+
+    inner: list[Sample]
+    # Dataset-by-ensemble mask for missing data combinations across datasets.
+    mask: TensorDM | None
+
+
+@dataclass
+class ListBatch:
+    """A batch containing a list of Batches (one per dataset) and a mask."""
+
+    inner: list[Batch]
+    mask: TensorDBM | None
+    output_fields: TensorBTSC | None = None
+
+    @property
+    def input_fields(self) -> TensorBTSC:
+        return self.inner[0].input_fields
+
+    def repeat(self, m: int) -> "ListBatch":
+        return ListBatch(
+            inner=[b.repeat(m) for b in self.inner],
+            mask=self.mask.repeat_interleave(m, dim=0)
+            if self.mask is not None
+            else None,
+            output_fields=self.output_fields.repeat_interleave(m, dim=0)
+            if self.output_fields is not None
+            else None,
+        )
+
+    def to(self, device: torch.device | str) -> "ListBatch":
+        return ListBatch(
+            inner=[b.to(device) for b in self.inner],
+            mask=self.mask.to(device) if self.mask is not None else None,
+            output_fields=self.output_fields.to(device)
+            if self.output_fields is not None
+            else None,
         )
