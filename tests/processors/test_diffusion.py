@@ -73,15 +73,17 @@ class _CaptureBackbone(nn.Module):
     def __init__(self) -> None:
         super().__init__()
         self.last_t: torch.Tensor | None = None
+        self.last_global_cond: torch.Tensor | None = None
 
     def forward(
         self,
         x_t: torch.Tensor,
         t: torch.Tensor,
         cond: torch.Tensor | None = None,  # noqa: ARG002
-        global_cond: torch.Tensor | None = None,  # noqa: ARG002
+        global_cond: torch.Tensor | None = None,
     ) -> torch.Tensor:
         self.last_t = t.detach()
+        self.last_global_cond = global_cond
         return torch.zeros_like(x_t)
 
 
@@ -233,6 +235,32 @@ def test_diffusion_get_sampler_accepts_explicit_override():
 
     assert isinstance(sampler, EulerSampler)
     assert processor.sampler == "ddpm"
+
+
+@pytest.mark.parametrize("return_trajectory", [False, True])
+def test_diffusion_sample_forwards_global_conditioning(return_trajectory: bool):
+    backbone = _CaptureBackbone()
+    processor = DiffusionProcessor(
+        backbone=backbone,
+        schedule=LogLogitSchedule(),
+        denoiser_type="lola",
+        n_steps_output=1,
+        n_channels_out=1,
+        sampler="euler",
+    )
+    x_t = torch.randn(2, 1, 3, 3, 1)
+    cond = torch.randn(2, 1, 3, 3, 1)
+    global_cond = torch.randn(2, 4)
+
+    processor.sample(
+        x_t,
+        cond,
+        global_cond=global_cond,
+        num_steps=2,
+        return_trajectory=return_trajectory,
+    )
+
+    assert backbone.last_global_cond is global_cond
 
 
 def test_lola_diffusion_processor_loss_is_finite():

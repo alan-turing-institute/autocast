@@ -261,6 +261,7 @@ class DiffusionProcessor(Processor):
         self,
         x_t: Tensor,
         cond: Tensor,
+        global_cond: Tensor | None = None,
         num_steps: int = 100,
         sampler: str | None = None,
         eta: float = 0.0,
@@ -273,6 +274,7 @@ class DiffusionProcessor(Processor):
         Args:
             x_t: Starting noise (B, T, C, W, H)
             cond: Conditioning input (B, T_cond, C_cond, W, H)
+            global_cond: Optional non-spatial conditioning/modulation tensor.
             num_steps: Number of denoising steps
             sampler: Type of sampler to use. Defaults to the configured
                 `self.sampler` when unset.
@@ -307,9 +309,9 @@ class DiffusionProcessor(Processor):
 
             x = x_t
             for t, s in time_pairs:
-                x = azula_sampler.step(x, t, s, cond=cond)
+                x = azula_sampler.step(x, t, s, cond=cond, global_cond=global_cond)
                 trajectory.append(x)
 
             # Stack, this is just for debugging and visualisation purposes
             return torch.stack(trajectory, dim=0)  # (num_steps+1, B, T, C, W, H)
-        return azula_sampler(x_t, cond=cond)  # (B, T, C, W, H)
+        return azula_sampler(x_t, cond=cond, global_cond=global_cond)  # (B, T, C, W, H)
