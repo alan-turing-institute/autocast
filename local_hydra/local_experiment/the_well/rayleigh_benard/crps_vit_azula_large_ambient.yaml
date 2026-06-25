@@ -1,0 +1,70 @@
+# @package _global_
+defaults:
+  - /distributed: ddp_4gpu_slurm
+  - override /datamodule: rayleigh_benard
+  - override /encoder@model.encoder: identity
+  - override /decoder@model.decoder: identity
+  - override /processor@model.processor: vit_azula_large
+  - override /optimizer: adamw_half
+  - _self_
+
+experiment_name: the_well_rayleigh_benard_crps_vit_azula_large_ambient
+
+# CRPS directly in ambient Rayleigh-Benard space. Use identity encoder/decoder
+# so constants and boundary conditions are routed through global_cond/AdaLN, as
+# in the CNS identity+global_cond ablation.
+datamodule:
+  batch_size: 32
+
+float32_matmul_precision: high
+
+logging:
+  wandb:
+    enabled: true
+
+output:
+  skip_test: true
+
+optimizer:
+  learning_rate: 2e-4
+  warmup: 0
+
+model:
+  train_in_latent_space: false
+  n_members: 8
+  processor:
+    # Match the LOLA latent token grid: cached RB latents are 16x4 with
+    # patch_size=1, and raw RB is 512x128, so patch_size=32 gives the same
+    # 16x4 token layout. hidden_dim=848, n_layers=16 keeps the trainable
+    # processor close to the ~218M LOLA-scale budget.
+    hidden_dim: 848
+    num_heads: 8
+    n_layers: 16
+    patch_size: 32
+    n_noise_channels: 1024
+    # Route RB constants and boundary conditions through global_cond/AdaLN,
+    # not spatial concatenation.
+    global_cond_channels: auto
+    include_global_cond: true
+  loss_func:
+    _target_: autocast.losses.ensemble.AlphaFairCRPSLoss
+  train_metrics:
+    afcrps:
+      _target_: autocast.metrics.ensemble.AlphaFairCRPS
+    afcrps_mae_term:
+      _target_: autocast.metrics.ensemble.AlphaFairCRPSMAETerm
+    afcrps_spread_term:
+      _target_: autocast.metrics.ensemble.AlphaFairCRPSSpreadTerm
+  val_metrics:
+    afcrps:
+      _target_: autocast.metrics.ensemble.AlphaFairCRPS
+    afcrps_mae_term:
+      _target_: autocast.metrics.ensemble.AlphaFairCRPSMAETerm
+    afcrps_spread_term:
+      _target_: autocast.metrics.ensemble.AlphaFairCRPSSpreadTerm
+    spread:
+      _target_: autocast.metrics.ensemble.EnsembleSpread
+    multicoverage:
+      _target_: autocast.metrics.MultiCoverage
+    multiwinkler:
+      _target_: autocast.metrics.ensemble.MultiWinkler
