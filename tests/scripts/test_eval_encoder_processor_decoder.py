@@ -1626,6 +1626,74 @@ def test_run_evaluation_auto_uses_standard_cached_latent_metadata(
     assert captured["eval_mode"] == "encode_once"
 
 
+def test_run_evaluation_passes_distributed_eval_config_to_fabric(tmp_path, monkeypatch):
+    eval_mod = "autocast.scripts.eval.encoder_processor_decoder"
+    cfg = OmegaConf.create(
+        {
+            "eval": {
+                "mode": "latent",
+                "latent_space_metrics": True,
+                "checkpoint": str(tmp_path / "ckpt.ckpt"),
+                "compute_test_metrics": False,
+                "accelerator": "gpu",
+                "strategy": "ddp",
+                "devices": 4,
+                "num_nodes": 2,
+            },
+            "model": {"n_members": 1},
+        }
+    )
+    encoded_batch = _example_batch("encoded")
+
+    monkeypatch.setattr(
+        f"{eval_mod}.load_checkpoint_payload",
+        lambda _path: {"state_dict": {"processor.layer.weight": torch.zeros(1)}},
+    )
+    monkeypatch.setattr(
+        f"{eval_mod}.resolve_checkpoint_path",
+        lambda *_args, **_kwargs: tmp_path / "ckpt.ckpt",
+    )
+    monkeypatch.setattr(
+        f"{eval_mod}.setup_datamodule",
+        lambda config: (
+            object(),
+            config,
+            {"example_batch": encoded_batch, "n_steps_output": 1},
+        ),
+    )
+
+    class _FakeModel:
+        def load_state_dict(self, *_args, **_kwargs):
+            return SimpleNamespace(missing_keys=[], unexpected_keys=[])
+
+    monkeypatch.setattr(
+        f"{eval_mod}.setup_processor_model",
+        lambda *_args, **_kwargs: _FakeModel(),
+    )
+
+    class _StopAfterFabric(Exception):
+        pass
+
+    captured: dict[str, Any] = {}
+
+    class _FakeFabric:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+            raise _StopAfterFabric
+
+    monkeypatch.setattr(f"{eval_mod}.L.Fabric", _FakeFabric)
+
+    with pytest.raises(_StopAfterFabric):
+        run_evaluation(cast(Any, cfg), work_dir=tmp_path)
+
+    assert captured == {
+        "accelerator": "gpu",
+        "strategy": "ddp",
+        "devices": 4,
+        "num_nodes": 2,
+    }
+
+
 def test_read_eval_chunk_size_returns_none_when_absent():
     cfg = OmegaConf.create({"eval": {}})
     assert _read_eval_chunk_size(cfg) is None

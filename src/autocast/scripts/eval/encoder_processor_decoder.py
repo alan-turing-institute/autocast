@@ -2703,8 +2703,15 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
             "using eval.accelerator=%s.",
             accelerator,
         )
+    strategy = eval_cfg.get("strategy", "auto")
     devices = eval_cfg.get("devices", 1)
-    fabric = L.Fabric(accelerator=accelerator, devices=devices)
+    num_nodes = eval_cfg.get("num_nodes", 1)
+    fabric = L.Fabric(
+        accelerator=accelerator,
+        strategy=strategy,
+        devices=devices,
+        num_nodes=num_nodes,
+    )
     fabric.launch()
 
     # Setup model and loader with Fabric

@@ -80,6 +80,7 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
         pred: Optional predicted tensor of shape (B, T, W, H, C).
         pred_uq: Optional predicted uncertainty tensor of shape (B, T, W, H, C).
         coverage: Optional coverage tensor of shape (B, T, W, H, C).
+        extra_preds: Optional extra prediction rows as ``(tensor, label)`` pairs.
         batch_idx: Which batch index to visualize (default: 0).
         fps: Frames per second for the video (default: 5).
         vmin: Minimum value for color scale (default: auto from data).
@@ -87,6 +88,7 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
         cmap: Colormap to use (default: "viridis").
         save_path: Optional path to save the video (e.g., "output.mp4").
         title: Title for the video (default: "Ground Truth vs Prediction").
+        pred_label: Label for the main prediction row.
         pred_uq_label: Label for the prediction uncertainty row.
         coverage_label: Label for the coverage row.
         colorbar_mode: Select how colorbars (and underlying color scales) are
@@ -418,7 +420,11 @@ def plot_spatiotemporal_snapshots(  # noqa: PLR0912, PLR0915
     diff_log: bool = False,
     uq_log: bool = False,
 ) -> Figure:
-    """Create a still panel at selected timesteps for one spatial channel."""
+    """Create a still panel at selected timesteps for one spatial channel.
+
+    ``extra_preds`` adds extra prediction rows as ``(tensor, label)`` pairs;
+    ``pred_label`` names the main prediction row.
+    """
     true_batch = true[batch_idx]
     pred_batch = pred[batch_idx] if pred is not None else None
     pred_uq_batch = pred_uq[batch_idx] if pred_uq is not None else None

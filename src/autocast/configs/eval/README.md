@@ -91,8 +91,10 @@ All eval configs support these parameters:
   independently with deterministic metrics and average over members. CSV
   columns are suffixed as `<metric>_member_avg`.
 - `accelerator`: Accelerator for evaluation (auto, cpu, cuda, mps)
+- `strategy`: Lightning Fabric strategy for evaluation (`auto`, `ddp`, etc.)
 - `devices`: Number of GPUs for DDP evaluation (default: 1; set explicitly,
   e.g. 4, for multi-GPU runs)
+- `num_nodes`: Number of nodes for distributed evaluation
 - Ensemble-only metrics (`crps`, `fcrps`, `afcrps`, `energy`, `variogram`,
   `spread`, `skill`, `ssr`, `winkler`) are skipped automatically when
   `model.n_members <= 1`
