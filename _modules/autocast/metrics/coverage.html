@@ -1,0 +1,737 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../../../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>autocast.metrics.coverage &#8212; AutoCast: Spatiotemporal Forecasting</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../../../_static/styles/theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+<link href="../../../_static/styles/pydata-sphinx-theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/styles/sphinx-book-theme.css?v=3c74b3bc" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/togglebutton.css?v=9c3e77be" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/mystnb.11b39860a7a0cbfd473a3ad8a317855267ff0bd372690045ca344a6b62be495e.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sphinx-thebe.css?v=4fa983c6" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sphinx-design.min.css?v=95c83b7e" />
+  
+  <!-- So that users can add custom icons -->
+  <script src="../../../_static/scripts/fontawesome.js?digest=8878045cc6db502f8baf"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../../../_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf" />
+<link rel="preload" as="script" href="../../../_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf" />
+
+    <script src="../../../_static/documentation_options.js?v=9eb32ce0"></script>
+    <script src="../../../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../../../_static/copybutton.js?v=7f8ff830"></script>
+    <script src="../../../_static/scripts/sphinx-book-theme.js?v=fab101a9"></script>
+    <script>let toggleHintShow = 'Click to show';</script>
+    <script>let toggleHintHide = 'Click to hide';</script>
+    <script>let toggleOpenOnPrint = 'true';</script>
+    <script src="../../../_static/togglebutton.js?v=b8b12719"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script src="../../../_static/design-tabs.js?v=f930bc37"></script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script async="async" src="../../../_static/sphinx-thebe.js?v=c100c467"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script>DOCUMENTATION_OPTIONS.pagename = '_modules/autocast/metrics/coverage';</script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="" />
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="../../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search this book..."
+         aria-label="Search this book..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+        
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../../../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../../../_static/AC.png" class="logo__image only-light" alt="AutoCast: Spatiotemporal Forecasting - Home"/>
+    <img src="../../../_static/AC.png" class="logo__image only-dark pst-js-only" alt="AutoCast: Spatiotemporal Forecasting - Home"/>
+  
+  
+</a></div>
+        <div class="sidebar-primary-item">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button></div>
+        <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item navbar-nav active">
+        
+        <ul class="nav bd-sidenav bd-sidenav__home-link">
+            <li class="toctree-l1">
+                <a class="reference internal" href="../../../index.html">
+                    Welcome to AutoCast
+                </a>
+            </li>
+        </ul>
+        <ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../../installation.html">Installation</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../tutorial/index.html">Tutorial</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../tutorial/commands.html">Available commands</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../tutorial/configs.html">Extending configurations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../tutorial/eval.html">Evaluating models</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../other-commands.html">Direct usage of lower-level Hydra scripts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../contributing.html">Contributing</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../reference/index.html">API Reference</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/models/index.html">Models</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/models/encoder_decoder.html">autocast.models.encoder_decoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/models/encoder_processor_decoder.html">autocast.models.encoder_processor_decoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/models/autoencoder.html">autocast.models.autoencoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/models/variational_autoencoder.html">autocast.models.variational_autoencoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/models/processor.html">autocast.models.processor</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/processors/index.html">Processors</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/processors/base.html">autocast.processors.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/processors/unet.html">autocast.processors.unet</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/processors/swin_vit.html">autocast.processors.swin_vit</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/processors/vit.html">autocast.processors.vit</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/processors/flow_matching.html">autocast.processors.flow_matching</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/processors/diffusion.html">autocast.processors.diffusion</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/processors/noise.html">autocast.processors.noise</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/encoders/index.html">Encoders</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/encoders/base.html">autocast.encoders.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/encoders/dc.html">autocast.encoders.dc</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/encoders/unet.html">autocast.encoders.unet</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/encoders/identity.html">autocast.encoders.identity</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/decoders/index.html">Decoders</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/decoders/base.html">autocast.decoders.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/decoders/dc.html">autocast.decoders.dc</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/decoders/identity.html">autocast.decoders.identity</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/data/index.html">Data</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/data/datamodule.html">autocast.data.datamodule</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/data/dataset.html">autocast.data.dataset</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/data/encoded_dataset.html">autocast.data.encoded_dataset</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/data/metadata.html">autocast.data.metadata</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/metrics/index.html">Metrics</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/metrics/base.html">autocast.metrics.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/metrics/deterministic.html">autocast.metrics.deterministic</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/metrics/ensemble.html">autocast.metrics.ensemble</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/metrics/coverage.html">autocast.metrics.coverage</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/losses/index.html">Losses</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/losses/ensemble.html">autocast.losses.ensemble</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/types/index.html">Types</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/types/types.html">autocast.types.types</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/types/batch.html">autocast.types.batch</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/nn/index.html">Neural Network Utilities</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/nn/residual.html">autocast.nn.residual</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/nn/spatial_attention.html">autocast.nn.spatial_attention</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/utils/index.html">Utilities</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/utils/optimizer.html">autocast.utils.optimizer</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/utils/plots.html">autocast.utils.plots</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/benchmarking/index.html">Benchmarking</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/benchmarking/inference.html">autocast.benchmarking.inference</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/logging/index.html">Logging</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/logging/wandb.html">autocast.logging.wandb</a></li>
+</ul>
+</details></li>
+</ul>
+</details></li>
+</ul>
+
+    </div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+      <div class="sidebar-primary-item">
+<div id="ethical-ad-placement"
+      class="flat"
+      data-ea-publisher="readthedocs"
+      data-ea-type="readthedocs-sidebar"
+      data-ea-manual="true">
+</div></div>
+  </div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+
+<div class="sbt-scroll-pixel-helper"></div>
+
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item"><button class="sidebar-toggle primary-toggle btn btn-sm" title="Toggle primary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <span class="fa-solid fa-bars"></span>
+</button></div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+
+<div class="article-header-buttons">
+
+
+
+
+
+<div class="dropdown dropdown-source-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Source repositories">
+    <i class="fab fa-github"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="https://github.com/alan-turing-institute/autocast" target="_blank"
+   class="btn btn-sm btn-source-repository-button dropdown-item"
+   title="Source repository"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fab fa-github"></i>
+  </span>
+<span class="btn__text-container">Repository</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/alan-turing-institute/autocast/issues/new?title=Issue%20on%20page%20%2F_modules/autocast/metrics/coverage.html&body=Your%20issue%20content%20here." target="_blank"
+   class="btn btn-sm btn-source-issues-button dropdown-item"
+   title="Open an issue"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-lightbulb"></i>
+  </span>
+<span class="btn__text-container">Open issue</span>
+</a>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+<button onclick="toggleFullScreen()"
+  class="btn btn-sm btn-fullscreen-button pst-navbar-icon"
+  title="Fullscreen mode"
+  data-bs-placement="bottom" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+
+
+<button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button pst-js-only" aria-label="Color mode" data-bs-title="Color mode"  data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <i class="theme-switch fa-solid fa-sun                fa-lg" data-mode="light" title="Light"></i>
+  <i class="theme-switch fa-solid fa-moon               fa-lg" data-mode="dark"  title="Dark"></i>
+  <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"  title="System Settings"></i>
+</button>
+
+
+<button class="btn btn-sm pst-navbar-icon search-button search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+</button>
+
+</div></div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="jb-print-docs-body" class="onlyprint">
+    <h1></h1>
+    <!-- Table of contents -->
+    <div id="print-main-content">
+        <div id="jb-print-toc">
+            
+        </div>
+    </div>
+</div>
+
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <h1>Source code for autocast.metrics.coverage</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">matplotlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">pyplot</span> <span class="k">as</span> <span class="n">plt</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">matplotlib.lines</span><span class="w"> </span><span class="kn">import</span> <span class="n">Line2D</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="kn">import</span> <span class="n">ModuleList</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torchmetrics</span><span class="w"> </span><span class="kn">import</span> <span class="n">Metric</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">autocast.metrics.ensemble</span><span class="w"> </span><span class="kn">import</span> <span class="n">BTSCMMetric</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autocast.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">Tensor</span><span class="p">,</span> <span class="n">TensorBTSC</span><span class="p">,</span> <span class="n">TensorBTSCM</span>
+
+
+<div class="viewcode-block" id="Coverage">
+<a class="viewcode-back" href="../../../reference/metrics/coverage.html#autocast.metrics.coverage.Coverage">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">Coverage</span><span class="p">(</span><span class="n">BTSCMMetric</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Coverage probability for a fixed coverage level.</span>
+
+<span class="sd">    Calculates the proportion of true values that fall within the symmetric</span>
+<span class="sd">    prediction interval defined by the coverage level.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;coverage&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">coverage_level</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.95</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initialize Coverage metric.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            coverage_level: nominal coverage probability (e.g. 0.95 for 95% interval).</span>
+<span class="sd">                Must be between 0 and 1.</span>
+<span class="sd">            **kwargs: Additional arguments passed to BaseMetric.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="mi">0</span> <span class="o">&lt;</span> <span class="n">coverage_level</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;coverage_level must be in (0, 1), got </span><span class="si">{</span><span class="n">coverage_level</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">coverage_level</span> <span class="o">=</span> <span class="n">coverage_level</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_score</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">:</span> <span class="n">TensorBTSCM</span><span class="p">,</span> <span class="n">y_true</span><span class="p">:</span> <span class="n">TensorBTSC</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TensorBTSC</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Compute per-gridpoint coverage indicator.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            y_pred: (B, T, S, C, M)</span>
+<span class="sd">            y_true: (B, T, S, C)</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            coverage: (B, T, S, C) — 1.0 where y_true falls inside the</span>
+<span class="sd">                interval, else 0.0</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># e.g. coverage_level=0.95 -&gt; 0.025 and 0.975 quantiles</span>
+        <span class="n">q_low</span> <span class="o">=</span> <span class="mf">0.5</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">coverage_level</span> <span class="o">/</span> <span class="mi">2</span>
+        <span class="n">q_high</span> <span class="o">=</span> <span class="mf">0.5</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">coverage_level</span> <span class="o">/</span> <span class="mi">2</span>
+
+        <span class="n">q_tensor</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span>
+            <span class="p">[</span><span class="n">q_low</span><span class="p">,</span> <span class="n">q_high</span><span class="p">],</span> <span class="n">device</span><span class="o">=</span><span class="n">y_pred</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">y_pred</span><span class="o">.</span><span class="n">dtype</span>
+        <span class="p">)</span>
+        <span class="n">quantiles</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">quantile</span><span class="p">(</span><span class="n">y_pred</span><span class="p">,</span> <span class="n">q_tensor</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>  <span class="c1"># (2, B, T, S, C)</span>
+
+        <span class="n">is_covered</span> <span class="o">=</span> <span class="p">((</span><span class="n">y_true</span> <span class="o">&gt;=</span> <span class="n">quantiles</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">y_true</span> <span class="o">&lt;=</span> <span class="n">quantiles</span><span class="p">[</span><span class="mi">1</span><span class="p">]))</span><span class="o">.</span><span class="n">float</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">is_covered</span></div>
+
+
+
+<div class="viewcode-block" id="MultiCoverage">
+<a class="viewcode-back" href="../../../reference/metrics/coverage.html#autocast.metrics.coverage.MultiCoverage">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">MultiCoverage</span><span class="p">(</span><span class="n">Metric</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Computes coverage for multiple coverage levels at once.</span>
+
+<span class="sd">    This is a wrapper around multiple Coverage metrics. It inherits from Metric</span>
+<span class="sd">    to integrate with PyTorch Lightning and TorchMetrics.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">coverage_levels</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">coverage_levels</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">coverage_levels</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="nb">round</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">0.05</span><span class="p">,</span> <span class="mf">0.95</span><span class="p">,</span> <span class="n">steps</span><span class="o">=</span><span class="mi">19</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+            <span class="p">]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">coverage_levels</span> <span class="o">=</span> <span class="n">coverage_levels</span>
+        <span class="c1"># List of Coverage metrics with reduce_all=False to allow per-channel analysis</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">metrics</span> <span class="o">=</span> <span class="n">ModuleList</span><span class="p">(</span>
+            <span class="p">[</span><span class="n">Coverage</span><span class="p">(</span><span class="n">coverage_level</span><span class="o">=</span><span class="n">cl</span><span class="p">,</span> <span class="n">reduce_all</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="k">for</span> <span class="n">cl</span> <span class="ow">in</span> <span class="n">coverage_levels</span><span class="p">]</span>
+        <span class="p">)</span>
+
+<div class="viewcode-block" id="MultiCoverage.update">
+<a class="viewcode-back" href="../../../reference/metrics/coverage.html#autocast.metrics.coverage.MultiCoverage.update">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">update</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">,</span> <span class="n">y_true</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">metric</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">metrics</span><span class="p">:</span>
+            <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">metric</span><span class="p">,</span> <span class="n">Coverage</span><span class="p">)</span>
+            <span class="n">metric</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">y_pred</span><span class="p">,</span> <span class="n">y_true</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="MultiCoverage.compute">
+<a class="viewcode-back" href="../../../reference/metrics/coverage.html#autocast.metrics.coverage.MultiCoverage.compute">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">compute</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tensor</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Compute the Average Calibration Error.&quot;&quot;&quot;</span>
+        <span class="n">errors</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">cl</span><span class="p">,</span> <span class="n">metric</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">coverage_levels</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">metrics</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+            <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">metric</span><span class="p">,</span> <span class="n">Coverage</span><span class="p">)</span>
+            <span class="c1"># Calibration error: |observed - expected|</span>
+            <span class="n">errors</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">metric</span><span class="o">.</span><span class="n">compute</span><span class="p">()</span> <span class="o">-</span> <span class="n">cl</span><span class="p">))</span>
+
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">(</span><span class="n">errors</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_compute_levels_and_values</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get coverage levels and observed values for plotting.&quot;&quot;&quot;</span>
+        <span class="n">levels</span><span class="p">,</span> <span class="n">observed</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">cl</span><span class="p">,</span> <span class="n">metric</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">coverage_levels</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">metrics</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+            <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">metric</span><span class="p">,</span> <span class="n">Coverage</span><span class="p">)</span>
+            <span class="n">levels</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cl</span><span class="p">)</span>
+            <span class="n">observed</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">metric</span><span class="o">.</span><span class="n">compute</span><span class="p">()</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
+        <span class="k">return</span> <span class="n">levels</span><span class="p">,</span> <span class="n">observed</span>
+
+<div class="viewcode-block" id="MultiCoverage.compute_detailed">
+<a class="viewcode-back" href="../../../reference/metrics/coverage.html#autocast.metrics.coverage.MultiCoverage.compute_detailed">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">compute_detailed</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return a dict of results, keys formatted as &#39;coverage_{coverage_level}&#39;.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="sa">f</span><span class="s2">&quot;coverage_</span><span class="si">{</span><span class="n">level</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">:</span> <span class="n">value</span>
+            <span class="k">for</span> <span class="n">level</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">_compute_levels_and_values</span><span class="p">(),</span> <span class="n">strict</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="MultiCoverage.plot">
+<a class="viewcode-back" href="../../../reference/metrics/coverage.html#autocast.metrics.coverage.MultiCoverage.plot">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">plot</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">save_path</span><span class="p">:</span> <span class="n">Path</span> <span class="o">|</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">title</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;Coverage Plot&quot;</span><span class="p">,</span>
+        <span class="n">cmap_str</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;viridis&quot;</span><span class="p">,</span>
+        <span class="n">save_csv</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Plot reliability diagram showing expected vs observed coverage.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            save_path: Path to save the plot (PNG). If provided and save_csv=True,</span>
+<span class="sd">                a CSV file with the same name will also be saved.</span>
+<span class="sd">            title: Plot title.</span>
+<span class="sd">            cmap_str: Color map string from matplotlib.</span>
+<span class="sd">            save_csv: If True and save_path is provided, save plot data as CSV</span>
+<span class="sd">                before creating the plot.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            matplotlib.figure.Figure</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Prepare data structure: levels -&gt; [val_c1, val_c2, ...]</span>
+        <span class="n">levels</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">coverage_levels</span>
+        <span class="n">observed_means</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">observed_channels</span> <span class="o">=</span> <span class="p">[]</span>  <span class="c1"># shape (L, C)</span>
+
+        <span class="c1"># Loop over metrics</span>
+        <span class="k">for</span> <span class="n">metric</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">metrics</span><span class="p">:</span>
+            <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">metric</span><span class="p">,</span> <span class="n">Coverage</span><span class="p">)</span>
+            <span class="n">val</span> <span class="o">=</span> <span class="n">metric</span><span class="o">.</span><span class="n">compute</span><span class="p">()</span>
+            <span class="c1"># Ensure channel coverage is always represented as 1D, even if a</span>
+            <span class="c1"># degenerate shape collapses to a scalar.</span>
+            <span class="n">val_c</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">atleast_1d</span><span class="p">(</span><span class="n">val</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">())</span>  <span class="c1"># (C,)</span>
+            <span class="n">observed_channels</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">val_c</span><span class="p">)</span>
+            <span class="n">observed_means</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">val_c</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
+
+        <span class="c1"># Create matplotlib figure</span>
+        <span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">8</span><span class="p">))</span>
+
+        <span class="c1"># Optimal line (y=x)</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">([</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="s2">&quot;k:&quot;</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;Expected&quot;</span><span class="p">,</span> <span class="n">linewidth</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+
+        <span class="c1"># Plot channels</span>
+        <span class="n">observed_arr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">(</span><span class="n">observed_channels</span><span class="p">)</span>  <span class="c1"># (L, C)</span>
+
+        <span class="c1"># Save CSV data if requested</span>
+        <span class="k">if</span> <span class="n">save_path</span> <span class="ow">and</span> <span class="n">save_csv</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_save_csv_data</span><span class="p">(</span>
+                <span class="n">save_path</span><span class="o">=</span><span class="n">save_path</span><span class="p">,</span>
+                <span class="n">levels</span><span class="o">=</span><span class="n">levels</span><span class="p">,</span>
+                <span class="n">observed_means</span><span class="o">=</span><span class="n">observed_means</span><span class="p">,</span>
+                <span class="n">observed_channels</span><span class="o">=</span><span class="n">observed_arr</span><span class="p">,</span>
+            <span class="p">)</span>
+
+        <span class="n">cmap</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">get_cmap</span><span class="p">(</span><span class="n">cmap_str</span><span class="p">)</span>  <span class="c1"># cmap for each channel</span>
+        <span class="n">n_channels</span> <span class="o">=</span> <span class="n">observed_arr</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_channels</span><span class="p">):</span>
+            <span class="n">color</span> <span class="o">=</span> <span class="n">cmap</span><span class="p">(</span><span class="n">c</span> <span class="o">/</span> <span class="n">n_channels</span><span class="p">)</span> <span class="k">if</span> <span class="n">n_channels</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="k">else</span> <span class="s2">&quot;blue&quot;</span>
+            <span class="n">label</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;Ch </span><span class="si">{</span><span class="n">c</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="n">n_channels</span> <span class="o">&lt;=</span> <span class="mi">10</span> <span class="k">else</span> <span class="kc">None</span>
+            <span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span>
+                <span class="n">levels</span><span class="p">,</span>
+                <span class="n">observed_arr</span><span class="p">[:,</span> <span class="n">c</span><span class="p">],</span>
+                <span class="n">color</span><span class="o">=</span><span class="n">color</span><span class="p">,</span>
+                <span class="n">alpha</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span>
+                <span class="n">linewidth</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+                <span class="n">label</span><span class="o">=</span><span class="n">label</span><span class="p">,</span>
+            <span class="p">)</span>
+
+        <span class="c1"># Plot mean coverage in bold</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">levels</span><span class="p">,</span> <span class="n">observed_means</span><span class="p">,</span> <span class="s2">&quot;k-&quot;</span><span class="p">,</span> <span class="n">linewidth</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;Mean&quot;</span><span class="p">)</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;Coverage level, $\alpha$&quot;</span><span class="p">)</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s2">&quot;Observed Coverage&quot;</span><span class="p">)</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="n">title</span><span class="p">)</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">set_xlim</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">set_ylim</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="kc">True</span><span class="p">,</span> <span class="n">linestyle</span><span class="o">=</span><span class="s2">&quot;:&quot;</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.6</span><span class="p">)</span>
+
+        <span class="c1"># Only show legend if not cluttered</span>
+        <span class="k">if</span> <span class="n">n_channels</span> <span class="o">&gt;</span> <span class="mi">10</span><span class="p">:</span>
+            <span class="c1"># Add manual legend for trace</span>
+            <span class="n">custom_lines</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="n">Line2D</span><span class="p">([</span><span class="mi">0</span><span class="p">],</span> <span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">color</span><span class="o">=</span><span class="s2">&quot;k&quot;</span><span class="p">,</span> <span class="n">lw</span><span class="o">=</span><span class="mi">3</span><span class="p">),</span>
+                <span class="n">Line2D</span><span class="p">([</span><span class="mi">0</span><span class="p">],</span> <span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">color</span><span class="o">=</span><span class="s2">&quot;grey&quot;</span><span class="p">,</span> <span class="n">lw</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.5</span><span class="p">),</span>
+            <span class="p">]</span>
+            <span class="n">ax</span><span class="o">.</span><span class="n">legend</span><span class="p">(</span><span class="n">custom_lines</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;Mean&quot;</span><span class="p">,</span> <span class="s2">&quot;Individual Channels&quot;</span><span class="p">])</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">ax</span><span class="o">.</span><span class="n">legend</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="n">save_path</span><span class="p">:</span>
+            <span class="n">plt</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="n">save_path</span><span class="p">,</span> <span class="n">bbox_inches</span><span class="o">=</span><span class="s2">&quot;tight&quot;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Plot saved to </span><span class="si">{</span><span class="n">save_path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="n">plt</span><span class="o">.</span><span class="n">close</span><span class="p">(</span><span class="n">fig</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">fig</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_save_csv_data</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">save_path</span><span class="p">:</span> <span class="n">Path</span> <span class="o">|</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">levels</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span>
+        <span class="n">observed_means</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span>
+        <span class="n">observed_channels</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Save coverage plot data to CSV file.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            save_path: Path for the PNG file. CSV will use the same path</span>
+<span class="sd">                with .csv extension.</span>
+<span class="sd">            levels: Coverage levels (expected coverage values).</span>
+<span class="sd">            observed_means: Mean observed coverage across all channels for each level.</span>
+<span class="sd">            observed_channels: Observed coverage per level per channel, shape (L, C).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Generate CSV path from PNG path</span>
+        <span class="n">csv_path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">save_path</span><span class="p">)</span><span class="o">.</span><span class="n">with_suffix</span><span class="p">(</span><span class="s2">&quot;.csv&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Build DataFrame</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">&quot;coverage_level&quot;</span><span class="p">:</span> <span class="n">levels</span><span class="p">,</span>
+            <span class="s2">&quot;observed_mean&quot;</span><span class="p">:</span> <span class="n">observed_means</span><span class="p">,</span>
+        <span class="p">}</span>
+
+        <span class="k">if</span> <span class="n">observed_channels</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">observed_channels</span> <span class="o">=</span> <span class="n">observed_channels</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]</span>
+
+        <span class="c1"># Add per-channel columns</span>
+        <span class="n">n_channels</span> <span class="o">=</span> <span class="n">observed_channels</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_channels</span><span class="p">):</span>
+            <span class="n">data</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;channel_</span><span class="si">{</span><span class="n">c</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">observed_channels</span><span class="p">[:,</span> <span class="n">c</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+
+        <span class="n">df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+
+        <span class="c1"># Save CSV</span>
+        <span class="n">csv_path</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">df</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span><span class="n">csv_path</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+<div class="viewcode-block" id="MultiCoverage.reset">
+<a class="viewcode-back" href="../../../reference/metrics/coverage.html#autocast.metrics.coverage.MultiCoverage.reset">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="c1"># Reset all sub-metrics</span>
+        <span class="k">for</span> <span class="n">metric</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">metrics</span><span class="p">:</span>
+            <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">metric</span><span class="p">,</span> <span class="n">Coverage</span><span class="p">)</span>
+            <span class="n">metric</span><span class="o">.</span><span class="n">reset</span><span class="p">()</span></div>
+</div>
+
+</pre></div>
+
+                </article>
+              
+
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+<div class="bd-footer-content__inner container">
+  
+  <div class="footer-item">
+    
+<p class="component-author">
+By AI for Physical Systems Team at The Alan Turing Institute
+</p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+  <div class="footer-item">
+    
+<div class="extra_footer">
+  Copyright &copy; 2026
+
+</div>
+  </div>
+  
+</div>
+          </footer>
+        
+
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="../../../_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf"></script>
+<script defer src="../../../_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf"></script>
+
+  <footer class="bd-footer">
+  </footer>
+  </body>
+</html>

@@ -1,0 +1,739 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Extending configurations &#8212; AutoCast: Spatiotemporal Forecasting</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../_static/styles/theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+<link href="../_static/styles/pydata-sphinx-theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=03e43079" />
+    <link rel="stylesheet" type="text/css" href="../_static/styles/sphinx-book-theme.css?v=3c74b3bc" />
+    <link rel="stylesheet" type="text/css" href="../_static/togglebutton.css?v=9c3e77be" />
+    <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../_static/mystnb.11b39860a7a0cbfd473a3ad8a317855267ff0bd372690045ca344a6b62be495e.css" />
+    <link rel="stylesheet" type="text/css" href="../_static/sphinx-thebe.css?v=4fa983c6" />
+    <link rel="stylesheet" type="text/css" href="../_static/sphinx-design.min.css?v=95c83b7e" />
+  
+  <!-- So that users can add custom icons -->
+  <script src="../_static/scripts/fontawesome.js?digest=8878045cc6db502f8baf"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf" />
+<link rel="preload" as="script" href="../_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf" />
+
+    <script src="../_static/documentation_options.js?v=9eb32ce0"></script>
+    <script src="../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../_static/copybutton.js?v=7f8ff830"></script>
+    <script src="../_static/scripts/sphinx-book-theme.js?v=fab101a9"></script>
+    <script>let toggleHintShow = 'Click to show';</script>
+    <script>let toggleHintHide = 'Click to hide';</script>
+    <script>let toggleOpenOnPrint = 'true';</script>
+    <script src="../_static/togglebutton.js?v=b8b12719"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script src="../_static/design-tabs.js?v=f930bc37"></script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script async="async" src="../_static/sphinx-thebe.js?v=c100c467"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'tutorial/configs';</script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Evaluating models" href="eval.html" />
+    <link rel="prev" title="Available commands" href="commands.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="" />
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search this book..."
+         aria-label="Search this book..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../_static/AC.png" class="logo__image only-light" alt="AutoCast: Spatiotemporal Forecasting - Home"/>
+    <img src="../_static/AC.png" class="logo__image only-dark pst-js-only" alt="AutoCast: Spatiotemporal Forecasting - Home"/>
+  
+  
+</a></div>
+        <div class="sidebar-primary-item">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button></div>
+        <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item navbar-nav active">
+        
+        <ul class="nav bd-sidenav bd-sidenav__home-link">
+            <li class="toctree-l1">
+                <a class="reference internal" href="../index.html">
+                    Welcome to AutoCast
+                </a>
+            </li>
+        </ul>
+        <ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="index.html">Tutorial</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="commands.html">Available commands</a></li>
+<li class="toctree-l2 current active"><a class="current reference internal" href="#">Extending configurations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="eval.html">Evaluating models</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="../other-commands.html">Direct usage of lower-level Hydra scripts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../contributing.html">Contributing</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../reference/index.html">API Reference</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../reference/models/index.html">Models</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../reference/models/encoder_decoder.html">autocast.models.encoder_decoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/models/encoder_processor_decoder.html">autocast.models.encoder_processor_decoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/models/autoencoder.html">autocast.models.autoencoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/models/variational_autoencoder.html">autocast.models.variational_autoencoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/models/processor.html">autocast.models.processor</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../reference/processors/index.html">Processors</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../reference/processors/base.html">autocast.processors.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/processors/unet.html">autocast.processors.unet</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/processors/swin_vit.html">autocast.processors.swin_vit</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/processors/vit.html">autocast.processors.vit</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/processors/flow_matching.html">autocast.processors.flow_matching</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/processors/diffusion.html">autocast.processors.diffusion</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/processors/noise.html">autocast.processors.noise</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../reference/encoders/index.html">Encoders</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../reference/encoders/base.html">autocast.encoders.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/encoders/dc.html">autocast.encoders.dc</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/encoders/unet.html">autocast.encoders.unet</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/encoders/identity.html">autocast.encoders.identity</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../reference/decoders/index.html">Decoders</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../reference/decoders/base.html">autocast.decoders.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/decoders/dc.html">autocast.decoders.dc</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/decoders/identity.html">autocast.decoders.identity</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../reference/data/index.html">Data</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../reference/data/datamodule.html">autocast.data.datamodule</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/data/dataset.html">autocast.data.dataset</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/data/encoded_dataset.html">autocast.data.encoded_dataset</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/data/metadata.html">autocast.data.metadata</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../reference/metrics/index.html">Metrics</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../reference/metrics/base.html">autocast.metrics.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/metrics/deterministic.html">autocast.metrics.deterministic</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/metrics/ensemble.html">autocast.metrics.ensemble</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/metrics/coverage.html">autocast.metrics.coverage</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../reference/losses/index.html">Losses</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../reference/losses/ensemble.html">autocast.losses.ensemble</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../reference/types/index.html">Types</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../reference/types/types.html">autocast.types.types</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/types/batch.html">autocast.types.batch</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../reference/nn/index.html">Neural Network Utilities</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../reference/nn/residual.html">autocast.nn.residual</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/nn/spatial_attention.html">autocast.nn.spatial_attention</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../reference/utils/index.html">Utilities</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../reference/utils/optimizer.html">autocast.utils.optimizer</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/utils/plots.html">autocast.utils.plots</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../reference/benchmarking/index.html">Benchmarking</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../reference/benchmarking/inference.html">autocast.benchmarking.inference</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../reference/logging/index.html">Logging</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../reference/logging/wandb.html">autocast.logging.wandb</a></li>
+</ul>
+</details></li>
+</ul>
+</details></li>
+</ul>
+
+    </div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+      <div class="sidebar-primary-item">
+<div id="ethical-ad-placement"
+      class="flat"
+      data-ea-publisher="readthedocs"
+      data-ea-type="readthedocs-sidebar"
+      data-ea-manual="true">
+</div></div>
+  </div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+
+<div class="sbt-scroll-pixel-helper"></div>
+
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item"><button class="sidebar-toggle primary-toggle btn btn-sm" title="Toggle primary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <span class="fa-solid fa-bars"></span>
+</button></div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+
+<div class="article-header-buttons">
+
+
+
+
+
+<div class="dropdown dropdown-source-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Source repositories">
+    <i class="fab fa-github"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="https://github.com/alan-turing-institute/autocast" target="_blank"
+   class="btn btn-sm btn-source-repository-button dropdown-item"
+   title="Source repository"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fab fa-github"></i>
+  </span>
+<span class="btn__text-container">Repository</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/alan-turing-institute/autocast/issues/new?title=Issue%20on%20page%20%2Ftutorial/configs.html&body=Your%20issue%20content%20here." target="_blank"
+   class="btn btn-sm btn-source-issues-button dropdown-item"
+   title="Open an issue"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-lightbulb"></i>
+  </span>
+<span class="btn__text-container">Open issue</span>
+</a>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+
+
+<div class="dropdown dropdown-download-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Download this page">
+    <i class="fas fa-download"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="../_sources/tutorial/configs.md" target="_blank"
+   class="btn btn-sm btn-download-source-button dropdown-item"
+   title="Download source file"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file"></i>
+  </span>
+<span class="btn__text-container">.md</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li>
+<button onclick="window.print()"
+  class="btn btn-sm btn-download-pdf-button dropdown-item"
+  title="Print to PDF"
+  data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file-pdf"></i>
+  </span>
+<span class="btn__text-container">.pdf</span>
+</button>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+<button onclick="toggleFullScreen()"
+  class="btn btn-sm btn-fullscreen-button pst-navbar-icon"
+  title="Fullscreen mode"
+  data-bs-placement="bottom" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+
+
+<button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button pst-js-only" aria-label="Color mode" data-bs-title="Color mode"  data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <i class="theme-switch fa-solid fa-sun                fa-lg" data-mode="light" title="Light"></i>
+  <i class="theme-switch fa-solid fa-moon               fa-lg" data-mode="dark"  title="Dark"></i>
+  <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"  title="System Settings"></i>
+</button>
+
+
+<button class="btn btn-sm pst-navbar-icon search-button search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+</button>
+<button class="sidebar-toggle secondary-toggle btn btn-sm pst-navbar-icon" title="Toggle secondary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <span class="fa-solid fa-list"></span>
+</button>
+</div></div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="jb-print-docs-body" class="onlyprint">
+    <h1>Extending configurations</h1>
+    <!-- Table of contents -->
+    <div id="print-main-content">
+        <div id="jb-print-toc">
+            
+            <div>
+                <h2> Contents </h2>
+            </div>
+            <nav aria-label="Page">
+                <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#data-modules">Data modules</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#output-paths">Output paths</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#using-multiple-gpus-nodes">Using multiple GPUs / nodes</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#resuming-from-a-checkpoint">Resuming from a checkpoint</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#weights-biases-logging">Weights &amp; Biases logging</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#making-your-own-configurations">Making your own configurations</a></li>
+</ul>
+            </nav>
+        </div>
+    </div>
+</div>
+
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section class="tex2jax_ignore mathjax_ignore" id="extending-configurations">
+<h1>Extending configurations<a class="headerlink" href="#extending-configurations" title="Link to this heading">#</a></h1>
+<p>Hydra allows you to add or override any configuration value from the command line.
+See <a class="reference external" href="https://hydra.cc/docs/advanced/override_grammar/basic/">the Hydra documentation</a> for more details.
+As an example, to <em>override</em> the number of training epochs for the <code class="docutils literal notranslate"><span class="pre">ae</span></code> command, you can run:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>autocast<span class="w"> </span>ae<span class="w"> </span>trainer.max_epochs<span class="o">=</span><span class="m">5</span>
+</pre></div>
+</div>
+<p>Note that this only works if the <code class="docutils literal notranslate"><span class="pre">trainer.max_epochs</span></code> key is defined in the default configuration for that command.
+If the key is not defined, you have to prefix it with <code class="docutils literal notranslate"><span class="pre">+</span></code> to tell Hydra to add it:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>autocast<span class="w"> </span>ae<span class="w"> </span>+trainer.max_epochs<span class="o">=</span><span class="m">5</span>
+</pre></div>
+</div>
+<p>If you want to specify the option regardless of whether it is defined in the default config or not, you can use <code class="docutils literal notranslate"><span class="pre">++</span></code>:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>autocast<span class="w"> </span>ae<span class="w"> </span>++trainer.max_epochs<span class="o">=</span><span class="m">5</span>
+</pre></div>
+</div>
+<p>In general, usage of <code class="docutils literal notranslate"><span class="pre">autocast</span></code> usually involves some invocation of <code class="docutils literal notranslate"><span class="pre">uv</span> <span class="pre">run</span> <span class="pre">autocast</span> <span class="pre">&lt;command&gt;</span> <span class="pre">&lt;config-overrides&gt;</span></code>.</p>
+<p>On this page we’ll describe some of the options you will almost certainly need to override when using <code class="docutils literal notranslate"><span class="pre">autocast</span></code>.</p>
+<section id="data-modules">
+<h2>Data modules<a class="headerlink" href="#data-modules" title="Link to this heading">#</a></h2>
+<p>By default, these commands all point to their own <em>data modules</em>, which specify the dataset and how it gets loaded.
+The data module configurations are stored in <code class="docutils literal notranslate"><span class="pre">src/autocast/configs/datamodule/</span></code>.</p>
+<p><code class="docutils literal notranslate"><span class="pre">autocast</span></code> can read datasets stored in two different formats:</p>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Format</p></th>
+<th class="head"><p>Appropriate setting for <code class="docutils literal notranslate"><span class="pre">datamodule</span></code></p></th>
+<th class="head"><p>Override…</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">.pt</span></code> files from <a class="reference external" href="https://github.com/alan-turing-institute/autosim">autosim</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">datamodule=advection_diffusion</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">datamodule.data_path</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>HDF5 files from <a class="reference external" href="https://polymathic-ai.org/the_well/">The Well</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">datamodule=the_well</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">datamodule.well_base_path</span></code> and <code class="docutils literal notranslate"><span class="pre">datamodule.well_dataset_name</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>For example, let’s say that you have used <code class="docutils literal notranslate"><span class="pre">autosim</span></code> to generate a dataset of advection-diffusion simulations.
+We’ll keep the size of the spatial grid (<code class="docutils literal notranslate"><span class="pre">simulator.n</span></code>) and the number of trajectories (<code class="docutils literal notranslate"><span class="pre">dataset.n_...</span></code>) small for this example.
+We’ll also manually specify the output directory for the generated dataset, so that we can point <code class="docutils literal notranslate"><span class="pre">autocast</span></code> to it later (otherwise <code class="docutils literal notranslate"><span class="pre">autosim</span></code> will automatically generate a directory for you by default):</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># See the autosim repository for more information on this.</span>
+
+uv<span class="w"> </span>run<span class="w"> </span>autosim<span class="w"> </span><span class="nv">simulator</span><span class="o">=</span>advection_diffusion<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>simulator.n<span class="o">=</span><span class="m">16</span><span class="w"> </span>dataset.n_train<span class="o">=</span><span class="m">10</span><span class="w"> </span>dataset.n_valid<span class="o">=</span><span class="m">2</span><span class="w"> </span>dataset.n_test<span class="o">=</span><span class="m">2</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>dataset.output_dir<span class="o">=</span>/path/to/dataset
+</pre></div>
+</div>
+<p>You can then train an autoencoder on that dataset (with all other settings inherited from that default) with:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>autocast<span class="w"> </span>ae<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span><span class="nv">datamodule</span><span class="o">=</span>advection_diffusion<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>datamodule.data_path<span class="o">=</span>/path/to/dataset<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>+trainer.max_epochs<span class="o">=</span><span class="m">5</span>
+</pre></div>
+</div>
+</section>
+<section id="output-paths">
+<h2>Output paths<a class="headerlink" href="#output-paths" title="Link to this heading">#</a></h2>
+<p>To specify the output directory for an experiment, you can either use the <code class="docutils literal notranslate"><span class="pre">--workdir</span></code> flag:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>autocast<span class="w"> </span>ae<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--workdir<span class="w"> </span>/path/to/output/directory<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span><span class="nv">datamodule</span><span class="o">=</span>advection_diffusion<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>datamodule.data_path<span class="o">=</span>/path/to/dataset<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>+trainer.max_epochs<span class="o">=</span><span class="m">5</span>
+</pre></div>
+</div>
+<p>or alternatively, specify <code class="docutils literal notranslate"><span class="pre">--run-group</span></code> and <code class="docutils literal notranslate"><span class="pre">--run-id</span></code></p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>autocast<span class="w"> </span>ae<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--run-group<span class="w"> </span>MYGROUP<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--run-id<span class="w"> </span>MYID<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span><span class="nv">datamodule</span><span class="o">=</span>advection_diffusion<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>datamodule.data_path<span class="o">=</span>/path/to/dataset<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>+trainer.max_epochs<span class="o">=</span><span class="m">5</span>
+</pre></div>
+</div>
+<p>and <code class="docutils literal notranslate"><span class="pre">autocast</span></code> will automatically use <code class="docutils literal notranslate"><span class="pre">outputs/MYGROUP/MYID</span></code> as the output directory.
+If logging to Weights and Biases is enabled, the run ID will also be used for the default W&amp;B run name.</p>
+<p><code class="docutils literal notranslate"><span class="pre">--run-group</span></code> defaults to the current date, and <code class="docutils literal notranslate"><span class="pre">--run-id</span></code> defaults to a legacy-style run id (a concatenation of dataset/model/hash/uuid).</p>
+</section>
+<section id="using-multiple-gpus-nodes">
+<h2>Using multiple GPUs / nodes<a class="headerlink" href="#using-multiple-gpus-nodes" title="Link to this heading">#</a></h2>
+<p>When running on SLURM with <code class="docutils literal notranslate"><span class="pre">--mode</span> <span class="pre">slurm</span></code> (see <a class="reference internal" href="commands.html"><span class="std std-doc">the previous page</span></a>), you can enable multi-GPU and multi-node SLURM runs through distributed presets (found in <code class="docutils literal notranslate"><span class="pre">src/autocast/configs/distributed/</span></code>):</p>
+<ul class="simple">
+<li><p>To use 4 GPUs on a single node with DDP, add <code class="docutils literal notranslate"><span class="pre">++distributed=ddp_4gpu_slurm</span></code></p></li>
+<li><p>To use 8 GPUs across 2 nodes with DDP, add <code class="docutils literal notranslate"><span class="pre">++distributed=ddp_4gpu_2node_slurm</span></code></p></li>
+<li><p>To use 12 GPUs across 3 nodes with DDP, add <code class="docutils literal notranslate"><span class="pre">++distributed=ddp_4gpu_2node_slurm</span> <span class="pre">++trainer.num_nodes=3</span> <span class="pre">++eval.num_nodes=3</span> <span class="pre">++hydra.launcher.nodes=3</span></code></p></li>
+</ul>
+<p>The preset configurations set both Lightning <code class="docutils literal notranslate"><span class="pre">trainer.devices</span></code>/<code class="docutils literal notranslate"><span class="pre">trainer.num_nodes</span></code> and the matching Slurm <code class="docutils literal notranslate"><span class="pre">hydra.launcher.nodes</span></code>/<code class="docutils literal notranslate"><span class="pre">gpus_per_node</span></code>/<code class="docutils literal notranslate"><span class="pre">tasks_per_node</span></code> values.
+For more fine-grained control, you can also explicitly override these configuration values:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>autocast<span class="w"> </span>epd<span class="w"> </span>--mode<span class="w"> </span>slurm<span class="w"> </span><span class="se">\</span>
+<span class="w">	</span><span class="nv">datamodule</span><span class="o">=</span>reaction_diffusion<span class="w"> </span><span class="se">\</span>
+<span class="w">	</span>trainer.devices<span class="o">=</span><span class="m">4</span><span class="w"> </span>trainer.num_nodes<span class="o">=</span><span class="m">2</span><span class="w"> </span>trainer.strategy<span class="o">=</span>ddp<span class="w"> </span><span class="se">\</span>
+<span class="w">	</span>hydra.launcher.nodes<span class="o">=</span><span class="m">2</span><span class="w"> </span>hydra.launcher.gpus_per_node<span class="o">=</span><span class="m">4</span><span class="w"> </span><span class="se">\</span>
+<span class="w">	</span>hydra.launcher.tasks_per_node<span class="o">=</span><span class="m">4</span>
+</pre></div>
+</div>
+</section>
+<section id="resuming-from-a-checkpoint">
+<h2>Resuming from a checkpoint<a class="headerlink" href="#resuming-from-a-checkpoint" title="Link to this heading">#</a></h2>
+<p>The following extra CLI options can be passed to the <code class="docutils literal notranslate"><span class="pre">ae</span></code>, <code class="docutils literal notranslate"><span class="pre">epd</span></code>, and <code class="docutils literal notranslate"><span class="pre">train-eval</span></code> subcommands (or added to configuration files):</p>
+<ul>
+<li><p>Resume from a saved checkpoint.
+The default is to perform a full-state resume, which restores model + optimizer/scheduler/trainer loop state.</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>--resume-from<span class="w"> </span>path/to/encoder_processor_decoder.ckpt
+</pre></div>
+</div>
+</li>
+<li><p>To additionally reset the timer budget:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>--resume-from<span class="w"> </span>path/to/encoder_processor_decoder.ckpt<span class="w"> </span>++trainer.max_time<span class="o">=</span><span class="s2">&quot;00:04:00:00&quot;</span><span class="w"> </span>++train_eval.reset_resume_time_budget<span class="o">=</span><span class="nb">true</span>
+</pre></div>
+</div>
+</li>
+<li><p>To restore only the model weights and generate a fresh optimizer/trainer state:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>--resume-from<span class="w"> </span>path/to/encoder_processor_decoder.ckpt<span class="w"> </span>++trainer.max_time<span class="o">=</span><span class="s2">&quot;00:04:00:00&quot;</span><span class="w"> </span>++train_eval.resume_weights_only<span class="o">=</span><span class="nb">true</span>
+</pre></div>
+</div>
+<p>In conjunction with <code class="docutils literal notranslate"><span class="pre">trainer.max_time</span></code>, this allows you to continue training with a fresh timer budget.
+Note that if <code class="docutils literal notranslate"><span class="pre">resume_weights_only=true</span></code> is set without a checkpoint, AutoCast raises an error.</p>
+</li>
+</ul>
+</section>
+<section id="weights-biases-logging">
+<h2>Weights &amp; Biases logging<a class="headerlink" href="#weights-biases-logging" title="Link to this heading">#</a></h2>
+<p>AutoCast optionally integrates with <a class="reference external" href="https://wandb.ai/">Weights &amp; Biases</a>; this is driven by the Hydra config in <a class="reference external" href="https://github.com/alan-turing-institute/autocast/blob/main/src/autocast/configs/logging/wandb.yaml"><code class="docutils literal notranslate"><span class="pre">src/autocast/configs/logging/wandb.yaml</span></code></a>.</p>
+<p>Logging to W&amp;B can be enabled (or disabled) with <code class="docutils literal notranslate"><span class="pre">++logging.wandb.enabled=true</span></code> (or <code class="docutils literal notranslate"><span class="pre">false</span></code> respectively).</p>
+<p>The W&amp;B project name can be set with <code class="docutils literal notranslate"><span class="pre">++logging.wandb.project=MYPROJECT</span></code>.</p>
+<p>By default the <code class="docutils literal notranslate"><span class="pre">--run-id</span></code> is used as the W&amp;B run name.
+You can override this with <code class="docutils literal notranslate"><span class="pre">++logging.wandb.name=MYNAME</span></code>.</p>
+<p>If you are resuming from a previous run and want to continue logging to the same W&amp;B run, you need to set:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">++logging.wandb.id=EXISTING_RUN_ID</span></code> (the run ID of the existing W&amp;B run)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">++logging.wandb.resume=allow</span></code> (or <code class="docutils literal notranslate"><span class="pre">must</span></code>)</p></li>
+</ul>
+<p>Without this combination, W&amp;B will create a new run even if the <code class="docutils literal notranslate"><span class="pre">logging.wandb.name</span></code> matches an existing run name.</p>
+</section>
+<section id="making-your-own-configurations">
+<h2>Making your own configurations<a class="headerlink" href="#making-your-own-configurations" title="Link to this heading">#</a></h2>
+<p>Finally, if you find yourself making the same overrides repeatedly, it is probably worth it to make a new YAML configuration that specifies these overrides.
+If they are generally useful for the package, these can stored in <code class="docutils literal notranslate"><span class="pre">src/autocast/configs/experiments/&lt;myexpt&gt;.yaml</span></code> and specified on the command-line with <code class="docutils literal notranslate"><span class="pre">+experiment=&lt;myexpt&gt;</span></code>.</p>
+<p>Some of the configurations we used for our experiments are stored in the <code class="docutils literal notranslate"><span class="pre">local_hydra/local_experiment</span></code> folder.
+These are not in the main <code class="docutils literal notranslate"><span class="pre">src/autocast/configs</span></code> folder because they are not meant to be distributed as part of the package.
+These configuration files can, however, still be used by setting <code class="docutils literal notranslate"><span class="pre">local_experiment=&lt;name&gt;</span></code> on the command line.</p>
+<p>(This works because <code class="docutils literal notranslate"><span class="pre">autocast</span></code> makes sure to add <code class="docutils literal notranslate"><span class="pre">local_hydra</span></code> to Hydra’s search path, allowing you to load configurations from there even though they are outside the package.)</p>
+</section>
+</section>
+
+    <script type="text/x-thebe-config">
+    {
+        requestKernel: true,
+        binderOptions: {
+            repo: "binder-examples/jupyter-stacks-datascience",
+            ref: "master",
+        },
+        codeMirrorConfig: {
+            theme: "abcdef",
+            mode: "python"
+        },
+        kernelOptions: {
+            name: "python3",
+            path: "./tutorial"
+        },
+        predefinedOutput: true
+    }
+    </script>
+    <script>kernelName = 'python3'</script>
+
+                </article>
+              
+
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="commands.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Available commands</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="eval.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Evaluating models</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item"><div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> Contents
+  </div>
+  <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#data-modules">Data modules</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#output-paths">Output paths</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#using-multiple-gpus-nodes">Using multiple GPUs / nodes</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#resuming-from-a-checkpoint">Resuming from a checkpoint</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#weights-biases-logging">Weights &amp; Biases logging</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#making-your-own-configurations">Making your own configurations</a></li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+<div class="bd-footer-content__inner container">
+  
+  <div class="footer-item">
+    
+<p class="component-author">
+By AI for Physical Systems Team at The Alan Turing Institute
+</p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+  <div class="footer-item">
+    
+<div class="extra_footer">
+  Copyright &copy; 2026
+
+</div>
+  </div>
+  
+</div>
+          </footer>
+        
+
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="../_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf"></script>
+<script defer src="../_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf"></script>
+
+  <footer class="bd-footer">
+  </footer>
+  </body>
+</html>

@@ -1,0 +1,1370 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../../../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>autocast.processors.swin_vit &#8212; AutoCast: Spatiotemporal Forecasting</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../../../_static/styles/theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+<link href="../../../_static/styles/pydata-sphinx-theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/styles/sphinx-book-theme.css?v=3c74b3bc" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/togglebutton.css?v=9c3e77be" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/mystnb.11b39860a7a0cbfd473a3ad8a317855267ff0bd372690045ca344a6b62be495e.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sphinx-thebe.css?v=4fa983c6" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sphinx-design.min.css?v=95c83b7e" />
+  
+  <!-- So that users can add custom icons -->
+  <script src="../../../_static/scripts/fontawesome.js?digest=8878045cc6db502f8baf"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../../../_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf" />
+<link rel="preload" as="script" href="../../../_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf" />
+
+    <script src="../../../_static/documentation_options.js?v=9eb32ce0"></script>
+    <script src="../../../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../../../_static/copybutton.js?v=7f8ff830"></script>
+    <script src="../../../_static/scripts/sphinx-book-theme.js?v=fab101a9"></script>
+    <script>let toggleHintShow = 'Click to show';</script>
+    <script>let toggleHintHide = 'Click to hide';</script>
+    <script>let toggleOpenOnPrint = 'true';</script>
+    <script src="../../../_static/togglebutton.js?v=b8b12719"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script src="../../../_static/design-tabs.js?v=f930bc37"></script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script async="async" src="../../../_static/sphinx-thebe.js?v=c100c467"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script>DOCUMENTATION_OPTIONS.pagename = '_modules/autocast/processors/swin_vit';</script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="" />
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="../../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search this book..."
+         aria-label="Search this book..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+        
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../../../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../../../_static/AC.png" class="logo__image only-light" alt="AutoCast: Spatiotemporal Forecasting - Home"/>
+    <img src="../../../_static/AC.png" class="logo__image only-dark pst-js-only" alt="AutoCast: Spatiotemporal Forecasting - Home"/>
+  
+  
+</a></div>
+        <div class="sidebar-primary-item">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button></div>
+        <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item navbar-nav active">
+        
+        <ul class="nav bd-sidenav bd-sidenav__home-link">
+            <li class="toctree-l1">
+                <a class="reference internal" href="../../../index.html">
+                    Welcome to AutoCast
+                </a>
+            </li>
+        </ul>
+        <ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../../installation.html">Installation</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../tutorial/index.html">Tutorial</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../tutorial/commands.html">Available commands</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../tutorial/configs.html">Extending configurations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../tutorial/eval.html">Evaluating models</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../other-commands.html">Direct usage of lower-level Hydra scripts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../contributing.html">Contributing</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../reference/index.html">API Reference</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/models/index.html">Models</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/models/encoder_decoder.html">autocast.models.encoder_decoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/models/encoder_processor_decoder.html">autocast.models.encoder_processor_decoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/models/autoencoder.html">autocast.models.autoencoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/models/variational_autoencoder.html">autocast.models.variational_autoencoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/models/processor.html">autocast.models.processor</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/processors/index.html">Processors</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/processors/base.html">autocast.processors.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/processors/unet.html">autocast.processors.unet</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/processors/swin_vit.html">autocast.processors.swin_vit</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/processors/vit.html">autocast.processors.vit</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/processors/flow_matching.html">autocast.processors.flow_matching</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/processors/diffusion.html">autocast.processors.diffusion</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/processors/noise.html">autocast.processors.noise</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/encoders/index.html">Encoders</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/encoders/base.html">autocast.encoders.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/encoders/dc.html">autocast.encoders.dc</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/encoders/unet.html">autocast.encoders.unet</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/encoders/identity.html">autocast.encoders.identity</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/decoders/index.html">Decoders</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/decoders/base.html">autocast.decoders.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/decoders/dc.html">autocast.decoders.dc</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/decoders/identity.html">autocast.decoders.identity</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/data/index.html">Data</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/data/datamodule.html">autocast.data.datamodule</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/data/dataset.html">autocast.data.dataset</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/data/encoded_dataset.html">autocast.data.encoded_dataset</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/data/metadata.html">autocast.data.metadata</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/metrics/index.html">Metrics</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/metrics/base.html">autocast.metrics.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/metrics/deterministic.html">autocast.metrics.deterministic</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/metrics/ensemble.html">autocast.metrics.ensemble</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/metrics/coverage.html">autocast.metrics.coverage</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/losses/index.html">Losses</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/losses/ensemble.html">autocast.losses.ensemble</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/types/index.html">Types</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/types/types.html">autocast.types.types</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/types/batch.html">autocast.types.batch</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/nn/index.html">Neural Network Utilities</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/nn/residual.html">autocast.nn.residual</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/nn/spatial_attention.html">autocast.nn.spatial_attention</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/utils/index.html">Utilities</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/utils/optimizer.html">autocast.utils.optimizer</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/utils/plots.html">autocast.utils.plots</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/benchmarking/index.html">Benchmarking</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/benchmarking/inference.html">autocast.benchmarking.inference</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/logging/index.html">Logging</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/logging/wandb.html">autocast.logging.wandb</a></li>
+</ul>
+</details></li>
+</ul>
+</details></li>
+</ul>
+
+    </div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+      <div class="sidebar-primary-item">
+<div id="ethical-ad-placement"
+      class="flat"
+      data-ea-publisher="readthedocs"
+      data-ea-type="readthedocs-sidebar"
+      data-ea-manual="true">
+</div></div>
+  </div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+
+<div class="sbt-scroll-pixel-helper"></div>
+
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item"><button class="sidebar-toggle primary-toggle btn btn-sm" title="Toggle primary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <span class="fa-solid fa-bars"></span>
+</button></div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+
+<div class="article-header-buttons">
+
+
+
+
+
+<div class="dropdown dropdown-source-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Source repositories">
+    <i class="fab fa-github"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="https://github.com/alan-turing-institute/autocast" target="_blank"
+   class="btn btn-sm btn-source-repository-button dropdown-item"
+   title="Source repository"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fab fa-github"></i>
+  </span>
+<span class="btn__text-container">Repository</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/alan-turing-institute/autocast/issues/new?title=Issue%20on%20page%20%2F_modules/autocast/processors/swin_vit.html&body=Your%20issue%20content%20here." target="_blank"
+   class="btn btn-sm btn-source-issues-button dropdown-item"
+   title="Open an issue"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-lightbulb"></i>
+  </span>
+<span class="btn__text-container">Open issue</span>
+</a>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+<button onclick="toggleFullScreen()"
+  class="btn btn-sm btn-fullscreen-button pst-navbar-icon"
+  title="Fullscreen mode"
+  data-bs-placement="bottom" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+
+
+<button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button pst-js-only" aria-label="Color mode" data-bs-title="Color mode"  data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <i class="theme-switch fa-solid fa-sun                fa-lg" data-mode="light" title="Light"></i>
+  <i class="theme-switch fa-solid fa-moon               fa-lg" data-mode="dark"  title="Dark"></i>
+  <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"  title="System Settings"></i>
+</button>
+
+
+<button class="btn btn-sm pst-navbar-icon search-button search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+</button>
+
+</div></div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="jb-print-docs-body" class="onlyprint">
+    <h1></h1>
+    <!-- Table of contents -->
+    <div id="print-main-content">
+        <div id="jb-print-toc">
+            
+        </div>
+    </div>
+</div>
+
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <h1>Source code for autocast.processors.swin_vit</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">itertools</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Sequence</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">functools</span><span class="w"> </span><span class="kn">import</span> <span class="n">lru_cache</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">einops</span><span class="w"> </span><span class="kn">import</span> <span class="n">rearrange</span><span class="p">,</span> <span class="n">repeat</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">timm.layers.drop</span><span class="w"> </span><span class="kn">import</span> <span class="n">DropPath</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch</span><span class="w"> </span><span class="kn">import</span> <span class="n">nn</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">autocast.processors.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">Processor</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autocast.processors.vit</span><span class="w"> </span><span class="kn">import</span> <span class="n">PatchEmbedding</span><span class="p">,</span> <span class="n">PatchUnembedding</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autocast.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">EncodedBatch</span><span class="p">,</span> <span class="n">Tensor</span>
+
+
+<div class="viewcode-block" id="modulate">
+<a class="viewcode-back" href="../../../reference/processors/swin_vit.html#autocast.processors.swin_vit.modulate">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">modulate</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">Tensor</span><span class="p">,</span> <span class="n">shift</span><span class="p">:</span> <span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span> <span class="n">scale</span><span class="p">:</span> <span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tensor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Modulate the input tensor with shift and scale parameters.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">shift</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">scale</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">x</span>
+    <span class="n">shape</span> <span class="o">=</span> <span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">ndim</span> <span class="o">-</span> <span class="mi">2</span><span class="p">)</span> <span class="o">+</span> <span class="p">[</span><span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]]</span>
+    <span class="k">return</span> <span class="n">x</span> <span class="o">*</span> <span class="p">(</span><span class="mi">1</span> <span class="o">+</span> <span class="n">scale</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">*</span><span class="n">shape</span><span class="p">))</span> <span class="o">+</span> <span class="n">shift</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">*</span><span class="n">shape</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="apply_gate">
+<a class="viewcode-back" href="../../../reference/processors/swin_vit.html#autocast.processors.swin_vit.apply_gate">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">apply_gate</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">Tensor</span><span class="p">,</span> <span class="n">gate</span><span class="p">:</span> <span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tensor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Apply a gating mechanism to the input tensor.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">gate</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">x</span>
+    <span class="n">shape</span> <span class="o">=</span> <span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">ndim</span> <span class="o">-</span> <span class="mi">2</span><span class="p">)</span> <span class="o">+</span> <span class="p">[</span><span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]]</span>
+    <span class="k">return</span> <span class="n">x</span> <span class="o">*</span> <span class="n">gate</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">*</span><span class="n">shape</span><span class="p">)</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_adjust_window_and_shift</span><span class="p">(</span>
+    <span class="n">window_size</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
+    <span class="n">shift_size</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
+    <span class="n">spatial_shape</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Clamp windows to the input shape and disable shifts on clamped axes.&quot;&quot;&quot;</span>
+    <span class="n">ws</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">min</span><span class="p">(</span><span class="n">w</span><span class="p">,</span> <span class="n">s</span><span class="p">)</span> <span class="k">for</span> <span class="n">w</span><span class="p">,</span> <span class="n">s</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">window_size</span><span class="p">,</span> <span class="n">spatial_shape</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">False</span><span class="p">))</span>
+    <span class="n">ss</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span>
+        <span class="mi">0</span> <span class="k">if</span> <span class="n">w</span> <span class="o">&gt;=</span> <span class="n">s</span> <span class="k">else</span> <span class="n">sh</span>
+        <span class="k">for</span> <span class="n">w</span><span class="p">,</span> <span class="n">sh</span><span class="p">,</span> <span class="n">s</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">window_size</span><span class="p">,</span> <span class="n">shift_size</span><span class="p">,</span> <span class="n">spatial_shape</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="n">ws</span><span class="p">,</span> <span class="n">ss</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_get_two_sided_padding</span><span class="p">(</span><span class="n">h_pad</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">w_pad</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return left, right, top, and bottom padding.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">h_pad</span><span class="p">:</span>
+        <span class="n">pad_top</span> <span class="o">=</span> <span class="n">h_pad</span> <span class="o">//</span> <span class="mi">2</span>
+        <span class="n">pad_bottom</span> <span class="o">=</span> <span class="n">h_pad</span> <span class="o">-</span> <span class="n">pad_top</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">pad_top</span> <span class="o">=</span> <span class="n">pad_bottom</span> <span class="o">=</span> <span class="mi">0</span>
+
+    <span class="k">if</span> <span class="n">w_pad</span><span class="p">:</span>
+        <span class="n">pad_left</span> <span class="o">=</span> <span class="n">w_pad</span> <span class="o">//</span> <span class="mi">2</span>
+        <span class="n">pad_right</span> <span class="o">=</span> <span class="n">w_pad</span> <span class="o">-</span> <span class="n">pad_left</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">pad_left</span> <span class="o">=</span> <span class="n">pad_right</span> <span class="o">=</span> <span class="mi">0</span>
+
+    <span class="k">return</span> <span class="n">pad_left</span><span class="p">,</span> <span class="n">pad_right</span><span class="p">,</span> <span class="n">pad_top</span><span class="p">,</span> <span class="n">pad_bottom</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_pad_2d</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">Tensor</span><span class="p">,</span> <span class="n">pad_size</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span> <span class="n">value</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tensor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Pad 2D spatial dimensions for tensors shaped (B, H, W, C).&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">F</span><span class="o">.</span><span class="n">pad</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="o">*</span><span class="n">_get_two_sided_padding</span><span class="p">(</span><span class="o">*</span><span class="n">pad_size</span><span class="p">)),</span> <span class="n">value</span><span class="o">=</span><span class="n">value</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_crop_2d</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">Tensor</span><span class="p">,</span> <span class="n">pad_size</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Tensor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Undo _pad_2d by symmetric cropping.&quot;&quot;&quot;</span>
+    <span class="n">_</span><span class="p">,</span> <span class="n">h</span><span class="p">,</span> <span class="n">w</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span>
+    <span class="n">hp</span><span class="p">,</span> <span class="n">wp</span> <span class="o">=</span> <span class="n">pad_size</span>
+    <span class="n">pleft</span><span class="p">,</span> <span class="n">pright</span><span class="p">,</span> <span class="n">ptop</span><span class="p">,</span> <span class="n">pbottom</span> <span class="o">=</span> <span class="n">_get_two_sided_padding</span><span class="p">(</span><span class="n">hp</span><span class="p">,</span> <span class="n">wp</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">x</span><span class="p">[:,</span> <span class="n">ptop</span> <span class="p">:</span> <span class="n">h</span> <span class="o">-</span> <span class="n">pbottom</span><span class="p">,</span> <span class="n">pleft</span> <span class="p">:</span> <span class="n">w</span> <span class="o">-</span> <span class="n">pright</span><span class="p">,</span> <span class="p">:]</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_pad_3d</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">Tensor</span><span class="p">,</span> <span class="n">pad_size</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span> <span class="n">value</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tensor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Pad 3D spatial dimensions for tensors shaped (B, H, W, D, C).&quot;&quot;&quot;</span>
+    <span class="n">hp</span><span class="p">,</span> <span class="n">wp</span><span class="p">,</span> <span class="n">dp</span> <span class="o">=</span> <span class="n">pad_size</span>
+    <span class="k">if</span> <span class="n">hp</span><span class="p">:</span>
+        <span class="n">h_front</span> <span class="o">=</span> <span class="n">hp</span> <span class="o">//</span> <span class="mi">2</span>
+        <span class="n">h_back</span> <span class="o">=</span> <span class="n">hp</span> <span class="o">-</span> <span class="n">h_front</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">h_front</span> <span class="o">=</span> <span class="n">h_back</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">if</span> <span class="n">wp</span><span class="p">:</span>
+        <span class="n">w_left</span> <span class="o">=</span> <span class="n">wp</span> <span class="o">//</span> <span class="mi">2</span>
+        <span class="n">w_right</span> <span class="o">=</span> <span class="n">wp</span> <span class="o">-</span> <span class="n">w_left</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">w_left</span> <span class="o">=</span> <span class="n">w_right</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">if</span> <span class="n">dp</span><span class="p">:</span>
+        <span class="n">d_left</span> <span class="o">=</span> <span class="n">dp</span> <span class="o">//</span> <span class="mi">2</span>
+        <span class="n">d_right</span> <span class="o">=</span> <span class="n">dp</span> <span class="o">-</span> <span class="n">d_left</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">d_left</span> <span class="o">=</span> <span class="n">d_right</span> <span class="o">=</span> <span class="mi">0</span>
+
+    <span class="c1"># For (B, H, W, D, C), F.pad expects (C_l, C_r, D_l, D_r, W_l, W_r, H_l, H_r).</span>
+    <span class="k">return</span> <span class="n">F</span><span class="o">.</span><span class="n">pad</span><span class="p">(</span>
+        <span class="n">x</span><span class="p">,</span>
+        <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">d_left</span><span class="p">,</span> <span class="n">d_right</span><span class="p">,</span> <span class="n">w_left</span><span class="p">,</span> <span class="n">w_right</span><span class="p">,</span> <span class="n">h_front</span><span class="p">,</span> <span class="n">h_back</span><span class="p">),</span>
+        <span class="n">value</span><span class="o">=</span><span class="n">value</span><span class="p">,</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_crop_3d</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">Tensor</span><span class="p">,</span> <span class="n">pad_size</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Tensor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Undo _pad_3d by symmetric cropping.&quot;&quot;&quot;</span>
+    <span class="n">_</span><span class="p">,</span> <span class="n">h</span><span class="p">,</span> <span class="n">w</span><span class="p">,</span> <span class="n">d</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span>
+    <span class="n">hp</span><span class="p">,</span> <span class="n">wp</span><span class="p">,</span> <span class="n">dp</span> <span class="o">=</span> <span class="n">pad_size</span>
+    <span class="k">if</span> <span class="n">hp</span><span class="p">:</span>
+        <span class="n">h_front</span> <span class="o">=</span> <span class="n">hp</span> <span class="o">//</span> <span class="mi">2</span>
+        <span class="n">h_back</span> <span class="o">=</span> <span class="n">hp</span> <span class="o">-</span> <span class="n">h_front</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">h_front</span> <span class="o">=</span> <span class="n">h_back</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">if</span> <span class="n">wp</span><span class="p">:</span>
+        <span class="n">w_left</span> <span class="o">=</span> <span class="n">wp</span> <span class="o">//</span> <span class="mi">2</span>
+        <span class="n">w_right</span> <span class="o">=</span> <span class="n">wp</span> <span class="o">-</span> <span class="n">w_left</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">w_left</span> <span class="o">=</span> <span class="n">w_right</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">if</span> <span class="n">dp</span><span class="p">:</span>
+        <span class="n">d_left</span> <span class="o">=</span> <span class="n">dp</span> <span class="o">//</span> <span class="mi">2</span>
+        <span class="n">d_right</span> <span class="o">=</span> <span class="n">dp</span> <span class="o">-</span> <span class="n">d_left</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">d_left</span> <span class="o">=</span> <span class="n">d_right</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">return</span> <span class="n">x</span><span class="p">[</span>
+        <span class="p">:,</span>
+        <span class="n">h_front</span> <span class="p">:</span> <span class="n">h</span> <span class="o">-</span> <span class="n">h_back</span><span class="p">,</span>
+        <span class="n">w_left</span> <span class="p">:</span> <span class="n">w</span> <span class="o">-</span> <span class="n">w_right</span><span class="p">,</span>
+        <span class="n">d_left</span> <span class="p">:</span> <span class="n">d</span> <span class="o">-</span> <span class="n">d_right</span><span class="p">,</span>
+        <span class="p">:,</span>
+    <span class="p">]</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_window_partition_2d</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">Tensor</span><span class="p">,</span> <span class="n">ws</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Tensor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Partition (B, H, W, C) into local 2D windows.&quot;&quot;&quot;</span>
+    <span class="n">wh</span><span class="p">,</span> <span class="n">ww</span> <span class="o">=</span> <span class="n">ws</span>
+    <span class="k">return</span> <span class="n">rearrange</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="s2">&quot;b (h1 wh) (w1 ww) c -&gt; (b h1 w1) wh ww c&quot;</span><span class="p">,</span> <span class="n">wh</span><span class="o">=</span><span class="n">wh</span><span class="p">,</span> <span class="n">ww</span><span class="o">=</span><span class="n">ww</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_window_reverse_2d</span><span class="p">(</span><span class="n">windows</span><span class="p">:</span> <span class="n">Tensor</span><span class="p">,</span> <span class="n">ws</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span> <span class="n">h</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">w</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tensor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Undo _window_partition_2d.&quot;&quot;&quot;</span>
+    <span class="n">wh</span><span class="p">,</span> <span class="n">ww</span> <span class="o">=</span> <span class="n">ws</span>
+    <span class="n">h1</span><span class="p">,</span> <span class="n">w1</span> <span class="o">=</span> <span class="n">h</span> <span class="o">//</span> <span class="n">wh</span><span class="p">,</span> <span class="n">w</span> <span class="o">//</span> <span class="n">ww</span>
+    <span class="n">b</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">windows</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">/</span> <span class="p">(</span><span class="n">h1</span> <span class="o">*</span> <span class="n">w1</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">rearrange</span><span class="p">(</span>
+        <span class="n">windows</span><span class="p">,</span>
+        <span class="s2">&quot;(b h1 w1) wh ww c -&gt; b (h1 wh) (w1 ww) c&quot;</span><span class="p">,</span>
+        <span class="n">b</span><span class="o">=</span><span class="n">b</span><span class="p">,</span>
+        <span class="n">h1</span><span class="o">=</span><span class="n">h1</span><span class="p">,</span>
+        <span class="n">w1</span><span class="o">=</span><span class="n">w1</span><span class="p">,</span>
+        <span class="n">wh</span><span class="o">=</span><span class="n">wh</span><span class="p">,</span>
+        <span class="n">ww</span><span class="o">=</span><span class="n">ww</span><span class="p">,</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_window_partition_3d</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">Tensor</span><span class="p">,</span> <span class="n">ws</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Tensor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Partition (B, H, W, D, C) into local 3D windows.&quot;&quot;&quot;</span>
+    <span class="n">wh</span><span class="p">,</span> <span class="n">ww</span><span class="p">,</span> <span class="n">wd</span> <span class="o">=</span> <span class="n">ws</span>
+    <span class="k">return</span> <span class="n">rearrange</span><span class="p">(</span>
+        <span class="n">x</span><span class="p">,</span> <span class="s2">&quot;b (h1 wh) (w1 ww) (d1 wd) c -&gt; (b h1 w1 d1) wh ww wd c&quot;</span><span class="p">,</span> <span class="n">wh</span><span class="o">=</span><span class="n">wh</span><span class="p">,</span> <span class="n">ww</span><span class="o">=</span><span class="n">ww</span><span class="p">,</span> <span class="n">wd</span><span class="o">=</span><span class="n">wd</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_window_reverse_3d</span><span class="p">(</span>
+    <span class="n">windows</span><span class="p">:</span> <span class="n">Tensor</span><span class="p">,</span> <span class="n">ws</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span> <span class="n">h</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">w</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">d</span><span class="p">:</span> <span class="nb">int</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tensor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Undo _window_partition_3d.&quot;&quot;&quot;</span>
+    <span class="n">wh</span><span class="p">,</span> <span class="n">ww</span><span class="p">,</span> <span class="n">wd</span> <span class="o">=</span> <span class="n">ws</span>
+    <span class="n">h1</span><span class="p">,</span> <span class="n">w1</span><span class="p">,</span> <span class="n">d1</span> <span class="o">=</span> <span class="n">h</span> <span class="o">//</span> <span class="n">wh</span><span class="p">,</span> <span class="n">w</span> <span class="o">//</span> <span class="n">ww</span><span class="p">,</span> <span class="n">d</span> <span class="o">//</span> <span class="n">wd</span>
+    <span class="n">b</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">windows</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">/</span> <span class="p">(</span><span class="n">h1</span> <span class="o">*</span> <span class="n">w1</span> <span class="o">*</span> <span class="n">d1</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">rearrange</span><span class="p">(</span>
+        <span class="n">windows</span><span class="p">,</span>
+        <span class="s2">&quot;(b h1 w1 d1) wh ww wd c -&gt; b (h1 wh) (w1 ww) (d1 wd) c&quot;</span><span class="p">,</span>
+        <span class="n">b</span><span class="o">=</span><span class="n">b</span><span class="p">,</span>
+        <span class="n">h1</span><span class="o">=</span><span class="n">h1</span><span class="p">,</span>
+        <span class="n">w1</span><span class="o">=</span><span class="n">w1</span><span class="p">,</span>
+        <span class="n">d1</span><span class="o">=</span><span class="n">d1</span><span class="p">,</span>
+        <span class="n">wh</span><span class="o">=</span><span class="n">wh</span><span class="p">,</span>
+        <span class="n">ww</span><span class="o">=</span><span class="n">ww</span><span class="p">,</span>
+        <span class="n">wd</span><span class="o">=</span><span class="n">wd</span><span class="p">,</span>
+    <span class="p">)</span>
+
+
+<span class="nd">@lru_cache</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_compute_shifted_window_mask_2d</span><span class="p">(</span>
+    <span class="n">h</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">w</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">ws</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span>
+    <span class="n">ss</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span>
+    <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
+    <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tensor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Compute Aurora-style shifted-window attention mask for 2D.&quot;&quot;&quot;</span>
+    <span class="n">img_mask</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="n">h</span><span class="p">,</span> <span class="n">w</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">)</span>
+    <span class="n">h_slices</span> <span class="o">=</span> <span class="p">(</span><span class="nb">slice</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="o">-</span><span class="n">ws</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="nb">slice</span><span class="p">(</span><span class="o">-</span><span class="n">ws</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="o">-</span><span class="n">ss</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="nb">slice</span><span class="p">(</span><span class="o">-</span><span class="n">ss</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="kc">None</span><span class="p">))</span>
+    <span class="n">w_slices</span> <span class="o">=</span> <span class="p">(</span><span class="nb">slice</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="o">-</span><span class="n">ws</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span> <span class="nb">slice</span><span class="p">(</span><span class="o">-</span><span class="n">ws</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="o">-</span><span class="n">ss</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span> <span class="nb">slice</span><span class="p">(</span><span class="o">-</span><span class="n">ss</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="kc">None</span><span class="p">))</span>
+
+    <span class="n">cnt</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">hs</span><span class="p">,</span> <span class="n">wslice</span> <span class="ow">in</span> <span class="n">itertools</span><span class="o">.</span><span class="n">product</span><span class="p">(</span><span class="n">h_slices</span><span class="p">,</span> <span class="n">w_slices</span><span class="p">):</span>
+        <span class="n">img_mask</span><span class="p">[:,</span> <span class="n">hs</span><span class="p">,</span> <span class="n">wslice</span><span class="p">,</span> <span class="p">:]</span> <span class="o">=</span> <span class="n">cnt</span>
+        <span class="n">cnt</span> <span class="o">+=</span> <span class="mi">1</span>
+
+    <span class="n">pad_size</span> <span class="o">=</span> <span class="p">((</span><span class="o">-</span><span class="n">h</span><span class="p">)</span> <span class="o">%</span> <span class="n">ws</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="p">(</span><span class="o">-</span><span class="n">w</span><span class="p">)</span> <span class="o">%</span> <span class="n">ws</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+    <span class="n">img_mask</span> <span class="o">=</span> <span class="n">_pad_2d</span><span class="p">(</span><span class="n">img_mask</span><span class="p">,</span> <span class="n">pad_size</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="n">cnt</span><span class="p">)</span>
+
+    <span class="n">mask_windows</span> <span class="o">=</span> <span class="n">_window_partition_2d</span><span class="p">(</span><span class="n">img_mask</span><span class="p">,</span> <span class="n">ws</span><span class="p">)</span>
+    <span class="n">mask_windows</span> <span class="o">=</span> <span class="n">rearrange</span><span class="p">(</span><span class="n">mask_windows</span><span class="p">,</span> <span class="s2">&quot;nw wh ww 1 -&gt; nw (wh ww)&quot;</span><span class="p">)</span>
+    <span class="n">attn_mask</span> <span class="o">=</span> <span class="n">rearrange</span><span class="p">(</span><span class="n">mask_windows</span><span class="p">,</span> <span class="s2">&quot;nw w -&gt; nw 1 w&quot;</span><span class="p">)</span> <span class="o">-</span> <span class="n">rearrange</span><span class="p">(</span>
+        <span class="n">mask_windows</span><span class="p">,</span> <span class="s2">&quot;nw w -&gt; nw w 1&quot;</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="n">attn_mask</span><span class="o">.</span><span class="n">masked_fill</span><span class="p">(</span><span class="n">attn_mask</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">,</span> <span class="o">-</span><span class="mf">100.0</span><span class="p">)</span><span class="o">.</span><span class="n">masked_fill</span><span class="p">(</span>
+        <span class="n">attn_mask</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="mf">0.0</span>
+    <span class="p">)</span>
+
+
+<span class="nd">@lru_cache</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_compute_shifted_window_mask_3d</span><span class="p">(</span>
+    <span class="n">h</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">w</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">d</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">ws</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span>
+    <span class="n">ss</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span>
+    <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
+    <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tensor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Compute Aurora-style shifted-window attention mask for 3D.&quot;&quot;&quot;</span>
+    <span class="n">img_mask</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="n">h</span><span class="p">,</span> <span class="n">w</span><span class="p">,</span> <span class="n">d</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">)</span>
+    <span class="n">h_slices</span> <span class="o">=</span> <span class="p">(</span><span class="nb">slice</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="o">-</span><span class="n">ws</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="nb">slice</span><span class="p">(</span><span class="o">-</span><span class="n">ws</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="o">-</span><span class="n">ss</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="nb">slice</span><span class="p">(</span><span class="o">-</span><span class="n">ss</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="kc">None</span><span class="p">))</span>
+    <span class="n">w_slices</span> <span class="o">=</span> <span class="p">(</span><span class="nb">slice</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="o">-</span><span class="n">ws</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span> <span class="nb">slice</span><span class="p">(</span><span class="o">-</span><span class="n">ws</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="o">-</span><span class="n">ss</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span> <span class="nb">slice</span><span class="p">(</span><span class="o">-</span><span class="n">ss</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="kc">None</span><span class="p">))</span>
+    <span class="n">d_slices</span> <span class="o">=</span> <span class="p">(</span><span class="nb">slice</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="o">-</span><span class="n">ws</span><span class="p">[</span><span class="mi">2</span><span class="p">]),</span> <span class="nb">slice</span><span class="p">(</span><span class="o">-</span><span class="n">ws</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="o">-</span><span class="n">ss</span><span class="p">[</span><span class="mi">2</span><span class="p">]),</span> <span class="nb">slice</span><span class="p">(</span><span class="o">-</span><span class="n">ss</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="kc">None</span><span class="p">))</span>
+
+    <span class="n">cnt</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">hs</span><span class="p">,</span> <span class="n">wslice</span><span class="p">,</span> <span class="n">ds</span> <span class="ow">in</span> <span class="n">itertools</span><span class="o">.</span><span class="n">product</span><span class="p">(</span><span class="n">h_slices</span><span class="p">,</span> <span class="n">w_slices</span><span class="p">,</span> <span class="n">d_slices</span><span class="p">):</span>
+        <span class="n">img_mask</span><span class="p">[:,</span> <span class="n">hs</span><span class="p">,</span> <span class="n">wslice</span><span class="p">,</span> <span class="n">ds</span><span class="p">,</span> <span class="p">:]</span> <span class="o">=</span> <span class="n">cnt</span>
+        <span class="n">cnt</span> <span class="o">+=</span> <span class="mi">1</span>
+
+    <span class="n">pad_size</span> <span class="o">=</span> <span class="p">((</span><span class="o">-</span><span class="n">h</span><span class="p">)</span> <span class="o">%</span> <span class="n">ws</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="p">(</span><span class="o">-</span><span class="n">w</span><span class="p">)</span> <span class="o">%</span> <span class="n">ws</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="p">(</span><span class="o">-</span><span class="n">d</span><span class="p">)</span> <span class="o">%</span> <span class="n">ws</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+    <span class="n">img_mask</span> <span class="o">=</span> <span class="n">_pad_3d</span><span class="p">(</span><span class="n">img_mask</span><span class="p">,</span> <span class="n">pad_size</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="n">cnt</span><span class="p">)</span>
+
+    <span class="n">mask_windows</span> <span class="o">=</span> <span class="n">_window_partition_3d</span><span class="p">(</span><span class="n">img_mask</span><span class="p">,</span> <span class="n">ws</span><span class="p">)</span>
+    <span class="n">mask_windows</span> <span class="o">=</span> <span class="n">rearrange</span><span class="p">(</span><span class="n">mask_windows</span><span class="p">,</span> <span class="s2">&quot;nw wh ww wd 1 -&gt; nw (wh ww wd)&quot;</span><span class="p">)</span>
+    <span class="n">attn_mask</span> <span class="o">=</span> <span class="n">rearrange</span><span class="p">(</span><span class="n">mask_windows</span><span class="p">,</span> <span class="s2">&quot;nw w -&gt; nw 1 w&quot;</span><span class="p">)</span> <span class="o">-</span> <span class="n">rearrange</span><span class="p">(</span>
+        <span class="n">mask_windows</span><span class="p">,</span> <span class="s2">&quot;nw w -&gt; nw w 1&quot;</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="n">attn_mask</span><span class="o">.</span><span class="n">masked_fill</span><span class="p">(</span><span class="n">attn_mask</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">,</span> <span class="o">-</span><span class="mf">100.0</span><span class="p">)</span><span class="o">.</span><span class="n">masked_fill</span><span class="p">(</span>
+        <span class="n">attn_mask</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="mf">0.0</span>
+    <span class="p">)</span>
+
+
+<div class="viewcode-block" id="AdaLNGenerator">
+<a class="viewcode-back" href="../../../reference/processors/swin_vit.html#autocast.processors.swin_vit.AdaLNGenerator">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">AdaLNGenerator</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Generate Adaptive Layer Norm parameters from noise embeddings.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">hidden_dim</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">n_noise_channels</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">num_chunks</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">use_ada_ln</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">zero_init</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">num_chunks</span> <span class="o">=</span> <span class="n">num_chunks</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">use_ada_ln</span> <span class="o">=</span> <span class="n">use_ada_ln</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">zero_init</span> <span class="o">=</span> <span class="n">zero_init</span>
+        <span class="k">if</span> <span class="n">n_noise_channels</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">n_noise_channels</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">use_ada_ln</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">net</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span>
+                <span class="n">nn</span><span class="o">.</span><span class="n">SiLU</span><span class="p">(),</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_noise_channels</span><span class="p">,</span> <span class="n">num_chunks</span> <span class="o">*</span> <span class="n">hidden_dim</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">zero_init</span><span class="p">:</span>
+                <span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">zeros_</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">net</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">weight</span><span class="p">)</span>  <span class="c1"># type: ignore[arg-type]</span>
+                <span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">zeros_</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">net</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">bias</span><span class="p">)</span>  <span class="c1"># type: ignore[arg-type]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">net</span> <span class="o">=</span> <span class="kc">None</span>
+
+<div class="viewcode-block" id="AdaLNGenerator.forward">
+<a class="viewcode-back" href="../../../reference/processors/swin_vit.html#autocast.processors.swin_vit.AdaLNGenerator.forward">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x_noise</span><span class="p">:</span> <span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">net</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">x_noise</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="kc">None</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_chunks</span><span class="p">))</span>
+        <span class="n">noise</span> <span class="o">=</span> <span class="n">x_noise</span><span class="o">.</span><span class="n">flatten</span><span class="p">(</span><span class="n">start_dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">params</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">net</span><span class="p">(</span><span class="n">noise</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">params</span><span class="o">.</span><span class="n">chunk</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_chunks</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="SwinViTBlock">
+<a class="viewcode-back" href="../../../reference/processors/swin_vit.html#autocast.processors.swin_vit.SwinViTBlock">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">SwinViTBlock</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Block for Swin ViT Processor.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">hidden_dim</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">num_heads</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">n_spatial_dims</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">n_noise_channels</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">window_size</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
+        <span class="n">shift</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">drop_path</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+        <span class="n">use_ada_ln</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">zero_init</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">hidden_dim</span> <span class="o">%</span> <span class="n">num_heads</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;hidden_dim (</span><span class="si">{</span><span class="n">hidden_dim</span><span class="si">}</span><span class="s2">) must be divisible by &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;num_heads (</span><span class="si">{</span><span class="n">num_heads</span><span class="si">}</span><span class="s2">)&quot;</span>
+            <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">num_heads</span> <span class="o">=</span> <span class="n">num_heads</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">hidden_dim</span> <span class="o">=</span> <span class="n">hidden_dim</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">n_spatial_dims</span> <span class="o">=</span> <span class="n">n_spatial_dims</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">window_size</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">n_spatial_dims</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;window_size has &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">window_size</span><span class="p">)</span><span class="si">}</span><span class="s2"> dims but n_spatial_dims=</span><span class="si">{</span><span class="n">n_spatial_dims</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">window_size</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">window_size</span><span class="p">[:</span><span class="n">n_spatial_dims</span><span class="p">])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">shift_size</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="nb">tuple</span><span class="p">(</span><span class="n">ws</span> <span class="o">//</span> <span class="mi">2</span> <span class="k">for</span> <span class="n">ws</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">window_size</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">shift</span>
+            <span class="k">else</span> <span class="nb">tuple</span><span class="p">(</span><span class="mi">0</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_spatial_dims</span><span class="p">))</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">drop_path</span> <span class="o">=</span> <span class="n">DropPath</span><span class="p">(</span><span class="n">drop_path</span><span class="p">)</span> <span class="k">if</span> <span class="n">drop_path</span> <span class="o">&gt;</span> <span class="mf">0.0</span> <span class="k">else</span> <span class="n">nn</span><span class="o">.</span><span class="n">Identity</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ada_generator</span> <span class="o">=</span> <span class="n">AdaLNGenerator</span><span class="p">(</span>
+            <span class="n">hidden_dim</span><span class="p">,</span> <span class="n">n_noise_channels</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="n">use_ada_ln</span><span class="o">=</span><span class="n">use_ada_ln</span><span class="p">,</span> <span class="n">zero_init</span><span class="o">=</span><span class="n">zero_init</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">norm1</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">(</span><span class="n">hidden_dim</span><span class="p">,</span> <span class="n">elementwise_affine</span><span class="o">=</span><span class="ow">not</span> <span class="n">use_ada_ln</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fused_heads</span> <span class="o">=</span> <span class="p">[</span><span class="n">hidden_dim</span><span class="p">,</span> <span class="n">hidden_dim</span><span class="p">,</span> <span class="n">hidden_dim</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">qkv_proj</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">hidden_dim</span><span class="p">,</span> <span class="nb">sum</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fused_heads</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">output_proj</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">hidden_dim</span><span class="p">,</span> <span class="n">hidden_dim</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">norm2</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">(</span><span class="n">hidden_dim</span><span class="p">,</span> <span class="n">elementwise_affine</span><span class="o">=</span><span class="ow">not</span> <span class="n">use_ada_ln</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">mlp</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">hidden_dim</span><span class="p">,</span> <span class="mi">4</span> <span class="o">*</span> <span class="n">hidden_dim</span><span class="p">),</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">GELU</span><span class="p">(),</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">4</span> <span class="o">*</span> <span class="n">hidden_dim</span><span class="p">,</span> <span class="n">hidden_dim</span><span class="p">),</span>
+        <span class="p">)</span>
+
+<div class="viewcode-block" id="SwinViTBlock.forward">
+<a class="viewcode-back" href="../../../reference/processors/swin_vit.html#autocast.processors.swin_vit.SwinViTBlock.forward">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">Tensor</span><span class="p">,</span> <span class="n">x_noise</span><span class="p">:</span> <span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tensor</span><span class="p">:</span>  <span class="c1"># noqa: PLR0915</span>
+        <span class="n">shift1</span><span class="p">,</span> <span class="n">scale1</span><span class="p">,</span> <span class="n">gate1</span><span class="p">,</span> <span class="n">shift2</span><span class="p">,</span> <span class="n">scale2</span><span class="p">,</span> <span class="n">gate2</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ada_generator</span><span class="p">(</span><span class="n">x_noise</span><span class="p">)</span>
+        <span class="n">spatial_shape</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span> <span class="p">:</span> <span class="mi">1</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_spatial_dims</span><span class="p">])</span>
+        <span class="n">ws</span><span class="p">,</span> <span class="n">ss</span> <span class="o">=</span> <span class="n">_adjust_window_and_shift</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">window_size</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">shift_size</span><span class="p">,</span> <span class="n">spatial_shape</span>
+        <span class="p">)</span>
+        <span class="n">do_shift</span> <span class="o">=</span> <span class="nb">any</span><span class="p">(</span><span class="n">s</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">ss</span><span class="p">)</span>
+        <span class="n">hp</span> <span class="o">=</span> <span class="n">wp</span> <span class="o">=</span> <span class="n">dp</span> <span class="o">=</span> <span class="mi">0</span>
+
+        <span class="n">xs</span> <span class="o">=</span> <span class="n">modulate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">norm1</span><span class="p">(</span><span class="n">x</span><span class="p">),</span> <span class="n">shift1</span><span class="p">,</span> <span class="n">scale1</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">do_shift</span><span class="p">:</span>
+            <span class="n">xs</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">roll</span><span class="p">(</span>
+                <span class="n">xs</span><span class="p">,</span>
+                <span class="n">shifts</span><span class="o">=</span><span class="nb">tuple</span><span class="p">(</span><span class="o">-</span><span class="n">s</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">ss</span><span class="p">),</span>
+                <span class="n">dims</span><span class="o">=</span><span class="nb">tuple</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_spatial_dims</span><span class="p">)),</span>
+            <span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_spatial_dims</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="n">h</span><span class="p">,</span> <span class="n">w</span> <span class="o">=</span> <span class="n">spatial_shape</span>
+            <span class="n">ws2</span> <span class="o">=</span> <span class="p">(</span><span class="n">ws</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">ws</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+            <span class="n">ss2</span> <span class="o">=</span> <span class="p">(</span><span class="n">ss</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">ss</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+            <span class="n">pad_size_2d</span> <span class="o">=</span> <span class="p">((</span><span class="o">-</span><span class="n">h</span><span class="p">)</span> <span class="o">%</span> <span class="n">ws2</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="p">(</span><span class="o">-</span><span class="n">w</span><span class="p">)</span> <span class="o">%</span> <span class="n">ws2</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+            <span class="n">xs</span> <span class="o">=</span> <span class="n">_pad_2d</span><span class="p">(</span><span class="n">xs</span><span class="p">,</span> <span class="n">pad_size_2d</span><span class="p">)</span>
+            <span class="n">_</span><span class="p">,</span> <span class="n">hp</span><span class="p">,</span> <span class="n">wp</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">xs</span><span class="o">.</span><span class="n">shape</span>
+
+            <span class="n">windows</span> <span class="o">=</span> <span class="n">_window_partition_2d</span><span class="p">(</span><span class="n">xs</span><span class="p">,</span> <span class="n">ws2</span><span class="p">)</span>
+            <span class="n">windows</span> <span class="o">=</span> <span class="n">rearrange</span><span class="p">(</span><span class="n">windows</span><span class="p">,</span> <span class="s2">&quot;nw wh ww c -&gt; nw (wh ww) c&quot;</span><span class="p">)</span>
+            <span class="n">attn_mask</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">_compute_shifted_window_mask_2d</span><span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="n">w</span><span class="p">,</span> <span class="n">ws2</span><span class="p">,</span> <span class="n">ss2</span><span class="p">,</span> <span class="n">x</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="n">x</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">do_shift</span>
+                <span class="k">else</span> <span class="kc">None</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">h</span><span class="p">,</span> <span class="n">w</span><span class="p">,</span> <span class="n">d</span> <span class="o">=</span> <span class="n">spatial_shape</span>
+            <span class="n">ws3</span> <span class="o">=</span> <span class="p">(</span><span class="n">ws</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">ws</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">ws</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+            <span class="n">ss3</span> <span class="o">=</span> <span class="p">(</span><span class="n">ss</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">ss</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">ss</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+            <span class="n">pad_size_3d</span> <span class="o">=</span> <span class="p">((</span><span class="o">-</span><span class="n">h</span><span class="p">)</span> <span class="o">%</span> <span class="n">ws3</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="p">(</span><span class="o">-</span><span class="n">w</span><span class="p">)</span> <span class="o">%</span> <span class="n">ws3</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="p">(</span><span class="o">-</span><span class="n">d</span><span class="p">)</span> <span class="o">%</span> <span class="n">ws3</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+            <span class="n">xs</span> <span class="o">=</span> <span class="n">_pad_3d</span><span class="p">(</span><span class="n">xs</span><span class="p">,</span> <span class="n">pad_size_3d</span><span class="p">)</span>
+            <span class="n">_</span><span class="p">,</span> <span class="n">hp</span><span class="p">,</span> <span class="n">wp</span><span class="p">,</span> <span class="n">dp</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">xs</span><span class="o">.</span><span class="n">shape</span>
+
+            <span class="n">windows</span> <span class="o">=</span> <span class="n">_window_partition_3d</span><span class="p">(</span><span class="n">xs</span><span class="p">,</span> <span class="n">ws3</span><span class="p">)</span>
+            <span class="n">windows</span> <span class="o">=</span> <span class="n">rearrange</span><span class="p">(</span><span class="n">windows</span><span class="p">,</span> <span class="s2">&quot;nw wh ww wd c -&gt; nw (wh ww wd) c&quot;</span><span class="p">)</span>
+            <span class="n">attn_mask</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">_compute_shifted_window_mask_3d</span><span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="n">w</span><span class="p">,</span> <span class="n">d</span><span class="p">,</span> <span class="n">ws3</span><span class="p">,</span> <span class="n">ss3</span><span class="p">,</span> <span class="n">x</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="n">x</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">do_shift</span>
+                <span class="k">else</span> <span class="kc">None</span>
+            <span class="p">)</span>
+
+        <span class="n">qkv</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">qkv_proj</span><span class="p">(</span><span class="n">windows</span><span class="p">)</span>
+        <span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="o">=</span> <span class="n">qkv</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fused_heads</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">rearrange</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="s2">&quot;b n (he c) -&gt; b he n c&quot;</span><span class="p">,</span> <span class="n">he</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">num_heads</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span>
+        <span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">attn_mask</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">b_q</span> <span class="o">=</span> <span class="n">q</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">//</span> <span class="n">attn_mask</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">mask</span> <span class="o">=</span> <span class="n">repeat</span><span class="p">(</span><span class="n">attn_mask</span><span class="p">,</span> <span class="s2">&quot;nw n1 n2 -&gt; (b nw) 1 n1 n2&quot;</span><span class="p">,</span> <span class="n">b</span><span class="o">=</span><span class="n">b_q</span><span class="p">)</span>
+            <span class="n">attn_out</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">scaled_dot_product_attention</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">attn_mask</span><span class="o">=</span><span class="n">mask</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">attn_out</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">scaled_dot_product_attention</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span>
+
+        <span class="n">attn_out</span> <span class="o">=</span> <span class="n">rearrange</span><span class="p">(</span><span class="n">attn_out</span><span class="p">,</span> <span class="s2">&quot;b he n c -&gt; b n (he c)&quot;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_spatial_dims</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="n">ws2</span> <span class="o">=</span> <span class="p">(</span><span class="n">ws</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">ws</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+            <span class="n">pad_size_2d</span> <span class="o">=</span> <span class="p">((</span><span class="o">-</span><span class="n">spatial_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">%</span> <span class="n">ws2</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="p">(</span><span class="o">-</span><span class="n">spatial_shape</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span> <span class="o">%</span> <span class="n">ws2</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+            <span class="n">out_windows</span> <span class="o">=</span> <span class="n">rearrange</span><span class="p">(</span>
+                <span class="n">attn_out</span><span class="p">,</span> <span class="s2">&quot;nw (wh ww) c -&gt; nw wh ww c&quot;</span><span class="p">,</span> <span class="n">wh</span><span class="o">=</span><span class="n">ws2</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">ww</span><span class="o">=</span><span class="n">ws2</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+            <span class="p">)</span>
+            <span class="n">out</span> <span class="o">=</span> <span class="n">_window_reverse_2d</span><span class="p">(</span><span class="n">out_windows</span><span class="p">,</span> <span class="n">ws2</span><span class="p">,</span> <span class="n">hp</span><span class="p">,</span> <span class="n">wp</span><span class="p">)</span>
+            <span class="n">out</span> <span class="o">=</span> <span class="n">_crop_2d</span><span class="p">(</span><span class="n">out</span><span class="p">,</span> <span class="n">pad_size_2d</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">ws3</span> <span class="o">=</span> <span class="p">(</span><span class="n">ws</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">ws</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">ws</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+            <span class="n">pad_size_3d</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="p">(</span><span class="o">-</span><span class="n">spatial_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">%</span> <span class="n">ws3</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                <span class="p">(</span><span class="o">-</span><span class="n">spatial_shape</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span> <span class="o">%</span> <span class="n">ws3</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+                <span class="p">(</span><span class="o">-</span><span class="n">spatial_shape</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span> <span class="o">%</span> <span class="n">ws3</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span>
+            <span class="p">)</span>
+            <span class="n">out_windows</span> <span class="o">=</span> <span class="n">rearrange</span><span class="p">(</span>
+                <span class="n">attn_out</span><span class="p">,</span>
+                <span class="s2">&quot;nw (wh ww wd) c -&gt; nw wh ww wd c&quot;</span><span class="p">,</span>
+                <span class="n">wh</span><span class="o">=</span><span class="n">ws3</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                <span class="n">ww</span><span class="o">=</span><span class="n">ws3</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+                <span class="n">wd</span><span class="o">=</span><span class="n">ws3</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span>
+            <span class="p">)</span>
+            <span class="n">out</span> <span class="o">=</span> <span class="n">_window_reverse_3d</span><span class="p">(</span><span class="n">out_windows</span><span class="p">,</span> <span class="n">ws3</span><span class="p">,</span> <span class="n">hp</span><span class="p">,</span> <span class="n">wp</span><span class="p">,</span> <span class="n">dp</span><span class="p">)</span>
+            <span class="n">out</span> <span class="o">=</span> <span class="n">_crop_3d</span><span class="p">(</span><span class="n">out</span><span class="p">,</span> <span class="n">pad_size_3d</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">do_shift</span><span class="p">:</span>
+            <span class="n">out</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">roll</span><span class="p">(</span>
+                <span class="n">out</span><span class="p">,</span>
+                <span class="n">shifts</span><span class="o">=</span><span class="n">ss</span><span class="p">,</span>
+                <span class="n">dims</span><span class="o">=</span><span class="nb">tuple</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_spatial_dims</span><span class="p">)),</span>
+            <span class="p">)</span>
+
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">drop_path</span><span class="p">(</span><span class="n">apply_gate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">output_proj</span><span class="p">(</span><span class="n">out</span><span class="p">),</span> <span class="n">gate1</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">x</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">drop_path</span><span class="p">(</span>
+            <span class="n">apply_gate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">mlp</span><span class="p">(</span><span class="n">modulate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">norm2</span><span class="p">(</span><span class="n">x</span><span class="p">),</span> <span class="n">shift2</span><span class="p">,</span> <span class="n">scale2</span><span class="p">)),</span> <span class="n">gate2</span><span class="p">)</span>
+        <span class="p">)</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="PatchMerging">
+<a class="viewcode-back" href="../../../reference/processors/swin_vit.html#autocast.processors.swin_vit.PatchMerging">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">PatchMerging</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Patch merging layer.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dim</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">n_spatial_dims</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">2</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">dim</span> <span class="o">=</span> <span class="n">dim</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">n_spatial_dims</span> <span class="o">=</span> <span class="n">n_spatial_dims</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">reduction</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">4</span> <span class="o">*</span> <span class="n">dim</span><span class="p">,</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">dim</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">norm</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">(</span><span class="mi">4</span> <span class="o">*</span> <span class="n">dim</span><span class="p">)</span>
+
+<div class="viewcode-block" id="PatchMerging.forward">
+<a class="viewcode-back" href="../../../reference/processors/swin_vit.html#autocast.processors.swin_vit.PatchMerging.forward">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">Tensor</span><span class="p">,</span> <span class="n">spatial_shape</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Tensor</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_spatial_dims</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="n">H</span><span class="p">,</span> <span class="n">W</span> <span class="o">=</span> <span class="n">spatial_shape</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">rearrange</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="s2">&quot;b (h w) d -&gt; b h w d&quot;</span><span class="p">,</span> <span class="n">h</span><span class="o">=</span><span class="n">H</span><span class="p">,</span> <span class="n">w</span><span class="o">=</span><span class="n">W</span><span class="p">)</span>
+            <span class="n">pad_H</span><span class="p">,</span> <span class="n">pad_W</span> <span class="o">=</span> <span class="n">H</span> <span class="o">%</span> <span class="mi">2</span><span class="p">,</span> <span class="n">W</span> <span class="o">%</span> <span class="mi">2</span>
+            <span class="k">if</span> <span class="n">pad_H</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">pad_W</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">x</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">pad</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">pad_W</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">pad_H</span><span class="p">))</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">rearrange</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="s2">&quot;b (h h2) (w w2) d -&gt; b (h w) (w2 h2 d)&quot;</span><span class="p">,</span> <span class="n">h2</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">w2</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_spatial_dims</span> <span class="o">==</span> <span class="mi">3</span><span class="p">:</span>
+            <span class="n">H</span><span class="p">,</span> <span class="n">W</span><span class="p">,</span> <span class="n">depth</span> <span class="o">=</span> <span class="n">spatial_shape</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">rearrange</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="s2">&quot;b (h w dp) d -&gt; b h w dp d&quot;</span><span class="p">,</span> <span class="n">h</span><span class="o">=</span><span class="n">H</span><span class="p">,</span> <span class="n">w</span><span class="o">=</span><span class="n">W</span><span class="p">,</span> <span class="n">dp</span><span class="o">=</span><span class="n">depth</span><span class="p">)</span>
+            <span class="n">pad_H</span><span class="p">,</span> <span class="n">pad_W</span> <span class="o">=</span> <span class="n">H</span> <span class="o">%</span> <span class="mi">2</span><span class="p">,</span> <span class="n">W</span> <span class="o">%</span> <span class="mi">2</span>
+            <span class="k">if</span> <span class="n">pad_H</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">pad_W</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">x</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">pad</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">pad_W</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">pad_H</span><span class="p">))</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">rearrange</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="s2">&quot;b (h h2) (w w2) dp d -&gt; b (h w dp) (w2 h2 d)&quot;</span><span class="p">,</span> <span class="n">h2</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">w2</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unsupported n_spatial_dims </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">n_spatial_dims</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">reduction</span><span class="p">(</span><span class="n">x</span><span class="p">)</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="PatchSplitting">
+<a class="viewcode-back" href="../../../reference/processors/swin_vit.html#autocast.processors.swin_vit.PatchSplitting">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">PatchSplitting</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Patch splitting layer.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dim</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">n_spatial_dims</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">2</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">dim</span> <span class="o">=</span> <span class="n">dim</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">n_spatial_dims</span> <span class="o">=</span> <span class="n">n_spatial_dims</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lin1</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">dim</span><span class="p">,</span> <span class="n">dim</span> <span class="o">*</span> <span class="mi">2</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">norm</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">(</span><span class="n">dim</span> <span class="o">//</span> <span class="mi">2</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lin2</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">dim</span> <span class="o">//</span> <span class="mi">2</span><span class="p">,</span> <span class="n">dim</span> <span class="o">//</span> <span class="mi">2</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+<div class="viewcode-block" id="PatchSplitting.forward">
+<a class="viewcode-back" href="../../../reference/processors/swin_vit.html#autocast.processors.swin_vit.PatchSplitting.forward">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">x</span><span class="p">:</span> <span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">spatial_shape</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
+        <span class="n">crop</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tensor</span><span class="p">:</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lin1</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_spatial_dims</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="n">H</span><span class="p">,</span> <span class="n">W</span> <span class="o">=</span> <span class="n">spatial_shape</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">rearrange</span><span class="p">(</span>
+                <span class="n">x</span><span class="p">,</span> <span class="s2">&quot;b (h w) (w2 h2 d) -&gt; b (h h2) (w w2) d&quot;</span><span class="p">,</span> <span class="n">h</span><span class="o">=</span><span class="n">H</span><span class="p">,</span> <span class="n">w</span><span class="o">=</span><span class="n">W</span><span class="p">,</span> <span class="n">h2</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">w2</span><span class="o">=</span><span class="mi">2</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">crop</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">any</span><span class="p">(</span><span class="n">c</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">crop</span><span class="p">):</span>
+                <span class="n">x</span> <span class="o">=</span> <span class="n">x</span><span class="p">[:,</span> <span class="p">:</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">crop</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="p">:</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">-</span> <span class="n">crop</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="p">:]</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">rearrange</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="s2">&quot;b h w d -&gt; b (h w) d&quot;</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_spatial_dims</span> <span class="o">==</span> <span class="mi">3</span><span class="p">:</span>
+            <span class="n">H</span><span class="p">,</span> <span class="n">W</span><span class="p">,</span> <span class="n">depth</span> <span class="o">=</span> <span class="n">spatial_shape</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">rearrange</span><span class="p">(</span>
+                <span class="n">x</span><span class="p">,</span>
+                <span class="s2">&quot;b (h w dp) (w2 h2 d) -&gt; b (h h2) (w w2) dp d&quot;</span><span class="p">,</span>
+                <span class="n">h</span><span class="o">=</span><span class="n">H</span><span class="p">,</span>
+                <span class="n">w</span><span class="o">=</span><span class="n">W</span><span class="p">,</span>
+                <span class="n">dp</span><span class="o">=</span><span class="n">depth</span><span class="p">,</span>
+                <span class="n">h2</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+                <span class="n">w2</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">crop</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">any</span><span class="p">(</span><span class="n">c</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">crop</span><span class="p">):</span>
+                <span class="n">x</span> <span class="o">=</span> <span class="n">x</span><span class="p">[</span>
+                    <span class="p">:,</span>
+                    <span class="p">:</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">crop</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                    <span class="p">:</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">-</span> <span class="n">crop</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+                    <span class="p">:</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span> <span class="o">-</span> <span class="n">crop</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span>
+                    <span class="p">:,</span>
+                <span class="p">]</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">rearrange</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="s2">&quot;b h w dp d -&gt; b (h w dp) d&quot;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unsupported n_spatial_dims </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">n_spatial_dims</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">lin2</span><span class="p">(</span><span class="n">x</span><span class="p">)</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="BasicSwinLayer">
+<a class="viewcode-back" href="../../../reference/processors/swin_vit.html#autocast.processors.swin_vit.BasicSwinLayer">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">BasicSwinLayer</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A basic Swin layer comprising multiple blocks and an optional down/upsample.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">dim</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">depth</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">num_heads</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">n_spatial_dims</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">n_noise_channels</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">window_size</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
+        <span class="n">drop_path</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span>
+        <span class="n">downsample</span><span class="p">:</span> <span class="nb">type</span><span class="p">[</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">upsample</span><span class="p">:</span> <span class="nb">type</span><span class="p">[</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">use_ada_ln</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">zero_init</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">dim</span> <span class="o">=</span> <span class="n">dim</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">depth</span> <span class="o">=</span> <span class="n">depth</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">blocks</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">ModuleList</span><span class="p">(</span>
+            <span class="p">[</span>
+                <span class="n">SwinViTBlock</span><span class="p">(</span>
+                    <span class="n">dim</span><span class="p">,</span>
+                    <span class="n">num_heads</span><span class="p">,</span>
+                    <span class="n">n_spatial_dims</span><span class="p">,</span>
+                    <span class="n">n_noise_channels</span><span class="p">,</span>
+                    <span class="n">window_size</span><span class="p">,</span>
+                    <span class="n">shift</span><span class="o">=</span><span class="p">(</span><span class="n">i</span> <span class="o">%</span> <span class="mi">2</span> <span class="o">==</span> <span class="mi">1</span><span class="p">),</span>
+                    <span class="n">drop_path</span><span class="o">=</span><span class="n">drop_path</span><span class="p">[</span><span class="n">i</span><span class="p">],</span>
+                    <span class="n">use_ada_ln</span><span class="o">=</span><span class="n">use_ada_ln</span><span class="p">,</span>
+                    <span class="n">zero_init</span><span class="o">=</span><span class="n">zero_init</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">depth</span><span class="p">)</span>
+            <span class="p">]</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">downsample</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">downsample</span> <span class="o">=</span> <span class="n">downsample</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="n">dim</span><span class="p">,</span> <span class="n">n_spatial_dims</span><span class="o">=</span><span class="n">n_spatial_dims</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">downsample</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="k">if</span> <span class="n">upsample</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">upsample</span> <span class="o">=</span> <span class="n">upsample</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="n">dim</span><span class="p">,</span> <span class="n">n_spatial_dims</span><span class="o">=</span><span class="n">n_spatial_dims</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">upsample</span> <span class="o">=</span> <span class="kc">None</span>
+
+<div class="viewcode-block" id="BasicSwinLayer.forward">
+<a class="viewcode-back" href="../../../reference/processors/swin_vit.html#autocast.processors.swin_vit.BasicSwinLayer.forward">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span>  <span class="c1"># noqa: PLR0912</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">x</span><span class="p">:</span> <span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">x_noise</span><span class="p">:</span> <span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">spatial_shape</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
+        <span class="n">crop</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">]:</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">spatial_shape</span><span class="p">)</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">x</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">3</span><span class="p">:</span>
+                <span class="n">x</span> <span class="o">=</span> <span class="n">rearrange</span><span class="p">(</span>
+                    <span class="n">x</span><span class="p">,</span>
+                    <span class="s2">&quot;b (h w) c -&gt; b h w c&quot;</span><span class="p">,</span>
+                    <span class="n">h</span><span class="o">=</span><span class="n">spatial_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                    <span class="n">w</span><span class="o">=</span><span class="n">spatial_shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+                <span class="p">)</span>
+            <span class="k">elif</span> <span class="n">x</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">4</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="s2">&quot;Expected 3D or 4D tensor for 2D Swin layer, &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;got shape </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">spatial_shape</span><span class="p">)</span> <span class="o">==</span> <span class="mi">3</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">x</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">3</span><span class="p">:</span>
+                <span class="n">x</span> <span class="o">=</span> <span class="n">rearrange</span><span class="p">(</span>
+                    <span class="n">x</span><span class="p">,</span>
+                    <span class="s2">&quot;b (h w d) c -&gt; b h w d c&quot;</span><span class="p">,</span>
+                    <span class="n">h</span><span class="o">=</span><span class="n">spatial_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                    <span class="n">w</span><span class="o">=</span><span class="n">spatial_shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+                    <span class="n">d</span><span class="o">=</span><span class="n">spatial_shape</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span>
+                <span class="p">)</span>
+            <span class="k">elif</span> <span class="n">x</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">5</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="s2">&quot;Expected 3D or 5D tensor for 3D Swin layer, &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;got shape </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Unsupported spatial_shape with </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">spatial_shape</span><span class="p">)</span><span class="si">}</span><span class="s2"> dims&quot;</span>
+            <span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">blk</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">blocks</span><span class="p">:</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">blk</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">x_noise</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">spatial_shape</span><span class="p">)</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">rearrange</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="s2">&quot;b h w c -&gt; b (h w) c&quot;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">rearrange</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="s2">&quot;b h w d c -&gt; b (h w d) c&quot;</span><span class="p">)</span>
+        <span class="n">out_shape</span> <span class="o">=</span> <span class="n">spatial_shape</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">downsample</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">x_down</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">downsample</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">spatial_shape</span><span class="p">)</span>
+            <span class="n">padding</span> <span class="o">=</span> <span class="p">(</span><span class="n">spatial_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">%</span> <span class="mi">2</span><span class="p">,</span> <span class="n">spatial_shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">%</span> <span class="mi">2</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">spatial_shape</span><span class="p">)</span> <span class="o">==</span> <span class="mi">3</span><span class="p">:</span>
+                <span class="n">out_shape</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="p">(</span><span class="n">spatial_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="n">padding</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">//</span> <span class="mi">2</span><span class="p">,</span>
+                    <span class="p">(</span><span class="n">spatial_shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">padding</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span> <span class="o">//</span> <span class="mi">2</span><span class="p">,</span>
+                    <span class="n">spatial_shape</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span>
+                <span class="p">)</span>
+                <span class="n">padding_out</span> <span class="o">=</span> <span class="p">(</span><span class="o">*</span><span class="n">padding</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">out_shape</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="p">(</span><span class="n">spatial_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="n">padding</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">//</span> <span class="mi">2</span><span class="p">,</span>
+                    <span class="p">(</span><span class="n">spatial_shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">padding</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span> <span class="o">//</span> <span class="mi">2</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="n">padding_out</span> <span class="o">=</span> <span class="n">padding</span>
+            <span class="k">return</span> <span class="n">x_down</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">out_shape</span><span class="p">,</span> <span class="n">padding_out</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">upsample</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">x_up</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">upsample</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">spatial_shape</span><span class="p">,</span> <span class="n">crop</span><span class="o">=</span><span class="n">crop</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">spatial_shape</span><span class="p">)</span> <span class="o">==</span> <span class="mi">3</span><span class="p">:</span>
+                <span class="n">out_shape</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="n">spatial_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="mi">2</span><span class="p">,</span>
+                    <span class="n">spatial_shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="mi">2</span><span class="p">,</span>
+                    <span class="n">spatial_shape</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span>
+                <span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">out_shape</span> <span class="o">=</span> <span class="p">(</span><span class="n">spatial_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="mi">2</span><span class="p">,</span> <span class="n">spatial_shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="mi">2</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">crop</span><span class="p">:</span>
+                <span class="n">out_shape</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">o</span> <span class="o">-</span> <span class="n">c</span> <span class="k">for</span> <span class="n">o</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">out_shape</span><span class="p">,</span> <span class="n">crop</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">False</span><span class="p">))</span>
+            <span class="k">return</span> <span class="n">x_up</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">out_shape</span><span class="p">,</span> <span class="kc">None</span>
+
+        <span class="k">return</span> <span class="n">x</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">out_shape</span><span class="p">,</span> <span class="kc">None</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="SwinViTProcessor">
+<a class="viewcode-back" href="../../../reference/processors/swin_vit.html#autocast.processors.swin_vit.SwinViTProcessor">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">SwinViTProcessor</span><span class="p">(</span><span class="n">Processor</span><span class="p">[</span><span class="n">EncodedBatch</span><span class="p">]):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;ViT Processor using 2D/3D Shifted-Window Attention (Swin) and Ada-LN.</span>
+
+<span class="sd">    Constructs a U-Net style encoder-decoder architecture.</span>
+
+<span class="sd">    Features:</span>
+<span class="sd">    - Shifted-Window Multi-Head Self Attention (SW-MSA).</span>
+<span class="sd">    - Patch Merging for hierarchical staging (encoder downsampling).</span>
+<span class="sd">    - Patch Splitting for hierarchical expansion (decoder upsampling).</span>
+<span class="sd">    - Ada-LN conditioning from noise embeddings (post-norm or per-block scaled).</span>
+
+<span class="sd">    References:</span>
+<span class="sd">    ----------</span>
+<span class="sd">    - Liu, Z. et al. &quot;Swin Transformer: Hierarchical Vision Transformer using Shifted</span>
+<span class="sd">      Windows.&quot; ICCV 2021.</span>
+<span class="sd">    - Liu, Z. et al. &quot;Video Swin Transformer.&quot; CVPR 2022.</span>
+<span class="sd">    - Microsoft Aurora Swin3D implementation:</span>
+<span class="sd">      https://github.com/microsoft/aurora/blob/main/aurora/model/swin3d.py</span>
+
+<span class="sd">        Shape convention:</span>
+<span class="sd">        - Public processor boundary: channel-first</span>
+<span class="sd">            - 2D: (B, C, H, W)</span>
+<span class="sd">            - 3D: (B, C, H, W, D)</span>
+<span class="sd">        - Internal Swin blocks: channels-last</span>
+<span class="sd">            - 2D: (B, H, W, C)</span>
+<span class="sd">            - 3D: (B, H, W, D, C)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">in_channels</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">out_channels</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">spatial_resolution</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
+        <span class="n">window_size</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">4</span><span class="p">),</span>
+        <span class="n">hidden_dim</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">64</span><span class="p">,</span>
+        <span class="n">encoder_depths</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+        <span class="n">encoder_num_heads</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">12</span><span class="p">),</span>
+        <span class="n">decoder_depths</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+        <span class="n">decoder_num_heads</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="mi">12</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
+        <span class="n">drop_path</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+        <span class="n">groups</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">12</span><span class="p">,</span>
+        <span class="n">loss_func</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">Module</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">n_noise_channels</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">patch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">use_ada_ln</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">zero_init</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">n_spatial_dims</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">spatial_resolution</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">window_size</span><span class="p">)</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_spatial_dims</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;window_size has &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">window_size</span><span class="p">)</span><span class="si">}</span><span class="s2"> dims but n_spatial_dims=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">n_spatial_dims</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">window_size</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">window_size</span><span class="p">[:</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_spatial_dims</span><span class="p">])</span>
+        <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">ws</span> <span class="o">&lt;=</span> <span class="mi">0</span> <span class="k">for</span> <span class="n">ws</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">window_size</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;window_size values must be positive, got </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">window_size</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">n_noise_channels</span> <span class="o">=</span> <span class="n">n_noise_channels</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">loss_func</span> <span class="o">=</span> <span class="n">loss_func</span> <span class="ow">or</span> <span class="n">nn</span><span class="o">.</span><span class="n">MSELoss</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">embed</span> <span class="o">=</span> <span class="n">PatchEmbedding</span><span class="p">(</span>
+            <span class="n">in_channels</span><span class="p">,</span> <span class="n">hidden_dim</span><span class="p">,</span> <span class="n">groups</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_spatial_dims</span><span class="p">,</span> <span class="n">patch_size</span>
+        <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">num_encoder_layers</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">encoder_depths</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">num_decoder_layers</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">decoder_depths</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_encoder_layers</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_decoder_layers</span>
+
+        <span class="n">dpr</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">drop_path</span><span class="p">,</span> <span class="nb">sum</span><span class="p">(</span><span class="n">encoder_depths</span><span class="p">))</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">encoder_layers</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">ModuleList</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">i_layer</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_encoder_layers</span><span class="p">):</span>
+            <span class="n">layer</span> <span class="o">=</span> <span class="n">BasicSwinLayer</span><span class="p">(</span>
+                <span class="n">dim</span><span class="o">=</span><span class="nb">int</span><span class="p">(</span><span class="n">hidden_dim</span> <span class="o">*</span> <span class="mi">2</span><span class="o">**</span><span class="n">i_layer</span><span class="p">),</span>
+                <span class="n">depth</span><span class="o">=</span><span class="n">encoder_depths</span><span class="p">[</span><span class="n">i_layer</span><span class="p">],</span>
+                <span class="n">num_heads</span><span class="o">=</span><span class="n">encoder_num_heads</span><span class="p">[</span><span class="n">i_layer</span><span class="p">],</span>
+                <span class="n">n_spatial_dims</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">n_spatial_dims</span><span class="p">,</span>
+                <span class="n">n_noise_channels</span><span class="o">=</span><span class="n">n_noise_channels</span><span class="p">,</span>
+                <span class="n">window_size</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">window_size</span><span class="p">,</span>
+                <span class="n">drop_path</span><span class="o">=</span><span class="n">dpr</span><span class="p">[</span>
+                    <span class="nb">sum</span><span class="p">(</span><span class="n">encoder_depths</span><span class="p">[:</span><span class="n">i_layer</span><span class="p">])</span> <span class="p">:</span> <span class="nb">sum</span><span class="p">(</span><span class="n">encoder_depths</span><span class="p">[:</span> <span class="n">i_layer</span> <span class="o">+</span> <span class="mi">1</span><span class="p">])</span>
+                <span class="p">],</span>
+                <span class="n">downsample</span><span class="o">=</span><span class="n">PatchMerging</span>
+                <span class="k">if</span> <span class="p">(</span><span class="n">i_layer</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_encoder_layers</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+                <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="n">use_ada_ln</span><span class="o">=</span><span class="n">use_ada_ln</span><span class="p">,</span>
+                <span class="n">zero_init</span><span class="o">=</span><span class="n">zero_init</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">encoder_layers</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">layer</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">decoder_layers</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">ModuleList</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">i_layer</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_decoder_layers</span><span class="p">):</span>
+            <span class="n">exponent</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_decoder_layers</span> <span class="o">-</span> <span class="n">i_layer</span> <span class="o">-</span> <span class="mi">1</span>
+            <span class="n">layer</span> <span class="o">=</span> <span class="n">BasicSwinLayer</span><span class="p">(</span>
+                <span class="n">dim</span><span class="o">=</span><span class="nb">int</span><span class="p">(</span><span class="n">hidden_dim</span> <span class="o">*</span> <span class="mi">2</span><span class="o">**</span><span class="n">exponent</span><span class="p">),</span>
+                <span class="n">depth</span><span class="o">=</span><span class="n">decoder_depths</span><span class="p">[</span><span class="n">i_layer</span><span class="p">],</span>
+                <span class="n">num_heads</span><span class="o">=</span><span class="n">decoder_num_heads</span><span class="p">[</span><span class="n">i_layer</span><span class="p">],</span>
+                <span class="n">n_spatial_dims</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">n_spatial_dims</span><span class="p">,</span>
+                <span class="n">n_noise_channels</span><span class="o">=</span><span class="n">n_noise_channels</span><span class="p">,</span>
+                <span class="n">window_size</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">window_size</span><span class="p">,</span>
+                <span class="n">drop_path</span><span class="o">=</span><span class="n">dpr</span><span class="p">[</span>
+                    <span class="nb">sum</span><span class="p">(</span><span class="n">decoder_depths</span><span class="p">[:</span><span class="n">i_layer</span><span class="p">])</span> <span class="p">:</span> <span class="nb">sum</span><span class="p">(</span><span class="n">decoder_depths</span><span class="p">[:</span> <span class="n">i_layer</span> <span class="o">+</span> <span class="mi">1</span><span class="p">])</span>
+                <span class="p">],</span>
+                <span class="n">upsample</span><span class="o">=</span><span class="n">PatchSplitting</span>
+                <span class="k">if</span> <span class="p">(</span><span class="n">i_layer</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_decoder_layers</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+                <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="n">use_ada_ln</span><span class="o">=</span><span class="n">use_ada_ln</span><span class="p">,</span>
+                <span class="n">zero_init</span><span class="o">=</span><span class="n">zero_init</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">decoder_layers</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">layer</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">debed</span> <span class="o">=</span> <span class="n">PatchUnembedding</span><span class="p">(</span>
+            <span class="n">out_channels</span><span class="p">,</span> <span class="n">hidden_dim</span><span class="p">,</span> <span class="n">groups</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_spatial_dims</span><span class="p">,</span> <span class="n">patch_size</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">embed_reshapes</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="p">[</span><span class="s2">&quot;b h w c -&gt; b c h w&quot;</span><span class="p">,</span> <span class="s2">&quot;b c h w -&gt; b h w c&quot;</span><span class="p">]</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_spatial_dims</span> <span class="o">==</span> <span class="mi">2</span>
+            <span class="k">else</span> <span class="p">[</span><span class="s2">&quot;b h w d c -&gt; b c h w d&quot;</span><span class="p">,</span> <span class="s2">&quot;b c h w d -&gt; b h w d c&quot;</span><span class="p">]</span>
+        <span class="p">)</span>
+
+<div class="viewcode-block" id="SwinViTProcessor.get_encoder_specs">
+<a class="viewcode-back" href="../../../reference/processors/swin_vit.html#autocast.processors.swin_vit.SwinViTProcessor.get_encoder_specs">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_encoder_specs</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">patch_res</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]],</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">]]:</span>
+        <span class="n">all_res</span> <span class="o">=</span> <span class="p">[</span><span class="n">patch_res</span><span class="p">]</span>
+        <span class="n">padded_outs</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_encoder_layers</span><span class="p">):</span>
+            <span class="n">res</span> <span class="o">=</span> <span class="n">all_res</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+            <span class="n">pad_H</span><span class="p">,</span> <span class="n">pad_W</span> <span class="o">=</span> <span class="n">res</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">%</span> <span class="mi">2</span><span class="p">,</span> <span class="n">res</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">%</span> <span class="mi">2</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">res</span><span class="p">)</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+                <span class="n">padded_outs</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">pad_H</span><span class="p">,</span> <span class="n">pad_W</span><span class="p">))</span>
+                <span class="n">all_res</span><span class="o">.</span><span class="n">append</span><span class="p">(((</span><span class="n">res</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="n">pad_H</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span><span class="p">,</span> <span class="p">(</span><span class="n">res</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">pad_W</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span><span class="p">))</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">padded_outs</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">pad_H</span><span class="p">,</span> <span class="n">pad_W</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
+                <span class="n">all_res</span><span class="o">.</span><span class="n">append</span><span class="p">(((</span><span class="n">res</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="n">pad_H</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span><span class="p">,</span> <span class="p">(</span><span class="n">res</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">pad_W</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span><span class="p">,</span> <span class="n">res</span><span class="p">[</span><span class="mi">2</span><span class="p">]))</span>
+        <span class="n">padded_outs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">all_res</span><span class="p">,</span> <span class="n">padded_outs</span></div>
+
+
+<div class="viewcode-block" id="SwinViTProcessor.forward">
+<a class="viewcode-back" href="../../../reference/processors/swin_vit.html#autocast.processors.swin_vit.SwinViTProcessor.forward">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">Tensor</span><span class="p">,</span> <span class="n">x_noise</span><span class="p">:</span> <span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tensor</span><span class="p">:</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">rearrange</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">embed</span><span class="p">(</span><span class="n">rearrange</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">embed_reshapes</span><span class="p">[</span><span class="mi">0</span><span class="p">])),</span> <span class="bp">self</span><span class="o">.</span><span class="n">embed_reshapes</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="p">)</span>
+
+        <span class="n">spatial_shape</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span> <span class="p">:</span> <span class="mi">1</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_spatial_dims</span><span class="p">])</span>
+        <span class="n">all_enc_res</span><span class="p">,</span> <span class="n">padded_outs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_encoder_specs</span><span class="p">(</span><span class="n">spatial_shape</span><span class="p">)</span>
+
+        <span class="n">skips</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">layer</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">encoder_layers</span><span class="p">):</span>
+            <span class="n">x</span><span class="p">,</span> <span class="n">x_unscaled</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">layer</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">x_noise</span><span class="p">,</span> <span class="n">all_enc_res</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>
+            <span class="n">skips</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">x_unscaled</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">layer</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">decoder_layers</span><span class="p">):</span>
+            <span class="n">index</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_decoder_layers</span> <span class="o">-</span> <span class="n">i</span> <span class="o">-</span> <span class="mi">1</span>
+            <span class="n">x</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">layer</span><span class="p">(</span>
+                <span class="n">x</span><span class="p">,</span>
+                <span class="n">x_noise</span><span class="p">,</span>
+                <span class="n">all_enc_res</span><span class="p">[</span><span class="n">index</span><span class="p">],</span>
+                <span class="n">crop</span><span class="o">=</span><span class="n">padded_outs</span><span class="p">[</span><span class="n">index</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> <span class="k">if</span> <span class="n">index</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">index</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="n">skips</span><span class="p">[</span><span class="n">index</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span>
+
+        <span class="c1"># Decoder layers may return flattened tokens; restore spatial layout</span>
+        <span class="c1"># expected by PatchUnembedding.</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_spatial_dims</span> <span class="o">==</span> <span class="mi">2</span> <span class="ow">and</span> <span class="n">x</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">3</span><span class="p">:</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">rearrange</span><span class="p">(</span>
+                <span class="n">x</span><span class="p">,</span>
+                <span class="s2">&quot;b (h w) c -&gt; b h w c&quot;</span><span class="p">,</span>
+                <span class="n">h</span><span class="o">=</span><span class="n">spatial_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                <span class="n">w</span><span class="o">=</span><span class="n">spatial_shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+            <span class="p">)</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_spatial_dims</span> <span class="o">==</span> <span class="mi">3</span> <span class="ow">and</span> <span class="n">x</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">3</span><span class="p">:</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">rearrange</span><span class="p">(</span>
+                <span class="n">x</span><span class="p">,</span>
+                <span class="s2">&quot;b (h w d) c -&gt; b h w d c&quot;</span><span class="p">,</span>
+                <span class="n">h</span><span class="o">=</span><span class="n">spatial_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                <span class="n">w</span><span class="o">=</span><span class="n">spatial_shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+                <span class="n">d</span><span class="o">=</span><span class="n">spatial_shape</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span>
+            <span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">rearrange</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">debed</span><span class="p">(</span><span class="n">rearrange</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">embed_reshapes</span><span class="p">[</span><span class="mi">0</span><span class="p">])),</span> <span class="bp">self</span><span class="o">.</span><span class="n">embed_reshapes</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="SwinViTProcessor.map">
+<a class="viewcode-back" href="../../../reference/processors/swin_vit.html#autocast.processors.swin_vit.SwinViTProcessor.map">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">map</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">Tensor</span><span class="p">,</span> <span class="n">global_cond</span><span class="p">:</span> <span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tensor</span><span class="p">:</span>  <span class="c1"># noqa: ARG002</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Map encoded inputs through Swin while preserving channel-first I/O.&quot;&quot;&quot;</span>
+        <span class="n">noise</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span>
+                <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_noise_channels</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">x</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">x</span><span class="o">.</span><span class="n">device</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_noise_channels</span>
+            <span class="k">else</span> <span class="kc">None</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_spatial_dims</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="n">out</span> <span class="o">=</span> <span class="bp">self</span><span class="p">(</span><span class="n">rearrange</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="s2">&quot;b c h w -&gt; b h w c&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">contiguous</span><span class="p">(),</span> <span class="n">noise</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">rearrange</span><span class="p">(</span><span class="n">out</span><span class="p">,</span> <span class="s2">&quot;b h w c -&gt; b c h w&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">contiguous</span><span class="p">()</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_spatial_dims</span> <span class="o">==</span> <span class="mi">3</span><span class="p">:</span>
+            <span class="n">out</span> <span class="o">=</span> <span class="bp">self</span><span class="p">(</span><span class="n">rearrange</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="s2">&quot;b c h w d -&gt; b h w d c&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">contiguous</span><span class="p">(),</span> <span class="n">noise</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">rearrange</span><span class="p">(</span><span class="n">out</span><span class="p">,</span> <span class="s2">&quot;b h w d c -&gt; b c h w d&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">contiguous</span><span class="p">()</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unsupported n_spatial_dims=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">n_spatial_dims</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="SwinViTProcessor.loss">
+<a class="viewcode-back" href="../../../reference/processors/swin_vit.html#autocast.processors.swin_vit.SwinViTProcessor.loss">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">loss</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">batch</span><span class="p">:</span> <span class="n">EncodedBatch</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tensor</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">loss_func</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">batch</span><span class="o">.</span><span class="n">encoded_inputs</span><span class="p">,</span> <span class="n">batch</span><span class="o">.</span><span class="n">global_cond</span><span class="p">),</span>
+            <span class="n">batch</span><span class="o">.</span><span class="n">encoded_output_fields</span><span class="p">,</span>
+        <span class="p">)</span></div>
+</div>
+
+</pre></div>
+
+                </article>
+              
+
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+<div class="bd-footer-content__inner container">
+  
+  <div class="footer-item">
+    
+<p class="component-author">
+By AI for Physical Systems Team at The Alan Turing Institute
+</p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+  <div class="footer-item">
+    
+<div class="extra_footer">
+  Copyright &copy; 2026
+
+</div>
+  </div>
+  
+</div>
+          </footer>
+        
+
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="../../../_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf"></script>
+<script defer src="../../../_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf"></script>
+
+  <footer class="bd-footer">
+  </footer>
+  </body>
+</html>

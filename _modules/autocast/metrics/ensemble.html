@@ -1,0 +1,1765 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../../../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>autocast.metrics.ensemble &#8212; AutoCast: Spatiotemporal Forecasting</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../../../_static/styles/theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+<link href="../../../_static/styles/pydata-sphinx-theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/styles/sphinx-book-theme.css?v=3c74b3bc" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/togglebutton.css?v=9c3e77be" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/mystnb.11b39860a7a0cbfd473a3ad8a317855267ff0bd372690045ca344a6b62be495e.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sphinx-thebe.css?v=4fa983c6" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sphinx-design.min.css?v=95c83b7e" />
+  
+  <!-- So that users can add custom icons -->
+  <script src="../../../_static/scripts/fontawesome.js?digest=8878045cc6db502f8baf"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../../../_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf" />
+<link rel="preload" as="script" href="../../../_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf" />
+
+    <script src="../../../_static/documentation_options.js?v=9eb32ce0"></script>
+    <script src="../../../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../../../_static/copybutton.js?v=7f8ff830"></script>
+    <script src="../../../_static/scripts/sphinx-book-theme.js?v=fab101a9"></script>
+    <script>let toggleHintShow = 'Click to show';</script>
+    <script>let toggleHintHide = 'Click to hide';</script>
+    <script>let toggleOpenOnPrint = 'true';</script>
+    <script src="../../../_static/togglebutton.js?v=b8b12719"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script src="../../../_static/design-tabs.js?v=f930bc37"></script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script async="async" src="../../../_static/sphinx-thebe.js?v=c100c467"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script>DOCUMENTATION_OPTIONS.pagename = '_modules/autocast/metrics/ensemble';</script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="" />
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="../../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search this book..."
+         aria-label="Search this book..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+        
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../../../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../../../_static/AC.png" class="logo__image only-light" alt="AutoCast: Spatiotemporal Forecasting - Home"/>
+    <img src="../../../_static/AC.png" class="logo__image only-dark pst-js-only" alt="AutoCast: Spatiotemporal Forecasting - Home"/>
+  
+  
+</a></div>
+        <div class="sidebar-primary-item">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button></div>
+        <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item navbar-nav active">
+        
+        <ul class="nav bd-sidenav bd-sidenav__home-link">
+            <li class="toctree-l1">
+                <a class="reference internal" href="../../../index.html">
+                    Welcome to AutoCast
+                </a>
+            </li>
+        </ul>
+        <ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../../installation.html">Installation</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../tutorial/index.html">Tutorial</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../tutorial/commands.html">Available commands</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../tutorial/configs.html">Extending configurations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../tutorial/eval.html">Evaluating models</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../other-commands.html">Direct usage of lower-level Hydra scripts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../contributing.html">Contributing</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../reference/index.html">API Reference</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/models/index.html">Models</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/models/encoder_decoder.html">autocast.models.encoder_decoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/models/encoder_processor_decoder.html">autocast.models.encoder_processor_decoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/models/autoencoder.html">autocast.models.autoencoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/models/variational_autoencoder.html">autocast.models.variational_autoencoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/models/processor.html">autocast.models.processor</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/processors/index.html">Processors</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/processors/base.html">autocast.processors.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/processors/unet.html">autocast.processors.unet</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/processors/swin_vit.html">autocast.processors.swin_vit</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/processors/vit.html">autocast.processors.vit</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/processors/flow_matching.html">autocast.processors.flow_matching</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/processors/diffusion.html">autocast.processors.diffusion</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/processors/noise.html">autocast.processors.noise</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/encoders/index.html">Encoders</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/encoders/base.html">autocast.encoders.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/encoders/dc.html">autocast.encoders.dc</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/encoders/unet.html">autocast.encoders.unet</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/encoders/identity.html">autocast.encoders.identity</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/decoders/index.html">Decoders</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/decoders/base.html">autocast.decoders.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/decoders/dc.html">autocast.decoders.dc</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/decoders/identity.html">autocast.decoders.identity</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/data/index.html">Data</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/data/datamodule.html">autocast.data.datamodule</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/data/dataset.html">autocast.data.dataset</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/data/encoded_dataset.html">autocast.data.encoded_dataset</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/data/metadata.html">autocast.data.metadata</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/metrics/index.html">Metrics</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/metrics/base.html">autocast.metrics.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/metrics/deterministic.html">autocast.metrics.deterministic</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/metrics/ensemble.html">autocast.metrics.ensemble</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/metrics/coverage.html">autocast.metrics.coverage</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/losses/index.html">Losses</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/losses/ensemble.html">autocast.losses.ensemble</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/types/index.html">Types</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/types/types.html">autocast.types.types</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/types/batch.html">autocast.types.batch</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/nn/index.html">Neural Network Utilities</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/nn/residual.html">autocast.nn.residual</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/nn/spatial_attention.html">autocast.nn.spatial_attention</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/utils/index.html">Utilities</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/utils/optimizer.html">autocast.utils.optimizer</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/utils/plots.html">autocast.utils.plots</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/benchmarking/index.html">Benchmarking</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/benchmarking/inference.html">autocast.benchmarking.inference</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/logging/index.html">Logging</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/logging/wandb.html">autocast.logging.wandb</a></li>
+</ul>
+</details></li>
+</ul>
+</details></li>
+</ul>
+
+    </div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+      <div class="sidebar-primary-item">
+<div id="ethical-ad-placement"
+      class="flat"
+      data-ea-publisher="readthedocs"
+      data-ea-type="readthedocs-sidebar"
+      data-ea-manual="true">
+</div></div>
+  </div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+
+<div class="sbt-scroll-pixel-helper"></div>
+
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item"><button class="sidebar-toggle primary-toggle btn btn-sm" title="Toggle primary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <span class="fa-solid fa-bars"></span>
+</button></div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+
+<div class="article-header-buttons">
+
+
+
+
+
+<div class="dropdown dropdown-source-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Source repositories">
+    <i class="fab fa-github"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="https://github.com/alan-turing-institute/autocast" target="_blank"
+   class="btn btn-sm btn-source-repository-button dropdown-item"
+   title="Source repository"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fab fa-github"></i>
+  </span>
+<span class="btn__text-container">Repository</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/alan-turing-institute/autocast/issues/new?title=Issue%20on%20page%20%2F_modules/autocast/metrics/ensemble.html&body=Your%20issue%20content%20here." target="_blank"
+   class="btn btn-sm btn-source-issues-button dropdown-item"
+   title="Open an issue"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-lightbulb"></i>
+  </span>
+<span class="btn__text-container">Open issue</span>
+</a>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+<button onclick="toggleFullScreen()"
+  class="btn btn-sm btn-fullscreen-button pst-navbar-icon"
+  title="Fullscreen mode"
+  data-bs-placement="bottom" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+
+
+<button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button pst-js-only" aria-label="Color mode" data-bs-title="Color mode"  data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <i class="theme-switch fa-solid fa-sun                fa-lg" data-mode="light" title="Light"></i>
+  <i class="theme-switch fa-solid fa-moon               fa-lg" data-mode="dark"  title="Dark"></i>
+  <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"  title="System Settings"></i>
+</button>
+
+
+<button class="btn btn-sm pst-navbar-icon search-button search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+</button>
+
+</div></div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="jb-print-docs-body" class="onlyprint">
+    <h1></h1>
+    <!-- Table of contents -->
+    <div id="print-main-content">
+        <div id="jb-print-toc">
+            
+        </div>
+    </div>
+</div>
+
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <h1>Source code for autocast.metrics.ensemble</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">abc</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Literal</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">einops</span><span class="w"> </span><span class="kn">import</span> <span class="n">rearrange</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">matplotlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">pyplot</span> <span class="k">as</span> <span class="n">plt</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torchmetrics</span><span class="w"> </span><span class="kn">import</span> <span class="n">Metric</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">autocast.metrics.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">BaseMetric</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autocast.types</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">ArrayLike</span><span class="p">,</span>
+    <span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">TensorBSC</span><span class="p">,</span>
+    <span class="n">TensorBTC</span><span class="p">,</span>
+    <span class="n">TensorBTSC</span><span class="p">,</span>
+    <span class="n">TensorBTSCM</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">VectorDimsOption</span> <span class="o">=</span> <span class="n">Literal</span><span class="p">[</span>
+    <span class="s2">&quot;spatial&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;temporal&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;spatial_temporal&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;spatial_temporal_channels&quot;</span><span class="p">,</span>
+<span class="p">]</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_normalize_vector_dims</span><span class="p">(</span><span class="n">vector_dims</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">VectorDimsOption</span><span class="p">:</span>
+    <span class="n">valid_options</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="s2">&quot;spatial&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;temporal&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;spatial_temporal&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;spatial_temporal_channels&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="n">vector_dims</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">valid_options</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="s2">&quot;vector_dims must be one of &quot;</span>
+            <span class="s2">&quot;(&#39;spatial&#39;, &#39;temporal&#39;, &#39;spatial_temporal&#39;, &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;&#39;spatial_temporal_channels&#39;), got </span><span class="si">{</span><span class="n">vector_dims</span><span class="si">!r}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">vector_dims</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_vectorize_selected_dims</span><span class="p">(</span>
+    <span class="n">y_pred</span><span class="p">:</span> <span class="n">TensorBTSCM</span><span class="p">,</span>
+    <span class="n">y_true</span><span class="p">:</span> <span class="n">TensorBTSC</span><span class="p">,</span>
+    <span class="n">vector_dims</span><span class="p">:</span> <span class="n">VectorDimsOption</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">Tensor</span><span class="p">]:</span>
+    <span class="k">if</span> <span class="n">vector_dims</span> <span class="o">==</span> <span class="s2">&quot;spatial&quot;</span><span class="p">:</span>
+        <span class="n">y_true_vector</span> <span class="o">=</span> <span class="n">rearrange</span><span class="p">(</span><span class="n">y_true</span><span class="p">,</span> <span class="s2">&quot;b t ... c -&gt; b t c (...)&quot;</span><span class="p">)</span>
+        <span class="n">y_pred_vector</span> <span class="o">=</span> <span class="n">rearrange</span><span class="p">(</span><span class="n">y_pred</span><span class="p">,</span> <span class="s2">&quot;b t ... c m -&gt; b t c (...) m&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">y_pred_vector</span><span class="p">,</span> <span class="n">y_true_vector</span>
+
+    <span class="k">if</span> <span class="n">vector_dims</span> <span class="o">==</span> <span class="s2">&quot;temporal&quot;</span><span class="p">:</span>
+        <span class="n">y_true_vector</span> <span class="o">=</span> <span class="n">rearrange</span><span class="p">(</span><span class="n">y_true</span><span class="p">,</span> <span class="s2">&quot;b t ... c -&gt; b ... c t&quot;</span><span class="p">)</span>
+        <span class="n">y_pred_vector</span> <span class="o">=</span> <span class="n">rearrange</span><span class="p">(</span><span class="n">y_pred</span><span class="p">,</span> <span class="s2">&quot;b t ... c m -&gt; b ... c t m&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">y_pred_vector</span><span class="p">,</span> <span class="n">y_true_vector</span>
+
+    <span class="k">if</span> <span class="n">vector_dims</span> <span class="o">==</span> <span class="s2">&quot;spatial_temporal&quot;</span><span class="p">:</span>
+        <span class="n">y_true_vector</span> <span class="o">=</span> <span class="n">rearrange</span><span class="p">(</span><span class="n">y_true</span><span class="p">,</span> <span class="s2">&quot;b t ... c -&gt; b c (t ...)&quot;</span><span class="p">)</span>
+        <span class="n">y_pred_vector</span> <span class="o">=</span> <span class="n">rearrange</span><span class="p">(</span><span class="n">y_pred</span><span class="p">,</span> <span class="s2">&quot;b t ... c m -&gt; b c (t ...) m&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">y_pred_vector</span><span class="p">,</span> <span class="n">y_true_vector</span>
+
+    <span class="n">y_true_vector</span> <span class="o">=</span> <span class="n">rearrange</span><span class="p">(</span><span class="n">y_true</span><span class="p">,</span> <span class="s2">&quot;b t ... c -&gt; b (t ... c)&quot;</span><span class="p">)</span>
+    <span class="n">y_pred_vector</span> <span class="o">=</span> <span class="n">rearrange</span><span class="p">(</span><span class="n">y_pred</span><span class="p">,</span> <span class="s2">&quot;b t ... c m -&gt; b (t ... c) m&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">y_pred_vector</span><span class="p">,</span> <span class="n">y_true_vector</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_restore_vector_dims_singletons</span><span class="p">(</span>
+    <span class="n">score</span><span class="p">:</span> <span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">y_true</span><span class="p">:</span> <span class="n">TensorBTSC</span><span class="p">,</span>
+    <span class="n">vector_dims</span><span class="p">:</span> <span class="n">VectorDimsOption</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tensor</span><span class="p">:</span>
+    <span class="n">n_spatial_dims</span> <span class="o">=</span> <span class="n">y_true</span><span class="o">.</span><span class="n">ndim</span> <span class="o">-</span> <span class="mi">3</span>
+
+    <span class="k">if</span> <span class="n">vector_dims</span> <span class="o">==</span> <span class="s2">&quot;spatial&quot;</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_spatial_dims</span><span class="p">):</span>
+            <span class="n">score</span> <span class="o">=</span> <span class="n">rearrange</span><span class="p">(</span><span class="n">score</span><span class="p">,</span> <span class="s2">&quot;b t ... -&gt; b t 1 ...&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">score</span>
+
+    <span class="k">if</span> <span class="n">vector_dims</span> <span class="o">==</span> <span class="s2">&quot;temporal&quot;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">rearrange</span><span class="p">(</span><span class="n">score</span><span class="p">,</span> <span class="s2">&quot;b ... -&gt; b 1 ...&quot;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">vector_dims</span> <span class="o">==</span> <span class="s2">&quot;spatial_temporal&quot;</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_spatial_dims</span> <span class="o">+</span> <span class="mi">1</span><span class="p">):</span>
+            <span class="n">score</span> <span class="o">=</span> <span class="n">rearrange</span><span class="p">(</span><span class="n">score</span><span class="p">,</span> <span class="s2">&quot;b ... -&gt; b 1 ...&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">score</span>
+
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_spatial_dims</span> <span class="o">+</span> <span class="mi">2</span><span class="p">):</span>
+        <span class="n">score</span> <span class="o">=</span> <span class="n">rearrange</span><span class="p">(</span><span class="n">score</span><span class="p">,</span> <span class="s2">&quot;b ... -&gt; b 1 ...&quot;</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">score</span>
+
+
+<div class="viewcode-block" id="BTSCMMetric">
+<a class="viewcode-back" href="../../../reference/metrics/ensemble.html#autocast.metrics.ensemble.BTSCMMetric">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">BTSCMMetric</span><span class="p">(</span><span class="n">BaseMetric</span><span class="p">[</span><span class="n">TensorBTSCM</span><span class="p">,</span> <span class="n">TensorBTSC</span><span class="p">]):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Base class for ensemble metrics that operate on spatial tensors.</span>
+
+<span class="sd">    Checks input types and shapes and converts to Tensor.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        score_dims: Which dimension to compute the score.</span>
+<span class="sd">            &#39;spatial&#39;: average over spatial dims → (B, T, C)</span>
+<span class="sd">            &#39;temporal&#39;: average over temporal dim → (B, S, C)</span>
+<span class="sd">            None: no reduction → (B, T, S, C)</span>
+<span class="sd">            These are the respective dimensions after calling .score()</span>
+<span class="sd">            This works in conjunction with the reduce_all parameter that is</span>
+<span class="sd">            applied in the compute() method to determine the final output shape</span>
+<span class="sd">        reduce_all: If True, return scalar by averaging over all non-batch dims</span>
+<span class="sd">        dist_sync_on_step: Synchronize metric state across processes at each forward()</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">score_dims</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;spatial&quot;</span><span class="p">,</span> <span class="s2">&quot;temporal&quot;</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="s2">&quot;spatial&quot;</span><span class="p">,</span>
+        <span class="n">reduce_all</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">dist_sync_on_step</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">reduce_all</span><span class="o">=</span><span class="n">reduce_all</span><span class="p">,</span> <span class="n">dist_sync_on_step</span><span class="o">=</span><span class="n">dist_sync_on_step</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">score_dims</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;spatial&quot;</span><span class="p">,</span> <span class="s2">&quot;temporal&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;score_dims must be &#39;spatial&#39;, &#39;temporal&#39;, or None, got </span><span class="si">{</span><span class="n">score_dims</span><span class="si">!r}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">score_dims</span> <span class="o">=</span> <span class="n">score_dims</span>
+
+    <span class="nd">@abc</span><span class="o">.</span><span class="n">abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_score</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">:</span> <span class="n">TensorBTSCM</span><span class="p">,</span> <span class="n">y_true</span><span class="p">:</span> <span class="n">TensorBTSC</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TensorBTSC</span><span class="p">:</span> <span class="o">...</span>
+
+<div class="viewcode-block" id="BTSCMMetric.score">
+<a class="viewcode-back" href="../../../reference/metrics/ensemble.html#autocast.metrics.ensemble.BTSCMMetric.score">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">score</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">:</span> <span class="n">ArrayLike</span><span class="p">,</span> <span class="n">y_true</span><span class="p">:</span> <span class="n">ArrayLike</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TensorBTC</span> <span class="o">|</span> <span class="n">TensorBSC</span> <span class="o">|</span> <span class="n">TensorBTSC</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Compute metric score, then reduce according to self.score_dims.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            y_pred: Predictions of shape (B, T, S, C, M)</span>
+<span class="sd">            y_true: Ground truth of shape (B, T, S, C)</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Tensor of shape (B, T, C) if reduce_over=&#39;spatial&#39;,</span>
+<span class="sd">            (B, S, C) if reduce_over=&#39;temporal&#39;, or (B, T, S, C) if None.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">y_pred_tensor</span><span class="p">,</span> <span class="n">y_true_tensor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_check_input</span><span class="p">(</span><span class="n">y_pred</span><span class="p">,</span> <span class="n">y_true</span><span class="p">)</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_score</span><span class="p">(</span><span class="n">y_pred_tensor</span><span class="p">,</span> <span class="n">y_true_tensor</span><span class="p">)</span>  <span class="c1"># (B, T, S, C)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">score_dims</span> <span class="o">==</span> <span class="s2">&quot;spatial&quot;</span><span class="p">:</span>
+            <span class="n">n_spatial_dims</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_infer_n_spatial_dims</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+            <span class="n">spatial_dims</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span> <span class="o">+</span> <span class="n">n_spatial_dims</span><span class="p">))</span>
+            <span class="k">return</span> <span class="n">result</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="n">spatial_dims</span><span class="p">)</span>  <span class="c1"># (B, T, C)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">score_dims</span> <span class="o">==</span> <span class="s2">&quot;temporal&quot;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">result</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>  <span class="c1"># (B, S, C)</span>
+        <span class="k">return</span> <span class="n">result</span>  <span class="c1"># (B, T, S, C)</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_check_input</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">:</span> <span class="n">ArrayLike</span><span class="p">,</span> <span class="n">y_true</span><span class="p">:</span> <span class="n">ArrayLike</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">TensorBTSC</span><span class="p">,</span> <span class="n">TensorBTSC</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Check types and shapes and converts inputs to Tensor.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            y_pred: Predictions of shape (B, T, S, C)</span>
+<span class="sd">            y_true: Ground truth of shape (B, T, S, C)</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Tuple of (y_pred, y_true) as Tensors</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">y_pred</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">):</span>
+            <span class="n">y_pred</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">from_numpy</span><span class="p">(</span><span class="n">y_pred</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">y_true</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">):</span>
+            <span class="n">y_true</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">from_numpy</span><span class="p">(</span><span class="n">y_true</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">y_pred</span><span class="p">,</span> <span class="n">Tensor</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;y_pred must be a Tensor or np.ndarray, got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">y_pred</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">y_true</span><span class="p">,</span> <span class="n">Tensor</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;y_true must be a Tensor or np.ndarray, got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">y_true</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">y_pred</span><span class="o">.</span><span class="n">ndim</span> <span class="o">&lt;</span> <span class="mi">5</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;y_pred has </span><span class="si">{</span><span class="n">y_pred</span><span class="o">.</span><span class="n">ndim</span><span class="si">}</span><span class="s2"> dimensions, should be at least 5, &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;following the pattern (B, T, S, C, M)&quot;</span>
+            <span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">y_pred</span><span class="o">.</span><span class="n">shape</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="n">y_true</span><span class="o">.</span><span class="n">shape</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;y_pred and y_true must have the same shape except for the last &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;dimension (ensemble members). Got </span><span class="si">{</span><span class="n">y_pred</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2"> and </span><span class="si">{</span><span class="n">y_true</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">y_pred</span><span class="p">,</span> <span class="n">y_true</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_sorted_pairwise_abs_weighted_sum</span><span class="p">(</span><span class="n">y_pred</span><span class="p">:</span> <span class="n">TensorBTSCM</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TensorBTSC</span><span class="p">:</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;Compute :math:`\sum_{k=1}^{M} (2k - M - 1)\, x_{(k)}` along the ensemble dim.</span>
+
+<span class="sd">    This is the order-statistic identity that lets the pairwise absolute</span>
+<span class="sd">    difference sum be evaluated in O(M log M) time and O(M) memory instead of</span>
+<span class="sd">    the O(M^2) / O(M^2)-memory broadcasting approach:</span>
+
+<span class="sd">    .. math::</span>
+<span class="sd">        \sum_{j,k=1}^{M} |x_j - x_k| = 2 \sum_{k=1}^{M} (2k - M - 1)\, x_{(k)},</span>
+
+<span class="sd">    where :math:`x_{(k)}` is the k-th order statistic.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        y_pred: Predictions of shape (..., M)</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        Tensor of shape (...) containing the weighted sum of sorted values.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">n_ensemble</span> <span class="o">=</span> <span class="n">y_pred</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">y_sorted</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">y_pred</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">values</span>
+    <span class="n">k</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">n_ensemble</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">y_pred</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">y_pred</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+    <span class="n">weights</span> <span class="o">=</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">k</span> <span class="o">-</span> <span class="p">(</span><span class="n">n_ensemble</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">y_sorted</span> <span class="o">*</span> <span class="n">weights</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_require_pairwise_ensemble_size</span><span class="p">(</span><span class="n">n_ensemble</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">metric_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">n_ensemble</span> <span class="o">&lt;=</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">metric_name</span><span class="si">}</span><span class="s2"> requires at least 2 ensemble members &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;to compute the pairwise spread term. Got </span><span class="si">{</span><span class="n">n_ensemble</span><span class="si">}</span><span class="s2">.&quot;</span>
+        <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_crps_mae_term</span><span class="p">(</span><span class="n">y_pred</span><span class="p">:</span> <span class="n">TensorBTSCM</span><span class="p">,</span> <span class="n">y_true</span><span class="p">:</span> <span class="n">TensorBTSC</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TensorBTSC</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return the mean absolute distance-to-truth term used by CRPS variants.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">y_pred</span> <span class="o">-</span> <span class="n">y_true</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)),</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_crps_pairwise_spread_term</span><span class="p">(</span>
+    <span class="n">y_pred</span><span class="p">:</span> <span class="n">TensorBTSCM</span><span class="p">,</span> <span class="n">pairwise_coefficient</span><span class="p">:</span> <span class="nb">float</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TensorBTSC</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return the pairwise ensemble-distance term used by CRPS variants.&quot;&quot;&quot;</span>
+    <span class="n">pairwise_weighted_sum</span> <span class="o">=</span> <span class="n">_sorted_pairwise_abs_weighted_sum</span><span class="p">(</span><span class="n">y_pred</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">pairwise_weighted_sum</span> <span class="o">*</span> <span class="n">pairwise_coefficient</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_common_crps_terms</span><span class="p">(</span>
+    <span class="n">y_pred</span><span class="p">:</span> <span class="n">TensorBTSCM</span><span class="p">,</span> <span class="n">y_true</span><span class="p">:</span> <span class="n">TensorBTSC</span><span class="p">,</span> <span class="n">adjustment_factor</span><span class="p">:</span> <span class="nb">float</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">TensorBTSC</span><span class="p">,</span> <span class="n">TensorBTSC</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return the MAE-like and pairwise spread terms for CRPS/fCRPS.&quot;&quot;&quot;</span>
+    <span class="n">n_ensemble</span> <span class="o">=</span> <span class="n">y_pred</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">term1</span> <span class="o">=</span> <span class="n">_crps_mae_term</span><span class="p">(</span><span class="n">y_pred</span><span class="p">,</span> <span class="n">y_true</span><span class="p">)</span>
+    <span class="n">term2</span> <span class="o">=</span> <span class="n">_crps_pairwise_spread_term</span><span class="p">(</span>
+        <span class="n">y_pred</span><span class="p">,</span> <span class="n">pairwise_coefficient</span><span class="o">=</span><span class="n">adjustment_factor</span> <span class="o">/</span> <span class="p">(</span><span class="n">n_ensemble</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="n">term1</span><span class="p">,</span> <span class="n">term2</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_common_crps_spread_term</span><span class="p">(</span>
+    <span class="n">y_pred</span><span class="p">:</span> <span class="n">TensorBTSCM</span><span class="p">,</span> <span class="n">adjustment_factor</span><span class="p">:</span> <span class="nb">float</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TensorBTSC</span><span class="p">:</span>
+    <span class="n">n_ensemble</span> <span class="o">=</span> <span class="n">y_pred</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">_crps_pairwise_spread_term</span><span class="p">(</span>
+        <span class="n">y_pred</span><span class="p">,</span> <span class="n">pairwise_coefficient</span><span class="o">=</span><span class="n">adjustment_factor</span> <span class="o">/</span> <span class="p">(</span><span class="n">n_ensemble</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_common_crps_score</span><span class="p">(</span>
+    <span class="n">y_pred</span><span class="p">:</span> <span class="n">TensorBTSCM</span><span class="p">,</span> <span class="n">y_true</span><span class="p">:</span> <span class="n">TensorBTSC</span><span class="p">,</span> <span class="n">adjustment_factor</span><span class="p">:</span> <span class="nb">float</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TensorBTSC</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Compute CRPS reduced over spatial dims only.</span>
+
+<span class="sd">    Expected input shape: (B, T, S, C, M)</span>
+<span class="sd">    Expected output shape: (B, T, S, C)</span>
+
+<span class="sd">    Uses the sort-based identity for the pairwise ensemble term to avoid</span>
+<span class="sd">    materialising the (..., M, M) tensor that naive broadcasting would produce,</span>
+<span class="sd">    reducing peak activation memory from O(M^2) to O(M).</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        y_pred: Predictions of shape (B, T, S, C, M)</span>
+<span class="sd">        y_true: Ground truth of shape (B, T, S, C)</span>
+<span class="sd">        adjustment_factor: Factor to adjust the second term in CRPS calculation</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        Tensor of shape (B, T, S, C) with CRPS scores</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">term1</span><span class="p">,</span> <span class="n">term2</span> <span class="o">=</span> <span class="n">_common_crps_terms</span><span class="p">(</span><span class="n">y_pred</span><span class="p">,</span> <span class="n">y_true</span><span class="p">,</span> <span class="n">adjustment_factor</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">term1</span> <span class="o">-</span> <span class="n">term2</span>
+
+
+<div class="viewcode-block" id="CRPS">
+<a class="viewcode-back" href="../../../reference/metrics/ensemble.html#autocast.metrics.ensemble.CRPS">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">CRPS</span><span class="p">(</span><span class="n">BTSCMMetric</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Continuous Ranked Probability Score (CRPS) for ensemble forecasts.</span>
+
+<span class="sd">    References:</span>
+<span class="sd">    ----------</span>
+<span class="sd">    Hersbach, H., 2000: Decomposition of the Continuous Ranked Probability Score for</span>
+<span class="sd">    Ensemble Prediction Systems. Wea. Forecasting, 15, 559-570,</span>
+<span class="sd">    https://doi.org/10.1175/1520-0434(2000)015&lt;0559:DOTCRP&gt;2.0.CO;2.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;crps&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_score</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">:</span> <span class="n">TensorBTSCM</span><span class="p">,</span> <span class="n">y_true</span><span class="p">:</span> <span class="n">TensorBTSC</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TensorBTSC</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Compute CRPS score.</span>
+
+<span class="sd">        Expected input shape: (B, T, S, C, M)</span>
+<span class="sd">        Expected output shape: (B, T, S, C)</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            y_pred: Predictions of shape (B, T, S, C, M)</span>
+<span class="sd">            y_true: Ground truth of shape (B, T, S, C)</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Tensor of shape (B, T, S, C) with CRPS scores</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">_common_crps_score</span><span class="p">(</span><span class="n">y_pred</span><span class="p">,</span> <span class="n">y_true</span><span class="p">,</span> <span class="n">adjustment_factor</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="CRPSMAETerm">
+<a class="viewcode-back" href="../../../reference/metrics/ensemble.html#autocast.metrics.ensemble.CRPSMAETerm">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">CRPSMAETerm</span><span class="p">(</span><span class="n">BTSCMMetric</span><span class="p">):</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;Mean-absolute-error term in the CRPS decomposition.</span>
+
+<span class="sd">    Note:</span>
+<span class="sd">        This is the first CRPS term,</span>
+
+<span class="sd">        .. math::</span>
+<span class="sd">            \frac{1}{M}\sum_{m=1}^{M} |x_m - y|,</span>
+
+<span class="sd">        so it is MAE-like, but it is **not** the deterministic MAE of the ensemble mean.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;crps_mae_term&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_score</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">:</span> <span class="n">TensorBTSCM</span><span class="p">,</span> <span class="n">y_true</span><span class="p">:</span> <span class="n">TensorBTSC</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TensorBTSC</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">_crps_mae_term</span><span class="p">(</span><span class="n">y_pred</span><span class="p">,</span> <span class="n">y_true</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="CRPSSpreadTerm">
+<a class="viewcode-back" href="../../../reference/metrics/ensemble.html#autocast.metrics.ensemble.CRPSSpreadTerm">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">CRPSSpreadTerm</span><span class="p">(</span><span class="n">BTSCMMetric</span><span class="p">):</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;Pairwise spread term in the CRPS decomposition.</span>
+
+<span class="sd">    Note:</span>
+<span class="sd">        This is the second CRPS term,</span>
+
+<span class="sd">        .. math::</span>
+<span class="sd">            \frac{1}{2M^2}\sum_{j=1}^{M}\sum_{k=1}^{M}|x_j - x_k|,</span>
+
+<span class="sd">        represented via the sort-based identity used elsewhere in this module.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;crps_spread_term&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_score</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">:</span> <span class="n">TensorBTSCM</span><span class="p">,</span> <span class="n">y_true</span><span class="p">:</span> <span class="n">TensorBTSC</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TensorBTSC</span><span class="p">:</span>
+        <span class="k">del</span> <span class="n">y_true</span>
+        <span class="k">return</span> <span class="n">_common_crps_spread_term</span><span class="p">(</span><span class="n">y_pred</span><span class="p">,</span> <span class="n">adjustment_factor</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="FairCRPS">
+<a class="viewcode-back" href="../../../reference/metrics/ensemble.html#autocast.metrics.ensemble.FairCRPS">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">FairCRPS</span><span class="p">(</span><span class="n">BTSCMMetric</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Fair Continuous Ranked Probability Score (fCRPS) for ensemble forecasts.</span>
+
+<span class="sd">    References:</span>
+<span class="sd">    ----------</span>
+<span class="sd">    Ferro, C.A.T. (2014), Fair scores for ensemble forecasts. Q.J.R. Meteorol. Soc.,</span>
+<span class="sd">    140: 1917-1923. https://doi.org/10.1002/qj.2270</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;fcrps&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_score</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">:</span> <span class="n">TensorBTSCM</span><span class="p">,</span> <span class="n">y_true</span><span class="p">:</span> <span class="n">TensorBTSC</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TensorBTSC</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Compute fCRPS score.</span>
+
+<span class="sd">        Expected input shape: (B, T, S, C, M)</span>
+<span class="sd">        Expected output shape: (B, T, S, C)</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            y_pred: Predictions of shape (B, T, S, C, M)</span>
+<span class="sd">            y_true: Ground truth of shape (B, T, S, C)</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Tensor of shape (B, T, S, C) with fCRPS scores</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">n_ensemble</span> <span class="o">=</span> <span class="n">y_pred</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">_require_pairwise_ensemble_size</span><span class="p">(</span><span class="n">n_ensemble</span><span class="p">,</span> <span class="s2">&quot;FairCRPS&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">_common_crps_score</span><span class="p">(</span>
+            <span class="n">y_pred</span><span class="p">,</span> <span class="n">y_true</span><span class="p">,</span> <span class="n">adjustment_factor</span><span class="o">=</span><span class="n">n_ensemble</span> <span class="o">/</span> <span class="p">(</span><span class="n">n_ensemble</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="FairCRPSMAETerm">
+<a class="viewcode-back" href="../../../reference/metrics/ensemble.html#autocast.metrics.ensemble.FairCRPSMAETerm">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">FairCRPSMAETerm</span><span class="p">(</span><span class="n">BTSCMMetric</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Mean-absolute-error term in the fCRPS decomposition.&quot;&quot;&quot;</span>
+
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;fcrps_mae_term&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_score</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">:</span> <span class="n">TensorBTSCM</span><span class="p">,</span> <span class="n">y_true</span><span class="p">:</span> <span class="n">TensorBTSC</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TensorBTSC</span><span class="p">:</span>
+        <span class="n">n_ensemble</span> <span class="o">=</span> <span class="n">y_pred</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">_require_pairwise_ensemble_size</span><span class="p">(</span><span class="n">n_ensemble</span><span class="p">,</span> <span class="s2">&quot;FairCRPSMAETerm&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">_crps_mae_term</span><span class="p">(</span><span class="n">y_pred</span><span class="p">,</span> <span class="n">y_true</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="FairCRPSSpreadTerm">
+<a class="viewcode-back" href="../../../reference/metrics/ensemble.html#autocast.metrics.ensemble.FairCRPSSpreadTerm">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">FairCRPSSpreadTerm</span><span class="p">(</span><span class="n">BTSCMMetric</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Pairwise spread term in the fCRPS decomposition.&quot;&quot;&quot;</span>
+
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;fcrps_spread_term&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_score</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">:</span> <span class="n">TensorBTSCM</span><span class="p">,</span> <span class="n">y_true</span><span class="p">:</span> <span class="n">TensorBTSC</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TensorBTSC</span><span class="p">:</span>
+        <span class="k">del</span> <span class="n">y_true</span>
+        <span class="n">n_ensemble</span> <span class="o">=</span> <span class="n">y_pred</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">_require_pairwise_ensemble_size</span><span class="p">(</span><span class="n">n_ensemble</span><span class="p">,</span> <span class="s2">&quot;FairCRPSSpreadTerm&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">_common_crps_spread_term</span><span class="p">(</span>
+            <span class="n">y_pred</span><span class="p">,</span> <span class="n">adjustment_factor</span><span class="o">=</span><span class="n">n_ensemble</span> <span class="o">/</span> <span class="p">(</span><span class="n">n_ensemble</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="p">)</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_alpha_fair_crps_terms</span><span class="p">(</span>
+    <span class="n">y_pred</span><span class="p">:</span> <span class="n">TensorBTSCM</span><span class="p">,</span> <span class="n">y_true</span><span class="p">:</span> <span class="n">TensorBTSC</span><span class="p">,</span> <span class="n">alpha</span><span class="p">:</span> <span class="nb">float</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">TensorBTSC</span><span class="p">,</span> <span class="n">TensorBTSC</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return the MAE-like and pairwise spread terms for afCRPS.&quot;&quot;&quot;</span>
+    <span class="n">n_ensemble</span> <span class="o">=</span> <span class="n">y_pred</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">_require_pairwise_ensemble_size</span><span class="p">(</span><span class="n">n_ensemble</span><span class="p">,</span> <span class="s2">&quot;AlphaFairCRPS&quot;</span><span class="p">)</span>
+    <span class="n">eps</span> <span class="o">=</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">alpha</span><span class="p">)</span> <span class="o">/</span> <span class="n">n_ensemble</span>
+
+    <span class="n">term1</span> <span class="o">=</span> <span class="n">_crps_mae_term</span><span class="p">(</span><span class="n">y_pred</span><span class="p">,</span> <span class="n">y_true</span><span class="p">)</span>
+    <span class="n">term2</span> <span class="o">=</span> <span class="n">_crps_pairwise_spread_term</span><span class="p">(</span>
+        <span class="n">y_pred</span><span class="p">,</span>
+        <span class="n">pairwise_coefficient</span><span class="o">=</span><span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">eps</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">n_ensemble</span> <span class="o">*</span> <span class="p">(</span><span class="n">n_ensemble</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)),</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="n">term1</span><span class="p">,</span> <span class="n">term2</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_alpha_fair_crps_spread_term</span><span class="p">(</span><span class="n">y_pred</span><span class="p">:</span> <span class="n">TensorBTSCM</span><span class="p">,</span> <span class="n">alpha</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TensorBTSC</span><span class="p">:</span>
+    <span class="n">n_ensemble</span> <span class="o">=</span> <span class="n">y_pred</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">_require_pairwise_ensemble_size</span><span class="p">(</span><span class="n">n_ensemble</span><span class="p">,</span> <span class="s2">&quot;AlphaFairCRPS&quot;</span><span class="p">)</span>
+    <span class="n">eps</span> <span class="o">=</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">alpha</span><span class="p">)</span> <span class="o">/</span> <span class="n">n_ensemble</span>
+    <span class="k">return</span> <span class="n">_crps_pairwise_spread_term</span><span class="p">(</span>
+        <span class="n">y_pred</span><span class="p">,</span>
+        <span class="n">pairwise_coefficient</span><span class="o">=</span><span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">eps</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">n_ensemble</span> <span class="o">*</span> <span class="p">(</span><span class="n">n_ensemble</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)),</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_alpha_fair_crps_score</span><span class="p">(</span>
+    <span class="n">y_pred</span><span class="p">:</span> <span class="n">TensorBTSCM</span><span class="p">,</span> <span class="n">y_true</span><span class="p">:</span> <span class="n">TensorBTSC</span><span class="p">,</span> <span class="n">alpha</span><span class="p">:</span> <span class="nb">float</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TensorBTSC</span><span class="p">:</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;Compute afCRPS reduced over spatial dims only.</span>
+
+<span class="sd">    Uses the order-statistic identity to avoid the (..., M, M) activation:</span>
+
+<span class="sd">    .. math::</span>
+<span class="sd">        \text{afCRPS}</span>
+<span class="sd">        = \frac{1}{M}\sum_j |x_j - y|</span>
+<span class="sd">          - \frac{1-\varepsilon}{M(M-1)} \sum_{k=1}^{M} (2k - M - 1) x_{(k)},</span>
+
+<span class="sd">    with :math:`\varepsilon = (1-\alpha)/M`. This is algebraically identical to</span>
+<span class="sd">    the off-diagonal pair sum form but needs only O(M) memory.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        y_pred: (B, T, S, C, M)</span>
+<span class="sd">        y_true: (B, T, S, C)</span>
+<span class="sd">        alpha: Smoothing parameter</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        afCRPS: (B, T, S, C)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">term1</span><span class="p">,</span> <span class="n">term2</span> <span class="o">=</span> <span class="n">_alpha_fair_crps_terms</span><span class="p">(</span><span class="n">y_pred</span><span class="p">,</span> <span class="n">y_true</span><span class="p">,</span> <span class="n">alpha</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">term1</span> <span class="o">-</span> <span class="n">term2</span>
+
+
+<div class="viewcode-block" id="AlphaFairCRPS">
+<a class="viewcode-back" href="../../../reference/metrics/ensemble.html#autocast.metrics.ensemble.AlphaFairCRPS">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">AlphaFairCRPS</span><span class="p">(</span><span class="n">BTSCMMetric</span><span class="p">):</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;Almost Fair Continuous Ranked Probability Score (afCRPS) (stable form).</span>
+
+<span class="sd">    Note:</span>
+<span class="sd">        Definition:</span>
+<span class="sd">        .. math::</span>
+<span class="sd">            \text{afCRPS}_\alpha := \alpha \text{fCRPS} + (1-\alpha) \text{CRPS}</span>
+
+<span class="sd">        Implementation follows eq. (4) in the AIFS-CRPS paper: rearranged</span>
+<span class="sd">        sum of positive terms to avoid instability.</span>
+
+<span class="sd">    References:</span>
+<span class="sd">        Lang, S., Alexe, M., Clare, M. C., Roberts, C., Adewoyin, R., Bouallègue, Z. B.,</span>
+<span class="sd">        ... &amp; Leutbecher, M. (2024).</span>
+<span class="sd">        AIFS-CRPS: ensemble forecasting using a model trained with a loss</span>
+<span class="sd">        function based on the continuous ranked probability score.</span>
+<span class="sd">        arXiv preprint arXiv:2412.15832.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;afcrps&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">alpha</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.95</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">score_dims</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;spatial&quot;</span><span class="p">,</span> <span class="s2">&quot;temporal&quot;</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="s2">&quot;spatial&quot;</span><span class="p">,</span>
+        <span class="n">reduce_all</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">dist_sync_on_step</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span>
+            <span class="n">score_dims</span><span class="o">=</span><span class="n">score_dims</span><span class="p">,</span>
+            <span class="n">reduce_all</span><span class="o">=</span><span class="n">reduce_all</span><span class="p">,</span>
+            <span class="n">dist_sync_on_step</span><span class="o">=</span><span class="n">dist_sync_on_step</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="c1"># alpha close to 1 is close to fair CRPS, lower values tend toward standard CRPS</span>
+        <span class="k">assert</span> <span class="mi">0</span> <span class="o">&lt;</span> <span class="n">alpha</span> <span class="o">&lt;=</span> <span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;alpha must be in (0,1]&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">alpha</span> <span class="o">=</span> <span class="n">alpha</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_score</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">:</span> <span class="n">TensorBTSCM</span><span class="p">,</span> <span class="n">y_true</span><span class="p">:</span> <span class="n">TensorBTSC</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TensorBTSC</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Compute afCRPS score.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            y_pred: (B, T, S, C, M)</span>
+<span class="sd">            y_true: (B, T, S, C)</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            afCRPS: (B, T, S, C)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">_alpha_fair_crps_score</span><span class="p">(</span><span class="n">y_pred</span><span class="p">,</span> <span class="n">y_true</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">alpha</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="AlphaFairCRPSMAETerm">
+<a class="viewcode-back" href="../../../reference/metrics/ensemble.html#autocast.metrics.ensemble.AlphaFairCRPSMAETerm">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">AlphaFairCRPSMAETerm</span><span class="p">(</span><span class="n">BTSCMMetric</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Mean-absolute-error term paired with afCRPS monitoring.</span>
+
+<span class="sd">    The MAE-like term itself does not depend on ``alpha``, but this class accepts</span>
+<span class="sd">    it so experiment configs can keep the afCRPS diagnostic bundle parameterized</span>
+<span class="sd">    consistently.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;afcrps_mae_term&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">alpha</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.95</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">score_dims</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;spatial&quot;</span><span class="p">,</span> <span class="s2">&quot;temporal&quot;</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="s2">&quot;spatial&quot;</span><span class="p">,</span>
+        <span class="n">reduce_all</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">dist_sync_on_step</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span>
+            <span class="n">score_dims</span><span class="o">=</span><span class="n">score_dims</span><span class="p">,</span>
+            <span class="n">reduce_all</span><span class="o">=</span><span class="n">reduce_all</span><span class="p">,</span>
+            <span class="n">dist_sync_on_step</span><span class="o">=</span><span class="n">dist_sync_on_step</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">assert</span> <span class="mi">0</span> <span class="o">&lt;</span> <span class="n">alpha</span> <span class="o">&lt;=</span> <span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;alpha must be in (0,1]&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">alpha</span> <span class="o">=</span> <span class="n">alpha</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_score</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">:</span> <span class="n">TensorBTSCM</span><span class="p">,</span> <span class="n">y_true</span><span class="p">:</span> <span class="n">TensorBTSC</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TensorBTSC</span><span class="p">:</span>
+        <span class="n">n_ensemble</span> <span class="o">=</span> <span class="n">y_pred</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">_require_pairwise_ensemble_size</span><span class="p">(</span><span class="n">n_ensemble</span><span class="p">,</span> <span class="s2">&quot;AlphaFairCRPSMAETerm&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">_crps_mae_term</span><span class="p">(</span><span class="n">y_pred</span><span class="p">,</span> <span class="n">y_true</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="AlphaFairCRPSSpreadTerm">
+<a class="viewcode-back" href="../../../reference/metrics/ensemble.html#autocast.metrics.ensemble.AlphaFairCRPSSpreadTerm">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">AlphaFairCRPSSpreadTerm</span><span class="p">(</span><span class="n">BTSCMMetric</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Pairwise spread term in the afCRPS decomposition.&quot;&quot;&quot;</span>
+
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;afcrps_spread_term&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">alpha</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.95</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">score_dims</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;spatial&quot;</span><span class="p">,</span> <span class="s2">&quot;temporal&quot;</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="s2">&quot;spatial&quot;</span><span class="p">,</span>
+        <span class="n">reduce_all</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">dist_sync_on_step</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span>
+            <span class="n">score_dims</span><span class="o">=</span><span class="n">score_dims</span><span class="p">,</span>
+            <span class="n">reduce_all</span><span class="o">=</span><span class="n">reduce_all</span><span class="p">,</span>
+            <span class="n">dist_sync_on_step</span><span class="o">=</span><span class="n">dist_sync_on_step</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">assert</span> <span class="mi">0</span> <span class="o">&lt;</span> <span class="n">alpha</span> <span class="o">&lt;=</span> <span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;alpha must be in (0,1]&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">alpha</span> <span class="o">=</span> <span class="n">alpha</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_score</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">:</span> <span class="n">TensorBTSCM</span><span class="p">,</span> <span class="n">y_true</span><span class="p">:</span> <span class="n">TensorBTSC</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TensorBTSC</span><span class="p">:</span>
+        <span class="k">del</span> <span class="n">y_true</span>
+        <span class="k">return</span> <span class="n">_alpha_fair_crps_spread_term</span><span class="p">(</span><span class="n">y_pred</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">alpha</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="EnergyScore">
+<a class="viewcode-back" href="../../../reference/metrics/ensemble.html#autocast.metrics.ensemble.EnergyScore">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">EnergyScore</span><span class="p">(</span><span class="n">BTSCMMetric</span><span class="p">):</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;Energy score (multivariate CRPS) for ensemble forecasts.</span>
+
+<span class="sd">    For a vector-valued forecast with ensemble members :math:`x_m \in \mathbb{R}^d`</span>
+<span class="sd">    and observation :math:`y \in \mathbb{R}^d`, this computes</span>
+
+<span class="sd">    .. math::</span>
+<span class="sd">        ES_\alpha(F, y) = \frac{1}{M} \sum_{m=1}^M \lVert x_m - y \rVert_2^\alpha</span>
+<span class="sd">        - \frac{1}{2M^2} \sum_{m=1}^M \sum_{j=1}^M \lVert x_m - x_j \rVert_2^\alpha,</span>
+
+<span class="sd">    with :math:`\alpha \in (0, 2)`.</span>
+
+<span class="sd">    Note:</span>
+<span class="sd">        The ``vector_dims`` argument controls which dimensions define the multivariate</span>
+<span class="sd">        vector used in the norm.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;energy&quot;</span>
+    <span class="n">vector_dims</span><span class="p">:</span> <span class="n">VectorDimsOption</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">alpha</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
+        <span class="n">vector_dims</span><span class="p">:</span> <span class="n">VectorDimsOption</span> <span class="o">=</span> <span class="s2">&quot;spatial_temporal&quot;</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="mi">0</span> <span class="o">&lt;</span> <span class="n">alpha</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;alpha must be in (0, 2), got </span><span class="si">{</span><span class="n">alpha</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">alpha</span> <span class="o">=</span> <span class="n">alpha</span>
+        <span class="n">normalized_vector_dims</span><span class="p">:</span> <span class="n">VectorDimsOption</span> <span class="o">=</span> <span class="n">_normalize_vector_dims</span><span class="p">(</span><span class="n">vector_dims</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">vector_dims</span> <span class="o">=</span> <span class="n">normalized_vector_dims</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_score</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">:</span> <span class="n">TensorBTSCM</span><span class="p">,</span> <span class="n">y_true</span><span class="p">:</span> <span class="n">TensorBTSC</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TensorBTSC</span><span class="p">:</span>
+        <span class="n">y_pred_vector</span><span class="p">,</span> <span class="n">y_true_vector</span> <span class="o">=</span> <span class="n">_vectorize_selected_dims</span><span class="p">(</span>
+            <span class="n">y_pred</span><span class="p">,</span> <span class="n">y_true</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">vector_dims</span>
+        <span class="p">)</span>
+
+        <span class="c1"># y_pred: (..., M), y_true: (...)</span>
+        <span class="n">y_true_expanded</span> <span class="o">=</span> <span class="n">rearrange</span><span class="p">(</span><span class="n">y_true_vector</span><span class="p">,</span> <span class="s2">&quot;... d -&gt; ... d 1&quot;</span><span class="p">)</span>
+
+        <span class="c1"># (..., M): ||x_m - y||_2^alpha over selected vector dimensions</span>
+        <span class="n">dist_truth</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">vector_norm</span><span class="p">(</span>
+            <span class="n">y_pred_vector</span> <span class="o">-</span> <span class="n">y_true_expanded</span><span class="p">,</span>
+            <span class="nb">ord</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+            <span class="n">dim</span><span class="o">=-</span><span class="mi">2</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">term1</span> <span class="o">=</span> <span class="n">dist_truth</span><span class="o">.</span><span class="n">pow</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">alpha</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+
+        <span class="c1"># (..., M, M): ||x_m - x_j||_2^alpha over selected vector dimensions</span>
+        <span class="n">pairwise</span> <span class="o">=</span> <span class="n">rearrange</span><span class="p">(</span><span class="n">y_pred_vector</span><span class="p">,</span> <span class="s2">&quot;... d m -&gt; ... d m 1&quot;</span><span class="p">)</span> <span class="o">-</span> <span class="n">rearrange</span><span class="p">(</span>
+            <span class="n">y_pred_vector</span><span class="p">,</span> <span class="s2">&quot;... d m -&gt; ... d 1 m&quot;</span>
+        <span class="p">)</span>
+        <span class="n">dist_pairwise</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">vector_norm</span><span class="p">(</span><span class="n">pairwise</span><span class="p">,</span> <span class="nb">ord</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">3</span><span class="p">)</span>
+        <span class="n">term2</span> <span class="o">=</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">dist_pairwise</span><span class="o">.</span><span class="n">pow</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">alpha</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">))</span>
+
+        <span class="c1"># Reinsert selected vector dimensions as singleton axes.</span>
+        <span class="n">score</span> <span class="o">=</span> <span class="n">term1</span> <span class="o">-</span> <span class="n">term2</span>
+        <span class="k">return</span> <span class="n">_restore_vector_dims_singletons</span><span class="p">(</span><span class="n">score</span><span class="p">,</span> <span class="n">y_true</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">vector_dims</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="VariogramScore">
+<a class="viewcode-back" href="../../../reference/metrics/ensemble.html#autocast.metrics.ensemble.VariogramScore">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">VariogramScore</span><span class="p">(</span><span class="n">BTSCMMetric</span><span class="p">):</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;Variogram score for multivariate ensemble forecasts.</span>
+
+<span class="sd">    For vector-valued forecast members :math:`x_m \in \mathbb{R}^d` and</span>
+<span class="sd">    observation :math:`y \in \mathbb{R}^d`, this computes</span>
+
+<span class="sd">    .. math::</span>
+<span class="sd">        VS_p(F, y) = \sum_{i,j=1}^d w_{ij}</span>
+<span class="sd">        \left(\frac{1}{M}\sum_{m=1}^M |x_{m,i} - x_{m,j}|^p - |y_i - y_j|^p\right)^2,</span>
+
+<span class="sd">    with :math:`p &gt; 0` and non-negative weights :math:`w_{ij}`.</span>
+
+<span class="sd">    Note:</span>
+<span class="sd">        The ``vector_dims`` argument controls which dimensions define the multivariate</span>
+<span class="sd">        vector used by the variogram transformation.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;variogram&quot;</span>
+    <span class="n">vector_dims</span><span class="p">:</span> <span class="n">VectorDimsOption</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">p</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.5</span><span class="p">,</span>
+        <span class="n">weights</span><span class="p">:</span> <span class="n">Tensor</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">vector_dims</span><span class="p">:</span> <span class="n">VectorDimsOption</span> <span class="o">=</span> <span class="s2">&quot;spatial_temporal&quot;</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">p</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;p must be &gt; 0, got </span><span class="si">{</span><span class="n">p</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">p</span> <span class="o">=</span> <span class="n">p</span>
+        <span class="n">normalized_vector_dims</span><span class="p">:</span> <span class="n">VectorDimsOption</span> <span class="o">=</span> <span class="n">_normalize_vector_dims</span><span class="p">(</span><span class="n">vector_dims</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">vector_dims</span> <span class="o">=</span> <span class="n">normalized_vector_dims</span>
+
+        <span class="k">if</span> <span class="n">weights</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">weights</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">):</span>
+                <span class="n">weights</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">from_numpy</span><span class="p">(</span><span class="n">weights</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">weights</span><span class="p">,</span> <span class="n">Tensor</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+                    <span class="s2">&quot;weights must be a Tensor, np.ndarray, or None, &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">weights</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="p">(</span><span class="n">weights</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">any</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">():</span>
+                <span class="n">msg</span> <span class="o">=</span> <span class="s2">&quot;weights must be non-negative (w_ij &gt;= 0)&quot;</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">weights</span> <span class="o">=</span> <span class="n">weights</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_score</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">:</span> <span class="n">TensorBTSCM</span><span class="p">,</span> <span class="n">y_true</span><span class="p">:</span> <span class="n">TensorBTSC</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TensorBTSC</span><span class="p">:</span>
+        <span class="n">y_pred_vector</span><span class="p">,</span> <span class="n">y_true_vector</span> <span class="o">=</span> <span class="n">_vectorize_selected_dims</span><span class="p">(</span>
+            <span class="n">y_pred</span><span class="p">,</span> <span class="n">y_true</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">vector_dims</span>
+        <span class="p">)</span>
+        <span class="n">vector_size</span> <span class="o">=</span> <span class="n">y_true_vector</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">weights</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">weights</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span>
+                <span class="p">(</span><span class="n">vector_size</span><span class="p">,</span> <span class="n">vector_size</span><span class="p">),</span>
+                <span class="n">device</span><span class="o">=</span><span class="n">y_pred</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
+                <span class="n">dtype</span><span class="o">=</span><span class="n">y_pred</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">weights</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">2</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">weights</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="p">(</span>
+                <span class="n">vector_size</span><span class="p">,</span>
+                <span class="n">vector_size</span><span class="p">,</span>
+            <span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="s2">&quot;weights must have shape (D, D) matching the selected vector &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;dimensions; got </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">weights</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2"> with D=</span><span class="si">{</span><span class="n">vector_size</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+            <span class="n">weights</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">weights</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="o">=</span><span class="n">y_pred</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">y_pred</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+
+        <span class="c1"># Observation variogram term: (..., D, D)</span>
+        <span class="n">obs_pairwise</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span>
+            <span class="n">rearrange</span><span class="p">(</span><span class="n">y_true_vector</span><span class="p">,</span> <span class="s2">&quot;... d -&gt; ... d 1&quot;</span><span class="p">)</span>
+            <span class="o">-</span> <span class="n">rearrange</span><span class="p">(</span><span class="n">y_true_vector</span><span class="p">,</span> <span class="s2">&quot;... d -&gt; ... 1 d&quot;</span><span class="p">)</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">pow</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">p</span><span class="p">)</span>
+
+        <span class="c1"># Ensemble variogram expectation: (..., D, D)</span>
+        <span class="n">ens_pairwise</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span>
+            <span class="n">rearrange</span><span class="p">(</span><span class="n">y_pred_vector</span><span class="p">,</span> <span class="s2">&quot;... d m -&gt; ... d 1 m&quot;</span><span class="p">)</span>
+            <span class="o">-</span> <span class="n">rearrange</span><span class="p">(</span><span class="n">y_pred_vector</span><span class="p">,</span> <span class="s2">&quot;... d m -&gt; ... 1 d m&quot;</span><span class="p">)</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">pow</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">p</span><span class="p">)</span>
+        <span class="n">ens_expected</span> <span class="o">=</span> <span class="n">ens_pairwise</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+
+        <span class="n">diff_sq</span> <span class="o">=</span> <span class="p">(</span><span class="n">ens_expected</span> <span class="o">-</span> <span class="n">obs_pairwise</span><span class="p">)</span><span class="o">.</span><span class="n">pow</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>  <span class="c1"># e.g. B T C D D if spatial</span>
+        <span class="n">score</span> <span class="o">=</span> <span class="p">(</span><span class="n">diff_sq</span> <span class="o">*</span> <span class="n">weights</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">))</span>  <span class="c1"># e.g. B T C if spatial</span>
+
+        <span class="c1"># Reinsert selected vector dimensions as singleton axes.</span>
+        <span class="k">return</span> <span class="n">_restore_vector_dims_singletons</span><span class="p">(</span>
+            <span class="n">score</span><span class="p">,</span> <span class="n">y_true</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">vector_dims</span>
+        <span class="p">)</span>  <span class="c1"># B T S C</span></div>
+
+
+
+<div class="viewcode-block" id="SpreadSkillRatio">
+<a class="viewcode-back" href="../../../reference/metrics/ensemble.html#autocast.metrics.ensemble.SpreadSkillRatio">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">SpreadSkillRatio</span><span class="p">(</span><span class="n">BTSCMMetric</span><span class="p">):</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;Corrected spread-to-skill ratio (SSR) for ensemble forecasts.</span>
+
+<span class="sd">    Note:</span>
+<span class="sd">        Uses the corrected finite-ensemble form:</span>
+<span class="sd">        .. math::</span>
+<span class="sd">            \text{SSR}_{\text{corrected}} = \frac{\text{Spread}}{\text{Skill}}</span>
+<span class="sd">            \sqrt{\frac{M + 1}{M}},</span>
+<span class="sd">        where skill is the pointwise RMSE of the ensemble mean and spread is the</span>
+<span class="sd">        pointwise ensemble standard deviation. Spatial/temporal reductions are then</span>
+<span class="sd">        handled by the base class according to score_dims.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;ssr&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">eps</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1e-6</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">eps</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s2">&quot;eps must be &gt; 0&quot;</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">eps</span> <span class="o">=</span> <span class="n">eps</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_score</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">:</span> <span class="n">TensorBTSCM</span><span class="p">,</span> <span class="n">y_true</span><span class="p">:</span> <span class="n">TensorBTSC</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TensorBTSC</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Not used directly, as we override score() to change the reduction order.&quot;&quot;&quot;</span>
+        <span class="n">msg</span> <span class="o">=</span> <span class="s2">&quot;SpreadSkillRatio overrides score() directly.&quot;</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+<div class="viewcode-block" id="SpreadSkillRatio.score">
+<a class="viewcode-back" href="../../../reference/metrics/ensemble.html#autocast.metrics.ensemble.SpreadSkillRatio.score">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">score</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">:</span> <span class="n">ArrayLike</span><span class="p">,</span> <span class="n">y_true</span><span class="p">:</span> <span class="n">ArrayLike</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TensorBTC</span> <span class="o">|</span> <span class="n">TensorBSC</span> <span class="o">|</span> <span class="n">TensorBTSC</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Compute corrected spread-to-skill ratio.</span>
+
+<span class="sd">        Reductions (spatial/temporal) are applied to the variance and MSE before</span>
+<span class="sd">        taking the square root and computing the ratio (i.e., reduce variance/MSE</span>
+<span class="sd">        first, then sqrt, then divide).</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            y_pred: (B, T, S, C, M)</span>
+<span class="sd">            y_true: (B, T, S, C)</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            SSR: (B, T, C) if score_dims=&#39;spatial&#39;, (B, S, C) if temporal,</span>
+<span class="sd">                or (B, T, S, C) if None.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">y_pred_tensor</span><span class="p">,</span> <span class="n">y_true_tensor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_check_input</span><span class="p">(</span><span class="n">y_pred</span><span class="p">,</span> <span class="n">y_true</span><span class="p">)</span>
+
+        <span class="n">n_ensemble</span> <span class="o">=</span> <span class="n">y_pred_tensor</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">n_ensemble</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;SpreadSkillRatio requires at least 2 ensemble members &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;(got </span><span class="si">{</span><span class="n">n_ensemble</span><span class="si">}</span><span class="s2">).&quot;</span>
+            <span class="p">)</span>
+
+        <span class="c1"># Pointwise squared errors and variances</span>
+        <span class="n">ensemble_mean</span> <span class="o">=</span> <span class="n">y_pred_tensor</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">skill_sq</span> <span class="o">=</span> <span class="p">(</span><span class="n">ensemble_mean</span> <span class="o">-</span> <span class="n">y_true_tensor</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span>
+        <span class="n">spread_var</span> <span class="o">=</span> <span class="n">y_pred_tensor</span><span class="o">.</span><span class="n">var</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span> <span class="n">unbiased</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+        <span class="c1"># Reduce the variances/SSE before sqrt and division</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">score_dims</span> <span class="o">==</span> <span class="s2">&quot;spatial&quot;</span><span class="p">:</span>
+            <span class="n">n_spatial_dims</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_infer_n_spatial_dims</span><span class="p">(</span><span class="n">y_true_tensor</span><span class="p">)</span>
+            <span class="n">spatial_dims</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span> <span class="o">+</span> <span class="n">n_spatial_dims</span><span class="p">))</span>
+            <span class="n">skill_sq</span> <span class="o">=</span> <span class="n">skill_sq</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="n">spatial_dims</span><span class="p">)</span>
+            <span class="n">spread_var</span> <span class="o">=</span> <span class="n">spread_var</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="n">spatial_dims</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">score_dims</span> <span class="o">==</span> <span class="s2">&quot;temporal&quot;</span><span class="p">:</span>
+            <span class="n">skill_sq</span> <span class="o">=</span> <span class="n">skill_sq</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+            <span class="n">spread_var</span> <span class="o">=</span> <span class="n">spread_var</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+
+        <span class="c1"># Reduce to spread, skill, and take ratio</span>
+        <span class="n">skill</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">skill_sq</span><span class="p">)</span>
+        <span class="n">spread</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">spread_var</span><span class="p">)</span>
+
+        <span class="n">correction</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">((</span><span class="n">n_ensemble</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">/</span> <span class="n">n_ensemble</span><span class="p">))</span>
+        <span class="n">ssr</span> <span class="o">=</span> <span class="p">(</span><span class="n">spread</span> <span class="o">/</span> <span class="n">torch</span><span class="o">.</span><span class="n">clamp</span><span class="p">(</span><span class="n">skill</span><span class="p">,</span> <span class="nb">min</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">eps</span><span class="p">))</span> <span class="o">*</span> <span class="n">correction</span>
+
+        <span class="k">return</span> <span class="n">ssr</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="EnsembleSpread">
+<a class="viewcode-back" href="../../../reference/metrics/ensemble.html#autocast.metrics.ensemble.EnsembleSpread">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">EnsembleSpread</span><span class="p">(</span><span class="n">BTSCMMetric</span><span class="p">):</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;Ensemble spread for probabilistic forecasts.</span>
+
+<span class="sd">    Note:</span>
+<span class="sd">        By default, returns a **finite-ensemble corrected spread**:</span>
+
+<span class="sd">        .. math::</span>
+<span class="sd">            \text{Spread}_{\text{corr}} =</span>
+<span class="sd">                \sqrt{\left\langle \mathrm{Var}_{m,\text{unbiased}}(x_m)\right\rangle}</span>
+<span class="sd">                \sqrt{\frac{M + 1}{M}}.</span>
+
+<span class="sd">        This correction is commonly used so that spread and skill are comparable for</span>
+<span class="sd">        finite ensemble sizes when using unbiased sample variance. It matches the</span>
+<span class="sd">        form used in LoLA/paper evaluations (Appendix &quot;Spread / Skill&quot;) where:</span>
+<span class="sd">        ``spread = sqrt((M+1)/(M-1) * mean((x_m - mean_m)^2))``, since</span>
+<span class="sd">        ``Var_unbiased = (M/(M-1)) * mean((x_m - mean_m)^2)``.</span>
+
+<span class="sd">        If ``corrected=False``, returns the uncorrected macroscopic ensemble standard</span>
+<span class="sd">        deviation computed from the unbiased variance estimator:</span>
+
+<span class="sd">        .. math::</span>
+<span class="sd">            \sqrt{\left\langle \mathrm{Var}_{m,\text{unbiased}}(x_m)\right\rangle}.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;spread&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">corrected</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">score_dims</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;spatial&quot;</span><span class="p">,</span> <span class="s2">&quot;temporal&quot;</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="s2">&quot;spatial&quot;</span><span class="p">,</span>
+        <span class="n">reduce_all</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">dist_sync_on_step</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span>
+            <span class="n">score_dims</span><span class="o">=</span><span class="n">score_dims</span><span class="p">,</span>
+            <span class="n">reduce_all</span><span class="o">=</span><span class="n">reduce_all</span><span class="p">,</span>
+            <span class="n">dist_sync_on_step</span><span class="o">=</span><span class="n">dist_sync_on_step</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">corrected</span> <span class="o">=</span> <span class="n">corrected</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_score</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">:</span> <span class="n">TensorBTSCM</span><span class="p">,</span> <span class="n">y_true</span><span class="p">:</span> <span class="n">TensorBTSC</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TensorBTSC</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Not used directly; we override score() to change reduction order.&quot;&quot;&quot;</span>
+        <span class="n">msg</span> <span class="o">=</span> <span class="s2">&quot;EnsembleSpread overrides score() directly.&quot;</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+<div class="viewcode-block" id="EnsembleSpread.score">
+<a class="viewcode-back" href="../../../reference/metrics/ensemble.html#autocast.metrics.ensemble.EnsembleSpread.score">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">score</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">:</span> <span class="n">ArrayLike</span><span class="p">,</span> <span class="n">y_true</span><span class="p">:</span> <span class="n">ArrayLike</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TensorBTC</span> <span class="o">|</span> <span class="n">TensorBSC</span> <span class="o">|</span> <span class="n">TensorBTSC</span><span class="p">:</span>
+        <span class="n">y_pred_tensor</span><span class="p">,</span> <span class="n">y_true_tensor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_check_input</span><span class="p">(</span><span class="n">y_pred</span><span class="p">,</span> <span class="n">y_true</span><span class="p">)</span>
+
+        <span class="n">n_ensemble</span> <span class="o">=</span> <span class="n">y_pred_tensor</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">n_ensemble</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;EnsembleSpread requires at least 2 ensemble members &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;(got </span><span class="si">{</span><span class="n">n_ensemble</span><span class="si">}</span><span class="s2">).&quot;</span>
+            <span class="p">)</span>
+
+        <span class="n">spread_var</span> <span class="o">=</span> <span class="n">y_pred_tensor</span><span class="o">.</span><span class="n">var</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span> <span class="n">unbiased</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>  <span class="c1"># (B, T, S..., C)</span>
+
+        <span class="c1"># Reduce variance before sqrt (macroscopic approach)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">score_dims</span> <span class="o">==</span> <span class="s2">&quot;spatial&quot;</span><span class="p">:</span>
+            <span class="n">n_spatial_dims</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_infer_n_spatial_dims</span><span class="p">(</span><span class="n">y_true_tensor</span><span class="p">)</span>
+            <span class="n">spatial_dims</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span> <span class="o">+</span> <span class="n">n_spatial_dims</span><span class="p">))</span>
+            <span class="n">spread_var</span> <span class="o">=</span> <span class="n">spread_var</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="n">spatial_dims</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">score_dims</span> <span class="o">==</span> <span class="s2">&quot;temporal&quot;</span><span class="p">:</span>
+            <span class="n">spread_var</span> <span class="o">=</span> <span class="n">spread_var</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+
+        <span class="n">spread</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">spread_var</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">corrected</span><span class="p">:</span>
+            <span class="n">correction</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">((</span><span class="n">n_ensemble</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">/</span> <span class="n">n_ensemble</span><span class="p">))</span>
+            <span class="n">spread</span> <span class="o">=</span> <span class="n">spread</span> <span class="o">*</span> <span class="n">correction</span>
+
+        <span class="k">return</span> <span class="n">spread</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="EnsembleSkill">
+<a class="viewcode-back" href="../../../reference/metrics/ensemble.html#autocast.metrics.ensemble.EnsembleSkill">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">EnsembleSkill</span><span class="p">(</span><span class="n">BTSCMMetric</span><span class="p">):</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;Ensemble skill defined as RMSE of the ensemble mean.</span>
+
+<span class="sd">    Note:</span>
+<span class="sd">        Skill is defined as the RMSE of the ensemble mean:</span>
+
+<span class="sd">        .. math::</span>
+<span class="sd">            \text{Skill} = \sqrt{\left\langle (\bar{x} - y)^2 \right\rangle},</span>
+
+<span class="sd">        where :math:`\langle \cdot \rangle` denotes the spatial mean.</span>
+
+<span class="sd">        This metric reduces the squared error over spatial/temporal dimensions *before*</span>
+<span class="sd">        taking the square root (macroscopic RMSE), as is commonly done in ensemble</span>
+<span class="sd">        forecast evaluation (and in LoLA/paper appendices).</span>
+
+<span class="sd">        In the default spatial-reduction evaluation path, this is numerically</span>
+<span class="sd">        equivalent to the deterministic ``RMSE`` metric applied to an ensemble</span>
+<span class="sd">        prediction tensor, because ``RMSE`` first averages over the ensemble</span>
+<span class="sd">        dimension and then computes RMSE.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;skill&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_score</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">:</span> <span class="n">TensorBTSCM</span><span class="p">,</span> <span class="n">y_true</span><span class="p">:</span> <span class="n">TensorBTSC</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TensorBTSC</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Not used directly; we override score() to change reduction order.&quot;&quot;&quot;</span>
+        <span class="n">msg</span> <span class="o">=</span> <span class="s2">&quot;EnsembleSkill overrides score() directly.&quot;</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+<div class="viewcode-block" id="EnsembleSkill.score">
+<a class="viewcode-back" href="../../../reference/metrics/ensemble.html#autocast.metrics.ensemble.EnsembleSkill.score">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">score</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">:</span> <span class="n">ArrayLike</span><span class="p">,</span> <span class="n">y_true</span><span class="p">:</span> <span class="n">ArrayLike</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TensorBTC</span> <span class="o">|</span> <span class="n">TensorBSC</span> <span class="o">|</span> <span class="n">TensorBTSC</span><span class="p">:</span>
+        <span class="n">y_pred_tensor</span><span class="p">,</span> <span class="n">y_true_tensor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_check_input</span><span class="p">(</span><span class="n">y_pred</span><span class="p">,</span> <span class="n">y_true</span><span class="p">)</span>
+
+        <span class="n">ensemble_mean</span> <span class="o">=</span> <span class="n">y_pred_tensor</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">skill_sq</span> <span class="o">=</span> <span class="p">(</span><span class="n">ensemble_mean</span> <span class="o">-</span> <span class="n">y_true_tensor</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span>
+
+        <span class="c1"># Reduce MSE before sqrt (macroscopic approach)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">score_dims</span> <span class="o">==</span> <span class="s2">&quot;spatial&quot;</span><span class="p">:</span>
+            <span class="n">n_spatial_dims</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_infer_n_spatial_dims</span><span class="p">(</span><span class="n">y_true_tensor</span><span class="p">)</span>
+            <span class="n">spatial_dims</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span> <span class="o">+</span> <span class="n">n_spatial_dims</span><span class="p">))</span>
+            <span class="n">skill_sq</span> <span class="o">=</span> <span class="n">skill_sq</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="n">spatial_dims</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">score_dims</span> <span class="o">==</span> <span class="s2">&quot;temporal&quot;</span><span class="p">:</span>
+            <span class="n">skill_sq</span> <span class="o">=</span> <span class="n">skill_sq</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">skill_sq</span><span class="p">)</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="WinklerScore">
+<a class="viewcode-back" href="../../../reference/metrics/ensemble.html#autocast.metrics.ensemble.WinklerScore">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">WinklerScore</span><span class="p">(</span><span class="n">BTSCMMetric</span><span class="p">):</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;Winkler interval score for central prediction intervals.</span>
+
+<span class="sd">    For significance level :math:`\alpha \in (0, 1)`, this metric computes</span>
+<span class="sd">    central :math:`(1-\alpha)` prediction intervals from ensemble quantiles and</span>
+<span class="sd">    returns the per-point interval score</span>
+
+<span class="sd">    .. math::</span>
+<span class="sd">        W_\alpha = (u - l)</span>
+<span class="sd">        + \frac{2}{\alpha}(l - y)\mathbf{1}(y &lt; l)</span>
+<span class="sd">        + \frac{2}{\alpha}(y - u)\mathbf{1}(y &gt; u),</span>
+
+<span class="sd">        where :math:`l` and :math:`u` are the lower/upper interval bounds.</span>
+
+<span class="sd">        Shape conventions</span>
+<span class="sd">        -----------------</span>
+<span class="sd">        - Input prediction tensor: y_pred has shape (B, T, S..., C, M)</span>
+<span class="sd">        - Input truth tensor: y_true has shape (B, T, S..., C)</span>
+<span class="sd">        - Quantiles are computed along ensemble dim M:</span>
+<span class="sd">            - l (lower): ``q_{alpha/2}``, shape (B, T, S..., C)</span>
+<span class="sd">            - u (upper): ``q_{1-alpha/2}``, shape (B, T, S..., C)</span>
+<span class="sd">            - y corresponds to y_true, same shape (B, T, S..., C).</span>
+
+<span class="sd">        The internal ``_score`` returns pointwise Winkler scores with shape</span>
+<span class="sd">        ``(B, T, S..., C)``. The base class then applies ``score_dims`` and</span>
+<span class="sd">        ``reduce_all`` reductions:</span>
+<span class="sd">        - ``score_dims=&#39;spatial&#39;`` (default) -&gt; ``(B, T, C)``</span>
+<span class="sd">        - ``score_dims=&#39;temporal&#39;`` -&gt; ``(B, S..., C)``</span>
+<span class="sd">        - ``score_dims=None`` -&gt; ``(B, T, S..., C)``</span>
+<span class="sd">        - if ``reduce_all=True`` (default), ``compute()`` returns a scalar.</span>
+
+<span class="sd">    Lower values are better: narrow intervals are rewarded, and misses are</span>
+<span class="sd">    penalized in proportion to their distance outside the interval.</span>
+
+<span class="sd">    References:</span>
+<span class="sd">    ----------</span>
+<span class="sd">    Winkler, R. L. (1972). A Decision-Theoretic Approach to Interval Estimation.</span>
+<span class="sd">    Journal of the American Statistical Association, 67(337), 187-191.</span>
+<span class="sd">    https://doi.org/10.1080/01621459.1972.10481224</span>
+
+<span class="sd">    Gneiting, T., &amp; Raftery, A. E. (2007). Strictly Proper Scoring Rules,</span>
+<span class="sd">    Prediction, and Estimation. Journal of the American Statistical Association,</span>
+<span class="sd">    102(477), 359-378. https://doi.org/10.1198/016214506000001437</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;winkler&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">alpha</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.1</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="mi">0</span> <span class="o">&lt;</span> <span class="n">alpha</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;alpha must be in (0, 1), got </span><span class="si">{</span><span class="n">alpha</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">alpha</span> <span class="o">=</span> <span class="n">alpha</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_score</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">:</span> <span class="n">TensorBTSCM</span><span class="p">,</span> <span class="n">y_true</span><span class="p">:</span> <span class="n">TensorBTSC</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TensorBTSC</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Compute pointwise Winkler score before spatial/temporal reductions.&quot;&quot;&quot;</span>
+        <span class="n">q_low</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">alpha</span> <span class="o">/</span> <span class="mf">2.0</span>
+        <span class="n">q_high</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">alpha</span> <span class="o">/</span> <span class="mf">2.0</span>
+
+        <span class="n">q_tensor</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span>
+            <span class="p">[</span><span class="n">q_low</span><span class="p">,</span> <span class="n">q_high</span><span class="p">],</span> <span class="n">device</span><span class="o">=</span><span class="n">y_pred</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">y_pred</span><span class="o">.</span><span class="n">dtype</span>
+        <span class="p">)</span>
+        <span class="n">quantiles</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">quantile</span><span class="p">(</span><span class="n">y_pred</span><span class="p">,</span> <span class="n">q_tensor</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">lower</span> <span class="o">=</span> <span class="n">quantiles</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">upper</span> <span class="o">=</span> <span class="n">quantiles</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+
+        <span class="n">width</span> <span class="o">=</span> <span class="n">upper</span> <span class="o">-</span> <span class="n">lower</span>
+        <span class="n">below_penalty</span> <span class="o">=</span> <span class="p">(</span><span class="mf">2.0</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">alpha</span><span class="p">)</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">clamp</span><span class="p">(</span><span class="n">lower</span> <span class="o">-</span> <span class="n">y_true</span><span class="p">,</span> <span class="nb">min</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>
+        <span class="n">above_penalty</span> <span class="o">=</span> <span class="p">(</span><span class="mf">2.0</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">alpha</span><span class="p">)</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">clamp</span><span class="p">(</span><span class="n">y_true</span> <span class="o">-</span> <span class="n">upper</span><span class="p">,</span> <span class="nb">min</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">width</span> <span class="o">+</span> <span class="n">below_penalty</span> <span class="o">+</span> <span class="n">above_penalty</span></div>
+
+
+
+<div class="viewcode-block" id="MultiWinkler">
+<a class="viewcode-back" href="../../../reference/metrics/ensemble.html#autocast.metrics.ensemble.MultiWinkler">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">MultiWinkler</span><span class="p">(</span><span class="n">Metric</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Average Winkler interval score across multiple central coverage levels.</span>
+
+<span class="sd">    This is the interval-score analogue of ``MultiCoverage``: it evaluates a</span>
+<span class="sd">    grid of nominal central prediction intervals and returns one scalar by</span>
+<span class="sd">    averaging the Winkler score across interval levels, time, space, channels,</span>
+<span class="sd">    and samples. Lower values are better.</span>
+
+<span class="sd">    Note:</span>
+<span class="sd">        This is an unweighted average of central interval scores across the chosen</span>
+<span class="sd">        coverage grid. The weighted interval score (WIS) uses a related multi-level</span>
+<span class="sd">        interval-score construction with prescribed weights.</span>
+
+<span class="sd">    References:</span>
+<span class="sd">        Bracher, J., Ray, E. L., Gneiting, T., &amp; Reich, N. G. (2021). Evaluating</span>
+<span class="sd">        epidemic forecasts in an interval format. PLOS Computational Biology,</span>
+<span class="sd">        17(2), e1008618. https://doi.org/10.1371/journal.pcbi.1008618</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;multiwinkler&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">coverage_levels</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">score_dims</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;spatial&quot;</span><span class="p">,</span> <span class="s2">&quot;temporal&quot;</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="s2">&quot;spatial&quot;</span><span class="p">,</span>
+        <span class="n">dist_sync_on_step</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">dist_sync_on_step</span><span class="o">=</span><span class="n">dist_sync_on_step</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">coverage_levels</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">coverage_levels</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="nb">round</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">0.05</span><span class="p">,</span> <span class="mf">0.95</span><span class="p">,</span> <span class="n">steps</span><span class="o">=</span><span class="mi">19</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+            <span class="p">]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">coverage_levels</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s2">&quot;coverage_levels must contain at least one level.&quot;</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">coverage_level</span> <span class="ow">in</span> <span class="n">coverage_levels</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="mi">0</span> <span class="o">&lt;</span> <span class="n">coverage_level</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">):</span>
+                <span class="n">msg</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;coverage_levels entries must be in (0, 1), got </span><span class="si">{</span><span class="n">coverage_level</span><span class="si">}</span><span class="s2">.&quot;</span>
+                <span class="p">)</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">score_dims</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;spatial&quot;</span><span class="p">,</span> <span class="s2">&quot;temporal&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">):</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="s2">&quot;score_dims must be &#39;spatial&#39;, &#39;temporal&#39;, or None, &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;got </span><span class="si">{</span><span class="n">score_dims</span><span class="si">!r}</span><span class="s2">.&quot;</span>
+            <span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">coverage_levels</span> <span class="o">=</span> <span class="n">coverage_levels</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">score_dims</span> <span class="o">=</span> <span class="n">score_dims</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">add_state</span><span class="p">(</span><span class="s2">&quot;sum_score&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">0.0</span><span class="p">),</span> <span class="n">dist_reduce_fx</span><span class="o">=</span><span class="s2">&quot;sum&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">add_state</span><span class="p">(</span><span class="s2">&quot;total_samples&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span> <span class="n">dist_reduce_fx</span><span class="o">=</span><span class="s2">&quot;sum&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_initialized</span> <span class="o">=</span> <span class="kc">False</span>
+
+<div class="viewcode-block" id="MultiWinkler.update">
+<a class="viewcode-back" href="../../../reference/metrics/ensemble.html#autocast.metrics.ensemble.MultiWinkler.update">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">update</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">:</span> <span class="n">ArrayLike</span><span class="p">,</span> <span class="n">y_true</span><span class="p">:</span> <span class="n">ArrayLike</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Update metric state with one validation batch.&quot;&quot;&quot;</span>
+        <span class="n">score</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">score</span><span class="p">(</span><span class="n">y_pred</span><span class="p">,</span> <span class="n">y_true</span><span class="p">)</span>
+        <span class="n">batch_size</span> <span class="o">=</span> <span class="n">score</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">score_summed</span> <span class="o">=</span> <span class="n">score</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_initialized</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">sum_score</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">score_summed</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_initialized</span> <span class="o">=</span> <span class="kc">True</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">sum_score</span> <span class="o">+=</span> <span class="n">score_summed</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">total_samples</span> <span class="o">+=</span> <span class="n">batch_size</span></div>
+
+
+<div class="viewcode-block" id="MultiWinkler.compute">
+<a class="viewcode-back" href="../../../reference/metrics/ensemble.html#autocast.metrics.ensemble.MultiWinkler.compute">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">compute</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tensor</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return average Winkler score across levels and reduced dimensions.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mean_score_by_level</span><span class="p">()</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="MultiWinkler.reset">
+<a class="viewcode-back" href="../../../reference/metrics/ensemble.html#autocast.metrics.ensemble.MultiWinkler.reset">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Reset metric state and dynamic state-shape flag.&quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">reset</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_initialized</span> <span class="o">=</span> <span class="kc">False</span></div>
+
+
+<div class="viewcode-block" id="MultiWinkler.score">
+<a class="viewcode-back" href="../../../reference/metrics/ensemble.html#autocast.metrics.ensemble.MultiWinkler.score">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">score</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">:</span> <span class="n">ArrayLike</span><span class="p">,</span> <span class="n">y_true</span><span class="p">:</span> <span class="n">ArrayLike</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tensor</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Compute per-level Winkler scores before batch aggregation.&quot;&quot;&quot;</span>
+        <span class="n">y_pred_tensor</span><span class="p">,</span> <span class="n">y_true_tensor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_check_input</span><span class="p">(</span><span class="n">y_pred</span><span class="p">,</span> <span class="n">y_true</span><span class="p">)</span>
+
+        <span class="n">coverage</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">coverage_levels</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">y_pred_tensor</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">y_pred_tensor</span><span class="o">.</span><span class="n">dtype</span>
+        <span class="p">)</span>
+        <span class="n">alpha</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="n">coverage</span>
+        <span class="n">q_low</span> <span class="o">=</span> <span class="n">alpha</span> <span class="o">/</span> <span class="mf">2.0</span>
+        <span class="n">q_high</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="n">q_low</span>
+        <span class="n">q_tensor</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">q_low</span><span class="p">,</span> <span class="n">q_high</span><span class="p">])</span>
+
+        <span class="n">quantiles</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">quantile</span><span class="p">(</span><span class="n">y_pred_tensor</span><span class="p">,</span> <span class="n">q_tensor</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">n_levels</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">coverage_levels</span><span class="p">)</span>
+        <span class="n">lower</span> <span class="o">=</span> <span class="n">quantiles</span><span class="p">[:</span><span class="n">n_levels</span><span class="p">]</span>
+        <span class="n">upper</span> <span class="o">=</span> <span class="n">quantiles</span><span class="p">[</span><span class="n">n_levels</span><span class="p">:]</span>
+        <span class="n">truth</span> <span class="o">=</span> <span class="n">y_true_tensor</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+        <span class="n">alpha_view</span> <span class="o">=</span> <span class="n">alpha</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">n_levels</span><span class="p">,</span> <span class="o">*</span><span class="p">([</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">y_true_tensor</span><span class="o">.</span><span class="n">ndim</span><span class="p">))</span>
+
+        <span class="n">width</span> <span class="o">=</span> <span class="n">upper</span> <span class="o">-</span> <span class="n">lower</span>
+        <span class="n">below_penalty</span> <span class="o">=</span> <span class="p">(</span><span class="mf">2.0</span> <span class="o">/</span> <span class="n">alpha_view</span><span class="p">)</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">clamp</span><span class="p">(</span><span class="n">lower</span> <span class="o">-</span> <span class="n">truth</span><span class="p">,</span> <span class="nb">min</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>
+        <span class="n">above_penalty</span> <span class="o">=</span> <span class="p">(</span><span class="mf">2.0</span> <span class="o">/</span> <span class="n">alpha_view</span><span class="p">)</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">clamp</span><span class="p">(</span><span class="n">truth</span> <span class="o">-</span> <span class="n">upper</span><span class="p">,</span> <span class="nb">min</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>
+        <span class="n">score</span> <span class="o">=</span> <span class="n">width</span> <span class="o">+</span> <span class="n">below_penalty</span> <span class="o">+</span> <span class="n">above_penalty</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">score_dims</span> <span class="o">==</span> <span class="s2">&quot;spatial&quot;</span><span class="p">:</span>
+            <span class="n">n_spatial_dims</span> <span class="o">=</span> <span class="n">y_true_tensor</span><span class="o">.</span><span class="n">ndim</span> <span class="o">-</span> <span class="mi">3</span>
+            <span class="n">spatial_dims</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span> <span class="o">+</span> <span class="n">n_spatial_dims</span><span class="p">))</span>
+            <span class="k">return</span> <span class="n">score</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="n">spatial_dims</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">score_dims</span> <span class="o">==</span> <span class="s2">&quot;temporal&quot;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">score</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">score</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_mean_score_by_level</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tensor</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">total_samples</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s2">&quot;No samples were provided to the metric&quot;</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">sum_score</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">total_samples</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_compute_levels_and_values</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return coverage levels, mean scores, and per-channel scores.&quot;&quot;&quot;</span>
+        <span class="n">score</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mean_score_by_level</span><span class="p">()</span>
+        <span class="n">mean_scores</span> <span class="o">=</span> <span class="n">score</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">score</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="n">score</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">channel_scores</span> <span class="o">=</span> <span class="n">score</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]</span>
+        <span class="k">elif</span> <span class="n">score</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="n">channel_scores</span> <span class="o">=</span> <span class="n">score</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">channel_scores</span> <span class="o">=</span> <span class="n">score</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="nb">tuple</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">score</span><span class="o">.</span><span class="n">ndim</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)))</span>
+
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">coverage_levels</span><span class="p">,</span>
+            <span class="n">mean_scores</span><span class="o">.</span><span class="n">tolist</span><span class="p">(),</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">atleast_2d</span><span class="p">(</span><span class="n">channel_scores</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">()),</span>
+        <span class="p">)</span>
+
+<div class="viewcode-block" id="MultiWinkler.plot">
+<a class="viewcode-back" href="../../../reference/metrics/ensemble.html#autocast.metrics.ensemble.MultiWinkler.plot">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">plot</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">save_path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">title</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;Winkler Interval Scores&quot;</span><span class="p">,</span>
+        <span class="n">cmap_str</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;viridis&quot;</span><span class="p">,</span>
+        <span class="n">save_csv</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Plot Winkler score against nominal interval coverage.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">plt</span><span class="o">.</span><span class="n">get_backend</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">!=</span> <span class="s2">&quot;agg&quot;</span><span class="p">:</span>
+            <span class="n">plt</span><span class="o">.</span><span class="n">switch_backend</span><span class="p">(</span><span class="s2">&quot;Agg&quot;</span><span class="p">)</span>
+
+        <span class="n">levels</span><span class="p">,</span> <span class="n">mean_scores</span><span class="p">,</span> <span class="n">channel_scores</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_compute_levels_and_values</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="n">save_path</span> <span class="ow">and</span> <span class="n">save_csv</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_save_csv_data</span><span class="p">(</span><span class="n">save_path</span><span class="p">,</span> <span class="n">levels</span><span class="p">,</span> <span class="n">mean_scores</span><span class="p">,</span> <span class="n">channel_scores</span><span class="p">)</span>
+
+        <span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">6</span><span class="p">))</span>
+        <span class="n">cmap</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">get_cmap</span><span class="p">(</span><span class="n">cmap_str</span><span class="p">)</span>
+        <span class="n">n_channels</span> <span class="o">=</span> <span class="n">channel_scores</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="k">for</span> <span class="n">channel_idx</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_channels</span><span class="p">):</span>
+            <span class="n">color</span> <span class="o">=</span> <span class="n">cmap</span><span class="p">(</span><span class="n">channel_idx</span> <span class="o">/</span> <span class="n">n_channels</span><span class="p">)</span> <span class="k">if</span> <span class="n">n_channels</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="k">else</span> <span class="s2">&quot;blue&quot;</span>
+            <span class="n">label</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;Ch </span><span class="si">{</span><span class="n">channel_idx</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="n">n_channels</span> <span class="o">&lt;=</span> <span class="mi">10</span> <span class="k">else</span> <span class="kc">None</span>
+            <span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span>
+                <span class="n">levels</span><span class="p">,</span>
+                <span class="n">channel_scores</span><span class="p">[:,</span> <span class="n">channel_idx</span><span class="p">],</span>
+                <span class="n">color</span><span class="o">=</span><span class="n">color</span><span class="p">,</span>
+                <span class="n">alpha</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span>
+                <span class="n">linewidth</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+                <span class="n">label</span><span class="o">=</span><span class="n">label</span><span class="p">,</span>
+            <span class="p">)</span>
+
+        <span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">levels</span><span class="p">,</span> <span class="n">mean_scores</span><span class="p">,</span> <span class="s2">&quot;k-&quot;</span><span class="p">,</span> <span class="n">linewidth</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;Mean&quot;</span><span class="p">)</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s2">&quot;Nominal interval coverage&quot;</span><span class="p">)</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s2">&quot;Winkler score (lower is better)&quot;</span><span class="p">)</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="n">title</span><span class="p">)</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="kc">True</span><span class="p">,</span> <span class="n">linestyle</span><span class="o">=</span><span class="s2">&quot;:&quot;</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.6</span><span class="p">)</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">legend</span><span class="p">()</span> <span class="k">if</span> <span class="n">n_channels</span> <span class="o">&lt;=</span> <span class="mi">10</span> <span class="k">else</span> <span class="n">ax</span><span class="o">.</span><span class="n">legend</span><span class="p">([</span><span class="s2">&quot;Mean&quot;</span><span class="p">,</span> <span class="s2">&quot;Channels&quot;</span><span class="p">])</span>
+
+        <span class="k">if</span> <span class="n">save_path</span><span class="p">:</span>
+            <span class="n">fig</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="n">save_path</span><span class="p">,</span> <span class="n">bbox_inches</span><span class="o">=</span><span class="s2">&quot;tight&quot;</span><span class="p">)</span>
+
+        <span class="n">plt</span><span class="o">.</span><span class="n">close</span><span class="p">(</span><span class="n">fig</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">fig</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_save_csv_data</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">save_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">levels</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span>
+        <span class="n">mean_scores</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span>
+        <span class="n">channel_scores</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">csv_path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">save_path</span><span class="p">)</span><span class="o">.</span><span class="n">removesuffix</span><span class="p">(</span><span class="s2">&quot;.png&quot;</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot;.csv&quot;</span><span class="p">)</span>
+        <span class="n">csv_path</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">&quot;coverage_level&quot;</span><span class="p">:</span> <span class="n">levels</span><span class="p">,</span>
+            <span class="s2">&quot;winkler_mean&quot;</span><span class="p">:</span> <span class="n">mean_scores</span><span class="p">,</span>
+        <span class="p">}</span>
+        <span class="k">for</span> <span class="n">channel_idx</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">channel_scores</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]):</span>
+            <span class="n">data</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;channel_</span><span class="si">{</span><span class="n">channel_idx</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">channel_scores</span><span class="p">[:,</span> <span class="n">channel_idx</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+
+        <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span><span class="n">csv_path</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_check_input</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">:</span> <span class="n">ArrayLike</span><span class="p">,</span> <span class="n">y_true</span><span class="p">:</span> <span class="n">ArrayLike</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">TensorBTSCM</span><span class="p">,</span> <span class="n">TensorBTSC</span><span class="p">]:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">y_pred</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">):</span>
+            <span class="n">y_pred</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">from_numpy</span><span class="p">(</span><span class="n">y_pred</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">y_true</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">):</span>
+            <span class="n">y_true</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">from_numpy</span><span class="p">(</span><span class="n">y_true</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">y_pred</span><span class="p">,</span> <span class="n">Tensor</span><span class="p">):</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;y_pred must be a Tensor or np.ndarray, got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">y_pred</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">y_true</span><span class="p">,</span> <span class="n">Tensor</span><span class="p">):</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;y_true must be a Tensor or np.ndarray, got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">y_true</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">y_pred</span><span class="o">.</span><span class="n">ndim</span> <span class="o">&lt;</span> <span class="mi">5</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;y_pred has </span><span class="si">{</span><span class="n">y_pred</span><span class="o">.</span><span class="n">ndim</span><span class="si">}</span><span class="s2"> dimensions, should be at least 5, &quot;</span>
+                <span class="s2">&quot;following the pattern (B, T, S, C, M)&quot;</span>
+            <span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">y_pred</span><span class="o">.</span><span class="n">shape</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="n">y_true</span><span class="o">.</span><span class="n">shape</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="s2">&quot;y_pred and y_true must have the same shape except for the last &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;dimension (ensemble members). Got </span><span class="si">{</span><span class="n">y_pred</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2"> and </span><span class="si">{</span><span class="n">y_true</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">y_pred</span><span class="p">,</span> <span class="n">y_true</span></div>
+
+</pre></div>
+
+                </article>
+              
+
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+<div class="bd-footer-content__inner container">
+  
+  <div class="footer-item">
+    
+<p class="component-author">
+By AI for Physical Systems Team at The Alan Turing Institute
+</p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+  <div class="footer-item">
+    
+<div class="extra_footer">
+  Copyright &copy; 2026
+
+</div>
+  </div>
+  
+</div>
+          </footer>
+        
+
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="../../../_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf"></script>
+<script defer src="../../../_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf"></script>
+
+  <footer class="bd-footer">
+  </footer>
+  </body>
+</html>
