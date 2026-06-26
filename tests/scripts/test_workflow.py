@@ -263,7 +263,8 @@ def test_compose_launcher_cfg_cli_overrides_win():
 
 
 def test_submit_via_sbatch_passes_distributed_flags_to_sbatch(tmp_path, monkeypatch):
-    """End-to-end: compose resolves distributed config and sbatch gets the right flags."""
+    """End-to-end: compose resolves distributed config and sbatch gets the
+    right flags."""
     monkeypatch.chdir(tmp_path)
     captured_cmd: list[str] = []
 
