@@ -1,5 +1,6 @@
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Any
 
 import h5py
 import torch
@@ -18,10 +19,13 @@ class EncodedBatchMixin:
     @staticmethod
     def to_sample(data: dict) -> EncodedSample:
         """Convert a dictionary of tensors to a Sample object."""
+        global_cond = data.get("global_cond")
+        if global_cond is None:
+            global_cond = data.get("label")
         return EncodedSample(
             encoded_inputs=data["input_fields"],
             encoded_output_fields=data["output_fields"],
-            global_cond=data.get("label"),
+            global_cond=global_cond,
             encoded_info=data.get("encoded_info", {}),
         )
 
@@ -46,13 +50,35 @@ class MiniWellDataset(Dataset):
         steps: int = 1,
         stride: int = 1,
     ):
-        self.file = h5py.File(file, mode="r")
+        self.file_path = str(file)
+        self._file: h5py.File | None = None
 
-        self.trajectories = self.file["state"].shape[0]  # type: ignore  # noqa: PGH003
-        self.steps_per_trajectory = self.file["state"].shape[1]  # type: ignore  # noqa: PGH003
+        with h5py.File(self.file_path, mode="r") as h5_file:
+            self.trajectories = h5_file["state"].shape[0]  # type: ignore  # noqa: PGH003
+            self.steps_per_trajectory = h5_file["state"].shape[1]  # type: ignore  # noqa: PGH003
 
         self.steps = steps
         self.stride = stride
+
+    def __getstate__(self) -> dict[str, Any]:
+        """Drop process-local HDF5 handles before worker serialization."""
+        state = self.__dict__.copy()
+        state["_file"] = None
+        return state
+
+    def _h5_file(self) -> h5py.File:
+        if self._file is None:
+            self._file = h5py.File(self.file_path, mode="r")
+        return self._file
+
+    def close(self) -> None:
+        if self._file is not None:
+            self._file.close()
+            self._file = None
+
+    def __del__(self) -> None:
+        """Close the process-local HDF5 handle at object teardown."""
+        self.close()
 
     def __len__(self) -> int:  # noqa: D105
         return self.trajectories * (
@@ -66,10 +92,11 @@ class MiniWellDataset(Dataset):
 
         i, j = i // crops_per_trajectory, i % crops_per_trajectory
 
-        state = self.file["state"][  # type: ignore  # noqa: PGH003
+        h5_file = self._h5_file()
+        state = h5_file["state"][  # type: ignore  # noqa: PGH003
             i, slice(j, j + (self.steps - 1) * self.stride + 1, self.stride)
         ]
-        label = self.file["label"][i]  # type: ignore  # noqa: PGH003
+        label = h5_file["label"][i]  # type: ignore  # noqa: PGH003
 
         return {
             "state": torch.as_tensor(state),
@@ -234,8 +261,7 @@ class EncodedDataModule(LightningDataModule):
             n_steps_output: Number of output time steps to predict.
             stride: Stride for stepping through trajectories.
             batch_size: Batch size for dataloaders.
-            num_workers: Number of workers for dataloaders. Default 0 for
-                h5py compatibility.
+            num_workers: Number of workers for dataloaders.
             dataset_cls: Dataset class to use. Defaults to MiniWellInputOutput.
             in_memory: Whether to load the full dataset into memory.
             **dataset_kwargs: Additional kwargs passed to dataset constructor.
@@ -423,6 +449,9 @@ class MiniWellDataModule(LightningDataModule):
         stride: int = 1,
         batch_size: int = 16,
         num_workers: int = 0,
+        pin_memory: bool = True,
+        persistent_workers: bool | None = None,
+        prefetch_factor: int | None = 2,
     ):
         """Initialize the MiniWellDataModule.
 
@@ -433,8 +462,13 @@ class MiniWellDataModule(LightningDataModule):
             n_steps_output: Number of output time steps to predict.
             stride: Stride for stepping through trajectories.
             batch_size: Batch size for dataloaders.
-            num_workers: Number of workers for dataloaders. Default 0 for
-                h5py compatibility.
+            num_workers: Number of workers for dataloaders. Each worker lazily
+                opens its own HDF5 file handle.
+            pin_memory: Whether to pin CPU tensors before transfer to GPU.
+            persistent_workers: Keep worker processes alive between epochs.
+                Defaults to True when num_workers > 0.
+            prefetch_factor: Number of batches loaded in advance per worker.
+                Only used when num_workers > 0.
         """
         super().__init__()
         self.data_path = Path(data_path) if data_path is not None else None
@@ -443,6 +477,11 @@ class MiniWellDataModule(LightningDataModule):
         self.stride = stride
         self.batch_size = batch_size
         self.num_workers = num_workers
+        self.pin_memory = pin_memory
+        self.persistent_workers = (
+            num_workers > 0 if persistent_workers is None else persistent_workers
+        )
+        self.prefetch_factor = prefetch_factor
 
         self.train_dataset: Dataset | None = None
         self.val_dataset: Dataset | None = None
@@ -477,6 +516,17 @@ class MiniWellDataModule(LightningDataModule):
         ]
         return ConcatDataset(datasets)
 
+    def _dataloader_kwargs(self) -> dict[str, Any]:
+        kwargs: dict[str, Any] = {
+            "num_workers": self.num_workers,
+            "pin_memory": self.pin_memory,
+        }
+        if self.num_workers > 0:
+            kwargs["persistent_workers"] = self.persistent_workers
+            if self.prefetch_factor is not None:
+                kwargs["prefetch_factor"] = self.prefetch_factor
+        return kwargs
+
     def setup(self, stage: str | None = None) -> None:
         """Set up datasets for the given stage."""
         if self.data_path is None:
@@ -506,8 +556,8 @@ class MiniWellDataModule(LightningDataModule):
             self.train_dataset,
             batch_size=self.batch_size,
             shuffle=True,
-            num_workers=self.num_workers,
             collate_fn=collate_encoded_samples,
+            **self._dataloader_kwargs(),
         )
 
     def val_dataloader(self) -> DataLoader:
@@ -521,8 +571,8 @@ class MiniWellDataModule(LightningDataModule):
             self.val_dataset,
             batch_size=self.batch_size,
             shuffle=False,
-            num_workers=self.num_workers,
             collate_fn=collate_encoded_samples,
+            **self._dataloader_kwargs(),
         )
 
     def test_dataloader(self) -> DataLoader:
@@ -536,6 +586,6 @@ class MiniWellDataModule(LightningDataModule):
             self.test_dataset,
             batch_size=self.batch_size,
             shuffle=False,
-            num_workers=self.num_workers,
             collate_fn=collate_encoded_samples,
+            **self._dataloader_kwargs(),
         )
