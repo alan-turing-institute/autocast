@@ -76,7 +76,7 @@ def _nested_set(target: dict, dotted_key: str, value: int | str | bool) -> None:
     current[parts[-1]] = value
 
 
-def _compose_launcher_cfg(config_name: str, overrides: list[str]) -> dict:
+def _get_launcher_cfg_via_compose(config_name: str, overrides: list[str]) -> dict:
     """Compose the full Hydra config and extract ``hydra.launcher``.
 
     Uses Hydra's Compose API so that interpolations are resolved against the
@@ -101,7 +101,7 @@ def _resolve_launcher_submission_context(
     overrides: list[str],
 ) -> tuple[dict, list[str]]:
     _, _, module_overrides = extract_launcher_overrides(overrides)
-    launcher_cfg = _compose_launcher_cfg(config_name, overrides)
+    launcher_cfg = _get_launcher_cfg_via_compose(config_name, overrides)
     return launcher_cfg, module_overrides
 
 
@@ -451,7 +451,9 @@ def submit_manifest_via_sbatch(
     # to get the value of `hydra.launcher`, and none of the base config names
     # define that directly (they're only overridden inside e.g. local
     # experiments with `/distributed` overrides).
-    merged_launcher_cfg = _compose_launcher_cfg("encoder_processor_decoder", overrides)
+    merged_launcher_cfg = _get_launcher_cfg_via_compose(
+        "encoder_processor_decoder", overrides
+    )
 
     setup_commands: list[str] = merged_launcher_cfg.get("setup", [])  # type: ignore[assignment]
     if not isinstance(setup_commands, list):

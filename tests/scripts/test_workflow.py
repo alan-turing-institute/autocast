@@ -44,7 +44,7 @@ from autocast.scripts.workflow.overrides import (
 )
 from autocast.scripts.workflow.slurm import (
     _build_sbatch_command,
-    _compose_launcher_cfg,
+    _get_launcher_cfg_via_compose,
     _parse_override_scalar,
     _should_use_srun,
     submit_manifest_via_sbatch,
@@ -219,8 +219,8 @@ def test_build_sbatch_command_includes_nodes(tmp_path: Path):
     assert "--nodes=99" not in cmd
 
 
-def test_compose_launcher_cfg_returns_slurm_defaults():
-    launcher_cfg = _compose_launcher_cfg(
+def test_get_launcher_cfg_via_compose_returns_slurm_defaults():
+    launcher_cfg = _get_launcher_cfg_via_compose(
         "encoder_processor_decoder", ["hydra/launcher=slurm"]
     )
 
@@ -229,8 +229,8 @@ def test_compose_launcher_cfg_returns_slurm_defaults():
     assert launcher_cfg.get("tasks_per_node") == 1
 
 
-def test_compose_launcher_cfg_with_distributed_override():
-    launcher_cfg = _compose_launcher_cfg(
+def test_get_launcher_cfg_via_compose_with_distributed_override():
+    launcher_cfg = _get_launcher_cfg_via_compose(
         "encoder_processor_decoder", ["+distributed=ddp_4gpu_slurm"]
     )
 
@@ -238,8 +238,8 @@ def test_compose_launcher_cfg_with_distributed_override():
     assert launcher_cfg.get("tasks_per_node") == 4
 
 
-def test_compose_launcher_cfg_with_multinode_distributed():
-    launcher_cfg = _compose_launcher_cfg(
+def test_get_launcher_cfg_via_compose_with_multinode_distributed():
+    launcher_cfg = _get_launcher_cfg_via_compose(
         "encoder_processor_decoder", ["+distributed=ddp_4gpu_2node_slurm"]
     )
 
@@ -248,8 +248,8 @@ def test_compose_launcher_cfg_with_multinode_distributed():
     assert launcher_cfg.get("tasks_per_node") == 4
 
 
-def test_compose_launcher_cfg_cli_overrides_win():
-    launcher_cfg = _compose_launcher_cfg(
+def test_get_launcher_cfg_via_compose_cli_overrides_win():
+    launcher_cfg = _get_launcher_cfg_via_compose(
         "encoder_processor_decoder",
         [
             "hydra/launcher=slurm",
