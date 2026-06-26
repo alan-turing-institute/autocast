@@ -83,6 +83,7 @@ def _compose_launcher_cfg(config_name: str, overrides: list[str]) -> dict:
     full config tree (including CLI overrides).
     """
     config_dir = get_default_config_path()
+    # Remove CLI flags that Hydra doesn't understand.
     _, compose_overrides = _split_hydra_cli_args(overrides)
     with initialize_config_dir(config_dir=config_dir, version_base=None):
         cfg = compose(
@@ -91,6 +92,7 @@ def _compose_launcher_cfg(config_name: str, overrides: list[str]) -> dict:
             return_hydra_config=True,
         )
         launcher = OmegaConf.to_container(cfg.hydra.launcher, resolve=True)
+        # launcher should always be a Dict but this makes type checking happy
         return launcher if isinstance(launcher, dict) else {}
 
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from subprocess import CompletedProcess
 from unittest.mock import patch
 
 import pandas as pd
@@ -47,6 +48,7 @@ from autocast.scripts.workflow.slurm import (
     _parse_override_scalar,
     _should_use_srun,
     submit_manifest_via_sbatch,
+    submit_via_sbatch,
 )
 
 
@@ -258,6 +260,33 @@ def test_compose_launcher_cfg_cli_overrides_win():
 
     assert launcher_cfg.get("partition") == "gpu"
     assert launcher_cfg.get("timeout_min") == 120
+
+
+def test_submit_via_sbatch_passes_distributed_flags_to_sbatch(tmp_path, monkeypatch):
+    """End-to-end: compose resolves distributed config and sbatch gets the right flags."""
+    monkeypatch.chdir(tmp_path)
+    captured_cmd: list[str] = []
+
+    def _fake_subprocess_run(cmd, **_kw):
+        captured_cmd.extend(cmd)
+        return CompletedProcess(cmd, 0, stdout="12345\n", stderr="")
+
+    monkeypatch.setattr(
+        "autocast.scripts.workflow.slurm.subprocess.run", _fake_subprocess_run
+    )
+
+    submit_via_sbatch(
+        "autocast.scripts.train.encoder_processor_decoder",
+        [
+            "+distributed=ddp_4gpu_2node_slurm",
+            "hydra/launcher=slurm",
+            f"hydra.run.dir={tmp_path / 'out'}",
+        ],
+    )
+
+    assert "--nodes=2" in captured_cmd
+    assert "--gpus-per-node=4" in captured_cmd
+    assert "--ntasks-per-node=4" in captured_cmd
 
 
 # ---------------------------------------------------------------------------
