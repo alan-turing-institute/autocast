@@ -4,8 +4,8 @@ defaults:
   - override /distributed: ddp_4gpu_2node_slurm
   - override /datamodule: 128x128/conditioned_navier_stokes
   - override /model: autoencoder_dc_large
-  - override /encoder@model.encoder: 128x128/dc_cout8
-  - override /decoder@model.decoder: 128x128/dc_cout8
+  - override /encoder@model.encoder: dc_f8c8
+  - override /decoder@model.decoder: dc_f8c8
   - override /optimizer: psgd
   - _self_
 

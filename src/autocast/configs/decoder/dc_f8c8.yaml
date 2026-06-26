@@ -1,0 +1,9 @@
+# 3 upsampling stages (8x spatial expansion) with 8 input channels.
+# For 8x8x8 input this gives 64x64; for 16x16x8 this gives 128x128.
+defaults:
+  - dc_large
+  - _self_
+
+in_channels: 8
+hid_channels: [512, 256, 128, 64]
+hid_blocks: [3, 3, 3, 3]

@@ -2,8 +2,8 @@
 defaults:
   - /distributed: single_gpu_slurm
   - override /datamodule: 128x128/gray_scott
-  - override /encoder@model.encoder: 128x128/dc_cout8
-  - override /decoder@model.decoder: 128x128/dc_cout8
+  - override /encoder@model.encoder: dc_f8c8
+  - override /decoder@model.decoder: dc_f8c8
   - _self_
 
 experiment_name: cache_latents_gs_128
