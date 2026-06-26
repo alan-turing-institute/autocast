@@ -1,0 +1,11 @@
+# @package _global_
+defaults:
+  - epd/gpe_laser_wake_only/crps_vit_azula_large
+  - override /datamodule: 128x128/gpe_laser_only_wake
+  - _self_
+
+experiment_name: epd_crps_vit_azula_large_gpe_128
+
+model:
+  processor:
+    patch_size: 8
