@@ -43,8 +43,7 @@ from autocast.scripts.workflow.overrides import (
 )
 from autocast.scripts.workflow.slurm import (
     _build_sbatch_command,
-    _load_direct_distributed_launcher_cfg,
-    _load_preset_launcher_cfg,
+    _compose_launcher_cfg,
     _parse_override_scalar,
     _should_use_srun,
     submit_manifest_via_sbatch,
@@ -218,145 +217,47 @@ def test_build_sbatch_command_includes_nodes(tmp_path: Path):
     assert "--nodes=99" not in cmd
 
 
-def test_load_preset_launcher_cfg_ignores_unrelated_interpolation(
-    tmp_path: Path, monkeypatch
-):
-    local_cfg = tmp_path / "local_hydra" / "local_experiment" / "repro.yaml"
-    local_cfg.parent.mkdir(parents=True, exist_ok=True)
-    local_cfg.write_text(
-        "\n".join(
-            [
-                "defaults:",
-                "  - /distributed: ddp_4gpu_slurm",
-                "model:",
-                "  processor:",
-                "    n_steps_input: ${datamodule.n_steps_input}",
-                "hydra:",
-                "  launcher:",
-                "    partition: gpu",
-                "    timeout_min: 120",
-            ]
-        ),
-        encoding="utf-8",
+def test_compose_launcher_cfg_returns_slurm_defaults():
+    launcher_cfg = _compose_launcher_cfg(
+        "encoder_processor_decoder", ["hydra/launcher=slurm"]
     )
 
-    monkeypatch.chdir(tmp_path)
-    launcher_cfg = _load_preset_launcher_cfg(["local_experiment=repro"])
+    assert launcher_cfg.get("timeout_min") == 240
+    assert launcher_cfg.get("gpus_per_node") == 1
+    assert launcher_cfg.get("tasks_per_node") == 1
+
+
+def test_compose_launcher_cfg_with_distributed_override():
+    launcher_cfg = _compose_launcher_cfg(
+        "encoder_processor_decoder", ["+distributed=ddp_4gpu_slurm"]
+    )
+
+    assert launcher_cfg.get("gpus_per_node") == 4
+    assert launcher_cfg.get("tasks_per_node") == 4
+
+
+def test_compose_launcher_cfg_with_multinode_distributed():
+    launcher_cfg = _compose_launcher_cfg(
+        "encoder_processor_decoder", ["+distributed=ddp_4gpu_2node_slurm"]
+    )
+
+    assert launcher_cfg.get("nodes") == 2
+    assert launcher_cfg.get("gpus_per_node") == 4
+    assert launcher_cfg.get("tasks_per_node") == 4
+
+
+def test_compose_launcher_cfg_cli_overrides_win():
+    launcher_cfg = _compose_launcher_cfg(
+        "encoder_processor_decoder",
+        [
+            "hydra/launcher=slurm",
+            "+hydra.launcher.partition=gpu",
+            "hydra.launcher.timeout_min=120",
+        ],
+    )
 
     assert launcher_cfg.get("partition") == "gpu"
     assert launcher_cfg.get("timeout_min") == 120
-
-
-def test_load_preset_launcher_cfg_walks_local_experiment_parent_chain(
-    tmp_path: Path, monkeypatch
-):
-    # Child references a parent local_experiment that declares /distributed:
-    # — the loader must walk the chain so SLURM allocates the right resources.
-    local_root = tmp_path / "local_hydra" / "local_experiment"
-    parent_cfg = local_root / "parent.yaml"
-    parent_cfg.parent.mkdir(parents=True, exist_ok=True)
-    parent_cfg.write_text(
-        "\n".join(
-            [
-                "defaults:",
-                "  - /distributed: ddp_4gpu_slurm",
-                "  - _self_",
-            ]
-        ),
-        encoding="utf-8",
-    )
-    child_cfg = local_root / "child.yaml"
-    child_cfg.write_text(
-        "\n".join(
-            [
-                "defaults:",
-                "  - /local_experiment/parent",
-                "  - _self_",
-            ]
-        ),
-        encoding="utf-8",
-    )
-
-    monkeypatch.chdir(tmp_path)
-    launcher_cfg = _load_preset_launcher_cfg(["local_experiment=child"])
-
-    assert launcher_cfg.get("gpus_per_node") == 4
-    assert launcher_cfg.get("tasks_per_node") == 4
-
-
-def test_load_preset_launcher_cfg_walks_relative_parent_reference(
-    tmp_path: Path, monkeypatch
-):
-    # Child uses a relative reference (no /local_experiment/ prefix) to a
-    # parent that declares /distributed: — the loader must resolve the
-    # relative path from the config group root.
-    local_root = tmp_path / "local_hydra" / "local_experiment"
-    parent_cfg = local_root / "epd" / "base.yaml"
-    parent_cfg.parent.mkdir(parents=True, exist_ok=True)
-    parent_cfg.write_text(
-        "\n".join(
-            [
-                "defaults:",
-                "  - /distributed: ddp_4gpu_slurm",
-                "  - _self_",
-            ]
-        ),
-        encoding="utf-8",
-    )
-    child_cfg = local_root / "epd" / "128x128" / "child.yaml"
-    child_cfg.parent.mkdir(parents=True, exist_ok=True)
-    child_cfg.write_text(
-        "\n".join(
-            [
-                "defaults:",
-                "  - epd/base",
-                "  - _self_",
-            ]
-        ),
-        encoding="utf-8",
-    )
-
-    monkeypatch.chdir(tmp_path)
-    launcher_cfg = _load_preset_launcher_cfg(["local_experiment=epd/128x128/child"])
-
-    assert launcher_cfg.get("gpus_per_node") == 4
-    assert launcher_cfg.get("tasks_per_node") == 4
-
-
-def test_load_preset_launcher_cfg_recognises_override_distributed(
-    tmp_path: Path, monkeypatch
-):
-    # When a config uses `override /distributed:` (needed when a parent
-    # already set the group), the CLI must still find the preset name.
-    local_root = tmp_path / "local_hydra" / "local_experiment"
-    cfg = local_root / "with_override.yaml"
-    cfg.parent.mkdir(parents=True, exist_ok=True)
-    cfg.write_text(
-        "\n".join(
-            [
-                "defaults:",
-                "  - override /distributed: ddp_4gpu_2node_slurm",
-                "  - _self_",
-            ]
-        ),
-        encoding="utf-8",
-    )
-
-    monkeypatch.chdir(tmp_path)
-    launcher_cfg = _load_preset_launcher_cfg(["local_experiment=with_override"])
-
-    assert launcher_cfg.get("nodes") == 2
-    assert launcher_cfg.get("gpus_per_node") == 4
-
-
-def test_load_direct_distributed_launcher_cfg_supports_multinode():
-    launcher_cfg = _load_direct_distributed_launcher_cfg(
-        ["+distributed=ddp_4gpu_2node_slurm"]
-    )
-
-    assert launcher_cfg.get("nodes") == 2
-    assert launcher_cfg.get("gpus_per_node") == 4
-    assert launcher_cfg.get("tasks_per_node") == 4
 
 
 # ---------------------------------------------------------------------------
