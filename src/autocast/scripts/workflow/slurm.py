@@ -447,6 +447,10 @@ def submit_manifest_via_sbatch(
     """
     umask_value = resolve_umask_from_overrides(overrides)
 
+    # The config name here doesn't *really* matter because we are just trying
+    # to get the value of `hydra.launcher`, and none of the base config names
+    # define that directly (they're only overridden inside e.g. local
+    # experiments with `/distributed` overrides).
     merged_launcher_cfg = _compose_launcher_cfg("encoder_processor_decoder", overrides)
 
     setup_commands: list[str] = merged_launcher_cfg.get("setup", [])  # type: ignore[assignment]
