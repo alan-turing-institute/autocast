@@ -11,7 +11,7 @@ from omegaconf import DictConfig
 from autocast.scripts.execution import resolve_hydra_work_dir
 from autocast.scripts.setup import setup_datamodule, setup_epd_model
 from autocast.scripts.training import run_training
-from autocast.scripts.utils import get_default_config_path
+from autocast.scripts.utils import MODULE_CONFIG_NAMES, get_default_config_path
 
 log = logging.getLogger(__name__)
 
@@ -57,7 +57,7 @@ def run_epd_training(
 @hydra.main(
     version_base=None,
     config_path=get_default_config_path(),
-    config_name="encoder_processor_decoder",
+    config_name=MODULE_CONFIG_NAMES[__spec__.name],
 )
 def main(cfg: DictConfig) -> None:
     """CLI entrypoint for training the encoder-processor-decoder."""

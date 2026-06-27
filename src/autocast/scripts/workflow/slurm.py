@@ -11,8 +11,7 @@ from pathlib import Path
 from hydra import compose, initialize_config_dir
 from omegaconf import OmegaConf
 
-from autocast.scripts.utils import get_default_config_path
-from autocast.scripts.workflow.constants import config_name_for_module
+from autocast.scripts.utils import MODULE_CONFIG_NAMES, get_default_config_path
 from autocast.scripts.workflow.helpers import (
     _split_hydra_cli_args,
     ensure_group_writable_parents,
@@ -298,7 +297,7 @@ def submit_via_sbatch(  # noqa: PLR0915
 ) -> None:
     """Submit *module* as one or more SLURM jobs via ``sbatch``."""
     merged_launcher_cfg, module_overrides = _resolve_launcher_submission_context(
-        config_name_for_module(module), overrides
+        MODULE_CONFIG_NAMES[module], overrides
     )
 
     if dry_run:

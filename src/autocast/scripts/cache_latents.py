@@ -18,7 +18,7 @@ from omegaconf import DictConfig, OmegaConf, open_dict
 from autocast.scripts.data import batch_to_device
 from autocast.scripts.execution import resolve_hydra_work_dir
 from autocast.scripts.setup import setup_autoencoder_components, setup_datamodule
-from autocast.scripts.utils import get_default_config_path
+from autocast.scripts.utils import MODULE_CONFIG_NAMES, get_default_config_path
 from autocast.types.batch import Batch
 
 log = logging.getLogger(__name__)
@@ -216,7 +216,7 @@ def _apply_umask(cfg: DictConfig) -> None:
 @hydra.main(
     version_base=None,
     config_path=get_default_config_path(),
-    config_name="encoder_processor_decoder",
+    config_name=MODULE_CONFIG_NAMES[__spec__.name],
 )
 def main(cfg: DictConfig) -> None:
     """CLI entrypoint for caching latent representations."""

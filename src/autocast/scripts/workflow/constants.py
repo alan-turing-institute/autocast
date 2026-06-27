@@ -13,17 +13,6 @@ BENCHMARK_MODULE = "autocast.scripts.benchmark.encoder_processor_decoder"
 TRAIN_EVAL_MODULE = "autocast.scripts.train_eval.encoder_processor_decoder"
 CACHE_LATENTS_MODULE = "autocast.scripts.cache_latents"
 
-_VALID_CONFIG_NAMES = {"autoencoder", "encoder_processor_decoder", "processor"}
-
-
-def config_name_for_module(module: str) -> str:
-    """Derive the Hydra ``config_name`` for a training/eval module."""
-    stem = module.rsplit(".", 1)[-1]
-    if stem in _VALID_CONFIG_NAMES:
-        return stem
-    return "encoder_processor_decoder"
-
-
 NAMING_DEFAULT_KEYS: set[str] = {
     "processor@model.processor",
     "input_noise_injector@model.input_noise_injector",

@@ -11,7 +11,7 @@ from omegaconf import DictConfig, OmegaConf, open_dict
 from autocast.scripts.eval.encoder_processor_decoder import run_evaluation
 from autocast.scripts.execution import resolve_hydra_work_dir
 from autocast.scripts.train.encoder_processor_decoder import run_epd_training
-from autocast.scripts.utils import get_default_config_path
+from autocast.scripts.utils import MODULE_CONFIG_NAMES, get_default_config_path
 
 log = logging.getLogger(__name__)
 
@@ -77,7 +77,7 @@ def _apply_eval_overrides(cfg: DictConfig) -> DictConfig:
 @hydra.main(
     version_base=None,
     config_path=get_default_config_path(),
-    config_name="encoder_processor_decoder",
+    config_name=MODULE_CONFIG_NAMES[__spec__.name],
 )
 def main(cfg: DictConfig) -> None:
     """Hydra entrypoint for single-job train→eval flow."""
