@@ -110,6 +110,10 @@ def extract_launcher_overrides(
 ) -> tuple[str, dict, list[str]]:
     """Separate ``hydra/launcher`` and ``hydra.launcher.*`` from *overrides*.
 
+    This is necessary because when constructing a SLURM batch script, we don't
+    want to include the launcher-specific overrides inside the commands that
+    are executed (otherwise the job will try to submit another job, and so on.)
+
     Returns ``(launcher_name, launcher_specific_cfg, remaining_overrides)``.
     """
     launcher_name = "slurm"
