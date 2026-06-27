@@ -1,6 +1,6 @@
 # Direct usage of lower-level Hydra scripts
 
-The `autocast` CLI is a convenient wrapper around the lower-level Hydra scripts in `src/autocast/scripts/`.
+The AutoCast CLI is a convenient wrapper around the lower-level Hydra scripts in `src/autocast/scripts/`.
 Advanced users may want to invoke these scripts directly for more control.
 Here are some example invocations:
 

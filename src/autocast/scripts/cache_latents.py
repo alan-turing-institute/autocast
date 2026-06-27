@@ -142,6 +142,7 @@ def cache_latents(
     with open_dict(cfg):
         if "datamodule" in cfg:
             OmegaConf.update(cfg, "datamodule.full_trajectory_mode", True, merge=True)
+            OmegaConf.update(cfg, "datamodule.autoencoder_mode", False, merge=True)
             # Ensure n_steps_input is set to 1 for full_trajectory_mode
             # (the dataset will set n_steps_output = T - n_steps_input)
             OmegaConf.update(cfg, "datamodule.n_steps_input", 1, merge=True)
