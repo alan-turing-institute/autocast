@@ -7,7 +7,7 @@ from omegaconf import DictConfig
 
 from autocast.scripts.execution import resolve_hydra_work_dir
 from autocast.scripts.training import train_autoencoder
-from autocast.scripts.utils import get_default_config_path
+from autocast.scripts.utils import MODULE_CONFIG_NAMES, get_default_config_path
 
 log = logging.getLogger(__name__)
 
@@ -15,7 +15,7 @@ log = logging.getLogger(__name__)
 @hydra.main(
     version_base=None,
     config_path=get_default_config_path(),
-    config_name="autoencoder",
+    config_name=MODULE_CONFIG_NAMES[__spec__.name],
 )
 def main(cfg: DictConfig) -> None:
     """CLI entrypoint for autoencoder training."""

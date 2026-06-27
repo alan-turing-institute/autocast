@@ -99,7 +99,7 @@ def ensure_group_writable_parents(target_dir: Path) -> None:
             desired = mode | stat.S_IWGRP | stat.S_ISGID
             if desired != mode:
                 os.chmod(directory, desired)
-        except PermissionError:
+        except OSError:
             continue
 
 
