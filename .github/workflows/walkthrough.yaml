@@ -1,0 +1,41 @@
+name: walkthrough
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  walkthrough:
+    if: github.event.pull_request.draft == false || github.event_name == 'push'
+    name: Run walkthrough
+    runs-on: ubuntu-latest
+    env:
+      TURN_OFF_MPS_IF_RUNNING_CI: 1
+      MPLBACKEND: Agg
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.11"
+          enable-cache: true
+          activate-environment: true
+
+      - name: Run walkthrough
+        run: bash docs/walkthrough/run_walkthrough.sh
