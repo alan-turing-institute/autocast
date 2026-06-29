@@ -1,0 +1,22 @@
+_target_: autocast.processors.consistency.ConsistencyDistilledProcessor
+# Output field dims are auto-filled from the datamodule by scripts/setup.py.
+n_steps_output: null
+n_channels_out: null
+# Conditioning field dims + spatial shape are set per toy in the experiment
+# config. The teacher is injected at train time (cal_study/distill_student.py),
+# not configured here, so the saved student checkpoint stands alone.
+n_steps_input: 1
+n_channels_in: 1
+spatial_shape: [1, 1]
+global_cond_features: 0
+# Student capacity (set per toy by field size). The predictive spread is not a
+# hyperparameter here: it emerges from imposing self-consistency over the
+# teacher's probability-flow ODE.
+hidden_features: [256, 256]
+# Number of equal time sub-intervals on [0, 1]; the consistency small step is 1/N.
+n_consistency_steps: 18
+# Fourier time-embedding frequencies (sin/cos pairs) added to the network input.
+n_time_frequencies: 6
+# Tilt the step sampling toward the noise boundary (the deployed t=0 slice) so the
+# one-pass draw is well-supervised; 1.0 = uniform, larger concentrates near t=0.
+boundary_bias: 2.0
