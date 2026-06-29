@@ -44,6 +44,11 @@ docs = [
     "sphinx-copybutton>=0.5.2",
     "sphinx-autodoc-typehints>=1.24.0",
 ]
+# Optional zuko flow processor (ZukoFlowProcessor); the package imports
+# without zuko and only errors if such a processor is instantiated.
+flows = [
+    "zuko>=1.6.0",
+]
 
 [project.scripts]
 autocast = "autocast.scripts.workflow:main"

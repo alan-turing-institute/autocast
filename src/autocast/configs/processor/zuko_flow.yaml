@@ -1,0 +1,14 @@
+_target_: autocast.processors.zuko_flow.ZukoFlowProcessor
+# Output field dims are auto-filled from the datamodule by scripts/setup.py.
+n_steps_output: null
+n_channels_out: null
+# Conditioning field dims + spatial shape are set per toy in the experiment
+# config (no backbone is mounted; the flow builds its own conditioner networks).
+n_steps_input: 1
+n_channels_in: 1
+spatial_shape: [1, 1]
+global_cond_features: 0
+# Flow family: coupling (one-forward) = realnvp/nice/ncsf; autoregressive = maf/nsf.
+flow_type: nsf
+transforms: 4
+hidden_features: [128, 128]
