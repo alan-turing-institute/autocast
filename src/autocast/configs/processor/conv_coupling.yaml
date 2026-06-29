@@ -1,0 +1,17 @@
+_target_: autocast.processors.conv_coupling.ConvCouplingFlowProcessor
+# Output field dims are auto-filled from the datamodule by scripts/setup.py.
+n_steps_output: null
+n_channels_out: null
+# Conditioning field dims + spatial shape are set per toy in the experiment
+# config (no backbone is mounted; the flow builds its own conv conditioner).
+# spatial_shape must be 2D (H, W); represent 1D fields as [L, 1].
+n_steps_input: 1
+n_channels_in: 1
+spatial_shape: [1, 1]
+global_cond_features: 0
+# Coupling depth/conditioner width — set per toy (scale with field size /
+# correlation length). The per-channel log-scale bound is learned, not fixed.
+transforms: 8
+hidden_channels: 64
+n_blocks: 2
+kernel_size: 3
