@@ -10,6 +10,8 @@ from autocast.types import EncodedBatch, Tensor
 class FlowMatchingProcessor(Processor):
     """Processor that wraps a flow-matching generative model."""
 
+    _INTEGRATORS = ("euler", "heun")
+
     def __init__(
         self,
         *,
@@ -17,13 +19,21 @@ class FlowMatchingProcessor(Processor):
         flow_ode_steps: int = 1,
         n_steps_output: int = 4,
         n_channels_out: int = 1,
+        integrator: str = "euler",
     ) -> None:
         # Store core hyperparameters and optional prebuilt backbone.
         super().__init__()
+        if integrator not in self._INTEGRATORS:
+            msg = (
+                "FlowMatchingProcessor integrator must be one of "
+                f"{self._INTEGRATORS}; got {integrator!r}."
+            )
+            raise ValueError(msg)
         self.flow_matching_model = backbone
         self.flow_ode_steps = max(flow_ode_steps, 1)
         self.n_steps_output = n_steps_output
         self.n_channels_out = n_channels_out
+        self.integrator = integrator
 
     def flow_field(
         self, z: Tensor, t: Tensor, x: Tensor, global_cond: Tensor | None = None
@@ -52,7 +62,11 @@ class FlowMatchingProcessor(Processor):
     def map(self, x: Tensor, global_cond: Tensor | None) -> Tensor:
         """Map inputs states (x) to output states (z) by integrating the flow ODE.
 
-        Starting from noise, Euler-integrate the learned vector field until t=1.
+        Starting from noise, integrate the learned vector field until t=1 with
+        the configured fixed-step scheme: forward Euler (``integrator="euler"``,
+        one field evaluation per step) or Heun's explicit trapezoid method
+        (``integrator="heun"``, two field evaluations per step, second-order
+        accurate).
 
         Args:
             x: Conditioning inputs of shape (B, T_in, *spatial, C_in).
@@ -70,10 +84,15 @@ class FlowMatchingProcessor(Processor):
         z = torch.randn(z_shape, device=device, dtype=dtype)
         t = torch.zeros(batch_size, device=device, dtype=dtype)
 
-        # Simple fixed-step Euler integration over the flow field.
+        # Fixed-step integration over the flow field.
         dt = torch.tensor(1.0 / self.flow_ode_steps, device=device, dtype=dtype)
         for _ in range(self.flow_ode_steps):
-            z = z + dt * self.flow_field(z, t, x, global_cond)
+            if self.integrator == "heun":
+                k1 = self.flow_field(z, t, x, global_cond)
+                k2 = self.flow_field(z + dt * k1, t + dt, x, global_cond)
+                z = z + dt * 0.5 * (k1 + k2)
+            else:
+                z = z + dt * self.flow_field(z, t, x, global_cond)
             t = t + dt
         return z
 
