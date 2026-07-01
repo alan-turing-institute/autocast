@@ -1,0 +1,50 @@
+# @package _global_
+defaults:
+  - /distributed: ddp_4gpu_slurm
+  - override /datamodule: rayleigh_benard
+  - override /encoder@model.encoder: identity
+  - override /decoder@model.decoder: identity
+  - override /processor@model.processor: flow_matching_vit
+  - override /backbone@model.processor.backbone: vit
+  - override /optimizer: adamw_half
+  - _self_
+
+experiment_name: the_well_rayleigh_benard_fm_vit_large_ambient_identity
+
+# Raw/ambient-space flow matching baseline. Identity encoder/decoder means the
+# processor flow-matching loss is applied directly to normalized RB fields.
+datamodule:
+  batch_size: 256
+
+float32_matmul_precision: high
+
+logging:
+  wandb:
+    enabled: true
+
+output:
+  skip_test: true
+
+optimizer:
+  learning_rate: 1e-4
+  warmup: 0
+
+model:
+  # Identity encoder/decoder keep FM in normalized ambient RB space while
+  # EncoderWithCond still passes log-scaled scalars and boundary conditions.
+  train_in_latent_space: true
+  freeze_encoder_decoder: true
+  processor:
+    flow_ode_steps: 50
+    backbone:
+      # Match the LOLA latent token grid: cached RB latents are 16x4 with
+      # patch_size=1, and raw RB is 512x128, so patch_size=32 gives the same
+      # 16x4 token layout. The 936x16 ViT stays near the ~218M-parameter LOLA
+      # FM latent processor.
+      hid_channels: 936
+      hid_blocks: 16
+      attention_heads: 8
+      patch_size: 32
+      dropout: 0.05
+      ffn_factor: 4
+  val_metrics: []
