@@ -2,6 +2,7 @@
 
 In [the previous page](./autoencoder.md), we showed how to train an autoencoder model and how to use it to encode (cache) data into a latent space.
 We'll now show how to train a processor model, i.e., one which actually does the spatiotemporal forecasting task.
+We first start by training a processor in the latent space, and then show how to train a processor in the original ambient space.
 
 You should have the following directory structure with several subfolders (other irrelevant files are hidden for brevity):
 
