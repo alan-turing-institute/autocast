@@ -27,7 +27,7 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
         hidden_dim: int = 768,
         num_heads: int = 12,
         n_layers: int = 6,
-        patch_size: int = 4,
+        patch_size: int | Sequence[int] = 4,
         temporal_method: str = "attention",
         loss_func: nn.Module | None = None,
         n_noise_channels: int | None = None,
@@ -37,6 +37,11 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
         checkpointing: bool = False,
         n_steps_input: int = 1,
         n_steps_output: int = 1,
+        dropout: float = 0.0,
+        ffn_factor: int = 4,
+        qk_norm: bool = True,
+        rope: bool = False,
+        rpb: bool = True,
     ):
         super().__init__()
         self.n_spatial_dims = len(spatial_resolution)
@@ -91,6 +96,11 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
             temporal_method=temporal_method,
             temporal_attention_heads=num_heads,
             temporal_attention_hidden_dim=hidden_dim // num_heads,
+            dropout=dropout,
+            ffn_factor=ffn_factor,
+            qk_norm=qk_norm,
+            rope=rope,
+            rpb=rpb,
             checkpointing=checkpointing,
             use_precomputed_modulation=True,
         )
