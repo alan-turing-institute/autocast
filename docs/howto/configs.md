@@ -30,7 +30,7 @@ uv run autocast ae ++trainer.max_epochs=5
 ## Making your own configurations
 
 If you find yourself making the same overrides repeatedly, it is probably worth it to make a new YAML configuration that specifies these overrides.
-If they are generally useful for the package, these can stored in `src/autocast/configs/experiments/<myexpt>.yaml` and specified on the command-line with `+experiment=<myexpt>`.
+If they are generally useful for the package, these can be stored in `src/autocast/configs/experiments/<myexpt>.yaml` and specified on the command-line with `+experiment=<myexpt>`.
 
 These largely follow the same pattern as the command-line overrides.
 If you are specifying a *configuration group*, for example you want to override the entire `model` configuration group to point to a different model, you need to specify this in what is called the "defaults list" of your configuration file.
