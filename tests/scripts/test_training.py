@@ -556,6 +556,86 @@ def test_progress_model_checkpoint_delays_monitored_topk(monkeypatch):
     assert len(calls) == 1
 
 
+def _timer_stub(elapsed_s: float, remaining_s: float | None) -> Timer:
+    """A real ``Timer`` with controlled elapsed/remaining for progress tests."""
+    duration = (
+        None if remaining_s is None else timedelta(seconds=elapsed_s + remaining_s)
+    )
+    timer = Timer(duration=duration)
+    timer.time_elapsed = lambda *_: float(elapsed_s)  # type: ignore[method-assign]
+    timer.time_remaining = lambda *_: remaining_s  # type: ignore[method-assign]
+    return timer
+
+
+def _windowed_callback() -> ProgressModelCheckpoint:
+    return ProgressModelCheckpoint(
+        monitor="val_multicoverage",
+        monitor_optional=True,
+        start_after_fraction=0.25,
+        mode="min",
+        save_top_k=1,
+        filename="best-from0p25-{epoch:04d}",
+    )
+
+
+def test_progress_fraction_uses_time_budget_over_placeholder_max_epochs():
+    """Time-limited run: the step fraction stays ~0 because ``max_epochs`` is a
+    large placeholder, but the wall-clock budget is half spent, so windowed
+    checkpoints must see 0.5 and open the ``start_after_fraction=0.25`` window.
+
+    This is the regression guard for the checkpoint-progress bug: before the
+    fix the ``from0p25``/``0p50``/``0p75`` checkpoints never fired on
+    ``max_time``-bounded runs.
+    """
+    callback = _windowed_callback()
+    timer = _timer_stub(elapsed_s=1800.0, remaining_s=1800.0)  # 50% of budget
+    trainer = _trainer_stub(
+        estimated_stepping_batches=10_000_000,  # placeholder max_epochs => ~0 steps
+        global_step=300,
+        callbacks=[timer],
+    )
+
+    assert callback._training_progress_fraction(
+        cast(L.Trainer, trainer)
+    ) == pytest.approx(0.5)
+    assert callback._monitor_ready(cast(L.Trainer, trainer)) is True
+
+
+def test_progress_fraction_falls_back_to_steps_without_timer():
+    callback = _windowed_callback()
+    trainer = _trainer_stub(estimated_stepping_batches=100, global_step=50)
+
+    assert callback._training_progress_fraction(
+        cast(L.Trainer, trainer)
+    ) == pytest.approx(0.5)
+
+
+def test_progress_fraction_takes_max_of_time_and_steps():
+    """Step-bounded run with a large, non-binding ``max_time`` must use the
+    (larger) step fraction, not the tiny wall-clock fraction."""
+    callback = _windowed_callback()
+    timer = _timer_stub(elapsed_s=60.0, remaining_s=43_140.0)  # ~0.14% of 12h
+    trainer = _trainer_stub(
+        estimated_stepping_batches=100, global_step=50, callbacks=[timer]
+    )
+
+    assert callback._training_progress_fraction(
+        cast(L.Trainer, trainer)
+    ) == pytest.approx(0.5)
+
+
+def test_progress_fraction_ignores_durationless_timer():
+    callback = _windowed_callback()
+    timer = _timer_stub(elapsed_s=1800.0, remaining_s=None)  # no duration set
+    trainer = _trainer_stub(
+        estimated_stepping_batches=100, global_step=50, callbacks=[timer]
+    )
+
+    assert callback._training_progress_fraction(
+        cast(L.Trainer, trainer)
+    ) == pytest.approx(0.5)
+
+
 def test_progress_model_checkpoint_skips_optional_missing_monitor(monkeypatch):
     callback = ProgressModelCheckpoint(
         monitor="val_multicoverage",
