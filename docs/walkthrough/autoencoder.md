@@ -1,6 +1,6 @@
 # Training an autoencoder
 
-We'll begin by training an autoencoder on the AD dataset we just simulated. If you want to skip this step and train a processor directly on the data, skip to the bottom of the [next page](./processor.md).
+We'll begin by training an autoencoder on the AD dataset we just simulated. If you want to skip this step and train a processor directly on the data, skip to the bottom of the [next page](./processor.md#processors-in-ambient-space).
 
 AutoCast provides a high-level tool for training autoencoders: `uv run autocast ae <options>`.
 The default options are stored in YAML configuration files, which can be found in the `src/autocast/configs` directory.

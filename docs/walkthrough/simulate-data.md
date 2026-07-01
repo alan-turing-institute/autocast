@@ -34,7 +34,7 @@ parent_folder
 ```
 
 :::{note}
-This is also a good time to install `ffmpeg` if you haven't already: it will let you visualise the generated data as a video.
+This is also a good time to install `ffmpeg` if you haven't already: it will let you visualise the generated data as a video. See the [installation instructions](../installation.md#ffmpeg) for details.
 :::
 
 Then, from the `autosim` directory, run:
