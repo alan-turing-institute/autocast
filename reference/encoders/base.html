@@ -1,0 +1,881 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>autocast.encoders.base &#8212; AutoCast: Spatiotemporal Forecasting</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../../_static/styles/theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+<link href="../../_static/styles/pydata-sphinx-theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
+    <link rel="stylesheet" type="text/css" href="../../_static/styles/sphinx-book-theme.css?v=3c74b3bc" />
+    <link rel="stylesheet" type="text/css" href="../../_static/togglebutton.css?v=9c3e77be" />
+    <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../_static/mystnb.11b39860a7a0cbfd473a3ad8a317855267ff0bd372690045ca344a6b62be495e.css" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sphinx-thebe.css?v=4fa983c6" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sphinx-design.min.css?v=95c83b7e" />
+  
+  <!-- So that users can add custom icons -->
+  <script src="../../_static/scripts/fontawesome.js?digest=8878045cc6db502f8baf"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../../_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf" />
+<link rel="preload" as="script" href="../../_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf" />
+
+    <script src="../../_static/documentation_options.js?v=9eb32ce0"></script>
+    <script src="../../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../../_static/copybutton.js?v=7f8ff830"></script>
+    <script src="../../_static/scripts/sphinx-book-theme.js?v=fab101a9"></script>
+    <script>let toggleHintShow = 'Click to show';</script>
+    <script>let toggleHintHide = 'Click to hide';</script>
+    <script>let toggleOpenOnPrint = 'true';</script>
+    <script src="../../_static/togglebutton.js?v=b8b12719"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script src="../../_static/design-tabs.js?v=f930bc37"></script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script async="async" src="../../_static/sphinx-thebe.js?v=c100c467"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'reference/encoders/base';</script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="autocast.encoders.dc" href="dc.html" />
+    <link rel="prev" title="Encoders" href="index.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="" />
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search this book..."
+         aria-label="Search this book..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../../_static/AC.png" class="logo__image only-light" alt="AutoCast: Spatiotemporal Forecasting - Home"/>
+    <img src="../../_static/AC.png" class="logo__image only-dark pst-js-only" alt="AutoCast: Spatiotemporal Forecasting - Home"/>
+  
+  
+</a></div>
+        <div class="sidebar-primary-item">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button></div>
+        <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item navbar-nav active">
+        
+        <ul class="nav bd-sidenav bd-sidenav__home-link">
+            <li class="toctree-l1">
+                <a class="reference internal" href="../../index.html">
+                    Welcome to AutoCast
+                </a>
+            </li>
+        </ul>
+        <ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../walkthrough/index.html">Walkthrough</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../walkthrough/simulate-data.html">Simulating data</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../walkthrough/autoencoder.html">Training an autoencoder</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../walkthrough/processor.html">Training a processor</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../walkthrough/epd.html">Full encoder-processor-decoder</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../walkthrough/ensembles.html">Training model ensembles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../walkthrough/eval.html">Evaluating a trained model</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../howto/index.html">How-tos</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../howto/output-paths.html">Output paths</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../howto/slurm.html">Running AutoCast on SLURM</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../howto/wandb.html">Weights &amp; Biases logging</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../howto/resume.html">Resuming from a checkpoint</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../howto/configs.html">Configurations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../howto/other-commands.html">Direct usage of lower-level Hydra scripts</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="../../contributing.html">Contributing</a></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="../index.html">API Reference</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2 has-children"><a class="reference internal" href="../models/index.html">Models</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../models/encoder_decoder.html">autocast.models.encoder_decoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../models/encoder_processor_decoder.html">autocast.models.encoder_processor_decoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../models/autoencoder.html">autocast.models.autoencoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../models/variational_autoencoder.html">autocast.models.variational_autoencoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../models/processor.html">autocast.models.processor</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../processors/index.html">Processors</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../processors/base.html">autocast.processors.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../processors/unet.html">autocast.processors.unet</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../processors/swin_vit.html">autocast.processors.swin_vit</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../processors/vit.html">autocast.processors.vit</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../processors/flow_matching.html">autocast.processors.flow_matching</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../processors/diffusion.html">autocast.processors.diffusion</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../processors/noise.html">autocast.processors.noise</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 current active has-children"><a class="reference internal" href="index.html">Encoders</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l3 current active"><a class="current reference internal" href="#">autocast.encoders.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="dc.html">autocast.encoders.dc</a></li>
+<li class="toctree-l3"><a class="reference internal" href="unet.html">autocast.encoders.unet</a></li>
+<li class="toctree-l3"><a class="reference internal" href="identity.html">autocast.encoders.identity</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../decoders/index.html">Decoders</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../decoders/base.html">autocast.decoders.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../decoders/dc.html">autocast.decoders.dc</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../decoders/identity.html">autocast.decoders.identity</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../data/index.html">Data</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../data/datamodule.html">autocast.data.datamodule</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../data/dataset.html">autocast.data.dataset</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../data/encoded_dataset.html">autocast.data.encoded_dataset</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../data/metadata.html">autocast.data.metadata</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../metrics/index.html">Metrics</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../metrics/base.html">autocast.metrics.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../metrics/deterministic.html">autocast.metrics.deterministic</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../metrics/ensemble.html">autocast.metrics.ensemble</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../metrics/coverage.html">autocast.metrics.coverage</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../losses/index.html">Losses</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../losses/ensemble.html">autocast.losses.ensemble</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../types/index.html">Types</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../types/types.html">autocast.types.types</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../types/batch.html">autocast.types.batch</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../nn/index.html">Neural Network Utilities</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../nn/residual.html">autocast.nn.residual</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../nn/spatial_attention.html">autocast.nn.spatial_attention</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../utils/index.html">Utilities</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../utils/optimizer.html">autocast.utils.optimizer</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../utils/plots.html">autocast.utils.plots</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../benchmarking/index.html">Benchmarking</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../benchmarking/inference.html">autocast.benchmarking.inference</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../logging/index.html">Logging</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../logging/wandb.html">autocast.logging.wandb</a></li>
+</ul>
+</details></li>
+</ul>
+</details></li>
+</ul>
+
+    </div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+      <div class="sidebar-primary-item">
+<div id="ethical-ad-placement"
+      class="flat"
+      data-ea-publisher="readthedocs"
+      data-ea-type="readthedocs-sidebar"
+      data-ea-manual="true">
+</div></div>
+  </div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+
+<div class="sbt-scroll-pixel-helper"></div>
+
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item"><button class="sidebar-toggle primary-toggle btn btn-sm" title="Toggle primary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <span class="fa-solid fa-bars"></span>
+</button></div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+
+<div class="article-header-buttons">
+
+
+
+
+
+<div class="dropdown dropdown-source-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Source repositories">
+    <i class="fab fa-github"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="https://github.com/alan-turing-institute/autocast" target="_blank"
+   class="btn btn-sm btn-source-repository-button dropdown-item"
+   title="Source repository"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fab fa-github"></i>
+  </span>
+<span class="btn__text-container">Repository</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/alan-turing-institute/autocast/issues/new?title=Issue%20on%20page%20%2Freference/encoders/base.html&body=Your%20issue%20content%20here." target="_blank"
+   class="btn btn-sm btn-source-issues-button dropdown-item"
+   title="Open an issue"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-lightbulb"></i>
+  </span>
+<span class="btn__text-container">Open issue</span>
+</a>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+
+
+<div class="dropdown dropdown-download-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Download this page">
+    <i class="fas fa-download"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="../../_sources/reference/encoders/base.rst" target="_blank"
+   class="btn btn-sm btn-download-source-button dropdown-item"
+   title="Download source file"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file"></i>
+  </span>
+<span class="btn__text-container">.rst</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li>
+<button onclick="window.print()"
+  class="btn btn-sm btn-download-pdf-button dropdown-item"
+  title="Print to PDF"
+  data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file-pdf"></i>
+  </span>
+<span class="btn__text-container">.pdf</span>
+</button>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+<button onclick="toggleFullScreen()"
+  class="btn btn-sm btn-fullscreen-button pst-navbar-icon"
+  title="Fullscreen mode"
+  data-bs-placement="bottom" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+
+
+<button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button pst-js-only" aria-label="Color mode" data-bs-title="Color mode"  data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <i class="theme-switch fa-solid fa-sun                fa-lg" data-mode="light" title="Light"></i>
+  <i class="theme-switch fa-solid fa-moon               fa-lg" data-mode="dark"  title="Dark"></i>
+  <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"  title="System Settings"></i>
+</button>
+
+
+<button class="btn btn-sm pst-navbar-icon search-button search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+</button>
+<button class="sidebar-toggle secondary-toggle btn btn-sm pst-navbar-icon" title="Toggle secondary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <span class="fa-solid fa-list"></span>
+</button>
+</div></div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="jb-print-docs-body" class="onlyprint">
+    <h1>autocast.encoders.base</h1>
+    <!-- Table of contents -->
+    <div id="print-main-content">
+        <div id="jb-print-toc">
+            
+            <div>
+                <h2> Contents </h2>
+            </div>
+            <nav aria-label="Page">
+                <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.encoders.base.GenericEncoder"><code class="docutils literal notranslate"><span class="pre">GenericEncoder</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.encoders.base.GenericEncoder.chunk_size"><code class="docutils literal notranslate"><span class="pre">GenericEncoder.chunk_size</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.encoders.base.GenericEncoder.preprocess"><code class="docutils literal notranslate"><span class="pre">GenericEncoder.preprocess()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.encoders.base.GenericEncoder.encode"><code class="docutils literal notranslate"><span class="pre">GenericEncoder.encode()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.encoders.base.GenericEncoder.encode_batch"><code class="docutils literal notranslate"><span class="pre">GenericEncoder.encode_batch()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.encoders.base.GenericEncoder.forward"><code class="docutils literal notranslate"><span class="pre">GenericEncoder.forward()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.encoders.base.Encoder"><code class="docutils literal notranslate"><span class="pre">Encoder</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.encoders.base.Encoder.encoder_model"><code class="docutils literal notranslate"><span class="pre">Encoder.encoder_model</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.encoders.base.Encoder.channel_axis"><code class="docutils literal notranslate"><span class="pre">Encoder.channel_axis</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.encoders.base.Encoder.latent_channels"><code class="docutils literal notranslate"><span class="pre">Encoder.latent_channels</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.encoders.base.Encoder.outputs_time_channel_concat"><code class="docutils literal notranslate"><span class="pre">Encoder.outputs_time_channel_concat</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.encoders.base.Encoder.encode"><code class="docutils literal notranslate"><span class="pre">Encoder.encode()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.encoders.base.EncoderWithCond"><code class="docutils literal notranslate"><span class="pre">EncoderWithCond</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.encoders.base.EncoderWithCond.encode_cond"><code class="docutils literal notranslate"><span class="pre">EncoderWithCond.encode_cond()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.encoders.base.EncoderWithCond.encode_with_cond"><code class="docutils literal notranslate"><span class="pre">EncoderWithCond.encode_with_cond()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.encoders.base.EncoderWithCond.encode_batch"><code class="docutils literal notranslate"><span class="pre">EncoderWithCond.encode_batch()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.encoders.base.EncoderWithCond.forward"><code class="docutils literal notranslate"><span class="pre">EncoderWithCond.forward()</span></code></a></li>
+</ul>
+</li>
+</ul>
+            </nav>
+        </div>
+    </div>
+</div>
+
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section id="module-autocast.encoders.base">
+<span id="autocast-encoders-base"></span><h1>autocast.encoders.base<a class="headerlink" href="#module-autocast.encoders.base" title="Link to this heading">#</a></h1>
+<dl class="py class">
+<dt class="sig sig-object py" id="autocast.encoders.base.GenericEncoder">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">GenericEncoder</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/encoders/base.html#GenericEncoder"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.encoders.base.GenericEncoder" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference external" href="https://docs.pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module" title="(in PyTorch v2.12)"><code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code></a>, <a class="reference external" href="https://docs.python.org/3/library/abc.html#abc.ABC" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">ABC</span></code></a>, <a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Generic" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">Generic</span></code></a>[<code class="xref py py-obj docutils literal notranslate"><span class="pre">BatchT</span></code>, <code class="xref py py-obj docutils literal notranslate"><span class="pre">BatchTEncoded</span></code>]</p>
+<p>Base encoder interface.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>args</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><em>Any</em></a>)</p></li>
+<li><p><strong>kwargs</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><em>Any</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autocast.encoders.base.GenericEncoder.chunk_size">
+<span class="sig-name descname"><span class="pre">chunk_size</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#autocast.encoders.base.GenericEncoder.chunk_size" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="autocast.encoders.base.GenericEncoder.preprocess">
+<span class="sig-name descname"><span class="pre">preprocess</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">batch</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/encoders/base.html#GenericEncoder.preprocess"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.encoders.base.GenericEncoder.preprocess" title="Link to this definition">#</a></dt>
+<dd><p>Optionally transform a batch before encoding.</p>
+<p>Subclasses can override to implement pre-encoding steps that still
+return a fully-populated <cite>Batch</cite> instance. Default is identity.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>batch</strong> (<em>BatchT</em>)</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><em>BatchT</em></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="autocast.encoders.base.GenericEncoder.encode">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">encode</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">batch</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/encoders/base.html#GenericEncoder.encode"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.encoders.base.GenericEncoder.encode" title="Link to this definition">#</a></dt>
+<dd><p>Encode the input tensor into the latent space.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>batch</strong> (<em>BatchT</em>) – Input batch to be encoded.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>Encoded tensor in the latent space with shape (B, <a href="#id1"><span class="problematic" id="id2">*</span></a>, C_latent) or a tuple of</dt><dd><p>(encoded tensor, optional conditioning tensor of shape (B, D)).</p>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><em>Float</em>[Tensor, ‘batch *optional_dims channel’] | <a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)">tuple</a>[<em>Float</em>[Tensor, ‘batch *optional_dims channel’], <a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a> | None]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="autocast.encoders.base.GenericEncoder.encode_batch">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">encode_batch</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">batch</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">encoded_info</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/encoders/base.html#GenericEncoder.encode_batch"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.encoders.base.GenericEncoder.encode_batch" title="Link to this definition">#</a></dt>
+<dd><p>Encode a full BatchT into a BatchTEncoded.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>batch</strong> (<em>BatchT</em>) – Input batch to be encoded.</p></li>
+<li><p><strong>encoded_info</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><em>dict</em></a><em> | </em><em>None</em>) – Optional dictionary of additional encoded
+information to include.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Encoded batch containing encoded inputs and original output fields.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><em>BatchTEncoded</em></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="autocast.encoders.base.GenericEncoder.forward">
+<span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">batch</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/encoders/base.html#GenericEncoder.forward"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.encoders.base.GenericEncoder.forward" title="Link to this definition">#</a></dt>
+<dd><p>Define the computation performed at every call.</p>
+<p>Should be overridden by all subclasses.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Although the recipe for forward pass needs to be defined within
+this function, one should call the <code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code> instance afterwards
+instead of this since the former takes care of running the
+registered hooks while the latter silently ignores them.</p>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>batch</strong> (<em>BatchT</em>)</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><em>Float</em>[Tensor, ‘batch *optional_dims channel’] | <a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)">tuple</a>[<em>Float</em>[Tensor, ‘batch *optional_dims channel’], <a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a> | None]</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="autocast.encoders.base.Encoder">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">Encoder</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/encoders/base.html#Encoder"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.encoders.base.Encoder" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">_Encoder</span></code></p>
+<p>Base encoder.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>args</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><em>Any</em></a>)</p></li>
+<li><p><strong>kwargs</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><em>Any</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autocast.encoders.base.Encoder.encoder_model">
+<span class="sig-name descname"><span class="pre">encoder_model</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module" title="(in PyTorch v2.12)"><span class="pre">Module</span></a></em><a class="headerlink" href="#autocast.encoders.base.Encoder.encoder_model" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autocast.encoders.base.Encoder.channel_axis">
+<span class="sig-name descname"><span class="pre">channel_axis</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></em><a class="headerlink" href="#autocast.encoders.base.Encoder.channel_axis" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autocast.encoders.base.Encoder.latent_channels">
+<span class="sig-name descname"><span class="pre">latent_channels</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></em><a class="headerlink" href="#autocast.encoders.base.Encoder.latent_channels" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autocast.encoders.base.Encoder.outputs_time_channel_concat">
+<span class="sig-name descname"><span class="pre">outputs_time_channel_concat</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">False</span></em><a class="headerlink" href="#autocast.encoders.base.Encoder.outputs_time_channel_concat" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="autocast.encoders.base.Encoder.encode">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">encode</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">batch</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/encoders/base.html#Encoder.encode"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.encoders.base.Encoder.encode" title="Link to this definition">#</a></dt>
+<dd><p>Encode the input tensor into the latent space.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>batch</strong> (<a class="reference internal" href="../types/batch.html#autocast.types.batch.Batch" title="autocast.types.batch.Batch"><em>Batch</em></a>) – Input batch to be encoded.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Encoded tensor in the latent space with shape (B, <a href="#id3"><span class="problematic" id="id4">*</span></a>, C_latent).</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><em>Float</em>[Tensor, ‘batch *optional_dims channel’]</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="autocast.encoders.base.EncoderWithCond">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">EncoderWithCond</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/encoders/base.html#EncoderWithCond"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.encoders.base.EncoderWithCond" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#autocast.encoders.base.Encoder" title="autocast.encoders.base.Encoder"><code class="xref py py-class docutils literal notranslate"><span class="pre">Encoder</span></code></a></p>
+<p>Encoder that returns encoded tensor and optional conditioning.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>args</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><em>Any</em></a>)</p></li>
+<li><p><strong>kwargs</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><em>Any</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="autocast.encoders.base.EncoderWithCond.encode_cond">
+<span class="sig-name descname"><span class="pre">encode_cond</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">batch</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/encoders/base.html#EncoderWithCond.encode_cond"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.encoders.base.EncoderWithCond.encode_cond" title="Link to this definition">#</a></dt>
+<dd><p>Encode global conditioning tensor from the batch.</p>
+<p>Default implementation flattens constant scalars and boundary conditions.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>batch</strong> (<a class="reference internal" href="../types/batch.html#autocast.types.batch.Batch" title="autocast.types.batch.Batch"><em>Batch</em></a>)</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a> | None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="autocast.encoders.base.EncoderWithCond.encode_with_cond">
+<span class="sig-name descname"><span class="pre">encode_with_cond</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">batch</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/encoders/base.html#EncoderWithCond.encode_with_cond"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.encoders.base.EncoderWithCond.encode_with_cond" title="Link to this definition">#</a></dt>
+<dd><p>Encode the input tensor into the latent space.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>batch</strong> (<a class="reference internal" href="../types/batch.html#autocast.types.batch.Batch" title="autocast.types.batch.Batch"><em>Batch</em></a>) – Input batch to be encoded.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>Encoded tensor in the latent space with shape (B, <a href="#id5"><span class="problematic" id="id6">*</span></a>, C_latent) with optional</dt><dd><p>conditioning tensor of shape (B, D).</p>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)">tuple</a>[<em>Float</em>[Tensor, ‘batch *optional_dims channel’], <a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a> | None]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="autocast.encoders.base.EncoderWithCond.encode_batch">
+<span class="sig-name descname"><span class="pre">encode_batch</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">batch</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">encoded_info</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/encoders/base.html#EncoderWithCond.encode_batch"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.encoders.base.EncoderWithCond.encode_batch" title="Link to this definition">#</a></dt>
+<dd><p>Encode a full Batch into an EncodedBatch with conditioning.</p>
+<p>Overrides base implementation to ensure encode_with_cond is used to capture
+any provided global conditioning variables.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>batch</strong> (<a class="reference internal" href="../types/batch.html#autocast.types.batch.Batch" title="autocast.types.batch.Batch"><em>Batch</em></a>)</p></li>
+<li><p><strong>encoded_info</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><em>dict</em></a><em> | </em><em>None</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="../types/batch.html#autocast.types.batch.EncodedBatch" title="autocast.types.batch.EncodedBatch"><em>EncodedBatch</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="autocast.encoders.base.EncoderWithCond.forward">
+<span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">batch</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/encoders/base.html#EncoderWithCond.forward"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.encoders.base.EncoderWithCond.forward" title="Link to this definition">#</a></dt>
+<dd><p>Define the computation performed at every call.</p>
+<p>Should be overridden by all subclasses.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Although the recipe for forward pass needs to be defined within
+this function, one should call the <code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code> instance afterwards
+instead of this since the former takes care of running the
+registered hooks while the latter silently ignores them.</p>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>batch</strong> (<a class="reference internal" href="../types/batch.html#autocast.types.batch.Batch" title="autocast.types.batch.Batch"><em>Batch</em></a>)</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><em>Float</em>[Tensor, ‘batch *optional_dims channel’] | <a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)">tuple</a>[<em>Float</em>[Tensor, ‘batch *optional_dims channel’], <a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.12)"><em>Tensor</em></a> | None]</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+
+    <script type="text/x-thebe-config">
+    {
+        requestKernel: true,
+        binderOptions: {
+            repo: "binder-examples/jupyter-stacks-datascience",
+            ref: "master",
+        },
+        codeMirrorConfig: {
+            theme: "abcdef",
+            mode: "python"
+        },
+        kernelOptions: {
+            name: "python3",
+            path: "./reference/encoders"
+        },
+        predefinedOutput: true
+    }
+    </script>
+    <script>kernelName = 'python3'</script>
+
+                </article>
+              
+
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="index.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Encoders</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="dc.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">autocast.encoders.dc</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item"><div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> Contents
+  </div>
+  <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.encoders.base.GenericEncoder"><code class="docutils literal notranslate"><span class="pre">GenericEncoder</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.encoders.base.GenericEncoder.chunk_size"><code class="docutils literal notranslate"><span class="pre">GenericEncoder.chunk_size</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.encoders.base.GenericEncoder.preprocess"><code class="docutils literal notranslate"><span class="pre">GenericEncoder.preprocess()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.encoders.base.GenericEncoder.encode"><code class="docutils literal notranslate"><span class="pre">GenericEncoder.encode()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.encoders.base.GenericEncoder.encode_batch"><code class="docutils literal notranslate"><span class="pre">GenericEncoder.encode_batch()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.encoders.base.GenericEncoder.forward"><code class="docutils literal notranslate"><span class="pre">GenericEncoder.forward()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.encoders.base.Encoder"><code class="docutils literal notranslate"><span class="pre">Encoder</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.encoders.base.Encoder.encoder_model"><code class="docutils literal notranslate"><span class="pre">Encoder.encoder_model</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.encoders.base.Encoder.channel_axis"><code class="docutils literal notranslate"><span class="pre">Encoder.channel_axis</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.encoders.base.Encoder.latent_channels"><code class="docutils literal notranslate"><span class="pre">Encoder.latent_channels</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.encoders.base.Encoder.outputs_time_channel_concat"><code class="docutils literal notranslate"><span class="pre">Encoder.outputs_time_channel_concat</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.encoders.base.Encoder.encode"><code class="docutils literal notranslate"><span class="pre">Encoder.encode()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.encoders.base.EncoderWithCond"><code class="docutils literal notranslate"><span class="pre">EncoderWithCond</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.encoders.base.EncoderWithCond.encode_cond"><code class="docutils literal notranslate"><span class="pre">EncoderWithCond.encode_cond()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.encoders.base.EncoderWithCond.encode_with_cond"><code class="docutils literal notranslate"><span class="pre">EncoderWithCond.encode_with_cond()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.encoders.base.EncoderWithCond.encode_batch"><code class="docutils literal notranslate"><span class="pre">EncoderWithCond.encode_batch()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.encoders.base.EncoderWithCond.forward"><code class="docutils literal notranslate"><span class="pre">EncoderWithCond.forward()</span></code></a></li>
+</ul>
+</li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+<div class="bd-footer-content__inner container">
+  
+  <div class="footer-item">
+    
+<p class="component-author">
+By AI for Physical Systems Team at The Alan Turing Institute
+</p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+  <div class="footer-item">
+    
+<div class="extra_footer">
+  Copyright &copy; 2026
+
+</div>
+  </div>
+  
+</div>
+          </footer>
+        
+
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="../../_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf"></script>
+<script defer src="../../_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf"></script>
+
+  <footer class="bd-footer">
+  </footer>
+  </body>
+</html>

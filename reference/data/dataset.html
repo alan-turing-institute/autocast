@@ -1,0 +1,778 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>autocast.data.dataset &#8212; AutoCast: Spatiotemporal Forecasting</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../../_static/styles/theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+<link href="../../_static/styles/pydata-sphinx-theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
+    <link rel="stylesheet" type="text/css" href="../../_static/styles/sphinx-book-theme.css?v=3c74b3bc" />
+    <link rel="stylesheet" type="text/css" href="../../_static/togglebutton.css?v=9c3e77be" />
+    <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../_static/mystnb.11b39860a7a0cbfd473a3ad8a317855267ff0bd372690045ca344a6b62be495e.css" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sphinx-thebe.css?v=4fa983c6" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sphinx-design.min.css?v=95c83b7e" />
+  
+  <!-- So that users can add custom icons -->
+  <script src="../../_static/scripts/fontawesome.js?digest=8878045cc6db502f8baf"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../../_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf" />
+<link rel="preload" as="script" href="../../_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf" />
+
+    <script src="../../_static/documentation_options.js?v=9eb32ce0"></script>
+    <script src="../../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../../_static/copybutton.js?v=7f8ff830"></script>
+    <script src="../../_static/scripts/sphinx-book-theme.js?v=fab101a9"></script>
+    <script>let toggleHintShow = 'Click to show';</script>
+    <script>let toggleHintHide = 'Click to hide';</script>
+    <script>let toggleOpenOnPrint = 'true';</script>
+    <script src="../../_static/togglebutton.js?v=b8b12719"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script src="../../_static/design-tabs.js?v=f930bc37"></script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script async="async" src="../../_static/sphinx-thebe.js?v=c100c467"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'reference/data/dataset';</script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="autocast.data.encoded_dataset" href="encoded_dataset.html" />
+    <link rel="prev" title="autocast.data.datamodule" href="datamodule.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="" />
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search this book..."
+         aria-label="Search this book..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../../_static/AC.png" class="logo__image only-light" alt="AutoCast: Spatiotemporal Forecasting - Home"/>
+    <img src="../../_static/AC.png" class="logo__image only-dark pst-js-only" alt="AutoCast: Spatiotemporal Forecasting - Home"/>
+  
+  
+</a></div>
+        <div class="sidebar-primary-item">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button></div>
+        <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item navbar-nav active">
+        
+        <ul class="nav bd-sidenav bd-sidenav__home-link">
+            <li class="toctree-l1">
+                <a class="reference internal" href="../../index.html">
+                    Welcome to AutoCast
+                </a>
+            </li>
+        </ul>
+        <ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../walkthrough/index.html">Walkthrough</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../walkthrough/simulate-data.html">Simulating data</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../walkthrough/autoencoder.html">Training an autoencoder</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../walkthrough/processor.html">Training a processor</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../walkthrough/epd.html">Full encoder-processor-decoder</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../walkthrough/ensembles.html">Training model ensembles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../walkthrough/eval.html">Evaluating a trained model</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../howto/index.html">How-tos</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../howto/output-paths.html">Output paths</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../howto/slurm.html">Running AutoCast on SLURM</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../howto/wandb.html">Weights &amp; Biases logging</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../howto/resume.html">Resuming from a checkpoint</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../howto/configs.html">Configurations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../howto/other-commands.html">Direct usage of lower-level Hydra scripts</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="../../contributing.html">Contributing</a></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="../index.html">API Reference</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2 has-children"><a class="reference internal" href="../models/index.html">Models</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../models/encoder_decoder.html">autocast.models.encoder_decoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../models/encoder_processor_decoder.html">autocast.models.encoder_processor_decoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../models/autoencoder.html">autocast.models.autoencoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../models/variational_autoencoder.html">autocast.models.variational_autoencoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../models/processor.html">autocast.models.processor</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../processors/index.html">Processors</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../processors/base.html">autocast.processors.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../processors/unet.html">autocast.processors.unet</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../processors/swin_vit.html">autocast.processors.swin_vit</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../processors/vit.html">autocast.processors.vit</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../processors/flow_matching.html">autocast.processors.flow_matching</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../processors/diffusion.html">autocast.processors.diffusion</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../processors/noise.html">autocast.processors.noise</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../encoders/index.html">Encoders</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../encoders/base.html">autocast.encoders.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../encoders/dc.html">autocast.encoders.dc</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../encoders/unet.html">autocast.encoders.unet</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../encoders/identity.html">autocast.encoders.identity</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../decoders/index.html">Decoders</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../decoders/base.html">autocast.decoders.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../decoders/dc.html">autocast.decoders.dc</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../decoders/identity.html">autocast.decoders.identity</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 current active has-children"><a class="reference internal" href="index.html">Data</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="datamodule.html">autocast.data.datamodule</a></li>
+<li class="toctree-l3 current active"><a class="current reference internal" href="#">autocast.data.dataset</a></li>
+<li class="toctree-l3"><a class="reference internal" href="encoded_dataset.html">autocast.data.encoded_dataset</a></li>
+<li class="toctree-l3"><a class="reference internal" href="metadata.html">autocast.data.metadata</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../metrics/index.html">Metrics</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../metrics/base.html">autocast.metrics.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../metrics/deterministic.html">autocast.metrics.deterministic</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../metrics/ensemble.html">autocast.metrics.ensemble</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../metrics/coverage.html">autocast.metrics.coverage</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../losses/index.html">Losses</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../losses/ensemble.html">autocast.losses.ensemble</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../types/index.html">Types</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../types/types.html">autocast.types.types</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../types/batch.html">autocast.types.batch</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../nn/index.html">Neural Network Utilities</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../nn/residual.html">autocast.nn.residual</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../nn/spatial_attention.html">autocast.nn.spatial_attention</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../utils/index.html">Utilities</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../utils/optimizer.html">autocast.utils.optimizer</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../utils/plots.html">autocast.utils.plots</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../benchmarking/index.html">Benchmarking</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../benchmarking/inference.html">autocast.benchmarking.inference</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../logging/index.html">Logging</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../logging/wandb.html">autocast.logging.wandb</a></li>
+</ul>
+</details></li>
+</ul>
+</details></li>
+</ul>
+
+    </div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+      <div class="sidebar-primary-item">
+<div id="ethical-ad-placement"
+      class="flat"
+      data-ea-publisher="readthedocs"
+      data-ea-type="readthedocs-sidebar"
+      data-ea-manual="true">
+</div></div>
+  </div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+
+<div class="sbt-scroll-pixel-helper"></div>
+
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item"><button class="sidebar-toggle primary-toggle btn btn-sm" title="Toggle primary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <span class="fa-solid fa-bars"></span>
+</button></div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+
+<div class="article-header-buttons">
+
+
+
+
+
+<div class="dropdown dropdown-source-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Source repositories">
+    <i class="fab fa-github"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="https://github.com/alan-turing-institute/autocast" target="_blank"
+   class="btn btn-sm btn-source-repository-button dropdown-item"
+   title="Source repository"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fab fa-github"></i>
+  </span>
+<span class="btn__text-container">Repository</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/alan-turing-institute/autocast/issues/new?title=Issue%20on%20page%20%2Freference/data/dataset.html&body=Your%20issue%20content%20here." target="_blank"
+   class="btn btn-sm btn-source-issues-button dropdown-item"
+   title="Open an issue"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-lightbulb"></i>
+  </span>
+<span class="btn__text-container">Open issue</span>
+</a>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+
+
+<div class="dropdown dropdown-download-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Download this page">
+    <i class="fas fa-download"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="../../_sources/reference/data/dataset.rst" target="_blank"
+   class="btn btn-sm btn-download-source-button dropdown-item"
+   title="Download source file"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file"></i>
+  </span>
+<span class="btn__text-container">.rst</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li>
+<button onclick="window.print()"
+  class="btn btn-sm btn-download-pdf-button dropdown-item"
+  title="Print to PDF"
+  data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file-pdf"></i>
+  </span>
+<span class="btn__text-container">.pdf</span>
+</button>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+<button onclick="toggleFullScreen()"
+  class="btn btn-sm btn-fullscreen-button pst-navbar-icon"
+  title="Fullscreen mode"
+  data-bs-placement="bottom" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+
+
+<button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button pst-js-only" aria-label="Color mode" data-bs-title="Color mode"  data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <i class="theme-switch fa-solid fa-sun                fa-lg" data-mode="light" title="Light"></i>
+  <i class="theme-switch fa-solid fa-moon               fa-lg" data-mode="dark"  title="Dark"></i>
+  <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"  title="System Settings"></i>
+</button>
+
+
+<button class="btn btn-sm pst-navbar-icon search-button search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+</button>
+<button class="sidebar-toggle secondary-toggle btn btn-sm pst-navbar-icon" title="Toggle secondary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <span class="fa-solid fa-list"></span>
+</button>
+</div></div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="jb-print-docs-body" class="onlyprint">
+    <h1>autocast.data.dataset</h1>
+    <!-- Table of contents -->
+    <div id="print-main-content">
+        <div id="jb-print-toc">
+            
+            <div>
+                <h2> Contents </h2>
+            </div>
+            <nav aria-label="Page">
+                <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.data.dataset.BatchMixin"><code class="docutils literal notranslate"><span class="pre">BatchMixin</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.data.dataset.BatchMixin.to_sample"><code class="docutils literal notranslate"><span class="pre">BatchMixin.to_sample()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.data.dataset.SpatioTemporalDataset"><code class="docutils literal notranslate"><span class="pre">SpatioTemporalDataset</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.data.dataset.SpatioTemporalDataset.read_data"><code class="docutils literal notranslate"><span class="pre">SpatioTemporalDataset.read_data()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.data.dataset.SpatioTemporalDataset.parse_data"><code class="docutils literal notranslate"><span class="pre">SpatioTemporalDataset.parse_data()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.data.dataset.SpatioTemporalDataset.to_preloaded_data"><code class="docutils literal notranslate"><span class="pre">SpatioTemporalDataset.to_preloaded_data()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.data.dataset.SpatioTemporalDataset.set_up_normalization"><code class="docutils literal notranslate"><span class="pre">SpatioTemporalDataset.set_up_normalization()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.data.dataset.ReactionDiffusionDataset"><code class="docutils literal notranslate"><span class="pre">ReactionDiffusionDataset</span></code></a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.data.dataset.AdvectionDiffusionDataset"><code class="docutils literal notranslate"><span class="pre">AdvectionDiffusionDataset</span></code></a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.data.dataset.BOUTDataset"><code class="docutils literal notranslate"><span class="pre">BOUTDataset</span></code></a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.data.dataset.TheWell"><code class="docutils literal notranslate"><span class="pre">TheWell</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.data.dataset.TheWell.well_dataset"><code class="docutils literal notranslate"><span class="pre">TheWell.well_dataset</span></code></a></li>
+</ul>
+</li>
+</ul>
+            </nav>
+        </div>
+    </div>
+</div>
+
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section id="module-autocast.data.dataset">
+<span id="autocast-data-dataset"></span><h1>autocast.data.dataset<a class="headerlink" href="#module-autocast.data.dataset" title="Link to this heading">#</a></h1>
+<dl class="py class">
+<dt class="sig sig-object py" id="autocast.data.dataset.BatchMixin">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">BatchMixin</span></span><a class="reference internal" href="../../_modules/autocast/data/dataset.html#BatchMixin"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.data.dataset.BatchMixin" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/library/functions.html#object" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
+<p>A mixin class to provide Batch conversion functionality.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="autocast.data.dataset.BatchMixin.to_sample">
+<em class="property"><span class="pre">static</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">to_sample</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/data/dataset.html#BatchMixin.to_sample"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.data.dataset.BatchMixin.to_sample" title="Link to this definition">#</a></dt>
+<dd><p>Convert a dictionary of tensors to a Sample object.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>data</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><em>dict</em></a>)</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="../types/batch.html#autocast.types.batch.Sample" title="autocast.types.batch.Sample"><em>Sample</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="autocast.data.dataset.SpatioTemporalDataset">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">SpatioTemporalDataset</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data_path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data=None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_steps_input=1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_steps_output=1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stride=1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">channel_idxs=None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">full_trajectory_mode=False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">autoencoder_mode=False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dtype=torch.float32</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">verbose=False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">use_normalization=False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">normalization_type=&lt;class</span> <span class="pre">'the_well.data.normalization.ZScoreNormalization'&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">normalization_path=None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">normalization_stats=None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/data/dataset.html#SpatioTemporalDataset"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.data.dataset.SpatioTemporalDataset" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference external" href="https://docs.pytorch.org/docs/stable/data.html#torch.utils.data.Dataset" title="(in PyTorch v2.12)"><code class="xref py py-class docutils literal notranslate"><span class="pre">Dataset</span></code></a>, <a class="reference internal" href="#autocast.data.dataset.BatchMixin" title="autocast.data.dataset.BatchMixin"><code class="xref py py-class docutils literal notranslate"><span class="pre">BatchMixin</span></code></a></p>
+<p>A class for spatio-temporal datasets.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data_path</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em> | </em><em>None</em>)</p></li>
+<li><p><strong>data</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><em>dict</em></a><em> | </em><em>None</em>)</p></li>
+<li><p><strong>n_steps_input</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>n_steps_output</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>stride</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>channel_idxs</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><em>tuple</em></a><em>[</em><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em>, </em><em>...</em><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>full_trajectory_mode</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+<li><p><strong>autoencoder_mode</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+<li><p><strong>dtype</strong> (<a class="reference external" href="https://docs.pytorch.org/docs/stable/tensor_attributes.html#torch.dtype" title="(in PyTorch v2.12)"><em>dtype</em></a>)</p></li>
+<li><p><strong>verbose</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+<li><p><strong>use_normalization</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+<li><p><strong>normalization_type</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#type" title="(in Python v3.14)"><em>type</em></a><em>[</em><em>ZScoreNormalization</em><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>normalization_path</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em> | </em><em>None</em>)</p></li>
+<li><p><strong>normalization_stats</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><em>dict</em></a><em> | </em><em>DictConfig</em><em> | </em><em>None</em>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="autocast.data.dataset.SpatioTemporalDataset.read_data">
+<span class="sig-name descname"><span class="pre">read_data</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data_path</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/data/dataset.html#SpatioTemporalDataset.read_data"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.data.dataset.SpatioTemporalDataset.read_data" title="Link to this definition">#</a></dt>
+<dd><p>Read data.</p>
+<p>By default assumes HDF5 format in <cite>data_path</cite> with correct shape and fields.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>data_path</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="autocast.data.dataset.SpatioTemporalDataset.parse_data">
+<span class="sig-name descname"><span class="pre">parse_data</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/data/dataset.html#SpatioTemporalDataset.parse_data"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.data.dataset.SpatioTemporalDataset.parse_data" title="Link to this definition">#</a></dt>
+<dd><p>Parse data from a dictionary.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>data</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><em>dict</em></a><em> | </em><em>None</em>)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="autocast.data.dataset.SpatioTemporalDataset.to_preloaded_data">
+<span class="sig-name descname"><span class="pre">to_preloaded_data</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/data/dataset.html#SpatioTemporalDataset.to_preloaded_data"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.data.dataset.SpatioTemporalDataset.to_preloaded_data" title="Link to this definition">#</a></dt>
+<dd><p>Return the in-memory payload accepted by <code class="docutils literal notranslate"><span class="pre">data=</span></code> without copying.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)">dict</a>[<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)">str</a>, <a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><em>Any</em></a>]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="autocast.data.dataset.SpatioTemporalDataset.set_up_normalization">
+<span class="sig-name descname"><span class="pre">set_up_normalization</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/data/dataset.html#SpatioTemporalDataset.set_up_normalization"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.data.dataset.SpatioTemporalDataset.set_up_normalization" title="Link to this definition">#</a></dt>
+<dd><p>Set up normalizer (<cite>None</cite> if <cite>self.use_normalization = False</cite>).</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="autocast.data.dataset.ReactionDiffusionDataset">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">ReactionDiffusionDataset</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/data/dataset.html#ReactionDiffusionDataset"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.data.dataset.ReactionDiffusionDataset" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#autocast.data.dataset.SpatioTemporalDataset" title="autocast.data.dataset.SpatioTemporalDataset"><code class="xref py py-class docutils literal notranslate"><span class="pre">SpatioTemporalDataset</span></code></a></p>
+<p>Reaction-Diffusion dataset.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="autocast.data.dataset.AdvectionDiffusionDataset">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">AdvectionDiffusionDataset</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/data/dataset.html#AdvectionDiffusionDataset"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.data.dataset.AdvectionDiffusionDataset" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#autocast.data.dataset.SpatioTemporalDataset" title="autocast.data.dataset.SpatioTemporalDataset"><code class="xref py py-class docutils literal notranslate"><span class="pre">SpatioTemporalDataset</span></code></a></p>
+<p>Advection-Diffusion dataset.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="autocast.data.dataset.BOUTDataset">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">BOUTDataset</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/data/dataset.html#BOUTDataset"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.data.dataset.BOUTDataset" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#autocast.data.dataset.SpatioTemporalDataset" title="autocast.data.dataset.SpatioTemporalDataset"><code class="xref py py-class docutils literal notranslate"><span class="pre">SpatioTemporalDataset</span></code></a></p>
+<p>BOUT++ dataset.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="autocast.data.dataset.TheWell">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">TheWell</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">path=None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">normalization_path='../stats.yaml'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">well_base_path=None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">well_dataset_name=None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">well_split_name=None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">include_filters=None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">exclude_filters=None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">use_normalization=False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">normalization_type=&lt;class</span> <span class="pre">'the_well.data.normalization.ZScoreNormalization'&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_rollout_steps=100</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_steps_input=1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_steps_output=1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_dt_stride=1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_dt_stride=1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">flatten_tensors=True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cache_small=True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_cache_size=1000000000.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">return_grid=True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">boundary_return_type='padding'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">full_trajectory_mode=False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">autoencoder_mode=False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name_override=None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transform=None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_std=0.0001</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">storage_options=None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/data/dataset.html#TheWell"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.data.dataset.TheWell" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#autocast.data.dataset.SpatioTemporalDataset" title="autocast.data.dataset.SpatioTemporalDataset"><code class="xref py py-class docutils literal notranslate"><span class="pre">SpatioTemporalDataset</span></code></a></p>
+<p>A wrapper around The Well’s WellDataset to provide Batch objects.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>path</strong> (<em>None</em><em> | </em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>)</p></li>
+<li><p><strong>normalization_path</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>)</p></li>
+<li><p><strong>well_base_path</strong> (<em>None</em><em> | </em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>)</p></li>
+<li><p><strong>well_dataset_name</strong> (<em>None</em><em> | </em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>)</p></li>
+<li><p><strong>well_split_name</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><em>Literal</em></a><em>[</em><em>'train'</em><em>, </em><em>'valid'</em><em>, </em><em>'test'</em><em>, </em><em>None</em><em>]</em>)</p></li>
+<li><p><strong>include_filters</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><em>list</em></a><em>[</em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>exclude_filters</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><em>list</em></a><em>[</em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>use_normalization</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+<li><p><strong>normalization_type</strong> (<em>None</em><em> | </em><a class="reference external" href="https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable" title="(in Python v3.14)"><em>Callable</em></a><em>[</em><em>[</em><em>...</em><em>]</em><em>, </em><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><em>Any</em></a><em>] </em><em>| </em><em>ZScoreNormalization</em>)</p></li>
+<li><p><strong>n_steps_input</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>n_steps_output</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>min_dt_stride</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>max_dt_stride</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>flatten_tensors</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+<li><p><strong>cache_small</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+<li><p><strong>max_cache_size</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>)</p></li>
+<li><p><strong>return_grid</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+<li><p><strong>boundary_return_type</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>)</p></li>
+<li><p><strong>full_trajectory_mode</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+<li><p><strong>autoencoder_mode</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+<li><p><strong>name_override</strong> (<em>None</em><em> | </em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>)</p></li>
+<li><p><strong>transform</strong> (<em>None</em><em> | </em><em>Augmentation</em>)</p></li>
+<li><p><strong>min_std</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>)</p></li>
+<li><p><strong>storage_options</strong> (<em>None</em><em> | </em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><em>dict</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autocast.data.dataset.TheWell.well_dataset">
+<span class="sig-name descname"><span class="pre">well_dataset</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">WellDataset</span></em><a class="headerlink" href="#autocast.data.dataset.TheWell.well_dataset" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</section>
+
+    <script type="text/x-thebe-config">
+    {
+        requestKernel: true,
+        binderOptions: {
+            repo: "binder-examples/jupyter-stacks-datascience",
+            ref: "master",
+        },
+        codeMirrorConfig: {
+            theme: "abcdef",
+            mode: "python"
+        },
+        kernelOptions: {
+            name: "python3",
+            path: "./reference/data"
+        },
+        predefinedOutput: true
+    }
+    </script>
+    <script>kernelName = 'python3'</script>
+
+                </article>
+              
+
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="datamodule.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">autocast.data.datamodule</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="encoded_dataset.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">autocast.data.encoded_dataset</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item"><div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> Contents
+  </div>
+  <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.data.dataset.BatchMixin"><code class="docutils literal notranslate"><span class="pre">BatchMixin</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.data.dataset.BatchMixin.to_sample"><code class="docutils literal notranslate"><span class="pre">BatchMixin.to_sample()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.data.dataset.SpatioTemporalDataset"><code class="docutils literal notranslate"><span class="pre">SpatioTemporalDataset</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.data.dataset.SpatioTemporalDataset.read_data"><code class="docutils literal notranslate"><span class="pre">SpatioTemporalDataset.read_data()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.data.dataset.SpatioTemporalDataset.parse_data"><code class="docutils literal notranslate"><span class="pre">SpatioTemporalDataset.parse_data()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.data.dataset.SpatioTemporalDataset.to_preloaded_data"><code class="docutils literal notranslate"><span class="pre">SpatioTemporalDataset.to_preloaded_data()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.data.dataset.SpatioTemporalDataset.set_up_normalization"><code class="docutils literal notranslate"><span class="pre">SpatioTemporalDataset.set_up_normalization()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.data.dataset.ReactionDiffusionDataset"><code class="docutils literal notranslate"><span class="pre">ReactionDiffusionDataset</span></code></a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.data.dataset.AdvectionDiffusionDataset"><code class="docutils literal notranslate"><span class="pre">AdvectionDiffusionDataset</span></code></a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.data.dataset.BOUTDataset"><code class="docutils literal notranslate"><span class="pre">BOUTDataset</span></code></a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.data.dataset.TheWell"><code class="docutils literal notranslate"><span class="pre">TheWell</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.data.dataset.TheWell.well_dataset"><code class="docutils literal notranslate"><span class="pre">TheWell.well_dataset</span></code></a></li>
+</ul>
+</li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+<div class="bd-footer-content__inner container">
+  
+  <div class="footer-item">
+    
+<p class="component-author">
+By AI for Physical Systems Team at The Alan Turing Institute
+</p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+  <div class="footer-item">
+    
+<div class="extra_footer">
+  Copyright &copy; 2026
+
+</div>
+  </div>
+  
+</div>
+          </footer>
+        
+
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="../../_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf"></script>
+<script defer src="../../_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf"></script>
+
+  <footer class="bd-footer">
+  </footer>
+  </body>
+</html>
