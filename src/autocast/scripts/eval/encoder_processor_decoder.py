@@ -73,7 +73,7 @@ from autocast.scripts.setup import (
     setup_processor_model,
 )
 from autocast.scripts.training import apply_float32_matmul_precision
-from autocast.scripts.utils import get_default_config_path
+from autocast.scripts.utils import MODULE_CONFIG_NAMES, get_default_config_path
 from autocast.types.batch import Batch, EncodedBatch
 from autocast.utils import (
     plot_spatiotemporal_snapshots,
@@ -1344,7 +1344,7 @@ def _collect_benchmark_rows(
 @hydra.main(
     version_base=None,
     config_path=get_default_config_path(),
-    config_name="encoder_processor_decoder",
+    config_name=MODULE_CONFIG_NAMES[__spec__.name],
 )
 def main(cfg: DictConfig) -> None:
     """Entry point for CLI-based evaluation."""
