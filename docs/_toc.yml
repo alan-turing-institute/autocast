@@ -7,11 +7,23 @@ chapters:
 
 - file: installation
 
-- file: tutorial/index
+- file: walkthrough/index
   sections:
-  - file: tutorial/commands
-  - file: tutorial/configs
-  - file: tutorial/eval
+  - file: walkthrough/simulate-data
+  - file: walkthrough/autoencoder
+  - file: walkthrough/processor
+  - file: walkthrough/epd
+  - file: walkthrough/ensembles
+  - file: walkthrough/eval
+
+- file: howto/index
+  sections:
+  - file: howto/output-paths
+  - file: howto/slurm
+  - file: howto/wandb
+  - file: howto/resume
+  - file: howto/configs
+  - file: howto/other-commands
 
 - file: other-commands
 
