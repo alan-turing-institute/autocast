@@ -53,7 +53,7 @@ Furthermore, AutoCast will time model inference and report this in `benchmark_me
 
 ## Coverage
 
-Many of the other outputs here relate to *coverage* metrics, i.e., how often the ground truth falls within the model's predicted uncertainty intervals.
+Many of the other outputs here relate to *coverage* metrics for ensemble model predictions, i.e., how often the ground truth falls within the model's predicted uncertainty intervals.
 At a given value of $\alpha$ (the *nominal coverage*), the *empirical coverage* is the fraction of test samples for which the ground truth falls within the model's predicted $\alpha$-level uncertainty interval.
 
 `test_coverage_window_all.csv` contains the empirical coverage for each nominal coverage level for the single-step predictions, while `rollout_coverage_window_....csv` contains the same for the autoregressive rollouts.
