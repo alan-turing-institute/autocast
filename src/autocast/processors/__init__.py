@@ -3,6 +3,7 @@ from autocast.processors.base import Processor
 from autocast.processors.flow_matching import FlowMatchingProcessor
 from autocast.processors.sigma_vae import SigmaVAEProcessor
 from autocast.processors.swin_vit import SwinViTProcessor
+from autocast.processors.tarflow import TarFlowProcessor
 from autocast.processors.unet import UNetProcessor
 
 __all__ = [
@@ -11,5 +12,6 @@ __all__ = [
     "Processor",
     "SigmaVAEProcessor",
     "SwinViTProcessor",
+    "TarFlowProcessor",
     "UNetProcessor",
 ]
