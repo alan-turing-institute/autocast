@@ -5,6 +5,10 @@ import torch
 
 from autocast.metrics import ALL_DETERMINISTIC_METRICS
 from autocast.metrics.deterministic import (
+    VMSE,
+    VMSE2,
+    VRMSE,
+    VRMSE2,
     PowerSpectrumCCRMSE,
     PowerSpectrumCCRMSEHigh,
     PowerSpectrumCCRMSELow,
@@ -17,7 +21,7 @@ from autocast.metrics.deterministic import (
     PowerSpectrumRMSETail,
     _isotropic_binning,
 )
-from autocast.types import TensorBTSC
+from autocast.types import TensorBTSC, TensorBTSCM
 
 
 def _lola_isotropic_binning(
@@ -76,11 +80,14 @@ def _lola_isotropic_cross_correlation(
 
 
 def _lola_eval_reference_bands(
-    y_pred: TensorBTSC, y_true: TensorBTSC, eps: float
+    y_pred: TensorBTSC | TensorBTSCM, y_true: TensorBTSC, eps: float
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    # Mirror Lola eval.py: treat prediction as a sample axis and average over samples.
+    # Mirror LOLA eval.py: treat prediction as a sample axis and average over samples.
     u = y_true[0, 0, ..., 0]
-    v = y_pred[0, 0, ..., 0].unsqueeze(0)
+    if y_pred.ndim == y_true.ndim + 1:
+        v = y_pred[0, 0, ..., 0, :].movedim(-1, 0)
+    else:
+        v = y_pred[0, 0, ..., 0].unsqueeze(0)
 
     p_u, k = _lola_isotropic_power_spectrum(u)
     p_v, _ = _lola_isotropic_power_spectrum(v)
@@ -137,6 +144,50 @@ def test_spatiotemporal_metrics_stateful(MetricCls):
     value = metric.compute()
 
     assert torch.allclose(value, torch.tensor(0.0))
+
+
+def test_legacy_variance_scaled_metrics_match_prior_formula():
+    # Constant y_true => std == 0; legacy regularizer eps = 1e-7 dominates.
+    y_true = torch.ones((1, 1, 4, 4, 1))
+    y_pred = y_true + 0.01
+
+    # Legacy VMSE  = MSE / (std**2 + 1e-7) = 1e-4 / 1e-7 = 1e3
+    # Legacy VRMSE = sqrt(MSE) / (std + 1e-7) = 1e-2 / 1e-7 = 1e5
+    vmse = VMSE()(y_pred, y_true)
+    vrmse = VRMSE()(y_pred, y_true)
+
+    assert vmse.item() == pytest.approx(1e3, rel=1e-5)
+    assert vrmse.item() == pytest.approx(1e5, rel=1e-5)
+
+
+def test_v2_variance_scaled_metrics_match_lola_formula():
+    # Constant y_true => var == 0; LOLA regularizer eps = 1e-6 dominates.
+    y_true = torch.ones((1, 1, 4, 4, 1))
+    y_pred = y_true + 0.01
+
+    # VMSE2  = MSE / (var + 1e-6)        = 1e-4 / 1e-6 = 100
+    # VRMSE2 = sqrt(MSE / (var + 1e-6))  = sqrt(100)   = 10
+    vmse = VMSE2()(y_pred, y_true)
+    vrmse = VRMSE2()(y_pred, y_true)
+
+    assert vmse.item() == pytest.approx(100.0, rel=1e-5)
+    assert vrmse.item() == pytest.approx(10.0, rel=1e-5)
+
+
+def test_legacy_and_v2_agree_for_well_behaved_variance():
+    # When std(y_true) >> sqrt(eps), v1 and v2 formulas are numerically
+    # equivalent: sqrt(MSE)/std == sqrt(MSE/var). This is the regime where
+    # nearly all real-world eval values live.
+    torch.manual_seed(0)
+    y_true: TensorBTSC = torch.randn((2, 3, 8, 8, 4))
+    y_pred: TensorBTSC = y_true + 0.1 * torch.randn_like(y_true)
+
+    assert VRMSE()(y_pred, y_true).item() == pytest.approx(
+        VRMSE2()(y_pred, y_true).item(), rel=1e-3
+    )
+    assert VMSE()(y_pred, y_true).item() == pytest.approx(
+        VMSE2()(y_pred, y_true).item(), rel=1e-3
+    )
 
 
 @pytest.mark.parametrize(
@@ -266,6 +317,40 @@ def test_power_spectrum_metrics_match_lola_eval_reference():
     assert torch.allclose(
         PowerSpectrumRMSE(eps=eps)(y_pred, y_true), power_ref[:3].mean()
     )
+
+    assert torch.allclose(PowerSpectrumCCRMSELow(eps=eps)(y_pred, y_true), cross_ref[0])
+    assert torch.allclose(PowerSpectrumCCRMSEMid(eps=eps)(y_pred, y_true), cross_ref[1])
+    assert torch.allclose(
+        PowerSpectrumCCRMSEHigh(eps=eps)(y_pred, y_true), cross_ref[2]
+    )
+    assert torch.allclose(
+        PowerSpectrumCCRMSETail(eps=eps)(y_pred, y_true), cross_ref[3]
+    )
+    assert torch.allclose(
+        PowerSpectrumCCRMSE(eps=eps)(y_pred, y_true), cross_ref[:3].mean()
+    )
+
+
+def test_power_spectrum_metrics_match_lola_ensemble_reference():
+    torch.manual_seed(0)
+    y_true: TensorBTSC = torch.randn((1, 1, 32, 32, 1))
+    perturbation = 0.15 * torch.randn_like(y_true)
+    y_pred: TensorBTSCM = torch.stack(
+        [y_true + perturbation, y_true - perturbation],
+        dim=-1,
+    )
+    eps = 1e-6
+
+    power_ref, cross_ref = _lola_eval_reference_bands(y_pred, y_true, eps=eps)
+
+    assert torch.allclose(PowerSpectrumRMSELow(eps=eps)(y_pred, y_true), power_ref[0])
+    assert torch.allclose(PowerSpectrumRMSEMid(eps=eps)(y_pred, y_true), power_ref[1])
+    assert torch.allclose(PowerSpectrumRMSEHigh(eps=eps)(y_pred, y_true), power_ref[2])
+    assert torch.allclose(PowerSpectrumRMSETail(eps=eps)(y_pred, y_true), power_ref[3])
+    assert torch.allclose(
+        PowerSpectrumRMSE(eps=eps)(y_pred, y_true), power_ref[:3].mean()
+    )
+    assert PowerSpectrumRMSE(eps=eps)(y_pred, y_true) > 0
 
     assert torch.allclose(PowerSpectrumCCRMSELow(eps=eps)(y_pred, y_true), cross_ref[0])
     assert torch.allclose(PowerSpectrumCCRMSEMid(eps=eps)(y_pred, y_true), cross_ref[1])

@@ -22,13 +22,14 @@ class ChannelsFirstEncoder(EncoderWithCond):
             output_fields=batch.output_fields,
             constant_scalars=batch.constant_scalars,
             constant_fields=batch.constant_fields,
+            boundary_conditions=batch.boundary_conditions,
         )
 
     def encode(self, batch: Batch) -> torch.Tensor:
         batch = self.preprocess(batch)
         b, _, t, *_ = batch.input_fields.shape
         x = rearrange(batch.input_fields, "B C T ... -> (B T) C ...")
-        x = self.wrapped_encode_func(x)
+        x = self._chunked_apply(self.wrapped_encode_func, x)
         return rearrange(x, "(B T) C ... -> B T ... C", B=b, T=t)
 
 
@@ -37,11 +38,20 @@ class WrappedEncoder(ChannelsFirstEncoder):
 
     wrapped_autoencoder: torch.nn.Module
     wrapped_encode_func: Callable
+    log_scalars: bool
 
     def __init__(self, **kwargs):
         super().__init__()
-        self.mean = kwargs.pop("mean", None)
-        self.std = kwargs.pop("std", None)
+        mean = kwargs.pop("mean", None)
+        std = kwargs.pop("std", None)
+        self.chunk_size = kwargs.pop("chunk_size", None)
+        self.log_scalars = bool(kwargs.pop("log_scalars", False))
+        self.latent_channels = kwargs["lat_channels"]
+        self.register_buffer(
+            "mean",
+            torch.as_tensor(mean) if mean is not None else None,
+        )
+        self.register_buffer("std", torch.as_tensor(std) if std is not None else None)
         device = kwargs.pop("device", None)
         runpath = kwargs.pop("runpath", None)
         self.wrapped_autoencoder = get_autoencoder(**kwargs)
@@ -62,6 +72,24 @@ class WrappedEncoder(ChannelsFirstEncoder):
             output_fields=batch.output_fields,
             constant_scalars=batch.constant_scalars,
             constant_fields=batch.constant_fields,
+            boundary_conditions=batch.boundary_conditions,
         )
 
         return ChannelsFirstEncoder.preprocess(self, batch)
+
+    def encode_cond(self, batch: Batch) -> torch.Tensor | None:
+        """Match LoLA cached-latent conditioning for raw eval batches."""
+        global_cond = None
+        if batch.constant_scalars is not None:
+            global_cond = (
+                torch.log(batch.constant_scalars)
+                if self.log_scalars
+                else batch.constant_scalars
+            )
+        if batch.boundary_conditions is not None:
+            bc = batch.boundary_conditions.flatten(start_dim=1)
+            global_cond = (
+                bc if global_cond is None else torch.cat([global_cond, bc], dim=1)
+            )
+
+        return global_cond
