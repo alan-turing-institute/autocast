@@ -25,6 +25,7 @@ dependencies = [
     "torchvision>=0.24.1",
     "wandb>=0.18.7",
     "nvidia-ml-py>=13.595.45",
+    "autouq",
 ]
 
 [project.optional-dependencies]
@@ -133,6 +134,7 @@ torch = [
 torchvision = [
     { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
 ]
+autouq = { git = "https://github.com/alan-turing-institute/autouq.git", branch = "add-emos-ecc-calibrators" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
