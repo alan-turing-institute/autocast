@@ -81,16 +81,7 @@ class FlowMatchingProcessor(Processor):
         input_states = batch.encoded_inputs
         target_states = batch.encoded_output_fields
 
-        if (
-            target_states.shape[1] != self.n_steps_output
-            or target_states.shape[-1] != self.n_channels_out
-        ):
-            msg = (
-                "Target shape does not match configured output dimensions "
-                f"(expected T_out={self.n_steps_output}, C_out={self.n_channels_out}, "
-                f"got T_out={target_states.shape[1]}, C_out={target_states.shape[-1]})."
-            )
-            raise ValueError(msg)
+        self._validate_output_shape(target_states)
 
         batch_size = target_states.shape[0]
 
@@ -104,3 +95,16 @@ class FlowMatchingProcessor(Processor):
         target_velocity = target_states - z0
         v_pred = self.flow_field(zt, t, input_states, global_cond=batch.global_cond)
         return torch.mean((v_pred - target_velocity) ** 2)
+
+    def _validate_output_shape(self, target_states: Tensor) -> None:
+        """Validate output-window shape against processor configuration."""
+        if (
+            target_states.shape[1] != self.n_steps_output
+            or target_states.shape[-1] != self.n_channels_out
+        ):
+            msg = (
+                "Target shape does not match configured output dimensions "
+                f"(expected T_out={self.n_steps_output}, C_out={self.n_channels_out}, "
+                f"got T_out={target_states.shape[1]}, C_out={target_states.shape[-1]})."
+            )
+            raise ValueError(msg)
