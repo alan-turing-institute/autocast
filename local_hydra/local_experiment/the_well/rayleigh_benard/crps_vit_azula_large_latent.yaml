@@ -1,0 +1,75 @@
+# @package _global_
+defaults:
+  - /distributed: ddp_4gpu_slurm
+  - override /datamodule: miniwell
+  - override /processor@model.processor: vit_azula_large
+  - override /optimizer: adamw_half
+  - _self_
+
+experiment_name: the_well_rayleigh_benard_crps_vit_azula_large_latent
+
+# CRPS directly in the cached LOLA latent space used by the RB FM baseline.
+# Batch 32/GPU with 8 ensemble members gives an effective per-GPU objective
+# batch of 256 for the 24h comparison scripts. The older equal-data LOLA
+# scripts may still add gradient accumulation when matching their 4096-epoch
+# accounting.
+datamodule:
+  data_path: ${oc.env:AUTOCAST_DATASETS,./datasets}/rayleigh_benard/1e3z5x2c_rayleigh_benard_dcae_f32c64_large/cache/rayleigh_benard
+  n_steps_input: 1
+  n_steps_output: 4
+  stride: 1
+  batch_size: 32
+  num_workers: 8
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 2
+
+float32_matmul_precision: high
+
+logging:
+  wandb:
+    enabled: true
+
+output:
+  skip_test: true
+
+optimizer:
+  learning_rate: 2e-4
+  warmup: 0
+
+model:
+  n_members: 8
+  processor:
+    # Match the ~220M-parameter LOLA FM processor as closely as possible while
+    # keeping the latent patch_size=1 tokenization.
+    hidden_dim: 896
+    num_heads: 8
+    n_layers: 16
+    patch_size: 1
+    n_noise_channels: 1024
+    global_cond_channels: auto
+    include_global_cond: true
+    n_steps_input: ${datamodule.n_steps_input}
+    n_steps_output: ${datamodule.n_steps_output}
+  loss_func:
+    _target_: autocast.losses.ensemble.AlphaFairCRPSLoss
+  train_metrics:
+    afcrps:
+      _target_: autocast.metrics.ensemble.AlphaFairCRPS
+    afcrps_mae_term:
+      _target_: autocast.metrics.ensemble.AlphaFairCRPSMAETerm
+    afcrps_spread_term:
+      _target_: autocast.metrics.ensemble.AlphaFairCRPSSpreadTerm
+  val_metrics:
+    afcrps:
+      _target_: autocast.metrics.ensemble.AlphaFairCRPS
+    afcrps_mae_term:
+      _target_: autocast.metrics.ensemble.AlphaFairCRPSMAETerm
+    afcrps_spread_term:
+      _target_: autocast.metrics.ensemble.AlphaFairCRPSSpreadTerm
+    spread:
+      _target_: autocast.metrics.ensemble.EnsembleSpread
+    multicoverage:
+      _target_: autocast.metrics.MultiCoverage
+    multiwinkler:
+      _target_: autocast.metrics.ensemble.MultiWinkler
