@@ -312,7 +312,7 @@ docs = [
 requires-dist = [
     { name = "autoemulate", git = "https://github.com/alan-turing-institute/autoemulate.git" },
     { name = "autosim", git = "https://github.com/alan-turing-institute/autosim.git" },
-    { name = "autouq", git = "https://github.com/alan-turing-institute/autouq.git?branch=add-emos-ecc-calibrators" },
+    { name = "autouq", git = "https://github.com/alan-turing-institute/autouq.git?branch=main" },
     { name = "azula", specifier = ">=0.7.0" },
     { name = "beartype", specifier = ">=0.22.8" },
     { name = "einops", specifier = ">=0.8.1" },
@@ -396,7 +396,7 @@ dependencies = [
 [[package]]
 name = "autouq"
 version = "0.0.1"
-source = { git = "https://github.com/alan-turing-institute/autouq.git?branch=add-emos-ecc-calibrators#1137fdd01fff8277f8391f77a0765a6a7098ec97" }
+source = { git = "https://github.com/alan-turing-institute/autouq.git?branch=main#2d26f6674f9f6fec1b2734fa3674b0dba60d9fdb" }
 dependencies = [
     { name = "beartype" },
     { name = "einops" },

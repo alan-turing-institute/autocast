@@ -134,7 +134,7 @@ torch = [
 torchvision = [
     { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
 ]
-autouq = { git = "https://github.com/alan-turing-institute/autouq.git", branch = "add-emos-ecc-calibrators" }
+autouq = { git = "https://github.com/alan-turing-institute/autouq.git", branch = "main" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
