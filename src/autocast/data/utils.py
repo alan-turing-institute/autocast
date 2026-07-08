@@ -47,7 +47,7 @@ _AUTOSIM_SIMULATOR_CONFIGS: dict[str, dict[str, Any]] = {
         },
     },
     "reaction_diffusion": {
-        "_target_": "autosim.experimental.simulations.ReactionDiffusion",
+        "_target_": "autosim.simulations.ReactionDiffusion",
         "return_timeseries": True,
         "log_level": "warning",
         "n": 32,
