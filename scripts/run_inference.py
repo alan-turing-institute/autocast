@@ -17,30 +17,37 @@ src/autocast/scripts/eval/encoder_processor_decoder.py):
     is swapped to ambient/raw-field mode if it was cached-latents, before
     only the processor's weights are loaded.
 
+A checkpoint with a stateless (parameter-free) encoder/decoder, e.g.
+PermuteConcat/ChannelsLast, has no `encoder_decoder.*` keys even though it's
+a genuine full EPD checkpoint -- this is reclassified using the model config
+instead, mirroring `run_evaluation()`'s identical safety net.
+
 Ensemble vs. deterministic models: you do not need to tell the script which
-kind of model it's loading. If the rebuilt model exposes an `n_members`
-attribute (EncoderProcessorDecoderEnsemble), a single forward call already
-returns all members, and --n-members (if given) overrides that count.
-Otherwise the model is treated as producing one sample per call by default
-(--n-members defaults to 1 in that case, so a genuinely deterministic model
-costs exactly one forward pass, not N redundant identical ones) -- pass
---n-members explicitly to draw more independent samples from a model that is
-stochastic but not wrapped in an Ensemble class (e.g. flow matching sampling
-fresh ODE-initial noise per call). See resolve_n_members().
+kind of model it's loading, or how many samples to draw -- this is inferred
+automatically (see resolve_model_n_members()):
+  1. `cfg.eval.n_members` from the run's own resolved config, if present --
+     this is the "how many stochastic samples to evaluate with" convention
+     the training pipeline already records for every run (via the `optional
+     eval: encoder_processor_decoder` default group), including for models
+     like flow matching that commonly have no `model.n_members` set at all.
+     This is applied *before* the model is built, so e.g. a flow-matching
+     checkpoint with `eval.n_members: 10` in its own config gets built as
+     the Ensemble variant automatically.
+  2. Otherwise, whatever `model.n_members` the checkpoint was trained with
+     (e.g. 10 for an EncoderProcessorDecoderEnsemble), or 1 if the model has
+     no `n_members` concept at all -- so a genuinely deterministic model
+     costs exactly one forward pass, never N redundant identical ones.
 
 Running on unseen data (e.g. a freshly-generated AutoSim dataset, not the
 data the checkpoint was trained on): pass --data-path pointing at the new
-dataset's directory (containing train/valid/test/data.pt, e.g. produced by
-scripts/generate_cns64_autosim_data.sh). This overrides *only* where raw
-data is read from -- normalization stats keep coming from the checkpoint's
-own training config (`normalization_path`/`normalization_stats`), which is
-what you want: a model must always be fed inputs normalized the same way it
-was trained, so new data should be normalized against training-set
-statistics, not its own. `SpatioTemporalDataModule` already keeps these two
-things (data location vs. normalization stats) fully decoupled, so no new
-normalization logic is needed here -- see docs/NORMALIZATION_CONFIG.md. Only
-pass --normalization-path too if you specifically want to override the
-stats as well (rare).
+dataset's directory (containing train/valid/test/data.pt). This overrides
+*only* where raw data is read from -- normalization stats keep coming from
+the checkpoint's own training config (`normalization_path`/
+`normalization_stats`), which is what you want: a model must always be fed
+inputs normalized the same way it was trained, so new data should be
+normalized against training-set statistics, not its own.
+`SpatioTemporalDataModule` already keeps these two things (data location vs.
+normalization stats) fully decoupled -- see docs/NORMALIZATION_CONFIG.md.
 
 Examples:
     # Score the checkpoint's own val/test splits (e.g. for conformal calibration).
@@ -48,9 +55,11 @@ Examples:
         --run-dir outputs/crps_cns64_vit_azula_large_bed4611_c99f534 \\
         --splits val,test
 
+    # n_members is inferred here too, from this run's own eval.n_members if
+    # present in its resolved config.
     python scripts/run_inference.py \\
         --run-dir outputs/diff_cns64_flow_matching_vit_09490da_636fcc3 \\
-        --splits val,test --n-members 10
+        --splits val,test
 
     # Score unseen data from a freshly-generated AutoSim dataset instead,
     # still normalized with the training-time stats.
@@ -83,9 +92,18 @@ from autocast.scripts.execution import (
     resolve_device,
 )
 from autocast.scripts.setup import setup_datamodule, setup_epd_model
-from autocast.scripts.workflow.commands import infer_eval_checkpoint
+from autocast.types import Batch
 
 log = logging.getLogger("run_inference")
+
+# The two checkpoint filenames this script's model-loading logic actually
+# knows how to distinguish (see _is_processor_only_checkpoint): the default
+# `output.checkpoint_name` for `train_processor` and
+# `train_encoder_processor_decoder` respectively (see configs/processor.yaml,
+# configs/encoder_processor_decoder.yaml). Anything else (a renamed/
+# overridden checkpoint, an autoencoder checkpoint, a raw Lightning
+# `epoch=N-step=N.ckpt`) must be passed via --checkpoint-name.
+DEFAULT_CHECKPOINT_NAMES = ("processor.ckpt", "encoder_processor_decoder.ckpt")
 
 
 def parse_args() -> argparse.Namespace:
@@ -104,10 +122,10 @@ def parse_args() -> argparse.Namespace:
         "--checkpoint-name",
         default=None,
         help=(
-            "Checkpoint filename inside --run-dir. Auto-detected if omitted "
-            "via infer_eval_checkpoint (tries output.checkpoint_name / "
-            "eval.checkpoint / encoder_processor_decoder.ckpt / "
-            "processor.ckpt / model.ckpt)."
+            "Checkpoint filename inside --run-dir. If omitted, looked for "
+            "under its default name for each training mode this script "
+            f"supports ({', '.join(DEFAULT_CHECKPOINT_NAMES)}); pass this "
+            "explicitly if the checkpoint has a different name."
         ),
     )
     p.add_argument(
@@ -131,16 +149,6 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     p.add_argument(
-        "--normalization-path",
-        default=None,
-        help=(
-            "Override datamodule.normalization_path. Rarely needed -- omit this "
-            "to keep normalizing with the checkpoint's own training-time stats, "
-            "which is almost always what you want, even when --data-path points "
-            "at unseen data."
-        ),
-    )
-    p.add_argument(
         "--out-dir",
         type=Path,
         default=None,
@@ -150,25 +158,14 @@ def parse_args() -> argparse.Namespace:
         "--splits", default="val,test", help="Comma-separated subset of {val,test}."
     )
     p.add_argument(
-        "--n-members",
-        type=int,
-        default=None,
-        help=(
-            "Number of ensemble predictions to draw per input window. If "
-            "omitted: for models with a native `n_members` attribute "
-            "(EncoderProcessorDecoderEnsemble), uses whatever count the model "
-            "was already configured with; otherwise defaults to 1 (a single, "
-            "deterministic-style forward pass) -- see resolve_n_members()."
-        ),
-    )
-    p.add_argument(
         "--seed-base",
         type=int,
         default=0,
         help=(
-            "First of --n-members consecutive seeds used for stochastic "
-            "sampling. Only used for models with no native `n_members` "
-            "attribute -- see get_ensemble_predictions."
+            "First of N consecutive seeds used for stochastic sampling, "
+            "where N is the number of samples inferred by "
+            "resolve_model_n_members(). Only used for models with no native "
+            "`n_members` attribute -- see get_ensemble_predictions."
         ),
     )
     p.add_argument(
@@ -188,6 +185,27 @@ def parse_args() -> argparse.Namespace:
         help="Use EMA weights if the checkpoint has an ema_state_dict.",
     )
     return p.parse_args()
+
+
+def find_checkpoint(run_dir: Path, checkpoint_name: str | None) -> Path:
+    """Locate the checkpoint file inside run_dir.
+
+    If --checkpoint-name is given, use it as-is. Otherwise, look for exactly
+    one of DEFAULT_CHECKPOINT_NAMES -- if the checkpoint has any other name
+    (e.g. it was renamed, or belongs to a training mode this script doesn't
+    handle), pass --checkpoint-name explicitly rather than guessing further.
+    """
+    if checkpoint_name is not None:
+        return run_dir / checkpoint_name
+
+    found = [name for name in DEFAULT_CHECKPOINT_NAMES if (run_dir / name).exists()]
+    if len(found) == 1:
+        return run_dir / found[0]
+
+    raise FileNotFoundError(
+        f"Could not find exactly one of {DEFAULT_CHECKPOINT_NAMES} under {run_dir} "
+        f"(found: {found or 'none'}). Pass --checkpoint-name explicitly."
+    )
 
 
 def resolve_autoencoder_checkpoint(
@@ -219,24 +237,54 @@ def resolve_autoencoder_checkpoint(
     return None
 
 
-def apply_data_overrides(
-    cfg: DictConfig, data_path: str | None, normalization_path: str | None
-) -> DictConfig:
-    """Point the datamodule at different raw data, keeping normalization as-is by default.
+def resolve_model_n_members(cfg: DictConfig) -> int | None:
+    """Decide what to set cfg.model.n_members to before building the model.
+
+    Uses `cfg.eval.n_members` -- the run's own recorded "how many stochastic
+    samples to evaluate with" convention -- if present. This config key is
+    populated by the `optional eval: encoder_processor_decoder` default
+    group at *training* time already (see
+    configs/encoder_processor_decoder.yaml), and `run_evaluation()` applies
+    it the same way (`cfg.model.n_members = eval_cfg.n_members`). Concretely,
+    this covers models like flow matching, which commonly have no
+    `model.n_members` set (so build as a plain, non-ensemble class) but do
+    have `eval.n_members: 10` recorded -- letting them get built as the
+    Ensemble variant automatically. Returns None if `cfg.eval.n_members` is
+    absent, leaving cfg.model.n_members (and therefore which model class
+    gets built) untouched.
+    """
+    eval_cfg = cfg.get("eval")
+    if eval_cfg is not None:
+        configured = eval_cfg.get("n_members")
+        if configured is not None:
+            return configured
+    return None
+
+
+def apply_overrides(cfg: DictConfig, data_path: str | None) -> DictConfig:
+    """Point the datamodule at different raw data and infer cfg.model.n_members.
+
+    Normalization always keeps coming from the checkpoint's own training
+    config (`cfg.datamodule.normalization_path`/`normalization_stats`,
+    untouched here) -- a model must always be fed inputs normalized the same
+    way it was trained, so new data should be normalized against
+    training-set statistics, not its own. `SpatioTemporalDataModule` already
+    keeps data location and normalization stats fully decoupled, so
+    overriding just `data_path` is sufficient -- see
+    docs/NORMALIZATION_CONFIG.md.
 
     Must be applied to the *final* resolved `cfg.datamodule` -- i.e. after any
     ambient-datamodule swap (`_maybe_swap_to_ambient_datamodule` can replace
     `cfg.datamodule` wholesale with the autoencoder's own cached training
-    datamodule config), not before it, or this override would be silently
-    discarded for processor-only + cached-latents checkpoints.
+    datamodule config), not before it, or the data_path override would be
+    silently discarded for processor-only + cached-latents checkpoints.
     """
-    if data_path is None and normalization_path is None:
-        return cfg
+    n_members = resolve_model_n_members(cfg)
     with open_dict(cfg):
         if data_path is not None:
             cfg.datamodule.data_path = data_path
-        if normalization_path is not None:
-            cfg.datamodule.normalization_path = normalization_path
+        if n_members is not None:
+            cfg.model.n_members = n_members
     return cfg
 
 
@@ -246,7 +294,6 @@ def load_trained_model(
     checkpoint_name: str | None,
     autoencoder_checkpoint_override: str | None,
     data_path: str | None,
-    normalization_path: str | None,
     device: torch.device,
     use_ema: bool,
 ):
@@ -257,19 +304,37 @@ def load_trained_model(
         msg = f"Expected DictConfig from {run_dir / config_name}, got {type(cfg).__name__}"
         raise TypeError(msg)
 
-    if checkpoint_name is not None:
-        checkpoint_path = run_dir / checkpoint_name
-    else:
-        checkpoint_path = infer_eval_checkpoint(run_dir)
-    if checkpoint_path is None or not Path(checkpoint_path).exists():
+    checkpoint_path = find_checkpoint(run_dir, checkpoint_name)
+    if not checkpoint_path.exists():
         raise FileNotFoundError(
-            f"Could not find a checkpoint under {run_dir}. Pass --checkpoint-name "
-            "explicitly (e.g. 'processor.ckpt' or 'encoder_processor_decoder.ckpt')."
+            f"Checkpoint not found: {checkpoint_path}. Pass --checkpoint-name "
+            "explicitly if it has a different name."
         )
     log.info("Checkpoint: %s", checkpoint_path)
 
-    payload = load_checkpoint_payload(Path(checkpoint_path))
+    payload = load_checkpoint_payload(checkpoint_path)
     processor_only = _is_processor_only_checkpoint(payload)
+
+    # Stateless encoders/decoders (e.g. PermuteConcat/ChannelsLast) contribute
+    # no encoder_decoder.* params, so a full EPD checkpoint can look
+    # processor-only from its state_dict keys alone. Reclassify using the
+    # model config instead -- mirrors run_evaluation()'s identical safety net
+    # in src/autocast/scripts/eval/encoder_processor_decoder.py.
+    _probe_datamodule, cfg, probe_stats = setup_datamodule(cfg)
+    example_batch = probe_stats.get("example_batch")
+    if (
+        processor_only
+        and isinstance(example_batch, Batch)
+        and not cfg.get("autoencoder_checkpoint")
+        and cfg.get("model", {}).get("encoder") is not None
+        and cfg.get("model", {}).get("decoder") is not None
+    ):
+        log.info(
+            "Checkpoint has no encoder_decoder.* params, but the model config "
+            "has its own encoder+decoder -- treating as a full EPD checkpoint "
+            "with a stateless (parameter-free) encoder/decoder."
+        )
+        processor_only = False
     log.info("processor_only checkpoint: %s", processor_only)
 
     if processor_only:
@@ -287,27 +352,23 @@ def load_trained_model(
             cfg.autoencoder_checkpoint = autoencoder_checkpoint
         cfg = _maybe_inject_encoder_decoder_from_autoencoder_checkpoint(cfg)
 
-        # Probe first: if the training datamodule was cached-latents, swap to
-        # the raw/ambient datamodule so predictions are comparable to raw
-        # ground truth. No-op if the datamodule already yields raw Batch
-        # objects.
-        _probe_datamodule, cfg, probe_stats = setup_datamodule(cfg)
+        # If the training datamodule was cached-latents, swap to the
+        # raw/ambient datamodule so predictions are comparable to raw ground
+        # truth. No-op if the datamodule already yields raw Batch objects.
+        # Must happen before apply_overrides below, which can be silently
+        # discarded by this swap replacing cfg.datamodule wholesale.
         cfg = _maybe_swap_to_ambient_datamodule(
-            cfg, eval_mode="ambient", example_batch=probe_stats.get("example_batch")
+            cfg, eval_mode="ambient", example_batch=example_batch
         )
-        # Apply data/normalization overrides only after the ambient swap above,
-        # which can replace cfg.datamodule wholesale -- applying earlier would
-        # be silently discarded for processor-only + cached-latents checkpoints.
-        cfg = apply_data_overrides(cfg, data_path, normalization_path)
-        datamodule, cfg, stats = setup_datamodule(cfg)
 
-        model = setup_epd_model(cfg, stats, datamodule=datamodule)
+    cfg = apply_overrides(cfg, data_path)
+    datamodule, cfg, stats = setup_datamodule(cfg)
+    model = setup_epd_model(cfg, stats, datamodule=datamodule)
+
+    if processor_only:
         processor_state_dict = _extract_processor_state_dict(payload, use_ema=use_ema)
         load_result = model.processor.load_state_dict(processor_state_dict, strict=True)
     else:
-        cfg = apply_data_overrides(cfg, data_path, normalization_path)
-        datamodule, cfg, stats = setup_datamodule(cfg)
-        model = setup_epd_model(cfg, stats, datamodule=datamodule)
         load_result = model.load_state_dict(
             extract_state_dict(payload, use_ema=use_ema), strict=True
         )
@@ -320,33 +381,7 @@ def load_trained_model(
         )
 
     model = model.eval().to(device)
-    return model, datamodule, cfg
-
-
-def resolve_n_members(model, requested_n_members: int | None) -> int:
-    """Resolve how many samples to draw per input, without requiring the
-    caller to know whether the model is an ensemble or deterministic.
-
-    Ensemble-class models (those exposing `n_members`, e.g.
-    EncoderProcessorDecoderEnsemble) already carry a member count from their
-    training/eval config -- used as-is unless explicitly overridden, so a
-    correctly-configured ensemble checkpoint just works with no flags.
-    Everything else defaults to a single sample, so a genuinely deterministic
-    model costs exactly one forward pass rather than `--n-members` redundant
-    identical ones. A model that is stochastic without being wrapped in an
-    Ensemble class (e.g. flow matching sampling fresh ODE-initial noise per
-    call) will still only draw one sample unless --n-members is passed
-    explicitly -- there is no fully general, static way to detect "this
-    model is secretly stochastic" across arbitrary processor types; the
-    reliable way is empirical (call the model twice with different seeds and
-    compare outputs), which isn't worth the extra forward pass here given
-    --n-members already covers this case with one explicit flag.
-    """
-    if requested_n_members is not None:
-        return requested_n_members
-    if hasattr(model, "n_members"):
-        return model.n_members
-    return 1
+    return model, datamodule, cfg, checkpoint_path
 
 
 @torch.no_grad()
@@ -392,45 +427,25 @@ def main() -> None:
     device = resolve_device(args.device or "auto")
     log.info("Device: %s", device)
 
-    if args.data_path is not None:
-        log.info(
-            "Running on unseen data at %s (normalization stats still come from "
-            "the checkpoint's training config unless --normalization-path is "
-            "also set).",
-            args.data_path,
-        )
-
-    model, datamodule, cfg = load_trained_model(
+    model, datamodule, cfg, checkpoint_path = load_trained_model(
         run_dir,
         args.config_name,
         args.checkpoint_name,
         args.autoencoder_checkpoint,
         args.data_path,
-        args.normalization_path,
         device,
         args.use_ema,
     )
-    log.info("Model class: %s", type(model).__name__)
-    log.info("datamodule.data_path: %s", cfg.get("datamodule", {}).get("data_path"))
+    datamodule_cfg = cfg.get("datamodule", {})
     log.info(
-        "datamodule.normalization_path: %s",
-        cfg.get("datamodule", {}).get("normalization_path"),
+        "Model class: %s, data_path: %s, normalization_path: %s",
+        type(model).__name__,
+        datamodule_cfg.get("data_path"),
+        datamodule_cfg.get("normalization_path"),
     )
 
-    n_members = resolve_n_members(model, args.n_members)
-    log.info(
-        "n_members: %d (%s)",
-        n_members,
-        (
-            "explicit --n-members"
-            if args.n_members is not None
-            else (
-                "model's own configured n_members"
-                if hasattr(model, "n_members")
-                else "default of 1"
-            )
-        ),
-    )
+    n_members = getattr(model, "n_members", 1)
+    log.info("n_members (inferred): %d", n_members)
 
     if args.batch_size is not None:
         datamodule.batch_size = args.batch_size
@@ -454,11 +469,7 @@ def main() -> None:
                 "pred": pred,
                 "n_members": n_members,
                 "run_dir": str(run_dir),
-                "checkpoint_path": str(
-                    run_dir / args.checkpoint_name
-                    if args.checkpoint_name
-                    else "auto-detected"
-                ),
+                "checkpoint_path": str(checkpoint_path),
             },
             out_path,
         )
