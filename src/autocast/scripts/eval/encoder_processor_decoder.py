@@ -3,6 +3,7 @@
 import contextlib
 import logging
 import os
+import time
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from types import MethodType
@@ -311,6 +312,105 @@ def _build_encode_once_rollout_predict(
         return preds[:, :min_len], trues[:, :min_len]
 
     return rollout_predict_encode_once
+
+
+def _dump_rollout_tensors(
+    *,
+    rollout_predict: Callable[[Any], Any],
+    dataloader: Any,
+    out_path: Path,
+    meta: dict,
+    fabric: Any,
+    n_traj_cap: int | None = None,
+) -> None:
+    """Single-pass dump of ensemble rollout tensors for post-hoc UQ calibration.
+
+    Runs the family-agnostic ``rollout_predict`` closure (ambient EPD via
+    ``_standard_rollout_predict`` or FM latent via ``rollout_predict_encode_once``)
+    over the rollout test set exactly once, moving each batch's
+    ``preds[B,T,H,W,C,M]`` / ``trues[B,T,H,W,C]`` (denormalized data space, same
+    space the rollout metrics use) to CPU, then saves
+    ``{preds, trues, constant_scalars, meta}`` matching the field-stage
+    ``dump_rollouts.py`` schema so the existing calibration harness consumes it
+    unchanged.
+
+    Dump-only: the caller skips the metric passes so the (expensive) rollout is
+    computed once, not three times. Requires a single device (``eval.devices=1``);
+    tensors are NOT gathered across ranks, so a multi-rank run would silently dump
+    only rank 0's shard -- guarded against below.
+    """
+    world_size = int(getattr(fabric, "world_size", 1) or 1)
+    if world_size > 1:
+        msg = (
+            "dump_rollout_tensors requires eval.devices=1 (single process); got "
+            f"world_size={world_size}. Rollout tensors are not gathered across "
+            "ranks -- rerun with devices=1."
+        )
+        raise RuntimeError(msg)
+
+    preds_all: list[torch.Tensor] = []
+    trues_all: list[torch.Tensor] = []
+    scalars_all: list[torch.Tensor] = []
+    n_done = 0
+    t_start = time.perf_counter()
+    with torch.no_grad():
+        for bi, batch in enumerate(dataloader):
+            if n_traj_cap is not None and n_done >= n_traj_cap:
+                break
+            tb = time.perf_counter()
+            preds, trues = rollout_predict(batch)
+            if preds is None or trues is None:
+                log.warning("[dump] batch %d produced no tensors; skipping.", bi)
+                continue
+            preds = preds.detach().to("cpu")
+            trues = trues.detach().to("cpu")
+            b = int(preds.shape[0])
+            preds_all.append(preds)
+            trues_all.append(trues)
+            cs = getattr(batch, "constant_scalars", None)
+            if cs is not None:
+                scalars_all.append(cs.detach().to("cpu"))
+            n_done += b
+            dt = time.perf_counter() - tb
+            log.info(
+                "[dump] batch %d: B=%d preds%s trues%s %.1fs (%.2fs/traj)",
+                bi, b, tuple(preds.shape), tuple(trues.shape), dt, dt / max(b, 1),
+            )
+
+    if not preds_all:
+        log.warning("[dump] no batches produced tensors; nothing written.")
+        return
+
+    preds = torch.cat(preds_all, dim=0)
+    del preds_all
+    trues = torch.cat(trues_all, dim=0)
+    del trues_all
+    scalars = torch.cat(scalars_all, dim=0) if scalars_all else None
+    out_meta = {
+        **meta,
+        "n_traj": int(preds.shape[0]),
+        "dims": (
+            "preds=(B,T,H,W,C,M) trues=(B,T,H,W,C) denormalized data space "
+            "(same as autocast eval rollout metrics / dump_rollouts.py)"
+        ),
+    }
+    if int(getattr(fabric, "global_rank", 0)) == 0:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(
+            {
+                "preds": preds,
+                "trues": trues,
+                "constant_scalars": scalars,
+                "meta": out_meta,
+            },
+            out_path,
+        )
+        gb = (preds.numel() * preds.element_size()) / 1e9
+        total = time.perf_counter() - t_start
+        log.info(
+            "[dump] wrote %s (%d traj, %.1f GB) in %.1fs",
+            out_path, int(preds.shape[0]), gb, total,
+        )
 
 
 def _crop_rollout_batch_start(batch: Any, rollout_start: int) -> Any:
@@ -3185,15 +3285,50 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                     )
 
             rollout_predict = _build_rollout_predict()
-            _write_rollout_metric_outputs(
-                rollout_predict=rollout_predict,
-                csv_name="rollout_metrics.csv",
-                metadata_csv_name="rollout_metadata.csv",
-                per_timestep_stem="rollout_metrics_per_timestep",
-                log_prefix="Rollout",
-            )
+            _dump_requested = eval_cfg.get("dump_rollout_tensors", False)
+            if _dump_requested:
+                # Dump-only: run the rollout ONCE to save ensemble tensors and
+                # skip the (2x) metric passes. Raw metrics are recomputed from the
+                # dump offline by the calibration harness. Keeps GPU cost at 1x.
+                dump_loader = _limit_batches(
+                    fabric.setup_dataloaders(
+                        datamodule.rollout_test_dataloader(batch_size=eval_batch_size)
+                    ),
+                    max_rollout_batches,
+                )
+                _dump_path_cfg = eval_cfg.get("dump_rollout_path", None)
+                dump_out_path = (
+                    Path(_dump_path_cfg)
+                    if _dump_path_cfg
+                    else csv_path.parent / "rollout_tensors.pt"
+                )
+                _dump_rollout_tensors(
+                    rollout_predict=rollout_predict,
+                    dataloader=dump_loader,
+                    out_path=dump_out_path,
+                    meta={
+                        "n_members": int(n_members) if n_members else 1,
+                        "max_rollout_steps": int(max_rollout_steps),
+                        "rollout_stride": int(rollout_stride),
+                        "resolved_eval_path": str(resolved_eval_path),
+                        "checkpoint": str(eval_cfg.get("checkpoint", "")),
+                    },
+                    fabric=fabric,
+                    n_traj_cap=eval_cfg.get("dump_max_traj", None),
+                )
 
-            if eval_cfg.get("compute_rollout_autoencoded_target_metrics", False):
+            if not _dump_requested:
+                _write_rollout_metric_outputs(
+                    rollout_predict=rollout_predict,
+                    csv_name="rollout_metrics.csv",
+                    metadata_csv_name="rollout_metadata.csv",
+                    per_timestep_stem="rollout_metrics_per_timestep",
+                    log_prefix="Rollout",
+                )
+
+            if not _dump_requested and eval_cfg.get(
+                "compute_rollout_autoencoded_target_metrics", False
+            ):
                 if resolved_eval_path == EVAL_PATH_ENCODE_ONCE:
                     rollout_predict_ae_target = _build_rollout_predict(
                         compare_to_autoencoded_target=True
