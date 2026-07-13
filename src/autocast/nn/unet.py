@@ -25,6 +25,7 @@ class TemporalUNetBackbone(TemporalBackboneBase):
         n_steps_input: int,
         global_cond_channels: int | None,
         include_global_cond: bool,
+        include_time_embedding: bool = True,
         mod_features: int = 256,
         hid_channels: Sequence[int] = (32, 64, 128),
         hid_blocks: Sequence[int] = (2, 2, 2),
@@ -59,6 +60,8 @@ class TemporalUNetBackbone(TemporalBackboneBase):
             mod_features: Dimension for time embedding (diffusion timestep)
             global_cond_channels: Dimension for optional conditioning/modulation
             include_global_cond: Whether to include global conditioning
+            include_time_embedding: Whether to build a time embedding for scalar
+                diffusion timesteps; disable for models with no per-step modulation
             hid_channels: Tuple of hidden channels for UNet levels
             hid_blocks: Tuple of number of blocks per UNet level
             spatial: Spatial dimensionality (2 for 2D)
@@ -92,6 +95,7 @@ class TemporalUNetBackbone(TemporalBackboneBase):
             mod_features=mod_features,
             global_cond_channels=global_cond_channels,
             include_global_cond=include_global_cond,
+            include_time_embedding=include_time_embedding,
             temporal_method=temporal_method,
             temporal_attention_heads=temporal_attention_heads,
             temporal_attention_hidden_dim=temporal_attention_hidden_dim,

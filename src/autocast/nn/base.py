@@ -12,6 +12,8 @@ from autocast.nn.temporal_modules import (
 )
 from autocast.types import Tensor, TensorBTSC
 
+_PRECOMPUTED_MODULATION_NDIM = 2
+
 
 class TemporalBackboneBase(nn.Module, ABC):
     """Base class for temporal backbone architectures.
@@ -31,6 +33,7 @@ class TemporalBackboneBase(nn.Module, ABC):
         n_steps_input: int,
         global_cond_channels: int | None,
         include_global_cond: bool,
+        include_time_embedding: bool = True,
         mod_features: int = 256,
         temporal_method: str = "none",
         temporal_attention_heads: int = 8,
@@ -51,6 +54,8 @@ class TemporalBackboneBase(nn.Module, ABC):
             mod_features: Dimension for time embedding (diffusion timestep)
             global_cond_channels: Dimension for optional conditioning/modulation
             include_global_cond: Whether to include global conditioning
+            include_time_embedding: Whether to build a time embedding for scalar
+                diffusion timesteps; disable for models with no per-step modulation
             temporal_method: Method for temporal processing. Options:
                 - "attention": Multi-head self-attention over time
                 - "tcn": Temporal convolutional network
@@ -80,13 +85,15 @@ class TemporalBackboneBase(nn.Module, ABC):
             raise ValueError(msg)
         self.global_cond_channels = global_cond_channels
         self.include_global_cond = include_global_cond
+        self.include_time_embedding = include_time_embedding
 
         # Time embedding for scalar diffusion timesteps. Some models pass
         # precomputed modulation vectors directly and should not register
-        # unused embedding parameters under strict DDP.
+        # unused embedding parameters under strict DDP; models that don't use
+        # per-step modulation at all (include_time_embedding=False) also skip it.
         self.time_embedding = (
             None
-            if self.use_precomputed_modulation
+            if (not include_time_embedding or self.use_precomputed_modulation)
             else nn.Sequential(
                 SineEncoding(mod_features),
                 nn.Linear(mod_features, mod_features),
@@ -207,7 +214,7 @@ class TemporalBackboneBase(nn.Module, ABC):
     def forward(
         self,
         x_t: TensorBTSC,
-        t: Tensor,
+        t: Tensor | None,
         cond: TensorBTSC,
         global_cond: Tensor | None = None,
     ) -> TensorBTSC:
@@ -218,30 +225,46 @@ class TemporalBackboneBase(nn.Module, ABC):
             t: Diffusion modulation input. Either:
                 - scalar timesteps with shape (B,), which are embedded via SineEncoding
                 - precomputed modulation vectors with shape (B, D), where D=mod_features
+                - None, when the backbone was built with include_time_embedding=False
             cond: Conditioning input (B, T_cond, W, H, C)
             global_cond: Optional global conditioning/modulation vector (B, D)
 
         Returns:
             Denoised output (B, T, W, H, C)
         """
-        # Accept either scalar timesteps (B,) or precomputed modulation vectors (B, D).
-        if t.ndim == 2 and t.shape[-1] == self.mod_features:
-            t_emb = t
-        else:
-            if self.time_embedding is None:
+        # Build modulation embedding. Accept scalar timesteps (B,), precomputed
+        # modulation vectors (B, D), or no timestep input when time embedding
+        # is disabled entirely (include_time_embedding=False).
+        t_emb = None
+        if self.include_time_embedding:
+            if t is None:
                 msg = (
-                    "Expected precomputed modulation vectors with shape "
-                    "(B, mod_features), but received scalar timesteps."
+                    "Model initialized with include_time_embedding=True "
+                    "but no t provided"
                 )
                 raise ValueError(msg)
-            t_emb = self.time_embedding(t)
+            is_precomputed_ndim = t.ndim == _PRECOMPUTED_MODULATION_NDIM
+            is_precomputed = is_precomputed_ndim and t.shape[-1] == self.mod_features
+            if is_precomputed:
+                t_emb = t
+            else:
+                if self.time_embedding is None:
+                    msg = (
+                        "Expected precomputed modulation vectors with shape "
+                        "(B, mod_features), but received scalar timesteps."
+                    )
+                    raise ValueError(msg)
+                t_emb = self.time_embedding(t)
 
-        # Combine with global conditioning embedding if provided
         if self.global_cond_embedding is not None:
             if global_cond is None:
                 msg = "Model init with global_cond_channels but no global_cond provided"
                 raise ValueError(msg)
-            t_emb = t_emb + self.global_cond_embedding(global_cond)
+            global_emb = self.global_cond_embedding(global_cond)
+            t_emb = global_emb if t_emb is None else t_emb + global_emb
+
+        if t_emb is None:
+            t_emb = x_t.new_zeros((x_t.shape[0], self.mod_features))
 
         # Apply temporal processing
         x_t_temporal, cond_temporal = self.apply_temporal_processing(x_t, cond)
