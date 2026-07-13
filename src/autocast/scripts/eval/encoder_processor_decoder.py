@@ -2549,6 +2549,13 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
 
     # Get eval config
     eval_cfg = cfg.get("eval", {})
+    # Dump-only mode runs the rollout once to save raw ensemble tensors; metrics
+    # are recomputed offline from the dump. Benchmarks and the test-metric pass
+    # are unrelated extra rollout/inference passes that dump mode doesn't need,
+    # so gate them here rather than requiring every dump job to also pass
+    # `benchmark.enabled=false benchmark_rollout.enabled=false
+    # compute_test_metrics=false` by hand.
+    dump_requested = bool(eval_cfg.get("dump_rollout_tensors", False))
     eval_batch_size: int = eval_cfg.get("batch_size", 1)
     max_test_batches = eval_cfg.get("max_test_batches")
     max_rollout_batches = _resolve_rollout_batch_limit(eval_cfg)
@@ -2832,7 +2839,8 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     # Evaluation
 
     evaluation_rows: list[dict[str, float | str]] = []
-    compute_test_metrics = eval_cfg.get("compute_test_metrics", True)
+    compute_test_metrics_cfg = eval_cfg.get("compute_test_metrics", True)
+    compute_test_metrics = compute_test_metrics_cfg and not dump_requested
     skip_memory_intensive_metrics = bool(
         eval_cfg.get("skip_memory_intensive_metrics", True)
     )
@@ -2921,6 +2929,11 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
         )
 
         evaluation_rows.extend(test_rows)
+    elif dump_requested:
+        log.info(
+            "Skipping test metrics computation: dump-only mode requested "
+            "(eval.dump_rollout_tensors=true)."
+        )
     else:
         log.info("Skipping test metrics computation (eval.compute_test_metrics=false).")
 
@@ -2930,15 +2943,22 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
             model=model,  # pyright: ignore[reportArgumentType]
         )
     )
-    benchmark_rows = _collect_benchmark_rows(
-        eval_cfg=eval_cfg,
-        cfg=cfg,
-        stats=stats,
-        model=model,  # pyright: ignore[reportArgumentType]
-        checkpoint_path=checkpoint_path,
-        device=str(fabric.device),
-        eval_batch_size=eval_batch_size,
-    )
+    if dump_requested:
+        log.info(
+            "Skipping inference/rollout benchmarks: dump-only mode requested "
+            "(eval.dump_rollout_tensors=true)."
+        )
+        benchmark_rows = []
+    else:
+        benchmark_rows = _collect_benchmark_rows(
+            eval_cfg=eval_cfg,
+            cfg=cfg,
+            stats=stats,
+            model=model,  # pyright: ignore[reportArgumentType]
+            checkpoint_path=checkpoint_path,
+            device=str(fabric.device),
+            eval_batch_size=eval_batch_size,
+        )
 
     # Rollouts
     compute_rollout_coverage = eval_cfg.get("compute_rollout_coverage", False)
@@ -3285,8 +3305,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                     )
 
             rollout_predict = _build_rollout_predict()
-            _dump_requested = eval_cfg.get("dump_rollout_tensors", False)
-            if _dump_requested:
+            if dump_requested:
                 # Dump-only: run the rollout ONCE to save ensemble tensors and
                 # skip the (2x) metric passes. Raw metrics are recomputed from the
                 # dump offline by the calibration harness. Keeps GPU cost at 1x.
@@ -3317,7 +3336,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                     n_traj_cap=eval_cfg.get("dump_max_traj", None),
                 )
 
-            if not _dump_requested:
+            if not dump_requested:
                 _write_rollout_metric_outputs(
                     rollout_predict=rollout_predict,
                     csv_name="rollout_metrics.csv",
@@ -3326,7 +3345,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                     log_prefix="Rollout",
                 )
 
-            if not _dump_requested and eval_cfg.get(
+            if not dump_requested and eval_cfg.get(
                 "compute_rollout_autoencoded_target_metrics", False
             ):
                 if resolved_eval_path == EVAL_PATH_ENCODE_ONCE:
