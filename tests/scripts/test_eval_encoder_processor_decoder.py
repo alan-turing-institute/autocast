@@ -37,7 +37,9 @@ from autocast.scripts.eval.encoder_processor_decoder import (
     _deterministic_member_average_metric_name,
     _deterministic_member_metric_name,
     _load_lola_autoencoder_config_from_cache,
+    _maybe_inject_encoder_decoder_from_autoencoder_checkpoint,
     _maybe_swap_to_ambient_datamodule,
+    _needs_autoencoder_injection,
     _normalize_ensemble_member_indices,
     _normalize_eval_mode,
     _normalize_per_batch_rows,
@@ -1232,6 +1234,107 @@ def test_try_build_decode_fn_falls_back_to_lola_autoencoder_run(tmp_path, monkey
     assert torch.allclose(captured["mean"], torch.tensor([0.5]))
     assert torch.allclose(captured["std"], torch.tensor([2.0]))
     assert torch.equal(decode_fn(torch.zeros(1)), torch.ones(1))
+
+
+def test_needs_autoencoder_injection_true_when_unset():
+    assert _needs_autoencoder_injection(None, {"pkg.Identity"}) is True
+
+
+def test_needs_autoencoder_injection_true_for_stateless_placeholder():
+    placeholder_cfg = OmegaConf.create({"_target_": "pkg.Identity", "in_channels": 3})
+    assert _needs_autoencoder_injection(placeholder_cfg, {"pkg.Identity"}) is True
+
+
+def test_needs_autoencoder_injection_false_for_real_component():
+    real_cfg = OmegaConf.create({"_target_": "pkg.DCEncoder", "in_channels": 3})
+    assert _needs_autoencoder_injection(real_cfg, {"pkg.Identity"}) is False
+
+
+def _write_autoencoder_run_config(run_dir, *, encoder_target, decoder_target):
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "autoencoder.ckpt").touch()
+    OmegaConf.save(
+        OmegaConf.create(
+            {
+                "model": {
+                    "encoder": {"_target_": encoder_target, "in_channels": 3},
+                    "decoder": {"_target_": decoder_target, "out_channels": 3},
+                }
+            }
+        ),
+        run_dir / "resolved_autoencoder_config.yaml",
+    )
+    return run_dir / "autoencoder.ckpt"
+
+
+def test_maybe_inject_encoder_decoder_replaces_stateless_placeholders(tmp_path):
+    ae_ckpt = _write_autoencoder_run_config(
+        tmp_path / "ae_run",
+        encoder_target="autocast.encoders.dc.DCEncoder",
+        decoder_target="autocast.decoders.dc.DCDecoder",
+    )
+    cfg = OmegaConf.create(
+        {
+            "autoencoder_checkpoint": str(ae_ckpt),
+            "model": {
+                "encoder": {
+                    "_target_": "autocast.encoders.identity.IdentityEncoder",
+                    "in_channels": 3,
+                },
+                "decoder": {
+                    "_target_": "autocast.decoders.identity.IdentityDecoder",
+                    "in_channels": 3,
+                },
+            },
+        }
+    )
+
+    injected = _maybe_inject_encoder_decoder_from_autoencoder_checkpoint(cfg)
+
+    assert injected.model.encoder._target_ == "autocast.encoders.dc.DCEncoder"
+    assert injected.model.decoder._target_ == "autocast.decoders.dc.DCDecoder"
+
+
+def test_maybe_inject_encoder_decoder_fills_missing_slots(tmp_path):
+    ae_ckpt = _write_autoencoder_run_config(
+        tmp_path / "ae_run",
+        encoder_target="autocast.encoders.dc.DCEncoder",
+        decoder_target="autocast.decoders.dc.DCDecoder",
+    )
+    cfg = OmegaConf.create({"autoencoder_checkpoint": str(ae_ckpt)})
+
+    injected = _maybe_inject_encoder_decoder_from_autoencoder_checkpoint(cfg)
+
+    assert injected.model.encoder._target_ == "autocast.encoders.dc.DCEncoder"
+    assert injected.model.decoder._target_ == "autocast.decoders.dc.DCDecoder"
+
+
+def test_maybe_inject_encoder_decoder_leaves_real_components_untouched(tmp_path):
+    ae_ckpt = _write_autoencoder_run_config(
+        tmp_path / "ae_run",
+        encoder_target="autocast.encoders.dc.DCEncoder",
+        decoder_target="autocast.decoders.dc.DCDecoder",
+    )
+    cfg = OmegaConf.create(
+        {
+            "autoencoder_checkpoint": str(ae_ckpt),
+            "model": {
+                "encoder": {
+                    "_target_": "autocast.encoders.dc.DCEncoder",
+                    "in_channels": 1,
+                },
+                "decoder": {
+                    "_target_": "autocast.decoders.dc.DCDecoder",
+                    "out_channels": 1,
+                },
+            },
+        }
+    )
+
+    injected = _maybe_inject_encoder_decoder_from_autoencoder_checkpoint(cfg)
+
+    assert injected.model.encoder.in_channels == 1
+    assert injected.model.decoder.out_channels == 1
 
 
 def test_maybe_swap_to_ambient_datamodule_wires_lola_autoencoder(tmp_path):

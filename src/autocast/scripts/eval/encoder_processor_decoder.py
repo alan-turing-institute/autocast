@@ -171,6 +171,21 @@ LOLA_WRAPPED_ENCODER_TARGET = "autocast.external.lola.wrapped_encoder.WrappedEnc
 LOLA_WRAPPED_DECODER_TARGET = "autocast.external.lola.wrapped_decoder.WrappedDecoder"
 THE_WELL_DATAMODULE_TARGET = "autocast.data.datamodule.TheWellDataModule"
 
+# Parameter-free encoder/decoder targets used as training-time placeholders
+# for models trained purely on pre-cached latents (the real autoencoder ran
+# offline to produce the cache and is never part of the training graph).
+# These carry no weights to restore, so for ambient-reconstruction eval they
+# must be swapped for the real architecture rather than treated as an
+# already-configured encoder/decoder.
+STATELESS_ENCODER_TARGETS = {
+    "autocast.encoders.identity.IdentityEncoder",
+    "autocast.encoders.permute_concat.PermuteConcat",
+}
+STATELESS_DECODER_TARGETS = {
+    "autocast.decoders.identity.IdentityDecoder",
+    "autocast.decoders.channels_last.ChannelsLast",
+}
+
 
 def _decode_tensor(
     x: torch.Tensor,
@@ -2071,12 +2086,35 @@ def _load_autoencoder_run_config_from_checkpoint(
     return None
 
 
+def _needs_autoencoder_injection(
+    component_cfg: Any, stateless_targets: set[str]
+) -> bool:
+    """Return True if a model.encoder/decoder slot should be filled from the AE.
+
+    True both when the slot is unset and when it holds a parameter-free
+    placeholder target (see ``STATELESS_ENCODER_TARGETS``/
+    ``STATELESS_DECODER_TARGETS``) — such placeholders have no weights to
+    restore and must be replaced, not merely left in place, to reconstruct
+    ambient space from an explicitly-supplied autoencoder checkpoint.
+    """
+    if component_cfg is None:
+        return True
+    target = component_cfg.get("_target_") if hasattr(component_cfg, "get") else None
+    return str(target) in stateless_targets
+
+
 def _maybe_inject_encoder_decoder_from_autoencoder_checkpoint(
     cfg: DictConfig,
 ) -> DictConfig:
-    """Backfill missing model.encoder/decoder from autoencoder checkpoint config."""
+    """Backfill missing/stateless model.encoder/decoder from AE checkpoint config."""
     model_cfg = cfg.get("model", {})
-    if model_cfg.get("encoder") is not None and model_cfg.get("decoder") is not None:
+    needs_encoder = _needs_autoencoder_injection(
+        model_cfg.get("encoder"), STATELESS_ENCODER_TARGETS
+    )
+    needs_decoder = _needs_autoencoder_injection(
+        model_cfg.get("decoder"), STATELESS_DECODER_TARGETS
+    )
+    if not needs_encoder and not needs_decoder:
         return cfg
 
     ae_cfg = _load_autoencoder_run_config_from_checkpoint(
@@ -2101,14 +2139,14 @@ def _maybe_inject_encoder_decoder_from_autoencoder_checkpoint(
         return cfg
 
     with open_dict(model_cfg):
-        if model_cfg.get("encoder") is None:
+        if needs_encoder:
             model_cfg["encoder"] = ae_encoder_cfg
-        if model_cfg.get("decoder") is None:
+        if needs_decoder:
             model_cfg["decoder"] = ae_decoder_cfg
 
     log.info(
-        "Ambient eval: injected missing model.encoder/model.decoder from "
-        "autoencoder checkpoint config."
+        "Ambient eval: injected missing/stateless model.encoder/model.decoder "
+        "from autoencoder checkpoint config."
     )
     return cfg
 
