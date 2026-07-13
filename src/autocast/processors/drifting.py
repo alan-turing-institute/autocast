@@ -1,209 +1,344 @@
+"""Drifting processor algorithm core.
+
+PyTorch port of the JAX reference implementation of the drift-field loss from
+"Generative Modeling via Drifting" (Deng et al. 2026, arXiv:2602.04770).
+Reference: https://github.com/lambertae/drifting (drift_loss.py, commit
+c8b4fee).
+
+Inherits the cohort-inflation forward path from ``OneStepCohortProcessor``;
+this module owns the drift-field math (``_compute_drift_field`` and helpers)
+and the ``_compute_cohort_loss`` override.
+"""
+
+# ruff: noqa: F722 — jaxtyping shape strings (Float[Tensor, "batch n_gen feature"])
+# are nested inside the forward-annotation string under `from __future__ import
+# annotations`; F722 flags the inner shape as if it were a Python expression.
+from __future__ import annotations
+
+from collections.abc import Sequence
+from typing import ClassVar
+
 import torch
-from einops import rearrange
+from jaxtyping import Float
 from torch import nn
+from torch.nn import functional as F
 
-from autocast.processors.base import Processor
-from autocast.types import EncodedBatch, Tensor
-
-
-def compute_v(
-    x, y_pos, y_neg, T, N, N_pos, return_stats: bool = False
-) -> tuple[Tensor, dict[str, float] | None]:
-    """Compute drift vector field V for drifting processor."""
-    # x: [N, D]
-    # y_pos: [N_pos, D]
-    # y_neg: [N_neg, D]
-    # T: temperature
-    # compute pairwise distance
-    dist_pos = torch.cdist(x, y_pos)  # [N, N_pos]
-    dist_neg = torch.cdist(x, y_neg)  # [N, N_neg]
-    # ignore self (if y_neg is x) - Alg. 2
-    dist_neg = dist_neg + torch.eye(N, device=x.device, dtype=x.dtype) * 1e6
-    # compute logits
-    logit_pos = -dist_pos / T
-    logit_neg = -dist_neg / T
-    # concat for normalization
-    logit = torch.cat([logit_pos, logit_neg], dim=1)
-    # normalize along both dimensions
-    A_row = logit.softmax(dim=-1)
-    A_col = logit.softmax(dim=-2)
-    A = torch.sqrt(A_row * A_col)
-    # back to [N, N_pos] and [N, N_neg]
-    N_neg = y_neg.shape[0]
-    A_pos, A_neg = torch.split(A, [N_pos, N_neg], dim=1)
-    # compute the weights
-    W_pos = A_pos * A_neg.sum(dim=1, keepdim=True)  # [N, N_pos]
-    W_neg = A_neg * A_pos.sum(dim=1, keepdim=True)  # [N, N_neg]
-    drift_pos = W_pos @ y_pos  # [N_x, D]
-    drift_neg = W_neg @ y_neg  # [N_x, D]
-    V = drift_pos - drift_neg
-    if not return_stats:
-        return V, None
-    with torch.no_grad():
-        stats = {
-            "dist_pos_mean": dist_pos.mean().item(),
-            "dist_neg_mean": dist_neg.mean().item(),
-            "logit_min": logit.min().item(),
-            "logit_max": logit.max().item(),
-            "a_pos_sum_mean": A_pos.sum(dim=1).mean().item(),
-            "a_neg_sum_mean": A_neg.sum(dim=1).mean().item(),
-            "w_pos_mean": W_pos.mean().item(),
-            "w_neg_mean": W_neg.mean().item(),
-            "v_abs_mean": V.abs().mean().item(),
-            "v_norm_mean": V.norm(dim=1).mean().item(),
-        }
-    return V, stats
+from autocast.processors.one_step_cohort import OneStepCohortProcessor
+from autocast.types import Tensor
 
 
-class DriftingProcessor(Processor):
-    """Processor that wraps a flow-matching generative model."""
+def _pairwise_distances(
+    x: Float[Tensor, "batch n_x feature"],
+    y: Float[Tensor, "batch n_y feature"],
+    *,
+    eps: float = 1e-8,
+) -> Float[Tensor, "batch n_x n_y"]:
+    """Pairwise Euclidean distances with a soft-floor on the squared form.
+
+    Reimplemented rather than calling ``torch.cdist`` to match the JAX
+    reference's ``sqrt(clamp(sq_dist, min=eps))`` form, which gives a
+    well-defined backward at ``d == 0`` and avoids sqrt(0)-NaN gradients.
+
+    Args:
+        x: Query tensor of shape ``(B, N_x, D)``.
+        y: Key tensor of shape ``(B, N_y, D)``.
+        eps: Soft floor on the squared distance before the sqrt.
+
+    Returns:
+        Pairwise distance tensor of shape ``(B, N_x, N_y)``.
+    """
+    sq_dist = (
+        (x * x).sum(dim=-1, keepdim=True)
+        + (y * y).sum(dim=-1, keepdim=True).transpose(-1, -2)
+        - 2.0 * torch.einsum("bnd,bmd->bnm", x, y)
+    )
+    return torch.sqrt(sq_dist.clamp_min(eps))
+
+
+def _per_tau_force_field(
+    *,
+    dist_normed: Float[Tensor, "batch n_gen n_target"],
+    targets_scaled: Float[Tensor, "batch n_target feature"],
+    gen_scaled: Float[Tensor, "batch n_gen feature"],
+    target_weights: Float[Tensor, "batch n_target"],
+    n_neg_total: int,
+    tau: float,
+) -> tuple[Float[Tensor, "batch n_gen feature"], Float[Tensor, ""]]:
+    """Compute the L2-normalised drift force at one kernel temperature.
+
+    Args:
+        dist_normed: Normalised pairwise distances, shape ``(B, N_gen, N_t)``.
+        targets_scaled: Targets in scaled feature space, shape ``(B, N_t, D)``.
+        gen_scaled: Trainable cohort in scaled feature space, shape
+            ``(B, N_gen, D)``.
+        target_weights: Per-target weights, shape ``(B, N_t)``.
+        n_neg_total: Total negative-side slab width (gen + fixed_neg).
+        tau: Kernel temperature for this scale.
+
+    Returns:
+        ``(force_l2, force_rms_sq)``: the per-tau force normalised to unit
+        root-mean-square, and the pre-normalisation mean squared force
+        magnitude (logged in ``info`` by the caller).
+    """
+    logits = -dist_normed / tau
+    aff_row = torch.softmax(logits, dim=-1)
+    aff_col = torch.softmax(logits, dim=-2)
+    # 1e-6 floor: sqrt-stability guard on the geometric-mean affinity; matches
+    # the JAX reference's clamp on the inner product before the sqrt.
+    aff = torch.sqrt((aff_row * aff_col).clamp_min(1e-6))
+    aff = aff * target_weights[:, None, :]
+
+    aff_neg = aff[..., :n_neg_total]
+    aff_pos = aff[..., n_neg_total:]
+    coeff_neg = -aff_neg * aff_pos.sum(dim=-1, keepdim=True)
+    coeff_pos = aff_pos * aff_neg.sum(dim=-1, keepdim=True)
+    coeff = torch.cat([coeff_neg, coeff_pos], dim=-1)
+
+    force_tau = torch.einsum("bny,byd->bnd", coeff, targets_scaled)
+    force_tau = force_tau - coeff.sum(dim=-1, keepdim=True) * gen_scaled
+
+    force_rms_sq = (force_tau**2).mean()
+    # 1e-8 floor: RMS divide-by-zero guard for the L2 normaliser.
+    return force_tau / force_rms_sq.clamp_min(1e-8).sqrt(), force_rms_sq
+
+
+def _compute_drift_field(
+    gen: Float[Tensor, "batch n_gen feature"],
+    fixed_pos: Float[Tensor, "batch n_pos feature"],
+    fixed_neg: Float[Tensor, "batch n_neg feature"] | None = None,
+    *,
+    tau_list: Sequence[float] = (0.02, 0.05, 0.2),
+    weight_gen: Float[Tensor, "batch n_gen"] | None = None,
+    weight_pos: Float[Tensor, "batch n_pos"] | None = None,
+    weight_neg: Float[Tensor, "batch n_neg"] | None = None,
+    diag_mask_value: float = 100.0,
+    eps: float = 1e-3,
+) -> tuple[
+    Float[Tensor, "batch n_gen feature"],
+    Float[Tensor, "batch n_gen feature"],
+    dict[str, Tensor],
+]:
+    """Compute the kernelised contrastive drift field, JAX-faithful port.
+
+    The drift moves each generated sample toward the positives and away from
+    the negatives (the cohort detached + any extra fixed negatives), computed
+    at multiple kernel temperatures and aggregated by per-scale L2
+    normalisation. All arithmetic runs in fp32 for numerical stability of
+    ``exp(-d / tau)`` with small ``tau``; the output stays in fp32 (the
+    caller squares-and-reduces).
+
+    The target buffer is structured as three slabs
+    ``[gen_detached, fixed_neg, fixed_pos]``, with diagonal masking only on
+    the leading gen-vs-gen block — matches the reference implementation
+    exactly. Forward-compatible with the v2 memory-bank backlog (where
+    ``fixed_neg`` becomes non-empty).
+
+    Args:
+        gen: Trainable cohort of generated samples of shape ``(B, N_gen, D)``.
+        fixed_pos: Positives of shape ``(B, N_pos, D)``. In v1, ``N_pos = 1``
+            per design — the unique ground truth for each cohort.
+        fixed_neg: Extra fixed negatives (e.g. memory-bank samples) of shape
+            ``(B, N_neg, D)``, or ``None`` (the v1 default).
+        tau_list: Kernel temperatures. Default ``(0.02, 0.05, 0.2)`` matches
+            the reference's library default.
+        weight_gen: Per-sample weights for the cohort slab, shape
+            ``(B, N_gen)``. Defaults to ones.
+        weight_pos: Same for ``fixed_pos``, shape ``(B, N_pos)``.
+        weight_neg: Same for ``fixed_neg``, shape ``(B, N_neg)``.
+        diag_mask_value: Value added to the gen-vs-gen diagonal of the
+            distance matrix to mask out self-affinity. Default 100 matches
+            the reference.
+        eps: Soft floor on the distance/feature scale denominators. Default
+            ``1e-3`` matches the reference.
+
+    Returns:
+        A tuple ``(goal_scaled, gen_scaled, info)``:
+
+        - ``goal_scaled`` of shape ``(B, N_gen, D)`` — the regression target
+          in the scaled feature space, detached.
+        - ``gen_scaled`` of shape ``(B, N_gen, D)`` — the trainable cohort
+          rescaled into the same space; carries the live gradient through
+          ``gen`` (the scale factor is detached, so the gradient is the
+          clean ``1 / scale_inputs``).
+        - ``info`` carrying per-scale diagnostics: ``"scale"`` (the
+          distance-normalisation scalar) and ``"loss_<tau>"`` (the
+          pre-normalisation mean squared force at each temperature).
+    """
+    # fp32 cast for numerical stability of exp(-d / tau) at small tau.
+    gen_f32 = gen.to(torch.float32)
+    fixed_pos_f32 = fixed_pos.to(torch.float32)
+    batch_size, n_gen, feature_dim = gen_f32.shape
+    fixed_neg_f32 = (
+        gen_f32.new_zeros((batch_size, 0, feature_dim))
+        if fixed_neg is None
+        else fixed_neg.to(torch.float32)
+    )
+    weight_gen = (
+        gen_f32.new_ones(gen_f32.shape[:-1])
+        if weight_gen is None
+        else weight_gen.to(torch.float32)
+    )
+    weight_pos = (
+        gen_f32.new_ones(fixed_pos_f32.shape[:-1])
+        if weight_pos is None
+        else weight_pos.to(torch.float32)
+    )
+    weight_neg = (
+        gen_f32.new_ones(fixed_neg_f32.shape[:-1])
+        if weight_neg is None
+        else weight_neg.to(torch.float32)
+    )
+
+    # Three-slab target buffer: [gen_detached, fixed_neg, fixed_pos].
+    gen_detached = gen_f32.detach()
+    targets = torch.cat([gen_detached, fixed_neg_f32, fixed_pos_f32], dim=1)
+    target_weights = torch.cat([weight_gen, weight_neg, weight_pos], dim=1)
+
+    dist = _pairwise_distances(gen_f32, targets)
+
+    # Normalisation stats — detached so they act as constants downstream
+    # (matches JAX's stop_gradient at the calculate-scaled-goal boundary).
+    scale = (dist * target_weights[:, None, :]).mean() / target_weights.mean()
+    scale = scale.detach()
+    scale_inputs = (scale / (feature_dim**0.5)).clamp_min(eps)
+    scale_clamped = scale.clamp_min(eps)
+
+    gen_scaled = gen_f32 / scale_inputs
+    targets_scaled = targets / scale_inputs
+    dist_normed = dist / scale_clamped
+
+    # Diagonal mask on the leading gen-vs-gen block ONLY. F.pad takes pads in
+    # REVERSE axis order: (last_left, last_right, second_left, second_right).
+    n_targets = dist_normed.shape[-1]
+    eye_block = (
+        torch.eye(n_gen, dtype=dist_normed.dtype, device=gen_f32.device)
+        * diag_mask_value
+    )
+    eye_padded = F.pad(eye_block, (0, n_targets - n_gen, 0, 0))
+    dist_normed = dist_normed + eye_padded[None, :, :]
+
+    n_neg_total = n_gen + fixed_neg_f32.shape[1]
+    info: dict[str, Tensor] = {"scale": scale}
+    force_total = torch.zeros_like(gen_scaled)
+    for tau in tau_list:
+        force_l2, force_rms_sq = _per_tau_force_field(
+            dist_normed=dist_normed,
+            targets_scaled=targets_scaled,
+            gen_scaled=gen_scaled,
+            target_weights=target_weights,
+            n_neg_total=n_neg_total,
+            tau=tau,
+        )
+        info[f"loss_{tau}"] = force_rms_sq.detach()
+        force_total = force_total + force_l2
+
+    # Drift target is detached: the regression loss in the caller computes
+    # ((gen_scaled - goal_scaled) ** 2).mean() and the gradient flows through
+    # gen_scaled only.
+    goal_scaled = (gen_scaled + force_total).detach()
+    return goal_scaled, gen_scaled, info
+
+
+class DriftingProcessor(OneStepCohortProcessor):
+    """One-step generative processor trained via the drifting field loss.
+
+    Implements the algorithm of Deng et al. 2026 (arXiv:2602.04770) as a
+    drop-in autocast ``Processor``. Inherits the cohort-inflation forward
+    path from ``OneStepCohortProcessor``; this class only specifies the
+    extra hyperparameters (``tau_list``, ``diag_mask_value``) and the
+    drift-field loss body.
+
+    Note:
+        With ``n_pos=1`` (the v1 default — the unique ground truth is the
+        only positive per input), the positive-side dual softmax degenerates
+        to a constant pull toward that single target; only the
+        *negative-side* repulsion across the same-input cohort distinguishes
+        drifting from plain MSE-toward-target. The ``MSECohortProcessor``
+        ablation isolates that contribution.
+    """
+
+    _MIN_N_SAMPLES: ClassVar[int] = 2
+    _MIN_N_SAMPLES_REASON: ClassVar[str] = (
+        "cohort sizes below 2 collapse the negative-side dual softmax to a "
+        "trivial self-affinity term"
+    )
 
     def __init__(
         self,
         *,
         backbone: nn.Module,
-        n_steps_output: int = 4,
-        n_channels_in: int = 1,
-        n_channels_out: int = 1,
-        n_samples: int = 20,
-        temperature: float = 50,
-        debug_every: int = 50,
+        n_steps_output: int,
+        n_channels_out: int,
+        n_samples: int = 8,
+        tau_list: Sequence[float] = (0.02, 0.05, 0.2),
+        diag_mask_value: float = 100.0,
     ) -> None:
-        # Store core hyperparameters and optional prebuilt backbone.
-        super().__init__()
-        self.generator = backbone
-
-        self.n_steps_output = n_steps_output
-        self.n_channels_in = n_channels_in
-        self.n_channels_out = n_channels_out
-        self.n_samples = n_samples
-        self.temperature = temperature
-        self.debug_every = debug_every
-        self._debug_step = 0
-
-    def generator_func(
-        self, z: Tensor, x: Tensor, global_cond: Tensor | None = None
-    ) -> Tensor:
-        """Flow matching vector field.
-
-        The vector field over the tangent space of output states (z).
-        conditioned on input states (x) at time (t).
+        """Build a DriftingProcessor.
 
         Args:
-            z: Current output states of shape (B, T_out, *spatial, C_out).
-            x: Conditioning inputs of shape (B, T_in, *spatial, C_in).
-            global_cond: Optional non-spatial conditioning/modulation tensor.
-
-        Returns:
-            Time derivative of output states with the same shape as `z`.
+            backbone: One-step generator backbone. MUST be constructed with
+                ``include_time_embedding=False`` (drifting has no
+                integration time ``t``).
+            n_steps_output: Number of output time steps per sample. Required;
+                configs pass ``auto`` and let ``setup.py`` resolve from the
+                datamodule's output shape.
+            n_channels_out: Number of output channels per sample. Required;
+                resolved via ``auto`` as for ``n_steps_output``.
+            n_samples: Cohort size per input. Must be >= 2 (a cohort of one
+                produces a trivially zero negative-side dual softmax;
+                contrastive drift needs >= 2). Default 8 matches the
+                reference's library default.
+            tau_list: Kernel temperatures for the multi-scale aggregation.
+                Default ``(0.02, 0.05, 0.2)`` matches the reference.
+            diag_mask_value: Value added to the gen-vs-gen diagonal of the
+                distance matrix to mask self-affinity.
         """
-        return self.generator(z, t=None, cond=x, global_cond=global_cond)
+        if len(tau_list) < 1:
+            msg = (
+                f"DriftingProcessor requires len(tau_list) >= 1 (got {len(tau_list)})."
+            )
+            raise ValueError(msg)
 
-    def forward(self, x: Tensor, global_cond: Tensor | None) -> Tensor:
-        """Alias to map for Lightning/PyTorch compatibility."""
-        return self.map(x, global_cond)
+        super().__init__(
+            backbone=backbone,
+            n_steps_output=n_steps_output,
+            n_channels_out=n_channels_out,
+            n_samples=n_samples,
+        )
 
-    def map(
-        self, x: Tensor, global_cond: Tensor | None, n_samples: int | None = None
-    ) -> Tensor:
-        """Map inputs states (x) to output states (z) by passing through the generator.
+        self.tau_list = tuple(tau_list)
+        self.diag_mask_value = diag_mask_value
+
+    def _compute_cohort_loss(
+        self,
+        gen_b: Tensor,
+        target_b: Tensor,
+    ) -> tuple[Tensor, dict[str, Tensor]]:
+        """Compute the drift-field loss and per-scale force-RMS diagnostics.
+
+        With ``n_pos = 1``, ``target_b[:, :1, :]`` recovers the unique
+        positive per input (the K target copies along the middle axis are
+        identical under repeat-interleave). The negative side comes
+        implicitly from the gen-vs-gen block of the target buffer inside
+        ``_compute_drift_field``.
 
         Args:
-            x: Conditioning inputs of shape (B, T_in, *spatial, C_in).
-            global_cond: Optional non-spatial conditioning/modulation tensor.
-            n_samples: Number of candidate samples per step used when computing
-                the drift vector field; defaults to `self.n_samples`.
+            gen_b: Cohort-flattened generator output.
+            target_b: Cohort-flattened target.
 
         Returns:
-            Generated outputs of shape (B, T_out, *spatial, C_out).
+            ``(loss, extra_diagnostics)`` per the
+            ``OneStepCohortProcessor`` contract.
         """
-        batch_size = x.shape[0]
-        device, dtype = x.device, x.dtype
-
-        # Initialize noisy sample and scalar time for each batch element.
-        spatial_shape = tuple(x.shape[2:-1])
-        n_gen = batch_size * n_samples if n_samples is not None else batch_size
-        z_shape = (
-            n_gen,
-            self.n_steps_output,
-            *spatial_shape,
-            self.n_channels_in,
+        pos_b = target_b[:, :1, :]
+        goal_scaled, gen_scaled, info = _compute_drift_field(
+            gen_b,
+            pos_b,
+            tau_list=self.tau_list,
+            diag_mask_value=self.diag_mask_value,
         )
-        z = torch.randn(z_shape, device=device, dtype=dtype)
-        if n_samples is not None:
-            x = x.repeat_interleave(n_samples, dim=0)
-            if global_cond is not None:
-                global_cond = global_cond.repeat_interleave(n_samples, dim=0)
-        return (
-            self.generator_func(z, x, global_cond)
-            if n_samples is None
-            else rearrange(
-                self.generator_func(z, x, global_cond),
-                "(b m) ... -> b ... m",
-                b=batch_size,
-                m=n_samples,
-            )
-        )
-
-    def loss(self, batch: EncodedBatch) -> Tensor:
-        """Compute drifting loss (Alg. 1): L = E[||x - stopgrad(x + V)||^2]."""
-        batch_n_samples = batch.repeat(self.n_samples)
-        target_states = batch_n_samples.encoded_output_fields  # y_pos from p_data
-        cond = batch_n_samples.encoded_inputs
-        global_cond = batch_n_samples.global_cond
-
-        N = cond.shape[0]
-        spatial_shape = tuple(cond.shape[2:-1])
-        eps = torch.randn(
-            N,
-            self.n_steps_output,
-            *spatial_shape,
-            self.n_channels_in,
-            device=cond.device,
-            dtype=cond.dtype,
-        )
-        # Alg. 1: x = f(eps), use noise as generator input (not conditioning)
-        x = self.generator_func(eps, cond, global_cond)
-
-        y_neg = x  # reuse generated as negatives (Alg. 1)
-        y_pos = target_states
-
-        x_flat = x.flatten(start_dim=1)
-        y_pos_flat = y_pos.flatten(start_dim=1)
-        y_neg_flat = y_neg.flatten(start_dim=1)
-
-        v, stats = compute_v(
-            x_flat,
-            y_pos_flat,
-            y_neg_flat,
-            T=self.temperature,  # paper τ ∈ {0.02, 0.05, 0.2}, curr 50 for stability
-            N=N,
-            N_pos=y_pos_flat.shape[0],
-            return_stats=self.training and self.debug_every > 0,
-        )
-        # Alg. 1: loss = MSE(x, stopgrad(x + V))
-        x_drifted = (x_flat + v).detach()  # Alg. 1
-        loss = (x_flat - x_drifted).pow(2).mean()  # Alg. 1
-        if (
-            self.training
-            and self.debug_every > 0
-            and stats is not None
-            and (self._debug_step % self.debug_every == 0)
-        ):
-            print(
-                "[drifting debug] "
-                f"step={self._debug_step} "
-                f"loss={loss.item():.3e} "
-                f"|v|_mean={stats['v_abs_mean']:.3e} "
-                f"v_norm_mean={stats['v_norm_mean']:.3e} "
-                f"dist_pos={stats['dist_pos_mean']:.3e} "
-                f"dist_neg={stats['dist_neg_mean']:.3e} "
-                "logit[min,max]="
-                f"({stats['logit_min']:.3e},{stats['logit_max']:.3e}) "
-                "A[pos,neg]="
-                f"({stats['a_pos_sum_mean']:.3e},{stats['a_neg_sum_mean']:.3e}) "
-                "W[pos,neg]="
-                f"({stats['w_pos_mean']:.3e},{stats['w_neg_mean']:.3e})"
-            )
-        self._debug_step += 1
-        return loss
+        loss = ((gen_scaled - goal_scaled) ** 2).mean()
+        extras: dict[str, Tensor] = {
+            f"force_rms_tau{tau}": info[f"loss_{tau}"] for tau in self.tau_list
+        }
+        return loss, extras

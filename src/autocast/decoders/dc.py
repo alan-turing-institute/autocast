@@ -2,6 +2,7 @@ import math
 from collections.abc import Sequence
 from typing import cast
 
+import torch
 from azula.nn.layers import ConvNd, Unpatchify
 from einops import rearrange
 from torch import nn
@@ -37,6 +38,11 @@ class DCDecoder(Decoder):
         identity_init: Initialize up/downsampling convolutions as identity.
         ffn_out_scale: Optional multiplicative scale applied to each ResBlock
             FFN output conv.
+        out_channels_multiplier: Multiplier applied to the final output channel
+            count. With multiplier M, the decoder produces M * out_channels
+            channels instead of out_channels. Used by heteroscedastic outputs
+            (M=2 for packed (mu, log_var)). Default 1 preserves the standard
+            behaviour.
 
     Note:
         Based on the implementation from:
@@ -69,10 +75,12 @@ class DCDecoder(Decoder):
         checkpointing: bool = False,
         identity_init: bool = True,
         ffn_out_scale: float | None = None,
+        out_channels_multiplier: int = 1,
     ) -> None:
         super().__init__()
         self.latent_channels = in_channels
-        self.output_channels = out_channels
+        self.out_channels_multiplier = out_channels_multiplier
+        self.output_channels = out_channels * out_channels_multiplier
         attention_heads = attention_heads or {}
         assert len(hid_blocks) == len(hid_channels)
 
@@ -145,7 +153,7 @@ class DCDecoder(Decoder):
                 blocks.append(
                     ConvNd(
                         hid_channels[i],
-                        math.prod(patch_size) * out_channels,
+                        math.prod(patch_size) * self.output_channels,
                         spatial=spatial,
                         **kwargs,
                     )
@@ -154,6 +162,45 @@ class DCDecoder(Decoder):
             self.ascent.append(blocks)
 
         self.decoder_model = self.ascent
+
+        if out_channels_multiplier > 1:
+            final_block_list = cast(nn.ModuleList, self.ascent[-1])
+            self._zero_extra_channel_bias(
+                final_conv=final_block_list[-1],
+                base_channels=out_channels,
+                patch_volume=math.prod(patch_size),
+            )
+
+    @staticmethod
+    def _zero_extra_channel_bias(
+        final_conv: nn.Module, base_channels: int, patch_volume: int
+    ) -> None:
+        """Zero-init the bias for the extra output channels.
+
+        Used when ``out_channels_multiplier > 1`` so the bias for the extra
+        output channels (e.g. log-variance under Gaussian NLL) starts at 0.
+        The conv weights themselves remain at their default init, so the
+        initial extra-channel output is centred at 0 in expectation rather
+        than identically 0. The conv output is laid out as ``(Z, *patch)``
+        with ``Z`` slow-varying (see ``azula.nn.layers.Unpatchify``), so final
+        channels ``[base_channels, M * base_channels)`` map to bias indices
+        ``[base_channels * patch_volume :]``.
+
+        Args:
+            final_conv: The final projection conv module.
+            base_channels: The un-multiplied output channel count.
+            patch_volume: Product of the patch size across spatial dims.
+        """
+        bias = getattr(final_conv, "bias", None)
+        if not isinstance(bias, nn.Parameter):
+            msg = (
+                "DCDecoder final projection has no bias parameter; cannot "
+                "zero-init the extra output channels required when "
+                "out_channels_multiplier > 1."
+            )
+            raise RuntimeError(msg)
+        with torch.no_grad():
+            bias[base_channels * patch_volume :].zero_()
 
     def decode(self, z: TensorBTSC) -> TensorBTSC:
         """Decode latent tensor with time dimension back to original space.
