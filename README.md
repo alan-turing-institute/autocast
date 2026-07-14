@@ -31,6 +31,20 @@ If you want to contribute to the autocast codebase, please see [the contributing
 
 See [ETHICAL_GUIDANCE.md](ETHICAL_GUIDANCE.md) for guidance on the intended scope and use of AutoCast.
 
+## Citation
+
+```bibtex
+@misc{greenbury-etal-2026-reliability,
+      title={Reliability of Probabilistic Emulation of Physical Systems}, 
+      author={Sam F. Greenbury and Radka Jersakova and Paolo Conti and Marjan Famili and Christopher Iliffe Sprague and Edwin Brown and Jason D. McEwen},
+      year={2026},
+      eprint={2606.12997},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2606.12997}, 
+}
+```
+
 ## Contributors ✨
 
 Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/docs/en/emoji-key)):
