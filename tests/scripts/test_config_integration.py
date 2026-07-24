@@ -4,8 +4,10 @@ from pathlib import Path
 
 import pytest
 from hydra import compose, initialize_config_dir
+from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 
+from autocast.processors import MCDropoutAzulaViTProcessor
 from autocast.scripts.setup import (
     _apply_processor_channel_defaults,
     _build_loss_func,
@@ -91,6 +93,25 @@ def test_processor_configs_exist(processor_configs: list[str]):
     """Verify processor configs are found."""
     assert len(processor_configs) > 0
     assert "flow_matching" in processor_configs or "fno" in processor_configs
+
+
+def test_mc_dropout_azula_vit_config_instantiates(config_dir: str):
+    processor_cfg = OmegaConf.load(
+        Path(config_dir) / "processor" / "vit_azula_mc_dropout_large.yaml"
+    )
+    processor_cfg.in_channels = 4
+    processor_cfg.out_channels = 4
+    processor_cfg.spatial_resolution = [8, 8]
+    processor_cfg.hidden_dim = 64
+    processor_cfg.num_heads = 4
+    processor_cfg.n_layers = 2
+    processor_cfg.patch_size = 1
+
+    processor = instantiate(processor_cfg)
+
+    assert isinstance(processor, MCDropoutAzulaViTProcessor)
+    assert processor.dropout == 0.1
+    assert processor.n_noise_channels is None
 
 
 # --- Tests using real configs ---
