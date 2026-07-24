@@ -24,10 +24,14 @@ def config_dir(REPO_ROOT: Path) -> str:
     return str(REPO_ROOT / "src" / "autocast" / "configs")
 
 
-def _load_config(config_dir: str, config_name: str) -> DictConfig:
+def _load_config(
+    config_dir: str,
+    config_name: str,
+    overrides: list[str] | None = None,
+) -> DictConfig:
     """Load a config by name."""
     with initialize_config_dir(version_base=None, config_dir=config_dir):
-        return compose(config_name=config_name)
+        return compose(config_name=config_name, overrides=overrides)
 
 
 # --- Parametrized tests over top-level configs ---
@@ -112,6 +116,41 @@ def test_mc_dropout_azula_vit_config_instantiates(config_dir: str):
     assert isinstance(processor, MCDropoutAzulaViTProcessor)
     assert processor.dropout == 0.1
     assert processor.n_noise_channels is None
+
+
+@pytest.mark.parametrize(
+    "local_experiment",
+    [
+        "ablations/mc_dropout/gray_scott/crps_vit_azula_mc_dropout_large",
+        ("ablations/mc_dropout/gpe_laser_wake_only/crps_vit_azula_mc_dropout_large"),
+        (
+            "ablations/mc_dropout/conditioned_navier_stokes/"
+            "crps_vit_azula_mc_dropout_large"
+        ),
+        ("ablations/mc_dropout/advection_diffusion/crps_vit_azula_mc_dropout_large"),
+    ],
+)
+def test_mc_dropout_ablation_config_matches_crps_baseline(
+    config_dir: str,
+    local_experiment: str,
+):
+    cfg = _load_config(
+        config_dir,
+        "encoder_processor_decoder",
+        overrides=[f"local_experiment={local_experiment}"],
+    )
+
+    assert cfg.model.processor._target_ == (
+        "autocast.processors.MCDropoutAzulaViTProcessor"
+    )
+    assert cfg.model.processor.hidden_dim == 704
+    assert cfg.model.processor.num_heads == 8
+    assert cfg.model.processor.n_layers == 12
+    assert cfg.model.processor.dropout == 0.1
+    assert cfg.model.processor.n_noise_channels is None
+    assert cfg.model.n_members == 8
+    assert cfg.datamodule.batch_size == 32
+    assert cfg.model.loss_func._target_ == "autocast.losses.ensemble.AlphaFairCRPSLoss"
 
 
 # --- Tests using real configs ---

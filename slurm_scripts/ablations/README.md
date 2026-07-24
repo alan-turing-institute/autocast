@@ -21,7 +21,9 @@ small edit.
 | ensemble_size (m=16, fixed global eff. bs=1024) | sweep | GS / GPE / CNS / AD | 4 | timing ready |
 | planned_01 batch | mixed | CNS | 8 | timing scripted |
 | planned_02 batch | mixed | GS / GPE / AD | 6 | timing + production scripted |
+| planned_updates_01 batch | MC dropout | GS / GPE / CNS / AD | 4 | timing + production scripted |
 | noise_channels | sweep | CNS | 1 | config + planned |
+| mc_dropout (FFN, p=0.1) | comparison | GS / GPE / CNS / AD | 4 | timing + production scripted |
 | crps_variants (AlphaFair / Fair / CRPS) | comparison | CNS | 2 new (+baseline) | config + planned |
 | fm_vs_diffusion | comparison | CNS | 1 | config + planned |
 | arch_unet_fno_vit | comparison | CNS | 1 U-Net (+ViT baseline) | config + planned |
@@ -78,6 +80,14 @@ extending without repurposing earlier scripts. It covers:
 The m=4 GPE/AD follow-up follows the same timing-then-production pattern:
 `submit_planned_02_m4_followup_timing.sh` first, then
 `submit_planned_02_m4_followup_large.sh` after retrieving timing outputs.
+
+## Planned Updates Batch 01
+
+The first post-comparison update batch contains the parameter-matched
+four-dataset MC-dropout CRPS ablation. Its orchestration lives in
+`submit_planned_updates_01_timing.sh` and
+`submit_planned_updates_01_large.sh`; the reusable experiment configs and
+design notes remain under `ablations/mc_dropout/`.
 
 ## Design notes
 

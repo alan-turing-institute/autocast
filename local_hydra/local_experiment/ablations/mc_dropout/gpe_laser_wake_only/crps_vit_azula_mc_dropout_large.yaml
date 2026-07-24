@@ -1,0 +1,18 @@
+# @package _global_
+defaults:
+  - /local_experiment/epd/gpe_laser_wake_only/crps_vit_azula_large
+  - override /processor@model.processor: vit_azula_mc_dropout_large
+  - _self_
+
+experiment_name: ablation_mc_dropout_crps_vit_azula_large_gpe_laser_only_wake
+
+model:
+  processor:
+    # Removing the 1024-channel stochastic modulation projection reduces the
+    # 568/12/8 baseline to ~53.3M parameters. Width 704 restores ~79.8M while
+    # retaining the baseline depth and head count (~80.8M baseline).
+    hidden_dim: 704
+    num_heads: 8
+    n_layers: 12
+    n_noise_channels: null
+    dropout: 0.1
