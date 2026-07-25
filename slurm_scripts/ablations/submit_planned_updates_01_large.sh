@@ -4,16 +4,15 @@ set -euo pipefail
 
 # Final 24h jobs for planned updates batch 01.
 #
-# Run submit_planned_updates_01_timing.sh first. This script derives each
-# dataset's trainer.max_epochs from the newest matching timing checkpoint
-# unless a value has been pinned in COSINE_EPOCHS_BY_DATASET.
+# Epoch counts are pinned from the 2026-07-25 four-GPU interactive timing runs,
+# using the mean of five epochs with a 2% safety margin. If a value is removed,
+# the script falls back to the newest matching timing checkpoint.
 
 declare -A COSINE_EPOCHS_BY_DATASET=(
-    # Populate after timing, if desired:
-    # ["gray_scott"]=...
-    # ["gpe_laser_only_wake"]=...
-    # ["conditioned_navier_stokes"]=...
-    # ["advection_diffusion"]=...
+    ["gray_scott"]=355
+    ["gpe_laser_only_wake"]=421
+    ["conditioned_navier_stokes"]=414
+    ["advection_diffusion"]=425
 )
 
 BUDGET_MAX_TIME="00:23:59:00"
