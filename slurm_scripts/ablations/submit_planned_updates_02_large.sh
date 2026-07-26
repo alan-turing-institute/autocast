@@ -4,9 +4,14 @@ set -euo pipefail
 
 # Final 24h CNS job for planned updates batch 02.
 #
-# No epoch counts are pinned before timing. The script resolves the newest
-# matching timing checkpoint and derives a schedule with a 2% safety margin.
+# Epoch counts are pinned from the 2026-07-26 four-GPU interactive timing run,
+# using the mean of five epochs with a 2% safety margin. If a value is removed,
+# the script falls back to the newest matching timing checkpoint.
 # Other reusable dataset configs remain listed below for easy re-enabling.
+
+declare -A COSINE_EPOCHS_BY_DATASET=(
+    ["conditioned_navier_stokes"]=2329
+)
 
 BUDGET_MAX_TIME="00:23:59:00"
 TIMEOUT_MIN=1439
@@ -45,6 +50,13 @@ derive_cosine_epochs_from_timing() {
 
 resolve_cosine_epochs() {
     local datamodule="$1"
+    local cached="${COSINE_EPOCHS_BY_DATASET[$datamodule]:-}"
+
+    if [[ -n "${cached}" ]]; then
+        printf '%s\n' "${cached}"
+        return 0
+    fi
+
     local run_id="mc_dropout_mse_${datamodule}"
     local timing_ckpt
     timing_ckpt="$(find_timing_checkpoint "${run_id}")"
