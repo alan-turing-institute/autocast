@@ -153,6 +153,49 @@ def test_mc_dropout_ablation_config_matches_crps_baseline(
     assert cfg.model.loss_func._target_ == "autocast.losses.ensemble.AlphaFairCRPSLoss"
 
 
+@pytest.mark.parametrize(
+    "local_experiment",
+    [
+        "ablations/mc_dropout/gray_scott/mse_vit_azula_mc_dropout_large",
+        "ablations/mc_dropout/gpe_laser_wake_only/mse_vit_azula_mc_dropout_large",
+        (
+            "ablations/mc_dropout/conditioned_navier_stokes/"
+            "mse_vit_azula_mc_dropout_large"
+        ),
+        "ablations/mc_dropout/advection_diffusion/mse_vit_azula_mc_dropout_large",
+    ],
+)
+def test_mc_dropout_mse_l2_config_is_parameter_matched(
+    config_dir: str,
+    local_experiment: str,
+):
+    cfg = _load_config(
+        config_dir,
+        "encoder_processor_decoder",
+        overrides=[f"local_experiment={local_experiment}"],
+    )
+
+    assert cfg.model.processor._target_ == (
+        "autocast.processors.MCDropoutAzulaViTProcessor"
+    )
+    assert cfg.model.processor.hidden_dim == 704
+    assert cfg.model.processor.num_heads == 8
+    assert cfg.model.processor.n_layers == 12
+    assert cfg.model.processor.dropout == 0.1
+    assert cfg.model.processor.n_noise_channels is None
+    assert cfg.model.processor.include_global_cond is False
+    assert cfg.model.encoder._target_ == (
+        "autocast.encoders.permute_concat.PermuteConcat"
+    )
+    assert cfg.model.encoder.with_constants is True
+    assert cfg.model.n_members == 1
+    assert cfg.datamodule.batch_size == 256
+    assert cfg.model.loss_func._target_ == ("autocast.losses.MCDropoutMSEL2Loss")
+    assert cfg.model.loss_func.l2_coefficient == pytest.approx(1e-5)
+    assert "parameter_regularizer" not in cfg.model
+    assert cfg.optimizer.weight_decay == 0.0
+
+
 # --- Tests using real configs ---
 
 

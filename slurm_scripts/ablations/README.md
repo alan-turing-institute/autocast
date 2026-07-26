@@ -22,8 +22,10 @@ small edit.
 | planned_01 batch | mixed | CNS | 8 | timing scripted |
 | planned_02 batch | mixed | GS / GPE / AD | 6 | timing + production scripted |
 | planned_updates_01 batch | MC dropout | GS / GPE / CNS / AD | 4 | timing + production scripted |
+| planned_updates_02 batch | MC dropout MSE + L2 | CNS | 1 | config + timing + production + eval scripted |
 | noise_channels | sweep | CNS | 1 | config + planned |
 | mc_dropout (FFN, p=0.1) | comparison | GS / GPE / CNS / AD | 4 | timing + production scripted |
+| mc_dropout MSE + L2 (FFN, p=0.1) | comparison | CNS | 1 | ready |
 | crps_variants (AlphaFair / Fair / CRPS) | comparison | CNS | 2 new (+baseline) | config + planned |
 | fm_vs_diffusion | comparison | CNS | 1 | config + planned |
 | arch_unet_fno_vit | comparison | CNS | 1 U-Net (+ViT baseline) | config + planned |
@@ -88,6 +90,18 @@ four-dataset MC-dropout CRPS ablation. Its orchestration lives in
 `submit_planned_updates_01_timing.sh` and
 `submit_planned_updates_01_large.sh`; the reusable experiment configs and
 design notes remain under `ablations/mc_dropout/`.
+
+## Planned Updates Batch 02
+
+The second post-comparison update batch is a CNS MC-dropout MSE baseline. It
+uses the same parameter-matched architecture and `p=0.1` sampler as the CRPS
+ablation, plus an explicit processor-local L2 penalty with coefficient `1e-5`.
+Evaluation uses 50 stochastic forward passes. GS, GPE and AD configs remain
+available but are commented out in the submission scripts. Its orchestration
+lives
+in `submit_planned_updates_02_timing.sh`,
+`submit_planned_updates_02_large.sh`, and
+`submit_eval_planned_updates_02.sh`.
 
 ## Design notes
 

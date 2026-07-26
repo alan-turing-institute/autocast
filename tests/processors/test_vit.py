@@ -4,6 +4,7 @@ import torch
 from conftest import get_optimizer_config
 from torch import nn
 
+from autocast.losses import MCDropoutMSEL2Loss
 from autocast.models.processor import ProcessorModel
 from autocast.processors.azula_vit import (
     AzulaViTProcessor,
@@ -162,6 +163,31 @@ def test_mc_dropout_azula_vit_remains_stochastic_during_inference():
         not module.training
         for module in processor.modules()
         if isinstance(module, nn.Dropout)
+    )
+
+
+def test_mc_dropout_azula_vit_mse_l2_is_trainable():
+    processor = _make_mc_dropout_processor(dropout=0.1)
+    processor.train()
+    inputs = torch.randn(2, 1, 8, 8, 4)
+    targets = torch.randn_like(inputs)
+
+    prediction = processor.map(inputs)
+    loss_func = MCDropoutMSEL2Loss(
+        processor=processor,
+        l2_coefficient=1e-5,
+    )
+    loss = loss_func(prediction, targets)
+    loss.backward()
+
+    assert loss.shape == ()
+    assert torch.isfinite(loss)
+    assert loss_func.l2_penalty(loss) > 0
+    assert any(
+        parameter.grad is not None
+        and torch.isfinite(parameter.grad).all()
+        and torch.count_nonzero(parameter.grad) > 0
+        for parameter in processor.parameters()
     )
 
 
