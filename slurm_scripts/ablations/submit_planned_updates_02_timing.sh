@@ -6,10 +6,13 @@ set -euo pipefail
 #
 # This batch times the MC-dropout MSE + L2 baseline with p=0.1 across all four
 # comparison datasets. Run the jobs sequentially in Isambard's interactive
-# reservation, using the same lightweight checkpoint stack as the original
-# April main-comparison timing runs. Do not use the full default callback stack
-# here: its 5%-progress cadence would compress roughly 20 production snapshots
-# into each five-epoch timing window.
+# reservation, using the lightweight checkpoint stack from the original April
+# main-comparison timing runs. The regular monitored checkpoint is best-val;
+# the rolling checkpoint remains at its sparse configured cadence. MC dropout
+# does not log MultiWinkler or MultiCoverage, so timing their optional callback
+# stack would not model the production workload. Do not use the full default
+# progress callback here: its 5%-progress cadence would compress roughly 20
+# production snapshots into each five-epoch timing window.
 #
 # Corrected results from the 2026-07-27 interactive runs (24h budget,
 # 2% margin, April callback stack):

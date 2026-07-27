@@ -4,10 +4,11 @@ set -euo pipefail
 
 # Final 24h jobs for planned updates batch 03.
 #
-# Run submit_planned_updates_03_timing.sh first. Each dataset receives its own
-# timing-derived cosine horizon so all four jobs fill the same 24h budget.
+# Each dataset receives its own timing-derived cosine horizon so all four jobs
+# fill the same 24h budget. CRPS timings use the production validation
+# checkpoint stack because MultiCoverage and MultiWinkler monitors are active.
 
-TIMING_GROUP="timing_planned_updates_03"
+TIMING_GROUP="timing_planned_updates_03_production_callbacks_5ep"
 RUN_GROUP="$(date +%Y-%m-%d)/planned_updates_03"
 BUDGET_MAX_TIME="00:23:59:00"
 TIMEOUT_MIN=1439
@@ -24,10 +25,10 @@ declare -A EXPERIMENTS=(
 # Pin values here after timing if desired. Missing entries fall back to the
 # newest matching timing checkpoint.
 declare -A COSINE_EPOCHS_BY_DATASET=(
-    ["gray_scott"]=584
-    ["gpe_laser_only_wake"]=695
-    ["conditioned_navier_stokes"]=688
-    ["advection_diffusion"]=713
+    ["gray_scott"]=591
+    ["gpe_laser_only_wake"]=683
+    ["conditioned_navier_stokes"]=668
+    ["advection_diffusion"]=708
 )
 
 find_timing_checkpoint() {

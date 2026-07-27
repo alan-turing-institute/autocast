@@ -2,30 +2,33 @@
 
 set -euo pipefail
 
-# Five-epoch timing runs for planned updates batch 03.
+# Production-callback timing runs for planned updates batch 03.
 #
 # This batch adds the parameter-matched CRPS FNO architecture ablation across
 # all four main-comparison datasets. Run the jobs sequentially in Isambard's
-# interactive reservation, using the same lightweight checkpoint stack as the
-# original April main-comparison timing runs. Do not use the full default
-# callback stack here: its 5%-progress cadence would compress roughly 20
-# production snapshots into this five-epoch timing window.
+# interactive reservation with the production validation checkpoint stack.
+# The plotting callback is no longer part of the default trainer. The
+# 5%-progress snapshot callback is explicitly suppressed because resolving its
+# cadence against a short timing run would compress roughly 20 production
+# snapshots into five epochs. Best-val, MultiCoverage, MultiWinkler, and EMA
+# remain active.
 #
 # Each resulting timing.ckpt is consumed by
 # submit_planned_updates_03_large.sh to derive the number of epochs that fit
 # the same 24h budget as the ViT baseline.
 #
-# Results from the 2026-07-27 interactive runs (24h budget, 2% margin):
-#   gray_scott:                 144.9 s/epoch -> 584 epochs
-#   gpe_laser_only_wake:        121.8 s/epoch -> 695 epochs
-#   conditioned_navier_stokes:  123.0 s/epoch -> 688 epochs
-#   advection_diffusion:        118.7 s/epoch -> 713 epochs
+# Reviewed production-callback results from the 2026-07-27 interactive runs
+# (24h budget, 2% margin):
+#   gray_scott:                 143.2 s/epoch -> 591 epochs
+#   gpe_laser_only_wake:        123.8 s/epoch -> 683 epochs
+#   conditioned_navier_stokes:  126.7 s/epoch -> 668 epochs
+#   advection_diffusion:        119.5 s/epoch -> 708 epochs
 # These epoch counts are pinned in submit_planned_updates_03_large.sh.
 
 BUDGET_HOURS=24
-NUM_TIMING_EPOCHS=5
+NUM_TIMING_EPOCHS="${NUM_TIMING_EPOCHS:-5}"
 MARGIN=0.02
-RUN_GROUP="$(date +%Y-%m-%d)/timing_planned_updates_03"
+RUN_GROUP="${RUN_GROUP:-$(date +%Y-%m-%d)/timing_planned_updates_03_production_callbacks_5ep}"
 RESERVATION="${RESERVATION:-interactive}"
 TIME_LIMIT="${TIME_LIMIT:-01:00:00}"
 CPUS_PER_TASK="${CPUS_PER_TASK:-16}"
@@ -43,12 +46,16 @@ declare -A EXPERIMENTS=(
     ["advection_diffusion"]="ablations/arch_unet_fno_vit/advection_diffusion/crps_fno_80m"
 )
 
-DATASETS=(
-    "gray_scott"
-    "gpe_laser_only_wake"
-    "conditioned_navier_stokes"
-    "advection_diffusion"
-)
+if [[ -n "${DATASETS_OVERRIDE:-}" ]]; then
+    read -r -a DATASETS <<< "${DATASETS_OVERRIDE}"
+else
+    DATASETS=(
+        "gray_scott"
+        "gpe_laser_only_wake"
+        "conditioned_navier_stokes"
+        "advection_diffusion"
+    )
+fi
 
 for datamodule in "${DATASETS[@]}"; do
     experiment="${EXPERIMENTS[$datamodule]}"
@@ -88,8 +95,12 @@ for datamodule in "${DATASETS[@]}"; do
         -n "${NUM_TIMING_EPOCHS}" \
         -b "${BUDGET_HOURS}" \
         -m "${MARGIN}" \
-        trainer=fm_main_comparison \
-        local_experiment="${experiment}"
+        trainer=default \
+        local_experiment="${experiment}" \
+        trainer.callbacks.0.every_n_train_steps_fraction=null \
+        +trainer.callbacks.0.every_n_train_steps=999999999 \
+        +trainer.callbacks.0.every_n_epochs=0 \
+        trainer.callbacks.0.save_last=false
 
     echo ""
     echo "---"
@@ -100,5 +111,5 @@ echo "All planned updates batch 03 timing jobs completed."
 echo ""
 echo "Recompute any recommendation with:"
 echo "  uv run --frozen autocast time-epochs \\"
-echo "    --from-checkpoint outputs/<date>/timing_planned_updates_03/<run_id>/timing.ckpt \\"
+echo "    --from-checkpoint outputs/<date>/timing_planned_updates_03_production_callbacks_5ep/<run_id>/timing.ckpt \\"
 echo "    -b ${BUDGET_HOURS} -m ${MARGIN}"
