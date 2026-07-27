@@ -289,6 +289,38 @@ def test_single_step_results_latex_bolds_best_values_by_dataset(tmp_path: Path):
     assert r"\bfseries 1.10" in tex
 
 
+def test_single_step_results_markdown_is_reviewer_ready(tmp_path: Path):
+    df = pd.DataFrame(
+        {
+            "dataset_label": ["AD", "AD"],
+            "plot_group": ["crps", "fm"],
+            "overall_vrmse": [0.012345, 0.023456],
+            "overall_coverage": [0.04, 0.03],
+            "overall_crps": [0.098765, 0.087654],
+            "overall_ssr": [0.9, 1.2],
+        }
+    )
+    styles = {
+        "crps": {"label": "CRPS", "color": "tab:blue"},
+        "fm": {"label": "FM", "color": "tab:orange"},
+    }
+
+    pdc.write_single_step_results_table(
+        df,
+        tmp_path,
+        styles,
+        dataset_order=["AD"],
+        hue_order=["CRPS", "FM"],
+    )
+
+    markdown = (tmp_path / "single_step_overall_results.md").read_text()
+    assert (
+        "| Dataset | Model | VRMSE ↓ | Coverage MAE ↓ | CRPS ↓ | SSR → 1 |" in markdown
+    )
+    assert "| AD | CRPS | **1.2e-02** | 0.04 | 9.9e-02 | **0.90** |" in markdown
+    assert "| AD | FM | 2.3e-02 | **0.03** | **8.8e-02** | 1.20 |" in markdown
+
+
 def test_coverage_calibration_panel_uses_publication_axis_labels(tmp_path: Path):
     eval_dir = tmp_path / "run1" / "eval"
     eval_dir.mkdir(parents=True)

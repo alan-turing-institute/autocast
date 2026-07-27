@@ -1998,6 +1998,43 @@ def render_single_step_results_latex(table: pd.DataFrame) -> str:
     return "\n".join(lines)
 
 
+def render_single_step_results_markdown(table: pd.DataFrame) -> str:
+    """Render a compact table suitable for an inline reviewer response."""
+    header_labels = {
+        "VRMSE": "VRMSE ↓",
+        "Coverage MAE": "Coverage MAE ↓",
+        "CRPS": "CRPS ↓",
+        "SSR": "SSR → 1",
+        "Inference latency (ms/sample)": "Inference latency (ms/sample) ↓",
+        "Training time (s/epoch)": "Training time (s/epoch) ↓",
+    }
+    columns = table.columns.tolist()
+    header = [
+        str(header_labels.get(column, column)).replace("|", r"\|") for column in columns
+    ]
+    lines = [
+        "| " + " | ".join(header) + " |",
+        "| " + " | ".join("---" for _ in columns) + " |",
+    ]
+    best_cells = _best_latex_cells_by_dataset(table)
+    for idx, row in table.iterrows():
+        idx_i = int(cast(SupportsIndex, idx))
+        cells = []
+        for column in columns:
+            value = row[column]
+            if column == "Dataset":
+                cell = "" if str(value) == "nan" else str(value)
+            elif isinstance(value, str):
+                cell = value.replace("|", r"\|").replace("\n", " ")
+            else:
+                cell = _format_latex_table_value(value, column=column)
+            if cell and (idx_i, column) in best_cells:
+                cell = f"**{cell}**"
+            cells.append(cell)
+        lines.append("| " + " | ".join(cells) + " |")
+    return "\n".join([*lines, ""])
+
+
 def write_single_step_results_table(
     df_in: pd.DataFrame,
     out_dir: Path,
@@ -2019,10 +2056,16 @@ def write_single_step_results_table(
 
     csv_path = out_dir / f"{stem}.csv"
     tex_path = out_dir / f"{stem}.tex"
+    markdown_path = out_dir / f"{stem}.md"
     table.to_csv(csv_path, index=False, float_format="%.6g")
     tex_path.write_text(render_single_step_results_latex(table), encoding="utf-8")
+    markdown_path.write_text(
+        render_single_step_results_markdown(table),
+        encoding="utf-8",
+    )
     print(f"Saved: {csv_path}")
     print(f"Saved: {tex_path}")
+    print(f"Saved: {markdown_path}")
     return table
 
 

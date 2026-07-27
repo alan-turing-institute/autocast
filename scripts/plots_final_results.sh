@@ -1,11 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 
-PLOTS_PATH=${PLOTS_PATH:-2026-05-19_final_plots}
-RESULTS_DIR=${RESULTS_DIR:-outputs/2026-05-15_collated}
+PLOTS_PATH=${PLOTS_PATH:-2026-07-27_final_plots}
+RESULTS_DIR=${RESULTS_DIR:-outputs/2026-07-24_collated}
 OUTPUT_DIR=${OUTPUT_DIR:-$RESULTS_DIR/$PLOTS_PATH/main_comparison_m8_complete_no_fm_amb_best_winkler}
 FIGURE_FORMATS=${FIGURE_FORMATS:-png}
 PAPER_OUTPUT_DIR=${PAPER_OUTPUT_DIR:-$RESULTS_DIR/$PLOTS_PATH/paper_figures}
+REVIEWER_OUTPUT_DIR=${REVIEWER_OUTPUT_DIR:-$RESULTS_DIR/$PLOTS_PATH}
 PAPER_USE_TEX=${PAPER_USE_TEX:-false}
 PAPER_PANEL_LABELS=${PAPER_PANEL_LABELS:-true}
 
@@ -26,6 +27,7 @@ PAPER_MAIN_FIGURES=false
 FOUR_DS_ABLATION=false
 ONE_DS_ABLATION=false
 PAPER_ONLY=false
+REVIEWER_ONLY=false
 
 usage() {
 	cat <<'EOF'
@@ -38,6 +40,11 @@ Options:
   --one-ds-ablation     Add the one-dataset ablation paper figure.
   --paper-figures       Add all optional paper-width figures above.
   --paper-only          Only run/copy paper figures, writing PNG and PDF.
+  --reviewer-only       Only run the independent-seed and MC-dropout
+                        reviewer-response comparisons.
+  --reviewer-output-dir DIR
+                        Write reviewer-response comparisons under DIR.
+                        Default: <results-dir>/<plots-path>.
   --paper-output-dir DIR
                         Copy all paper_*.png/pdf figures into DIR.
                         Default: <results-dir>/<plots-path>/paper_figures.
@@ -75,6 +82,17 @@ while [[ $# -gt 0 ]]; do
 			FOUR_DS_ABLATION=true
 			ONE_DS_ABLATION=true
 			PAPER_ONLY=true
+			;;
+		--reviewer-only)
+			REVIEWER_ONLY=true
+			;;
+		--reviewer-output-dir)
+			if [[ $# -lt 2 ]]; then
+				echo "--reviewer-output-dir requires a value" >&2
+				exit 2
+			fi
+			REVIEWER_OUTPUT_DIR=$2
+			shift
 			;;
 		--paper-output-dir)
 			if [[ $# -lt 2 ]]; then
@@ -196,6 +214,15 @@ ALL_DATASET_COMMON_ARGS=(
 	--coverage-panel-height-scale 1.5
 )
 
+all_evaluations_available() {
+	local eval_path
+	for eval_path in "$@"; do
+		if [[ ! -f "$RESULTS_DIR/$eval_path/evaluation_metrics.csv" ]]; then
+			return 1
+		fi
+	done
+}
+
 if [[ "$FOUR_DS_ABLATION" == true ]]; then
 	ALL_DATASET_COMMON_ARGS+=(--four-ds-ablation)
 fi
@@ -215,40 +242,7 @@ if [[ "$PAPER_MAIN_FIGURES" != true && "$FOUR_DS_ABLATION" != true && "$ONE_DS_A
 	echo "Paper-ready outputs are disabled. Run with --paper-figures to write paper_*.png files."
 fi
 
-autocast-plots --results-dir "$RESULTS_DIR" \
-	"${BASE_PLOT_ARGS[@]}" \
-	--run crps_ad64_vit_azula_large_bed4611_da01a04 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
-	--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
-	--run crps_gpe64_vit_azula_large_bed4611_e0a6df5 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
-	--run crps_gs64_vit_azula_large_bed4611_828a161 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
-	--run diff_ad64_flow_matching_vit_09490da_dae1382 "FM" "$HUE_FM_LATENT" \
-	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM" "$HUE_FM_LATENT" \
-	--run diff_gpe64_flow_matching_vit_09490da_47bf39a "FM" "$HUE_FM_LATENT" \
-	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "FM" "$HUE_FM_LATENT" \
-	--dataset-order AD CNS GS GPE \
-	--error-ylim 1e-5 1 \
-	--lead-time-error-metrics vrmse \
-	--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
-	--lead-time-coverage-delta \
-	--combined-lead-time \
-	--training-metrics val_loss train_loss \
-	--training-yscale log \
-	--panel-figure \
-	--panel-figure-no-training \
-	--coverage-panel-overall-rollout-windows \
-	--uniform-run-hue-color \
-	--tick-label-scale 1.5 \
-	--axis-label-scale 1.3 \
-	--legend-font-scale 1.5 \
-	--short-axis-labels \
-	--shared-axis-labels \
-	--coverage-panel-height-scale 1.5 \
-	${PAPER_MAIN_ARG:+$PAPER_MAIN_ARG} \
-	--output-dir "$OUTPUT_DIR"
-
-if [[ "$PAPER_ONLY" != true ]]; then
-	# Same as above but rendered smaller so the two coverage panels read well when
-	# paired side-by-side in LaTeX (each at ~0.5\textwidth).
+if [[ "$REVIEWER_ONLY" != true ]]; then
 	autocast-plots --results-dir "$RESULTS_DIR" \
 		"${BASE_PLOT_ARGS[@]}" \
 		--run crps_ad64_vit_azula_large_bed4611_da01a04 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
@@ -277,8 +271,125 @@ if [[ "$PAPER_ONLY" != true ]]; then
 		--short-axis-labels \
 		--shared-axis-labels \
 		--coverage-panel-height-scale 1.5 \
-		--figure-scale 0.6 \
-		--output-dir "${OUTPUT_DIR}_pairfig"
+		${PAPER_MAIN_ARG:+$PAPER_MAIN_ARG} \
+		--output-dir "$OUTPUT_DIR"
+
+	if [[ "$PAPER_ONLY" != true ]]; then
+		# Same as above but rendered smaller so the two coverage panels read well
+		# when paired side-by-side in LaTeX (each at ~0.5\textwidth).
+		autocast-plots --results-dir "$RESULTS_DIR" \
+			"${BASE_PLOT_ARGS[@]}" \
+			--run crps_ad64_vit_azula_large_bed4611_da01a04 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+			--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+			--run crps_gpe64_vit_azula_large_bed4611_e0a6df5 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+			--run crps_gs64_vit_azula_large_bed4611_828a161 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+			--run diff_ad64_flow_matching_vit_09490da_dae1382 "FM" "$HUE_FM_LATENT" \
+			--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM" "$HUE_FM_LATENT" \
+			--run diff_gpe64_flow_matching_vit_09490da_47bf39a "FM" "$HUE_FM_LATENT" \
+			--run diff_gs64_flow_matching_vit_09490da_7e9e331 "FM" "$HUE_FM_LATENT" \
+			--dataset-order AD CNS GS GPE \
+			--error-ylim 1e-5 1 \
+			--lead-time-error-metrics vrmse \
+			--lead-time-coverage-metrics coverage_0.9 coverage_0.5 coverage_0.1 \
+			--lead-time-coverage-delta \
+			--combined-lead-time \
+			--training-metrics val_loss train_loss \
+			--training-yscale log \
+			--panel-figure \
+			--panel-figure-no-training \
+			--coverage-panel-overall-rollout-windows \
+			--uniform-run-hue-color \
+			--tick-label-scale 1.5 \
+			--axis-label-scale 1.3 \
+			--legend-font-scale 1.5 \
+			--short-axis-labels \
+			--shared-axis-labels \
+			--coverage-panel-height-scale 1.5 \
+			--figure-scale 0.6 \
+			--output-dir "${OUTPUT_DIR}_pairfig"
+	fi
+fi
+
+# Reviewer-response evidence: compare the original and independent training
+# seeds for both model families in Table 1.
+SEED_COMPARISON_EVALUATIONS=(
+	crps_ad64_vit_azula_large_bed4611_da01a04/eval_best_multiwinkler_from0p25
+	crps_cns64_vit_azula_large_bed4611_c99f534/eval_best_multiwinkler_from0p25
+	crps_gpe64_vit_azula_large_bed4611_e0a6df5/eval_best_multiwinkler_from0p25
+	crps_gs64_vit_azula_large_bed4611_828a161/eval_best_multiwinkler_from0p25
+	crps_ad64_vit_azula_large_103985e_dca5712/eval_best_multiwinkler_overall
+	crps_cns64_vit_azula_large_103985e_6360e51/eval_best_multiwinkler_overall
+	crps_gpe64_vit_azula_large_103985e_6d2adc5/eval_best_multiwinkler_overall
+	crps_gs64_vit_azula_large_103985e_8a8aec0/eval_best_multiwinkler_overall
+	diff_ad64_flow_matching_vit_09490da_dae1382/eval
+	diff_cns64_flow_matching_vit_09490da_636fcc3/eval
+	diff_gpe64_flow_matching_vit_09490da_47bf39a/eval
+	diff_gs64_flow_matching_vit_09490da_7e9e331/eval
+	diff_ad64_flow_matching_vit_103985e_74d6bd6/eval
+	diff_cns64_flow_matching_vit_103985e_b0eb639/eval
+	diff_gpe64_flow_matching_vit_103985e_e498f5e/eval
+	diff_gs64_flow_matching_vit_103985e_fa8e0f5/eval
+)
+if all_evaluations_available "${SEED_COMPARISON_EVALUATIONS[@]}"; then
+	autocast-plots --results-dir "$RESULTS_DIR" \
+		"${ALL_DATASET_COMMON_ARGS[@]}" \
+		--run crps_ad64_vit_azula_large_bed4611_da01a04 "CRPS (seed 1)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+		--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS (seed 1)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+		--run crps_gpe64_vit_azula_large_bed4611_e0a6df5 "CRPS (seed 1)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+		--run crps_gs64_vit_azula_large_bed4611_828a161 "CRPS (seed 1)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+		--run crps_ad64_vit_azula_large_103985e_dca5712 "CRPS (seed 2)" "$HUE_CRPS" eval=eval_best_multiwinkler_overall \
+		--run crps_cns64_vit_azula_large_103985e_6360e51 "CRPS (seed 2)" "$HUE_CRPS" eval=eval_best_multiwinkler_overall \
+		--run crps_gpe64_vit_azula_large_103985e_6d2adc5 "CRPS (seed 2)" "$HUE_CRPS" eval=eval_best_multiwinkler_overall \
+		--run crps_gs64_vit_azula_large_103985e_8a8aec0 "CRPS (seed 2)" "$HUE_CRPS" eval=eval_best_multiwinkler_overall \
+		--run diff_ad64_flow_matching_vit_09490da_dae1382 "FM (seed 1)" "$HUE_FM_LATENT" \
+		--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (seed 1)" "$HUE_FM_LATENT" \
+		--run diff_gpe64_flow_matching_vit_09490da_47bf39a "FM (seed 1)" "$HUE_FM_LATENT" \
+		--run diff_gs64_flow_matching_vit_09490da_7e9e331 "FM (seed 1)" "$HUE_FM_LATENT" \
+		--run diff_ad64_flow_matching_vit_103985e_74d6bd6 "FM (seed 2)" "$HUE_FM_LATENT" \
+		--run diff_cns64_flow_matching_vit_103985e_b0eb639 "FM (seed 2)" "$HUE_FM_LATENT" \
+		--run diff_gpe64_flow_matching_vit_103985e_e498f5e "FM (seed 2)" "$HUE_FM_LATENT" \
+		--run diff_gs64_flow_matching_vit_103985e_fa8e0f5 "FM (seed 2)" "$HUE_FM_LATENT" \
+		--four-ds-ablation \
+		--figure-formats png pdf \
+		--output-dir "$REVIEWER_OUTPUT_DIR/reviewer_seed_comparison"
+else
+	echo "Skipping reviewer seed-comparison plots: evaluations are not yet available."
+fi
+
+# Reviewer-response evidence: compare the original conditional-layer-
+# normalisation ensemble mechanism with MC dropout under the same CRPS training.
+MC_DROPOUT_EVALUATIONS=(
+	crps_ad64_vit_azula_large_bed4611_da01a04/eval_best_multiwinkler_from0p25
+	crps_cns64_vit_azula_large_bed4611_c99f534/eval_best_multiwinkler_from0p25
+	crps_gpe64_vit_azula_large_bed4611_e0a6df5/eval_best_multiwinkler_from0p25
+	crps_gs64_vit_azula_large_bed4611_828a161/eval_best_multiwinkler_from0p25
+	epd_ad64_vit_azula_mc_dropout_large_f008bcf_df1b2b5/eval_best_multiwinkler_overall
+	epd_cns64_vit_azula_mc_dropout_large_f008bcf_8ee53a1/eval_best_multiwinkler_overall
+	epd_gpe64_vit_azula_mc_dropout_large_f008bcf_299ad0f/eval_best_multiwinkler_overall
+	epd_gs64_vit_azula_mc_dropout_large_f008bcf_6784acb/eval_best_multiwinkler_overall
+)
+if all_evaluations_available "${MC_DROPOUT_EVALUATIONS[@]}"; then
+	autocast-plots --results-dir "$RESULTS_DIR" \
+		"${ALL_DATASET_COMMON_ARGS[@]}" \
+		--run crps_ad64_vit_azula_large_bed4611_da01a04 "CLN" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+		--run crps_cns64_vit_azula_large_bed4611_c99f534 "CLN" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+		--run crps_gpe64_vit_azula_large_bed4611_e0a6df5 "CLN" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+		--run crps_gs64_vit_azula_large_bed4611_828a161 "CLN" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+		--run epd_ad64_vit_azula_mc_dropout_large_f008bcf_df1b2b5 "MC dropout" "$HUE_ABLATION_ALT_2" eval=eval_best_multiwinkler_overall \
+		--run epd_cns64_vit_azula_mc_dropout_large_f008bcf_8ee53a1 "MC dropout" "$HUE_ABLATION_ALT_2" eval=eval_best_multiwinkler_overall \
+		--run epd_gpe64_vit_azula_mc_dropout_large_f008bcf_299ad0f "MC dropout" "$HUE_ABLATION_ALT_2" eval=eval_best_multiwinkler_overall \
+		--run epd_gs64_vit_azula_mc_dropout_large_f008bcf_6784acb "MC dropout" "$HUE_ABLATION_ALT_2" eval=eval_best_multiwinkler_overall \
+		--uniform-run-hue-color \
+		--four-ds-ablation \
+		--figure-formats png pdf \
+		--output-dir "$REVIEWER_OUTPUT_DIR/reviewer_mc_dropout"
+else
+	echo "Skipping reviewer MC-dropout plots: evaluations are not yet available."
+fi
+
+if [[ "$REVIEWER_ONLY" == true ]]; then
+	echo "Finished generating reviewer-response comparisons."
+	exit 0
 fi
 
 autocast-plots --results-dir "$RESULTS_DIR" \
@@ -456,7 +567,7 @@ if [[ "$PAPER_MAIN_FIGURES" == true || "$FOUR_DS_ABLATION" == true || "$ONE_DS_A
 			rm -f "$PAPER_OUTPUT_DIR/$ext/${skipped_dir}_"*."$ext"
 		done
 	done
-	rm -f "$PAPER_OUTPUT_DIR/tables/"*.csv "$PAPER_OUTPUT_DIR/tables/"*.tex
+	rm -f "$PAPER_OUTPUT_DIR/tables/"*.csv "$PAPER_OUTPUT_DIR/tables/"*.tex "$PAPER_OUTPUT_DIR/tables/"*.md
 	copied=0
 	while IFS= read -r fig; do
 		src_dir=$(basename "$(dirname "$fig")")
@@ -499,7 +610,7 @@ if [[ "$PAPER_MAIN_FIGURES" == true || "$FOUR_DS_ABLATION" == true || "$ONE_DS_A
 			-path "$PAPER_OUTPUT_DIR" -prune -o \
 			-path "$RESULTS_DIR/$PLOTS_PATH/ablation_fm_ema" -prune -o \
 			-path "$RESULTS_DIR/$PLOTS_PATH/ablation_cns_dm" -prune -o \
-			-type f \( -name 'single_step_overall_results.csv' -o -name 'single_step_overall_results.tex' \) \
+			-type f \( -name 'single_step_overall_results.csv' -o -name 'single_step_overall_results.tex' -o -name 'single_step_overall_results.md' \) \
 			-print
 	)
 	echo "Copied $copied_tables table result files to: $PAPER_OUTPUT_DIR/tables"
