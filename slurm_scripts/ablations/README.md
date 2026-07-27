@@ -23,13 +23,13 @@ small edit.
 | planned_02 batch | mixed | GS / GPE / AD | 6 | timing + production scripted |
 | planned_updates_01 batch | MC dropout | GS / GPE / CNS / AD | 4 | timing + production scripted |
 | planned_updates_02 batch | MC dropout MSE + L2 | CNS | 1 | config + timing + production + eval scripted |
-| planned_updates_03 batch | FNO architecture | CNS | 1 | timing + production + eval scripted |
+| planned_updates_03 batch | FNO architecture | GS / GPE / CNS / AD | 4 | timing + production + eval scripted |
 | noise_channels | sweep | CNS | 1 | config + planned |
 | mc_dropout (FFN, p=0.1) | comparison | GS / GPE / CNS / AD | 4 | timing + production scripted |
 | mc_dropout MSE + L2 (FFN, p=0.1) | comparison | CNS | 1 | ready |
 | crps_variants (AlphaFair / Fair / CRPS) | comparison | CNS | 2 new (+baseline) | config + planned |
 | fm_vs_diffusion | comparison | CNS | 1 | config + planned |
-| arch_unet_fno_vit | comparison | CNS | U-Net + FNO (+ViT baseline) | FNO timing ready |
+| arch_unet_fno_vit | comparison | all 4 FNO; CNS U-Net | 4 FNO + 1 U-Net (+ViT baselines) | FNO timing ready |
 | model_size | sweep | CNS | 2 active (+2 staged) | in progress |
 | vit_mae_pretrain | pretrain | CNS | 1 | staged |
 | cached_latent_crps | comparison | CNS | 1 (basis: 2026-04-20) | eval ready |
@@ -106,8 +106,8 @@ in `submit_planned_updates_02_timing.sh`,
 
 ## Planned Updates Batch 03
 
-The third post-comparison update batch adds the parameter-matched CNS CRPS FNO
-architecture run. Its orchestration lives in
+The third post-comparison update batch adds parameter-matched CRPS FNO
+architecture runs for all four comparison datasets. Its orchestration lives in
 `submit_planned_updates_03_timing.sh` and
 `submit_planned_updates_03_large.sh`, with evaluation in
 `submit_eval_planned_updates_03.sh`. The experiment config and design notes

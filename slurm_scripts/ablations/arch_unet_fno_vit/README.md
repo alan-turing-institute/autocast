@@ -3,12 +3,12 @@
 Compare U-Net and FNO backbones against the ViT (Azula) baseline on the
 CRPS ambient path.
 
-**Status:** U-Net run complete; FNO config and timing/production/eval scripts
-ready.
+**Status:** CNS U-Net run complete; four-dataset FNO configs and
+timing/production/eval scripts ready.
 
 ## Baseline
 
-`local_hydra/local_experiment/epd/conditioned_navier_stokes/crps_vit_azula_large.yaml`
+`local_hydra/local_experiment/epd/<dataset>/crps_vit_azula_large.yaml`
 (ViT-Azula, ~80.8M real scalar parameters).
 
 ## Knob
@@ -28,8 +28,8 @@ It matches the ambient baseline's encoder/decoder/loss and uses an Azula U-Net
 channel ladder `[62, 124, 248, 496]`, measured at ~81.3M processor params for
 CNS ambient shapes.
 
-The FNO run uses
-`local_hydra/local_experiment/ablations/arch_unet_fno_vit/conditioned_navier_stokes/crps_fno_80m.yaml`.
+The FNO runs use
+`local_hydra/local_experiment/ablations/arch_unet_fno_vit/<dataset>/crps_fno_80m.yaml`.
 On the 64x64 ambient grid, the ViT's patch size of 4 produces a 16x16 token
 lattice. Retaining 16 Fourier modes per axis gives the FNO a comparable global
 spatial bandwidth, while the FNO pointwise path still operates on the full
@@ -49,7 +49,7 @@ the current wrapper, so it uses `ConcatenatedNoiseInjector` with one spatial
 white-noise channel. Ensemble expansion happens before injection, giving each
 of the eight members an independent noise field.
 
-All other practical settings follow the CNS CRPS ViT baseline:
+All other practical settings follow each dataset's CRPS ViT baseline:
 
 - `AlphaFairCRPSLoss` and the same train/validation metrics;
 - `n_members=8`, batch size 32/GPU, and four-GPU DDP;
@@ -59,22 +59,25 @@ All other practical settings follow the CNS CRPS ViT baseline:
 
 ## Datasets
 
-CNS only for now.
+FNO covers all four comparison datasets: Gray-Scott, GPE laser wake,
+conditioned Navier-Stokes, and advection-diffusion. U-Net remains CNS-only for
+now. This creates a temporary coverage asymmetry in the architecture study;
+the other three U-Net runs can be added later without changing the FNO design.
 
 ## Run sequence
 
 1. Submit `../submit_planned_updates_03_timing.sh`.
 2. Retrieve
-   `outputs/<date>/timing_planned_updates_03/fno_m8_crps_cns/`.
+   `outputs/<date>/timing_planned_updates_03/fno_m8_crps_*/`.
 3. Run `../submit_planned_updates_03_large.sh`. It derives the 24h epoch count
-   from the latest timing checkpoint; `COSINE_EPOCHS=<n>` can override it
-   explicitly.
-4. After production, run `../submit_eval_planned_updates_03.sh`. It finds the
-   latest matching run automatically, or accepts `FNO_RUN_DIR=<path>`.
+   independently for each dataset from its latest timing checkpoint.
+4. After production, run `../submit_eval_planned_updates_03.sh`. It evaluates
+   all completed runs in the latest batch, or accepts `RUN_ROOT=<path>` or
+   `FNO_RUN_DIR=<path>`.
 
 Start evaluation at batch size 4/GPU because FNO keeps full-resolution feature
 maps. Override with `EVAL_BATCH_SIZE` after confirming memory headroom.
 
-The first timing job is also the memory check. If batch size 32/GPU does not
-fit, use batch size 16 with two gradient-accumulation steps so the optimizer
-still sees the baseline's effective batch.
+The timing jobs are also the per-dataset memory check. If batch size 32/GPU
+does not fit for a dataset, use batch size 16 with two gradient-accumulation
+steps so the optimizer still sees the baseline's effective batch.

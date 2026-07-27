@@ -196,23 +196,30 @@ def test_mc_dropout_mse_l2_config_is_parameter_matched(
     assert cfg.optimizer.weight_decay == 0.0
 
 
-def test_fno_architecture_ablation_config_matches_crps_baseline(config_dir: str):
+@pytest.mark.parametrize(
+    "dataset",
+    [
+        "gray_scott",
+        "gpe_laser_wake_only",
+        "conditioned_navier_stokes",
+        "advection_diffusion",
+    ],
+)
+def test_fno_architecture_ablation_config_matches_crps_baseline(
+    config_dir: str,
+    dataset: str,
+):
     cfg = _load_config(
         config_dir,
         "encoder_processor_decoder",
         overrides=[
-            (
-                "local_experiment=ablations/arch_unet_fno_vit/"
-                "conditioned_navier_stokes/crps_fno_80m"
-            )
+            (f"local_experiment=ablations/arch_unet_fno_vit/{dataset}/crps_fno_80m")
         ],
     )
     baseline = _load_config(
         config_dir,
         "encoder_processor_decoder",
-        overrides=[
-            ("local_experiment=epd/conditioned_navier_stokes/crps_vit_azula_large")
-        ],
+        overrides=[f"local_experiment=epd/{dataset}/crps_vit_azula_large"],
     )
 
     assert cfg.model.processor._target_ == "autocast.processors.fno.FNOProcessor"
@@ -227,6 +234,7 @@ def test_fno_architecture_ablation_config_matches_crps_baseline(config_dir: str)
 
     assert cfg.model.n_members == baseline.model.n_members == 8
     assert cfg.datamodule.batch_size == baseline.datamodule.batch_size == 32
+    assert cfg.datamodule.data_path == baseline.datamodule.data_path
     assert cfg.datamodule.use_normalization is baseline.datamodule.use_normalization
     assert cfg.optimizer.learning_rate == baseline.optimizer.learning_rate == 2e-4
     assert cfg.optimizer.warmup == baseline.optimizer.warmup == 0
