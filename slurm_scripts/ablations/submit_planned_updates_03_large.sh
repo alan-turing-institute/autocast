@@ -24,10 +24,10 @@ declare -A EXPERIMENTS=(
 # Pin values here after timing if desired. Missing entries fall back to the
 # newest matching timing checkpoint.
 declare -A COSINE_EPOCHS_BY_DATASET=(
-    # ["gray_scott"]=...
-    # ["gpe_laser_only_wake"]=...
-    # ["conditioned_navier_stokes"]=...
-    # ["advection_diffusion"]=...
+    ["gray_scott"]=584
+    ["gpe_laser_only_wake"]=695
+    ["conditioned_navier_stokes"]=688
+    ["advection_diffusion"]=713
 )
 
 find_timing_checkpoint() {
