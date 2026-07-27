@@ -26,7 +26,7 @@ declare -A EXPERIMENTS=(
     # ["gray_scott"]="ablations/mc_dropout/gray_scott/mse_vit_azula_mc_dropout_large"
     # ["gpe_laser_only_wake"]="ablations/mc_dropout/gpe_laser_wake_only/mse_vit_azula_mc_dropout_large"
     ["conditioned_navier_stokes"]="ablations/mc_dropout/conditioned_navier_stokes/mse_vit_azula_mc_dropout_large"
-    # ["advection_diffusion"]="ablations/mc_dropout/advection_diffusion/mse_vit_azula_mc_dropout_large"
+    ["advection_diffusion"]="ablations/mc_dropout/advection_diffusion/mse_vit_azula_mc_dropout_large"
 )
 
 find_timing_checkpoint() {
