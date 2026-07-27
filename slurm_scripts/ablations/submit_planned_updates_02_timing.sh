@@ -20,9 +20,9 @@ set -euo pipefail
 # These epoch counts are pinned in submit_planned_updates_02_large.sh.
 
 BUDGET_HOURS=24
-NUM_TIMING_EPOCHS=5
+NUM_TIMING_EPOCHS="${NUM_TIMING_EPOCHS:-5}"
 MARGIN=0.02
-RUN_GROUP="$(date +%Y-%m-%d)/timing_planned_updates_02"
+RUN_GROUP="${RUN_GROUP:-$(date +%Y-%m-%d)/timing_planned_updates_02}"
 RESERVATION="${RESERVATION:-interactive}"
 TIME_LIMIT="${TIME_LIMIT:-01:00:00}"
 CPUS_PER_TASK="${CPUS_PER_TASK:-16}"
