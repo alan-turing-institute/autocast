@@ -23,12 +23,13 @@ small edit.
 | planned_02 batch | mixed | GS / GPE / AD | 6 | timing + production scripted |
 | planned_updates_01 batch | MC dropout | GS / GPE / CNS / AD | 4 | timing + production scripted |
 | planned_updates_02 batch | MC dropout MSE + L2 | CNS | 1 | config + timing + production + eval scripted |
+| planned_updates_03 batch | FNO architecture | CNS | 1 | timing + production + eval scripted |
 | noise_channels | sweep | CNS | 1 | config + planned |
 | mc_dropout (FFN, p=0.1) | comparison | GS / GPE / CNS / AD | 4 | timing + production scripted |
 | mc_dropout MSE + L2 (FFN, p=0.1) | comparison | CNS | 1 | ready |
 | crps_variants (AlphaFair / Fair / CRPS) | comparison | CNS | 2 new (+baseline) | config + planned |
 | fm_vs_diffusion | comparison | CNS | 1 | config + planned |
-| arch_unet_fno_vit | comparison | CNS | 1 U-Net (+ViT baseline) | config + planned |
+| arch_unet_fno_vit | comparison | CNS | U-Net + FNO (+ViT baseline) | FNO timing ready |
 | model_size | sweep | CNS | 2 active (+2 staged) | in progress |
 | vit_mae_pretrain | pretrain | CNS | 1 | staged |
 | cached_latent_crps | comparison | CNS | 1 (basis: 2026-04-20) | eval ready |
@@ -49,7 +50,7 @@ cross-ablation run list can be submitted consistently after timing. It covers:
 
 | planned run | study folder | implementation |
 |---|---|---|
-| U-Net m=8 CRPS CNS | `arch_unet_fno_vit` | `crps_unet_azula_80m`, ~80.9M params |
+| U-Net m=8 CRPS CNS | `arch_unet_fno_vit` | `crps_unet_azula_80m`, ~81.3M params |
 | Diffusion CNS | `fm_vs_diffusion` | diffusion processor with the FM 704/12/8 ViT backbone |
 | CNS m=8 fair CRPS | `crps_variants` | FairCRPS loss on the 80M CRPS ViT |
 | CNS m=8 CRPS | `crps_variants` | plain CRPS loss on the 80M CRPS ViT |
@@ -103,6 +104,15 @@ in `submit_planned_updates_02_timing.sh`,
 `submit_planned_updates_02_large.sh`, and
 `submit_eval_planned_updates_02.sh`.
 
+## Planned Updates Batch 03
+
+The third post-comparison update batch adds the parameter-matched CNS CRPS FNO
+architecture run. Its orchestration lives in
+`submit_planned_updates_03_timing.sh` and
+`submit_planned_updates_03_large.sh`, with evaluation in
+`submit_eval_planned_updates_03.sh`. The experiment config and design notes
+remain under `ablations/arch_unet_fno_vit/`.
+
 ## Design notes
 
 - **Flexible by construction.** Each ablation is a self-contained
@@ -130,7 +140,5 @@ in `submit_planned_updates_02_timing.sh`,
    and paste into `submit_*_large.sh`, or use a large script that derives
    them from matching timing checkpoints.
 3. `submit_*_large.sh` — 24h production runs, dry-run first.
-4. Eval from the script local to the study:
-   `slurm_scripts/comparison/eval/` for the canonical comparison suite, and
-   `slurm_scripts/ablations/<name>/eval/` for ablation-only run sets that have
-   not been promoted into the main comparison yet.
+4. Eval from the corresponding central `submit_eval_planned*.sh` script or a
+   study-local `eval/` submitter when the run set has not been centralized.

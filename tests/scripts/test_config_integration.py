@@ -196,6 +196,45 @@ def test_mc_dropout_mse_l2_config_is_parameter_matched(
     assert cfg.optimizer.weight_decay == 0.0
 
 
+def test_fno_architecture_ablation_config_matches_crps_baseline(config_dir: str):
+    cfg = _load_config(
+        config_dir,
+        "encoder_processor_decoder",
+        overrides=[
+            (
+                "local_experiment=ablations/arch_unet_fno_vit/"
+                "conditioned_navier_stokes/crps_fno_80m"
+            )
+        ],
+    )
+    baseline = _load_config(
+        config_dir,
+        "encoder_processor_decoder",
+        overrides=[
+            ("local_experiment=epd/conditioned_navier_stokes/crps_vit_azula_large")
+        ],
+    )
+
+    assert cfg.model.processor._target_ == "autocast.processors.fno.FNOProcessor"
+    assert list(cfg.model.processor.n_modes) == [16, 16]
+    assert cfg.model.processor.hidden_channels == 264
+    assert cfg.model.processor.n_layers == 4
+    assert cfg.model.input_noise_injector._target_ == (
+        "autocast.nn.noise.noise_injector.ConcatenatedNoiseInjector"
+    )
+    assert cfg.model.input_noise_injector.n_channels == 1
+    assert cfg.model.input_noise_injector.std == 1.0
+
+    assert cfg.model.n_members == baseline.model.n_members == 8
+    assert cfg.datamodule.batch_size == baseline.datamodule.batch_size == 32
+    assert cfg.datamodule.use_normalization is baseline.datamodule.use_normalization
+    assert cfg.optimizer.learning_rate == baseline.optimizer.learning_rate == 2e-4
+    assert cfg.optimizer.warmup == baseline.optimizer.warmup == 0
+    assert cfg.model.loss_func == baseline.model.loss_func
+    assert cfg.model.train_metrics == baseline.model.train_metrics
+    assert cfg.model.val_metrics == baseline.model.val_metrics
+
+
 # --- Tests using real configs ---
 
 
