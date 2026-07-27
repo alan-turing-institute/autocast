@@ -4,16 +4,16 @@ set -euo pipefail
 
 # Final 24h jobs for planned updates batch 02.
 #
-# Epoch counts are pinned from the 2026-07-26 and 2026-07-27 four-GPU
-# interactive timing runs, using the mean of five epochs with a 2% safety
-# margin. If a value is removed, the script falls back to the newest matching
-# timing checkpoint.
+# Epoch counts are pinned from the corrected 2026-07-27 four-GPU interactive
+# timing runs, using the April callback stack and the mean of five epochs with
+# a 2% safety margin. If a value is removed, the script falls back to the
+# newest matching timing checkpoint.
 
 declare -A COSINE_EPOCHS_BY_DATASET=(
-    ["gray_scott"]=2108
-    ["gpe_laser_only_wake"]=2441
-    ["conditioned_navier_stokes"]=2329
-    ["advection_diffusion"]=2505
+    ["gray_scott"]=2513
+    ["gpe_laser_only_wake"]=3087
+    ["conditioned_navier_stokes"]=2769
+    ["advection_diffusion"]=3154
 )
 
 BUDGET_MAX_TIME="00:23:59:00"

@@ -11,12 +11,12 @@ set -euo pipefail
 # here: its 5%-progress cadence would compress roughly 20 production snapshots
 # into each five-epoch timing window.
 #
-# Results from the 2026-07-26 and 2026-07-27 interactive runs (24h budget,
-# 2% margin):
-#   gray_scott:                 2108 epochs
-#   gpe_laser_only_wake:        2441 epochs
-#   conditioned_navier_stokes:  2329 epochs
-#   advection_diffusion:        2505 epochs
+# Corrected results from the 2026-07-27 interactive runs (24h budget,
+# 2% margin, April callback stack):
+#   gray_scott:                  33.7 s/epoch -> 2513 epochs
+#   gpe_laser_only_wake:         27.4 s/epoch -> 3087 epochs
+#   conditioned_navier_stokes:   30.6 s/epoch -> 2769 epochs
+#   advection_diffusion:         26.8 s/epoch -> 3154 epochs
 # These epoch counts are pinned in submit_planned_updates_02_large.sh.
 
 BUDGET_HOURS=24
