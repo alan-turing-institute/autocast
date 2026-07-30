@@ -9,18 +9,21 @@ This first run deliberately excludes attention-projection dropout, stochastic
 depth, and rollout-locked masks. It is the simplest Azula-native MC-dropout
 comparison.
 
-## CNS MSE + L2 baseline
+## MSE + L2 baseline
 
-The `planned_updates_02` scripts schedule one
-`conditioned_navier_stokes` run. Reusable GS, GPE and AD configs remain in the
-repository, and their script entries are commented out rather than deleted.
+The `planned_updates_02` scripts schedule runs for all four comparison
+datasets: Gray-Scott, GPE laser wake, conditioned Navier-Stokes, and
+advection-diffusion.
 
-The run trains one MC-dropout sample per case with mean-reduced MSE and evaluates
-50 stochastic samples. It holds the processor, `p=0.1`, conditioning and
-sampling mechanism fixed against the CRPS MC-dropout run, making the scoring
-objective the principal intended axis. The two training estimators still use
-different numbers of unique cases and masks per update, as detailed under
-comparison controls.
+Each run trains one MC-dropout sample per case with mean-reduced MSE and
+evaluates 10 stochastic samples, matching the shared evaluation protocol. It
+uses a test-dataloader batch size of 32 and a rollout batch size of 8, matching
+the successful `planned_updates_01` evaluations rather than inheriting the
+MSE run's training batch size of 256. It holds the processor, `p=0.1`,
+conditioning and sampling mechanism fixed against the CRPS MC-dropout run,
+making the scoring objective the principal intended axis. The two training
+estimators still use different numbers of unique cases and masks per update,
+as detailed under comparison controls.
 
 The loss is:
 
@@ -49,7 +52,7 @@ the production submission.
 
 | design choice | evidence | consequence here |
 |---|---|---|
-| MSE, `p=0.1`, 50 inference members | [WeatherBench Probability](https://arxiv.org/abs/2205.00865) tested `p` in `{0, 0.1, 0.2, 0.5}`, selected `0.1` by RMSE/CRPS, and used 50 samples to match IFS. | Direct empirical precedent; 50 is an evaluation protocol, not a theoretical requirement. |
+| MSE, `p=0.1` | [WeatherBench Probability](https://arxiv.org/abs/2205.00865) tested `p` in `{0, 0.1, 0.2, 0.5}`, selected `0.1` by RMSE/CRPS, and used 50 samples to match IFS. | Direct precedent for the training setup; evaluation is standardized to this project's 10-member comparison protocol. |
 | Explicit L2 coefficient `1e-5` | An [official `p=0.1` repository config](https://github.com/sagar-garg/WeatherBench/blob/f41f497ac45377d363dc30bfa77daf50d7b28afd/nn_configs/B/81-resnet_d3_dr_0.1.yml) uses latitude-weighted MSE and `l2: 1e-5`; the [network code](https://github.com/sagar-garg/WeatherBench/blob/f41f497ac45377d363dc30bfa77daf50d7b28afd/src/networks.py) applies Keras L2 to convolution kernels. | We copy this code-level coefficient and sum-of-squares convention, but deliberately limit it to the trainable processor. The paper itself does not state `1e-5`. |
 | Approximate-Bayesian interpretation | Under the mean-over-data objective in [Gal and Ghahramani](https://proceedings.mlr.press/v48/gal16.html), the matrix-weight coefficient is `p_keep l^2 / (2 tau N)`; bias scaling differs. Their predictive covariance also adds `tau^-1 I`, and their construction places dropout before every weight layer. | Here `p_drop=0.1` means `p_keep=0.9`, but `N` is ambiguous for overlapping trajectory windows and no prior length scale or observation precision is specified. FFN-only dropout plus L2 on all processor matrices is therefore not that exact VI construction. |
 | Point loss versus CRPS | [U-Cast](https://arxiv.org/html/2604.09041) uses `p=0.1`, first trains with weighted MAE, and then fine-tunes with fair CRPS using two members per update. It attributes point-loss MC-dropout underdispersion to the lack of a reward for ensemble spread and reports 50-member evaluation. | It motivates the scoring-rule axis and `p=0.1`, but not this exact MSE objective, eight-member AlphaFair CRPS estimator, or `1e-5` coefficient. |
@@ -114,7 +117,7 @@ used by the noise-channel ablation.
 | `../submit_planned_updates_01_large.sh` | Timing-derived 24h production jobs |
 | `../submit_planned_updates_02_timing.sh` | Four-dataset MSE + L2 five-epoch timing jobs |
 | `../submit_planned_updates_02_large.sh` | Four-dataset MSE + L2 24h production jobs |
-| `../submit_eval_planned_updates_02.sh` | Four deferred final-checkpoint evaluations with 50 MC samples |
+| `../submit_eval_planned_updates_02.sh` | Four deferred final-checkpoint evaluations with 10 MC samples |
 | `local_hydra/local_experiment/ablations/mc_dropout/<dataset>/crps_vit_azula_mc_dropout_large.yaml` | Dataset-specific parameter-matched experiment |
 | `local_hydra/local_experiment/ablations/mc_dropout/<dataset>/mse_vit_azula_mc_dropout_large.yaml` | Reusable dataset-specific MSE + L2 experiment |
 
@@ -132,7 +135,7 @@ to create an independent repeat; it defaults to 42.
 
 For the MSE + L2 baselines, run `submit_planned_updates_02_timing.sh`, inspect
 the MSE/L2 scale, then run `submit_planned_updates_02_large.sh`. Preview and
-submit the 50-sample evaluations with:
+submit the 10-sample evaluations with:
 
 ```bash
 RUN_ROOT=outputs/YYYY-MM-DD/planned_updates_02 \

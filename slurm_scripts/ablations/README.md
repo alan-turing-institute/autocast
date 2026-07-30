@@ -97,7 +97,8 @@ design notes remain under `ablations/mc_dropout/`.
 The second post-comparison update batch contains four-dataset MC-dropout MSE
 baselines. They use the same parameter-matched architecture and `p=0.1`
 sampler as the CRPS ablation, plus an explicit processor-local L2 penalty with
-coefficient `1e-5`. Evaluation uses 50 stochastic forward passes. Its
+coefficient `1e-5`. Evaluation uses the shared 10-member comparison protocol.
+Its
 orchestration lives in `submit_planned_updates_02_timing.sh`,
 `submit_planned_updates_02_large.sh`, and
 `submit_eval_planned_updates_02.sh`.

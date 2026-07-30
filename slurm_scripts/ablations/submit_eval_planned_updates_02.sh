@@ -15,11 +15,12 @@ set -euo pipefail
 # Queue them:
 #   SUBMIT=true ./slurm_scripts/ablations/submit_eval_planned_updates_02.sh
 
-EVAL_BATCH_SIZE=1
-EVAL_N_MEMBERS=50
+EVAL_BATCH_SIZE=8
+EVAL_TEST_BATCH_SIZE=32
+EVAL_N_MEMBERS=10
 TIMEOUT_MIN=45
 MEMORY="115G"
-EVAL_SUBDIR="eval_mc50_final"
+EVAL_SUBDIR="eval_mc10_final"
 ROLLOUT_SNAPSHOT_TIMESTEPS="[0,4,12,30,99]"
 EVAL_METRICS="[mse,mae,nmse,nmae,rmse,nrmse,vmse,vrmse,linf,psrmse,psrmse_low,psrmse_mid,psrmse_high,psrmse_tail,pscc,pscc_low,pscc_mid,pscc_high,pscc_tail,crps,fcrps,afcrps,energy,ssr,winkler]"
 
@@ -49,6 +50,8 @@ run_deferred_eval() {
     echo "  eval.checkpoint: ${eval_ckpt_abs}"
     echo "  eval.mode: ambient"
     echo "  eval.n_members: ${EVAL_N_MEMBERS}"
+    echo "  datamodule.batch_size: ${EVAL_TEST_BATCH_SIZE}"
+    echo "  eval.batch_size: ${EVAL_BATCH_SIZE}"
     echo "  output_subdir: ${EVAL_SUBDIR}"
     echo "  time: ${TIMEOUT_MIN} minutes"
     echo "  memory: ${MEMORY}"
@@ -66,6 +69,7 @@ run_deferred_eval() {
             eval.rollout_snapshot_timesteps="${ROLLOUT_SNAPSHOT_TIMESTEPS}" \
             eval.rollout_snapshot_format=png \
             eval.metrics="${EVAL_METRICS}" \
+            datamodule.batch_size="${EVAL_TEST_BATCH_SIZE}" \
             eval.batch_size="${EVAL_BATCH_SIZE}" \
             eval.n_members="${EVAL_N_MEMBERS}" \
             eval.devices=1
@@ -123,6 +127,8 @@ for run_spec in "${RUNS[@]}"; do
     echo "  deferred checkpoint: encoder_processor_decoder.ckpt"
     echo "  eval.mode: ambient"
     echo "  eval.n_members: ${EVAL_N_MEMBERS}"
+    echo "  datamodule.batch_size: ${EVAL_TEST_BATCH_SIZE}"
+    echo "  eval.batch_size: ${EVAL_BATCH_SIZE}"
     echo "  output_subdir: ${EVAL_SUBDIR}"
     echo "  time: ${TIMEOUT_MIN} minutes"
     echo "  memory: ${MEMORY}"
