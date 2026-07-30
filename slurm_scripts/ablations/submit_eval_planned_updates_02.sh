@@ -2,25 +2,94 @@
 
 set -euo pipefail
 
-# Evaluate the planned_updates_02 CNS MC-dropout run with 50 stochastic
-# forward passes. The run directory is discovered from the W&B
-# run name written into resolved_config.yaml by the production submitter.
+# Submit the four planned_updates_02 MC-dropout MSE evaluations after their
+# corresponding training jobs leave the queue.
 #
-# Preview:
-#   RUN_ROOT=outputs/YYYY-MM-DD/planned_updates_02 \
-#     ./slurm_scripts/ablations/submit_eval_planned_updates_02.sh
+# The best validation checkpoint is resolved inside the allocated evaluation
+# job, after its afterany dependency is satisfied. Resolution is strict:
+# exactly one best-val-*.ckpt must exist.
 #
-# Submit:
-#   RUN_ROOT=outputs/YYYY-MM-DD/planned_updates_02 SUBMIT=true \
-#     ./slurm_scripts/ablations/submit_eval_planned_updates_02.sh
+# Preview all four submissions without queueing anything:
+#   ./slurm_scripts/ablations/submit_eval_planned_updates_02.sh
+#
+# Queue them:
+#   SUBMIT=true ./slurm_scripts/ablations/submit_eval_planned_updates_02.sh
 
 EVAL_BATCH_SIZE=1
 EVAL_N_MEMBERS=50
-TIMEOUT_MIN=180
+TIMEOUT_MIN=45
+MEMORY="115G"
 EVAL_SUBDIR="eval_mc50_best_val"
 ROLLOUT_SNAPSHOT_TIMESTEPS="[0,4,12,30,99]"
 EVAL_METRICS="[mse,mae,nmse,nmae,rmse,nrmse,vmse,vrmse,linf,psrmse,psrmse_low,psrmse_mid,psrmse_high,psrmse_tail,pscc,pscc_low,pscc_mid,pscc_high,pscc_tail,crps,fcrps,afcrps,energy,ssr,winkler]"
-RUN_ROOT="${RUN_ROOT:-outputs/$(date +%Y-%m-%d)/planned_updates_02}"
+
+run_deferred_eval() {
+    local repo_root="$1"
+    local run_dir="$2"
+    local -a checkpoints=()
+
+    cd "${repo_root}"
+
+    if [[ ! -f "${run_dir}/resolved_config.yaml" ]]; then
+        echo "Missing resolved config: ${run_dir}/resolved_config.yaml" >&2
+        return 1
+    fi
+
+    mapfile -t checkpoints < <(
+        find "${run_dir}" -type f \
+            -path '*/checkpoints/best-val-*.ckpt' \
+            -print | sort
+    )
+
+    if (( ${#checkpoints[@]} != 1 )); then
+        echo "Expected exactly one best-val checkpoint in ${run_dir}; found ${#checkpoints[@]}" >&2
+        if (( ${#checkpoints[@]} > 0 )); then
+            printf '  %s\n' "${checkpoints[@]}" >&2
+        fi
+        return 1
+    fi
+
+    local eval_ckpt_abs eval_output_dir
+    eval_ckpt_abs="$(realpath "${checkpoints[0]}")"
+    eval_output_dir="${run_dir}/${EVAL_SUBDIR}"
+
+    echo "Starting deferred MC-dropout MSE ambient evaluation"
+    echo "  run_dir: ${run_dir}"
+    echo "  eval.checkpoint: ${eval_ckpt_abs}"
+    echo "  eval.mode: ambient"
+    echo "  eval.n_members: ${EVAL_N_MEMBERS}"
+    echo "  output_subdir: ${EVAL_SUBDIR}"
+    echo "  time: ${TIMEOUT_MIN} minutes"
+    echo "  memory: ${MEMORY}"
+
+    srun --nodes=1 --ntasks=1 --gpus=1 \
+        uv run autocast eval --mode local \
+            --workdir "${run_dir}" \
+            --output-subdir "${EVAL_SUBDIR}" \
+            eval.checkpoint="${eval_ckpt_abs}" \
+            eval.mode=ambient \
+            eval.csv_path="${eval_output_dir}/evaluation_metrics.csv" \
+            eval.video_dir="${eval_output_dir}/videos" \
+            eval.save_rollout_snapshots=true \
+            eval.rollout_snapshot_dir="${eval_output_dir}/videos/snapshots" \
+            eval.rollout_snapshot_timesteps="${ROLLOUT_SNAPSHOT_TIMESTEPS}" \
+            eval.rollout_snapshot_format=png \
+            eval.metrics="${EVAL_METRICS}" \
+            eval.batch_size="${EVAL_BATCH_SIZE}" \
+            eval.n_members="${EVAL_N_MEMBERS}" \
+            eval.devices=1
+}
+
+if [[ "${1:-}" == "--run-deferred" ]]; then
+    if (( $# != 3 )); then
+        echo "Usage: $0 --run-deferred REPO_ROOT RUN_DIR" >&2
+        exit 2
+    fi
+    run_deferred_eval "$2" "$3"
+    exit
+fi
+
+RUN_ROOT="${RUN_ROOT:-outputs/2026-07-27/planned_updates_02}"
 SUBMIT="${SUBMIT:-false}"
 
 case "${SUBMIT}" in
@@ -31,72 +100,62 @@ case "${SUBMIT}" in
         ;;
 esac
 
-DATASETS=(
-    # "gray_scott"
-    # "gpe_laser_only_wake"
-    "conditioned_navier_stokes"
-    # "advection_diffusion"
+repo_root="$(git rev-parse --show-toplevel)"
+script_path="$(realpath "${BASH_SOURCE[0]}")"
+
+# run_id|training_job_id|run_directory
+RUNS=(
+    "mcdo_mse_ad|5809381|epd_ad64_vit_azula_mc_dropout_large_5d39424_282ad08"
+    "mcdo_mse_gs|5809382|epd_gs64_vit_azula_mc_dropout_large_5d39424_f731d87"
+    "mcdo_mse_gpe|5809385|epd_gpe64_vit_azula_mc_dropout_large_5d39424_234111d"
+    "mcdo_mse_cns|5809390|epd_cns64_vit_azula_mc_dropout_large_5d39424_4c7c6be"
 )
 
 had_error=false
 
-for datamodule in "${DATASETS[@]}"; do
-    run_id="mc_dropout_mse_${datamodule}"
-    mapfile -t configs < <(
-        find "${RUN_ROOT}" -type f -name resolved_config.yaml -print0 2>/dev/null \
-            | xargs -0 grep -lF "name: ${run_id}" 2>/dev/null \
-            | sort
-    )
+for run_spec in "${RUNS[@]}"; do
+    IFS='|' read -r run_id training_job_id run_name <<< "${run_spec}"
+    run_dir="${RUN_ROOT%/}/${run_name}"
 
-    if (( ${#configs[@]} != 1 )); then
-        echo "Expected one resolved config for ${run_id}; found ${#configs[@]}" >&2
-        had_error=true
-        continue
-    fi
-
-    run_dir="$(dirname "${configs[0]}")"
-    mapfile -t checkpoints < <(
-        find "${run_dir}" -type f \
-            -path '*/checkpoints/best-val-*.ckpt' -print | sort
-    )
-    if (( ${#checkpoints[@]} != 1 )); then
-        echo "Expected one best-val checkpoint for ${run_id}; found ${#checkpoints[@]}" >&2
+    if [[ ! -f "${run_dir}/resolved_config.yaml" ]]; then
+        echo "Missing resolved config for ${run_id}: ${run_dir}" >&2
         had_error=true
         continue
     fi
 
     run_dir_abs="$(realpath "${run_dir}")"
-    checkpoint_abs="$(realpath "${checkpoints[0]}")"
     eval_output_dir="${run_dir_abs}/${EVAL_SUBDIR}"
 
-    echo "Submitting MC-dropout MSE + L2 evaluation"
-    echo "  mode: $([[ "${SUBMIT}" == "true" ]] && echo slurm || echo preview)"
-    echo "  run_id: ${run_id}"
+    echo "plan: ${run_id}"
+    echo "  training dependency: afterany:${training_job_id}"
     echo "  run_dir: ${run_dir_abs}"
-    echo "  checkpoint: ${checkpoint_abs}"
+    echo "  deferred checkpoint: best-val-*.ckpt"
+    echo "  eval.mode: ambient"
     echo "  eval.n_members: ${EVAL_N_MEMBERS}"
-    echo "  eval.batch_size: ${EVAL_BATCH_SIZE}"
+    echo "  output_subdir: ${EVAL_SUBDIR}"
+    echo "  time: ${TIMEOUT_MIN} minutes"
+    echo "  memory: ${MEMORY}"
 
     if [[ "${SUBMIT}" == "false" ]]; then
         continue
     fi
 
-    uv run autocast eval --mode slurm \
-        --workdir "${run_dir_abs}" \
-        --output-subdir "${EVAL_SUBDIR}" \
-        eval.checkpoint="${checkpoint_abs}" \
-        eval.mode=ambient \
-        eval.csv_path="${eval_output_dir}/evaluation_metrics.csv" \
-        eval.video_dir="${eval_output_dir}/videos" \
-        eval.save_rollout_snapshots=true \
-        eval.rollout_snapshot_dir="${eval_output_dir}/videos/snapshots" \
-        eval.rollout_snapshot_timesteps="${ROLLOUT_SNAPSHOT_TIMESTEPS}" \
-        eval.rollout_snapshot_format=png \
-        eval.metrics="${EVAL_METRICS}" \
-        eval.batch_size="${EVAL_BATCH_SIZE}" \
-        eval.n_members="${EVAL_N_MEMBERS}" \
-        eval.devices=1 \
-        hydra.launcher.timeout_min="${TIMEOUT_MIN}"
+    mkdir -p "${eval_output_dir}"
+    eval_job_id="$(
+        sbatch --parsable \
+            --job-name="eval_${run_id}_best_val" \
+            --output="${eval_output_dir}/slurm-%j.out" \
+            --error="${eval_output_dir}/slurm-%j.err" \
+            --time="${TIMEOUT_MIN}" \
+            --nodes=1 \
+            --ntasks-per-node=1 \
+            --gpus-per-node=1 \
+            --mem="${MEMORY}" \
+            --dependency="afterany:${training_job_id}" \
+            --chdir="${repo_root}" \
+            "${script_path}" --run-deferred "${repo_root}" "${run_dir_abs}"
+    )"
+    echo "  submitted eval job: ${eval_job_id}"
 done
 
 if [[ "${had_error}" == "true" ]]; then

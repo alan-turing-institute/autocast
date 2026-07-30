@@ -112,9 +112,9 @@ used by the noise-channel ablation.
 |---|---|
 | `../submit_planned_updates_01_timing.sh` | Five-epoch timing jobs for all four datasets |
 | `../submit_planned_updates_01_large.sh` | Timing-derived 24h production jobs |
-| `../submit_planned_updates_02_timing.sh` | CNS MSE + L2 five-epoch timing job |
-| `../submit_planned_updates_02_large.sh` | CNS MSE + L2 24h production job |
-| `../submit_eval_planned_updates_02.sh` | CNS best-validation evaluation with 50 MC samples |
+| `../submit_planned_updates_02_timing.sh` | Four-dataset MSE + L2 five-epoch timing jobs |
+| `../submit_planned_updates_02_large.sh` | Four-dataset MSE + L2 24h production jobs |
+| `../submit_eval_planned_updates_02.sh` | Four deferred best-validation evaluations with 50 MC samples |
 | `local_hydra/local_experiment/ablations/mc_dropout/<dataset>/crps_vit_azula_mc_dropout_large.yaml` | Dataset-specific parameter-matched experiment |
 | `local_hydra/local_experiment/ablations/mc_dropout/<dataset>/mse_vit_azula_mc_dropout_large.yaml` | Reusable dataset-specific MSE + L2 experiment |
 
@@ -130,9 +130,9 @@ The production script performs a dry-run submission before each real
 submission, matching the main CRPS comparison workflow. Set `TRAINING_SEED`
 to create an independent repeat; it defaults to 42.
 
-For the CNS MSE + L2 baseline, run `submit_planned_updates_02_timing.sh`,
-inspect the MSE/L2 scale, then run `submit_planned_updates_02_large.sh`. After
-training, preview and submit the 50-sample evaluation with:
+For the MSE + L2 baselines, run `submit_planned_updates_02_timing.sh`, inspect
+the MSE/L2 scale, then run `submit_planned_updates_02_large.sh`. Preview and
+submit the 50-sample evaluations with:
 
 ```bash
 RUN_ROOT=outputs/YYYY-MM-DD/planned_updates_02 \
@@ -140,3 +140,6 @@ RUN_ROOT=outputs/YYYY-MM-DD/planned_updates_02 \
 RUN_ROOT=outputs/YYYY-MM-DD/planned_updates_02 SUBMIT=true \
   ./slurm_scripts/ablations/submit_eval_planned_updates_02.sh
 ```
+
+The evaluation jobs use `afterany` dependencies and resolve each run's unique
+`best-val-*.ckpt` only after its training job leaves the queue.

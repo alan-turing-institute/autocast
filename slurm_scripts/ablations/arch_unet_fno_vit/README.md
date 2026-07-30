@@ -71,9 +71,9 @@ the other three U-Net runs can be added later without changing the FNO design.
    `outputs/<date>/timing_planned_updates_03/fno_m8_crps_*/`.
 3. Run `../submit_planned_updates_03_large.sh`. It derives the 24h epoch count
    independently for each dataset from its latest timing checkpoint.
-4. After production, run `../submit_eval_planned_updates_03.sh`. It evaluates
-   all completed runs in the latest batch, or accepts `RUN_ROOT=<path>` or
-   `FNO_RUN_DIR=<path>`.
+4. Preview and submit `../submit_eval_planned_updates_03.sh`. Its evaluation
+   jobs use `afterany` dependencies and resolve each run's unique
+   `best-multiwinkler-overall-*.ckpt` after training leaves the queue.
 
 Start evaluation at batch size 4/GPU because FNO keeps full-resolution feature
 maps. Override with `EVAL_BATCH_SIZE` after confirming memory headroom.
