@@ -5,9 +5,9 @@ set -euo pipefail
 # Submit the four planned_updates_02 MC-dropout MSE evaluations after their
 # corresponding training jobs leave the queue.
 #
-# The best validation checkpoint is resolved inside the allocated evaluation
-# job, after its afterany dependency is satisfied. Resolution is strict:
-# exactly one best-val-*.ckpt must exist.
+# The final exported checkpoint is resolved inside the allocated evaluation
+# job, after its afterany dependency is satisfied. This matches the checkpoint
+# policy used for the non-multi-Winkler FM and diffusion evaluations.
 #
 # Preview all four submissions without queueing anything:
 #   ./slurm_scripts/ablations/submit_eval_planned_updates_02.sh
@@ -19,14 +19,13 @@ EVAL_BATCH_SIZE=1
 EVAL_N_MEMBERS=50
 TIMEOUT_MIN=45
 MEMORY="115G"
-EVAL_SUBDIR="eval_mc50_best_val"
+EVAL_SUBDIR="eval_mc50_final"
 ROLLOUT_SNAPSHOT_TIMESTEPS="[0,4,12,30,99]"
 EVAL_METRICS="[mse,mae,nmse,nmae,rmse,nrmse,vmse,vrmse,linf,psrmse,psrmse_low,psrmse_mid,psrmse_high,psrmse_tail,pscc,pscc_low,pscc_mid,pscc_high,pscc_tail,crps,fcrps,afcrps,energy,ssr,winkler]"
 
 run_deferred_eval() {
     local repo_root="$1"
     local run_dir="$2"
-    local -a checkpoints=()
 
     cd "${repo_root}"
 
@@ -35,22 +34,14 @@ run_deferred_eval() {
         return 1
     fi
 
-    mapfile -t checkpoints < <(
-        find "${run_dir}" -type f \
-            -path '*/checkpoints/best-val-*.ckpt' \
-            -print | sort
-    )
-
-    if (( ${#checkpoints[@]} != 1 )); then
-        echo "Expected exactly one best-val checkpoint in ${run_dir}; found ${#checkpoints[@]}" >&2
-        if (( ${#checkpoints[@]} > 0 )); then
-            printf '  %s\n' "${checkpoints[@]}" >&2
-        fi
+    local eval_ckpt="${run_dir}/encoder_processor_decoder.ckpt"
+    if [[ ! -f "${eval_ckpt}" ]]; then
+        echo "Missing final checkpoint: ${eval_ckpt}" >&2
         return 1
     fi
 
     local eval_ckpt_abs eval_output_dir
-    eval_ckpt_abs="$(realpath "${checkpoints[0]}")"
+    eval_ckpt_abs="$(realpath "${eval_ckpt}")"
     eval_output_dir="${run_dir}/${EVAL_SUBDIR}"
 
     echo "Starting deferred MC-dropout MSE ambient evaluation"
@@ -129,7 +120,7 @@ for run_spec in "${RUNS[@]}"; do
     echo "plan: ${run_id}"
     echo "  training dependency: afterany:${training_job_id}"
     echo "  run_dir: ${run_dir_abs}"
-    echo "  deferred checkpoint: best-val-*.ckpt"
+    echo "  deferred checkpoint: encoder_processor_decoder.ckpt"
     echo "  eval.mode: ambient"
     echo "  eval.n_members: ${EVAL_N_MEMBERS}"
     echo "  output_subdir: ${EVAL_SUBDIR}"
@@ -143,7 +134,7 @@ for run_spec in "${RUNS[@]}"; do
     mkdir -p "${eval_output_dir}"
     eval_job_id="$(
         sbatch --parsable \
-            --job-name="eval_${run_id}_best_val" \
+            --job-name="eval_${run_id}_final" \
             --output="${eval_output_dir}/slurm-%j.out" \
             --error="${eval_output_dir}/slurm-%j.err" \
             --time="${TIMEOUT_MIN}" \
