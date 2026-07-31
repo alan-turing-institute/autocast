@@ -19,13 +19,24 @@ EVAL_BATCH_SIZE="${EVAL_BATCH_SIZE:-4}"
 EVAL_N_MEMBERS=10
 TIMEOUT_MIN=45
 MEMORY="115G"
-EVAL_SUBDIR="eval_best_multiwinkler_overall"
+EVAL_SUBDIR_BASE="eval_best_multiwinkler_overall"
+START_FRAME="${START_FRAME:-0}"
 ROLLOUT_SNAPSHOT_TIMESTEPS="[0,4,12,30,99]"
 EVAL_METRICS="[mse,mae,nmse,nmae,rmse,nrmse,vmse,vrmse,linf,psrmse,psrmse_low,psrmse_mid,psrmse_high,psrmse_tail,pscc,pscc_low,pscc_mid,pscc_high,pscc_tail,crps,fcrps,afcrps,energy,ssr,winkler]"
+
+eval_subdir_for_start_frame() {
+    local start_frame="$1"
+    if (( start_frame == 0 )); then
+        printf '%s\n' "${EVAL_SUBDIR_BASE}"
+    else
+        printf '%s_skip%s\n' "${EVAL_SUBDIR_BASE}" "${start_frame}"
+    fi
+}
 
 run_deferred_eval() {
     local repo_root="$1"
     local run_dir="$2"
+    local start_frame="$3"
     local -a checkpoints=()
 
     cd "${repo_root}"
@@ -49,22 +60,24 @@ run_deferred_eval() {
         return 1
     fi
 
-    local eval_ckpt_abs eval_output_dir
+    local eval_ckpt_abs eval_output_dir eval_subdir
     eval_ckpt_abs="$(realpath "${checkpoints[0]}")"
-    eval_output_dir="${run_dir}/${EVAL_SUBDIR}"
+    eval_subdir="$(eval_subdir_for_start_frame "${start_frame}")"
+    eval_output_dir="${run_dir}/${eval_subdir}"
 
     echo "Starting deferred FNO CRPS ambient evaluation"
     echo "  run_dir: ${run_dir}"
     echo "  eval.checkpoint: ${eval_ckpt_abs}"
     echo "  eval.mode: ambient"
-    echo "  output_subdir: ${EVAL_SUBDIR}"
+    echo "  datamodule.start_frame: ${start_frame}"
+    echo "  output_subdir: ${eval_subdir}"
     echo "  time: ${TIMEOUT_MIN} minutes"
     echo "  memory: ${MEMORY}"
 
     srun --nodes=1 --ntasks=1 --gpus=1 \
         uv run autocast eval --mode local \
             --workdir "${run_dir}" \
-            --output-subdir "${EVAL_SUBDIR}" \
+            --output-subdir "${eval_subdir}" \
             eval.checkpoint="${eval_ckpt_abs}" \
             eval.mode=ambient \
             eval.csv_path="${eval_output_dir}/evaluation_metrics.csv" \
@@ -76,15 +89,16 @@ run_deferred_eval() {
             eval.metrics="${EVAL_METRICS}" \
             eval.batch_size="${EVAL_BATCH_SIZE}" \
             eval.n_members="${EVAL_N_MEMBERS}" \
+            +datamodule.start_frame="${start_frame}" \
             eval.devices=1
 }
 
 if [[ "${1:-}" == "--run-deferred" ]]; then
-    if (( $# != 3 )); then
-        echo "Usage: $0 --run-deferred REPO_ROOT RUN_DIR" >&2
+    if (( $# != 4 )); then
+        echo "Usage: $0 --run-deferred REPO_ROOT RUN_DIR START_FRAME" >&2
         exit 2
     fi
-    run_deferred_eval "$2" "$3"
+    run_deferred_eval "$2" "$3" "$4"
     exit
 fi
 
@@ -98,6 +112,11 @@ case "${SUBMIT}" in
         exit 2
         ;;
 esac
+
+if [[ ! "${START_FRAME}" =~ ^[0-9]+$ ]]; then
+    echo "START_FRAME must be a non-negative integer, got: ${START_FRAME}" >&2
+    exit 2
+fi
 
 repo_root="$(git rev-parse --show-toplevel)"
 script_path="$(realpath "${BASH_SOURCE[0]}")"
@@ -123,14 +142,20 @@ for run_spec in "${RUNS[@]}"; do
     fi
 
     run_dir_abs="$(realpath "${run_dir}")"
-    eval_output_dir="${run_dir_abs}/${EVAL_SUBDIR}"
+    eval_subdir="$(eval_subdir_for_start_frame "${START_FRAME}")"
+    eval_output_dir="${run_dir_abs}/${eval_subdir}"
+    job_suffix=""
+    if (( START_FRAME > 0 )); then
+        job_suffix="_skip${START_FRAME}"
+    fi
 
     echo "plan: ${run_id}"
     echo "  training dependency: afterany:${training_job_id}"
     echo "  run_dir: ${run_dir_abs}"
     echo "  deferred checkpoint: best-multiwinkler-overall-*.ckpt"
     echo "  eval.mode: ambient"
-    echo "  output_subdir: ${EVAL_SUBDIR}"
+    echo "  datamodule.start_frame: ${START_FRAME}"
+    echo "  output_subdir: ${eval_subdir}"
     echo "  time: ${TIMEOUT_MIN} minutes"
     echo "  memory: ${MEMORY}"
 
@@ -141,7 +166,7 @@ for run_spec in "${RUNS[@]}"; do
     mkdir -p "${eval_output_dir}"
     eval_job_id="$(
         sbatch --parsable \
-            --job-name="eval_${run_id}_overall" \
+            --job-name="eval_${run_id}_overall${job_suffix}" \
             --output="${eval_output_dir}/slurm-%j.out" \
             --error="${eval_output_dir}/slurm-%j.err" \
             --time="${TIMEOUT_MIN}" \
@@ -151,7 +176,8 @@ for run_spec in "${RUNS[@]}"; do
             --mem="${MEMORY}" \
             --dependency="afterany:${training_job_id}" \
             --chdir="${repo_root}" \
-            "${script_path}" --run-deferred "${repo_root}" "${run_dir_abs}"
+            "${script_path}" --run-deferred "${repo_root}" "${run_dir_abs}" \
+            "${START_FRAME}"
     )"
     echo "  submitted eval job: ${eval_job_id}"
 done

@@ -180,6 +180,7 @@ class SpatioTemporalDataModule(LightningDataModule):
         normalization_path: None | str = None,
         normalization_stats: dict | DictConfig | None = None,
         num_workers: int | None = None,
+        start_frame: int = 0,
     ):
         super().__init__()
         self.verbose = verbose
@@ -203,6 +204,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             n_steps_input=n_steps_input,
             n_steps_output=n_steps_output,
             stride=stride,
+            start_frame=start_frame,
             channel_idxs=channel_idxs,
             autoencoder_mode=self.autoencoder_mode,
             full_trajectory_mode=full_trajectory_mode,
@@ -234,6 +236,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             n_steps_input=n_steps_input,
             n_steps_output=n_steps_output,
             stride=stride,
+            start_frame=start_frame,
             channel_idxs=channel_idxs,
             autoencoder_mode=self.autoencoder_mode,
             full_trajectory_mode=full_trajectory_mode,
@@ -250,6 +253,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             n_steps_input=n_steps_input,
             n_steps_output=n_steps_output,
             stride=stride,
+            start_frame=start_frame,
             channel_idxs=channel_idxs,
             autoencoder_mode=self.autoencoder_mode,
             full_trajectory_mode=full_trajectory_mode,
@@ -270,6 +274,7 @@ class SpatioTemporalDataModule(LightningDataModule):
                 n_steps_input=n_steps_input,
                 n_steps_output=n_steps_output,
                 stride=stride,
+                start_frame=start_frame,
                 channel_idxs=channel_idxs,
                 full_trajectory_mode=True,
                 dtype=dtype,
@@ -285,6 +290,7 @@ class SpatioTemporalDataModule(LightningDataModule):
                 n_steps_input=n_steps_input,
                 n_steps_output=n_steps_output,
                 stride=stride,
+                start_frame=start_frame,
                 channel_idxs=channel_idxs,
                 full_trajectory_mode=True,
                 dtype=dtype,

@@ -31,7 +31,7 @@ class BatchMixin:
 class SpatioTemporalDataset(Dataset, BatchMixin):
     """A class for spatio-temporal datasets."""
 
-    def __init__(  # noqa: PLR0915
+    def __init__(  # noqa: PLR0912, PLR0915
         self,
         data_path: str | None,
         data: dict | None = None,
@@ -47,6 +47,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         normalization_type: type[ZScoreNormalization] | None = ZScoreNormalization,
         normalization_path: str | None = None,
         normalization_stats: dict | DictConfig | None = None,
+        start_frame: int = 0,
     ):
         """
         Initialize the dataset.
@@ -86,6 +87,9 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             Path to normalization statistics file (yaml). Defaults to None.
         normalization_stats: dict | None
             Preloaded normalization statistics. Defaults to None.
+        start_frame: int
+            Number of leading frames to remove from every trajectory before
+            constructing input/output windows. Defaults to 0.
         """
         self.dtype = dtype
         self.verbose = verbose
@@ -100,6 +104,17 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         # TODO: consider ensuring only one passed and not overridden
         if data is not None:
             self.parse_data(data)
+
+        if isinstance(start_frame, bool) or not isinstance(start_frame, int):
+            msg = f"start_frame must be an integer, got {start_frame!r}."
+            raise TypeError(msg)
+        if start_frame < 0 or start_frame >= self.data.shape[1]:
+            msg = (
+                "start_frame must be in the range "
+                f"[0, {self.data.shape[1] - 1}], got {start_frame}."
+            )
+            raise ValueError(msg)
+        self.data = self.data[:, start_frame:]
 
         if channel_idxs is not None:
             self.data = self.data[..., list(channel_idxs)]
@@ -124,9 +139,24 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             # - input: first n_steps_input timesteps
             # - output: all remaining timesteps for rollout comparison
             n_steps_output = self.data.shape[1] - n_steps_input
+            if n_steps_output < 1:
+                msg = (
+                    f"start_frame={start_frame} leaves no output frames after "
+                    f"the {n_steps_input} input frame(s)."
+                )
+                raise ValueError(msg)
+
+        window_size = n_steps_input + n_steps_output
+        if self.data.shape[1] < window_size:
+            msg = (
+                f"start_frame={start_frame} leaves {self.data.shape[1]} frames, "
+                f"but {window_size} are required for one sample."
+            )
+            raise ValueError(msg)
 
         self.full_trajectory_mode = full_trajectory_mode
         self.autoencoder_mode = autoencoder_mode
+        self.start_frame = start_frame
         self.n_steps_input = n_steps_input
         self.n_steps_output = n_steps_output
         self.stride = stride

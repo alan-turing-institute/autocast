@@ -78,6 +78,12 @@ the other three U-Net runs can be added later without changing the FNO design.
 Start evaluation at batch size 4/GPU because FNO keeps full-resolution feature
 maps. Override with `EVAL_BATCH_SIZE` after confirming memory headroom.
 
+Set `START_FRAME=20` (or another non-negative frame count) to evaluate only
+after removing that many leading frames from every trajectory. This shifts
+both the one-step test windows and the full-rollout initial condition, and
+writes results to a distinct `eval_best_multiwinkler_overall_skip<N>`
+directory.
+
 The timing jobs are also the per-dataset memory check. If batch size 32/GPU
 does not fit for a dataset, use batch size 16 with two gradient-accumulation
 steps so the optimizer still sees the baseline's effective batch.
