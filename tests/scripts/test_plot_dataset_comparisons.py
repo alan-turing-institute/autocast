@@ -6,6 +6,7 @@ from typing import Any
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import pytest
 from matplotlib.figure import Figure
 
 from autocast.scripts import plot_dataset_comparisons as pdc
@@ -319,6 +320,54 @@ def test_single_step_results_markdown_is_reviewer_ready(tmp_path: Path):
     )
     assert "| AD | CRPS | **1.2e-02** | 0.04 | 9.9e-02 | **0.90** |" in markdown
     assert "| AD | FM | 2.3e-02 | **0.03** | **8.8e-02** | 1.20 |" in markdown
+
+
+def test_rollout_window_summary_markdown_is_reviewer_ready(tmp_path: Path):
+    df = pd.DataFrame(
+        {
+            "dataset_label": ["AD", "AD"],
+            "plot_group": ["cln", "fno"],
+            "vrmse_0-4": [0.001, 0.002],
+            "vrmse_31-99": [0.01, 0.2],
+            "coverage_0-4": [0.04, 0.08],
+            "coverage_31-99": [0.12, 0.30],
+        }
+    )
+    styles = {
+        "cln": {"label": "CLN", "color": "tab:blue"},
+        "fno": {"label": "FNO", "color": "tab:red"},
+    }
+
+    pdc.write_rollout_window_summary_table(
+        df,
+        tmp_path,
+        styles,
+        dataset_order=["AD"],
+        hue_order=["CLN", "FNO"],
+    )
+
+    markdown = (tmp_path / "rollout_window_summary_results.md").read_text()
+    assert "VRMSE [0:4) ↓" in markdown
+    assert "Coverage MAE [31:99) ↓" in markdown
+    assert "| AD | CLN | **1.0e-03** | **1.0e-02** | **0.04** | **0.12** |" in markdown
+    assert "| AD | FNO | 2.0e-03 | 2.0e-01 | 0.08 | 0.30 |" in markdown
+
+
+def test_load_single_run_metrics_falls_back_to_rollout_coverage_curve(
+    tmp_path: Path,
+):
+    eval_dir = tmp_path / "run1" / "eval"
+    eval_dir.mkdir(parents=True)
+    pd.DataFrame(
+        {
+            "coverage_level": [0.1, 0.5, 0.9],
+            "observed_mean": [0.0, 0.3, 0.8],
+        }
+    ).to_csv(eval_dir / "rollout_coverage_window_31-99.csv", index=False)
+
+    row = pdc.load_single_run_metrics(tmp_path / "run1")
+
+    assert row["coverage_31-99"] == pytest.approx((0.1 + 0.2 + 0.1) / 3)
 
 
 def test_coverage_calibration_panel_uses_publication_axis_labels(tmp_path: Path):

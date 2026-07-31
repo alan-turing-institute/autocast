@@ -43,6 +43,9 @@ DATASET_LABEL_OVERRIDES = {
     "sw2d464": "SW4",
     "sw2d64": "SW",
 }
+CANONICAL_DATASET_MODULE_BY_LABEL = {
+    label.casefold(): module for module, label in DATASET_LABEL_OVERRIDES.items()
+}
 
 # Canonical grid resolution for each known dataset module.
 DATASET_RESOLUTION: dict[str, str] = {
@@ -165,6 +168,11 @@ SINGLE_STEP_RESULTS_TABLE_METRICS: tuple[tuple[str, str], ...] = (
     ("model_latency_ms_per_sample", "Inference latency (ms/sample)"),
     ("train_mean_epoch_s", "Training time (s/epoch)"),
 )
+ROLLOUT_WINDOW_SUMMARY_WINDOWS: tuple[str, ...] = ("0-4", "31-99")
+ROLLOUT_WINDOW_SUMMARY_METRICS: tuple[tuple[str, str], ...] = (
+    ("vrmse", "VRMSE"),
+    ("coverage", "Coverage MAE"),
+)
 SINGLE_STEP_RESULTS_LATEX_HEADERS: dict[str, str] = {
     "Dataset": "Dataset",
     "Model": "Model",
@@ -200,6 +208,21 @@ SINGLE_STEP_RESULTS_LOWER_IS_BETTER = {
     "Training time (s/epoch)",
 }
 SINGLE_STEP_RESULTS_TARGET_METRICS = {"SSR": 1.0}
+
+
+def _table_metric_kind(column: str) -> str:
+    """Return the base metric represented by a table column label."""
+    for metric in (
+        "VRMSE",
+        "Coverage MAE",
+        "CRPS",
+        "SSR",
+        "Inference latency (ms/sample)",
+        "Training time (s/epoch)",
+    ):
+        if column == metric or column.startswith(f"{metric} "):
+            return metric
+    return column
 
 
 def _is_dispersion_metric(metric: str) -> bool:
@@ -688,6 +711,21 @@ def dataset_label_from_module(dataset_module: str | None) -> str | None:
     return str(dataset_module).replace("_", " ").title()
 
 
+def normalize_dataset_override(dataset: str | None) -> tuple[str, str] | None:
+    """Return canonical module and display label for a CLI dataset override."""
+    if dataset is None:
+        return None
+    token = str(dataset).strip()
+    if not token:
+        return None
+    token_cf = token.casefold()
+    module = CANONICAL_DATASET_MODULE_BY_LABEL.get(token_cf)
+    if module is None:
+        module = normalize_dataset_module(token) or token
+    label = dataset_label_from_module(module) or token
+    return module, label
+
+
 def _dataset_candidates() -> list[str]:
     base = set(DATASET_LABEL_OVERRIDES.keys())
     return sorted(base, key=len, reverse=True)
@@ -1026,6 +1064,16 @@ def load_single_run_metrics(  # noqa: PLR0912, PLR0915
                     if col in {"window", "batch_idx"}:
                         continue
                     row[f"{col}_{w}"] = pd.to_numeric(rr[col], errors="coerce")
+
+    for w in ROLL_WINDOWS:
+        coverage_col = f"coverage_{w}"
+        if coverage_col in row:
+            continue
+        coverage_mae = _coverage_diagonal_mae_from_csv(
+            eval_dir / f"rollout_coverage_window_{w}.csv"
+        )
+        if coverage_mae is not None:
+            row[coverage_col] = coverage_mae
 
     # Evaluation metadata (Params)
     p_meta = eval_dir / "evaluation_metadata.csv"
@@ -1407,6 +1455,31 @@ def _run_ref_aliases(run_name: str) -> list[str]:
     if core not in aliases:
         aliases.append(core)
     return aliases
+
+
+def apply_dataset_overrides(
+    df: pd.DataFrame,
+    dataset_override_by_run: dict[str, tuple[str, str]],
+) -> None:
+    """Apply explicit run-level dataset overrides in-place."""
+    if not dataset_override_by_run or df.empty or "run_name" not in df.columns:
+        return
+    for idx, run_name in cast(pd.Series, df["run_name"]).astype(str).items():
+        for alias in _run_ref_aliases(run_name):
+            override = dataset_override_by_run.get(alias)
+            if override is None:
+                continue
+            module, label = override
+            df.at[idx, "dataset_module"] = module
+            df.at[idx, "dataset_label"] = label
+            break
+
+
+def _metadata_series_or_na(df: pd.DataFrame, column: str) -> pd.Series:
+    """Return a metadata column or an all-NA series aligned to *df*."""
+    if column in df.columns:
+        return cast(pd.Series, df[column])
+    return pd.Series(np.nan, index=df.index, dtype="object")
 
 
 def _style_label_for_plot_group(
@@ -1843,6 +1916,74 @@ def build_single_step_results_table(
     return pd.DataFrame(rows, columns=pd.Index(columns))
 
 
+def build_rollout_window_summary_table(
+    df_in: pd.DataFrame,
+    styles: dict,
+    dataset_order: list[str] | None = None,
+    hue_order: list[str] | None = None,
+    windows: tuple[str, ...] = ROLLOUT_WINDOW_SUMMARY_WINDOWS,
+) -> pd.DataFrame:
+    """Build a compact early/late rollout table for reviewer responses."""
+    if "dataset_label" not in df_in.columns or "plot_group" not in df_in.columns:
+        return pd.DataFrame()
+
+    metric_specs: list[tuple[str, str]] = []
+    for metric, label in ROLLOUT_WINDOW_SUMMARY_METRICS:
+        for window in windows:
+            metric_specs.append(
+                (
+                    f"{metric}_{window}",
+                    f"{label} {_coverage_window_interval_label(window)}",
+                )
+            )
+
+    data = df_in.copy()
+    available_specs = [(src, label) for src, label in metric_specs if src in data]
+    if not available_specs:
+        return pd.DataFrame()
+
+    available = [src for src, _ in available_specs]
+    for col in available:
+        data[col] = pd.to_numeric(data[col], errors="coerce")
+
+    grouped = (
+        data.groupby(["dataset_label", "plot_group"], dropna=False)[available]
+        .mean()
+        .reset_index()
+    )
+    datasets = _apply_explicit_order(
+        list(grouped["dataset_label"].dropna().unique()), dataset_order
+    )
+
+    rows: list[dict[str, object]] = []
+    for ds_label in datasets:
+        ds_rows = grouped[grouped["dataset_label"] == ds_label]
+        groups = _order_groups_by_label(
+            cast(pd.Series, ds_rows["plot_group"].astype(str)).dropna().tolist(),
+            styles,
+            hue_order,
+        )
+        for group in groups:
+            row_match = cast(
+                pd.DataFrame,
+                ds_rows[ds_rows["plot_group"].astype(str) == str(group)],
+            )
+            if row_match.empty:
+                continue
+            raw = cast(pd.Series, row_match.iloc[0])
+            style = styles.get(group, {"label": group})
+            table_row: dict[str, object] = {
+                "Dataset": ds_label,
+                "Model": str(style.get("label", group)),
+            }
+            for src, label in available_specs:
+                table_row[label] = raw[src] if src in raw.index else np.nan
+            rows.append(table_row)
+
+    columns = ["Dataset", "Model", *[label for _, label in available_specs]]
+    return pd.DataFrame(rows, columns=pd.Index(columns))
+
+
 def _latex_escape(value: object) -> str:
     """Escape plain text for insertion into a LaTeX table."""
     text = "" if value is None else str(value)
@@ -1881,13 +2022,14 @@ def _format_latex_table_value(value: object, column: str | None = None) -> str: 
         return _latex_escape(value)
     if not np.isfinite(numeric) or math.isnan(numeric):
         return ""
-    if column in {"VRMSE", "CRPS"}:
+    metric_kind = _table_metric_kind(column or "")
+    if metric_kind in {"VRMSE", "CRPS"}:
         return f"{numeric:.1e}"
-    if column == "Coverage MAE":
+    if metric_kind == "Coverage MAE":
         return f"{numeric:.2f}"
-    if column == "SSR":
+    if metric_kind == "SSR":
         return f"{numeric:.2f}"
-    if column in {
+    if metric_kind in {
         "Inference latency (ms/sample)",
         "Training time (s/epoch)",
     }:
@@ -1902,21 +2044,25 @@ def _best_latex_cells_by_dataset(table: pd.DataFrame) -> set[tuple[int, str]]:
         return best_cells
 
     for _, dataset_rows in table.groupby("Dataset", sort=False):
-        for metric in [label for _, label in SINGLE_STEP_RESULTS_TABLE_METRICS]:
-            if metric not in dataset_rows.columns:
+        for metric in [c for c in table.columns if c not in {"Dataset", "Model"}]:
+            metric_kind = _table_metric_kind(metric)
+            if metric_kind not in {
+                *SINGLE_STEP_RESULTS_LOWER_IS_BETTER,
+                *SINGLE_STEP_RESULTS_TARGET_METRICS,
+            }:
                 continue
             metric_col = cast(pd.Series, dataset_rows[metric])
             values_ser = cast(pd.Series, pd.to_numeric(metric_col, errors="coerce"))
             values_ser = cast(pd.Series, values_ser.dropna())
             if values_ser.empty:
                 continue
-            if metric in SINGLE_STEP_RESULTS_TARGET_METRICS:
-                target = SINGLE_STEP_RESULTS_TARGET_METRICS[metric]
+            if metric_kind in SINGLE_STEP_RESULTS_TARGET_METRICS:
+                target = SINGLE_STEP_RESULTS_TARGET_METRICS[metric_kind]
                 scores = (values_ser - target).abs()
                 best_score = float(scores.min())
                 mask = cast(pd.Series, scores == best_score)
                 winners = cast(pd.Index, values_ser.index[mask])
-            elif metric in SINGLE_STEP_RESULTS_LOWER_IS_BETTER:
+            elif metric_kind in SINGLE_STEP_RESULTS_LOWER_IS_BETTER:
                 best_value = float(values_ser.min())
                 mask = cast(pd.Series, values_ser == best_value)
                 winners = cast(pd.Index, values_ser.index[mask])
@@ -1929,6 +2075,7 @@ def _best_latex_cells_by_dataset(table: pd.DataFrame) -> set[tuple[int, str]]:
 
 def _single_step_results_latex_column_spec(column: str) -> str:
     """Return a LaTeX tabular column spec for a single table column."""
+    metric_kind = _table_metric_kind(column)
     specs = {
         "Dataset": "l",
         "Model": "l",
@@ -1939,7 +2086,7 @@ def _single_step_results_latex_column_spec(column: str) -> str:
         "Inference latency (ms/sample)": "S[table-format=3.0, detect-weight=true]",
         "Training time (s/epoch)": "S[table-format=3.0, detect-weight=true]",
     }
-    return specs.get(column, "l")
+    return specs.get(metric_kind, "l")
 
 
 def render_single_step_results_latex(table: pd.DataFrame) -> str:
@@ -2008,10 +2155,25 @@ def render_single_step_results_markdown(table: pd.DataFrame) -> str:
         "Inference latency (ms/sample)": "Inference latency (ms/sample) ↓",
         "Training time (s/epoch)": "Training time (s/epoch) ↓",
     }
+
+    def _header_label(column: str) -> str:
+        if column in header_labels:
+            return header_labels[column]
+        metric_kind = _table_metric_kind(column)
+        if metric_kind == column:
+            return column
+        suffix = {
+            "VRMSE": "↓",
+            "Coverage MAE": "↓",
+            "CRPS": "↓",
+            "SSR": "→ 1",
+            "Inference latency (ms/sample)": "↓",
+            "Training time (s/epoch)": "↓",
+        }.get(metric_kind)
+        return f"{column} {suffix}" if suffix else column
+
     columns = table.columns.tolist()
-    header = [
-        str(header_labels.get(column, column)).replace("|", r"\|") for column in columns
-    ]
+    header = [str(_header_label(column)).replace("|", r"\|") for column in columns]
     lines = [
         "| " + " | ".join(header) + " |",
         "| " + " | ".join("---" for _ in columns) + " |",
@@ -2052,6 +2214,40 @@ def write_single_step_results_table(
     )
     if table.empty:
         print("No single-step overall results table available.")
+        return table
+
+    csv_path = out_dir / f"{stem}.csv"
+    tex_path = out_dir / f"{stem}.tex"
+    markdown_path = out_dir / f"{stem}.md"
+    table.to_csv(csv_path, index=False, float_format="%.6g")
+    tex_path.write_text(render_single_step_results_latex(table), encoding="utf-8")
+    markdown_path.write_text(
+        render_single_step_results_markdown(table),
+        encoding="utf-8",
+    )
+    print(f"Saved: {csv_path}")
+    print(f"Saved: {tex_path}")
+    print(f"Saved: {markdown_path}")
+    return table
+
+
+def write_rollout_window_summary_table(
+    df_in: pd.DataFrame,
+    out_dir: Path,
+    styles: dict,
+    dataset_order: list[str] | None = None,
+    hue_order: list[str] | None = None,
+    stem: str = "rollout_window_summary_results",
+) -> pd.DataFrame:
+    """Write a compact early/late rollout summary for reviewer responses."""
+    table = build_rollout_window_summary_table(
+        df_in,
+        styles,
+        dataset_order=dataset_order,
+        hue_order=hue_order,
+    )
+    if table.empty:
+        print("No rollout-window summary table available.")
         return table
 
     csv_path = out_dir / f"{stem}.csv"
@@ -4313,7 +4509,7 @@ def main():  # noqa: PLR0912, PLR0915
         metavar="RUN_ID",
         help=(
             "Add a run, with optional label: "
-            '--run <id> ["label"] [hue] [eval=<subdir>]. '
+            '--run <id> ["label"] [hue] [eval=<subdir>] [dataset=<label>]. '
             "Repeat for each run. Integer hue overrides --color-by-label "
             "for that run and groups runs into a shared hue family."
         ),
@@ -4722,11 +4918,12 @@ def main():  # noqa: PLR0912, PLR0915
     #   <id> <label> <hue>
     hue_group_by_run: dict[str, int] = {}
     eval_subdir_by_run: dict[str, str] = {}
+    dataset_override_by_run: dict[str, tuple[str, str]] = {}
     run_order: list[str] = []
 
     def _parse_run_entry(
         entry: list[str],
-    ) -> tuple[str, str | None, int | None, str | None]:
+    ) -> tuple[str, str | None, int | None, str | None, str | None]:
         if not entry:
             msg = "Error: --run requires at least <id>."
             raise ValueError(msg)
@@ -4735,6 +4932,7 @@ def main():  # noqa: PLR0912, PLR0915
         label: str | None = None
         hue: int | None = None
         eval_subdir: str | None = None
+        dataset_override: str | None = None
 
         for tok in entry[1:]:
             tok_s = str(tok)
@@ -4756,6 +4954,23 @@ def main():  # noqa: PLR0912, PLR0915
                 eval_subdir = eval_value
                 continue
 
+            if tok_l.startswith("dataset="):
+                if dataset_override is not None:
+                    msg = (
+                        f"Error: duplicate dataset override in --run {run_id!r}. "
+                        "Use one dataset=<label> token."
+                    )
+                    raise ValueError(msg)
+                dataset_value = tok_s.split("=", 1)[1]
+                if not dataset_value.strip():
+                    msg = (
+                        f"Error: empty dataset override in --run {run_id!r}. "
+                        "Use dataset=<label>."
+                    )
+                    raise ValueError(msg)
+                dataset_override = dataset_value
+                continue
+
             if hue is None and tok_s.lstrip("-").isdigit():
                 hue = int(tok_s)
                 continue
@@ -4766,24 +4981,36 @@ def main():  # noqa: PLR0912, PLR0915
 
             msg = (
                 f"Error: unrecognized extra token {tok_s!r} in --run {run_id!r}. "
-                "Expected optional [label] [hue] and/or eval=<subdir>."
+                "Expected optional [label] [hue], eval=<subdir>, "
+                "and/or dataset=<label>."
             )
             raise ValueError(msg)
 
-        return run_id, label, hue, eval_subdir
+        return run_id, label, hue, eval_subdir, dataset_override
 
     if args.run:
         merged_runs: list[str] = []
         merged_labels: list[list[str]] = list(args.label_run or [])
-        parsed_entries: list[tuple[str, str | None, int | None, str]] = []
+        parsed_entries: list[
+            tuple[str, str | None, int | None, str, tuple[str, str] | None]
+        ] = []
         for entry in args.run:
             try:
-                run_id, label, hue, run_eval_subdir = _parse_run_entry(entry)
+                run_id, label, hue, run_eval_subdir, run_dataset = _parse_run_entry(
+                    entry
+                )
             except ValueError as e:
                 print(e)
                 sys.exit(1)
+            dataset_override = normalize_dataset_override(run_dataset)
             parsed_entries.append(
-                (run_id, label, hue, normalize_eval_subdir(run_eval_subdir))
+                (
+                    run_id,
+                    label,
+                    hue,
+                    normalize_eval_subdir(run_eval_subdir),
+                    dataset_override,
+                )
             )
             merged_runs.append(run_id)
             eval_subdir_by_run[run_id] = normalize_eval_subdir(run_eval_subdir)
@@ -4791,7 +5018,7 @@ def main():  # noqa: PLR0912, PLR0915
         # Build stable per-entry refs so repeated run_ids with different eval/labels
         # are treated as distinct series in style/legend/hue mapping.
         ref_counts: dict[str, int] = {}
-        for run_id, label, hue, run_eval_subdir in parsed_entries:
+        for run_id, label, hue, run_eval_subdir, dataset_override in parsed_entries:
             base_ref = run_id
             if run_eval_subdir != DEFAULT_EVAL_SUBDIR:
                 base_ref = f"{run_id}::eval={run_eval_subdir}"
@@ -4803,6 +5030,8 @@ def main():  # noqa: PLR0912, PLR0915
                 merged_labels.append([run_ref, label])
             if hue is not None:
                 hue_group_by_run[run_ref] = hue
+            if dataset_override is not None:
+                dataset_override_by_run[run_ref] = dataset_override
         # --run takes precedence; append any extra --runs
         if args.runs:
             for run_id in args.runs:
@@ -4826,7 +5055,7 @@ def main():  # noqa: PLR0912, PLR0915
         if args.run:
             ref_counts = {}
             for entry in args.run:
-                run_id, _, _, run_eval_subdir = _parse_run_entry(entry)
+                run_id, _, _, run_eval_subdir, _ = _parse_run_entry(entry)
                 eval_subdir = normalize_eval_subdir(run_eval_subdir)
                 base_ref = run_id
                 if eval_subdir != DEFAULT_EVAL_SUBDIR:
@@ -4902,9 +5131,10 @@ def main():  # noqa: PLR0912, PLR0915
             ),
         )
         mdf["dataset_module"] = parsed_dataset.fillna(
-            mdf.get("dataset_from_data_path")
-        ).fillna(mdf["dataset"].map(normalize_dataset_module))
+            _metadata_series_or_na(mdf, "dataset_from_data_path")
+        ).fillna(_metadata_series_or_na(mdf, "dataset").map(normalize_dataset_module))
         mdf["dataset_label"] = mdf["dataset_module"].map(dataset_label_from_module)
+        apply_dataset_overrides(mdf, dataset_override_by_run)
         mdf["arch_segment"] = _parsed.map(
             lambda x: x[2] if isinstance(x, tuple) and len(x) > 2 else None
         )
@@ -5062,13 +5292,14 @@ def main():  # noqa: PLR0912, PLR0915
         ),
     )
     df["dataset_module"] = parsed_dataset.fillna(
-        df.get("dataset_from_data_path")
-    ).fillna(df["dataset"].map(normalize_dataset_module))
+        _metadata_series_or_na(df, "dataset_from_data_path")
+    ).fillna(_metadata_series_or_na(df, "dataset").map(normalize_dataset_module))
     df["arch_segment"] = _parsed.map(
         lambda x: x[2] if isinstance(x, tuple) and len(x) > 2 else None
     )
     df["arch_key"] = df["arch_segment"].map(arch_key_from_processor_segment)
     df["dataset_label"] = df["dataset_module"].map(dataset_label_from_module)
+    apply_dataset_overrides(df, dataset_override_by_run)
     df["model_scale"] = assign_model_scale(df)
 
     # Construct plot_group (includes run_name to guarantee no multi-run averaging)
@@ -5160,6 +5391,13 @@ def main():  # noqa: PLR0912, PLR0915
     paper_cov_metric = _paper_coverage_metrics(cov_metric)
 
     write_single_step_results_table(
+        df,
+        out_dir,
+        styles,
+        dataset_order=ds_order,
+        hue_order=hu_order,
+    )
+    write_rollout_window_summary_table(
         df,
         out_dir,
         styles,
