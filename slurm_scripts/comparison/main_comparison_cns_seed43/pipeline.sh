@@ -100,6 +100,23 @@ require_current_source_ready() {
     fi
 }
 
+require_expected_source_ready() {
+    local expected="${PIPELINE_EXPECTED_SOURCE_COMMIT:-}"
+    if [[ ! "${expected}" =~ ^[0-9a-f]{40}$ ]]; then
+        echo "Missing or invalid PIPELINE_EXPECTED_SOURCE_COMMIT: ${expected}" >&2
+        return 1
+    fi
+    require_current_source_ready
+    local actual
+    actual="$(current_source_commit)"
+    if [[ "${actual}" != "${expected}" ]]; then
+        echo "Current source changed after the dependent job was queued." >&2
+        echo "  expected: ${expected}" >&2
+        echo "  actual:   ${actual}" >&2
+        return 1
+    fi
+}
+
 current_source_commit() {
     git -C "${PIPELINE_REPO_ROOT}" rev-parse HEAD
 }
