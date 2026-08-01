@@ -108,8 +108,6 @@ SUBMIT=true ./slurm_scripts/comparison/main_comparison_cns_seed43/04_submit_flow
 # Independent branch; uses the published AE but encodes the new seed-43 data.
 RUN=true ./slurm_scripts/comparison/main_comparison_cns_seed43/03a_cache_latents_published_ae_interactive.sh
 SUBMIT=true ./slurm_scripts/comparison/main_comparison_cns_seed43/04_submit_flow_matching_published_ae.sh
-# Optional queued completion of the new-AE branch with guarded dependencies.
-SUBMIT=true AE_JOB_ID=5861060 ./slurm_scripts/comparison/main_comparison_cns_seed43/05_submit_remaining_dependency_chain.sh
 ```
 
 Steps 0, 3, and 3a use the short interactive reservation. Steps 1, 2, 4, and
@@ -135,11 +133,3 @@ one using the published AE. Their cache and FM directories are disjoint, and
 both launchers refuse to reuse any existing output target. Stage 3a is an
 interactive job; stage 4a remains a batch job and cannot be submitted until
 the new published-AE cache has passed validation.
-
-`05_submit_remaining_dependency_chain.sh` is the batch alternative for stages
-3 and 4 of the new-AE branch. It queues the one-GPU cache with `afterany` on the
-AE because a valid final checkpoint can survive the known NCCL teardown
-failure. The cache job refuses to proceed unless that checkpoint and its
-resolved config exist and agree with the cache configuration. The four-GPU FM
-uses `afterok` on the guarded cache, so it cannot start if the AE failed before
-producing usable artifacts or if cache generation or validation failed.
