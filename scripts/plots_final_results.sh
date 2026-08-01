@@ -467,25 +467,28 @@ else
 	echo "Skipping reviewer MC-dropout-MSE main-comparison plots: evaluations are not yet available."
 fi
 
+# Keep the FNO runs in the same AD/CNS/GPE/GS order as the main comparisons.
 FNO_MAIN_COMPARISON_EVALUATIONS=(
 	"${MAIN_COMPARISON_EVALUATIONS[@]}"
 	crps_default_fno_concat_6c8145f_4eca884/eval_best_multiwinkler_overall
-	crps_default_fno_concat_6c8145f_8940bbc/eval_best_multiwinkler_overall
-	crps_default_fno_concat_6c8145f_e7426f4/eval_best_multiwinkler_overall
 	crps_default_fno_concat_6c8145f_fa58a51/eval_best_multiwinkler_overall
+	crps_default_fno_concat_6c8145f_e7426f4/eval_best_multiwinkler_overall
+	crps_default_fno_concat_6c8145f_8940bbc/eval_best_multiwinkler_overall
 )
 if all_evaluations_available "${FNO_MAIN_COMPARISON_EVALUATIONS[@]}"; then
 	autocast-plots --results-dir "$RESULTS_DIR" \
 		"${ALL_DATASET_COMMON_ARGS[@]}" \
 		"${MAIN_COMPARISON_RUN_ARGS[@]}" \
 		--run crps_default_fno_concat_6c8145f_4eca884 "FNO" "$HUE_ABLATION_ALT_3" eval=eval_best_multiwinkler_overall dataset=AD \
-		--run crps_default_fno_concat_6c8145f_8940bbc "FNO" "$HUE_ABLATION_ALT_3" eval=eval_best_multiwinkler_overall dataset=CNS \
+		--run crps_default_fno_concat_6c8145f_fa58a51 "FNO" "$HUE_ABLATION_ALT_3" eval=eval_best_multiwinkler_overall dataset=CNS \
 		--run crps_default_fno_concat_6c8145f_e7426f4 "FNO" "$HUE_ABLATION_ALT_3" eval=eval_best_multiwinkler_overall dataset=GPE \
-		--run crps_default_fno_concat_6c8145f_fa58a51 "FNO" "$HUE_ABLATION_ALT_3" eval=eval_best_multiwinkler_overall dataset=GS \
+		--run crps_default_fno_concat_6c8145f_8940bbc "FNO" "$HUE_ABLATION_ALT_3" eval=eval_best_multiwinkler_overall dataset=GS \
 		--uniform-run-hue-color \
 		--four-ds-ablation \
 		--figure-formats png pdf \
 		--output-dir "$REVIEWER_OUTPUT_DIR/reviewer_fno_main_comparison"
+		# GS result currently off axis at 1.16 for VRMSE but keeping same scale for the moment.
+		# --error-ylim 1e-5 2 \
 else
 	echo "Skipping reviewer FNO main-comparison plots: evaluations are not yet available."
 fi
