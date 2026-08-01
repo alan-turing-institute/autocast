@@ -21,6 +21,7 @@ from autocast.scripts.eval.encoder_processor_decoder import (
     _maybe_swap_to_ambient_datamodule,
     _normalize_eval_mode,
     _normalize_per_batch_rows,
+    _prepare_trajectory_statistics_dir,
     _reindex_per_batch_rows_by_rank,
     _render_rollouts,
     _require_decoder_unless_latent_metrics_opt_in,
@@ -29,10 +30,12 @@ from autocast.scripts.eval.encoder_processor_decoder import (
     _resolve_rollout_batch_limit,
     _resolve_rollout_channel_names,
     _resolve_rollout_timestep_limit,
+    _resolve_trajectory_statistics_dir,
     _save_rollout_snapshot_panels,
     _should_skip_metric,
     _split_metric_and_metadata_rows,
     _training_runtime_rows,
+    _trajectory_statistics_seed,
     _validate_latent_space_metrics_flag,
     _validate_resolved_eval_path,
 )
@@ -60,6 +63,59 @@ def test_resolve_rollout_batch_limit_prefers_explicit_rollout_limit():
     )
 
     assert _resolve_rollout_batch_limit(eval_cfg) == 5
+
+
+def test_trajectory_statistics_default_to_dedicated_sibling_directory(tmp_path):
+    evaluation_csv = tmp_path / "evaluation_metrics.csv"
+
+    result = _resolve_trajectory_statistics_dir(
+        OmegaConf.create({"trajectory_statistics": {}}), evaluation_csv
+    )
+
+    assert result == tmp_path / "trajectory_statistics"
+
+
+def test_trajectory_statistics_relative_directory_uses_csv_parent(tmp_path):
+    evaluation_csv = tmp_path / "evaluation_metrics.csv"
+
+    result = _resolve_trajectory_statistics_dir(
+        OmegaConf.create(
+            {"trajectory_statistics": {"output_dir": "paper_trajectory_stats"}}
+        ),
+        evaluation_csv,
+    )
+
+    assert result == tmp_path / "paper_trajectory_stats"
+
+
+def test_trajectory_statistics_refuse_non_empty_output_by_default(tmp_path):
+    output_dir = tmp_path / "trajectory_statistics"
+    output_dir.mkdir()
+    (output_dir / "existing.csv").write_text("old results")
+
+    with pytest.raises(FileExistsError, match="output directory is not empty"):
+        _prepare_trajectory_statistics_dir(output_dir, overwrite_existing=False)
+
+    assert (output_dir / "existing.csv").read_text() == "old results"
+
+
+def test_trajectory_statistics_can_explicitly_allow_existing_output(tmp_path):
+    output_dir = tmp_path / "trajectory_statistics"
+    output_dir.mkdir()
+    existing = output_dir / "existing.csv"
+    existing.write_text("old results")
+
+    _prepare_trajectory_statistics_dir(output_dir, overwrite_existing=True)
+
+    assert existing.read_text() == "old results"
+
+
+@pytest.mark.parametrize("seed", [-1, True, 1.5, "42"])
+def test_trajectory_statistics_seed_requires_non_negative_integer(seed):
+    eval_cfg = OmegaConf.create({"trajectory_statistics": {"sampling_seed": seed}})
+
+    with pytest.raises(ValueError, match="non-negative integer"):
+        _trajectory_statistics_seed(eval_cfg)
 
 
 def test_build_eval_predict_fn_uses_predict_for_wrapped_processor_model():

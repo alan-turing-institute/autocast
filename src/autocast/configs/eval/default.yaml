@@ -67,6 +67,17 @@ rollout_snapshot_dataset_label: null  # optional label for data-only snapshot ro
 accelerator: auto  # auto, cpu, cuda, or mps
 devices: 1 # default single-GPU eval; override with int (e.g. 4) for multi-GPU DDP
 
+# Optional trajectory-level paper statistics. These are written under a dedicated
+# directory and never replace the legacy aggregate evaluation CSVs. The current
+# implementation deliberately requires a complete, single-device test pass so the
+# sequential dataset metadata can be validated exactly.
+trajectory_statistics:
+  enabled: false
+  output_dir: null  # default: <evaluation CSV directory>/trajectory_statistics
+  overwrite_existing: false  # fail before inference if output_dir is non-empty
+  sampling_seed: 42
+  include_per_timestep: true
+
 # Rollout settings
 max_rollout_steps: 10
 free_running_only: true

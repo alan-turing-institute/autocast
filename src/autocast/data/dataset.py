@@ -176,6 +176,8 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         self.all_output_fields = []
         self.all_constant_scalars = []
         self.all_constant_fields = []
+        self.sample_trajectory_indices: list[int] = []
+        self.sample_window_indices: list[int] = []
 
         # Create input-output pairs
         for traj_idx in range(self.n_trajectories):
@@ -197,6 +199,8 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
 
             # Store each subtrajectory separately
             for sub_idx in range(input_fields.shape[0]):
+                self.sample_trajectory_indices.append(traj_idx)
+                self.sample_window_indices.append(sub_idx)
                 self.all_input_fields.append(
                     input_fields[sub_idx].to(self.dtype)
                 )  # [T_in, W, H, C]
