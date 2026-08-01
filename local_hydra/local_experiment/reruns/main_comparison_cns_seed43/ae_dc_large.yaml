@@ -1,0 +1,28 @@
+# @package _global_
+defaults:
+  - /local_experiment/ae/conditioned_navier_stokes/ae_dc_large
+  - _self_
+
+# Exact CNS main-comparison autoencoder, repeated on the seed-43 data.
+experiment_name: rerun_main_comparison_cns_seed43_ae_dc_large
+
+datamodule:
+  data_path: /projects/u6eo/autocast/datasets/conditioned_navier_stokes_2d_seed43_20260801
+  normalization_path: ${.data_path}/stats.yml
+
+# Pin the two callbacks in the published 3a7999b7 AE resolved config. The live
+# default now contains CRPS calibration and EMA callbacks that the AE did not use.
+trainer:
+  callbacks:
+    - _target_: lightning.pytorch.callbacks.ModelCheckpoint
+      auto_insert_metric_name: false
+      every_n_epochs: 5
+      filename: latest-5ep-{epoch:04d}
+      save_on_train_epoch_end: true
+      save_top_k: 1
+    - _target_: lightning.pytorch.callbacks.ModelCheckpoint
+      auto_insert_metric_name: false
+      filename: best-val-{epoch:04d}-{val_loss:.4f}
+      mode: min
+      monitor: val_loss
+      save_top_k: 1
