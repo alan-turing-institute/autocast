@@ -52,7 +52,8 @@ if [[ "${SUBMIT}" == "true" ]]; then
 fi
 
 cd "${PIPELINE_REPO_ROOT}"
-uv run --frozen --no-sync autocast processor --mode slurm "${dry_run[@]}" \
+uv run --project "${PIPELINE_REPO_ROOT}" --frozen --no-sync \
+    autocast processor --mode slurm "${dry_run[@]}" \
     --workdir "${PUBLISHED_AE_FM_RUN_DIR}" \
     local_experiment="${PUBLISHED_AE_FM_EXPERIMENT}" \
     datamodule.data_path="${PUBLISHED_AE_CACHE_DIR}" \

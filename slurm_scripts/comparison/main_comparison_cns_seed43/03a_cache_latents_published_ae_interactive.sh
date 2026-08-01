@@ -61,7 +61,8 @@ srun \
     --output="${LOG_DIR}/published-ae-cache-%j.out" \
     --error="${LOG_DIR}/published-ae-cache-%j.err" \
     --chdir="${PIPELINE_REPO_ROOT}" \
-    uv run --frozen --no-sync autocast cache-latents --mode local \
+    uv run --project "${PIPELINE_REPO_ROOT}" --frozen --no-sync \
+        autocast cache-latents --mode local \
         --workdir "${PUBLISHED_AE_CACHE_DIR}" \
         --output-dir "${PUBLISHED_AE_CACHE_DIR}" \
         autoencoder_checkpoint="${PUBLISHED_AE_CHECKPOINT}" \

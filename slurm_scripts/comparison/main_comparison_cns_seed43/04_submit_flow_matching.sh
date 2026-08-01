@@ -21,7 +21,10 @@ done
 validate_cached_latents_against_ae "${AE_RUN_DIR}"
 validate_cached_latents_complete
 refuse_existing_path "${FM_RUN_DIR}"
-source_commit="$(pinned_source_commit)"
+if [[ "${SUBMIT}" == "true" ]]; then
+    require_current_source_ready
+fi
+source_commit="$(current_source_commit)"
 
 print_pipeline_paths
 echo "Step 4 plan"
@@ -36,14 +39,13 @@ echo "  epochs/cosine epochs: ${COSINE_EPOCHS}/${COSINE_EPOCHS}"
 echo "  trainer budget: 00:23:59:00"
 
 dry_run=(--dry-run)
-source_dir="${PIPELINE_REPO_ROOT}"
 if [[ "${SUBMIT}" == "true" ]]; then
     dry_run=()
-    source_dir="$(prepare_autocast_source)"
 fi
 
-cd "${source_dir}"
-uv run --frozen autocast processor --mode slurm "${dry_run[@]}" \
+cd "${PIPELINE_REPO_ROOT}"
+uv run --project "${PIPELINE_REPO_ROOT}" --frozen --no-sync \
+    autocast processor --mode slurm "${dry_run[@]}" \
     --workdir "${FM_RUN_DIR}" \
     local_experiment="${FM_EXPERIMENT}" \
     datamodule.data_path="${CACHE_DIR}" \

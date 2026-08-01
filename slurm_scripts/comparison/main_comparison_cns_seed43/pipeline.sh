@@ -28,12 +28,11 @@ readonly PUBLISHED_AE_CHECKPOINT="${PUBLISHED_AE_RUN_DIR}/autoencoder.ckpt"
 readonly PUBLISHED_AE_CACHE_DIR="${RUN_ROOT}/published_ae/cached_latents"
 readonly PUBLISHED_AE_FM_RUN_DIR="${RUN_ROOT}/fm_vit_large_published_ae"
 readonly LOG_DIR="${RUN_ROOT}/slurm_logs"
-readonly SOURCE_ROOT="${RUN_ROOT}/source"
 readonly SOURCE_COMMIT_FILE="${DATASET_DIR}/autocast_source_commit.txt"
 readonly DATASET_VALIDATION_MARKER="${DATASET_DIR}/validation_complete.txt"
 
 # Commits encoded in the three published run directory names. These identify
-# the reference experiments; the rerun itself uses a snapshot of this branch.
+# the reference experiments; rerun jobs use the committed current checkout.
 readonly REFERENCE_CRPS_SOURCE_COMMIT="bed4611609d224bb3497e858ba278d028e7430d2"
 readonly REFERENCE_AE_SOURCE_COMMIT="3a7999b733254d6a9e572644be3c694744c07305"
 readonly REFERENCE_FM_SOURCE_COMMIT="09490dad1093b304a69c0b2d14695887c536e67f"
@@ -105,26 +104,6 @@ current_source_commit() {
     git -C "${PIPELINE_REPO_ROOT}" rev-parse HEAD
 }
 
-pinned_source_commit() {
-    require_dataset_complete
-    local commit
-    commit="$(<"${SOURCE_COMMIT_FILE}")"
-    if [[ ! "${commit}" =~ ^[0-9a-f]{40}$ ]]; then
-        echo "Invalid pinned AutoCast source commit: ${commit}" >&2
-        return 1
-    fi
-    if ! git -C "${PIPELINE_REPO_ROOT}" cat-file -e "${commit}^{commit}"; then
-        echo "Pinned AutoCast commit is unavailable locally: ${commit}" >&2
-        return 1
-    fi
-    if ! git -C "${PIPELINE_REPO_ROOT}" merge-base --is-ancestor \
-        "${REQUIRED_DDP_FIX_COMMIT}" "${commit}"; then
-        echo "Pinned AutoCast commit predates the DDP teardown fix: ${commit}" >&2
-        return 1
-    fi
-    printf '%s\n' "${commit}"
-}
-
 validate_cached_latents_complete() {
     local project_dir="${1:-${PIPELINE_REPO_ROOT}}"
     local cache_dir="${2:-${CACHE_DIR}}"
@@ -141,30 +120,4 @@ print_pipeline_paths() {
     echo "  flow matching: ${FM_RUN_DIR}"
     echo "  published-AE cached latents: ${PUBLISHED_AE_CACHE_DIR}"
     echo "  published-AE flow matching: ${PUBLISHED_AE_FM_RUN_DIR}"
-}
-
-prepare_autocast_source() {
-    local commit
-    commit="$(pinned_source_commit)"
-    local short_commit="${commit:0:8}"
-    local target="${SOURCE_ROOT}/autocast-${short_commit}"
-    local marker="${target}/.autocast-source-commit"
-
-    if [[ -e "${target}" || -L "${target}" ]]; then
-        if [[ ! -f "${marker}" ]] || [[ "$(<"${marker}")" != "${commit}" ]]; then
-            echo "Refusing unexpected source snapshot: ${target}" >&2
-            return 1
-        fi
-    else
-        local temporary
-        mkdir -p "${SOURCE_ROOT}"
-        temporary="$(mktemp -d "${SOURCE_ROOT}/.autocast.XXXXXX")"
-        git -C "${PIPELINE_REPO_ROOT}" archive "${commit}" | tar -x -C "${temporary}"
-        printf '%s\n' "${commit}" > "${temporary}/.autocast-source-commit"
-        mv "${temporary}" "${target}"
-    fi
-
-    echo "Syncing locked AutoCast source ${short_commit}" >&2
-    uv sync --project "${target}" --frozen --offline >&2
-    printf '%s\n' "${target}"
 }

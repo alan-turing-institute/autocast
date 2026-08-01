@@ -24,7 +24,10 @@ fi
 refuse_existing_path "${CACHE_DIR}"
 validate_cache_experiment_against_ae \
     "${AE_RUN_DIR}" "${CACHE_EXPERIMENT}" "${PIPELINE_REPO_ROOT}"
-source_commit="$(pinned_source_commit)"
+if [[ "${RUN}" == "true" ]]; then
+    require_current_source_ready
+fi
+source_commit="$(current_source_commit)"
 
 print_pipeline_paths
 echo "Step 3 plan"
@@ -40,7 +43,6 @@ if [[ "${RUN}" == "false" ]]; then
     exit
 fi
 
-source_dir="$(prepare_autocast_source)"
 mkdir -p "${LOG_DIR}"
 srun \
     --reservation="${RESERVATION}" \
@@ -53,8 +55,9 @@ srun \
     --job-name="cns_seed43_cache" \
     --output="${LOG_DIR}/cache-%j.out" \
     --error="${LOG_DIR}/cache-%j.err" \
-    --chdir="${source_dir}" \
-    uv run --frozen autocast cache-latents --mode local \
+    --chdir="${PIPELINE_REPO_ROOT}" \
+    uv run --project "${PIPELINE_REPO_ROOT}" --frozen --no-sync \
+        autocast cache-latents --mode local \
         --workdir "${CACHE_DIR}" \
         --output-dir "${CACHE_DIR}" \
         autoencoder_checkpoint="${AE_CHECKPOINT}" \
@@ -64,4 +67,4 @@ srun \
         +provenance.dataset_seed="${DATASET_SEED}"
 
 validate_cached_latents_against_ae "${AE_RUN_DIR}"
-validate_cached_latents_complete "${source_dir}"
+validate_cached_latents_complete "${PIPELINE_REPO_ROOT}"

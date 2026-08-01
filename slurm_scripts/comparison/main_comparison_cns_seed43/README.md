@@ -24,10 +24,11 @@ The run names encode the source commits of the published references:
 - AE: `3a7999b733254d6a9e572644be3c694744c07305`
 - FM: `09490dad1093b304a69c0b2d14695887c536e67f`
 
-Those commits are provenance references only. The rerun executes an immutable
-snapshot of the checked-out `2026-07-24/updates` branch that was recorded when
-stage 0 generated the dataset. The pinned source must contain the multi-GPU
-checkpoint teardown fix `f5ee48356934e0e80f9da77c0922edcb8a4cf4b7`.
+Those commits are provenance references only. Rerun jobs execute from the
+committed current checkout with the existing `autocast-02/.venv`; launchers use
+`uv run --frozen --no-sync` and refuse an uncommitted tree. The checkout must
+contain the multi-GPU checkpoint teardown fix
+`f5ee48356934e0e80f9da77c0922edcb8a4cf4b7`.
 CRPS pins the callback list from the successful 2026-07-24 training-seed repeat
 (`crps_cns64_vit_azula_large_103985e_6360e51`): the published progress/window
 schedule plus its overall-Winkler checkpoint. AE pins its published callback
