@@ -82,7 +82,8 @@ split sizes, output directory, and visualization settings as CLI overrides in
 
 ```text
 0 data ──┬──> 1 CRPS
-         └──> 2 AE ──> 3 cache ──> 4 FM
+         ├──> 2 AE ────────────> 3 cache ──> 4 FM
+         └──> published AE ──> 3a cache ──> 4a FM
 ```
 
 - data: external dataset target above
@@ -90,6 +91,10 @@ split sizes, output directory, and visualization settings as CLI overrides in
 - AE: `outputs/2026-08-01/main_comparison_cns_seed43/ae_dc_large`
 - cache: `outputs/2026-08-01/main_comparison_cns_seed43/ae_dc_large/cached_latents`
 - FM: `outputs/2026-08-01/main_comparison_cns_seed43/fm_vit_large`
+- published-AE cache of the new data:
+  `outputs/2026-08-01/main_comparison_cns_seed43/published_ae/cached_latents`
+- published-AE FM:
+  `outputs/2026-08-01/main_comparison_cns_seed43/fm_vit_large_published_ae`
 
 Each script defaults to preview mode. The exact commands that arm a stage are:
 
@@ -99,14 +104,31 @@ SUBMIT=true ./slurm_scripts/comparison/main_comparison_cns_seed43/01_submit_crps
 SUBMIT=true ./slurm_scripts/comparison/main_comparison_cns_seed43/02_submit_autoencoder.sh
 RUN=true ./slurm_scripts/comparison/main_comparison_cns_seed43/03_cache_latents_interactive.sh
 SUBMIT=true ./slurm_scripts/comparison/main_comparison_cns_seed43/04_submit_flow_matching.sh
+# Independent branch; uses the published AE but encodes the new seed-43 data.
+RUN=true ./slurm_scripts/comparison/main_comparison_cns_seed43/03a_cache_latents_published_ae_interactive.sh
+SUBMIT=true ./slurm_scripts/comparison/main_comparison_cns_seed43/04_submit_flow_matching_published_ae.sh
 ```
 
-Steps 0 and 3 use the short interactive reservation. Steps 1, 2, and 4 are
-four-GPU batch jobs submitted through the repository's normal Slurm launcher.
-Run them one at a time, reviewing completion before arming the next stage; the
-scripts do not queue the full pipeline automatically.
+Steps 0, 3, and 3a use the short interactive reservation. Steps 1, 2, 4, and
+4a are four-GPU batch jobs submitted through the repository's normal Slurm
+launcher. Run them one at a time, reviewing completion before arming the next
+stage; the scripts do not queue the full pipeline automatically.
 
 No downstream stage can start until its required files exist and the dataset
 validator has written its success marker. Cache generation requires the stable
 final `autoencoder.ckpt`; it never falls back to a temporary checkpoint. FM
 validates the cached data and AE configs before submission.
+
+The published-AE branch does not reuse the original cache. Stage 3a encodes
+the new seed-43 trajectories with the fixed published checkpoint at
+`outputs/2026-04-17/ae_cns64_3a7999b_b9c29f8/autoencoder.ckpt`. It uses that
+AE's original normalization statistics because those define the input
+coordinate system in which its weights were trained; only the raw data path is
+changed to the new dataset. The preflight and post-generation validators
+enforce both identities explicitly.
+
+This gives two FMs on the same new raw data: one using the newly trained AE and
+one using the published AE. Their cache and FM directories are disjoint, and
+both launchers refuse to reuse any existing output target. Stage 3a is an
+interactive job; stage 4a remains a batch job and cannot be submitted until
+the new published-AE cache has passed validation.

@@ -23,6 +23,10 @@ readonly CRPS_RUN_DIR="${RUN_ROOT}/crps_vit_azula_large"
 readonly AE_RUN_DIR="${RUN_ROOT}/ae_dc_large"
 readonly CACHE_DIR="${AE_RUN_DIR}/cached_latents"
 readonly FM_RUN_DIR="${RUN_ROOT}/fm_vit_large"
+readonly PUBLISHED_AE_RUN_DIR="${PIPELINE_REPO_ROOT}/outputs/2026-04-17/ae_cns64_3a7999b_b9c29f8"
+readonly PUBLISHED_AE_CHECKPOINT="${PUBLISHED_AE_RUN_DIR}/autoencoder.ckpt"
+readonly PUBLISHED_AE_CACHE_DIR="${RUN_ROOT}/published_ae/cached_latents"
+readonly PUBLISHED_AE_FM_RUN_DIR="${RUN_ROOT}/fm_vit_large_published_ae"
 readonly LOG_DIR="${RUN_ROOT}/slurm_logs"
 readonly SOURCE_ROOT="${RUN_ROOT}/source"
 readonly SOURCE_COMMIT_FILE="${DATASET_DIR}/autocast_source_commit.txt"
@@ -47,6 +51,8 @@ readonly CRPS_EXPERIMENT="reruns/main_comparison_cns_seed43/crps_vit_azula_large
 readonly AE_EXPERIMENT="reruns/main_comparison_cns_seed43/ae_dc_large"
 readonly CACHE_EXPERIMENT="reruns/main_comparison_cns_seed43/cache_latents"
 readonly FM_EXPERIMENT="reruns/main_comparison_cns_seed43/fm_vit_large"
+readonly PUBLISHED_AE_CACHE_EXPERIMENT="reruns/main_comparison_cns_seed43/cache_latents_published_ae"
+readonly PUBLISHED_AE_FM_EXPERIMENT="reruns/main_comparison_cns_seed43/fm_vit_large_published_ae"
 
 require_boolean() {
     local name="$1"
@@ -121,8 +127,9 @@ pinned_source_commit() {
 
 validate_cached_latents_complete() {
     local project_dir="${1:-${PIPELINE_REPO_ROOT}}"
-    uv run --project "${project_dir}" --frozen python \
-        "${PIPELINE_SCRIPT_DIR}/validate_cached_latents.py" "${CACHE_DIR}"
+    local cache_dir="${2:-${CACHE_DIR}}"
+    uv run --project "${project_dir}" --frozen --no-sync python \
+        "${PIPELINE_SCRIPT_DIR}/validate_cached_latents.py" "${cache_dir}"
 }
 
 print_pipeline_paths() {
@@ -132,6 +139,8 @@ print_pipeline_paths() {
     echo "  autoencoder: ${AE_RUN_DIR}"
     echo "  cached latents: ${CACHE_DIR}"
     echo "  flow matching: ${FM_RUN_DIR}"
+    echo "  published-AE cached latents: ${PUBLISHED_AE_CACHE_DIR}"
+    echo "  published-AE flow matching: ${PUBLISHED_AE_FM_RUN_DIR}"
 }
 
 prepare_autocast_source() {
