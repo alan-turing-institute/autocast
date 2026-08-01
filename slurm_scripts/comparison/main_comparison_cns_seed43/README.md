@@ -108,6 +108,8 @@ SUBMIT=true ./slurm_scripts/comparison/main_comparison_cns_seed43/04_submit_flow
 # Independent branch; uses the published AE but encodes the new seed-43 data.
 RUN=true ./slurm_scripts/comparison/main_comparison_cns_seed43/03a_cache_latents_published_ae_interactive.sh
 SUBMIT=true ./slurm_scripts/comparison/main_comparison_cns_seed43/04_submit_flow_matching_published_ae.sh
+# Normal-queue alternative when no one can wait for the interactive cache.
+SUBMIT=true AE_JOB_ID=5861060 ./slurm_scripts/comparison/main_comparison_cns_seed43/05_submit_short_cache_chain.sh
 ```
 
 Steps 0, 3, and 3a use the short interactive reservation. Steps 1, 2, 4, and
@@ -119,6 +121,14 @@ No downstream stage can start until its required files exist and the dataset
 validator has written its success marker. Cache generation requires the stable
 final `autoencoder.ckpt`; it never falls back to a temporary checkpoint. FM
 validates the cached data and AE configs before submission.
+
+`05_submit_short_cache_chain.sh` is an optional normal-queue alternative to
+the interactive stage 3. The reference seed-43 cache allocation completed in
+1 minute 1 second, including startup and validation, so this requests one GPU
+for 10 minutes without the `interactive` reservation. It uses `afterany` on
+the AE to tolerate a nonzero NCCL teardown after a valid final checkpoint, but
+the cache runner requires that checkpoint and its resolved config. FM uses
+`afterok` on the validated cache job.
 
 The published-AE branch does not reuse the original cache. Stage 3a encodes
 the new seed-43 trajectories with the fixed published checkpoint at
