@@ -32,6 +32,7 @@ FOUR_DS_ABLATION=false
 ONE_DS_ABLATION=false
 PAPER_ONLY=false
 REVIEWER_ONLY=false
+TRAJECTORY_SE_ONLY=false
 
 usage() {
 	cat <<'EOF'
@@ -46,6 +47,8 @@ Options:
   --paper-only          Only run/copy paper figures, writing PNG and PDF.
   --reviewer-only       Only run the independent-seed, MC-dropout, and FNO
                         reviewer-response comparisons.
+  --trajectory-se-only  Only generate the main trajectory-statistics outputs.
+                        All plot and table filenames receive the _se suffix.
   --reviewer-output-dir DIR
                         Write reviewer-response comparisons under DIR.
                         Default: <results-dir>/<plots-path>.
@@ -89,6 +92,9 @@ while [[ $# -gt 0 ]]; do
 			;;
 		--reviewer-only)
 			REVIEWER_ONLY=true
+			;;
+		--trajectory-se-only)
+			TRAJECTORY_SE_ONLY=true
 			;;
 		--reviewer-output-dir)
 			if [[ $# -lt 2 ]]; then
@@ -136,6 +142,11 @@ while [[ $# -gt 0 ]]; do
 	shift
 done
 
+if [[ "$REVIEWER_ONLY" == true && "$TRAJECTORY_SE_ONLY" == true ]]; then
+	echo "--reviewer-only and --trajectory-se-only cannot be combined" >&2
+	exit 2
+fi
+
 FIGURE_FORMAT_ARRAY=()
 read -r -a FIGURE_FORMAT_ARRAY <<< "$FIGURE_FORMATS"
 if [[ "$PAPER_MAIN_FIGURES" == true || "$FOUR_DS_ABLATION" == true || "$ONE_DS_ABLATION" == true ]]; then
@@ -159,6 +170,27 @@ fi
 if [[ "$PAPER_PANEL_LABELS" != true ]]; then
 	BASE_PLOT_ARGS+=(--no-paper-panel-labels)
 fi
+
+MAIN_TRAJECTORY_STATS=(
+	"crps_ad64_vit_azula_large_bed4611_da01a04::eval=eval_best_multiwinkler_from0p25" "crps_ad64_vit_azula_large_bed4611_da01a04/eval_best_multiwinkler_from0p25_trajectory_stats_20260801/trajectory_statistics"
+	"crps_cns64_vit_azula_large_bed4611_c99f534::eval=eval_best_multiwinkler_from0p25" "crps_cns64_vit_azula_large_bed4611_c99f534/eval_best_multiwinkler_from0p25_trajectory_stats_20260801/trajectory_statistics"
+	"crps_gpe64_vit_azula_large_bed4611_e0a6df5::eval=eval_best_multiwinkler_from0p25" "crps_gpe64_vit_azula_large_bed4611_e0a6df5/eval_best_multiwinkler_from0p25_trajectory_stats_20260801/trajectory_statistics"
+	"crps_gs64_vit_azula_large_bed4611_828a161::eval=eval_best_multiwinkler_from0p25" "crps_gs64_vit_azula_large_bed4611_828a161/eval_best_multiwinkler_from0p25_trajectory_stats_20260801/trajectory_statistics"
+	"diff_ad64_flow_matching_vit_09490da_dae1382" "diff_ad64_flow_matching_vit_09490da_dae1382/eval_trajectory_stats_20260801/trajectory_statistics"
+	"diff_cns64_flow_matching_vit_09490da_636fcc3" "diff_cns64_flow_matching_vit_09490da_636fcc3/eval_trajectory_stats_20260801/trajectory_statistics"
+	"diff_gpe64_flow_matching_vit_09490da_47bf39a" "diff_gpe64_flow_matching_vit_09490da_47bf39a/eval_trajectory_stats_20260801/trajectory_statistics"
+	"diff_gs64_flow_matching_vit_09490da_7e9e331" "diff_gs64_flow_matching_vit_09490da_7e9e331/eval_trajectory_stats_20260801/trajectory_statistics"
+)
+MAIN_TRAJECTORY_STATS_ARGS=()
+MAIN_TRAJECTORY_OUTPUT_ARGS=(--output-suffix _se)
+for ((i = 0; i < ${#MAIN_TRAJECTORY_STATS[@]}; i += 2)); do
+	stats_path=${MAIN_TRAJECTORY_STATS[i + 1]}
+	if [[ -f "$RESULTS_DIR/$stats_path/single_step_metrics_per_trajectory.csv" ]]; then
+		MAIN_TRAJECTORY_STATS_ARGS+=(
+			--trajectory-stats "${MAIN_TRAJECTORY_STATS[i]}" "$stats_path"
+		)
+	fi
+done
 
 
 COMMON_ARGS=(
@@ -263,6 +295,9 @@ fi
 if [[ "$PAPER_ONLY" == true ]]; then
 	echo "Paper-only mode enabled."
 fi
+if [[ "$TRAJECTORY_SE_ONLY" == true ]]; then
+	echo "Trajectory-SE-only mode enabled; existing unsuffixed outputs are untouched."
+fi
 if [[ "$PAPER_MAIN_FIGURES" != true && "$FOUR_DS_ABLATION" != true && "$ONE_DS_ABLATION" != true ]]; then
 	echo "Paper-ready outputs are disabled. Run with --paper-figures to write paper_*.png files."
 fi
@@ -270,6 +305,8 @@ fi
 if [[ "$REVIEWER_ONLY" != true ]]; then
 	autocast-plots --results-dir "$RESULTS_DIR" \
 		"${BASE_PLOT_ARGS[@]}" \
+		"${MAIN_TRAJECTORY_STATS_ARGS[@]}" \
+		"${MAIN_TRAJECTORY_OUTPUT_ARGS[@]}" \
 		--run crps_ad64_vit_azula_large_bed4611_da01a04 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 		--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 		--run crps_gpe64_vit_azula_large_bed4611_e0a6df5 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
@@ -304,6 +341,8 @@ if [[ "$REVIEWER_ONLY" != true ]]; then
 		# when paired side-by-side in LaTeX (each at ~0.5\textwidth).
 		autocast-plots --results-dir "$RESULTS_DIR" \
 			"${BASE_PLOT_ARGS[@]}" \
+			"${MAIN_TRAJECTORY_STATS_ARGS[@]}" \
+			"${MAIN_TRAJECTORY_OUTPUT_ARGS[@]}" \
 			--run crps_ad64_vit_azula_large_bed4611_da01a04 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 			--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
 			--run crps_gpe64_vit_azula_large_bed4611_e0a6df5 "CRPS" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
@@ -333,6 +372,11 @@ if [[ "$REVIEWER_ONLY" != true ]]; then
 			--figure-scale 0.6 \
 			--output-dir "${OUTPUT_DIR}_pairfig"
 	fi
+fi
+
+if [[ "$TRAJECTORY_SE_ONLY" == true ]]; then
+	echo "Finished generating trajectory-statistics outputs with the _se suffix."
+	exit 0
 fi
 
 # Reviewer-response evidence: compare the original and independent training
@@ -717,12 +761,12 @@ if [[ "$PAPER_MAIN_FIGURES" == true || "$FOUR_DS_ABLATION" == true || "$ONE_DS_A
 			-path "$RESULTS_DIR/$PLOTS_PATH/ablation_fm_ema" -prune -o \
 			-path "$RESULTS_DIR/$PLOTS_PATH/ablation_cns_dm" -prune -o \
 			-type f \( \
-				-name 'single_step_overall_results.csv' -o \
-				-name 'single_step_overall_results.tex' -o \
-				-name 'single_step_overall_results.md' -o \
-				-name 'rollout_window_summary_results.csv' -o \
-				-name 'rollout_window_summary_results.tex' -o \
-				-name 'rollout_window_summary_results.md' \
+				-name 'single_step_overall_results*.csv' -o \
+				-name 'single_step_overall_results*.tex' -o \
+				-name 'single_step_overall_results*.md' -o \
+				-name 'rollout_window_summary_results*.csv' -o \
+				-name 'rollout_window_summary_results*.tex' -o \
+				-name 'rollout_window_summary_results*.md' \
 			\) \
 			-print
 	)

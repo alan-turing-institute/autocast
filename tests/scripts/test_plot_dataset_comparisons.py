@@ -200,6 +200,51 @@ def test_single_step_results_table_uses_grouped_bar_means():
     assert table.loc[0, "Training time (s/epoch)"] == 150.0
 
 
+def test_trajectory_standard_errors_use_independent_trajectories_and_gs_strata():
+    ordinary = pd.DataFrame(
+        {"dataset": ["advection_diffusion"] * 4, "vrmse": [1.0, 2.0, 3.0, 4.0]}
+    )
+    mean, se = pdc._trajectory_mean_se(ordinary, "vrmse")
+    assert mean == pytest.approx(2.5)
+    assert se == pytest.approx(np.std([1.0, 2.0, 3.0, 4.0], ddof=1) / 2)
+
+    gs = pd.DataFrame(
+        {
+            "dataset": ["gray_scott"] * 24,
+            "cs0": np.repeat(np.arange(6), 4),
+            "cs1": np.repeat(np.arange(6) + 10, 4),
+            "vrmse": np.tile([0.0, 2.0, 0.0, 2.0], 6),
+        }
+    )
+    mean, se = pdc._trajectory_mean_se(gs, "vrmse")
+    assert mean == pytest.approx(1.0)
+    assert se == pytest.approx(np.sqrt(2) / 6)
+
+    coverage = ordinary.assign(**{"coverage_0.90": [0.7, 0.8, 0.9, 1.0]})
+    summary = pdc._summarize_trajectory_metrics(coverage, ["coverage_0.9"])
+    assert summary.loc[0, "metric"] == "coverage_0.9"
+    assert summary.loc[0, "mean"] == pytest.approx(0.85)
+
+
+def test_results_table_formats_mean_with_standard_error():
+    df = pd.DataFrame(
+        {
+            "dataset_label": ["AD"],
+            "plot_group": ["crps"],
+            "overall_vrmse": [0.012345],
+            "overall_vrmse_se": [0.001234],
+            "overall_coverage": [0.04],
+            "overall_coverage_se": [0.01],
+        }
+    )
+    styles = {"crps": {"label": "CRPS", "color": "tab:blue"}}
+
+    table = pdc.build_single_step_results_table(df, styles)
+
+    assert table.loc[0, "VRMSE"] == "1.2e-02 (1.2e-03)"
+    assert table.loc[0, "Coverage MAE"] == "0.04 (0.01)"
+
+
 def test_single_step_results_latex_uses_two_sig_figs(tmp_path: Path):
     df = pd.DataFrame(
         {
@@ -221,6 +266,35 @@ def test_single_step_results_latex_uses_two_sig_figs(tmp_path: Path):
     assert "9.9e-02" in tex
     assert "0.012345" not in tex
     assert "0.098765" not in tex
+
+
+def test_output_suffix_applies_to_figures_and_tables(
+    monkeypatch,
+    tmp_path: Path,
+):
+    monkeypatch.setattr(pdc, "OUTPUT_NAME_SUFFIX", ["_se"])
+    monkeypatch.setattr(pdc, "FIGURE_FORMATS", ["png"])
+    fig, _ = plt.subplots()
+
+    pdc.save_fig(fig, tmp_path, "result.png")
+    pdc.write_single_step_results_table(
+        pd.DataFrame(
+            {
+                "dataset_label": ["AD"],
+                "plot_group": ["crps"],
+                "overall_vrmse": [0.1],
+            }
+        ),
+        tmp_path,
+        {"crps": {"label": "CRPS", "color": "tab:blue"}},
+    )
+
+    assert (tmp_path / "result_se.png").is_file()
+    assert (tmp_path / "single_step_overall_results_se.csv").is_file()
+    assert (tmp_path / "single_step_overall_results_se.tex").is_file()
+    assert (tmp_path / "single_step_overall_results_se.md").is_file()
+    assert not (tmp_path / "result.png").exists()
+    assert not (tmp_path / "single_step_overall_results.csv").exists()
 
 
 def test_single_step_results_latex_midrule_aligns_with_dataset_boundaries():
@@ -461,7 +535,7 @@ def test_lead_time_coverage_delta_is_proportional(tmp_path: Path):
         [[0.25, 0.75]],
         index=pd.Index(["coverage_0.5"], name="metric"),
         columns=pd.Index(["0", "1"]),
-    ).to_csv(eval_dir / "rollout_metrics_per_timestep_channel_0.csv")
+    ).to_csv(eval_dir / "rollout_metrics_per_timestep_channel_all.csv")
     df = pd.DataFrame(
         {
             "dataset_label": ["AD"],
@@ -500,7 +574,7 @@ def test_short_axis_labels_use_compact_shared_coverage_delta(tmp_path: Path):
         [[0.25, 0.75]],
         index=pd.Index(["coverage_0.5"], name="metric"),
         columns=pd.Index(["0", "1"]),
-    ).to_csv(eval_dir / "rollout_metrics_per_timestep_channel_0.csv")
+    ).to_csv(eval_dir / "rollout_metrics_per_timestep_channel_all.csv")
     df = pd.DataFrame(
         {
             "dataset_label": ["AD"],
@@ -537,7 +611,7 @@ def test_lead_time_error_labels_are_uppercase(tmp_path: Path):
         [[1.0, 2.0]],
         index=pd.Index(["vrmse"], name="metric"),
         columns=pd.Index(["0", "1"]),
-    ).to_csv(eval_dir / "rollout_metrics_per_timestep_channel_0.csv")
+    ).to_csv(eval_dir / "rollout_metrics_per_timestep_channel_all.csv")
     df = pd.DataFrame(
         {
             "dataset_label": ["AD"],
@@ -560,4 +634,43 @@ def test_lead_time_error_labels_are_uppercase(tmp_path: Path):
 
     assert isinstance(fig, Figure)
     assert fig.axes[0].get_ylabel() == "VRMSE"
+    plt.close(fig)
+
+
+def test_lead_time_panel_shades_trajectory_standard_error(tmp_path: Path):
+    stats_dir = tmp_path / "trajectory_statistics"
+    stats_dir.mkdir()
+    pd.DataFrame(
+        {
+            "dataset": ["advection_diffusion"] * 8,
+            "trajectory_id": [f"test_{i}" for i in range(4)] * 2,
+            "mse": np.arange(8, dtype=float),
+            "vrmse": [1.0, 2.0, 3.0, 4.0, 2.0, 3.0, 4.0, 5.0],
+            "lead_time": np.repeat([0, 1], 4),
+        }
+    ).to_csv(stats_dir / "rollout_metrics_per_timestep_per_trajectory.csv", index=False)
+    df = pd.DataFrame(
+        {
+            "dataset_label": ["AD"],
+            "plot_group": ["model"],
+            "run_path": ["run1"],
+            "eval_subdir": ["eval"],
+            "trajectory_statistics_dir": [str(stats_dir)],
+        }
+    )
+    styles = {"model": {"color": "black", "label": "model", "linestyle": "-"}}
+
+    fig = pdc.plot_lead_time_panel(
+        df,
+        ["vrmse"],
+        tmp_path,
+        tmp_path,
+        "lead_time.png",
+        styles,
+        save=False,
+    )
+
+    assert isinstance(fig, Figure)
+    assert np.asarray(fig.axes[0].lines[0].get_ydata()).tolist() == [2.5, 3.5]
+    assert len(fig.axes[0].collections) == 1
     plt.close(fig)

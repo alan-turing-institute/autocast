@@ -134,6 +134,7 @@ PAPER_AXES_LINE_WIDTH = 0.55
 PAPER_TICK_LINE_WIDTH = 0.55
 PAPER_GRID_LINE_WIDTH = 0.45
 FIGURE_FORMATS: list[str] = ["png"]
+OUTPUT_NAME_SUFFIX: list[str] = []
 NOMINAL_COVERAGE_AXIS_LABEL = r"Nominal coverage (1 - $\alpha$)"
 PAPER_RC_PARAMS = {
     "font.family": "serif",
@@ -173,6 +174,12 @@ ROLLOUT_WINDOW_SUMMARY_METRICS: tuple[tuple[str, str], ...] = (
     ("vrmse", "VRMSE"),
     ("coverage", "Coverage MAE"),
 )
+TRAJECTORY_STATISTICS_FILES = {
+    "single_step": "single_step_metrics_per_trajectory.csv",
+    "rollout": "rollout_metrics_per_trajectory.csv",
+    "lead_time": "rollout_metrics_per_timestep_per_trajectory.csv",
+}
+GS_MORPHOLOGY_COUNT = 6
 SINGLE_STEP_RESULTS_LATEX_HEADERS: dict[str, str] = {
     "Dataset": "Dataset",
     "Model": "Model",
@@ -891,6 +898,135 @@ def _as_nonnegative_int(value: object) -> int | None:
     return round(numeric)
 
 
+def _trajectory_metric_columns(data: pd.DataFrame) -> list[str]:
+    """Return metric columns from a trajectory-statistics export."""
+    if "mse" not in data.columns:
+        return []
+    start = data.columns.get_loc("mse")
+    return [
+        str(column)
+        for column in data.columns[start:]
+        if column not in {"lead_time", "window"}
+    ]
+
+
+def _is_gray_scott(data: pd.DataFrame) -> bool:
+    """Identify the stratified Gray--Scott test design."""
+    if "dataset" not in data.columns:
+        return False
+    names = data["dataset"].dropna().astype(str).str.casefold()
+    return bool(names.str.contains("gray_scott|gray-scott|gs64", regex=True).any())
+
+
+def _trajectory_mean_se(data: pd.DataFrame, metric: str) -> tuple[float, float]:
+    """Estimate a trajectory mean and its finite-test-sample standard error."""
+    values = cast(pd.Series, pd.to_numeric(data[metric], errors="coerce"))
+    valid = cast(pd.DataFrame, data.loc[values.notna()].copy())
+    valid[metric] = values.loc[values.notna()].astype(float)
+    if valid.empty:
+        return float("nan"), float("nan")
+    if "trajectory_id" in valid and valid["trajectory_id"].duplicated().any():
+        msg = f"Expected one {metric} value per independent trajectory."
+        raise ValueError(msg)
+
+    if not _is_gray_scott(valid):
+        n = len(valid)
+        se = valid[metric].std(ddof=1) / math.sqrt(n) if n > 1 else float("nan")
+        return float(valid[metric].mean()), float(se)
+
+    if not {"cs0", "cs1"}.issubset(valid.columns):
+        msg = "Gray--Scott trajectory statistics require cs0 and cs1 strata."
+        raise ValueError(msg)
+    cs0 = cast(pd.Series, pd.to_numeric(valid["cs0"], errors="coerce")).round(6)
+    cs1 = cast(pd.Series, pd.to_numeric(valid["cs1"], errors="coerce")).round(6)
+    strata = valid.assign(_cs0=cs0, _cs1=cs1).groupby(["_cs0", "_cs1"], dropna=False)[
+        metric
+    ]
+    if strata.ngroups != GS_MORPHOLOGY_COUNT:
+        msg = (
+            "Expected six Gray--Scott morphology strata from cs0/cs1; "
+            f"found {strata.ngroups}."
+        )
+        raise ValueError(msg)
+    means = strata.mean()
+    counts = strata.count()
+    if (counts != 4).any():
+        msg = "Expected exactly four trajectories in each Gray--Scott morphology."
+        raise ValueError(msg)
+    variances = strata.var(ddof=1)
+    mean = float(means.mean())
+    if not math.isclose(mean, float(valid[metric].mean()), rel_tol=1e-12):
+        msg = "Gray--Scott equal-stratum and ordinary means do not agree."
+        raise ValueError(msg)
+    se = math.sqrt(float((variances / counts).sum())) / GS_MORPHOLOGY_COUNT
+    return mean, se
+
+
+def _summarize_trajectory_metrics(
+    data: pd.DataFrame,
+    metrics: list[str],
+    group_col: str | None = None,
+) -> pd.DataFrame:
+    """Summarize selected metrics, optionally within rollout or lead-time groups."""
+    available: list[tuple[str, str]] = []
+    for metric in metrics:
+        source = metric if metric in data.columns else None
+        if source is None and metric.startswith("coverage_"):
+            level = _as_finite_float(metric.removeprefix("coverage_"))
+            source = next(
+                (
+                    str(column)
+                    for column in data.columns
+                    if str(column).startswith("coverage_")
+                    and _as_finite_float(str(column).removeprefix("coverage_")) == level
+                ),
+                None,
+            )
+        if source is not None:
+            available.append((metric, source))
+    groups = (
+        [(None, data)] if group_col is None else data.groupby(group_col, sort=False)
+    )
+    rows: list[dict[str, object]] = []
+    for group, frame in groups:
+        for metric, source in available:
+            mean, se = _trajectory_mean_se(cast(pd.DataFrame, frame), source)
+            row: dict[str, object] = {"metric": metric, "mean": mean, "se": se}
+            if group_col is not None:
+                row[group_col] = group
+            rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def _add_trajectory_aggregate_metrics(row: dict, stats_dir: Path) -> None:
+    """Replace scalar aggregates with trajectory means and attach their SEs."""
+    single_path = stats_dir / TRAJECTORY_STATISTICS_FILES["single_step"]
+    rollout_path = stats_dir / TRAJECTORY_STATISTICS_FILES["rollout"]
+    if not single_path.exists() or not rollout_path.exists():
+        msg = f"Incomplete trajectory statistics directory: {stats_dir}"
+        raise FileNotFoundError(msg)
+
+    single = pd.read_csv(single_path)
+    summary = _summarize_trajectory_metrics(single, _trajectory_metric_columns(single))
+    for _, result in summary.iterrows():
+        row[f"overall_{result['metric']}"] = result["mean"]
+        row[f"overall_{result['metric']}_se"] = result["se"]
+
+    rollout = pd.read_csv(rollout_path)
+    summary = _summarize_trajectory_metrics(
+        rollout,
+        _trajectory_metric_columns(rollout),
+        group_col="window",
+    )
+    for _, result in summary.iterrows():
+        window = (
+            str(result["window"]).removeprefix("[").removesuffix(")").replace(":", "-")
+        )
+        row[f"{result['metric']}_{window}"] = result["mean"]
+        row[f"{result['metric']}_{window}_se"] = result["se"]
+    row["trajectory_statistics_dir"] = str(stats_dir.resolve())
+
+
 def _read_yaml_mapping(path: Path) -> dict[str, Any]:
     """Read a YAML mapping, returning an empty mapping on missing/invalid files."""
     if not path.exists():
@@ -1011,6 +1147,7 @@ def load_single_run_metrics(  # noqa: PLR0912, PLR0915
     eval_subdir: str = DEFAULT_EVAL_SUBDIR,
     run_ref: str | None = None,
     force_training_refresh: bool = False,
+    trajectory_statistics_dir: Path | None = None,
 ) -> dict:
     """Load evaluation metrics and rollout metrics from a single run directory."""
     resolved_eval_subdir = normalize_eval_subdir(eval_subdir)
@@ -1140,6 +1277,8 @@ def load_single_run_metrics(  # noqa: PLR0912, PLR0915
             )
         if best_winkler_epoch is not None:
             row["best_winkler_epoch"] = best_winkler_epoch
+    if trajectory_statistics_dir is not None:
+        _add_trajectory_aggregate_metrics(row, trajectory_statistics_dir)
     return row
 
 
@@ -1794,9 +1933,18 @@ def build_custom_label_map(
 # ---------------------------------------------------------------------------
 
 
+def _output_name(name: str) -> str:
+    """Append the configured suffix before a filename extension."""
+    path = Path(name)
+    if not OUTPUT_NAME_SUFFIX:
+        return name
+    suffix = OUTPUT_NAME_SUFFIX[0]
+    return str(path.with_name(f"{path.stem}{suffix}{path.suffix}"))
+
+
 def save_fig(fig, out_dir: Path, name: str):
     """Save a matplotlib figure to disk and close it."""
-    p = out_dir / name
+    p = out_dir / _output_name(name)
     base = p.with_suffix("") if p.suffix else p
     original_format = p.suffix.lower().lstrip(".")
     formats = FIGURE_FORMATS or (original_format or "png",)
@@ -1850,6 +1998,25 @@ def _single_step_epochs_trained(row: pd.Series) -> float:
     return float("nan")
 
 
+def _mean_standard_error_cell(
+    mean: object,
+    standard_error: object,
+    column: str,
+) -> object:
+    """Format a table estimate as mean (standard error) when SE is available."""
+    mean_value = _as_finite_float(mean)
+    se_value = _as_finite_float(standard_error)
+    if mean_value is None or se_value is None:
+        return mean
+    if _table_metric_kind(column) in {"Coverage MAE", "SSR"} and se_value > 0:
+        decimals = max(2, -math.floor(math.log10(se_value)))
+        return f"{mean_value:.{decimals}f} ({se_value:.{decimals}f})"
+    return (
+        f"{_format_latex_table_value(mean_value, column=column)} "
+        f"({_format_latex_table_value(se_value, column=column)})"
+    )
+
+
 def build_single_step_results_table(
     df_in: pd.DataFrame,
     styles: dict,
@@ -1874,8 +2041,11 @@ def build_single_step_results_table(
     for col in available:
         data[col] = pd.to_numeric(data[col], errors="coerce")
 
+    uncertainty = [f"{column}_se" for column in available if f"{column}_se" in data]
     grouped = (
-        data.groupby(["dataset_label", "plot_group"], dropna=False)[available]
+        data.groupby(["dataset_label", "plot_group"], dropna=False)[
+            [*available, *uncertainty]
+        ]
         .mean()
         .reset_index()
     )
@@ -1905,7 +2075,12 @@ def build_single_step_results_table(
                 "Model": str(style.get("label", group)),
             }
             for src, label in SINGLE_STEP_RESULTS_TABLE_METRICS:
-                table_row[label] = raw[src] if src in raw.index else np.nan
+                value = raw[src] if src in raw.index else np.nan
+                table_row[label] = _mean_standard_error_cell(
+                    value,
+                    raw.get(f"{src}_se", np.nan),
+                    label,
+                )
             rows.append(table_row)
 
     columns = [
@@ -1946,8 +2121,11 @@ def build_rollout_window_summary_table(
     for col in available:
         data[col] = pd.to_numeric(data[col], errors="coerce")
 
+    uncertainty = [f"{column}_se" for column in available if f"{column}_se" in data]
     grouped = (
-        data.groupby(["dataset_label", "plot_group"], dropna=False)[available]
+        data.groupby(["dataset_label", "plot_group"], dropna=False)[
+            [*available, *uncertainty]
+        ]
         .mean()
         .reset_index()
     )
@@ -1977,7 +2155,11 @@ def build_rollout_window_summary_table(
                 "Model": str(style.get("label", group)),
             }
             for src, label in available_specs:
-                table_row[label] = raw[src] if src in raw.index else np.nan
+                table_row[label] = _mean_standard_error_cell(
+                    raw[src] if src in raw.index else np.nan,
+                    raw.get(f"{src}_se", np.nan),
+                    label,
+                )
             rows.append(table_row)
 
     columns = ["Dataset", "Model", *[label for _, label in available_specs]]
@@ -2052,7 +2234,17 @@ def _best_latex_cells_by_dataset(table: pd.DataFrame) -> set[tuple[int, str]]:
             }:
                 continue
             metric_col = cast(pd.Series, dataset_rows[metric])
-            values_ser = cast(pd.Series, pd.to_numeric(metric_col, errors="coerce"))
+            values_ser = cast(
+                pd.Series,
+                pd.to_numeric(
+                    metric_col.map(
+                        lambda value: str(value).split("(", 1)[0].strip()
+                        if isinstance(value, str)
+                        else value
+                    ),
+                    errors="coerce",
+                ),
+            )
             values_ser = cast(pd.Series, values_ser.dropna())
             if values_ser.empty:
                 continue
@@ -2073,9 +2265,14 @@ def _best_latex_cells_by_dataset(table: pd.DataFrame) -> set[tuple[int, str]]:
     return best_cells
 
 
-def _single_step_results_latex_column_spec(column: str) -> str:
+def _single_step_results_latex_column_spec(
+    column: str,
+    has_uncertainty: bool = False,
+) -> str:
     """Return a LaTeX tabular column spec for a single table column."""
     metric_kind = _table_metric_kind(column)
+    if has_uncertainty and column not in {"Dataset", "Model"}:
+        return "c"
     specs = {
         "Dataset": "l",
         "Model": "l",
@@ -2089,12 +2286,30 @@ def _single_step_results_latex_column_spec(column: str) -> str:
     return specs.get(metric_kind, "l")
 
 
+def _table_contains_uncertainty(table: pd.DataFrame) -> bool:
+    """Return whether any table cell contains a parenthesized uncertainty."""
+    matches = table.astype(str).apply(
+        lambda column: column.str.contains(r"\([^)]*\)").any()
+    )
+    return bool(matches.to_numpy(dtype=bool).any())
+
+
 def render_single_step_results_latex(table: pd.DataFrame) -> str:
     """Render the results table using booktabs + siunitx styling."""
     columns = table.columns.tolist()
+    has_uncertainty = _table_contains_uncertainty(table)
     align = (
         "@{}"
-        + "\n  ".join(_single_step_results_latex_column_spec(col) for col in columns)
+        + "\n  ".join(
+            _single_step_results_latex_column_spec(
+                col,
+                has_uncertainty=cast(pd.Series, table[col])
+                .astype(str)
+                .str.contains(r"\([^)]*\)")
+                .any(),
+            )
+            for col in columns
+        )
         + "@{}"
     )
     header = " & ".join(
@@ -2131,6 +2346,14 @@ def render_single_step_results_latex(table: pd.DataFrame) -> str:
             if next_dataset != str(row["Dataset"]):
                 body.append(r"\midrule")
     lines = [
+        *(
+            [
+                "% Values are means of trajectory-level metrics; parentheses "
+                "report finite-test-trajectory standard errors."
+            ]
+            if has_uncertainty
+            else []
+        ),
         r"% Requires \usepackage{booktabs,siunitx}",
         r"\setlength{\tabcolsep}{3.5pt}",
         rf"\begin{{tabular}}{{{align}}}",
@@ -2194,7 +2417,13 @@ def render_single_step_results_markdown(table: pd.DataFrame) -> str:
                 cell = f"**{cell}**"
             cells.append(cell)
         lines.append("| " + " | ".join(cells) + " |")
-    return "\n".join([*lines, ""])
+    note = (
+        "*Values are means of trajectory-level metrics; parentheses report "
+        "finite-test-trajectory standard errors.*\n\n"
+        if _table_contains_uncertainty(table)
+        else ""
+    )
+    return note + "\n".join([*lines, ""])
 
 
 def write_single_step_results_table(
@@ -2216,9 +2445,9 @@ def write_single_step_results_table(
         print("No single-step overall results table available.")
         return table
 
-    csv_path = out_dir / f"{stem}.csv"
-    tex_path = out_dir / f"{stem}.tex"
-    markdown_path = out_dir / f"{stem}.md"
+    csv_path = out_dir / _output_name(f"{stem}.csv")
+    tex_path = out_dir / _output_name(f"{stem}.tex")
+    markdown_path = out_dir / _output_name(f"{stem}.md")
     table.to_csv(csv_path, index=False, float_format="%.6g")
     tex_path.write_text(render_single_step_results_latex(table), encoding="utf-8")
     markdown_path.write_text(
@@ -2250,9 +2479,9 @@ def write_rollout_window_summary_table(
         print("No rollout-window summary table available.")
         return table
 
-    csv_path = out_dir / f"{stem}.csv"
-    tex_path = out_dir / f"{stem}.tex"
-    markdown_path = out_dir / f"{stem}.md"
+    csv_path = out_dir / _output_name(f"{stem}.csv")
+    tex_path = out_dir / _output_name(f"{stem}.tex")
+    markdown_path = out_dir / _output_name(f"{stem}.md")
     table.to_csv(csv_path, index=False, float_format="%.6g")
     tex_path.write_text(render_single_step_results_latex(table), encoding="utf-8")
     markdown_path.write_text(
@@ -2475,6 +2704,43 @@ def plot_coverage_calibration_panel(  # noqa: PLR0912, PLR0915
     ).drop_duplicates()
     for _, r in base.iterrows():
         for w in rows:
+            stats_dir_value = r.get("trajectory_statistics_dir")
+            if isinstance(stats_dir_value, (str, Path)) and str(stats_dir_value):
+                stats_dir = Path(str(stats_dir_value))
+                source = (
+                    stats_dir / TRAJECTORY_STATISTICS_FILES["single_step"]
+                    if w == "all"
+                    else stats_dir / TRAJECTORY_STATISTICS_FILES["rollout"]
+                )
+                if source.exists():
+                    trajectory_data = pd.read_csv(source)
+                    if w != "all":
+                        window = f"[{str(w).replace('-', ':')})"
+                        trajectory_data = cast(
+                            pd.DataFrame,
+                            trajectory_data[trajectory_data["window"] == window],
+                        )
+                    coverage_metrics = [
+                        column
+                        for column in trajectory_data.columns
+                        if re.fullmatch(r"coverage_\d+(?:\.\d+)?", str(column))
+                    ]
+                    summary = _summarize_trajectory_metrics(
+                        trajectory_data, coverage_metrics
+                    )
+                    if not summary.empty:
+                        summary["coverage_level"] = (
+                            summary["metric"].str.split("_", n=1).str[1].astype(float)
+                        )
+                        summary = summary.rename(
+                            columns={"mean": "observed_mean", "se": "observed_se"}
+                        )
+                        summary["window"] = w
+                        summary["dataset_label"] = r["dataset_label"]
+                        summary["plot_group"] = r["plot_group"]
+                        summary["run_path"] = r["run_path"]
+                        curves.append(summary)
+                        continue
             fn = (
                 "test_coverage_window_all.csv"
                 if w == "all"
@@ -2552,7 +2818,11 @@ def plot_coverage_calibration_panel(  # noqa: PLR0912, PLR0915
                     cast(
                         pd.DataFrame,
                         sf.groupby("coverage_level", as_index=False)[
-                            "observed_mean"
+                            [
+                                column
+                                for column in ("observed_mean", "observed_se")
+                                if column in sf.columns
+                            ]
                         ].mean(),
                     ).sort_values(by="coverage_level"),
                 )
@@ -2563,6 +2833,23 @@ def plot_coverage_calibration_panel(  # noqa: PLR0912, PLR0915
                     lw=line_width,
                     linestyle=st.get("linestyle", "-"),
                 )
+                if "observed_se" in mean_curve:
+                    se = cast(
+                        pd.Series,
+                        pd.to_numeric(mean_curve["observed_se"], errors="coerce"),
+                    )
+                    if se.notna().any():
+                        mean = cast(
+                            pd.Series,
+                            pd.to_numeric(mean_curve["observed_mean"], errors="coerce"),
+                        )
+                        ax.fill_between(
+                            mean_curve["coverage_level"],
+                            (mean - se).clip(lower=0, upper=1),
+                            (mean + se).clip(lower=0, upper=1),
+                            color=st["color"],
+                            alpha=0.15,
+                        )
             if i == 0:
                 ax.set_title(ds_label)
             if i == nrows - 1:
@@ -2662,6 +2949,28 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
         pg = getattr(r, "plot_group", None)
         if run_path is None or ds_label is None or pg is None:
             continue
+        stats_dir_value = getattr(r, "trajectory_statistics_dir", None)
+        if stats_dir_value is not None and pd.notna(stats_dir_value):
+            stats_path = (
+                Path(str(stats_dir_value)) / TRAJECTORY_STATISTICS_FILES["lead_time"]
+            )
+            if stats_path.exists():
+                trajectory_data = pd.read_csv(stats_path)
+                summary = _summarize_trajectory_metrics(
+                    trajectory_data,
+                    metrics,
+                    group_col="lead_time",
+                ).rename(
+                    columns={
+                        "lead_time": "timestep",
+                        "mean": "value",
+                    }
+                )
+                if not summary.empty:
+                    summary["dataset_label"] = ds_label
+                    summary["plot_group"] = pg
+                    rows.append(summary)
+                    continue
         p = (
             results_root
             / str(run_path)
@@ -2689,6 +2998,8 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
     if not rows:
         return None
     metrics_long = pd.concat(rows, ignore_index=True).dropna(subset=["value"])
+    if "se" not in metrics_long.columns:
+        metrics_long["se"] = np.nan
 
     available_metrics = set(metrics_long["metric"].dropna().astype(str).unique())
     metrics_to_plot = [m for m in metrics if m in available_metrics]
@@ -2769,15 +3080,19 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
                     continue
                 agg = cast(
                     pd.DataFrame,
-                    sf.groupby("timestep", as_index=False)["value"]
-                    .agg(["mean", "std", "count"])
-                    .set_index("timestep")
-                    .sort_index()
-                    .reset_index(),
+                    sf.groupby("timestep", as_index=False).agg(
+                        mean=("value", "mean"),
+                        std=("value", "std"),
+                        count=("value", "count"),
+                        se=("se", "mean"),
+                    ),
                 )
+                agg = cast(pd.DataFrame, agg.sort_values(by="timestep"))
                 st = styles.get(fam, {"color": "k"})
                 mean = cast(pd.Series, agg["mean"])
-                std = cast(pd.Series, agg["std"]).fillna(0)
+                uncertainty = cast(pd.Series, agg["se"])
+                fallback = cast(pd.Series, agg["std"]).where(agg["count"] > 1)
+                uncertainty = uncertainty.where(uncertainty.notna(), fallback)
 
                 if is_cov_delta and cov_target is not None:
                     m = (mean / cov_target) - 1.0
@@ -2797,18 +3112,18 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
                     lw=line_width,
                     linestyle=st.get("linestyle", "-"),
                 )
-                if (agg["count"] > 1).any():
+                if uncertainty.notna().any():
                     if is_cov_delta and cov_target is not None:
-                        y1 = ((mean - std) / cov_target) - 1.0
-                        y2 = ((mean + std) / cov_target) - 1.0
+                        y1 = ((mean - uncertainty) / cov_target) - 1.0
+                        y2 = ((mean + uncertainty) / cov_target) - 1.0
                         vals.extend(y1.dropna().tolist())
                         vals.extend(y2.dropna().tolist())
                     elif is_cov:
-                        y1 = (mean - std).clip(lower=0, upper=1)
-                        y2 = (mean + std).clip(lower=0, upper=1)
+                        y1 = (mean - uncertainty).clip(lower=0, upper=1)
+                        y2 = (mean + uncertainty).clip(lower=0, upper=1)
                     else:
-                        y1 = (mean - std).clip(lower=1e-6)
-                        y2 = (mean + std).clip(lower=1e-6)
+                        y1 = (mean - uncertainty).clip(lower=1e-6)
+                        y2 = (mean + uncertainty).clip(lower=1e-6)
                     if (not is_cov) and (not is_cov_delta):
                         vals.extend(y1.dropna().tolist())
                         vals.extend(y2.dropna().tolist())
@@ -4491,6 +4806,14 @@ def main():  # noqa: PLR0912, PLR0915
         help="Directory to save plots (defaults to <results-dir>/plots/<name>)",
     )
     parser.add_argument(
+        "--output-suffix",
+        default="",
+        help=(
+            "Append a suffix before every generated plot and table extension "
+            "(for example, --output-suffix _se)."
+        ),
+    )
+    parser.add_argument(
         "--figure-formats",
         nargs="+",
         default=["png"],
@@ -4512,6 +4835,17 @@ def main():  # noqa: PLR0912, PLR0915
             '--run <id> ["label"] [hue] [eval=<subdir>] [dataset=<label>]. '
             "Repeat for each run. Integer hue overrides --color-by-label "
             "for that run and groups runs into a shared hue family."
+        ),
+    )
+    parser.add_argument(
+        "--trajectory-stats",
+        action="append",
+        nargs=2,
+        metavar=("RUN_REF", "PATH"),
+        help=(
+            "Attach a trajectory_statistics directory to a run reference. "
+            "Relative paths resolve under --results-dir. Repeat for each run "
+            "with finite-test-sample uncertainty outputs."
         ),
     )
     parser.add_argument(
@@ -4859,6 +5193,10 @@ def main():  # noqa: PLR0912, PLR0915
         help="Also render the one-dataset ablation paper layout.",
     )
     args = parser.parse_args()
+    if "/" in args.output_suffix or "\\" in args.output_suffix:
+        msg = "--output-suffix must not contain a path separator"
+        raise SystemExit(msg)
+    OUTPUT_NAME_SUFFIX[:] = [args.output_suffix] if args.output_suffix else []
     FIGURE_FORMATS[:] = list(dict.fromkeys(args.figure_formats))
     if args.paper_use_tex:
         PAPER_RC_PARAMS.update(
@@ -4901,6 +5239,12 @@ def main():  # noqa: PLR0912, PLR0915
     training_ylim = _parse_ylim(args.training_ylim)
 
     results_dir = resolve_results_root(args.results_dir)
+    trajectory_stats_by_run: dict[str, Path] = {}
+    for run_ref, stats_path in args.trajectory_stats or []:
+        path = Path(stats_path).expanduser()
+        trajectory_stats_by_run[run_ref] = (
+            path if path.is_absolute() else results_dir / path
+        )
     if args.output_dir:
         out_dir = Path(args.output_dir)
     else:
@@ -5267,6 +5611,7 @@ def main():  # noqa: PLR0912, PLR0915
                 eval_subdir=run_eval_subdir,
                 run_ref=run_ref,
                 force_training_refresh=args.training_refresh,
+                trajectory_statistics_dir=trajectory_stats_by_run.get(run_ref),
             )
         except Exception as e:
             print(f"Error loading {d}: {e}")
