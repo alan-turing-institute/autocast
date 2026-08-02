@@ -227,6 +227,89 @@ def test_trajectory_standard_errors_use_independent_trajectories_and_gs_strata()
     assert summary.loc[0, "mean"] == pytest.approx(0.85)
 
 
+def test_pooled_coverage_mae_se_uses_cross_level_covariance_and_gs_strata():
+    coverage_vectors = np.array(
+        [
+            [0.1, 0.5],
+            [0.2, 0.7],
+            [0.3, 0.6],
+            [0.4, 0.8],
+        ]
+    )
+    ordinary = pd.DataFrame(
+        {
+            "dataset": ["advection_diffusion"] * 4,
+            "trajectory_id": [f"test_{i}" for i in range(4)],
+            "coverage_0.20": coverage_vectors[:, 0],
+            "coverage_0.80": coverage_vectors[:, 1],
+        }
+    )
+    projected = coverage_vectors @ np.array([0.5, -0.5])
+    expected_se = projected.std(ddof=1) / np.sqrt(4)
+
+    mean, se = pdc._pooled_coverage_mae_se(ordinary)
+
+    assert mean == pytest.approx(0.1)
+    assert se == pytest.approx(expected_se)
+
+    gs = pd.concat(
+        [
+            ordinary.assign(
+                dataset="gray_scott",
+                trajectory_id=[f"test_{4 * h + i}" for i in range(4)],
+                cs0=h,
+                cs1=h + 10,
+            )
+            for h in range(6)
+        ],
+        ignore_index=True,
+    )
+
+    mean, se = pdc._pooled_coverage_mae_se(gs)
+
+    assert mean == pytest.approx(0.1)
+    assert se == pytest.approx(expected_se / np.sqrt(6))
+
+
+def test_trajectory_aggregates_use_pooled_coverage_mae(tmp_path: Path):
+    stats_dir = tmp_path / "trajectory_statistics"
+    stats_dir.mkdir()
+    coverage_vectors = np.array(
+        [
+            [0.1, 0.5],
+            [0.2, 0.7],
+            [0.3, 0.6],
+            [0.4, 0.8],
+        ]
+    )
+    nominal = np.array([0.2, 0.8])
+    trajectory_coverage_mae = np.abs(coverage_vectors - nominal).mean(axis=1)
+    data = pd.DataFrame(
+        {
+            "dataset": ["advection_diffusion"] * 4,
+            "trajectory_id": [f"test_{i}" for i in range(4)],
+            "mse": np.arange(4, dtype=float),
+            "coverage": trajectory_coverage_mae,
+            "coverage_mae": trajectory_coverage_mae,
+            "coverage_0.20": coverage_vectors[:, 0],
+            "coverage_0.80": coverage_vectors[:, 1],
+            "window": ["all"] * 4,
+        }
+    )
+    data.to_csv(stats_dir / "single_step_metrics_per_trajectory.csv", index=False)
+    data.assign(window="[0:4)").to_csv(
+        stats_dir / "rollout_metrics_per_trajectory.csv", index=False
+    )
+    row: dict[str, object] = {}
+
+    pdc._add_trajectory_aggregate_metrics(row, stats_dir)
+
+    assert np.mean(trajectory_coverage_mae) != pytest.approx(0.1)
+    assert row["overall_coverage"] == pytest.approx(0.1)
+    assert row["coverage_0-4"] == pytest.approx(0.1)
+    assert row["overall_coverage_se"] == pytest.approx(row["coverage_0-4_se"])
+
+
 def test_results_table_formats_mean_with_standard_error():
     df = pd.DataFrame(
         {

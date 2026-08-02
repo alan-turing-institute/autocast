@@ -962,6 +962,47 @@ def _trajectory_mean_se(data: pd.DataFrame, metric: str) -> tuple[float, float]:
     return mean, se
 
 
+def _coverage_level_columns(data: pd.DataFrame) -> list[tuple[str, float]]:
+    """Return raw empirical-coverage columns and their nominal levels."""
+    columns = []
+    for column in data.columns:
+        match = re.fullmatch(r"coverage_(\d+(?:\.\d+)?)", str(column))
+        if match:
+            columns.append((str(column), float(match.group(1))))
+    return sorted(columns, key=lambda item: item[1])
+
+
+def _pooled_coverage_mae_se(data: pd.DataFrame) -> tuple[float, float]:
+    """Calculate pooled Coverage MAE and its covariance-aware analytic SE."""
+    level_columns = _coverage_level_columns(data)
+    if not level_columns:
+        msg = "Pooled Coverage MAE requires raw coverage_<level> columns."
+        raise ValueError(msg)
+    columns = [column for column, _ in level_columns]
+    nominal = np.asarray([level for _, level in level_columns], dtype=float)
+    coverage = cast(
+        pd.DataFrame,
+        data[columns].apply(pd.to_numeric, errors="coerce"),
+    )
+    if coverage.isna().to_numpy().any():
+        msg = "Pooled Coverage MAE requires every trajectory coverage level."
+        raise ValueError(msg)
+    mean_coverage = cast(pd.Series, coverage.mean(axis=0)).to_numpy(dtype=float)
+    calibration_error = mean_coverage - nominal
+    if np.isclose(calibration_error, 0.0, rtol=0.0, atol=1e-12).any():
+        msg = "Coverage MAE analytic SE is undefined at zero calibration error."
+        raise ValueError(msg)
+    signs = np.sign(calibration_error)
+    projection = ((coverage.to_numpy(dtype=float) - nominal) @ signs) / len(nominal)
+    projected = data.assign(_coverage_mae_projection=projection)
+    projected_mean, se = _trajectory_mean_se(projected, "_coverage_mae_projection")
+    mean = float(np.abs(calibration_error).mean())
+    if not math.isclose(projected_mean, mean, rel_tol=1e-12, abs_tol=1e-12):
+        msg = "Signed coverage projection does not reproduce pooled Coverage MAE."
+        raise ValueError(msg)
+    return mean, se
+
+
 def _summarize_trajectory_metrics(
     data: pd.DataFrame,
     metrics: list[str],
@@ -1011,6 +1052,11 @@ def _add_trajectory_aggregate_metrics(row: dict, stats_dir: Path) -> None:
     for _, result in summary.iterrows():
         row[f"overall_{result['metric']}"] = result["mean"]
         row[f"overall_{result['metric']}_se"] = result["se"]
+    coverage_mean, coverage_se = _pooled_coverage_mae_se(single)
+    row["overall_coverage"] = coverage_mean
+    row["overall_coverage_se"] = coverage_se
+    row["overall_coverage_mae"] = coverage_mean
+    row["overall_coverage_mae_se"] = coverage_se
 
     rollout = pd.read_csv(rollout_path)
     summary = _summarize_trajectory_metrics(
@@ -1024,6 +1070,13 @@ def _add_trajectory_aggregate_metrics(row: dict, stats_dir: Path) -> None:
         )
         row[f"{result['metric']}_{window}"] = result["mean"]
         row[f"{result['metric']}_{window}_se"] = result["se"]
+    for window_value, frame in rollout.groupby("window", sort=False):
+        window = str(window_value).removeprefix("[").removesuffix(")").replace(":", "-")
+        coverage_mean, coverage_se = _pooled_coverage_mae_se(cast(pd.DataFrame, frame))
+        row[f"coverage_{window}"] = coverage_mean
+        row[f"coverage_{window}_se"] = coverage_se
+        row[f"coverage_mae_{window}"] = coverage_mean
+        row[f"coverage_mae_{window}_se"] = coverage_se
     row["trajectory_statistics_dir"] = str(stats_dir.resolve())
 
 
@@ -2348,8 +2401,8 @@ def render_single_step_results_latex(table: pd.DataFrame) -> str:
     lines = [
         *(
             [
-                "% Values are means of trajectory-level metrics; parentheses "
-                "report finite-test-trajectory standard errors."
+                "% Values are computed from trajectory-level statistics; "
+                "parentheses report finite-test-trajectory standard errors."
             ]
             if has_uncertainty
             else []
@@ -2418,7 +2471,7 @@ def render_single_step_results_markdown(table: pd.DataFrame) -> str:
             cells.append(cell)
         lines.append("| " + " | ".join(cells) + " |")
     note = (
-        "*Values are means of trajectory-level metrics; parentheses report "
+        "*Values are computed from trajectory-level statistics; parentheses report "
         "finite-test-trajectory standard errors.*\n\n"
         if _table_contains_uncertainty(table)
         else ""
