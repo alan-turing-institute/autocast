@@ -2849,6 +2849,7 @@ def plot_coverage_calibration_panel(  # noqa: PLR0912, PLR0915
                             (mean + se).clip(lower=0, upper=1),
                             color=st["color"],
                             alpha=0.15,
+                            linewidth=0,
                         )
             if i == 0:
                 ax.set_title(ds_label)
@@ -3128,7 +3129,12 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
                         vals.extend(y1.dropna().tolist())
                         vals.extend(y2.dropna().tolist())
                     ax.fill_between(
-                        agg["timestep"], y1, y2, color=st["color"], alpha=0.15
+                        agg["timestep"],
+                        y1,
+                        y2,
+                        color=st["color"],
+                        alpha=0.15,
+                        linewidth=0,
                     )
 
             if r == 0:

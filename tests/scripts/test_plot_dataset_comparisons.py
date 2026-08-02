@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pytest
+from matplotlib.collections import PolyCollection
 from matplotlib.figure import Figure
 
 from autocast.scripts import plot_dataset_comparisons as pdc
@@ -673,4 +674,7 @@ def test_lead_time_panel_shades_trajectory_standard_error(tmp_path: Path):
     assert isinstance(fig, Figure)
     assert np.asarray(fig.axes[0].lines[0].get_ydata()).tolist() == [2.5, 3.5]
     assert len(fig.axes[0].collections) == 1
+    band = fig.axes[0].collections[0]
+    assert isinstance(band, PolyCollection)
+    assert np.asarray(band.get_linewidth()).tolist() == [0]
     plt.close(fig)
