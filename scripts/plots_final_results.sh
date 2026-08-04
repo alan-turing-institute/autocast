@@ -45,8 +45,8 @@ Options:
   --one-ds-ablation     Add the one-dataset ablation paper figure.
   --paper-figures       Add all optional paper-width figures above.
   --paper-only          Only run/copy paper figures, writing PNG and PDF.
-  --reviewer-only       Only run the independent-seed, MC-dropout, and FNO
-                        reviewer-response comparisons.
+  --reviewer-only       Only run the independent-seed, training-data,
+                        MC-dropout, and FNO reviewer-response comparisons.
   --trajectory-se-only  Only generate the main trajectory-statistics outputs.
                         All plot and table filenames receive the _se suffix.
   --reviewer-output-dir DIR
@@ -423,6 +423,39 @@ if all_evaluations_available "${SEED_COMPARISON_EVALUATIONS[@]}"; then
 		--output-dir "$REVIEWER_OUTPUT_DIR/reviewer_seed_comparison"
 else
 	echo "Skipping reviewer seed-comparison plots: evaluations are not yet available."
+fi
+
+# Compare the original CNS pair with the August training-data ablations.
+# Keep this separate from the independent training-seed comparison above.
+TRAINING_DATA_CRPS_RUN=training_data_cns_crps_vit_azula_large
+TRAINING_DATA_CRPS_EVAL=eval_best_multiwinkler_overall_trajectory_stats_20260804/trajectory_statistics
+TRAINING_DATA_FM_RUN=training_data_cns_fm_vit_large_published_ae
+TRAINING_DATA_FM_EVAL=eval_trajectory_stats_20260804/trajectory_statistics
+TRAINING_DATA_COMPARISON_EVALUATIONS=(
+	crps_cns64_vit_azula_large_bed4611_c99f534/eval_best_multiwinkler_from0p25
+	"${TRAINING_DATA_CRPS_RUN}/${TRAINING_DATA_CRPS_EVAL}"
+	diff_cns64_flow_matching_vit_09490da_636fcc3/eval
+	"${TRAINING_DATA_FM_RUN}/${TRAINING_DATA_FM_EVAL}"
+)
+TRAINING_DATA_COMPARISON_TRAJECTORY_STATS_ARGS=(
+	--trajectory-stats "crps_cns64_vit_azula_large_bed4611_c99f534::eval=eval_best_multiwinkler_from0p25" "crps_cns64_vit_azula_large_bed4611_c99f534/eval_best_multiwinkler_from0p25_trajectory_stats_20260801/trajectory_statistics"
+	--trajectory-stats "${TRAINING_DATA_CRPS_RUN}::eval=${TRAINING_DATA_CRPS_EVAL}" "${TRAINING_DATA_CRPS_RUN}/${TRAINING_DATA_CRPS_EVAL}"
+	--trajectory-stats diff_cns64_flow_matching_vit_09490da_636fcc3 "diff_cns64_flow_matching_vit_09490da_636fcc3/eval_trajectory_stats_20260801/trajectory_statistics"
+	--trajectory-stats "${TRAINING_DATA_FM_RUN}::eval=${TRAINING_DATA_FM_EVAL}" "${TRAINING_DATA_FM_RUN}/${TRAINING_DATA_FM_EVAL}"
+)
+if all_evaluations_available "${TRAINING_DATA_COMPARISON_EVALUATIONS[@]}"; then
+	autocast-plots --results-dir "$RESULTS_DIR" \
+		"${COMMON_ARGS[@]}" \
+		"${TRAINING_DATA_COMPARISON_TRAJECTORY_STATS_ARGS[@]}" \
+		--base-first-run-hue-color \
+		--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS (main)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+		--run "$TRAINING_DATA_CRPS_RUN" "CRPS (training data)" "$HUE_CRPS" eval="$TRAINING_DATA_CRPS_EVAL" dataset=CNS \
+		--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (main)" "$HUE_FM_LATENT" \
+		--run "$TRAINING_DATA_FM_RUN" "FM (training data)" "$HUE_FM_LATENT" eval="$TRAINING_DATA_FM_EVAL" dataset=CNS \
+		--figure-formats png pdf \
+		--output-dir "$REVIEWER_OUTPUT_DIR/reviewer_cns_training_data_comparison"
+else
+	echo "Skipping reviewer training-data comparison: evaluations are not yet available."
 fi
 
 # Reviewer-response evidence: compare the original conditional-layer-

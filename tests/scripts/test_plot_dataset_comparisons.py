@@ -13,6 +13,29 @@ from matplotlib.figure import Figure
 from autocast.scripts import plot_dataset_comparisons as pdc
 
 
+def test_base_first_run_hue_keeps_main_color_and_darkens_variant():
+    main_pg = "vit__crps__large__main_run"
+    variant_pg = "vit__crps__large__training_data_run"
+    df = pd.DataFrame({"plot_group": [main_pg, variant_pg]})
+
+    styles = pdc.build_family_style(
+        df,
+        custom_label_by_run={
+            "main_run": "CRPS (main)",
+            "training_data_run": "CRPS (training data)",
+        },
+        uniform_run_hue_color=True,
+        base_first_run_hue_color=True,
+        hue_group_by_run={"main_run": 0, "training_data_run": 0},
+    )
+
+    base_color = plt.get_cmap("tab10")(0)
+    assert styles[main_pg]["color"] == pytest.approx(base_color)
+    assert pdc._rgb_luminance(styles[variant_pg]["color"]) < pdc._rgb_luminance(
+        base_color
+    )
+
+
 def test_default_plot_metrics_include_overall_crps_and_ssr():
     assert pdc.DEFAULT_PLOT_METRICS == ("vrmse", "coverage", "crps", "ssr")
 

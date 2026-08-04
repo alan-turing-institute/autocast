@@ -1718,6 +1718,13 @@ def _shade_variant(base_color, idx: int, total: int):
     )
 
 
+def _base_then_dark_variant(base_color, idx: int, total: int):
+    """Keep the first color unchanged and darken later family members."""
+    if idx <= 0 or total <= 1:
+        return base_color
+    return _mix_with_black(base_color, 0.22 * idx / (total - 1))
+
+
 def _build_label_color_map(
     labels: list[str],
 ) -> dict[str, tuple]:
@@ -1800,6 +1807,7 @@ def _apply_run_hue_styles(
     hue_group_by_run: dict[str, int],
     custom_label_by_run: dict[str, str] | None,
     uniform_run_hue_color: bool,
+    base_first_run_hue_color: bool,
 ) -> None:
     """Assign styles using per-run hue group indices from --run <id> [label] <hue>."""
     base_cmap = plt.get_cmap("tab10")
@@ -1830,9 +1838,13 @@ def _apply_run_hue_styles(
         unique_labels = list(dict.fromkeys(member_labels))
         label_to_color = {
             lb: (
-                base_color
-                if uniform_run_hue_color
-                else _shade_variant(base_color, j, len(unique_labels))
+                _base_then_dark_variant(base_color, j, len(unique_labels))
+                if base_first_run_hue_color
+                else (
+                    base_color
+                    if uniform_run_hue_color
+                    else _shade_variant(base_color, j, len(unique_labels))
+                )
             )
             for j, lb in enumerate(unique_labels)
         }
@@ -1899,6 +1911,7 @@ def build_family_style(
     custom_label_by_run: dict[str, str] | None = None,
     uniform_group_color: bool = False,
     uniform_run_hue_color: bool = False,
+    base_first_run_hue_color: bool = False,
     group_hues: list[int] | None = None,
     color_by_label: bool = False,
     hue_group_by_run: dict[str, int] | None = None,
@@ -1927,6 +1940,7 @@ def build_family_style(
             hue_group_by_run,
             custom_label_by_run,
             uniform_run_hue_color,
+            base_first_run_hue_color,
         )
         remaining = []
     elif color_by_label and custom_label_by_run and remaining:
@@ -4995,6 +5009,15 @@ def main():  # noqa: PLR0912, PLR0915
         ),
     )
     parser.add_argument(
+        "--base-first-run-hue-color",
+        action="store_true",
+        help=(
+            "Keep the first run in each integer hue at the base palette color "
+            "and progressively darken later runs. Overrides "
+            "--uniform-run-hue-color."
+        ),
+    )
+    parser.add_argument(
         "--group-hues",
         type=int,
         nargs="+",
@@ -5741,6 +5764,7 @@ def main():  # noqa: PLR0912, PLR0915
         custom_label_by_run=custom_label_by_run,
         uniform_group_color=args.uniform_group_color,
         uniform_run_hue_color=args.uniform_run_hue_color,
+        base_first_run_hue_color=args.base_first_run_hue_color,
         group_hues=args.group_hues,
         color_by_label=args.color_by_label,
         hue_group_by_run=hue_group_by_run or None,
