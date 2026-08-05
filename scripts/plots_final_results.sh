@@ -49,6 +49,8 @@ Options:
                         MC-dropout, and FNO reviewer-response comparisons.
   --trajectory-se-only  Only generate the main trajectory-statistics outputs.
                         All plot and table filenames receive the _se suffix.
+                        Combine with --four-ds-ablation for the paper-width
+                        four-dataset SE figure.
   --reviewer-output-dir DIR
                         Write reviewer-response comparisons under DIR.
                         Default: <results-dir>/<plots-path>.
@@ -334,6 +336,7 @@ if [[ "$REVIEWER_ONLY" != true ]]; then
 		--shared-axis-labels \
 		--coverage-panel-height-scale 1.5 \
 		${PAPER_MAIN_ARG:+$PAPER_MAIN_ARG} \
+		${FOUR_DS_ABLATION_ARG:+$FOUR_DS_ABLATION_ARG} \
 		--output-dir "$OUTPUT_DIR"
 
 	if [[ "$PAPER_ONLY" != true ]]; then
