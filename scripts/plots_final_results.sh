@@ -46,7 +46,8 @@ Options:
   --paper-figures       Add all optional paper-width figures above.
   --paper-only          Only run/copy paper figures, writing PNG and PDF.
   --reviewer-only       Only run the independent-seed, training-data,
-                        MC-dropout, and FNO reviewer-response comparisons.
+                        MC-dropout, and FNO reviewer-response comparisons,
+                        including applicable paper_* ablation layouts.
   --trajectory-se-only  Only generate the main trajectory-statistics outputs.
                         All plot and table filenames receive the _se suffix.
                         Combine with --four-ds-ablation for the paper-width
@@ -66,7 +67,8 @@ Options:
   -h, --help            Show this help.
 
 By default the script preserves the standard output set and does not write
-paper_*.png files. Pass --paper-figures to generate the paper-ready variants.
+paper_*.png files. Pass --paper-figures for every paper-ready variant, or
+--reviewer-only for the applicable reviewer ablation layouts.
 EOF
 }
 
@@ -94,6 +96,8 @@ while [[ $# -gt 0 ]]; do
 			;;
 		--reviewer-only)
 			REVIEWER_ONLY=true
+			FOUR_DS_ABLATION=true
+			ONE_DS_ABLATION=true
 			;;
 		--trajectory-se-only)
 			TRAJECTORY_SE_ONLY=true
@@ -288,7 +292,9 @@ fi
 
 echo "Writing plots under: $RESULTS_DIR/$PLOTS_PATH"
 echo "Writing figure formats: ${FIGURE_FORMAT_ARRAY[*]}"
-if [[ "$PAPER_MAIN_FIGURES" == true || "$FOUR_DS_ABLATION" == true || "$ONE_DS_ABLATION" == true ]]; then
+if [[ "$REVIEWER_ONLY" == true ]]; then
+	echo "Reviewer paper layouts are enabled in each reviewer output directory."
+elif [[ "$PAPER_MAIN_FIGURES" == true || "$FOUR_DS_ABLATION" == true || "$ONE_DS_ABLATION" == true ]]; then
 	echo "Collecting paper figures under: $PAPER_OUTPUT_DIR"
 fi
 if [[ "$PAPER_USE_TEX" == true ]]; then
