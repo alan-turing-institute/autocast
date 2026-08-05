@@ -1688,6 +1688,11 @@ def _style_label_for_plot_group(
     return plot_group_display_label(pg)
 
 
+def _is_flow_matching_style(loss: str, label: str) -> bool:
+    """Recognize FM styling from parsed metadata or an explicit run label."""
+    return loss == "diff" or label.strip().startswith("FM")
+
+
 def extract_valid_plot_groups_from_run_names(
     run_names: list[str], df_in: pd.DataFrame
 ) -> set[str]:
@@ -1852,11 +1857,12 @@ def _apply_run_hue_styles(
         for pg, lb in zip(members, member_labels, strict=False):
             parts = pg.split("__")
             loss = parts[1] if len(parts) > 1 else "unknown"
+            is_flow_matching = _is_flow_matching_style(loss, lb)
             styles[pg] = {
                 "color": label_to_color[lb],
                 "label": lb,
-                "marker": "^" if loss == "diff" else "o",
-                "linestyle": "-" if loss == "diff" else "--",
+                "marker": "^" if is_flow_matching else "o",
+                "linestyle": "-" if is_flow_matching else "--",
             }
 
     # Runs without an explicit hue get sequential colors after the last hue.

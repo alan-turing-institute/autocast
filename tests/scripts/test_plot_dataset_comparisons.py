@@ -36,6 +36,24 @@ def test_base_first_run_hue_keeps_main_color_and_darkens_variant():
     )
 
 
+def test_run_hue_uses_explicit_fm_label_for_semantic_run_style():
+    crps_pg = "semantic__unknown__large__crps_run"
+    fm_pg = "semantic__unknown__large__fm_run"
+    df = pd.DataFrame({"plot_group": [crps_pg, fm_pg]})
+
+    styles = pdc.build_family_style(
+        df,
+        custom_label_by_run={
+            "crps_run": "CRPS (training data)",
+            "fm_run": "FM (training data)",
+        },
+        hue_group_by_run={"crps_run": 0, "fm_run": 1},
+    )
+
+    assert styles[crps_pg]["linestyle"] == "--"
+    assert styles[fm_pg]["linestyle"] == "-"
+
+
 def test_default_plot_metrics_include_overall_crps_and_ssr():
     assert pdc.DEFAULT_PLOT_METRICS == ("vrmse", "coverage", "crps", "ssr")
 

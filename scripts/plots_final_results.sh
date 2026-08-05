@@ -446,17 +446,27 @@ TRAINING_DATA_COMPARISON_TRAJECTORY_STATS_ARGS=(
 	--trajectory-stats diff_cns64_flow_matching_vit_09490da_636fcc3 "diff_cns64_flow_matching_vit_09490da_636fcc3/eval_trajectory_stats_20260801/trajectory_statistics"
 	--trajectory-stats "${TRAINING_DATA_FM_RUN}::eval=${TRAINING_DATA_FM_EVAL}" "${TRAINING_DATA_FM_RUN}/${TRAINING_DATA_FM_EVAL}"
 )
+TRAINING_DATA_COMPARISON_RUN_ARGS=(
+	--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS (main)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25
+	--run "$TRAINING_DATA_CRPS_RUN" "CRPS (training data)" "$HUE_CRPS" eval="$TRAINING_DATA_CRPS_EVAL" dataset=CNS
+	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (main)" "$HUE_FM_LATENT"
+	--run "$TRAINING_DATA_FM_RUN" "FM (training data)" "$HUE_FM_LATENT" eval="$TRAINING_DATA_FM_EVAL" dataset=CNS
+)
 if all_evaluations_available "${TRAINING_DATA_COMPARISON_EVALUATIONS[@]}"; then
 	autocast-plots --results-dir "$RESULTS_DIR" \
 		"${COMMON_ARGS[@]}" \
 		"${TRAINING_DATA_COMPARISON_TRAJECTORY_STATS_ARGS[@]}" \
 		--base-first-run-hue-color \
-		--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS (main)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
-		--run "$TRAINING_DATA_CRPS_RUN" "CRPS (training data)" "$HUE_CRPS" eval="$TRAINING_DATA_CRPS_EVAL" dataset=CNS \
-		--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (main)" "$HUE_FM_LATENT" \
-		--run "$TRAINING_DATA_FM_RUN" "FM (training data)" "$HUE_FM_LATENT" eval="$TRAINING_DATA_FM_EVAL" dataset=CNS \
+		"${TRAINING_DATA_COMPARISON_RUN_ARGS[@]}" \
 		--figure-formats png pdf \
 		--output-dir "$REVIEWER_OUTPUT_DIR/reviewer_cns_training_data_comparison"
+
+	autocast-plots --results-dir "$RESULTS_DIR" \
+		"${COMMON_ARGS[@]}" \
+		--base-first-run-hue-color \
+		"${TRAINING_DATA_COMPARISON_RUN_ARGS[@]}" \
+		--figure-formats png pdf \
+		--output-dir "$REVIEWER_OUTPUT_DIR/reviewer_cns_training_data_comparison_mean_only"
 else
 	echo "Skipping reviewer training-data comparison: evaluations are not yet available."
 fi
