@@ -171,6 +171,21 @@ def test_processor_reference_is_not_residual_standardized():
     assert torch.equal(prediction, expected_reference + 0.25)
 
 
+def test_processor_reference_defines_training_residual():
+    batch = _batch(residual_scale=0.0)
+    processor = ResidualFlowMatchingProcessor(
+        backbone=_ZeroField(),
+        reference=ProcessorReference(_OffsetReferenceProcessor()),
+        source=ZeroSource(),
+        n_steps_output=4,
+        n_channels_out=1,
+    )
+
+    loss = processor.loss(batch)
+
+    assert loss.item() == pytest.approx(9.0)
+
+
 def test_loss_targets_residual_instead_of_full_state():
     batch = _batch(residual_scale=0.0)
     processor = _processor(source=ZeroSource())
