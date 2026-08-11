@@ -131,6 +131,33 @@ def test_apply_processor_defaults_to_backbone():
     assert cfg["backbone"]["cond_channels"] == 8  # in_channels for backbone
 
 
+def test_apply_processor_defaults_to_residual_components():
+    cfg = OmegaConf.create(
+        {
+            "n_steps_output": "auto",
+            "n_channels_out": "auto",
+            "reference": {"n_steps_output": "auto"},
+            "standardizer": {
+                "n_steps_output": "auto",
+                "n_channels": "auto",
+            },
+        }
+    )
+
+    _apply_processor_channel_defaults(
+        cfg,
+        in_channels=2,
+        out_channels=3,
+        n_steps_input=1,
+        n_steps_output=8,
+        n_channels_out=3,
+    )
+
+    assert cfg.reference.n_steps_output == 8
+    assert cfg.standardizer.n_steps_output == 8
+    assert cfg.standardizer.n_channels == 3
+
+
 def test_apply_processor_handles_none_config():
     # Should not raise
     _apply_processor_channel_defaults(

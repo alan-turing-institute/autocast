@@ -1,0 +1,5 @@
+_target_: autocast.nn.noise.source.SeparableGaussianSource
+temporal_correlation_time: 4.0
+spatial_length_scale: 2.0
+channel_correlation: null
+dt: 1.0
