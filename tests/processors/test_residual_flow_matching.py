@@ -5,8 +5,13 @@ from torch import nn
 
 from autocast.nn.noise.source import FlowSource, IIDGaussianSource, ZeroSource
 from autocast.nn.vit import TemporalViTBackbone
+from autocast.processors.base import Processor
 from autocast.processors.residual_flow_matching import ResidualFlowMatchingProcessor
-from autocast.processors.residual_reference import LastFrameReference
+from autocast.processors.residual_normalization import ResidualStandardizer
+from autocast.processors.residual_reference import (
+    LastFrameReference,
+    ProcessorReference,
+)
 from autocast.types import EncodedBatch
 
 
@@ -22,6 +27,19 @@ class _ScaledField(nn.Module):
 
     def forward(self, z, t, cond, global_cond=None):  # noqa: ARG002
         return self.scale * z
+
+
+class _OneField(nn.Module):
+    def forward(self, z, t, cond, global_cond=None):  # noqa: ARG002
+        return torch.ones_like(z)
+
+
+class _OffsetReferenceProcessor(Processor[EncodedBatch]):
+    def map(self, x, global_cond):  # noqa: ARG002
+        return repeat(x[:, -1:] + 3.0, "b 1 y x c -> b t y x c", t=4)
+
+    def loss(self, batch):
+        raise NotImplementedError
 
 
 def _batch(
@@ -59,6 +77,7 @@ def _processor(
     backbone: nn.Module | None = None,
     source: FlowSource | None = None,
     n_steps_output: int = 4,
+    standardizer: ResidualStandardizer | None = None,
 ) -> ResidualFlowMatchingProcessor:
     return ResidualFlowMatchingProcessor(
         backbone=backbone if backbone is not None else _ZeroField(),
@@ -66,6 +85,7 @@ def _processor(
         source=source,
         n_steps_output=n_steps_output,
         n_channels_out=1,
+        standardizer=standardizer,
     )
 
 
@@ -100,6 +120,57 @@ def test_map_adds_configured_source_to_reference():
     assert torch.equal(prediction, expected_reference + source)
 
 
+def test_map_denormalizes_generated_residual_before_adding_reference():
+    batch = _batch()
+    standardizer = ResidualStandardizer(
+        n_steps_output=4,
+        n_channels=1,
+        mean=0.25,
+        scale=2.0,
+    )
+    processor = _processor(
+        backbone=_OneField(),
+        source=ZeroSource(),
+        standardizer=standardizer,
+    )
+
+    prediction = processor.map(batch.encoded_inputs, batch.global_cond)
+
+    expected_reference = repeat(
+        batch.encoded_inputs[:, -1:],
+        "b 1 y x c -> b t y x c",
+        t=4,
+    )
+    assert torch.equal(prediction, expected_reference + 2.25)
+
+
+def test_processor_reference_is_not_residual_standardized():
+    batch = _batch()
+    standardizer = ResidualStandardizer(
+        n_steps_output=4,
+        n_channels=1,
+        mean=0.25,
+        scale=2.0,
+    )
+    processor = ResidualFlowMatchingProcessor(
+        backbone=_ZeroField(),
+        reference=ProcessorReference(_OffsetReferenceProcessor()),
+        source=ZeroSource(),
+        n_steps_output=4,
+        n_channels_out=1,
+        standardizer=standardizer,
+    )
+
+    prediction = processor.map(batch.encoded_inputs, batch.global_cond)
+
+    expected_reference = repeat(
+        batch.encoded_inputs[:, -1:] + 3.0,
+        "b 1 y x c -> b t y x c",
+        t=4,
+    )
+    assert torch.equal(prediction, expected_reference + 0.25)
+
+
 def test_loss_targets_residual_instead_of_full_state():
     batch = _batch(residual_scale=0.0)
     processor = _processor(source=ZeroSource())
@@ -107,6 +178,26 @@ def test_loss_targets_residual_instead_of_full_state():
     loss = processor.loss(batch)
 
     assert loss.item() == 0.0
+
+
+def test_loss_targets_standardized_residual():
+    batch = _batch(residual_scale=0.0)
+    batch.encoded_output_fields = repeat(
+        batch.encoded_inputs[:, -1:],
+        "b 1 y x c -> b t y x c",
+        t=4,
+    ) + 5.0
+    standardizer = ResidualStandardizer(
+        n_steps_output=4,
+        n_channels=1,
+        mean=1.0,
+        scale=2.0,
+    )
+    processor = _processor(source=ZeroSource(), standardizer=standardizer)
+
+    loss = processor.loss(batch)
+
+    assert loss.item() == pytest.approx(4.0)
 
 
 def test_residual_flow_loss_has_finite_backbone_gradients():
@@ -134,6 +225,18 @@ def test_reference_shape_is_validated():
 
     with pytest.raises(ValueError, match="Reference trajectory must have shape"):
         processor.map(batch.encoded_inputs, batch.global_cond)
+
+
+def test_standardizer_dimensions_are_validated():
+    standardizer = ResidualStandardizer(
+        n_steps_output=3,
+        n_channels=1,
+        mean=0.0,
+        scale=1.0,
+    )
+
+    with pytest.raises(ValueError, match="must match the processor"):
+        _processor(standardizer=standardizer)
 
 
 def test_temporal_vit_residual_flow_shapes_and_gradients():

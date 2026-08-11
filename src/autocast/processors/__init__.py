@@ -6,6 +6,7 @@ from autocast.processors.flow_matching_masked_window import (
     FlowMatchingMaskedWindowProcessor,
 )
 from autocast.processors.residual_flow_matching import ResidualFlowMatchingProcessor
+from autocast.processors.residual_normalization import ResidualStandardizer
 from autocast.processors.residual_reference import (
     LastFrameReference,
     ProcessorReference,
@@ -26,6 +27,7 @@ __all__ = [
     "ProcessorReference",
     "ReferenceTrajectory",
     "ResidualFlowMatchingProcessor",
+    "ResidualStandardizer",
     "SigmaVAEProcessor",
     "SwinViTProcessor",
     "TarFlowProcessor",

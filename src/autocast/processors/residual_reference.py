@@ -15,11 +15,16 @@ from autocast.types import Tensor
 
 
 class ReferenceTrajectory(nn.Module, ABC):
-    """Build the trajectory about which a residual is modelled."""
+    """Build a processor-coordinate trajectory about which a residual is modelled.
+
+    A reference must use the same ambient or latent coordinates as the processor
+    target. References computed by an external ambient model must therefore be
+    encoded before use with a latent processor.
+    """
 
     @abstractmethod
     def forward(self, x: Tensor, global_cond: Tensor | None = None) -> Tensor:
-        """Return a reference trajectory conditioned on ``x``."""
+        """Return a processor-coordinate reference conditioned on ``x``."""
 
 
 class LastFrameReference(ReferenceTrajectory):
@@ -55,7 +60,13 @@ class LastFrameReference(ReferenceTrajectory):
 
 
 class ProcessorReference(ReferenceTrajectory):
-    """Use another processor as a reference trajectory generator."""
+    """Use another processor as a processor-coordinate reference generator.
+
+    The wrapped processor receives ``x`` and ``global_cond`` unchanged. Its
+    ``map`` output must already use the same ambient or latent coordinates,
+    horizon, and channels as the outer residual processor target. In particular,
+    it must not return dataset-denormalized states or standardized residuals.
+    """
 
     def __init__(self, processor: Processor, *, frozen: bool = True) -> None:
         super().__init__()
@@ -73,7 +84,7 @@ class ProcessorReference(ReferenceTrajectory):
         return self
 
     def forward(self, x: Tensor, global_cond: Tensor | None = None) -> Tensor:
-        """Delegate trajectory generation to the wrapped processor."""
+        """Return the wrapped processor's output without coordinate transforms."""
         context = torch.no_grad() if self.frozen else nullcontext()
         with context:
             return self.processor.map(x, global_cond)
