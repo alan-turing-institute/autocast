@@ -3,6 +3,7 @@ from __future__ import annotations
 import torch
 from torch import nn
 
+from autocast.nn.noise.source import FlowSource, IIDGaussianSource
 from autocast.processors.base import Processor
 from autocast.types import EncodedBatch, Tensor
 
@@ -20,6 +21,7 @@ class FlowMatchingProcessor(Processor):
         n_steps_output: int = 4,
         n_channels_out: int = 1,
         integrator: str = "euler",
+        source: FlowSource | None = None,
     ) -> None:
         # Store core hyperparameters and optional prebuilt backbone.
         super().__init__()
@@ -34,6 +36,15 @@ class FlowMatchingProcessor(Processor):
         self.n_steps_output = n_steps_output
         self.n_channels_out = n_channels_out
         self.integrator = integrator
+        self.source = source if source is not None else IIDGaussianSource()
+
+    def _output_shape(self, x: Tensor) -> tuple[int, ...]:
+        return (
+            x.shape[0],
+            self.n_steps_output,
+            *x.shape[2:-1],
+            self.n_channels_out,
+        )
 
     def flow_field(
         self, z: Tensor, t: Tensor, x: Tensor, global_cond: Tensor | None = None
@@ -74,13 +85,23 @@ class FlowMatchingProcessor(Processor):
         Returns:
             Generated outputs of shape (B, T_out, *spatial, C_out).
         """
+        template = x.new_empty(self._output_shape(x))
+        source_states = self.source.sample_like(template)
+        return self.map_from_source(x, global_cond, source_states=source_states)
+
+    def map_from_source(
+        self,
+        x: Tensor,
+        global_cond: Tensor | None,
+        *,
+        source_states: Tensor,
+    ) -> Tensor:
+        """Integrate the flow ODE from caller-supplied source states."""
+        template = x.new_empty(self._output_shape(x))
+        self._validate_source_states(source_states, template)
+        z = source_states
         batch_size = x.shape[0]
         device, dtype = x.device, x.dtype
-
-        # Initialize noisy sample and scalar time for each batch element.
-        spatial_shape = tuple(x.shape[2:-1])
-        z_shape = (batch_size, self.n_steps_output, *spatial_shape, self.n_channels_out)
-        z = torch.randn(z_shape, device=device, dtype=dtype)
         t = torch.zeros(batch_size, device=device, dtype=dtype)
 
         # Fixed-step integration over the flow field.
@@ -97,14 +118,24 @@ class FlowMatchingProcessor(Processor):
 
     def loss(self, batch: EncodedBatch) -> Tensor:
         """Compute flow-matching loss for a batch."""
-        input_states = batch.encoded_inputs
-        target_states = batch.encoded_output_fields
+        return self._flow_matching_loss(
+            target_states=batch.encoded_output_fields,
+            conditioning=batch.encoded_inputs,
+            global_cond=batch.global_cond,
+        )
 
+    def _flow_matching_loss(
+        self,
+        *,
+        target_states: Tensor,
+        conditioning: Tensor,
+        global_cond: Tensor | None,
+    ) -> Tensor:
+        """Match the configured source distribution to target states."""
         self._validate_output_shape(target_states)
-
         batch_size = target_states.shape[0]
-
-        z0 = torch.randn_like(target_states, requires_grad=True)
+        z0 = self.source.sample_like(target_states)
+        self._validate_source_states(z0, target_states)
         t = torch.rand(
             batch_size, device=target_states.device, dtype=target_states.dtype
         )
@@ -112,8 +143,23 @@ class FlowMatchingProcessor(Processor):
         zt = (1 - t_broadcast) * z0 + t_broadcast * target_states
 
         target_velocity = target_states - z0
-        v_pred = self.flow_field(zt, t, input_states, global_cond=batch.global_cond)
+        v_pred = self.flow_field(zt, t, conditioning, global_cond=global_cond)
         return torch.mean((v_pred - target_velocity) ** 2)
+
+    @staticmethod
+    def _validate_source_states(source_states: Tensor, reference: Tensor) -> None:
+        if source_states.shape != reference.shape:
+            msg = (
+                f"Source states must have shape {tuple(reference.shape)}; "
+                f"received {tuple(source_states.shape)}."
+            )
+            raise ValueError(msg)
+        if (
+            source_states.device != reference.device
+            or source_states.dtype != reference.dtype
+        ):
+            msg = "Source states must use the reference device and dtype."
+            raise ValueError(msg)
 
     def _validate_output_shape(self, target_states: Tensor) -> None:
         """Validate output-window shape against processor configuration."""
