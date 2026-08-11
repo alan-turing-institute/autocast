@@ -12,14 +12,19 @@ import torch
 from conftest import get_optimizer_config
 from hydra import compose, initialize_config_dir
 from hydra.utils import instantiate
-from lightning.pytorch.callbacks import ModelCheckpoint, Timer
+from lightning.pytorch.callbacks import Callback, ModelCheckpoint, Timer
 from matplotlib import pyplot as plt
 from omegaconf import DictConfig, OmegaConf, open_dict
+from torch.utils.data import DataLoader, Dataset
 from torchmetrics import Metric, MetricCollection
 
 from autocast.callbacks.checkpoint import ProgressModelCheckpoint
 from autocast.callbacks.metrics import ValidationMetricPlotCallback
+from autocast.callbacks.residual_statistics import ResidualStatisticsCallback
+from autocast.data.datamodule import SpatioTemporalDataModule
 from autocast.encoders.base import EncoderWithCond
+from autocast.nn.noise.source import TemporalOUSource
+from autocast.processors.residual_flow_matching import ResidualFlowMatchingProcessor
 from autocast.scripts.setup import (
     _infer_latent_spatial_resolution,
     setup_autoencoder_model,
@@ -30,6 +35,7 @@ from autocast.scripts.training import (
     ResetResumeTimerCallback,
     TrainingTimerCallback,
     _attach_reset_timer_callback,
+    _ensure_residual_statistics_callback,
     _validate_resume_settings,
 )
 from autocast.types import Batch, EncodedBatch
@@ -73,6 +79,38 @@ def _stats_from_encoded_batch(batch: EncodedBatch) -> dict:
         "output_shape": batch.encoded_output_fields.shape,
         "example_batch": batch,
     }
+
+
+def _first_encoded_batch(batches: list[EncodedBatch]) -> EncodedBatch:
+    return batches[0]
+
+
+class _EncodedDataset(Dataset[EncodedBatch]):
+    def __init__(self, batch: EncodedBatch) -> None:
+        self.batch = batch
+
+    def __len__(self) -> int:
+        return 1
+
+    def __getitem__(self, index: int) -> EncodedBatch:
+        return self.batch
+
+
+class _EncodedDataModule(L.LightningDataModule):
+    def __init__(self, batch: EncodedBatch) -> None:
+        super().__init__()
+        self.train_dataset = _EncodedDataset(batch)
+
+    def train_dataloader(self):
+        return DataLoader(
+            self.train_dataset,
+            batch_size=1,
+            collate_fn=_first_encoded_batch,
+            num_workers=0,
+        )
+
+    def val_dataloader(self):
+        return self.train_dataloader()
 
 
 def test_autoencoder_config_trainer_fit_smoke(
@@ -255,6 +293,100 @@ def test_processor_config_training_step_smoke(config_dir: str, dummy_datamodule)
     loss = model.training_step(batch, batch_idx=0)
     assert torch.is_tensor(loss)
     assert loss.ndim == 0
+
+
+def test_residual_flow_config_fits_and_restores_statistics(
+    config_dir: str,
+    tmp_path: Path,
+):
+    model_cfg = _load_config(
+        config_dir,
+        "model/processor",
+        overrides=[
+            "processor@model.processor=residual_flow_matching_vit",
+            "flow_source@model.processor.source=temporal_ou",
+        ],
+    )
+    with open_dict(model_cfg):
+        processor_cfg = model_cfg.model.processor
+        processor_cfg.flow_ode_steps = 1
+        processor_cfg.backbone.include_global_cond = False
+        processor_cfg.backbone.global_cond_channels = 0
+        processor_cfg.backbone.mod_features = 8
+        processor_cfg.backbone.hid_channels = 16
+        processor_cfg.backbone.hid_blocks = 1
+        processor_cfg.backbone.attention_heads = 2
+        model_cfg.optimizer = get_optimizer_config(learning_rate=1e-3)
+        model_cfg.datamodule = {
+            "stride": 1,
+            "n_steps_input": 1,
+            "n_steps_output": 3,
+        }
+
+    inputs = torch.randn(2, 1, 4, 4, 1)
+    residual = torch.randn(2, 3, 4, 4, 1)
+    targets = inputs[:, -1:].expand(-1, 3, -1, -1, -1) + residual
+    batch = EncodedBatch(
+        encoded_inputs=inputs,
+        encoded_output_fields=targets,
+        global_cond=None,
+        encoded_info={},
+    )
+    datamodule = _EncodedDataModule(batch)
+    setup_datamodule = cast(SpatioTemporalDataModule, datamodule)
+    model = setup_processor_model(
+        model_cfg,
+        _stats_from_encoded_batch(batch),
+        setup_datamodule,
+    )
+    callbacks: list = [Callback()]
+    callbacks = _ensure_residual_statistics_callback(callbacks, model)
+
+    assert isinstance(model.processor, ResidualFlowMatchingProcessor)
+    assert isinstance(model.processor.source, TemporalOUSource)
+    assert isinstance(callbacks[0], ResidualStatisticsCallback)
+    assert len(callbacks) == 2
+
+    trainer = L.Trainer(
+        accelerator="cpu",
+        devices=1,
+        max_steps=1,
+        limit_val_batches=0,
+        num_sanity_val_steps=0,
+        callbacks=callbacks,
+        logger=False,
+        enable_checkpointing=False,
+        enable_model_summary=False,
+        enable_progress_bar=False,
+    )
+    trainer.fit(model, datamodule=datamodule)
+
+    standardizer = model.processor.standardizer
+    assert standardizer is not None
+    expected_scale, expected_mean = torch.std_mean(
+        residual.movedim(1, 0).reshape(3, -1, 1),
+        dim=1,
+        correction=0,
+    )
+    assert standardizer.fitted
+    assert torch.allclose(standardizer.mean, expected_mean)
+    assert torch.allclose(standardizer.scale, expected_scale)
+
+    checkpoint = tmp_path / "residual.ckpt"
+    trainer.save_checkpoint(checkpoint)
+    restored = setup_processor_model(
+        model_cfg,
+        _stats_from_encoded_batch(batch),
+        setup_datamodule,
+    )
+    payload = torch.load(checkpoint, map_location="cpu", weights_only=False)
+    restored.load_state_dict(payload["state_dict"])
+    assert isinstance(restored.processor, ResidualFlowMatchingProcessor)
+    restored_standardizer = restored.processor.standardizer
+    assert restored_standardizer is not None
+    assert restored_standardizer.fitted
+    assert torch.equal(restored_standardizer.mean, standardizer.mean)
+    assert torch.equal(restored_standardizer.scale, standardizer.scale)
 
 
 def test_masked_window_flow_matching_config_smoke(config_dir: str, dummy_datamodule):

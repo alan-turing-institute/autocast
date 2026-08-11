@@ -197,6 +197,15 @@ def _apply_processor_channel_defaults(
         list(spatial_resolution) if spatial_resolution is not None else None,
     )
 
+    reference_config = processor_config.get("reference")
+    if isinstance(reference_config, DictConfig):
+        _set_if_auto(reference_config, "n_steps_output", n_steps_output)
+
+    standardizer_config = processor_config.get("standardizer")
+    if isinstance(standardizer_config, DictConfig):
+        _set_if_auto(standardizer_config, "n_steps_output", n_steps_output)
+        _set_if_auto(standardizer_config, "n_channels", n_channels_out)
+
     backbone_config = processor_config.get("backbone")
     if backbone_config is None:
         return

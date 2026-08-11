@@ -297,13 +297,55 @@ def test_flow_matching_euler_default_unchanged():
     """integrator='euler' (the default) reproduces the original sampling path
     bit-for-bit: same RNG consumption, same update rule."""
     x = torch.randn(3, 1, 2, 2, 1)
+    steps = 4
     torch.manual_seed(123)
-    out_default = FlowMatchingProcessor(
-        backbone=_DecayField(), n_steps_output=1, n_channels_out=1, flow_ode_steps=4
+    actual = FlowMatchingProcessor(
+        backbone=_DecayField(),
+        n_steps_output=1,
+        n_channels_out=1,
+        flow_ode_steps=steps,
     ).map(x, None)
+
+    # Reconstruct the pre-source-API implementation directly: draw with
+    # torch.randn, then apply the original Euler update z <- z - dt * z.
     torch.manual_seed(123)
-    out_euler = _decay_processor("euler", 4).map(x, None)
-    assert torch.equal(out_default, out_euler)
+    expected = torch.randn(3, 1, 2, 2, 1)
+    dt = 1.0 / steps
+    for _ in range(steps):
+        expected = expected - dt * expected
+
+    assert torch.equal(actual, expected)
+
+
+def test_flow_matching_default_loss_matches_original_formulation():
+    """The default source preserves the original loss and RNG sequence."""
+    inputs = torch.randn(3, 1, 2, 2, 1)
+    targets = torch.randn(3, 2, 2, 2, 1)
+    batch = EncodedBatch(
+        encoded_inputs=inputs,
+        encoded_output_fields=targets,
+        global_cond=None,
+        encoded_info={},
+    )
+    processor = FlowMatchingProcessor(
+        backbone=_DecayField(),
+        n_steps_output=2,
+        n_channels_out=1,
+    )
+
+    torch.manual_seed(123)
+    actual = processor.loss(batch)
+
+    # Reconstruct the implementation before sources became configurable.
+    torch.manual_seed(123)
+    z0 = torch.randn_like(targets)
+    t = torch.rand(targets.shape[0], device=targets.device, dtype=targets.dtype)
+    t_broadcast = t.view(targets.shape[0], *([1] * (targets.ndim - 1)))
+    zt = (1 - t_broadcast) * z0 + t_broadcast * targets
+    target_velocity = targets - z0
+    expected = torch.mean((-zt - target_velocity) ** 2)
+
+    assert torch.equal(actual, expected)
 
 
 @pytest.mark.parametrize("integrator", ["euler", "heun"])

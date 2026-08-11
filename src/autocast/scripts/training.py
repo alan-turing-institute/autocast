@@ -15,10 +15,12 @@ from matplotlib import pyplot as plt
 from omegaconf import DictConfig, OmegaConf
 
 from autocast.callbacks.gpu_util import GpuUtilizationLogCallback
+from autocast.callbacks.residual_statistics import ResidualStatisticsCallback
 from autocast.data.datamodule import SpatioTemporalDataModule, TheWellDataModule
 from autocast.logging import create_wandb_logger
 from autocast.logging.wandb import maybe_watch_model
 from autocast.models.autoencoder import AE
+from autocast.processors.residual_normalization import ResidualStandardizer
 from autocast.scripts.config import save_resolved_config
 from autocast.scripts.data import batch_to_device
 from autocast.scripts.setup import setup_autoencoder_model, setup_datamodule
@@ -388,6 +390,30 @@ def _gpu_util_callbacks(config: DictConfig) -> list[Callback]:
     return []
 
 
+def _ensure_residual_statistics_callback(
+    callbacks: object,
+    model: L.LightningModule,
+) -> list:
+    """Prepend the statistics pass required by an unfitted standardizer."""
+    callback_list = callbacks if isinstance(callbacks, list) else []
+    processor = getattr(model, "processor", None)
+    standardizer = getattr(processor, "standardizer", None)
+    if not isinstance(standardizer, ResidualStandardizer) or standardizer.fitted:
+        return callback_list
+    for index, callback in enumerate(callback_list):
+        configured = isinstance(callback, ResidualStatisticsCallback) or (
+            isinstance(callback, dict)
+            and str(callback.get("_target_", "")).endswith(
+                "ResidualStatisticsCallback"
+            )
+        )
+        if configured:
+            callback_list.insert(0, callback_list.pop(index))
+            return callback_list
+    callback_list.insert(0, ResidualStatisticsCallback())
+    return callback_list
+
+
 def run_training(
     config: DictConfig,
     model: L.LightningModule,
@@ -436,9 +462,9 @@ def run_training(
         msg = "trainer config must resolve to a mapping"
         raise TypeError(msg)
 
-    callbacks = trainer_cfg.get("callbacks", [])
-    if not isinstance(callbacks, list):
-        callbacks = []
+    callbacks = _ensure_residual_statistics_callback(
+        trainer_cfg.get("callbacks", []), model
+    )
 
     for callback in callbacks:
         if isinstance(callback, dict) and callback.get("_target_", "").endswith(

@@ -107,6 +107,32 @@ def test_processor_configs_exist(processor_configs: list[str]):
     assert "flow_matching" in processor_configs or "fno" in processor_configs
 
 
+@pytest.mark.parametrize(
+    ("source", "target"),
+    [
+        ("iid_gaussian", "IIDGaussianSource"),
+        ("temporal_ou", "TemporalOUSource"),
+        ("separable_gaussian", "SeparableGaussianSource"),
+    ],
+)
+def test_residual_flow_source_configs_compose(
+    config_dir: str,
+    source: str,
+    target: str,
+):
+    cfg = _load_config(
+        config_dir,
+        "model/processor",
+        overrides=[
+            "processor@model.processor=residual_flow_matching_vit",
+            f"flow_source@model.processor.source={source}",
+        ],
+    )
+
+    assert cfg.model.processor._target_.endswith("ResidualFlowMatchingProcessor")
+    assert cfg.model.processor.source._target_.endswith(target)
+
+
 # --- Tests using real configs ---
 
 
