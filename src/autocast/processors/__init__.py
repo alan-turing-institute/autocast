@@ -5,6 +5,11 @@ from autocast.processors.flow_matching import FlowMatchingProcessor
 from autocast.processors.flow_matching_masked_window import (
     FlowMatchingMaskedWindowProcessor,
 )
+from autocast.processors.residual_reference import (
+    LastFrameReference,
+    ProcessorReference,
+    ReferenceTrajectory,
+)
 from autocast.processors.sigma_vae import SigmaVAEProcessor
 from autocast.processors.swin_vit import SwinViTProcessor
 from autocast.processors.tarflow import TarFlowProcessor
@@ -15,7 +20,10 @@ __all__ = [
     "ConvCouplingFlowProcessor",
     "FlowMatchingMaskedWindowProcessor",
     "FlowMatchingProcessor",
+    "LastFrameReference",
     "Processor",
+    "ProcessorReference",
+    "ReferenceTrajectory",
     "SigmaVAEProcessor",
     "SwinViTProcessor",
     "TarFlowProcessor",
