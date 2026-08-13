@@ -1,0 +1,181 @@
+campaign:
+  id: main_comparison_seed43
+  run_group: "2026-08-13"
+  output_base: outputs
+  dataset_seed: 43
+  training_seed: 42
+  autosim_repo: /home/u6eo/ltcx7228.u6eo/autosim
+  required_source_commit: f5ee48356934e0e80f9da77c0922edcb8a4cf4b7
+  reference_source_commits:
+    crps: bed4611609d224bb3497e858ba278d028e7430d2
+    autoencoder: 3a7999b733254d6a9e572644be3c694744c07305
+    flow_matching: 09490dad1093b304a69c0b2d14695887c536e67f
+
+resources:
+  data:
+    time: "02:00:00"
+    nodes: 1
+    tasks_per_node: 1
+    gpus_per_node: 1
+    cpus_per_task: 16
+    mem: 0
+  cache:
+    time: "00:15:00"
+    nodes: 1
+    tasks_per_node: 1
+    gpus_per_node: 1
+    cpus_per_task: 16
+    mem: 0
+  crps:
+    time: "23:59:00"
+    nodes: 1
+    tasks_per_node: 4
+    gpus_per_node: 4
+    cpus_per_task: 1
+    mem: 0
+  fm:
+    time: "23:59:00"
+    nodes: 1
+    tasks_per_node: 4
+    gpus_per_node: 4
+    cpus_per_task: 1
+    mem: 0
+  eval_crps:
+    time: "01:00:00"
+    nodes: 1
+    tasks_per_node: 1
+    gpus_per_node: 1
+    cpus_per_task: 16
+    mem: 115G
+  eval_fm:
+    time: "02:30:00"
+    nodes: 1
+    tasks_per_node: 1
+    gpus_per_node: 1
+    cpus_per_task: 16
+    mem: 115G
+
+evaluation:
+  n_members: 10
+  visual_batch_indices: [0, 1, 2, 3, 4, 5, 6, 7]
+  snapshot_timesteps: [0, 4, 12, 30, 99]
+  metric_windows: [null]
+  rollout_windows: [[0, 1], [0, 4], [6, 12], [13, 30], [31, 99]]
+  metrics:
+    - mse
+    - mae
+    - nmse
+    - nmae
+    - rmse
+    - nrmse
+    - vmse
+    - vrmse
+    - linf
+    - psrmse
+    - psrmse_low
+    - psrmse_mid
+    - psrmse_high
+    - psrmse_tail
+    - pscc
+    - pscc_low
+    - pscc_mid
+    - pscc_high
+    - pscc_tail
+    - crps
+    - fcrps
+    - afcrps
+    - energy
+    - ssr
+    - winkler
+
+datasets:
+  ad:
+    canonical_dataset: advection_diffusion
+    token: ad64
+    dataset_dir: /projects/u6eo/autocast/datasets/advection_diffusion_seed43_20260813
+    published_dataset_dir: /projects/u6eo/autocast/datasets/advection_diffusion_2ba25b9
+    generator:
+      commit: bd5ac317c3533a18a52fb07e05abe3a0247b437d
+      config_name: generate_data
+      overrides: [simulator=advection_diffusion]
+      stats_commit: 0bc366adf92fac25228da7550f70d58819f37708
+      stats_field_names: [vorticity]
+    schema:
+      split_sizes: {train: 200, valid: 20, test: 20}
+      frames: 321
+      height: 64
+      width: 64
+      channels: 1
+      constant_scalars: 2
+      core_field_names: [vorticity]
+    published_ae_run: outputs/2026-04-17/ae_ad64_3a7999b_1a1e300
+    reference_crps_run: outputs/2026-04-24/crps_ad64_vit_azula_large_bed4611_da01a04
+    reference_fm_run: outputs/2026-04-20/diff_ad64_flow_matching_vit_09490da_dae1382
+    crps_experiment: epd/advection_diffusion/crps_vit_azula_large
+    fm_experiment: processor/advection_diffusion/fm_vit_large
+    crps_epochs: 478
+    fm_epochs: 3314
+    eval_batch_size: {crps: 8, fm: 4}
+
+  gpe:
+    canonical_dataset: gpe_laser_only_wake
+    token: gpe64
+    dataset_dir: /projects/u6eo/autocast/datasets/gpe/laser_only_wake_seed43_20260813
+    published_dataset_dir: /projects/u6eo/autocast/datasets/gpe/laser_only_wake_5b51eac
+    generator:
+      commit: 550531c1b06edce55eca56f68fbf8165dbf9a3ff
+      config_name: generate_data_gpe
+      overrides:
+        - simulator=gpe/laser_only_wake
+        - simulator.n=64
+        - simulator.parameters_range.imaginary_time_steps=[4000,4000]
+        - simulator.parameters_range.imaginary_time_dt=[0.0025,0.0025]
+        - simulator.artifact_validation_enabled=true
+      stats_commit: 550531c1b06edce55eca56f68fbf8165dbf9a3ff
+      stats_field_names: [density, real, imag]
+    schema:
+      split_sizes: {train: 200, valid: 20, test: 20}
+      frames: 321
+      height: 64
+      width: 64
+      channels: 3
+      constant_scalars: 24
+      core_field_names: [density, real, imag]
+      channel_idxs: [1, 2]
+    published_ae_run: outputs/2026-04-17/ae_gpe64_3a7999b_31e1c9f
+    reference_crps_run: outputs/2026-04-24/crps_gpe64_vit_azula_large_bed4611_e0a6df5
+    reference_fm_run: outputs/2026-04-20/diff_gpe64_flow_matching_vit_09490da_47bf39a
+    crps_experiment: epd/gpe_laser_wake_only/crps_vit_azula_large
+    fm_experiment: processor/gpe_laser_wake_only/fm_vit_large
+    crps_epochs: 477
+    fm_epochs: 3411
+    eval_batch_size: {crps: 8, fm: 4}
+
+  gs:
+    canonical_dataset: gray_scott
+    token: gs64
+    dataset_dir: /projects/u6eo/autocast/datasets/gray_scott_seed43_20260813
+    published_dataset_dir: /projects/u6eo/autocast/datasets/gray_scott_68b0669
+    generator:
+      commit: cfa8f7473df0fd9e65e2be349e3098c33dd5df85
+      config_name: generate_data_gray_scott
+      overrides: [simulator=gray_scott]
+      stats_commit: cfa8f7473df0fd9e65e2be349e3098c33dd5df85
+      stats_field_names: [u, v]
+    schema:
+      split_sizes: {train: 240, valid: 24, test: 24}
+      frames: 321
+      height: 64
+      width: 64
+      channels: 2
+      constant_scalars: 4
+      core_field_names: [u, v]
+      strata: [spirals, spots, worms, maze, gliders, bubbles]
+    published_ae_run: outputs/2026-04-17/ae_gs64_3a7999b_ed36b8e
+    reference_crps_run: outputs/2026-04-24/crps_gs64_vit_azula_large_bed4611_828a161
+    reference_fm_run: outputs/2026-04-20/diff_gs64_flow_matching_vit_09490da_7e9e331
+    crps_experiment: epd/gray_scott/crps_vit_azula_large
+    fm_experiment: processor/gray_scott/fm_vit_large
+    crps_epochs: 399
+    fm_epochs: 2830
+    eval_batch_size: {crps: 8, fm: 4}

@@ -1,0 +1,120 @@
+_target_: lightning.pytorch.trainer.trainer.Trainer
+max_time: "00:23:59:00"
+accelerator: auto
+strategy: auto
+num_nodes: 1
+devices: 1
+log_every_n_steps: 10
+enable_checkpointing: true
+detect_anomaly: false
+default_root_dir: null
+gradient_clip_val: null
+
+# This is the callback policy used by the successful CNS seed reruns. Keep it
+# shared so every dataset repeat has the same progress and selection records.
+callbacks:
+  - _target_: autocast.callbacks.checkpoint.ProgressModelCheckpoint
+    auto_insert_metric_name: false
+    every_n_epochs: 0
+    every_n_train_steps_fraction: 0.05
+    filename: snapshot-{progress_token}-{epoch:04d}-{step:08d}
+    save_last: true
+    save_top_k: -1
+  - _target_: lightning.pytorch.callbacks.ModelCheckpoint
+    auto_insert_metric_name: false
+    filename: best-val-{epoch:04d}-{val_loss:.4f}
+    mode: min
+    monitor: val_loss
+    save_last: false
+    save_top_k: 1
+  - _target_: autocast.callbacks.checkpoint.ProgressModelCheckpoint
+    auto_insert_metric_name: false
+    filename: best-multicov-pre0p25-{epoch:04d}-{val_multicoverage:.4f}
+    mode: min
+    monitor: val_multicoverage
+    monitor_optional: true
+    save_last: false
+    save_top_k: 1
+    stop_after_fraction: 0.25
+  - _target_: autocast.callbacks.checkpoint.ProgressModelCheckpoint
+    auto_insert_metric_name: false
+    filename: best-multiwinkler-pre0p25-{epoch:04d}-{val_multiwinkler:.4f}
+    mode: min
+    monitor: val_multiwinkler
+    monitor_optional: true
+    save_last: false
+    save_top_k: 1
+    stop_after_fraction: 0.25
+  - _target_: autocast.callbacks.checkpoint.ProgressModelCheckpoint
+    auto_insert_metric_name: false
+    filename: best-multicov-from0p25-{epoch:04d}-{val_multicoverage:.4f}
+    mode: min
+    monitor: val_multicoverage
+    monitor_optional: true
+    save_last: false
+    save_top_k: 1
+    start_after_fraction: 0.25
+  - _target_: autocast.callbacks.checkpoint.ProgressModelCheckpoint
+    auto_insert_metric_name: false
+    filename: best-multicov-from0p50-{epoch:04d}-{val_multicoverage:.4f}
+    mode: min
+    monitor: val_multicoverage
+    monitor_optional: true
+    save_last: false
+    save_top_k: 1
+    start_after_fraction: 0.5
+  - _target_: autocast.callbacks.checkpoint.ProgressModelCheckpoint
+    auto_insert_metric_name: false
+    filename: best-multicov-from0p75-{epoch:04d}-{val_multicoverage:.4f}
+    mode: min
+    monitor: val_multicoverage
+    monitor_optional: true
+    save_last: false
+    save_top_k: 1
+    start_after_fraction: 0.75
+  - _target_: autocast.callbacks.checkpoint.ProgressModelCheckpoint
+    auto_insert_metric_name: false
+    filename: best-multiwinkler-from0p25-{epoch:04d}-{val_multiwinkler:.4f}
+    mode: min
+    monitor: val_multiwinkler
+    monitor_optional: true
+    save_last: false
+    save_top_k: 1
+    start_after_fraction: 0.25
+  - _target_: autocast.callbacks.checkpoint.ProgressModelCheckpoint
+    auto_insert_metric_name: false
+    filename: best-multiwinkler-from0p50-{epoch:04d}-{val_multiwinkler:.4f}
+    mode: min
+    monitor: val_multiwinkler
+    monitor_optional: true
+    save_last: false
+    save_top_k: 1
+    start_after_fraction: 0.5
+  - _target_: autocast.callbacks.checkpoint.ProgressModelCheckpoint
+    auto_insert_metric_name: false
+    filename: best-multiwinkler-from0p75-{epoch:04d}-{val_multiwinkler:.4f}
+    mode: min
+    monitor: val_multiwinkler
+    monitor_optional: true
+    save_last: false
+    save_top_k: 1
+    start_after_fraction: 0.75
+  - _target_: autocast.callbacks.checkpoint.ProgressModelCheckpoint
+    auto_insert_metric_name: false
+    filename: best-multiwinkler-overall-{epoch:04d}-{val_multiwinkler:.4f}
+    mode: min
+    monitor: val_multiwinkler
+    monitor_optional: true
+    save_last: false
+    save_top_k: 1
+    start_after_fraction: 0.05
+  - _target_: autocast.callbacks.metrics.ValidationMetricPlotCallback
+    dirname: validation_metrics
+    filename: validation_metrics.png
+    log_to_logger: true
+    max_cols: 3
+    metric_prefixes: [val_]
+    plot_metric_objects: true
+    save_local: true
+  - _target_: autocast.callbacks.ema.EMACallback
+    decay: 0.999
