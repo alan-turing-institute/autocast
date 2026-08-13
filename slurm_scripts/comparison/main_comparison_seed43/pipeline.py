@@ -13,16 +13,16 @@ import re
 import shlex
 import subprocess
 import sys
-import tarfile
-import tempfile
 import uuid
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import torch
 import yaml
+from hydra import compose, initialize_config_dir
+from omegaconf import OmegaConf
 
 from autocast.scripts.workflow.naming import auto_run_name
 
@@ -31,6 +31,11 @@ REPO_ROOT = SCRIPT_DIR.parents[2]
 WORKER = SCRIPT_DIR / "worker.sh"
 SPLITS = ("train", "valid", "test")
 STAGES = ("data", "cache", "crps", "fm", "eval_crps", "eval_fm")
+CURRENT_SIMULATOR_TARGETS = {
+    "ad": "autosim.simulations.spatiotemporal.AdvectionDiffusion",
+    "gpe": "autosim.simulations.spatiotemporal.GrossPitaevskiiEquation2D",
+    "gs": "autosim.simulations.spatiotemporal.GrayScott",
+}
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
@@ -74,6 +79,20 @@ def _source_commit() -> str:
     return _git("rev-parse", "HEAD")
 
 
+def _repository_commit(repository: Path) -> str:
+    result = _run(["git", "-C", repository, "rev-parse", "HEAD"], capture=True)
+    return result.stdout.strip()
+
+
+def _repository_status(repository: Path) -> str:
+    result = _run(["git", "-C", repository, "status", "--porcelain"], capture=True)
+    return result.stdout.strip()
+
+
+def _autosim_repo(manifest: dict[str, Any]) -> Path:
+    return Path(str(manifest["campaign"]["autosim_repo"])).expanduser().resolve()
+
+
 def _require_source_ready(manifest: dict[str, Any], expected: str | None = None) -> str:
     current = _source_commit()
     if expected is not None and current != expected:
@@ -93,19 +112,57 @@ def _require_source_ready(manifest: dict[str, Any], expected: str | None = None)
     return current
 
 
+def _require_autosim_ready(
+    manifest: dict[str, Any], expected: str | None = None
+) -> str:
+    repository = _autosim_repo(manifest)
+    current = _repository_commit(repository)
+    if expected is not None and current != expected:
+        raise RuntimeError(
+            "The AutoSim checkout changed after campaign preparation: "
+            f"expected {expected}, found {current}"
+        )
+    if _repository_status(repository):
+        raise RuntimeError("Refusing to run from an uncommitted AutoSim checkout")
+    return current
+
+
 def _absolute_repo_path(value: str) -> Path:
     path = Path(value).expanduser()
     return path if path.is_absolute() else REPO_ROOT / path
 
 
+def _validate_resources_and_evaluation(manifest: dict[str, Any]) -> None:
+    resources = manifest.get("resources")
+    if not isinstance(resources, dict):
+        raise TypeError("campaign.yaml must contain a resources mapping")
+    for stage in STAGES:
+        if stage not in resources:
+            raise ValueError(f"Missing resources.{stage}")
+        stage_resources = resources[stage]
+        if stage_resources["gpus_per_node"] == 1 and stage_resources["mem"] != "115G":
+            raise ValueError(f"One-GPU stage {stage} must request mem=115G")
+
+    evaluation = manifest.get("evaluation")
+    if not isinstance(evaluation, dict):
+        raise TypeError("campaign.yaml must contain an evaluation mapping")
+    trajectory = evaluation.get("trajectory_statistics")
+    if evaluation.get("aggregate_statistics") is not True:
+        raise ValueError("evaluation.aggregate_statistics must be true")
+    if not isinstance(trajectory, dict) or trajectory.get("enabled") is not True:
+        raise ValueError("evaluation.trajectory_statistics.enabled must be true")
+    if trajectory.get("include_per_timestep") is not True:
+        raise ValueError(
+            "evaluation.trajectory_statistics.include_per_timestep must be true"
+        )
+
+
 def _validate_manifest(manifest: dict[str, Any]) -> None:
     campaign = manifest.get("campaign")
     datasets = manifest.get("datasets")
-    resources = manifest.get("resources")
     if not isinstance(campaign, dict) or not isinstance(datasets, dict):
         raise TypeError("campaign.yaml must contain campaign and datasets mappings")
-    if not isinstance(resources, dict):
-        raise TypeError("campaign.yaml must contain a resources mapping")
+    _validate_resources_and_evaluation(manifest)
     if set(datasets) != {"ad", "gpe", "gs"}:
         raise ValueError("The campaign must define exactly AD, GPE, and GS")
     run_group = str(campaign["run_group"])
@@ -113,12 +170,9 @@ def _validate_manifest(manifest: dict[str, Any]) -> None:
     required_commit = str(campaign["required_source_commit"])
     if re.fullmatch(r"[0-9a-f]{40}", required_commit) is None:
         raise ValueError("campaign.required_source_commit must be a full git hash")
-    autosim_repo = Path(str(campaign["autosim_repo"]))
+    autosim_repo = _autosim_repo(manifest)
     if not (autosim_repo / ".git").exists():
         raise FileNotFoundError(f"Missing AutoSim repository: {autosim_repo}")
-    for stage in STAGES:
-        if stage not in resources:
-            raise ValueError(f"Missing resources.{stage}")
     for key, spec in datasets.items():
         if not isinstance(spec, dict):
             raise TypeError(f"datasets.{key} must be a mapping")
@@ -126,25 +180,24 @@ def _validate_manifest(manifest: dict[str, Any]) -> None:
         generator = spec.get("generator")
         if not isinstance(schema, dict) or not isinstance(generator, dict):
             raise TypeError(f"datasets.{key} needs schema and generator mappings")
-        for commit_key in ("commit", "stats_commit"):
-            commit = str(generator[commit_key])
-            if re.fullmatch(r"[0-9a-f]{40}", commit) is None:
-                raise ValueError(f"datasets.{key}.generator.{commit_key} is invalid")
-            result = subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    str(autosim_repo),
-                    "cat-file",
-                    "-e",
-                    f"{commit}^{{commit}}",
-                ],
-                check=False,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            if result.returncode != 0:
-                raise ValueError(f"AutoSim commit is unavailable: {commit}")
+        config_path = (
+            autosim_repo / "src/autosim/configs" / f"{generator['config_name']}.yaml"
+        )
+        if not config_path.is_file():
+            raise FileNotFoundError(config_path)
+        simulator_overrides = [
+            item
+            for item in generator["overrides"]
+            if str(item).startswith("simulator=")
+        ]
+        if len(simulator_overrides) != 1:
+            raise ValueError(f"datasets.{key} needs one simulator group override")
+        simulator_group = str(simulator_overrides[0]).split("=", maxsplit=1)[1]
+        simulator_path = (
+            autosim_repo / "src/autosim/configs/simulator" / f"{simulator_group}.yaml"
+        )
+        if not simulator_path.is_file():
+            raise FileNotFoundError(simulator_path)
         if set(schema["split_sizes"]) != set(SPLITS):
             raise ValueError(f"datasets.{key}.schema.split_sizes is incomplete")
         for dependency in (
@@ -177,7 +230,26 @@ def _custom_run_name(prefix: str, token: str, git_hash: str) -> str:
     return f"{prefix}_{token}_{git_hash}_{_short_uuid()}"
 
 
-def _build_state(manifest: dict[str, Any], source_commit: str) -> dict[str, Any]:
+def _load_yaml_list(path: Path) -> list[str]:
+    value = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise TypeError(f"Expected a YAML string list in {path}")
+    return value
+
+
+def _single_override(overrides: list[str], key: str) -> str:
+    prefix = f"{key}="
+    matches = [
+        value.removeprefix(prefix) for value in overrides if value.startswith(prefix)
+    ]
+    if len(matches) != 1:
+        raise ValueError(f"Expected one {key} override, found {len(matches)}")
+    return matches[0]
+
+
+def _build_state(
+    manifest: dict[str, Any], source_commit: str, autosim_source_commit: str
+) -> dict[str, Any]:
     campaign = manifest["campaign"]
     output_root = REPO_ROOT / str(campaign["output_base"]) / str(campaign["run_group"])
     short_hash = source_commit[:7]
@@ -222,6 +294,7 @@ def _build_state(manifest: dict[str, Any], source_commit: str) -> dict[str, Any]
         "campaign_id": campaign["id"],
         "created_at_utc": datetime.now(UTC).isoformat(),
         "source_commit": source_commit,
+        "autosim_source_commit": autosim_source_commit,
         "manifest": str(Path(_manifest_path()).resolve()),
         "campaign_dir": str(campaign_dir),
         "runs": runs,
@@ -247,6 +320,14 @@ def _format_plan(manifest: dict[str, Any], state: dict[str, Any] | None = None) 
         "Execution is disabled by default; submission requires --yes-submit.",
         "",
     ]
+    if state is not None:
+        lines.extend(
+            [
+                f"AutoCast source: {state['source_commit']}",
+                f"AutoSim source:  {state['autosim_source_commit']}",
+                "",
+            ]
+        )
     for key, spec in manifest["datasets"].items():
         lines.extend(
             [
@@ -279,7 +360,8 @@ def _format_plan(manifest: dict[str, Any], state: dict[str, Any] | None = None) 
 
 def _prepare(manifest: dict[str, Any]) -> Path:
     source_commit = _require_source_ready(manifest)
-    state = _build_state(manifest, source_commit)
+    autosim_source_commit = _require_autosim_ready(manifest)
+    state = _build_state(manifest, source_commit, autosim_source_commit)
     campaign_dir = Path(state["campaign_dir"])
     state_path = campaign_dir / "state.yaml"
     if campaign_dir.exists() or state_path.exists():
@@ -304,6 +386,9 @@ def _load_state(path: Path, manifest: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("State file belongs to a different campaign")
     if Path(str(state.get("manifest"))).resolve() != _manifest_path().resolve():
         raise ValueError("State file points to a different manifest")
+    for key in ("source_commit", "autosim_source_commit"):
+        if re.fullmatch(r"[0-9a-f]{40}", str(state.get(key))) is None:
+            raise ValueError(f"State file has an invalid {key}")
     return state
 
 
@@ -313,6 +398,22 @@ def _dataset_validation_marker(spec: dict[str, Any]) -> Path:
 
 def _cache_validation_marker(run: dict[str, Any]) -> Path:
     return Path(run["cache_dir"]) / "validation_complete.yaml"
+
+
+def _require_dataset_validation(spec: dict[str, Any], state: dict[str, Any]) -> None:
+    marker_path = _dataset_validation_marker(spec)
+    if not marker_path.is_file():
+        raise FileNotFoundError(f"Dataset has not passed validation: {marker_path}")
+    marker = _load_yaml(marker_path)
+    state_keys = {
+        "autocast_source_commit": "source_commit",
+        "autosim_source_commit": "autosim_source_commit",
+    }
+    for key, state_key in state_keys.items():
+        if marker.get(key) != state[state_key]:
+            raise RuntimeError(
+                f"Dataset validation marker has the wrong {key}: {marker_path}"
+            )
 
 
 def _select_crps_checkpoint(run_dir: Path) -> Path:
@@ -338,10 +439,7 @@ def _preflight_stage(
         if Path(spec["dataset_dir"]).exists():
             raise FileExistsError(spec["dataset_dir"])
         return
-    if not _dataset_validation_marker(spec).is_file():
-        raise FileNotFoundError(
-            f"Dataset has not passed validation: {_dataset_validation_marker(spec)}"
-        )
+    _require_dataset_validation(spec, state)
     if stage == "cache":
         if Path(run["cache_dir"]).exists():
             raise FileExistsError(run["cache_dir"])
@@ -401,6 +499,8 @@ def _submit(
 ) -> None:
     state = _load_state(state_path, manifest)
     _require_source_ready(manifest, str(state["source_commit"]))
+    if stage == "data":
+        _require_autosim_ready(manifest, str(state["autosim_source_commit"]))
     for dataset in datasets:
         _preflight_stage(manifest, state, dataset, stage)
     for dataset in datasets:
@@ -415,14 +515,6 @@ def _submit(
         print(f"Submitted {dataset}/{stage}: {job_id}")
 
 
-def _extract_archive(repo: Path, commit: str, destination: Path) -> None:
-    destination.mkdir()
-    archive = destination.parent / f"{destination.name}.tar"
-    _run(["git", "-C", repo, "archive", "--format=tar", f"--output={archive}", commit])
-    with tarfile.open(archive) as handle:
-        handle.extractall(destination, filter="data")
-
-
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -431,71 +523,47 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _generation_command(
+    manifest: dict[str, Any], dataset: str
+) -> list[str | os.PathLike[str]]:
+    campaign = manifest["campaign"]
+    spec = manifest["datasets"][dataset]
+    generator = spec["generator"]
+    schema = spec["schema"]
+    dataset_dir = Path(spec["dataset_dir"])
+    return [
+        "uv",
+        "run",
+        "--project",
+        _autosim_repo(manifest),
+        "--frozen",
+        "--no-sync",
+        "autosim",
+        f"--config-name={generator['config_name']}",
+        *generator["overrides"],
+        f"dataset.output_dir={dataset_dir}",
+        f"dataset.n_train={schema['split_sizes']['train']}",
+        f"dataset.n_valid={schema['split_sizes']['valid']}",
+        f"dataset.n_test={schema['split_sizes']['test']}",
+        f"seed={campaign['dataset_seed']}",
+        "overwrite=false",
+    ]
+
+
 def _run_data(manifest: dict[str, Any], state: dict[str, Any], dataset: str) -> None:
     spec = manifest["datasets"][dataset]
     campaign = manifest["campaign"]
-    generator = spec["generator"]
     dataset_dir = Path(spec["dataset_dir"])
     if dataset_dir.exists():
         raise FileExistsError(dataset_dir)
-    autosim_repo = Path(campaign["autosim_repo"])
-    with tempfile.TemporaryDirectory(prefix=f"autosim-{dataset}-seed43-") as scratch:
-        scratch_dir = Path(scratch)
-        generation_tree = scratch_dir / "generation"
-        _extract_archive(autosim_repo, str(generator["commit"]), generation_tree)
-        stats_tree = generation_tree
-        if generator["stats_commit"] != generator["commit"]:
-            stats_tree = scratch_dir / "stats"
-            _extract_archive(autosim_repo, str(generator["stats_commit"]), stats_tree)
-        _run(["uv", "sync", "--project", generation_tree, "--frozen"])
-        schema = spec["schema"]
-        generation_command: list[str | os.PathLike[str]] = [
-            "uv",
-            "run",
-            "--project",
-            generation_tree,
-            "--frozen",
-            "autosim",
-            f"--config-name={generator['config_name']}",
-            *generator["overrides"],
-            f"dataset.output_dir={dataset_dir}",
-            f"dataset.n_train={schema['split_sizes']['train']}",
-            f"dataset.n_valid={schema['split_sizes']['valid']}",
-            f"dataset.n_test={schema['split_sizes']['test']}",
-            f"seed={campaign['dataset_seed']}",
-            "overwrite=false",
-        ]
-        _run(generation_command, cwd=REPO_ROOT)
-        if stats_tree != generation_tree:
-            _run(["uv", "sync", "--project", stats_tree, "--frozen"])
-            _run(
-                [
-                    "uv",
-                    "run",
-                    "--project",
-                    stats_tree,
-                    "--frozen",
-                    "autosim",
-                    "stats",
-                    dataset_dir,
-                    "--split",
-                    "train",
-                    "--output",
-                    dataset_dir / "stats.yml",
-                    "--field-names",
-                    ",".join(generator["stats_field_names"]),
-                    "--sig-figs",
-                    "4",
-                ]
-            )
+    _run(_generation_command(manifest, dataset), cwd=REPO_ROOT)
     provenance = {
         "campaign": campaign["id"],
         "generated_at_utc": datetime.now(UTC).isoformat(),
         "dataset_seed": campaign["dataset_seed"],
         "training_seed": campaign["training_seed"],
         "autocast_source_commit": state["source_commit"],
-        "autosim_generation_commit": generator["commit"],
-        "autosim_stats_commit": generator["stats_commit"],
+        "autosim_source_commit": state["autosim_source_commit"],
         "published_reference_dataset": spec["published_dataset_dir"],
     }
     _write_yaml(dataset_dir / "provenance.yaml", provenance)
@@ -515,6 +583,7 @@ def _run_data(manifest: dict[str, Any], state: dict[str, Any], dataset: str) -> 
         {
             "validated_at_utc": datetime.now(UTC).isoformat(),
             "autocast_source_commit": state["source_commit"],
+            "autosim_source_commit": state["autosim_source_commit"],
         },
     )
 
@@ -641,6 +710,7 @@ def _eval_overrides(
     spec = manifest["datasets"][dataset]
     run = state["runs"][dataset]
     evaluation = manifest["evaluation"]
+    trajectory_statistics = evaluation["trajectory_statistics"]
     is_crps = stage == "eval_crps"
     run_dir = Path(run["crps_dir"] if is_crps else run["fm_dir"])
     output_subdir = str(run["eval_crps_subdir"] if is_crps else run["eval_fm_subdir"])
@@ -674,7 +744,7 @@ def _eval_overrides(
         f"eval.metric_windows_rollout={_hydra_list(evaluation['rollout_windows'])}",
         f"eval.metrics={_hydra_list(evaluation['metrics'])}",
         "eval.compute_rollout_coverage=true",
-        "eval.compute_rollout_metrics=true",
+        f"eval.compute_rollout_metrics={str(evaluation['aggregate_statistics']).lower()}",
         f"eval.batch_indices={_hydra_list(evaluation['visual_batch_indices'])}",
         "eval.save_rollout_snapshots=true",
         f"eval.rollout_snapshot_timesteps={_hydra_list(evaluation['snapshot_timesteps'])}",
@@ -683,11 +753,13 @@ def _eval_overrides(
         "eval.benchmark_rollout.enabled=true",
         f"eval.csv_path={output_dir / 'evaluation_metrics.csv'}",
         f"eval.video_dir={output_dir / 'videos'}",
-        "eval.trajectory_statistics.enabled=true",
+        "eval.trajectory_statistics.enabled="
+        f"{str(trajectory_statistics['enabled']).lower()}",
         f"eval.trajectory_statistics.output_dir={trajectory_dir}",
         "eval.trajectory_statistics.overwrite_existing=false",
         "eval.trajectory_statistics.sampling_seed=42",
-        "eval.trajectory_statistics.include_per_timestep=true",
+        "eval.trajectory_statistics.include_per_timestep="
+        f"{str(trajectory_statistics['include_per_timestep']).lower()}",
         "logging.wandb.enabled=false",
     ]
     return run_dir, output_subdir, overrides
@@ -724,7 +796,10 @@ def _run_stage(
 ) -> None:
     state = _load_state(state_path, manifest)
     _require_source_ready(manifest, str(state["source_commit"]))
+    if stage != "data":
+        _require_dataset_validation(manifest["datasets"][dataset], state)
     if stage == "data":
+        _require_autosim_ready(manifest, str(state["autosim_source_commit"]))
         _run_data(manifest, state, dataset)
     elif stage == "cache":
         _run_cache(manifest, state, dataset)
@@ -734,11 +809,135 @@ def _run_stage(
         _run_eval(manifest, state, dataset, stage)
 
 
-def _normalized_config(config: dict[str, Any]) -> dict[str, Any]:
+def _canonical_visualization(config: dict[str, Any]) -> None:
+    visualization = config.get("visualize")
+    if not isinstance(visualization, dict):
+        return
+    batch_indices = visualization.pop("batch_indices", None)
+    max_examples = visualization.pop("max_examples", None)
+    if isinstance(batch_indices, list):
+        visualization["example_count"] = len(batch_indices)
+    elif max_examples is not None:
+        visualization["example_count"] = int(max_examples)
+
+
+def _canonical_simulator(config: dict[str, Any], dataset: str) -> None:
+    simulator = config.get("simulator")
+    if not isinstance(simulator, dict):
+        raise TypeError("Generated config has no simulator mapping")
+    target = str(simulator.get("_target_"))
+    if dataset == "ad":
+        if target.endswith(".AdvectionDiffusionMultichannel"):
+            if simulator.get("output_indices") != [0]:
+                raise ValueError("Published AD simulator is not vorticity-only")
+            simulator.pop("output_indices")
+        elif not target.endswith(".AdvectionDiffusion"):
+            raise ValueError(f"Unexpected AD simulator target: {target}")
+        simulator["_target_"] = "advection_diffusion_vorticity"
+    else:
+        simulator["_target_"] = target.rsplit(".", maxsplit=1)[-1]
+
+
+def _normalized_config(config: dict[str, Any], dataset: str) -> dict[str, Any]:
     copied = json.loads(json.dumps(config))
     copied["seed"] = "<new-data-seed>"
     copied.setdefault("dataset", {})["output_dir"] = "<dataset-output>"
+    if dataset == "ad":
+        copied["dataset"]["ensure_exact_n"] = True
+    _canonical_visualization(copied)
+    _canonical_simulator(copied, dataset)
+    normalization = copied.get("normalization")
+    if normalization == {"shared_core_field_groups": []}:
+        copied.pop("normalization")
     return copied
+
+
+def _preflight(manifest: dict[str, Any]) -> None:
+    """Audit cluster-local campaign references without creating any outputs."""
+    source_commit = _require_source_ready(manifest)
+    autosim_commit = _require_autosim_ready(manifest)
+    shared_callbacks = _load_yaml(
+        REPO_ROOT / "src/autocast/configs/trainer/crps_main_comparison_rerun.yaml"
+    )["callbacks"]
+    cns_callbacks = _load_yaml(
+        REPO_ROOT
+        / "local_hydra/local_experiment/reruns/main_comparison_cns_seed43"
+        / "crps_vit_azula_large.yaml"
+    )["trainer"]["callbacks"]
+    if shared_callbacks != cns_callbacks:
+        raise ValueError("Shared CRPS callbacks differ from the successful CNS rerun")
+
+    autosim_config_dir = _autosim_repo(manifest) / "src/autosim/configs"
+    for dataset, spec in manifest["datasets"].items():
+        published_dir = Path(spec["published_dataset_dir"])
+        published_overrides = _load_yaml_list(published_dir / ".hydra/overrides.yaml")
+        expected_generator = [
+            item.replace("simulator=", "simulator=spatiotemporal/", 1)
+            if item.startswith("simulator=")
+            else item
+            for item in published_overrides
+            if not item.startswith("seed=")
+        ]
+        if spec["generator"]["overrides"] != expected_generator:
+            raise ValueError(f"{dataset} generator overrides differ from published")
+
+        current_overrides = [
+            *spec["generator"]["overrides"],
+            f"seed={manifest['campaign']['dataset_seed']}",
+            "dataset.output_dir=/tmp/autosim-config-check",
+        ]
+        with initialize_config_dir(
+            version_base=None, config_dir=str(autosim_config_dir)
+        ):
+            current_cfg = compose(
+                config_name=spec["generator"]["config_name"],
+                overrides=current_overrides,
+            )
+        current_value = OmegaConf.to_container(current_cfg, resolve=True)
+        if not isinstance(current_value, dict):
+            raise TypeError(f"{dataset} AutoSim config did not compose to a mapping")
+        current = cast(dict[str, Any], current_value)
+        if (
+            current.get("simulator", {}).get("_target_")
+            != CURRENT_SIMULATOR_TARGETS[dataset]
+        ):
+            raise ValueError(f"{dataset} did not compose the current simulator target")
+        published = _load_yaml(published_dir / "resolved_config.yaml")
+        if _normalized_config(current, dataset) != _normalized_config(
+            published, dataset
+        ):
+            raise ValueError(
+                f"{dataset} current AutoSim config differs from published science"
+            )
+
+        crps_overrides = _load_yaml_list(
+            _absolute_repo_path(str(spec["reference_crps_run"]))
+            / ".hydra/overrides.yaml"
+        )
+        fm_overrides = _load_yaml_list(
+            _absolute_repo_path(str(spec["reference_fm_run"])) / ".hydra/overrides.yaml"
+        )
+        if (
+            int(_single_override(crps_overrides, "optimizer.cosine_epochs"))
+            != spec["crps_epochs"]
+        ):
+            raise ValueError(f"{dataset} CRPS epoch budget differs from published")
+        if (
+            int(_single_override(fm_overrides, "optimizer.cosine_epochs"))
+            != spec["fm_epochs"]
+        ):
+            raise ValueError(f"{dataset} FM epoch budget differs from published")
+
+    gpe = manifest["datasets"]["gpe"]
+    gpe_ae = _load_yaml(
+        _absolute_repo_path(str(gpe["published_ae_run"]))
+        / "resolved_autoencoder_config.yaml"
+    )
+    if gpe_ae["datamodule"].get("channel_idxs") != gpe["schema"].get("channel_idxs"):
+        raise ValueError("GPE channel selection differs from the published AE")
+    print(f"Preflight passed for AutoCast {source_commit}")
+    print(f"Preflight passed for AutoSim  {autosim_commit}")
+    print("Aggregate and per-trajectory evaluation outputs are enabled")
 
 
 def _validate_stats(path: Path, expected_fields: list[str]) -> None:
@@ -766,7 +965,15 @@ def validate_dataset(manifest: dict[str, Any], dataset: str) -> None:
     published_dir = Path(spec["published_dataset_dir"])
     generated_cfg = _load_yaml(dataset_dir / "resolved_config.yaml")
     published_cfg = _load_yaml(published_dir / "resolved_config.yaml")
-    if _normalized_config(generated_cfg) != _normalized_config(published_cfg):
+    generated_target = generated_cfg.get("simulator", {}).get("_target_")
+    if generated_target != CURRENT_SIMULATOR_TARGETS[dataset]:
+        raise ValueError(
+            f"{dataset} did not use the current AutoSim simulator target: "
+            f"{generated_target}"
+        )
+    if _normalized_config(generated_cfg, dataset) != _normalized_config(
+        published_cfg, dataset
+    ):
         raise ValueError(
             f"{dataset} generated config differs from the published procedure "
             "outside seed and output path"
@@ -957,6 +1164,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--manifest", type=Path, default=SCRIPT_DIR / "campaign.yaml")
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("plan", help="Show the immutable campaign specification")
+    subparsers.add_parser("preflight", help="Audit local references without writing")
     subparsers.add_parser("prepare", help="Reserve named run paths in state")
     status = subparsers.add_parser("status", help="Print a prepared campaign state")
     status.add_argument("--state", type=Path, required=True)
@@ -986,6 +1194,8 @@ def main() -> None:
     _validate_manifest(manifest)
     if args.command == "plan":
         print(_format_plan(manifest))
+    elif args.command == "preflight":
+        _preflight(manifest)
     elif args.command == "prepare":
         _prepare(manifest)
     elif args.command == "status":

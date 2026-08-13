@@ -18,14 +18,14 @@ resources:
     tasks_per_node: 1
     gpus_per_node: 1
     cpus_per_task: 16
-    mem: 0
+    mem: 115G
   cache:
     time: "00:15:00"
     nodes: 1
     tasks_per_node: 1
     gpus_per_node: 1
     cpus_per_task: 16
-    mem: 0
+    mem: 115G
   crps:
     time: "23:59:00"
     nodes: 1
@@ -56,6 +56,10 @@ resources:
     mem: 115G
 
 evaluation:
+  aggregate_statistics: true
+  trajectory_statistics:
+    enabled: true
+    include_per_timestep: true
   n_members: 10
   visual_batch_indices: [0, 1, 2, 3, 4, 5, 6, 7]
   snapshot_timesteps: [0, 4, 12, 30, 99]
@@ -95,11 +99,8 @@ datasets:
     dataset_dir: /projects/u6eo/autocast/datasets/advection_diffusion_seed43_20260813
     published_dataset_dir: /projects/u6eo/autocast/datasets/advection_diffusion_2ba25b9
     generator:
-      commit: bd5ac317c3533a18a52fb07e05abe3a0247b437d
       config_name: generate_data
-      overrides: [simulator=advection_diffusion]
-      stats_commit: 0bc366adf92fac25228da7550f70d58819f37708
-      stats_field_names: [vorticity]
+      overrides: [simulator=spatiotemporal/advection_diffusion]
     schema:
       split_sizes: {train: 200, valid: 20, test: 20}
       frames: 321
@@ -123,16 +124,13 @@ datasets:
     dataset_dir: /projects/u6eo/autocast/datasets/gpe/laser_only_wake_seed43_20260813
     published_dataset_dir: /projects/u6eo/autocast/datasets/gpe/laser_only_wake_5b51eac
     generator:
-      commit: 550531c1b06edce55eca56f68fbf8165dbf9a3ff
       config_name: generate_data_gpe
       overrides:
-        - simulator=gpe/laser_only_wake
+        - simulator=spatiotemporal/gpe/laser_only_wake
         - simulator.n=64
         - simulator.parameters_range.imaginary_time_steps=[4000,4000]
         - simulator.parameters_range.imaginary_time_dt=[0.0025,0.0025]
         - simulator.artifact_validation_enabled=true
-      stats_commit: 550531c1b06edce55eca56f68fbf8165dbf9a3ff
-      stats_field_names: [density, real, imag]
     schema:
       split_sizes: {train: 200, valid: 20, test: 20}
       frames: 321
@@ -157,11 +155,8 @@ datasets:
     dataset_dir: /projects/u6eo/autocast/datasets/gray_scott_seed43_20260813
     published_dataset_dir: /projects/u6eo/autocast/datasets/gray_scott_68b0669
     generator:
-      commit: cfa8f7473df0fd9e65e2be349e3098c33dd5df85
       config_name: generate_data_gray_scott
-      overrides: [simulator=gray_scott]
-      stats_commit: cfa8f7473df0fd9e65e2be349e3098c33dd5df85
-      stats_field_names: [u, v]
+      overrides: [simulator=spatiotemporal/gray_scott]
     schema:
       split_sizes: {train: 240, valid: 24, test: 24}
       frames: 321
