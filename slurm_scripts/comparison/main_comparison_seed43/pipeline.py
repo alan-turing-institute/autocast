@@ -213,6 +213,7 @@ def _validate_manifest(manifest: dict[str, Any]) -> None:
             if not (ae_run / dependency).is_file():
                 raise FileNotFoundError(ae_run / dependency)
         local_configs = (
+            spec["cache_experiment"],
             spec["crps_experiment"],
             spec["fm_experiment"],
         )
@@ -672,6 +673,8 @@ def _run_cache(manifest: dict[str, Any], state: dict[str, Any], dataset: str) ->
     ae_run = _absolute_repo_path(str(spec["published_ae_run"]))
     if cache_dir.exists():
         raise FileExistsError(cache_dir)
+    # Start from the cache experiment rather than the resolved AE training
+    # config: caching requires full_trajectory_mode, not autoencoder_mode.
     command = [
         "srun",
         "--kill-on-bad-exit=1",
@@ -680,10 +683,11 @@ def _run_cache(manifest: dict[str, Any], state: dict[str, Any], dataset: str) ->
         "--mode",
         "local",
         "--workdir",
-        ae_run,
+        cache_dir,
         "--output-dir",
         cache_dir,
         f"autoencoder_checkpoint={ae_run / 'autoencoder.ckpt'}",
+        f"local_experiment={spec['cache_experiment']}",
         f"datamodule.data_path={spec['dataset_dir']}",
         f"datamodule.normalization_path={spec['published_dataset_dir']}/stats.yml",
         f"+provenance.source_commit={state['source_commit']}",
