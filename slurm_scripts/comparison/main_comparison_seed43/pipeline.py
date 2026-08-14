@@ -149,7 +149,10 @@ def _validate_resources_and_evaluation(manifest: dict[str, Any]) -> None:
         if stage not in resources:
             raise ValueError(f"Missing resources.{stage}")
         stage_resources = resources[stage]
-        if stage_resources["gpus_per_node"] == 1 and stage_resources["mem"] != "115G":
+        if (
+            stage_resources["gpus_per_node"] == 1
+            and stage_resources.get("mem") != "115G"
+        ):
             raise ValueError(f"One-GPU stage {stage} must request mem=115G")
 
     evaluation = manifest.get("evaluation")
@@ -581,6 +584,49 @@ def _sbatch_command(
     ]
 
 
+def _training_sbatch_command(
+    manifest: dict[str, Any], state: dict[str, Any], dataset: str, stage: str
+) -> list[str | os.PathLike[str]]:
+    """Submit training through the established AutoCast Slurm launcher."""
+    resources = manifest["resources"][stage]
+    module, overrides = _training_overrides(manifest, state, dataset, stage)
+    command = {
+        "autocast.scripts.train.encoder_processor_decoder": "epd",
+        "autocast.scripts.train.processor": "processor",
+    }[module]
+    run_dir = Path(state["runs"][dataset][f"{stage}_dir"])
+    training_overrides = [
+        override for override in overrides if not override.startswith("hydra.run.dir=")
+    ]
+    return [
+        "uv",
+        "run",
+        "--project",
+        REPO_ROOT,
+        "--frozen",
+        "--no-sync",
+        "autocast",
+        command,
+        "--mode",
+        "slurm",
+        "--workdir",
+        run_dir,
+        *training_overrides,
+        f"hydra.launcher.timeout_min={resources['time']}",
+        f"hydra.launcher.gpus_per_node={resources['gpus_per_node']}",
+        f"hydra.launcher.tasks_per_node={resources['tasks_per_node']}",
+        f"hydra.launcher.cpus_per_task={resources['cpus_per_task']}",
+        "hydra.launcher.additional_parameters.nodes=1",
+    ]
+
+
+def _submitted_workflow_job_id(stdout: str) -> str:
+    match = re.search(r"^Submitted SLURM job ([0-9]+) via ", stdout, re.MULTILINE)
+    if match is None:
+        raise RuntimeError(f"Could not parse workflow SLURM job ID from: {stdout!r}")
+    return match.group(1)
+
+
 def _submit(
     manifest: dict[str, Any], state_path: Path, datasets: list[str], stage: str
 ) -> None:
@@ -591,10 +637,17 @@ def _submit(
     for dataset in datasets:
         _preflight_stage(manifest, state, dataset, stage)
     for dataset in datasets:
-        result = _run(
-            _sbatch_command(manifest, state_path, dataset, stage), capture=True
-        )
-        job_id = result.stdout.strip().split(";", maxsplit=1)[0]
+        if stage in {"crps", "fm"}:
+            result = _run(
+                _training_sbatch_command(manifest, state, dataset, stage),
+                capture=True,
+            )
+            job_id = _submitted_workflow_job_id(result.stdout)
+        else:
+            result = _run(
+                _sbatch_command(manifest, state_path, dataset, stage), capture=True
+            )
+            job_id = result.stdout.strip().split(";", maxsplit=1)[0]
         if not job_id.isdigit():
             raise RuntimeError(f"Could not parse sbatch job ID from: {result.stdout!r}")
         state["runs"][dataset].setdefault("jobs", {})[stage] = job_id

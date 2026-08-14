@@ -127,8 +127,11 @@ for DATASET in ad gpe gs; do
 done
 ```
 
-Every stage requests `115G` explicitly. The four-GPU training stages request
-that amount for the job as a whole rather than reserving all node memory.
+The one-GPU data, cache, and evaluation stages request `115G` explicitly.
+Four-GPU CRPS and FM training inherit `mem=0` from the established comparison
+launcher preset, with one `srun` rank per GPU, four GPUs on one node, and 72 CPU
+cores per GH200 rank. Their run directories and generated batch scripts appear
+immediately after successful submission.
 
 Wait for all three jobs, inspect the example videos and data distributions,
 then run the validator for each dataset:
@@ -185,11 +188,13 @@ alongside the single-step and rollout per-trajectory tables (including
 per-timestep trajectory rows). The validator requires both output families.
 
 `status --state "$STATE"` prints the immutable paths and recorded job IDs.
-Every worker executes the exact AutoCast commit recorded by `prepare`. Data
-submission and generation additionally require the exact clean AutoSim commit;
-later stages use the immutable data-validation marker that records that pin.
-The worker derives the repository from the manifest argument, so direct
-`sbatch worker.sh ...` submission remains valid when Slurm stages its copy in
-the node-local spool directory.
+Direct data, cache, and evaluation workers execute the exact AutoCast commit
+recorded by `prepare`. CRPS and FM use the established AutoCast launcher from
+that same clean checkout; keep the checkout at the recorded commit while they
+are queued. Data submission and generation additionally require the exact
+clean AutoSim commit; later stages use the immutable data-validation marker
+that records that pin. The direct worker derives the repository from the
+manifest argument, so `sbatch worker.sh ...` remains valid when Slurm stages
+its copy in the node-local spool directory.
 Failed or partial outputs are preserved for diagnosis; the pipeline never
 removes or overwrites them.

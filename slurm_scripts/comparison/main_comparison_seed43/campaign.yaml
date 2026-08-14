@@ -31,15 +31,13 @@ resources:
     nodes: 1
     tasks_per_node: 4
     gpus_per_node: 4
-    cpus_per_task: 1
-    mem: 115G
+    cpus_per_task: 72
   fm:
     time: "23:59:00"
     nodes: 1
     tasks_per_node: 4
     gpus_per_node: 4
-    cpus_per_task: 1
-    mem: 115G
+    cpus_per_task: 72
   eval_crps:
     time: "01:00:00"
     nodes: 1
