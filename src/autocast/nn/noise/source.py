@@ -5,10 +5,16 @@ from __future__ import annotations
 import math
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
+from typing import cast
 
 import torch
 from torch import nn
 
+from autocast.nn.noise.spatial import (
+    SpatialBoundary,
+    gaussian_spatial_filter,
+    validate_spatial_boundary,
+)
 from autocast.types import Tensor
 
 
@@ -75,7 +81,7 @@ class TemporalOUSource(FlowSource):
 
 
 class SeparableGaussianSource(TemporalOUSource):
-    """OU-time x periodic squared-exponential spatial Gaussian process."""
+    """OU-time x boundary-aware squared-exponential spatial Gaussian process."""
 
     channel_factor: Tensor | None
 
@@ -85,6 +91,7 @@ class SeparableGaussianSource(TemporalOUSource):
         temporal_correlation_time: float,
         spatial_length_scale: float,
         channel_correlation: Tensor | Sequence[Sequence[float]] | None = None,
+        spatial_boundaries: SpatialBoundary | Sequence[SpatialBoundary] = "periodic",
         dt: float = 1.0,
     ) -> None:
         super().__init__(correlation_time=temporal_correlation_time, dt=dt)
@@ -92,14 +99,30 @@ class SeparableGaussianSource(TemporalOUSource):
             msg = "spatial_length_scale must be positive."
             raise ValueError(msg)
         self.spatial_length_scale = spatial_length_scale
+        self.spatial_boundaries = self._validate_spatial_boundaries(spatial_boundaries)
         self.register_buffer(
             "channel_factor",
-            self._channel_factor(channel_correlation),
+            self._channel_factor(channel_correlation, self.spatial_boundaries),
         )
+
+    @staticmethod
+    def _validate_spatial_boundaries(
+        boundaries: SpatialBoundary | Sequence[SpatialBoundary],
+    ) -> SpatialBoundary | tuple[SpatialBoundary, ...]:
+        if isinstance(boundaries, str):
+            return validate_spatial_boundary(boundaries)
+        validated: tuple[SpatialBoundary, ...] = tuple(
+            validate_spatial_boundary(value) for value in boundaries
+        )
+        if not validated:
+            msg = "spatial_boundaries must not be empty."
+            raise ValueError(msg)
+        return validated
 
     @staticmethod
     def _channel_factor(
         correlation: Tensor | Sequence[Sequence[float]] | None,
+        boundaries: SpatialBoundary | tuple[SpatialBoundary, ...],
     ) -> Tensor | None:
         if correlation is None:
             return None
@@ -117,58 +140,88 @@ class SeparableGaussianSource(TemporalOUSource):
         if not torch.allclose(matrix, matrix.mT):
             msg = "channel_correlation must be symmetric."
             raise ValueError(msg)
-        if not torch.allclose(matrix.diagonal(), torch.ones(matrix.shape[0])):
+        diagonal = matrix.diagonal()
+        if not torch.allclose(diagonal, torch.ones_like(diagonal)):
             msg = "channel_correlation must have a unit diagonal."
             raise ValueError(msg)
+        if isinstance(boundaries, tuple):
+            if len(boundaries) != matrix.shape[0]:
+                msg = (
+                    "spatial_boundaries size must match channel_correlation: "
+                    f"expected {matrix.shape[0]}, got {len(boundaries)}."
+                )
+                raise ValueError(msg)
+            compatible = torch.tensor(
+                [[left == right for right in boundaries] for left in boundaries],
+                dtype=torch.bool,
+                device=matrix.device,
+            )
+            if torch.any(matrix.masked_select(~compatible).abs() > 1e-6):
+                msg = (
+                    "channel_correlation cannot couple channels with different "
+                    "spatial boundaries."
+                )
+                raise ValueError(msg)
         factor, info = torch.linalg.cholesky_ex(matrix)
         if torch.any(info):
             msg = "channel_correlation must be positive definite."
             raise ValueError(msg)
         return factor
 
-    def _spatial_amplitude(self, reference: Tensor) -> Tensor:
-        height, width = reference.shape[2:4]
-        angular_y = (
-            2.0
-            * math.pi
-            * torch.fft.fftfreq(
-                height,
-                dtype=reference.dtype,
-                device=reference.device,
+    def _resolved_spatial_boundaries(
+        self,
+        n_channels: int,
+    ) -> tuple[SpatialBoundary, ...]:
+        if isinstance(self.spatial_boundaries, str):
+            boundary = cast("SpatialBoundary", self.spatial_boundaries)
+            return (boundary,) * n_channels
+        if len(self.spatial_boundaries) != n_channels:
+            msg = (
+                "spatial_boundaries size must match the reference channels: "
+                f"expected {len(self.spatial_boundaries)}, got {n_channels}."
             )
-        )
-        angular_x = (
-            2.0
-            * math.pi
-            * torch.fft.fftfreq(
-                width,
-                dtype=reference.dtype,
-                device=reference.device,
+            raise ValueError(msg)
+        return self.spatial_boundaries
+
+    def _filter_spatially(
+        self,
+        samples: Tensor,
+        boundaries: tuple[SpatialBoundary, ...],
+    ) -> Tensor:
+        if all(boundary == boundaries[0] for boundary in boundaries):
+            return gaussian_spatial_filter(
+                samples,
+                length_scale=self.spatial_length_scale,
+                boundary=boundaries[0],
             )
-        )
-        squared_frequency = angular_y[:, None].square() + angular_x[None, :].square()
-        power = torch.exp(-0.5 * self.spatial_length_scale**2 * squared_frequency)
-        return (power / power.mean()).sqrt().to(dtype=reference.dtype)
+
+        filtered = torch.empty_like(samples)
+        for boundary in dict.fromkeys(boundaries):
+            channels = [
+                index
+                for index, channel_boundary in enumerate(boundaries)
+                if channel_boundary == boundary
+            ]
+            filtered[..., channels] = gaussian_spatial_filter(
+                samples[..., channels],
+                length_scale=self.spatial_length_scale,
+                boundary=boundary,
+            )
+        return filtered
 
     def sample_like(self, reference: Tensor) -> Tensor:
-        """Draw a zero-mean, unit-marginal separable GP sample."""
+        """Draw a zero-mean, unit-pooled-variance separable GP sample."""
         temporally_correlated = super().sample_like(reference)
         working = (
             temporally_correlated.float()
             if temporally_correlated.dtype in (torch.float16, torch.bfloat16)
             else temporally_correlated
         )
-        spectrum = torch.fft.fft2(
+        boundaries = self._resolved_spatial_boundaries(working.shape[-1])
+        samples = self._filter_spatially(
             working,
-            dim=(2, 3),
-            norm="ortho",
+            boundaries,
         )
-        amplitude = self._spatial_amplitude(working)[None, None, :, :, None]
-        samples = torch.fft.ifft2(
-            spectrum * amplitude,
-            dim=(2, 3),
-            norm="ortho",
-        ).real
         if self.channel_factor is not None:
             if samples.shape[-1] != self.channel_factor.shape[0]:
                 msg = (

@@ -131,6 +131,8 @@ def test_residual_flow_source_configs_compose(
 
     assert cfg.model.processor._target_.endswith("ResidualFlowMatchingProcessor")
     assert cfg.model.processor.source._target_.endswith(target)
+    if source == "separable_gaussian":
+        assert cfg.model.processor.source.spatial_boundaries == "periodic"
 
 
 # --- Tests using real configs ---
