@@ -4,7 +4,12 @@ import math
 from collections.abc import Sequence
 
 import torch
-import zuko
+
+# zuko ships in the optional "flows" extra, so it is absent from the default dev
+# environment CI installs. The processors package imports this module lazily and
+# falls back to a placeholder that raises a clear ImportError, so a missing zuko
+# is a supported state rather than a defect.
+import zuko  # pyright: ignore[reportMissingImports]
 
 from autocast.processors.base import Processor
 from autocast.types import EncodedBatch, Tensor
