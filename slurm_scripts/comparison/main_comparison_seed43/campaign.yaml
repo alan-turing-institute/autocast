@@ -5,7 +5,7 @@ campaign:
   dataset_seed: 43
   training_seed: 42
   autosim_repo: /home/u6eo/ltcx7228.u6eo/autosim
-  required_source_commit: f5ee48356934e0e80f9da77c0922edcb8a4cf4b7
+  required_source_commit: e40b8801fbb40771d1c03976bccd47a7acbcbe12
   reference_source_commits:
     crps: bed4611609d224bb3497e858ba278d028e7430d2
     autoencoder: 3a7999b733254d6a9e572644be3c694744c07305
@@ -32,14 +32,14 @@ resources:
     tasks_per_node: 4
     gpus_per_node: 4
     cpus_per_task: 1
-    mem: 0
+    mem: 115G
   fm:
     time: "23:59:00"
     nodes: 1
     tasks_per_node: 4
     gpus_per_node: 4
     cpus_per_task: 1
-    mem: 0
+    mem: 115G
   eval_crps:
     time: "01:00:00"
     nodes: 1

@@ -9,7 +9,9 @@ runs the full trajectory-statistics evaluation.
 
 Nothing is submitted by `plan` or `prepare`. Every submission requires both a
 single named stage and `--yes-submit`. The pipeline intentionally has manual
-gates instead of automatically queuing the whole DAG.
+gates instead of automatically queuing the whole DAG. Evaluation stages may
+be queued after their training stage: the pipeline records an `afterany`
+dependency so evaluation can use a checkpoint saved before a hard timeout.
 
 ## Identities held fixed
 
@@ -125,8 +127,8 @@ for DATASET in ad gpe gs; do
 done
 ```
 
-The one-GPU data, cache, and evaluation stages each request `115G`. The
-four-GPU training stages retain `mem=0` so they can use the full-node memory.
+Every stage requests `115G` explicitly. The four-GPU training stages request
+that amount for the job as a whole rather than reserving all node memory.
 
 Wait for all three jobs, inspect the example videos and data distributions,
 then run the validator for each dataset:
@@ -163,8 +165,8 @@ uv run --project . --frozen --no-sync python "$PIPELINE" \
   submit --state "$STATE" --dataset all --stage fm --yes-submit
 ```
 
-After validating CRPS and FM checkpoints, submit their evaluations as two
-separate phases:
+Once the CRPS and FM job IDs have been recorded, their evaluations can be
+queued as two separate phases:
 
 ```bash
 uv run --project . --frozen --no-sync python "$PIPELINE" \
@@ -172,6 +174,11 @@ uv run --project . --frozen --no-sync python "$PIPELINE" \
 uv run --project . --frozen --no-sync python "$PIPELINE" \
   submit --state "$STATE" --dataset all --stage eval_fm --yes-submit
 ```
+
+Each evaluation receives an `afterany` dependency on its corresponding
+training job. CRPS selects the single overall-best multi-Winkler checkpoint.
+FM prefers the finalized `processor.ckpt`; after a timeout it records and uses
+the valid saved checkpoint with the highest global step.
 
 Each evaluation writes the usual aggregate test, rollout, and benchmark CSVs
 alongside the single-step and rollout per-trajectory tables (including
@@ -181,5 +188,8 @@ per-timestep trajectory rows). The validator requires both output families.
 Every worker executes the exact AutoCast commit recorded by `prepare`. Data
 submission and generation additionally require the exact clean AutoSim commit;
 later stages use the immutable data-validation marker that records that pin.
+The worker derives the repository from the manifest argument, so direct
+`sbatch worker.sh ...` submission remains valid when Slurm stages its copy in
+the node-local spool directory.
 Failed or partial outputs are preserved for diagnosis; the pipeline never
 removes or overwrites them.

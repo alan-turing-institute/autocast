@@ -53,6 +53,15 @@ def _write_yaml(path: Path, value: dict[str, Any]) -> None:
     temporary.replace(path)
 
 
+def _write_json(path: Path, value: dict[str, Any]) -> None:
+    temporary = path.with_suffix(f"{path.suffix}.tmp")
+    temporary.write_text(
+        json.dumps(value, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(path)
+
+
 def _run(
     command: Sequence[str | os.PathLike[str]],
     *,
@@ -429,6 +438,66 @@ def _select_crps_checkpoint(run_dir: Path) -> Path:
     return matches[0]
 
 
+def _select_fm_checkpoint(run_dir: Path) -> Path:
+    target = run_dir / "processor.ckpt"
+    if target.is_file():
+        print(f"Using finalized FM checkpoint: {target.resolve()}")
+        return target
+    if target.is_symlink():
+        target.unlink()
+    elif target.exists():
+        raise FileExistsError(f"FM checkpoint target is not a file: {target}")
+
+    ranked: list[tuple[tuple[int, int, int], Path]] = []
+    seen: set[Path] = set()
+    for candidate in sorted(run_dir.glob("autocast/*/checkpoints/*.ckpt")):
+        try:
+            resolved = candidate.resolve(strict=True)
+            if resolved in seen:
+                continue
+            payload = torch.load(
+                resolved,
+                map_location="cpu",
+                weights_only=False,
+                mmap=True,
+            )
+            rank = (
+                int(payload.get("global_step", -1)),
+                int(payload.get("epoch", -1)),
+                resolved.stat().st_mtime_ns,
+            )
+            ranked.append((rank, resolved))
+            seen.add(resolved)
+            del payload
+        except Exception as error:
+            print(f"Skipping unusable checkpoint {candidate}: {error}")
+    if not ranked:
+        raise FileNotFoundError(f"No usable FM checkpoint found under {run_dir}")
+
+    rank, source = max(ranked, key=lambda item: item[0])
+    relative_source = Path(os.path.relpath(source, start=target.parent.resolve()))
+    target.symlink_to(relative_source)
+    _write_json(
+        run_dir / "processor_checkpoint_fallback.json",
+        {
+            "created_at_utc": datetime.now(UTC).isoformat(),
+            "reason": "final processor.ckpt unavailable after parent termination",
+            "selected_checkpoint": str(source),
+            "global_step": rank[0],
+            "epoch": rank[1],
+        },
+    )
+    print(
+        "Using highest-step saved FM checkpoint: "
+        f"{source} (epoch={rank[1]}, global_step={rank[0]})"
+    )
+    return target
+
+
+def _evaluation_parent(stage: str) -> str | None:
+    return {"eval_crps": "crps", "eval_fm": "fm"}.get(stage)
+
+
 def _preflight_stage(
     manifest: dict[str, Any], state: dict[str, Any], dataset: str, stage: str
 ) -> None:
@@ -454,28 +523,34 @@ def _preflight_stage(
             raise FileExistsError(run["fm_dir"])
     elif stage == "eval_crps":
         run_dir = Path(run["crps_dir"])
-        _select_crps_checkpoint(run_dir)
         output = run_dir / run["eval_crps_subdir"]
         if output.exists():
             raise FileExistsError(output)
+        if "crps" not in run.get("jobs", {}):
+            _select_crps_checkpoint(run_dir)
     elif stage == "eval_fm":
         run_dir = Path(run["fm_dir"])
-        for required in (run_dir / "resolved_config.yaml", run_dir / "processor.ckpt"):
-            if not required.is_file():
-                raise FileNotFoundError(required)
         output = run_dir / run["eval_fm_subdir"]
         if output.exists():
             raise FileExistsError(output)
+        if "fm" not in run.get("jobs", {}):
+            for required in (
+                run_dir / "resolved_config.yaml",
+                run_dir / "processor.ckpt",
+            ):
+                if not required.is_file():
+                    raise FileNotFoundError(required)
 
 
 def _sbatch_command(
     manifest: dict[str, Any], state_path: Path, dataset: str, stage: str
 ) -> list[str]:
     resources = manifest["resources"][stage]
-    campaign_dir = Path(_load_yaml(state_path)["campaign_dir"])
+    state = _load_yaml(state_path)
+    campaign_dir = Path(state["campaign_dir"])
     logs = campaign_dir / "slurm_logs"
     job_name = f"rerun43_{dataset}_{stage}"
-    return [
+    command = [
         "sbatch",
         "--parsable",
         f"--job-name={job_name}",
@@ -487,7 +562,18 @@ def _sbatch_command(
         f"--mem={resources['mem']}",
         f"--output={logs}/{dataset}-{stage}-%j.out",
         f"--error={logs}/{dataset}-{stage}-%j.err",
-        str(WORKER),
+    ]
+    parent_stage = _evaluation_parent(stage)
+    if parent_stage is not None:
+        parent_job = str(state["runs"][dataset].get("jobs", {}).get(parent_stage, ""))
+        if not parent_job.isdigit():
+            raise RuntimeError(
+                f"{dataset}/{stage} requires a recorded {parent_stage} job"
+            )
+        command.append(f"--dependency=afterany:{parent_job}")
+    return [
+        *command,
+        str(WORKER.resolve()),
         str(_manifest_path().resolve()),
         str(state_path.resolve()),
         dataset,
@@ -719,7 +805,7 @@ def _eval_overrides(
     run_dir = Path(run["crps_dir"] if is_crps else run["fm_dir"])
     output_subdir = str(run["eval_crps_subdir"] if is_crps else run["eval_fm_subdir"])
     checkpoint = (
-        _select_crps_checkpoint(run_dir) if is_crps else run_dir / "processor.ckpt"
+        _select_crps_checkpoint(run_dir) if is_crps else _select_fm_checkpoint(run_dir)
     )
     published_ae_checkpoint = (
         _absolute_repo_path(str(spec["published_ae_run"])) / "autoencoder.ckpt"
