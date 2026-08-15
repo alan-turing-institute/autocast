@@ -15,6 +15,18 @@ from typing import Any, ClassVar
 import pandas as pd
 import yaml
 
+_EPD = "encoder_processor_decoder"
+
+MODULE_CONFIG_NAMES: dict[str, str] = {
+    "autocast.scripts.train.autoencoder": "autoencoder",
+    "autocast.scripts.train.encoder_processor_decoder": _EPD,
+    "autocast.scripts.train.processor": "processor",
+    "autocast.scripts.eval.encoder_processor_decoder": _EPD,
+    "autocast.scripts.benchmark.encoder_processor_decoder": _EPD,
+    "autocast.scripts.train_eval.encoder_processor_decoder": _EPD,
+    "autocast.scripts.cache_latents": _EPD,
+}
+
 
 def default_run_name(prefix: str = "run") -> str:
     """Generate a short default run name when none is provided."""

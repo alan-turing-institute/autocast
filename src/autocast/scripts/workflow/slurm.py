@@ -8,9 +8,12 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
+from hydra import compose, initialize_config_dir
 from omegaconf import OmegaConf
 
+from autocast.scripts.utils import MODULE_CONFIG_NAMES, get_default_config_path
 from autocast.scripts.workflow.helpers import (
+    _split_hydra_cli_args,
     ensure_group_writable_parents,
     format_command,
     resolve_umask_from_overrides,
@@ -72,214 +75,43 @@ def _nested_set(target: dict, dotted_key: str, value: int | str | bool) -> None:
     current[parts[-1]] = value
 
 
-def load_launcher_defaults(launcher_name: str) -> dict:
-    """Load launcher YAML defaults by *launcher_name*."""
-    candidate_paths = [
-        Path(__file__).resolve().parents[2]
-        / "configs"
-        / "hydra"
-        / "launcher"
-        / f"{launcher_name}.yaml",
-        Path.cwd() / "local_hydra" / "hydra" / "launcher" / f"{launcher_name}.yaml",
-    ]
-    for path in candidate_paths:
-        if not path.exists():
-            continue
-        cfg = OmegaConf.load(path)
-        loaded = OmegaConf.to_container(cfg, resolve=False)
-        if isinstance(loaded, dict):
-            loaded.pop("defaults", None)
-            return loaded
-    if launcher_name != "slurm":
-        raise ValueError(f"Unable to resolve hydra launcher preset '{launcher_name}'.")
-    return {}
+def _get_launcher_cfg_via_compose(config_name: str, overrides: list[str]) -> dict:
+    """Compose the full Hydra config and extract ``hydra.launcher``.
 
-
-def _extract_local_experiment_name(overrides: list[str]) -> str | None:
-    """Return selected local_experiment name from CLI overrides, if any."""
-    for override in overrides:
-        norm = normalized_override(override)
-        if norm.startswith("local_experiment="):
-            return norm.split("=", 1)[1]
-    return None
-
-
-def _resolve_local_experiment_parent(item: object) -> Path | None:
-    # Map a defaults-list entry to its YAML file so we can follow the
-    # inheritance chain when looking up ``/distributed``.
-    # Handles both absolute (``/local_experiment/foo``) and relative
-    # (``foo/bar``) references within the local_experiment config group.
-    if not isinstance(item, str):
-        return None
-    if item.startswith("/local_experiment/"):
-        rel = item.removeprefix("/local_experiment/")
-        return Path.cwd() / "local_hydra" / "local_experiment" / f"{rel}.yaml"
-    if item.startswith(("_", "/")):
-        return None
-    return Path.cwd() / "local_hydra" / "local_experiment" / f"{item}.yaml"
-
-
-def _extract_distributed_preset_name(
-    cfg: dict, seen: set[Path] | None = None
-) -> str | None:
-    if seen is None:
-        seen = set()
-    defaults = cfg.get("defaults")
-    if not isinstance(defaults, list):
-        return None
-    for item in defaults:
-        if not isinstance(item, dict):
-            continue
-        val = item.get("/distributed") or item.get("override /distributed")
-        if isinstance(val, str) and val:
-            return val
-    for item in defaults:
-        parent_path = _resolve_local_experiment_parent(item)
-        if parent_path is None or parent_path in seen or not parent_path.exists():
-            continue
-        seen.add(parent_path)
-        parent_raw = OmegaConf.to_container(OmegaConf.load(parent_path), resolve=False)
-        if not isinstance(parent_raw, dict):
-            continue
-        result = _extract_distributed_preset_name(parent_raw, seen)
-        if result:
-            return result
-    return None
-
-
-def _extract_distributed_override_name(overrides: list[str]) -> str | None:
-    for override in reversed(overrides):
-        norm = normalized_override(override)
-        if norm.startswith(("distributed=", "/distributed=")):
-            value = norm.split("=", 1)[1].strip()
-            return value or None
-    return None
-
-
-def _load_distributed_cfg(name: str) -> dict:
-    cfg_root = Path(__file__).resolve().parents[2] / "configs"
-    candidate_paths = [
-        cfg_root / "distributed" / f"{name}.yaml",
-        Path.cwd() / "local_hydra" / "distributed" / f"{name}.yaml",
-    ]
-    external_config_root = os.environ.get("AUTOCAST_CONFIG_PATH")
-    if external_config_root:
-        candidate_paths.append(
-            Path(external_config_root) / "distributed" / f"{name}.yaml"
-        )
-    for path in candidate_paths:
-        if not path.exists():
-            continue
-        loaded = OmegaConf.to_container(OmegaConf.load(path), resolve=False)
-        return loaded if isinstance(loaded, dict) else {}
-    return {}
-
-
-def _extract_launcher_cfg(cfg: dict) -> dict:
-    hydra_cfg = cfg.get("hydra")
-    if not isinstance(hydra_cfg, dict):
-        return {}
-    launcher_cfg = hydra_cfg.get("launcher")
-    return launcher_cfg if isinstance(launcher_cfg, dict) else {}
-
-
-def _load_launcher_from_file(path: Path) -> dict:
-    if not path.exists():
-        return {}
-    # Do not resolve the whole experiment config here; it may contain
-    # interpolations that are valid only during full Hydra composition
-    # (e.g. model.processor.n_steps_input -> datamodule.n_steps_input).
-    # We only need the hydra.launcher subtree for submission defaults.
-    raw = OmegaConf.to_container(OmegaConf.load(path), resolve=False)
-    if not isinstance(raw, dict):
-        return {}
-    distributed = _extract_distributed_preset_name(raw)
-    merged = (
-        OmegaConf.merge(_load_distributed_cfg(distributed), OmegaConf.create(raw))
-        if distributed
-        else OmegaConf.create(raw)
-    )
-    cfg = OmegaConf.to_container(merged, resolve=False)
-    if not isinstance(cfg, dict):
-        return {}
-    return _extract_launcher_cfg(cfg)
-
-
-def _load_direct_distributed_launcher_cfg(overrides: list[str]) -> dict:
-    distributed = _extract_distributed_override_name(overrides)
-    if distributed is None:
-        return {}
-    return _extract_launcher_cfg(_load_distributed_cfg(distributed))
-
-
-def _load_preset_launcher_cfg(overrides: list[str]) -> dict:
-    """Load ``hydra.launcher`` mapping from selected experiment preset.
-
-    Supports both ``local_experiment=<name>`` and ``experiment=<name>``.
-    ``local_experiment`` has precedence if both are provided.
+    Uses Hydra's Compose API so that interpolations are resolved against the
+    full config tree (including CLI overrides).
     """
-    local_experiment = _extract_local_experiment_name(overrides)
-    if local_experiment:
-        local_cfg_path = (
-            Path.cwd() / "local_hydra" / "local_experiment" / f"{local_experiment}.yaml"
+    config_dir = get_default_config_path()
+    # Remove CLI flags that Hydra doesn't understand.
+    _, compose_overrides = _split_hydra_cli_args(overrides)
+    with initialize_config_dir(config_dir=config_dir, version_base=None):
+        cfg = compose(
+            config_name=config_name,
+            overrides=compose_overrides,
+            return_hydra_config=True,
         )
-        local_launcher_cfg = _load_launcher_from_file(local_cfg_path)
-        if local_launcher_cfg:
-            return local_launcher_cfg
-
-    experiment_name = extract_override_value(overrides, "experiment")
-    if isinstance(experiment_name, str) and experiment_name:
-        experiment_cfg_path = (
-            Path(__file__).resolve().parents[2]
-            / "configs"
-            / "experiment"
-            / f"{experiment_name}.yaml"
-        )
-        experiment_launcher_cfg = _load_launcher_from_file(experiment_cfg_path)
-        if experiment_launcher_cfg:
-            return experiment_launcher_cfg
-
-        external_config_root = os.environ.get("AUTOCAST_CONFIG_PATH")
-        if external_config_root:
-            external_experiment_cfg_path = (
-                Path(external_config_root) / "experiment" / f"{experiment_name}.yaml"
-            )
-            external_experiment_launcher_cfg = _load_launcher_from_file(
-                external_experiment_cfg_path
-            )
-            if external_experiment_launcher_cfg:
-                return external_experiment_launcher_cfg
-
-    return {}
+        launcher = OmegaConf.to_container(cfg.hydra.launcher, resolve=True)
+        # launcher should always be a Dict but this makes type checking happy
+        return launcher if isinstance(launcher, dict) else {}
 
 
 def _resolve_launcher_submission_context(
+    config_name: str,
     overrides: list[str],
 ) -> tuple[dict, list[str]]:
-    launcher_name, launcher_override_cfg, module_overrides = extract_launcher_overrides(
-        overrides
-    )
-    preset_launcher_cfg = _load_preset_launcher_cfg(overrides)
-    direct_distributed_launcher_cfg = _load_direct_distributed_launcher_cfg(overrides)
-    launcher_cfg = load_launcher_defaults(launcher_name)
-    merged_launcher_cfg = OmegaConf.to_container(
-        OmegaConf.merge(
-            launcher_cfg,
-            preset_launcher_cfg,
-            direct_distributed_launcher_cfg,
-            launcher_override_cfg,
-        ),
-        resolve=True,
-    )
-    if not isinstance(merged_launcher_cfg, dict):
-        merged_launcher_cfg = {}
-    return merged_launcher_cfg, module_overrides
+    _, _, module_overrides = extract_launcher_overrides(overrides)
+    launcher_cfg = _get_launcher_cfg_via_compose(config_name, overrides)
+    return launcher_cfg, module_overrides
 
 
 def extract_launcher_overrides(
     overrides: list[str],
 ) -> tuple[str, dict, list[str]]:
     """Separate ``hydra/launcher`` and ``hydra.launcher.*`` from *overrides*.
+
+    This is necessary because when constructing a SLURM batch script, we don't
+    want to include the launcher-specific overrides inside the commands that
+    are executed (otherwise the job will try to submit another job, and so on.)
 
     Returns ``(launcher_name, launcher_specific_cfg, remaining_overrides)``.
     """
@@ -465,7 +297,7 @@ def submit_via_sbatch(  # noqa: PLR0915
 ) -> None:
     """Submit *module* as one or more SLURM jobs via ``sbatch``."""
     merged_launcher_cfg, module_overrides = _resolve_launcher_submission_context(
-        overrides
+        MODULE_CONFIG_NAMES[module], overrides
     )
 
     if dry_run:
@@ -618,21 +450,13 @@ def submit_manifest_via_sbatch(
     """
     umask_value = resolve_umask_from_overrides(overrides)
 
-    launcher_name, launcher_override_cfg, _ = extract_launcher_overrides(overrides)
-    preset_launcher_cfg = _load_preset_launcher_cfg(overrides)
-    direct_distributed_launcher_cfg = _load_direct_distributed_launcher_cfg(overrides)
-    launcher_cfg = load_launcher_defaults(launcher_name)
-    merged_launcher_cfg = OmegaConf.to_container(
-        OmegaConf.merge(
-            launcher_cfg,
-            preset_launcher_cfg,
-            direct_distributed_launcher_cfg,
-            launcher_override_cfg,
-        ),
-        resolve=True,
+    # The config name here doesn't *really* matter because we are just trying
+    # to get the value of `hydra.launcher`, and none of the base config names
+    # define that directly (they're only overridden inside e.g. local
+    # experiments with `/distributed` overrides).
+    merged_launcher_cfg = _get_launcher_cfg_via_compose(
+        "encoder_processor_decoder", overrides
     )
-    if not isinstance(merged_launcher_cfg, dict):
-        merged_launcher_cfg = {}
 
     setup_commands: list[str] = merged_launcher_cfg.get("setup", [])  # type: ignore[assignment]
     if not isinstance(setup_commands, list):

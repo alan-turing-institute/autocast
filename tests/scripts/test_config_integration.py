@@ -63,6 +63,21 @@ def test_multinode_distributed_config_sets_trainer_nodes(config_dir: str):
     assert cfg.trainer.strategy == "ddp"
 
 
+def test_distributed_config_sets_launcher(config_dir: str):
+    with initialize_config_dir(version_base=None, config_dir=config_dir):
+        cfg = compose(
+            config_name="encoder_processor_decoder",
+            overrides=["+distributed=ddp_4gpu_2node_slurm"],
+            return_hydra_config=True,
+        )
+    launcher = OmegaConf.to_container(cfg.hydra.launcher, resolve=True)
+    assert isinstance(launcher, dict)
+
+    assert launcher["nodes"] == 2
+    assert launcher["gpus_per_node"] == 4
+    assert launcher["tasks_per_node"] == 4
+
+
 # --- Parametrized tests over component configs ---
 
 
