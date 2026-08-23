@@ -87,6 +87,8 @@ evaluation:
     - fcrps
     - afcrps
     - energy
+    - spread
+    - skill
     - ssr
     - winkler
 

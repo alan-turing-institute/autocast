@@ -32,7 +32,7 @@ VISUAL_BATCH_INDICES="[0,1,2,3,4,5,6,7]"
 ROLLOUT_SNAPSHOT_TIMESTEPS="[0,4,12,30,99]"
 TEST_WINDOWS="[null]"
 ROLLOUT_WINDOWS="[[0,1],[0,4],[6,12],[13,30],[31,99]]"
-EVAL_METRICS="[mse,mae,nmse,nmae,rmse,nrmse,vmse,vrmse,linf,psrmse,psrmse_low,psrmse_mid,psrmse_high,psrmse_tail,pscc,pscc_low,pscc_mid,pscc_high,pscc_tail,crps,fcrps,afcrps,energy,ssr,winkler]"
+EVAL_METRICS="[mse,mae,nmse,nmae,rmse,nrmse,vmse,vrmse,linf,psrmse,psrmse_low,psrmse_mid,psrmse_high,psrmse_tail,pscc,pscc_low,pscc_mid,pscc_high,pscc_tail,crps,fcrps,afcrps,energy,spread,skill,ssr,winkler]"
 
 CRPS_RUN_DIR="${RUN_ROOT}/crps_vit_azula_large"
 CRPS_CHECKPOINT="${CRPS_RUN_DIR}/autocast/spy78y66/checkpoints/best-multiwinkler-overall-0255-0.0066.ckpt"
