@@ -173,3 +173,22 @@ def test_build_loss_func_with_real_config(config_dir: str):
     loss = _build_loss_func(cfg.model)
     # Should return a valid nn.Module
     assert hasattr(loss, "forward")
+
+
+def test_swe_crps_vit_concat_experiment_config(config_dir: str):
+    cfg = _load_config(
+        config_dir,
+        "encoder_processor_decoder",
+        overrides=["experiment=epd_crps_vit_concat_32"],
+    )
+
+    assert cfg.datamodule.n_steps_input == 1
+    assert cfg.datamodule.n_steps_output == 1
+    assert cfg.datamodule.stride == 1
+    assert cfg.datamodule.use_normalization is True
+    assert cfg.model.n_members == 8
+    assert cfg.model.processor.spatial_resolution == [32, 32]
+    assert cfg.model.processor.patch_size == 1
+    assert cfg.model.processor.n_noise_channels is None
+    assert cfg.model.input_noise_injector.n_channels == 1
+    assert cfg.trainer.max_epochs == 50
