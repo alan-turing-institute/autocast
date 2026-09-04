@@ -262,6 +262,35 @@ def test_swe_crps_vit_residual_experiments_match(config_dir: str):
     assert configs[1].model.processor.n_noise_channels == 16
 
 
+@pytest.mark.parametrize(
+    "experiment",
+    [
+        "epd_crps_vit_concat_residual_32",
+        "epd_crps_vit_adaln_residual_32",
+    ],
+)
+def test_swe_crps_residual_experiments_accept_deterministic_data(
+    config_dir: str, experiment: str
+):
+    cfg = _load_config(
+        config_dir,
+        "encoder_processor_decoder",
+        overrides=[
+            f"experiment={experiment}",
+            "datamodule=shallow_water2d_crps_deterministic_32",
+        ],
+    )
+
+    assert cfg.datamodule.data_path.endswith("/swe_crps_deterministic_32_128f_spinup5")
+    assert cfg.datamodule.n_steps_input == 1
+    assert cfg.datamodule.n_steps_output == 1
+    assert cfg.datamodule.stride == 1
+    assert cfg.datamodule.use_normalization is True
+    assert cfg.model.residual_prediction is True
+    assert cfg.model.residual_use_delta_stats is True
+    assert cfg.model.processor.zero_init_output is True
+
+
 def test_swe_crps_fno_concat_experiment_config(config_dir: str):
     cfg = _load_config(
         config_dir,
