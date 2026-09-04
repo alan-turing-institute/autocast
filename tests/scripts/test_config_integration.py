@@ -186,15 +186,54 @@ def test_swe_crps_vit_concat_experiment_config(config_dir: str):
     assert cfg.datamodule.n_steps_output == 1
     assert cfg.datamodule.stride == 1
     assert cfg.datamodule.use_normalization is True
-    assert cfg.model.n_members == 8
+    assert cfg.model.n_members == 4
     assert cfg.model.processor.spatial_resolution == [32, 32]
     assert cfg.model.processor.patch_size == 1
+    assert cfg.model.processor.hidden_dim == 64
+    assert cfg.model.processor.n_layers == 4
     assert cfg.model.processor.n_noise_channels is None
     assert cfg.model.input_noise_injector.n_channels == 1
     assert cfg.trainer.max_epochs == 50
+    assert cfg.trainer.max_steps == 1024
+    assert cfg.trainer.limit_val_batches == 4
+    assert cfg.trainer.num_sanity_val_steps == 0
     assert all(
         callback._target_ != "autocast.callbacks.ema.EMACallback"
         for callback in cfg.trainer.callbacks
+    )
+
+
+def test_swe_crps_vit_adaln_experiment_matches_concat(config_dir: str):
+    concat_cfg = _load_config(
+        config_dir,
+        "encoder_processor_decoder",
+        overrides=["experiment=epd_crps_vit_concat_32"],
+    )
+    adaln_cfg = _load_config(
+        config_dir,
+        "encoder_processor_decoder",
+        overrides=["experiment=epd_crps_vit_adaln_32"],
+    )
+
+    backbone_keys = [
+        "spatial_resolution",
+        "patch_size",
+        "hidden_dim",
+        "num_heads",
+        "n_layers",
+    ]
+    for key in backbone_keys:
+        assert concat_cfg.model.processor[key] == adaln_cfg.model.processor[key]
+    assert concat_cfg.model.n_members == adaln_cfg.model.n_members == 4
+    assert concat_cfg.model.input_noise_injector.n_channels == 1
+    assert concat_cfg.model.processor.n_noise_channels is None
+    assert adaln_cfg.model.get("input_noise_injector") is None
+    assert adaln_cfg.model.processor.n_noise_channels == 16
+    assert adaln_cfg.trainer.max_steps == concat_cfg.trainer.max_steps == 1024
+    assert adaln_cfg.trainer.limit_val_batches == 4
+    assert all(
+        callback._target_ != "autocast.callbacks.ema.EMACallback"
+        for callback in adaln_cfg.trainer.callbacks
     )
 
 
