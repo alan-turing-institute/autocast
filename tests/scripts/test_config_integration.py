@@ -237,6 +237,31 @@ def test_swe_crps_vit_adaln_experiment_matches_concat(config_dir: str):
     )
 
 
+def test_swe_crps_vit_residual_experiments_match(config_dir: str):
+    configs = [
+        _load_config(
+            config_dir,
+            "encoder_processor_decoder",
+            overrides=[f"experiment={experiment}"],
+        )
+        for experiment in (
+            "epd_crps_vit_concat_residual_32",
+            "epd_crps_vit_adaln_residual_32",
+        )
+    ]
+
+    for cfg in configs:
+        assert cfg.model.residual_prediction is True
+        assert cfg.model.residual_use_delta_stats is True
+        assert cfg.model.processor.zero_init_output is True
+        assert cfg.model.n_members == 4
+        assert cfg.trainer.max_steps == 1024
+    assert configs[0].model.input_noise_injector.n_channels == 1
+    assert configs[0].model.processor.n_noise_channels is None
+    assert configs[1].model.get("input_noise_injector") is None
+    assert configs[1].model.processor.n_noise_channels == 16
+
+
 def test_swe_crps_fno_concat_experiment_config(config_dir: str):
     cfg = _load_config(
         config_dir,

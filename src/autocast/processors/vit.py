@@ -328,6 +328,7 @@ class AViTProcessor(Processor[EncodedBatch]):
         loss_func: nn.Module | None = None,
         n_noise_channels: int | None = None,
         patch_size: int | None = None,
+        zero_init_output: bool = False,
     ):
         super().__init__()
         self.n_spatial_dims = len(spatial_resolution)
@@ -345,6 +346,20 @@ class AViTProcessor(Processor[EncodedBatch]):
             n_noise_channels=n_noise_channels,
             patch_size=patch_size,
         )
+
+        if zero_init_output:
+            output_layers = [
+                module
+                for module in self.model.debed.modules()
+                if isinstance(
+                    module,
+                    (nn.ConvTranspose1d, nn.ConvTranspose2d, nn.ConvTranspose3d),
+                )
+            ]
+            output_layer = output_layers[-1]
+            nn.init.zeros_(output_layer.weight)
+            if output_layer.bias is not None:
+                nn.init.zeros_(output_layer.bias)
 
         self.loss_func = loss_func or nn.MSELoss()
         self.n_noise_channels = n_noise_channels

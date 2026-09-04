@@ -4,6 +4,7 @@ import lightning as L
 import pytest
 import torch
 from conftest import CondCaptureProcessor, get_optimizer_config
+from the_well.data.normalization import ZScoreNormalization
 from torch import nn
 
 from autocast.decoders.channels_last import ChannelsLast
@@ -90,6 +91,43 @@ def test_encoder_processor_decoder_training_step_runs(make_toy_batch, dummy_load
         limit_train_batches=1,
         accelerator="cpu",
     ).fit(model, train_dataloaders=dummy_loader, val_dataloaders=dummy_loader)
+
+
+def test_residual_prediction_uses_delta_normalization(make_toy_batch):
+    batch = make_toy_batch(batch_size=2, t_in=1, t_out=1, c=2)
+    batch.input_fields.fill_(0.0)
+
+    encoder = PermuteConcat(in_channels=2, n_steps_input=1, with_constants=False)
+    decoder = ChannelsLast(output_channels=2, time_steps=1)
+    encoder_decoder = EncoderDecoder(encoder=encoder, decoder=decoder)
+    processor = TinyProcessor(in_channels=2, out_channels=2)
+    nn.init.zeros_(processor.conv.weight)
+    assert processor.conv.bias is not None
+    nn.init.zeros_(processor.conv.bias)
+
+    model = EncoderProcessorDecoder(
+        encoder_decoder=encoder_decoder,
+        processor=processor,
+        optimizer_config=get_optimizer_config(),
+        residual_prediction=True,
+        norm=ZScoreNormalization(
+            stats={
+                "mean": {"U": 10.0, "V": -2.0},
+                "std": {"U": 2.0, "V": 4.0},
+                "mean_delta": {"U": 1.0, "V": -2.0},
+                "std_delta": {"U": 0.5, "V": 0.25},
+            },
+            core_field_names=["U", "V"],
+            core_constant_field_names=[],
+        ),
+    )
+
+    prediction = model(batch)
+
+    expected = torch.empty_like(prediction)
+    expected[..., 0] = 0.5
+    expected[..., 1] = -0.5
+    assert torch.allclose(prediction, expected)
 
 
 def test_global_cond_passes_from_encoder_to_processor():

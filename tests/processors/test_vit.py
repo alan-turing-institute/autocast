@@ -49,6 +49,26 @@ def test_vit_processor(encoded_batch, encoded_dummy_loader):
     )
 
 
+def test_vit_processor_can_zero_initialize_output(encoded_batch):
+    input_channels = encoded_batch.encoded_inputs.shape[1]
+    output_channels = encoded_batch.encoded_output_fields.shape[1]
+    spatial_resolution = tuple(encoded_batch.encoded_output_fields.shape[2:])
+    processor = AViTProcessor(
+        in_channels=input_channels,
+        out_channels=output_channels,
+        spatial_resolution=spatial_resolution,
+        hidden_dim=32,
+        num_heads=4,
+        n_layers=1,
+        patch_size=1,
+        zero_init_output=True,
+    )
+
+    output = processor.map(encoded_batch.encoded_inputs, global_cond=None)
+
+    assert torch.count_nonzero(output) == 0
+
+
 def test_azula_vit_processor_5d_multistep():
     """Cached-latent path: T_in=1, T_out=4. Processor folds T into C internally.
 

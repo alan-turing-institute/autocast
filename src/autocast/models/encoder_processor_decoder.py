@@ -47,6 +47,8 @@ class EncoderProcessorDecoder(
         test_metrics: Sequence[Metric] | None = None,
         input_noise_injector: NoiseInjector | None = None,
         norm: ZScoreNormalization | None = None,
+        residual_prediction: bool = False,
+        residual_use_delta_stats: bool = True,
         **kwargs: Any,
     ) -> None:
         super().__init__()
@@ -61,6 +63,8 @@ class EncoderProcessorDecoder(
         self.freeze_encoder_decoder = freeze_encoder_decoder
         self.input_noise_injector = input_noise_injector
         self.norm = norm
+        self.residual_prediction = residual_prediction
+        self.residual_use_delta_stats = residual_use_delta_stats
 
         if self.train_in_latent_space or self.freeze_encoder_decoder:
             self.encoder_decoder.freeze()
@@ -95,11 +99,34 @@ class EncoderProcessorDecoder(
             state_dict.pop("_metadata", None)
 
     def forward(self, batch: Batch) -> TensorBTSC | TensorBTSCM:
+        latest_input = batch.input_fields[:, -1:, ...]
         batch = self._apply_input_noise(batch)
         encoded, global_cond = self.encoder_decoder.encoder.encode_with_cond(batch)
         mapped = self.processor.map(encoded, global_cond)
         decoded = self.encoder_decoder.decoder.decode(mapped)
+        if self.residual_prediction:
+            decoded = self._add_residual_to_latest_input(decoded, latest_input)
         return decoded
+
+    def _add_residual_to_latest_input(
+        self, residual: TensorBTSC, latest_input: TensorBTSC
+    ) -> TensorBTSC:
+        """Convert a predicted residual into a normalized next-state prediction."""
+        if residual.shape[-1] != latest_input.shape[-1]:
+            msg = (
+                "Residual prediction requires matching state channels: "
+                f"got {residual.shape[-1]} outputs and "
+                f"{latest_input.shape[-1]} inputs."
+            )
+            raise ValueError(msg)
+
+        if self.norm is None or not self.residual_use_delta_stats:
+            return latest_input + residual
+
+        current_state = self.denormalize_tensor(latest_input)
+        physical_delta = self.denormalize_tensor(residual, delta=True)
+        next_state = current_state + physical_delta
+        return self.norm.normalize_flattened(next_state, "variable")
 
     def loss(self, batch: Batch) -> tuple[Tensor, Tensor | None]:
         if self.train_in_latent_space:

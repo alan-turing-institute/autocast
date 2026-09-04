@@ -723,6 +723,8 @@ def setup_epd_model(
         "loss_func": loss_func,
         "input_noise_injector": noise_injector,
         "norm": norm,
+        "residual_prediction": model_config.get("residual_prediction", False),
+        "residual_use_delta_stats": model_config.get("residual_use_delta_stats", True),
     }
     _maybe_add_metric_overrides(kwargs, model_config)
     if is_ensemble:
