@@ -1,0 +1,29 @@
+_target_: lightning.pytorch.trainer.trainer.Trainer
+max_time: "00:12:00:00"
+accelerator: auto
+strategy: auto
+num_nodes: 1
+devices: 1
+log_every_n_steps: 10
+enable_checkpointing: true
+detect_anomaly: false
+default_root_dir: null
+gradient_clip_val: null
+
+# Keep the two checkpoints needed to resume and select these short comparison
+# runs. EMA and the optional calibration-specific checkpoints in the default
+# trainer are deliberately omitted while the CRPS experiment is being scoped.
+callbacks:
+  - _target_: autocast.callbacks.checkpoint.ProgressModelCheckpoint
+    save_top_k: -1
+    every_n_train_steps_fraction: 0.05
+    save_last: true
+    filename: "snapshot-{progress_token}-{epoch:04d}-{step:08d}"
+    auto_insert_metric_name: false
+  - _target_: lightning.pytorch.callbacks.ModelCheckpoint
+    monitor: val_loss
+    mode: min
+    save_top_k: 1
+    save_last: false
+    filename: "best-val-{epoch:04d}-{val_loss:.4f}"
+    auto_insert_metric_name: false

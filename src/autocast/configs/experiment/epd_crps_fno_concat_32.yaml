@@ -4,11 +4,11 @@ defaults:
   - override /trainer: crps_no_ema
   - override /encoder@model.encoder: permute_concat
   - override /decoder@model.decoder: channels_last
-  - override /processor@model.processor: vit
+  - override /processor@model.processor: fno
   - override /input_noise_injector@model.input_noise_injector: concat
   - _self_
 
-experiment_name: epd_crps_vit_concat_32
+experiment_name: epd_crps_fno_concat_32
 
 optimizer:
   learning_rate: 1.0e-3
@@ -44,12 +44,9 @@ model:
     n_channels: 1
     std: 1.0
   processor:
-    spatial_resolution: [32, 32]
-    hidden_dim: 128
-    num_heads: 4
-    n_layers: 4
-    n_noise_channels: null
-    patch_size: 1
+    n_modes: [12, 12]
+    hidden_channels: 32
+    n_layers: 3
 
 trainer:
   max_epochs: 50
