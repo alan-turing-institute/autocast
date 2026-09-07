@@ -123,22 +123,24 @@ convention = "google"
 [tool.ruff.lint.per-file-ignores]
 "tests/*.py" = ["D"]
 
-# https://docs.astral.sh/uv/guides/integration/pytorch/#using-a-pytorch-index
-# CUDA wheels (used automatically on GH if available)
+# Temporary Spark experiment override. autoemulate and autosim also declare
+# PyTorch source indexes, so ignore those declarations and select cu130 here.
+# TODO: restore selectable cu126/cu130 backends before merging this branch.
+[tool.uv]
+no-sources-package = ["torch", "torchvision"]
+index-strategy = "unsafe-best-match"
+constraint-dependencies = [
+    "torch==2.10.0+cu130; sys_platform == 'linux' or sys_platform == 'win32'",
+    "torchvision==0.25.0+cu130; sys_platform == 'linux' or sys_platform == 'win32'",
+]
+
 [[tool.uv.index]]
-name = "pytorch-cu126"
-url = "https://download.pytorch.org/whl/cu126"
-explicit = true
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
 
 [tool.uv.sources]
 autoemulate = { git = "https://github.com/alan-turing-institute/autoemulate.git" }
 autosim = { git = "https://github.com/alan-turing-institute/autosim.git" }
-torch = [
-    { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
-]
-torchvision = [
-    { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
-]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
