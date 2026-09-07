@@ -99,6 +99,10 @@ num_nodes: 1
 # Rollout settings
 max_rollout_steps: 10
 free_running_only: true
+# Probability of advancing a rollout with the matching ground-truth state.
+# Set free_running_only=false and teacher_forcing_ratio=1.0 for a sequence of
+# independent one-step forecasts along a ground-truth trajectory.
+teacher_forcing_ratio: 0.0
 
 # Inference benchmark settings (synthetic batch with matching tensor shapes)
 benchmark:

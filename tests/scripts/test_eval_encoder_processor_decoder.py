@@ -52,6 +52,7 @@ from autocast.scripts.eval.encoder_processor_decoder import (
     _resolve_rollout_batch_limit,
     _resolve_rollout_channel_names,
     _resolve_rollout_timestep_limit,
+    _resolve_teacher_forcing_ratio,
     _should_skip_metric,
     _split_metric_and_metadata_rows,
     _training_runtime_rows,
@@ -85,6 +86,23 @@ def test_resolve_rollout_batch_limit_prefers_explicit_rollout_limit():
     )
 
     assert _resolve_rollout_batch_limit(eval_cfg) == 5
+
+
+def test_resolve_teacher_forcing_ratio_accepts_explicit_teacher_forcing():
+    eval_cfg = OmegaConf.create(
+        {"free_running_only": False, "teacher_forcing_ratio": 1.0}
+    )
+
+    assert _resolve_teacher_forcing_ratio(eval_cfg) == 1.0
+
+
+def test_resolve_teacher_forcing_ratio_rejects_conflicting_settings():
+    eval_cfg = OmegaConf.create(
+        {"free_running_only": True, "teacher_forcing_ratio": 1.0}
+    )
+
+    with pytest.raises(ValueError, match="free_running_only=false"):
+        _resolve_teacher_forcing_ratio(eval_cfg)
 
 
 def test_crop_rollout_batch_start_shifts_raw_full_trajectory_batch():
@@ -658,6 +676,38 @@ def test_render_rollouts_resolves_indices_within_batched_samples(tmp_path, monke
     assert len(captured_paths) == 4
     for idx in range(4):
         assert any(f"batch_{idx}_sample_{idx}.mp4" in p for p in captured_paths)
+
+
+def test_render_rollouts_forwards_teacher_forcing_ratio(tmp_path, monkeypatch):
+    rollout_kwargs: dict[str, Any] = {}
+
+    class DummyModel:
+        def rollout(self, *_args, **kwargs):
+            rollout_kwargs.update(kwargs)
+            preds = torch.zeros(1, 2, 2, 2, 1)
+            return preds, torch.ones_like(preds)
+
+    monkeypatch.setattr(
+        "autocast.scripts.eval.encoder_processor_decoder.plot_spatiotemporal_video",
+        lambda **_kwargs: None,
+    )
+
+    _render_rollouts(
+        model=cast(Any, DummyModel()),
+        dataloader=[object()],
+        batch_indices=[0],
+        video_dir=tmp_path,
+        sample_index=0,
+        fmt="mp4",
+        fps=5,
+        stride=1,
+        max_rollout_steps=2,
+        free_running_only=False,
+        teacher_forcing_ratio=1.0,
+    )
+
+    assert rollout_kwargs["free_running_only"] is False
+    assert rollout_kwargs["teacher_forcing_ratio"] == 1.0
 
 
 def test_render_rollouts_can_use_custom_rollout_predict(tmp_path, monkeypatch):

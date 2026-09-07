@@ -242,6 +242,7 @@ def _build_encode_once_rollout_predict(
     device: Any,
     compare_to_autoencoded_target: bool = False,
     rollout_start: int = 0,
+    teacher_forcing_ratio: float = 0.0,
 ) -> Callable[[Any], tuple[torch.Tensor, torch.Tensor | None]]:
     """Build a rollout closure that encodes once and compares against raw truth.
 
@@ -287,6 +288,7 @@ def _build_encode_once_rollout_predict(
                 encoded_batch,
                 stride=rollout_stride,
                 max_rollout_steps=max_rollout_steps,
+                teacher_forcing_ratio=teacher_forcing_ratio,
                 free_running_only=free_running_only,
                 n_members=n_members if n_members and n_members > 1 else None,
             )
@@ -429,6 +431,22 @@ def _resolve_rollout_batch_limit(eval_cfg: DictConfig) -> int | None:
     if max_rollout_batches is None:
         return max_test_batches
     return max_rollout_batches
+
+
+def _resolve_teacher_forcing_ratio(eval_cfg: DictConfig) -> float:
+    """Validate the teacher-forcing settings used by rollout evaluation."""
+    ratio = float(eval_cfg.get("teacher_forcing_ratio", 0.0))
+    if not 0.0 <= ratio <= 1.0:
+        msg = f"eval.teacher_forcing_ratio must be in [0, 1], got {ratio}."
+        raise ValueError(msg)
+    if bool(eval_cfg.get("free_running_only", True)) and ratio > 0.0:
+        msg = (
+            "eval.teacher_forcing_ratio must be 0 when "
+            "eval.free_running_only=true. Set eval.free_running_only=false "
+            "to enable teacher forcing."
+        )
+        raise ValueError(msg)
+    return ratio
 
 
 def _resolve_rollout_timestep_limit(
@@ -755,6 +773,7 @@ def _render_rollouts(  # noqa: PLR0912, PLR0915
     snapshot_channels: Sequence[int] | None = None,
     member_indices: Sequence[int] | None = None,
     member_render_mode: str = DEFAULT_ROLLOUT_MEMBER_RENDER_MODE,
+    teacher_forcing_ratio: float = 0.0,
 ) -> list[Path]:
     # Return early if no rollout indices are requested
     if not batch_indices:
@@ -784,6 +803,7 @@ def _render_rollouts(  # noqa: PLR0912, PLR0915
                     batch,
                     stride=stride,
                     max_rollout_steps=max_rollout_steps,
+                    teacher_forcing_ratio=teacher_forcing_ratio,
                     free_running_only=free_running_only,
                     n_members=n_members if n_members and n_members > 1 else None,
                 )
@@ -2452,6 +2472,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     eval_batch_size: int = eval_cfg.get("batch_size", 1)
     max_test_batches = eval_cfg.get("max_test_batches")
     max_rollout_batches = _resolve_rollout_batch_limit(eval_cfg)
+    teacher_forcing_ratio = _resolve_teacher_forcing_ratio(eval_cfg)
     requested_eval_mode = _normalize_eval_mode(eval_cfg.get("mode"))
     eval_mode = requested_eval_mode
     latent_space_metrics = bool(eval_cfg.get("latent_space_metrics", False))
@@ -2902,6 +2923,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                     n_members=n_members if n_members and n_members > 1 else None,
                     device=fabric.device,
                     rollout_start=rollout_start,
+                    teacher_forcing_ratio=teacher_forcing_ratio,
                 )
                 if resolved_eval_path == EVAL_PATH_ENCODE_ONCE
                 else None
@@ -2929,6 +2951,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 snapshot_channels=rollout_snapshot_channels,
                 member_indices=rollout_member_indices,
                 member_render_mode=rollout_member_render_mode,
+                teacher_forcing_ratio=teacher_forcing_ratio,
             )
 
         # Prepare metric functions for rollouts
@@ -2993,6 +3016,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                     batch,
                     stride=rollout_stride,
                     max_rollout_steps=max_rollout_steps,
+                    teacher_forcing_ratio=teacher_forcing_ratio,
                     free_running_only=eval_cfg.get("free_running_only", True),
                     n_members=n_members if n_members and n_members > 1 else None,
                 )
@@ -3027,6 +3051,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                         device=fabric.device,
                         compare_to_autoencoded_target=compare_to_autoencoded_target,
                         rollout_start=rollout_start,
+                        teacher_forcing_ratio=teacher_forcing_ratio,
                     )
                 return _standard_rollout_predict
 

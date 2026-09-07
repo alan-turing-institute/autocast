@@ -120,6 +120,31 @@ On SLURM, `srun` propagates `LOCAL_RANK` / `WORLD_SIZE` into the
 process so Fabric DDP initialises automatically — no extra flags needed.
 - `max_rollout_steps`: Maximum number of rollout steps
 - `free_running_only`: Whether to disable teacher forcing
+- `teacher_forcing_ratio`: Probability of advancing with the matching
+  ground-truth state. For a fully teacher-forced sequence, set
+  `eval.free_running_only=false eval.teacher_forcing_ratio=1.0`.
+
+## Shallow-water CRPS diagnostics
+
+The dedicated diagnostic command reports physical-space forecast fit, spread,
+high-wavenumber member-anomaly energy, neighbour correlation, and the
+divergence-to-vorticity ratio over a test trajectory. A fully teacher-forced
+32 by 32 evaluation can be run with:
+
+```bash
+uv run evaluate_swe_crps \
+  experiment=epd_crps_vit_concat_residual_32 \
+  datamodule=shallow_water2d_crps_deterministic_32 \
+  eval.checkpoint=/path/to/checkpoint.ckpt \
+  eval.n_members=8 \
+  eval.max_rollout_steps=100 \
+  eval.free_running_only=false \
+  eval.teacher_forcing_ratio=1.0
+```
+
+Results are printed and written to `swe_crps_diagnostics.json` in the Hydra
+run directory. The 32 by 32 high-wavenumber cutoff defaults to 6. For 64 by 64
+data, use `+swe_crps.high_k_cutoff=14`.
 
 ## Evaluation modes
 

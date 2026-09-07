@@ -55,6 +55,7 @@ autocast = "autocast.scripts.workflow:main"
 train_encoder_processor_decoder = "autocast.scripts.train.encoder_processor_decoder:main"
 train_autoencoder = "autocast.scripts.train.autoencoder:main"
 evaluate_encoder_processor_decoder = "autocast.scripts.eval.encoder_processor_decoder:main"
+evaluate_swe_crps = "autocast.scripts.eval.swe_crps_diagnostics:main"
 cache_latents = "autocast.scripts.cache_latents:main"
 
 [build-system]
