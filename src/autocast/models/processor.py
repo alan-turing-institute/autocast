@@ -35,6 +35,7 @@ class ProcessorModel(
         self,
         processor: Processor,
         stride: int = 1,
+        supports_rollout: bool = True,
         loss_func: nn.Module | None = None,
         optimizer_config: DictConfig | dict[str, Any] | None = None,
         train_metrics: Sequence[Metric] | None = [],
@@ -47,6 +48,7 @@ class ProcessorModel(
         super().__init__()
         self.processor = processor  # Register nn.Module parameters
         self.stride = stride
+        self.supports_rollout = supports_rollout
         self.loss_func = loss_func or nn.MSELoss()
         self.optimizer_config = optimizer_config
         self.train_metrics = self._build_metrics(train_metrics, "train_")

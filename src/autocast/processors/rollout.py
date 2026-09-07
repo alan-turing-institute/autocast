@@ -14,6 +14,14 @@ from autocast.types.batch import BatchT
 class RolloutMixin(ABC, Generic[BatchT]):
     """Rollout logic for generic batches."""
 
+    #: Whether this model can be fed its own predictions back in as inputs.
+    #: Autoregressive rollout requires output fields to match input fields
+    #: (same channels and spatial resolution). Models whose output fields
+    #: differ from their input fields (e.g. downscaling, or asymmetric
+    #: multi-modal/conditioned inputs) should set this to False and use
+    #: one-shot (non-rollout) training/evaluation instead.
+    supports_rollout: bool = True
+
     def rollout(
         self,
         batch: BatchT,
@@ -59,6 +67,17 @@ class RolloutMixin(ABC, Generic[BatchT]):
 
             requiring that the stride equals n_steps_output.
         """
+        if not self.supports_rollout:
+            msg = (
+                "This model has supports_rollout=False and cannot perform "
+                "autoregressive rollout. This is expected for models whose "
+                "output fields differ from their input fields (e.g. spatial "
+                "or temporal downscaling, or asymmetric multi-modal/"
+                "conditioned inputs). Use one-shot (non-rollout) training/"
+                "evaluation instead."
+            )
+            raise NotImplementedError(msg)
+
         pred_outs: list[Tensor] = []
         true_outs: list[Tensor] = []
         current_batch = self._clone_batch(batch)
@@ -93,7 +112,20 @@ class RolloutMixin(ABC, Generic[BatchT]):
             if next_inputs.shape[1] < stride:
                 break
 
-            current_batch = self._advance_batch(current_batch, next_inputs, stride)
+            try:
+                current_batch = self._advance_batch(current_batch, next_inputs, stride)
+            except RuntimeError as err:
+                msg = (
+                    "Failed to advance the rollout window: the model's "
+                    "predicted output shape is not compatible with its input "
+                    "shape. Autoregressive rollout requires output fields to "
+                    "match input fields (same channels and spatial "
+                    "resolution). If this model performs downscaling or has "
+                    "output fields that differ from its input fields, set "
+                    "supports_rollout=False and use one-shot (non-rollout) "
+                    "training/evaluation instead."
+                )
+                raise ValueError(msg) from err
 
         # Construct rollout outputs
         preds = torch.stack(pred_outs, dim=1)  # (B, R, T, spatial, C)

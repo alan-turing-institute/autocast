@@ -10,9 +10,10 @@ from torch.utils.data import DataLoader, Dataset
 from autocast.models.processor import ProcessorModel
 from autocast.nn.unet import TemporalUNetBackbone
 from autocast.nn.vit import TemporalViTBackbone
+from autocast.processors.base import Processor
 from autocast.processors.diffusion import DiffusionProcessor
 from autocast.processors.flow_matching import FlowMatchingProcessor
-from autocast.types import EncodedBatch
+from autocast.types import EncodedBatch, Tensor
 
 
 def _single_item_collate(items):
@@ -490,6 +491,66 @@ def test_processor_ignores_global_cond_when_disabled():
     assert torch.allclose(output_no_cond, output_with_cond), (
         "Output changed despite global_cond being disabled"
     )
+
+
+# --- supports_rollout tests ---
+
+
+class _MismatchedChannelsProcessor(Processor[EncodedBatch]):
+    """Processor whose `map` output has a different channel count than its input."""
+
+    def __init__(self, out_channels: int) -> None:
+        super().__init__()
+        self.out_channels = out_channels
+
+    def map(self, x: Tensor, global_cond: Tensor | None = None) -> Tensor:  # noqa: ARG002
+        b, t = x.shape[0], x.shape[1]
+        spatial = x.shape[2:-1]
+        return torch.randn(b, t, *spatial, self.out_channels, device=x.device)
+
+    def loss(self, batch: EncodedBatch) -> Tensor:
+        return torch.zeros((), device=batch.encoded_inputs.device)
+
+
+def test_processor_model_supports_rollout_defaults_to_true():
+    processor = _build_diffusion_processor()
+    model = ProcessorModel(processor=processor, optimizer_config=get_optimizer_config())
+    assert model.supports_rollout is True
+
+
+def test_processor_model_supports_rollout_false_blocks_rollout():
+    """`supports_rollout=False` should fail fast instead of attempting rollout."""
+    processor = _build_diffusion_processor()
+    model = ProcessorModel(
+        processor=processor,
+        optimizer_config=get_optimizer_config(),
+        supports_rollout=False,
+    )
+    batch = _make_encoded_batch()
+
+    with pytest.raises(NotImplementedError, match="supports_rollout=False"):
+        model.rollout(batch, stride=1)
+
+
+def test_processor_model_rollout_shape_mismatch_raises_clear_error():
+    """A rollout-incompatible output shape should raise a clear ValueError.
+
+    (rather than an opaque `RuntimeError` from deep inside `torch.cat`).
+    """
+    processor = _MismatchedChannelsProcessor(out_channels=6)
+    model = ProcessorModel(processor=processor, optimizer_config=get_optimizer_config())
+
+    # n_steps_input=2, stride=1 keeps a non-empty `remaining_inputs` window so
+    # `_advance_batch` actually needs to concatenate mismatched channel counts.
+    batch = EncodedBatch(
+        encoded_inputs=torch.randn(2, 2, 8, 8, 4),
+        encoded_output_fields=torch.randn(2, 4, 8, 8, 4),
+        global_cond=None,
+        encoded_info={},
+    )
+
+    with pytest.raises(ValueError, match="not compatible with its input shape"):
+        model.rollout(batch, stride=1, max_rollout_steps=2, return_windows=True)
 
 
 def test_temporal_vit_uses_precomputed_modulation_without_embedding_params():
