@@ -7,6 +7,7 @@ from .batch import (
     EncodedSample,
     Sample,
 )
+from .spec import FieldSpec, IOSpec
 from .types import (
     ArrayLike,
     Input,
@@ -33,6 +34,8 @@ __all__ = [
     "BatchT",
     "EncodedBatch",
     "EncodedSample",
+    "FieldSpec",
+    "IOSpec",
     "Input",
     "RolloutOutput",
     "Sample",
