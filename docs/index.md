@@ -14,9 +14,22 @@ This website provides detailed documentation on how to use `AutoCast`, including
 Our installation guide will get you up and running in no time
 :::
 
-:::{grid-item-card} 📚 Tutorials
-:link: https://alan-turing-institute.github.io/autocast/tutorial
-Learn how to use AutoCast with our in-depth tutorial
+:::{grid-item-card} ⚡ Python quickstart
+:link: tutorials/quickstart
+:link-type: doc
+Generate data, train with Lightning and plot your first forecast
+:::
+
+:::{grid-item-card} 🛠 CLI walkthrough
+:link: walkthrough/index
+:link-type: doc
+Follow a complete experiment from simulation to evaluation
+:::
+
+:::{grid-item-card} 📚 Focused notebooks
+:link: tutorials/index
+:link-type: doc
+Explore compression, forecasting models and uncertainty with small examples
 :::
 
 :::{grid-item-card} 👥 Contributing
