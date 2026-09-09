@@ -75,7 +75,9 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
                 Defaults to None.
             normalization_stats: Preloaded normalization statistics. Defaults to None.
             start_frame: Number of leading frames to remove from every trajectory
-                before constructing input/output windows. Defaults to 0.
+                before constructing input/output windows. This is an absolute
+                offset in the original data, including when reusing preloaded
+                tensors. Already removed frames cannot be restored. Defaults to 0.
         """
         self.dtype = dtype
         self.verbose = verbose
@@ -85,7 +87,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         self.normalization_stats = normalization_stats
         self.autoencoder_mode = autoencoder_mode
         self._channel_idxs_applied = False
-        self._start_frame_applied = False
+        self._applied_start_frame = 0
 
         if data_path is not None:
             self.read_data(data_path)
@@ -96,18 +98,32 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         if isinstance(start_frame, bool) or not isinstance(start_frame, int):
             msg = f"start_frame must be an integer, got {start_frame!r}."
             raise TypeError(msg)
-        if start_frame < 0 or (
-            not self._start_frame_applied and start_frame >= self.data.shape[1]
+        if (
+            isinstance(self._applied_start_frame, bool)
+            or not isinstance(self._applied_start_frame, int)
+            or self._applied_start_frame < 0
         ):
+            msg = "The preloaded frame offset must be a non-negative integer."
+            raise ValueError(msg)
+        if start_frame < self._applied_start_frame:
             msg = (
-                "start_frame must be in the range "
-                f"[0, {self.data.shape[1] - 1}], got {start_frame}."
+                f"start_frame={start_frame} is unavailable: the data already starts "
+                f"at frame {self._applied_start_frame}; "
+                "earlier frames cannot be restored."
             )
             raise ValueError(msg)
-        if not self._start_frame_applied:
-            if start_frame:
-                self.data = self.data[:, start_frame:]
-            self._start_frame_applied = True
+        relative_start = start_frame - self._applied_start_frame
+        if relative_start >= self.data.shape[1]:
+            msg = (
+                "start_frame must be in the range "
+                f"[{self._applied_start_frame}, "
+                f"{self._applied_start_frame + self.data.shape[1] - 1}], "
+                f"got {start_frame}."
+            )
+            raise ValueError(msg)
+        if relative_start:
+            self.data = self.data[:, relative_start:]
+        self._applied_start_frame = start_frame
 
         if channel_idxs is not None and not self._channel_idxs_applied:
             self.data = self.data[..., list(channel_idxs)]
@@ -245,6 +261,12 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             else None
         )
         self._channel_idxs_applied = bool(f.get("_channel_idxs_applied", False))
+        applied_start_frame = f.get("_applied_start_frame", 0)
+        self._applied_start_frame = (
+            applied_start_frame[()].item()
+            if isinstance(applied_start_frame, h5py.Dataset)
+            else applied_start_frame
+        )
 
     def read_data(self, data_path: str):
         """Read data.
@@ -269,7 +291,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             self.constant_scalars = data.get("constant_scalars", None)
             self.constant_fields = data.get("constant_fields", None)
             self._channel_idxs_applied = bool(data.get("_channel_idxs_applied", False))
-            self._start_frame_applied = bool(data.get("_start_frame_applied", False))
+            self._applied_start_frame = data.get("_applied_start_frame", 0)
             return
         msg = "No data provided to parse."
         raise ValueError(msg)
@@ -281,7 +303,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             "constant_scalars": self.constant_scalars,
             "constant_fields": self.constant_fields,
             "_channel_idxs_applied": self._channel_idxs_applied,
-            "_start_frame_applied": self._start_frame_applied,
+            "_applied_start_frame": self._applied_start_frame,
         }
 
     def __len__(self):  # noqa: D105
