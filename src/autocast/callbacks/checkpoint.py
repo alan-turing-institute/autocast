@@ -4,7 +4,7 @@ from typing import Any
 
 import lightning as L
 import torch
-from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.callbacks import ModelCheckpoint, Timer
 
 log = logging.getLogger(__name__)
 
@@ -168,6 +168,45 @@ class ProgressModelCheckpoint(ModelCheckpoint):
         )
 
     def _training_progress_fraction(self, trainer: L.Trainer) -> float:
+        """Fraction of the run completed, in [0, 1].
+
+        A run stops when *any* configured budget is exhausted, so progress
+        toward stopping is the maximum over the time- and step-based fractions.
+        This is what makes the windowed (``start_after_fraction`` /
+        ``stop_after_fraction``) checkpoints fire correctly on time-limited
+        runs: those set a large placeholder ``max_epochs`` and are actually
+        bounded by ``max_time``, so the step/epoch fraction stays near zero for
+        the whole run while the wall-clock fraction is the one that matters.
+        """
+        fractions = [self._step_progress_fraction(trainer)]
+        time_fraction = self._time_progress_fraction(trainer)
+        if time_fraction is not None:
+            fractions.append(time_fraction)
+        return max(fractions)
+
+    def _time_progress_fraction(self, trainer: L.Trainer) -> float | None:
+        """Wall-clock progress in [0, 1] when the run is time-limited, else None.
+
+        A ``Trainer(max_time=...)`` run is bounded by elapsed wall-clock rather
+        than by ``max_epochs``/``max_steps``. Lightning installs a ``Timer``
+        callback for such runs; it owns the authoritative, resume-safe elapsed
+        time and total duration. ``time_remaining`` returns ``None`` for a
+        duration-less Timer, which we treat as "no binding time budget" so the
+        caller falls back to step-based progress.
+        """
+        for callback in getattr(trainer, "callbacks", None) or []:
+            if not isinstance(callback, Timer):
+                continue
+            remaining = callback.time_remaining()
+            if remaining is None:
+                continue
+            elapsed = callback.time_elapsed()
+            total = elapsed + remaining
+            if total > 0:
+                return min(1.0, max(0.0, float(elapsed) / float(total)))
+        return None
+
+    def _step_progress_fraction(self, trainer: L.Trainer) -> float:
         try:
             total_steps = self._resolve_total_training_steps(trainer)
         except ValueError:

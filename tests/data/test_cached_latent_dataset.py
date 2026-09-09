@@ -1,11 +1,14 @@
 """Tests for CachedLatentDataset and its integration with EncodedDataModule."""
 
+import h5py
 import pytest
 import torch
 
 from autocast.data.encoded_dataset import (
     CachedLatentDataset,
     EncodedDataModule,
+    MiniWellDataModule,
+    MiniWellInputOutput,
 )
 from autocast.types.batch import EncodedBatch, EncodedSample
 from autocast.types.collation import collate_encoded_samples
@@ -115,6 +118,59 @@ def test_cached_dataset_collation_produces_encoded_batch(tmp_path):
     assert isinstance(batch, EncodedBatch)
     assert batch.encoded_inputs.shape == (3, 2, *spatial)
     assert batch.encoded_output_fields.shape == (3, 2, *spatial)
+
+
+def test_miniwell_input_output_preserves_global_cond(tmp_path):
+    file_path = tmp_path / "data.h5"
+    state = torch.randn(2, 6, 3, 4, 5)
+    labels = torch.randn(2, 6)
+    with h5py.File(file_path, "w") as h5:
+        h5.create_dataset("state", data=state.numpy())
+        h5.create_dataset("label", data=labels.numpy())
+
+    dataset = MiniWellInputOutput(
+        file_name=str(file_path),
+        n_steps_input=2,
+        n_steps_output=3,
+        steps=5,
+        stride=1,
+    )
+
+    sample = dataset[0]
+
+    assert isinstance(sample, EncodedSample)
+    assert sample.encoded_inputs.shape == (2, 4, 5, 3)
+    assert sample.encoded_output_fields.shape == (3, 4, 5, 3)
+    assert sample.global_cond is not None
+    assert torch.allclose(sample.global_cond, labels[0])
+
+
+def test_miniwell_datamodule_supports_worker_dataloader(tmp_path):
+    for split in ("train", "valid", "test"):
+        split_dir = tmp_path / split
+        split_dir.mkdir(parents=True)
+        with h5py.File(split_dir / "data.h5", "w") as h5:
+            h5.create_dataset("state", data=torch.randn(2, 6, 3, 4, 5).numpy())
+            h5.create_dataset("label", data=torch.randn(2, 6).numpy())
+
+    dm = MiniWellDataModule(
+        data_path=str(tmp_path),
+        n_steps_input=2,
+        n_steps_output=3,
+        batch_size=2,
+        num_workers=1,
+        pin_memory=False,
+        persistent_workers=False,
+        prefetch_factor=2,
+    )
+
+    batch = next(iter(dm.train_dataloader()))
+
+    assert isinstance(batch, EncodedBatch)
+    assert batch.encoded_inputs.shape == (2, 2, 4, 5, 3)
+    assert batch.encoded_output_fields.shape == (2, 3, 4, 5, 3)
+    assert batch.global_cond is not None
+    assert batch.global_cond.shape == (2, 6)
 
 
 # --- EncodedDataModule with CachedLatentDataset tests ---

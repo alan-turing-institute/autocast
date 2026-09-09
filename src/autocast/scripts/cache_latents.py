@@ -49,9 +49,7 @@ def _encode_and_save_split(
     ``encoded_fields`` (the full encoded trajectory) and optionally
     ``global_cond``.
 
-    Returns
-    -------
-    dict
+    Returns:
         Metadata about the encoded split (num_trajectories, shapes).
     """
     split_dir.mkdir(parents=True, exist_ok=True)
@@ -128,19 +126,13 @@ def cache_latents(
     allows runtime-configurable windowing (``n_steps_input``,
     ``n_steps_output``, ``stride``) when loading with ``CachedLatentDataset``.
 
-    Parameters
-    ----------
-    cfg
-        Hydra configuration (must include ``datamodule`` and ``model.encoder``
-        sections, plus ``autoencoder_checkpoint``).
-    output_dir
-        Directory to write cached latent files into.
-    device
-        Device to run encoding on (``"auto"``, ``"cpu"``, ``"cuda"``, etc.).
+    Args:
+        cfg: Hydra configuration (must include ``datamodule`` and ``model.encoder``
+            sections, plus ``autoencoder_checkpoint``).
+        output_dir: Directory to write cached latent files into.
+        device: Device to run encoding on (``"auto"``, ``"cpu"``, ``"cuda"``, etc.).
 
-    Returns
-    -------
-    Path
+    Returns:
         The output directory containing cached latents.
     """
     resolved_device = _resolve_device(device)
@@ -150,6 +142,7 @@ def cache_latents(
     with open_dict(cfg):
         if "datamodule" in cfg:
             OmegaConf.update(cfg, "datamodule.full_trajectory_mode", True, merge=True)
+            OmegaConf.update(cfg, "datamodule.autoencoder_mode", False, merge=True)
             # Ensure n_steps_input is set to 1 for full_trajectory_mode
             # (the dataset will set n_steps_output = T - n_steps_input)
             OmegaConf.update(cfg, "datamodule.n_steps_input", 1, merge=True)

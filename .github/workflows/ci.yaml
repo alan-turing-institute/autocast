@@ -48,9 +48,9 @@ jobs:
         run: |
           uv sync --extra dev
 
-      - name: Run pre-commit
+      - name: Run prek
         run: |
-          uv run pre-commit run --hook-stage manual --all-files
+          uv run prek run --stage manual --all-files
 
       - name: Test with pytest
         run: |

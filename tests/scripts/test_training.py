@@ -103,6 +103,124 @@ def test_autoencoder_config_trainer_fit_smoke(
     trainer.fit(model, train_dataloaders=dummy_loader, val_dataloaders=dummy_loader)
 
 
+def test_autoencoder_trainer_fit_bf16_mixed_smoke(
+    config_dir: str, toy_batch: Batch, dummy_loader, dummy_datamodule
+):
+    """Verify bf16-mixed + gradient_clip_val=1.0 don't produce NaN/Inf.
+
+    bf16-mixed is a supported but non-default option (not recommended — earlier
+    experiments showed fp32-vs-bf16 degradation). This smoke fit with both
+    enabled catches regressions where mixed precision introduces NaN/Inf in our
+    model paths or where clipping interferes with the optimizer step.
+    """
+    model_cfg = _load_config(config_dir, "model/autoencoder")
+    cfg = _wrap_model_config(model_cfg)
+    with open_dict(cfg):
+        cfg.optimizer = get_optimizer_config()
+        cfg.datamodule = {
+            "n_steps_input": toy_batch.input_fields.shape[1],
+            "n_steps_output": toy_batch.output_fields.shape[1],
+        }
+    stats = _stats_from_batch(toy_batch)
+    model = setup_autoencoder_model(cfg, stats, dummy_datamodule)
+
+    trainer = L.Trainer(
+        accelerator="cpu",
+        devices=1,
+        max_epochs=1,
+        limit_train_batches=1,
+        limit_val_batches=1,
+        logger=False,
+        enable_checkpointing=False,
+        enable_model_summary=False,
+        enable_progress_bar=False,
+        precision="bf16-mixed",
+        gradient_clip_val=1.0,
+    )
+    trainer.fit(model, train_dataloaders=dummy_loader, val_dataloaders=dummy_loader)
+
+    for name, p in model.named_parameters():
+        assert torch.isfinite(p).all(), f"param {name} has NaN/Inf after bf16-mixed fit"
+
+
+def test_autoencoder_trainer_fit_time_cosine_smoke(
+    config_dir: str, toy_batch: Batch, dummy_loader, dummy_datamodule
+):
+    """scheduler_interval='time' wires up and runs under a real max_time Trainer.
+
+    Confirms the wall-clock cosine path finds Lightning's Timer in
+    trainer.callbacks and that the time->step interval mapping in
+    configure_optimizers is accepted by Lightning's scheduler config.
+    """
+    model_cfg = _load_config(config_dir, "model/autoencoder")
+    cfg = _wrap_model_config(model_cfg)
+    with open_dict(cfg):
+        cfg.optimizer = get_optimizer_config(
+            scheduler="cosine", scheduler_interval="time"
+        )
+        cfg.datamodule = {
+            "n_steps_input": toy_batch.input_fields.shape[1],
+            "n_steps_output": toy_batch.output_fields.shape[1],
+        }
+    stats = _stats_from_batch(toy_batch)
+    model = setup_autoencoder_model(cfg, stats, dummy_datamodule)
+
+    trainer = L.Trainer(
+        accelerator="cpu",
+        devices=1,
+        max_epochs=1,
+        limit_train_batches=2,
+        limit_val_batches=1,
+        max_time="00:01:00:00",
+        logger=False,
+        enable_checkpointing=False,
+        enable_model_summary=False,
+        enable_progress_bar=False,
+    )
+    trainer.fit(model, train_dataloaders=dummy_loader, val_dataloaders=dummy_loader)
+
+    for name, p in model.named_parameters():
+        assert torch.isfinite(p).all(), f"param {name} not finite after time-cosine fit"
+
+
+def test_default_trainer_config_omits_clip_and_precision(config_dir: str):
+    """Pin trainer/default.yaml to the reproducibility-preserving defaults.
+
+    gradient_clip_val stays null (no clipping) and precision is left unset
+    (Lightning's 32-true) so existing runs reproduce unchanged; the tuned values
+    live in the opt-in ``updated_defaults`` configs. Fails loudly if a refactor
+    silently re-introduces a behaviour-changing default.
+    """
+    trainer_cfg = OmegaConf.load(Path(config_dir) / "trainer" / "default.yaml")
+    assert isinstance(trainer_cfg, DictConfig)
+    assert trainer_cfg.get("gradient_clip_val") is None
+    assert trainer_cfg.get("precision") is None
+
+
+def test_updated_defaults_configs_opt_in(config_dir: str):
+    """The opt-in recommended configs select cleanly and carry the tuned values.
+
+    Per review: live defaults stay untouched and the tuned values ship as
+    selectable configs (``optimizer=updated_defaults/adamw``,
+    ``trainer=updated_defaults``) rather than changing the defaults in place.
+    """
+    cfg = _load_config(
+        config_dir,
+        "autoencoder",
+        overrides=[
+            "optimizer=updated_defaults/adamw",
+            "trainer=updated_defaults",
+        ],
+    )
+    assert cfg.optimizer.weight_decay == 0.01
+    assert cfg.optimizer.warmup == 0.05
+    assert cfg.trainer.gradient_clip_val == 1.0
+    # bf16 deliberately not recommended (see review); precision stays unset.
+    assert cfg.trainer.get("precision") is None
+    # Inheritance from trainer/default.yaml preserved the callbacks.
+    assert len(cfg.trainer.callbacks) > 0
+
+
 def test_processor_config_training_step_smoke(config_dir: str, dummy_datamodule):
     processor_cfg = _load_config(config_dir, "processor/flow_matching").processor
     with open_dict(processor_cfg):
@@ -133,6 +251,56 @@ def test_processor_config_training_step_smoke(config_dir: str, dummy_datamodule)
     )
     stats = _stats_from_encoded_batch(batch)
     model = setup_processor_model(cfg, stats, dummy_datamodule)
+
+    loss = model.training_step(batch, batch_idx=0)
+    assert torch.is_tensor(loss)
+    assert loss.ndim == 0
+
+
+def test_masked_window_flow_matching_config_smoke(config_dir: str, dummy_datamodule):
+    processor_cfg = _load_config(
+        config_dir, "processor/flow_matching_masked_window_vit"
+    ).processor
+    with open_dict(processor_cfg):
+        processor_cfg.flow_ode_steps = 1
+        processor_cfg.backbone.include_global_cond = False
+        processor_cfg.backbone.global_cond_channels = 0
+        processor_cfg.backbone.hid_channels = 32
+        processor_cfg.backbone.hid_blocks = 1
+        processor_cfg.backbone.mod_features = 16
+
+    encoded_inputs = torch.randn(2, 1, 4, 4, 1)
+    encoded_outputs = torch.randn(2, 4, 4, 4, 1)
+    cfg = OmegaConf.create(
+        {
+            "model": {
+                "processor": processor_cfg,
+                "loss_func": {"_target_": "torch.nn.MSELoss"},
+            },
+            "optimizer": get_optimizer_config(learning_rate=1e-3),
+            "datamodule": {
+                "stride": 1,
+                "n_steps_input": encoded_inputs.shape[1],
+                "n_steps_output": encoded_outputs.shape[1],
+            },
+        }
+    )
+    batch = EncodedBatch(
+        encoded_inputs=encoded_inputs,
+        encoded_output_fields=encoded_outputs,
+        global_cond=None,
+        encoded_info={},
+    )
+    stats = _stats_from_encoded_batch(batch)
+    model = setup_processor_model(cfg, stats, dummy_datamodule)
+
+    processor = model.processor
+    assert processor.flow_matching_model.n_steps_input == 5  # type: ignore  # noqa: PGH003
+    assert processor.flow_matching_model.n_steps_output == 5  # type: ignore  # noqa: PGH003
+    assert processor.flow_matching_model.cond_channels == 1  # type: ignore  # noqa: PGH003
+
+    output = model.map(encoded_inputs, None)
+    assert output.shape == encoded_outputs.shape
 
     loss = model.training_step(batch, batch_idx=0)
     assert torch.is_tensor(loss)
@@ -438,6 +606,86 @@ def test_progress_model_checkpoint_delays_monitored_topk(monkeypatch):
     assert len(calls) == 1
 
 
+def _timer_stub(elapsed_s: float, remaining_s: float | None) -> Timer:
+    """A real ``Timer`` with controlled elapsed/remaining for progress tests."""
+    duration = (
+        None if remaining_s is None else timedelta(seconds=elapsed_s + remaining_s)
+    )
+    timer = Timer(duration=duration)
+    timer.time_elapsed = lambda *_: float(elapsed_s)  # type: ignore[method-assign]
+    timer.time_remaining = lambda *_: remaining_s  # type: ignore[method-assign]
+    return timer
+
+
+def _windowed_callback() -> ProgressModelCheckpoint:
+    return ProgressModelCheckpoint(
+        monitor="val_multicoverage",
+        monitor_optional=True,
+        start_after_fraction=0.25,
+        mode="min",
+        save_top_k=1,
+        filename="best-from0p25-{epoch:04d}",
+    )
+
+
+def test_progress_fraction_uses_time_budget_over_placeholder_max_epochs():
+    """Time-limited run: the step fraction stays ~0 because ``max_epochs`` is a
+    large placeholder, but the wall-clock budget is half spent, so windowed
+    checkpoints must see 0.5 and open the ``start_after_fraction=0.25`` window.
+
+    This is the regression guard for the checkpoint-progress bug: before the
+    fix the ``from0p25``/``0p50``/``0p75`` checkpoints never fired on
+    ``max_time``-bounded runs.
+    """
+    callback = _windowed_callback()
+    timer = _timer_stub(elapsed_s=1800.0, remaining_s=1800.0)  # 50% of budget
+    trainer = _trainer_stub(
+        estimated_stepping_batches=10_000_000,  # placeholder max_epochs => ~0 steps
+        global_step=300,
+        callbacks=[timer],
+    )
+
+    assert callback._training_progress_fraction(
+        cast(L.Trainer, trainer)
+    ) == pytest.approx(0.5)
+    assert callback._monitor_ready(cast(L.Trainer, trainer)) is True
+
+
+def test_progress_fraction_falls_back_to_steps_without_timer():
+    callback = _windowed_callback()
+    trainer = _trainer_stub(estimated_stepping_batches=100, global_step=50)
+
+    assert callback._training_progress_fraction(
+        cast(L.Trainer, trainer)
+    ) == pytest.approx(0.5)
+
+
+def test_progress_fraction_takes_max_of_time_and_steps():
+    """Step-bounded run with a large, non-binding ``max_time`` must use the
+    (larger) step fraction, not the tiny wall-clock fraction."""
+    callback = _windowed_callback()
+    timer = _timer_stub(elapsed_s=60.0, remaining_s=43_140.0)  # ~0.14% of 12h
+    trainer = _trainer_stub(
+        estimated_stepping_batches=100, global_step=50, callbacks=[timer]
+    )
+
+    assert callback._training_progress_fraction(
+        cast(L.Trainer, trainer)
+    ) == pytest.approx(0.5)
+
+
+def test_progress_fraction_ignores_durationless_timer():
+    callback = _windowed_callback()
+    timer = _timer_stub(elapsed_s=1800.0, remaining_s=None)  # no duration set
+    trainer = _trainer_stub(
+        estimated_stepping_batches=100, global_step=50, callbacks=[timer]
+    )
+
+    assert callback._training_progress_fraction(
+        cast(L.Trainer, trainer)
+    ) == pytest.approx(0.5)
+
+
 def test_progress_model_checkpoint_skips_optional_missing_monitor(monkeypatch):
     callback = ProgressModelCheckpoint(
         monitor="val_multicoverage",
@@ -577,7 +825,9 @@ def test_validation_metric_plot_callback_wandb_log_omits_step(tmp_path: Path):
         )
 
 
-def test_default_trainer_config_omits_validation_plots(config_dir: str):
+def test_default_trainer_config_tracks_coverage_winkler_without_plots(
+    config_dir: str,
+):
     trainer_cfg = OmegaConf.load(Path(config_dir) / "trainer" / "default.yaml")
     callbacks = list(trainer_cfg.callbacks)
     monitors = [callback.get("monitor") for callback in callbacks]

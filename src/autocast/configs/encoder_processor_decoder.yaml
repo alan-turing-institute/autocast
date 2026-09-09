@@ -1,5 +1,5 @@
 defaults:
-  - datamodule: advection_diffusion_multichannel
+  - datamodule: autosim
   - optional simulator: null
   - optimizer: adamw
   - model: encoder_processor_decoder

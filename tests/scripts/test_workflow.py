@@ -42,6 +42,8 @@ from autocast.scripts.workflow.overrides import (
     strip_hydra_sweep_controls,
 )
 from autocast.scripts.workflow.slurm import (
+    _build_sbatch_command,
+    _load_direct_distributed_launcher_cfg,
     _load_preset_launcher_cfg,
     _parse_override_scalar,
     _should_use_srun,
@@ -172,6 +174,14 @@ def test_should_use_srun_auto_for_multi_task_or_gpu():
     assert _should_use_srun({"tasks_per_node": 1, "gpus_per_node": 2}) is True
 
 
+def test_should_use_srun_auto_for_multinode():
+    assert _should_use_srun({"nodes": 2, "tasks_per_node": 1}) is True
+    assert (
+        _should_use_srun({"additional_parameters": {"nodes": 2}, "tasks_per_node": 1})
+        is True
+    )
+
+
 def test_should_use_srun_auto_false_for_single_task_single_gpu():
     assert _should_use_srun({"tasks_per_node": 1, "gpus_per_node": 1}) is False
 
@@ -185,6 +195,27 @@ def test_should_use_srun_respects_explicit_override():
         _should_use_srun({"tasks_per_node": 2, "gpus_per_node": 2, "use_srun": False})
         is False
     )
+
+
+def test_build_sbatch_command_includes_nodes(tmp_path: Path):
+    batch_script = tmp_path / "submit.sh"
+    cmd = _build_sbatch_command(
+        job_name="autocast-test",
+        log_dir=tmp_path,
+        launcher_cfg={
+            "nodes": 2,
+            "gpus_per_node": 4,
+            "tasks_per_node": 4,
+            "additional_parameters": {"mem": 0, "nodes": 99},
+        },
+        batch_script_path=batch_script,
+    )
+
+    assert "--nodes=2" in cmd
+    assert "--gpus-per-node=4" in cmd
+    assert "--ntasks-per-node=4" in cmd
+    assert "--mem=0" in cmd
+    assert "--nodes=99" not in cmd
 
 
 def test_load_preset_launcher_cfg_ignores_unrelated_interpolation(
@@ -249,6 +280,81 @@ def test_load_preset_launcher_cfg_walks_local_experiment_parent_chain(
     monkeypatch.chdir(tmp_path)
     launcher_cfg = _load_preset_launcher_cfg(["local_experiment=child"])
 
+    assert launcher_cfg.get("gpus_per_node") == 4
+    assert launcher_cfg.get("tasks_per_node") == 4
+
+
+def test_load_preset_launcher_cfg_walks_relative_parent_reference(
+    tmp_path: Path, monkeypatch
+):
+    # Child uses a relative reference (no /local_experiment/ prefix) to a
+    # parent that declares /distributed: — the loader must resolve the
+    # relative path from the config group root.
+    local_root = tmp_path / "local_hydra" / "local_experiment"
+    parent_cfg = local_root / "epd" / "base.yaml"
+    parent_cfg.parent.mkdir(parents=True, exist_ok=True)
+    parent_cfg.write_text(
+        "\n".join(
+            [
+                "defaults:",
+                "  - /distributed: ddp_4gpu_slurm",
+                "  - _self_",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    child_cfg = local_root / "epd" / "128x128" / "child.yaml"
+    child_cfg.parent.mkdir(parents=True, exist_ok=True)
+    child_cfg.write_text(
+        "\n".join(
+            [
+                "defaults:",
+                "  - epd/base",
+                "  - _self_",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(tmp_path)
+    launcher_cfg = _load_preset_launcher_cfg(["local_experiment=epd/128x128/child"])
+
+    assert launcher_cfg.get("gpus_per_node") == 4
+    assert launcher_cfg.get("tasks_per_node") == 4
+
+
+def test_load_preset_launcher_cfg_recognises_override_distributed(
+    tmp_path: Path, monkeypatch
+):
+    # When a config uses `override /distributed:` (needed when a parent
+    # already set the group), the CLI must still find the preset name.
+    local_root = tmp_path / "local_hydra" / "local_experiment"
+    cfg = local_root / "with_override.yaml"
+    cfg.parent.mkdir(parents=True, exist_ok=True)
+    cfg.write_text(
+        "\n".join(
+            [
+                "defaults:",
+                "  - override /distributed: ddp_4gpu_2node_slurm",
+                "  - _self_",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(tmp_path)
+    launcher_cfg = _load_preset_launcher_cfg(["local_experiment=with_override"])
+
+    assert launcher_cfg.get("nodes") == 2
+    assert launcher_cfg.get("gpus_per_node") == 4
+
+
+def test_load_direct_distributed_launcher_cfg_supports_multinode():
+    launcher_cfg = _load_direct_distributed_launcher_cfg(
+        ["+distributed=ddp_4gpu_2node_slurm"]
+    )
+
+    assert launcher_cfg.get("nodes") == 2
     assert launcher_cfg.get("gpus_per_node") == 4
     assert launcher_cfg.get("tasks_per_node") == 4
 

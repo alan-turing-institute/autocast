@@ -18,16 +18,11 @@ class Residual(nn.Sequential):
     def forward(self, input: Tensor) -> Tensor:
         """Forward pass with residual connection.
 
-        Parameters
-        ----------
-        input: Tensor
-            Input tensor.
+        Args:
+            input: Input tensor.
 
-        Returns
-        -------
-        Tensor
+        Returns:
             Input + output from sequential layers.
-
         """
         return input + super().forward(input)
 
@@ -35,29 +30,18 @@ class Residual(nn.Sequential):
 class ResBlock(nn.Module):
     """Residual block with normalization, optional attention, and FFN.
 
-    Parameters
-    ----------
-    channels: int
-        Number of channels.
-    norm: str
-        Type of normalization ('layer' or 'group').
-    groups: int
-        Number of groups for GroupNorm.
-    attention_heads: int | None
-        Number of attention heads (None for no attention).
-    ffn_factor: int
-        Channel expansion factor in FFN.
-    spatial: int
-        Number of spatial dimensions.
-    dropout: float | None
-        Dropout rate.
-    checkpointing: bool
-        Whether to use gradient checkpointing.
-    ffn_out_scale: float | None
-        Optional multiplicative scale applied to the final FFN conv weights.
-    **kwargs: Any
-        Additional arguments for convolution layers.
-
+    Args:
+        channels: Number of channels.
+        norm: Type of normalization ('layer' or 'group').
+        groups: Number of groups for GroupNorm.
+        attention_heads: Number of attention heads (None for no attention).
+        ffn_factor: Channel expansion factor in FFN.
+        spatial: Number of spatial dimensions.
+        dropout: Dropout rate.
+        checkpointing: Whether to use gradient checkpointing.
+        ffn_out_scale: Optional multiplicative scale applied to the final
+            FFN conv weights.
+        **kwargs: Additional arguments for convolution layers.
     """
 
     def __init__(
@@ -116,16 +100,11 @@ class ResBlock(nn.Module):
     def _forward(self, x: Tensor) -> Tensor:
         """Forward pass with residual connection.
 
-        Parameters
-        ----------
-        x: Tensor
-            Input tensor with shape (B, C, L_1, ..., L_N).
+        Args:
+            x: Input tensor with shape (B, C, L_1, ..., L_N).
 
-        Returns
-        -------
-        Tensor
+        Returns:
             Output tensor with shape (B, C, L_1, ..., L_N).
-
         """
         y = self.norm(x)
         y = self.attn(y)
@@ -135,16 +114,11 @@ class ResBlock(nn.Module):
     def forward(self, x: Tensor) -> Tensor:
         """Forward pass with optional gradient checkpointing.
 
-        Parameters
-        ----------
-        x: Tensor
-            Input tensor.
+        Args:
+            x: Input tensor.
 
-        Returns
-        -------
-        Tensor
+        Returns:
             Output tensor with same shape as input.
-
         """
         if self.checkpointing:
             result = checkpoint(self._forward, x, use_reentrant=False)

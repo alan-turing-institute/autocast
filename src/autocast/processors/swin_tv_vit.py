@@ -129,40 +129,39 @@ class SwinTVProcessor(Processor[EncodedBatch]):
     transposed-convolution decoder upsamples the encoder output back to the
     original spatial resolution and projects to ``out_channels``.
 
-    Parameters
-    ----------
-    in_channels:
-        Number of input channels.
-    out_channels:
-        Number of output channels.
-    spatial_resolution:
-        ``(H, W)`` of the input field. Both dimensions must be divisible by
-        the patch stride (default 4).
-    hidden_dim:
-        Patch embedding channel dimension used by the Swin backbone.
-    encoder_depths:
-        Number of transformer blocks in each Swin stage.
-    encoder_num_heads:
-        Attention heads per stage. Must match ``depths`` length.
-    decoder_depths:
-        Number of conv refinement blocks in each decoder stage.
-    decoder_num_heads:
-        Decoder attention-head placeholder for config compatibility.
-    window_size:
-        Swin local attention window size.
-    drop_path:
-        Stochastic depth probability for the Swin backbone.
-    patch_size:
-        Patch size for the stem convolution. Default is ``4``, matching the
-        original Swin paper.
-    groups:
-        Group count used in decoder GroupNorm layers.
-    use_ada_ln:
-        Enables noise-conditioned LayerNorm replacement in Swin blocks.
-    zero_init:
-        Initializes conditional affine projections to identity transform.
-    loss_func:
-        Loss function. Defaults to ``nn.MSELoss()``.
+    Args:
+        in_channels:
+            Number of input channels.
+        out_channels:
+            Number of output channels.
+        spatial_resolution:
+            ``(H, W)`` of the input field. Both dimensions must be divisible by
+            the patch stride (default 4).
+        hidden_dim:
+            Patch embedding channel dimension used by the Swin backbone.
+        encoder_depths:
+            Number of transformer blocks in each Swin stage.
+        encoder_num_heads:
+            Attention heads per stage. Must match ``depths`` length.
+        decoder_depths:
+            Number of conv refinement blocks in each decoder stage.
+        decoder_num_heads:
+            Decoder attention-head placeholder for config compatibility.
+        window_size:
+            Swin local attention window size.
+        drop_path:
+            Stochastic depth probability for the Swin backbone.
+        patch_size:
+            Patch size for the stem convolution. Default is ``4``, matching the
+            original Swin paper.
+        groups:
+            Group count used in decoder GroupNorm layers.
+        use_ada_ln:
+            Enables noise-conditioned LayerNorm replacement in Swin blocks.
+        zero_init:
+            Initializes conditional affine projections to identity transform.
+        loss_func:
+            Loss function. Defaults to ``nn.MSELoss()``.
     """
 
     def __init__(  # noqa: PLR0912, PLR0915

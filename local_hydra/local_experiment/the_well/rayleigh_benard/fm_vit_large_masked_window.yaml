@@ -1,0 +1,8 @@
+# @package _global_
+defaults:
+  - /local_experiment/the_well/rayleigh_benard/fm_vit_large
+  - override /processor@model.processor: flow_matching_masked_window_vit
+  - override /backbone@model.processor.backbone: vit
+  - _self_
+
+experiment_name: the_well_rayleigh_benard_fm_vit_large_masked_window

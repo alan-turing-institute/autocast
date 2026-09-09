@@ -23,8 +23,7 @@ def get_optimizer_config(
         **kwargs: Additional optimizer parameters (e.g., betas, weight_decay,
             step_size, gamma).
 
-    Returns
-    -------
+    Returns:
         Dict containing optimizer configuration compatible with OptimizerMixin.
     """
     config = {

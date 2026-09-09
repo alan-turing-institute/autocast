@@ -8,6 +8,8 @@ log_every_n_steps: 10
 enable_checkpointing: true
 detect_anomaly: false
 default_root_dir: null
+# Default null (no clipping) preserves reproducibility with existing runs. To
+# enable gradient clipping (1.0) opt in with trainer=updated_defaults.
 gradient_clip_val: null
 
 # Save snapshots throughout training based on optimizer-step progress.

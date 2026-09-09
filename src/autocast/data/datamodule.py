@@ -180,12 +180,14 @@ class SpatioTemporalDataModule(LightningDataModule):
         normalization_path: None | str = None,
         normalization_stats: dict | DictConfig | None = None,
         num_workers: int | None = None,
+        pin_memory: bool = torch.cuda.is_available(),
         start_frame: int = 0,
     ):
         super().__init__()
         self.verbose = verbose
         self.use_normalization = use_normalization
         self.autoencoder_mode = autoencoder_mode
+        self.pin_memory = pin_memory
         # Auto-detect num_workers based on available CPUs, capped at 8
         self.num_workers = (
             num_workers if num_workers is not None else min(os.cpu_count() or 1, 8)
@@ -268,9 +270,11 @@ class SpatioTemporalDataModule(LightningDataModule):
         self.batch_size = batch_size
 
         if not self.autoencoder_mode:
+            # Reuse loaded tensors; the payload records channel selection and frame
+            # cropping so rollout datasets do not slice the data a second time.
             self.rollout_val_dataset = dataset_cls(
-                data_path=str(train_path) if train_path is not None else None,
-                data=data["train"] if data is not None else None,
+                data_path=None,
+                data=self.train_dataset.to_preloaded_data(),
                 n_steps_input=n_steps_input,
                 n_steps_output=n_steps_output,
                 stride=stride,
@@ -285,8 +289,8 @@ class SpatioTemporalDataModule(LightningDataModule):
                 normalization_stats=normalization_stats,
             )
             self.rollout_test_dataset = dataset_cls(
-                data_path=str(test_path) if test_path is not None else None,
-                data=data["test"] if data is not None else None,
+                data_path=None,
+                data=self.test_dataset.to_preloaded_data(),
                 n_steps_input=n_steps_input,
                 n_steps_output=n_steps_output,
                 stride=stride,
@@ -309,7 +313,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             shuffle=True,
             num_workers=self.num_workers,
             collate_fn=collate_batches,
-            pin_memory=True,
+            pin_memory=self.pin_memory,
         )
 
     def val_dataloader(self) -> DataLoader:
@@ -320,7 +324,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             shuffle=False,
             num_workers=self.num_workers,
             collate_fn=collate_batches,
-            pin_memory=True,
+            pin_memory=self.pin_memory,
         )
 
     def rollout_val_dataloader(self, batch_size: int | None = None) -> DataLoader:
@@ -337,7 +341,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             shuffle=False,
             num_workers=self.num_workers,
             collate_fn=collate_batches,
-            pin_memory=True,
+            pin_memory=self.pin_memory,
         )
 
     def test_dataloader(self) -> DataLoader:
@@ -348,7 +352,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             shuffle=False,
             num_workers=self.num_workers,
             collate_fn=collate_batches,
-            pin_memory=True,
+            pin_memory=self.pin_memory,
         )
 
     def rollout_test_dataloader(self, batch_size: int | None = None) -> DataLoader:
@@ -365,5 +369,5 @@ class SpatioTemporalDataModule(LightningDataModule):
             shuffle=False,
             num_workers=self.num_workers,
             collate_fn=collate_batches,
-            pin_memory=True,
+            pin_memory=self.pin_memory,
         )

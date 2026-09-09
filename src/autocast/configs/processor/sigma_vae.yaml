@@ -1,0 +1,21 @@
+_target_: autocast.processors.sigma_vae.SigmaVAEProcessor
+# Output field dims are auto-filled from the datamodule by scripts/setup.py.
+n_steps_output: null
+n_channels_out: null
+# Conditioning field dims + spatial shape are set per toy in the experiment
+# config (no backbone is mounted; the VAE builds its own MLP enc/decoder).
+n_steps_input: 1
+n_channels_in: 1
+spatial_shape: [1, 1]
+global_cond_features: 0
+# Capacity (set per toy by field size). The decoder output sigma is LEARNED
+# (calibration knob), so beta stays at 1 and needs no per-toy tuning.
+latent_dim: 32
+hidden_features: [128, 128]
+beta: 1.0
+# Data-driven: 'auto' sets the output sigma to the data's one-step residual
+# scale on the first batch. The sigma is a single scalar per channel that a
+# decaying LR cannot move far from its init, so a hard-coded constant ships
+# over-dispersed (sigma stuck ~1.0 vs a ~0.1-0.3 residual). Do NOT replace this
+# with a fixed number -- that is exactly the bug this default prevents.
+init_log_sigma: auto

@@ -34,14 +34,12 @@ class Processor(ABC, nn.Module, Generic[BatchT]):
 
     @abstractmethod
     def map(self, x: Tensor, global_cond: Tensor | None) -> Tensor:
-        """
-        Map input states to output states.
+        """Map input states to output states.
 
         Args:
-            x (Tensor): Input tensor of shape (B, T_in, ...)
-            global_cond (Tensor | None): Optional conditioning/modulation tensor.
+            x: Input tensor of shape (B, T_in, ...)
+            global_cond: Optional conditioning/modulation tensor.
 
-        Returns
-        -------
+        Returns:
             y (Tensor): Output tensor of shape (B, T_out, ...)
         """
