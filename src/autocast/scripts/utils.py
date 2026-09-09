@@ -106,6 +106,9 @@ class RunCollator:
     """Collate results from multiple runs in an outputs directory.
 
     Supports glob-like pattern matching for flexible config parameter extraction.
+    Numeric score columns are collected as ``overall_<metric>`` for test
+    aggregates and ``<metric>_<window>`` for rollout aggregates, including
+    probabilistic and custom metrics.
 
     Args:
         outputs_dir: Path to the outputs directory containing runs.
@@ -331,9 +334,18 @@ class RunCollator:
             run_dir: Path to the run directory.
 
         Returns:
-            Dictionary with overall metrics and windowed metrics.
+            Dictionary with scalar numeric scores, excluding CSV identifiers
+            and legacy metadata. Existing metric column names are preserved.
         """
         metrics: dict[str, Any] = {}
+        metadata_columns = {
+            "window",
+            "batch_idx",
+            "category",
+            "metric",
+            "value",
+            "loader",
+        }
 
         # Parse overall metrics
         eval_csv = run_dir / "eval" / "evaluation_metrics.csv"
@@ -345,11 +357,10 @@ class RunCollator:
                     (df_eval["window"] == "all") & (df_eval["batch_idx"] == "all")
                 ]
                 if not overall_row.empty:
-                    for col in ["mse", "mae", "rmse", "vrmse", "coverage"]:
-                        if col in overall_row.columns:
+                    for col in df_eval.select_dtypes(include="number").columns:
+                        if col not in metadata_columns:
                             # Get the scalar value from the first row
-                            value = overall_row.iloc[0][col]
-                            metrics[f"overall_{col}"] = value
+                            metrics[f"overall_{col}"] = float(overall_row.iloc[0][col])
             except Exception as e:
                 self.log.warning(
                     "Failed to parse evaluation metrics from %s: %s", eval_csv, e
@@ -360,12 +371,16 @@ class RunCollator:
         if rollout_csv.exists():
             try:
                 df_rollout = pd.read_csv(rollout_csv)
-                # Get rows where batch_idx='all'
-                windowed = df_rollout[df_rollout["batch_idx"] == "all"]
+                # Older CSVs may include metadata alongside aggregate scores.
+                windowed = df_rollout[
+                    (df_rollout["batch_idx"] == "all")
+                    & (df_rollout["window"] != "meta")
+                ]
+                score_columns = df_rollout.select_dtypes(include="number").columns
                 for _, row in windowed.iterrows():
                     window = str(row["window"])
-                    for col in ["mse", "mae", "rmse", "vrmse", "coverage"]:
-                        if col in row.index:
+                    for col in score_columns:
+                        if col not in metadata_columns:
                             metrics[f"{col}_{window}"] = float(row[col])
             except Exception as e:
                 self.log.warning(
