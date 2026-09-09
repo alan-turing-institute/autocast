@@ -924,6 +924,42 @@ def test_maybe_swap_to_ambient_datamodule_loads_from_cache_dir(tmp_path):
     assert cfg.datamodule.use_normalization is True
 
 
+@pytest.mark.parametrize("eval_mode", ["ambient", "encode_once"])
+@pytest.mark.parametrize(
+    ("raw_start_frame", "overrides", "expected_start_frame"),
+    [
+        (None, {}, None),
+        (7, {}, 7),
+        (7, {"start_frame": 0}, 0),
+        (None, {"start_frame": 3}, 3),
+    ],
+)
+def test_maybe_swap_to_ambient_datamodule_preserves_start_frame(
+    tmp_path, encoded_batch, eval_mode, raw_start_frame, overrides, expected_start_frame
+):
+    raw_datamodule = {
+        "_target_": "autocast.data.datamodule.SpatioTemporalDataModule",
+        "data_path": "/path/to/raw",
+    }
+    if raw_start_frame is not None:
+        raw_datamodule["start_frame"] = raw_start_frame
+    OmegaConf.save(
+        OmegaConf.create({"datamodule": raw_datamodule}),
+        tmp_path / "autoencoder_config.yaml",
+    )
+    cfg = OmegaConf.create({"datamodule": {"data_path": str(tmp_path), **overrides}})
+
+    _maybe_swap_to_ambient_datamodule(
+        cfg, eval_mode=eval_mode, example_batch=encoded_batch
+    )
+
+    assert cfg.datamodule.data_path == "/path/to/raw"
+    if expected_start_frame is None:
+        assert "start_frame" not in cfg.datamodule
+    else:
+        assert cfg.datamodule.start_frame == expected_start_frame
+
+
 def test_maybe_swap_to_ambient_datamodule_errors_without_ae_config(tmp_path):
     cfg = OmegaConf.create(
         {

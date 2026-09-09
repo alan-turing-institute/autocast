@@ -1711,6 +1711,17 @@ def _maybe_swap_to_ambient_datamodule(
             )
             if isinstance(step_value, int) and step_value > 0:
                 OmegaConf.update(swapped_datamodule, step_key, step_value, merge=True)
+        if (
+            isinstance(original_datamodule, Mapping)
+            and "start_frame" in original_datamodule
+        ):
+            # Zero explicitly resets the offset; leave validation to the dataset.
+            OmegaConf.update(
+                swapped_datamodule,
+                "start_frame",
+                original_datamodule["start_frame"],
+                merge=True,
+            )
 
     log.info(
         "eval.mode=%s: substituting cached_latents datamodule with the "
