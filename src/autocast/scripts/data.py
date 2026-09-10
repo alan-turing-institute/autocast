@@ -107,22 +107,4 @@ def _generate_split(simulator: Any, split_cfg: dict) -> dict[str, Any]:
 
 def batch_to_device(batch: Batch, device: torch.device) -> Batch:
     """Move a Batch to the specified device."""
-    return Batch(
-        input_fields=batch.input_fields.to(device),
-        output_fields=batch.output_fields.to(device),
-        constant_scalars=(
-            batch.constant_scalars.to(device)
-            if batch.constant_scalars is not None
-            else None
-        ),
-        constant_fields=(
-            batch.constant_fields.to(device)
-            if batch.constant_fields is not None
-            else None
-        ),
-        boundary_conditions=(
-            batch.boundary_conditions.to(device)
-            if batch.boundary_conditions is not None
-            else None
-        ),
-    )
+    return batch.to(device)
