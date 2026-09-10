@@ -7,6 +7,8 @@ chapters:
 
 - file: installation
 
+- file: tutorials/quickstart
+
 - file: walkthrough/index
   sections:
   - file: walkthrough/simulate-data
@@ -15,6 +17,14 @@ chapters:
   - file: walkthrough/epd
   - file: walkthrough/ensembles
   - file: walkthrough/eval
+
+- file: tutorials/index
+  sections:
+  - file: tutorials/autoencoder_and_latents
+  - file: tutorials/diffusion_and_flow_matching
+  - file: tutorials/deterministic_ensembles
+
+- file: tutorials/evaluation_and_results
 
 - file: howto/index
   sections:

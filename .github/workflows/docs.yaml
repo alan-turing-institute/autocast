@@ -21,6 +21,7 @@ jobs:
   docs:
     if: github.event.pull_request.draft == false || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -44,8 +45,9 @@ jobs:
       - name: Install dependencies
         run: uv sync --extra dev --extra docs
 
-      - name: Build docs
-        run: uv run jupyter-book build docs --all
+      - name: Execute tutorials and build docs
+        timeout-minutes: 10
+        run: uv run --no-sync python docs/build.py
 
       - name: Deploy
         uses: peaceiris/actions-gh-pages@v3

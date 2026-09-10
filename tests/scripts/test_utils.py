@@ -1,6 +1,8 @@
 """Tests for autocast.scripts.utils module."""
 
+import pandas as pd
 import pytest
+import yaml
 
 from autocast.scripts.utils import RunCollator
 
@@ -329,3 +331,99 @@ def test_empty_pattern_parts(collator, sample_config):
     matches = collator._find_matching_paths(sample_config, "model.")
     # Should handle gracefully (implementation dependent)
     assert isinstance(matches, list)
+
+
+@pytest.fixture
+def evaluated_run(collator, sample_config):
+    """A saved run with current and legacy-style metric rows."""
+    run = collator.outputs_path / "experiment" / "trial"
+    (run / "eval").mkdir(parents=True)
+    (run / "resolved_config.yaml").write_text(yaml.safe_dump(sample_config))
+    return run
+
+
+def test_collation_keeps_all_scalar_metrics(evaluated_run, collator, tmp_path):
+    scores = {
+        "mse": 0.04,
+        "mae": 0.15,
+        "rmse": 0.2,
+        "vrmse": 0.3,
+        "coverage": 0.7,
+        "crps": 0.12,
+        "spread": 0.25,
+        "skill": 0.2,
+        "ssr": 1.25,
+        "energy_score": 0.18,
+    }
+    pd.DataFrame(
+        [
+            {"window": "all", "batch_idx": 0, **dict.fromkeys(scores, 99.0)},
+            {"window": "0-2", "batch_idx": "all", **dict.fromkeys(scores, 88.0)},
+            {"window": "all", "batch_idx": "all", **scores},
+        ]
+    ).to_csv(evaluated_run / "eval/evaluation_metrics.csv", index=False)
+    pd.DataFrame(
+        [
+            {"window": "all", "batch_idx": 0, **dict.fromkeys(scores, 99.0)},
+            {"window": "0-2", "batch_idx": "all", **scores},
+            {
+                "window": "all",
+                "batch_idx": "all",
+                **{key: value * 2 for key, value in scores.items()},
+            },
+        ]
+    ).to_csv(evaluated_run / "eval/rollout_metrics.csv", index=False)
+
+    output = tmp_path / "collated.csv"
+    collator.config_params = {"lr": "optimizer.learning_rate"}
+    result = collator.collate(output_csv=output)
+    row = result.iloc[0]
+    assert row["run_path"] == "experiment/trial"
+    assert row["lr"] == 0.0002
+    for metric, value in scores.items():
+        assert row[f"overall_{metric}"] == pytest.approx(value)
+        assert row[f"{metric}_0-2"] == pytest.approx(value)
+        assert row[f"{metric}_all"] == pytest.approx(value * 2)
+    assert "overall_batch_idx" not in row.index
+    assert "window_all" not in row.index
+    assert set(pd.read_csv(output).columns) == set(result.columns)
+
+
+def test_metric_collation_ignores_metadata_and_text(evaluated_run, collator):
+    rows = [
+        {"window": "all", "batch_idx": "all", "rmse": 0.2, "notes": "checked"},
+        {
+            "window": "meta",
+            "batch_idx": "all",
+            "category": "parameters",
+            "metric": "count",
+            "value": 1000,
+            "loader": "test",
+        },
+    ]
+    for filename in ("evaluation_metrics.csv", "rollout_metrics.csv"):
+        pd.DataFrame(rows).to_csv(evaluated_run / "eval" / filename, index=False)
+    assert collator._parse_metrics(evaluated_run) == {
+        "overall_rmse": 0.2,
+        "rmse_all": 0.2,
+    }
+
+
+def test_collation_preserves_nan_metrics_without_rollouts(evaluated_run, collator):
+    pd.DataFrame(
+        [{"window": "all", "batch_idx": "all", "rmse": 0.2, "crps": float("nan")}]
+    ).to_csv(evaluated_run / "eval/evaluation_metrics.csv", index=False)
+    row = collator.collate(save_csv=False).iloc[0]
+    assert row["overall_rmse"] == 0.2
+    assert pd.isna(row["overall_crps"])
+    assert "rmse_all" not in row.index
+
+
+def test_metric_collation_does_not_treat_per_batch_rows_as_aggregates(
+    evaluated_run, collator
+):
+    for filename in ("evaluation_metrics.csv", "rollout_metrics.csv"):
+        pd.DataFrame([{"window": "all", "batch_idx": 0, "rmse": 99}]).to_csv(
+            evaluated_run / "eval" / filename, index=False
+        )
+    assert collator._parse_metrics(evaluated_run) == {}
