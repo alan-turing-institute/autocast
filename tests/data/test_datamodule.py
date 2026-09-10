@@ -1,6 +1,27 @@
+from types import SimpleNamespace
+
+import pytest
 import torch
 
-from autocast.data.datamodule import SpatioTemporalDataModule
+from autocast.data.datamodule import SpatioTemporalDataModule, TheWellDataModule
+
+
+@pytest.mark.parametrize("full_trajectory_mode", [False, True])
+def test_well_datamodule_separates_windowed_and_rollout_modes(
+    monkeypatch, full_trajectory_mode
+):
+    monkeypatch.setattr("autocast.data.datamodule.TheWell", SimpleNamespace)
+
+    dm = TheWellDataModule(
+        well_dataset_name="rayleigh_benard",
+        full_trajectory_mode=full_trajectory_mode,
+        num_workers=0,
+    )
+
+    for dataset in (dm.train_dataset, dm.val_dataset, dm.test_dataset):
+        assert dataset.full_trajectory_mode is full_trajectory_mode
+    assert dm.rollout_val_dataset.full_trajectory_mode is True
+    assert dm.rollout_test_dataset.full_trajectory_mode is True
 
 
 def test_file_backed_rollout_datasets_apply_channel_idxs_once(tmp_path):

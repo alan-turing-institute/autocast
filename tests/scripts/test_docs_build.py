@@ -63,11 +63,12 @@ def test_notebooks_can_span_chapters_and_nested_sections(tmp_path):
 def test_navigation_keeps_walkthrough_before_focused_examples_and_results():
     toc = yaml.safe_load((REPO / "docs" / "_toc.yml").read_text())
     chapters = [chapter["file"] for chapter in toc["chapters"]]
-    assert chapters[:5] == [
+    assert chapters[:6] == [
         "installation",
         "tutorials/quickstart",
         "walkthrough/index",
         "tutorials/index",
+        "walkthrough/rayleigh-benard",
         "tutorials/evaluation_and_results",
     ]
 

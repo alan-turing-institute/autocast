@@ -1,12 +1,15 @@
 """Tests for the cache_latents script."""
 
+from types import SimpleNamespace
+
 import torch
+from omegaconf import OmegaConf
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
 from autocast.data.encoded_dataset import CachedLatentDataset
 from autocast.encoders.base import EncoderWithCond
-from autocast.scripts.cache_latents import _encode_and_save_split
+from autocast.scripts.cache_latents import _encode_and_save_split, cache_latents
 from autocast.types.batch import Batch
 from autocast.types.types import TensorBNC
 
@@ -93,6 +96,38 @@ def _make_cond_dataloader(cond_dim=3, t_in=1, t_out=9):
 
 
 # --- Tests ---
+
+
+def test_cache_latents_saves_resolved_autoencoder_metadata(tmp_path, monkeypatch):
+    cfg = OmegaConf.create(
+        {
+            "checkpoint_root": str(tmp_path / "autoencoder"),
+            "datamodule": {},
+            "model": {"encoder": {"runpath": "${checkpoint_root}"}},
+        }
+    )
+    loader = _make_full_traj_dataloader(n_trajectories=1)
+    dm = SimpleNamespace(
+        setup=lambda **_kwargs: None,
+        train_dataloader=lambda: loader,
+        val_dataloader=lambda: loader,
+        test_dataloader=lambda: loader,
+    )
+    monkeypatch.setattr(
+        "autocast.scripts.cache_latents.setup_datamodule", lambda cfg: (dm, cfg, {})
+    )
+    monkeypatch.setattr(
+        "autocast.scripts.cache_latents.setup_autoencoder_components",
+        lambda _cfg, _stats: (_MockEncoder(), None),
+    )
+
+    cache_dir = cache_latents(cfg, tmp_path / "cache", device="cpu")
+
+    metadata = (cache_dir / "autoencoder_config.yaml").read_text()
+    assert "${" not in metadata
+    saved_cfg = OmegaConf.create(metadata)
+    assert saved_cfg.model.encoder.runpath == str(tmp_path / "autoencoder")
+    assert saved_cfg.datamodule.full_trajectory_mode is True
 
 
 def test_encode_and_save_creates_traj_files(tmp_path):
