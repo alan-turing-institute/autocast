@@ -208,6 +208,14 @@ def benchmark_rollout(
         msg = "n_benchmark must be > 0"
         raise ValueError(msg)
 
+    if not getattr(model, "supports_rollout", True):
+        msg = (
+            "Cannot benchmark rollout for a model with supports_rollout=False: "
+            "its predictions cannot be fed back in as inputs. Benchmark "
+            "single-shot inference with benchmark_model instead."
+        )
+        raise ValueError(msg)
+
     device = next(model.parameters()).device
     synthetic_batch = make_synthetic_batch(example_batch, batch_size=batch_size).to(
         device

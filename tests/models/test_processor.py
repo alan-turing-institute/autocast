@@ -533,9 +533,10 @@ def test_processor_model_supports_rollout_false_blocks_rollout():
 
 
 def test_processor_model_rollout_shape_mismatch_raises_clear_error():
-    """A rollout-incompatible output shape should raise a clear ValueError.
+    """A rollout-incompatible output shape is caught before it is fed back.
 
-    (rather than an opaque `RuntimeError` from deep inside `torch.cat`).
+    The check runs ahead of `_advance_batch`, so the error names both shapes
+    rather than surfacing an opaque `RuntimeError` from inside `torch.cat`.
     """
     processor = _MismatchedChannelsProcessor(out_channels=6)
     model = ProcessorModel(processor=processor, optimizer_config=get_optimizer_config())
@@ -549,7 +550,7 @@ def test_processor_model_rollout_shape_mismatch_raises_clear_error():
         encoded_info={},
     )
 
-    with pytest.raises(ValueError, match="not compatible with its input shape"):
+    with pytest.raises(ValueError, match="Cannot feed this model's predictions"):
         model.rollout(batch, stride=1, max_rollout_steps=2, return_windows=True)
 
 

@@ -97,7 +97,26 @@ class _Encoder(GenericEncoder[Batch, EncodedBatch]):
 
         Returns:
             Encoded output tensor in the latent space with shape (B, *, C_latent).
+
+        Raises:
+            ValueError: If `output_fields` cannot be encoded by the input
+                encoder because its channel count or spatial resolution
+                differs from `input_fields`.
         """
+        input_layout = tuple(batch.input_fields.shape[2:])
+        output_layout = tuple(batch.output_fields.shape[2:])
+        if input_layout != output_layout:
+            msg = (
+                "This encoder cannot encode the target fields: output_fields "
+                f"have shape (channels/spatial) {output_layout}, but the "
+                f"encoder is built for input_fields with {input_layout}. "
+                "Encoding targets is only needed for latent-space losses, so "
+                "either train the full encoder-processor-decoder in data space "
+                "(train_in_latent_space=False), or override encode_output with "
+                "an encoder built for the target fields."
+            )
+            raise ValueError(msg)
+
         # Create a new batch with output fields as input fields to prevent mutation
         output_batch = replace(batch, input_fields=batch.output_fields.clone())
         encoded = self.encode(output_batch)

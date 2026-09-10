@@ -112,20 +112,8 @@ class RolloutMixin(ABC, Generic[BatchT]):
             if next_inputs.shape[1] < stride:
                 break
 
-            try:
-                current_batch = self._advance_batch(current_batch, next_inputs, stride)
-            except RuntimeError as err:
-                msg = (
-                    "Failed to advance the rollout window: the model's "
-                    "predicted output shape is not compatible with its input "
-                    "shape. Autoregressive rollout requires output fields to "
-                    "match input fields (same channels and spatial "
-                    "resolution). If this model performs downscaling or has "
-                    "output fields that differ from its input fields, set "
-                    "supports_rollout=False and use one-shot (non-rollout) "
-                    "training/evaluation instead."
-                )
-                raise ValueError(msg) from err
+            self._check_feedback_compatible(current_batch, next_inputs)
+            current_batch = self._advance_batch(current_batch, next_inputs, stride)
 
         # Construct rollout outputs
         preds = torch.stack(pred_outs, dim=1)  # (B, R, T, spatial, C)
@@ -139,6 +127,40 @@ class RolloutMixin(ABC, Generic[BatchT]):
         if not return_windows:
             trues = rearrange(trues, "b r t ... -> b (r t) ...")  # (B, T*R, spatial, C)
         return preds, trues
+
+    def _check_feedback_compatible(self, batch: BatchT, next_inputs: Tensor) -> None:
+        """Verify predictions can be fed back in as inputs, before attempting it.
+
+        Compares everything but the time axis: feeding predictions back means
+        concatenating them onto the input window along time, so the channel
+        count and spatial resolution must already agree.
+
+        Args:
+            batch: The current rollout batch.
+            next_inputs: The tensor about to be fed back in as inputs.
+
+        Raises:
+            ValueError: If `next_inputs` cannot be concatenated onto the
+                batch's input fields.
+        """
+        current_inputs = self._input_fields(batch)
+        expected = tuple(current_inputs.shape[2:])
+        actual = tuple(next_inputs.shape[2:])
+        if expected == actual:
+            return
+        msg = (
+            "Cannot feed this model's predictions back in as inputs: they have "
+            f"shape (channels/spatial) {actual}, but its input fields have "
+            f"{expected}. Autoregressive rollout requires the two to match. "
+            "Models whose outputs differ from their inputs (downscaling, or "
+            "predicting different fields than they consume) should set "
+            "supports_rollout=False and use one-shot evaluation instead."
+        )
+        raise ValueError(msg)
+
+    @abstractmethod
+    def _input_fields(self, batch: BatchT) -> Tensor:
+        """Return the batch's input fields, the tensor predictions feed back into."""
 
     @abstractmethod
     def _clone_batch(self, batch: BatchT) -> BatchT: ...

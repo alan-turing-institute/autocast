@@ -210,6 +210,9 @@ class EncoderProcessorDecoder(
             return batch.output_fields[:, :stride, ...], True
         return batch.output_fields, False
 
+    def _input_fields(self, batch: Batch) -> Tensor:
+        return batch.input_fields
+
     def _advance_batch(self, batch: Batch, next_inputs: Tensor, stride: int) -> Batch:
         """Shift the input/output windows forward by `stride` using `next_inputs`.
 

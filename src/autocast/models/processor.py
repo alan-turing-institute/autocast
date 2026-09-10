@@ -171,6 +171,9 @@ class ProcessorModel(
             return batch.encoded_output_fields[:, :stride, ...], True
         return batch.encoded_output_fields, False
 
+    def _input_fields(self, batch: EncodedBatch) -> Tensor:
+        return batch.encoded_inputs
+
     def _advance_batch(
         self, batch: EncodedBatch, next_inputs: Tensor, stride: int
     ) -> EncodedBatch:
