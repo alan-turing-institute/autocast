@@ -43,6 +43,7 @@ from autocast.scripts.eval.encoder_processor_decoder import (
     _normalize_per_batch_rows,
     _parse_deterministic_member_average_metric_name,
     _parse_deterministic_member_metric_name,
+    _prepare_trajectory_statistics_dir,
     _read_eval_chunk_size,
     _reindex_per_batch_rows_by_rank,
     _render_rollouts,
@@ -52,9 +53,11 @@ from autocast.scripts.eval.encoder_processor_decoder import (
     _resolve_rollout_batch_limit,
     _resolve_rollout_channel_names,
     _resolve_rollout_timestep_limit,
+    _resolve_trajectory_statistics_dir,
     _should_skip_metric,
     _split_metric_and_metadata_rows,
     _training_runtime_rows,
+    _trajectory_statistics_seed,
     _try_build_decode_fn,
     _validate_latent_space_metrics_flag,
     _validate_resolved_eval_path,
@@ -85,6 +88,59 @@ def test_resolve_rollout_batch_limit_prefers_explicit_rollout_limit():
     )
 
     assert _resolve_rollout_batch_limit(eval_cfg) == 5
+
+
+def test_trajectory_statistics_default_to_dedicated_sibling_directory(tmp_path):
+    evaluation_csv = tmp_path / "evaluation_metrics.csv"
+
+    result = _resolve_trajectory_statistics_dir(
+        OmegaConf.create({"trajectory_statistics": {}}), evaluation_csv
+    )
+
+    assert result == tmp_path / "trajectory_statistics"
+
+
+def test_trajectory_statistics_relative_directory_uses_csv_parent(tmp_path):
+    evaluation_csv = tmp_path / "evaluation_metrics.csv"
+
+    result = _resolve_trajectory_statistics_dir(
+        OmegaConf.create(
+            {"trajectory_statistics": {"output_dir": "paper_trajectory_stats"}}
+        ),
+        evaluation_csv,
+    )
+
+    assert result == tmp_path / "paper_trajectory_stats"
+
+
+def test_trajectory_statistics_refuse_non_empty_output_by_default(tmp_path):
+    output_dir = tmp_path / "trajectory_statistics"
+    output_dir.mkdir()
+    (output_dir / "existing.csv").write_text("old results")
+
+    with pytest.raises(FileExistsError, match="output directory is not empty"):
+        _prepare_trajectory_statistics_dir(output_dir, overwrite_existing=False)
+
+    assert (output_dir / "existing.csv").read_text() == "old results"
+
+
+def test_trajectory_statistics_can_explicitly_allow_existing_output(tmp_path):
+    output_dir = tmp_path / "trajectory_statistics"
+    output_dir.mkdir()
+    existing = output_dir / "existing.csv"
+    existing.write_text("old results")
+
+    _prepare_trajectory_statistics_dir(output_dir, overwrite_existing=True)
+
+    assert existing.read_text() == "old results"
+
+
+@pytest.mark.parametrize("seed", [-1, True, 1.5, "42"])
+def test_trajectory_statistics_seed_requires_non_negative_integer(seed):
+    eval_cfg = OmegaConf.create({"trajectory_statistics": {"sampling_seed": seed}})
+
+    with pytest.raises(ValueError, match="non-negative integer"):
+        _trajectory_statistics_seed(eval_cfg)
 
 
 def test_crop_rollout_batch_start_shifts_raw_full_trajectory_batch():
@@ -1467,6 +1523,42 @@ def test_maybe_swap_to_ambient_datamodule_loads_from_cache_dir(tmp_path):
     assert cfg.datamodule._target_ == "raw.TheWellDataModule"
     assert cfg.datamodule.data_path == "/path/to/raw"
     assert cfg.datamodule.use_normalization is True
+
+
+@pytest.mark.parametrize("eval_mode", ["ambient", "encode_once"])
+@pytest.mark.parametrize(
+    ("raw_start_frame", "overrides", "expected_start_frame"),
+    [
+        (None, {}, None),
+        (7, {}, 7),
+        (7, {"start_frame": 0}, 0),
+        (None, {"start_frame": 3}, 3),
+    ],
+)
+def test_maybe_swap_to_ambient_datamodule_preserves_start_frame(
+    tmp_path, encoded_batch, eval_mode, raw_start_frame, overrides, expected_start_frame
+):
+    raw_datamodule = {
+        "_target_": "autocast.data.datamodule.SpatioTemporalDataModule",
+        "data_path": "/path/to/raw",
+    }
+    if raw_start_frame is not None:
+        raw_datamodule["start_frame"] = raw_start_frame
+    OmegaConf.save(
+        OmegaConf.create({"datamodule": raw_datamodule}),
+        tmp_path / "autoencoder_config.yaml",
+    )
+    cfg = OmegaConf.create({"datamodule": {"data_path": str(tmp_path), **overrides}})
+
+    _maybe_swap_to_ambient_datamodule(
+        cfg, eval_mode=eval_mode, example_batch=encoded_batch
+    )
+
+    assert cfg.datamodule.data_path == "/path/to/raw"
+    if expected_start_frame is None:
+        assert "start_frame" not in cfg.datamodule
+    else:
+        assert cfg.datamodule.start_frame == expected_start_frame
 
 
 def test_maybe_swap_to_ambient_datamodule_errors_without_ae_config(tmp_path):

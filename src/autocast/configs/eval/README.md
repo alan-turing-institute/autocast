@@ -52,7 +52,9 @@ All eval configs support these parameters:
 - `compute_test_metrics`: When `false`, skip the single-step test-set metric
   pass entirely (no `evaluation_metrics.csv` written). Useful for re-rendering
   rollout videos/snapshots without paying for metrics. Rollout metrics are
-  gated separately via `compute_rollout_metrics`.
+  gated separately via `compute_rollout_metrics`. Enabling
+  `trajectory_statistics.enabled` requires both metric passes and overrides
+  these skip flags; its outputs go to the trajectory statistics directory.
 - `metrics`: List of metrics to compute (default includes mse/mae/rmse/vrmse,
   power spectrum scores `psrmse*`, cross-correlation spectrum scores `pscc*`,
   and ensemble scores `crps`, `fcrps`, `afcrps`, `spread`, `skill`, `ssr`,

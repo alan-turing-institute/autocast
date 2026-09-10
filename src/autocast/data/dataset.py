@@ -31,7 +31,7 @@ class BatchMixin:
 class SpatioTemporalDataset(Dataset, BatchMixin):
     """A class for spatio-temporal datasets."""
 
-    def __init__(  # noqa: PLR0915
+    def __init__(  # noqa: PLR0912, PLR0915
         self,
         data_path: str | None,
         data: dict | None = None,
@@ -47,6 +47,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         normalization_type: type[ZScoreNormalization] | None = ZScoreNormalization,
         normalization_path: str | None = None,
         normalization_stats: dict | DictConfig | None = None,
+        start_frame: int = 0,
     ):
         """Initialize the dataset.
 
@@ -73,6 +74,10 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             normalization_path: Path to normalization statistics file (yaml).
                 Defaults to None.
             normalization_stats: Preloaded normalization statistics. Defaults to None.
+            start_frame: Number of leading frames to remove from every trajectory
+                before constructing input/output windows. This is an absolute
+                offset in the original data, including when reusing preloaded
+                tensors. Already removed frames cannot be restored. Defaults to 0.
         """
         self.dtype = dtype
         self.verbose = verbose
@@ -82,12 +87,43 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         self.normalization_stats = normalization_stats
         self.autoencoder_mode = autoencoder_mode
         self._channel_idxs_applied = False
+        self._applied_start_frame = 0
 
         if data_path is not None:
             self.read_data(data_path)
         # TODO: consider ensuring only one passed and not overridden
         if data is not None:
             self.parse_data(data)
+
+        if isinstance(start_frame, bool) or not isinstance(start_frame, int):
+            msg = f"start_frame must be an integer, got {start_frame!r}."
+            raise TypeError(msg)
+        if (
+            isinstance(self._applied_start_frame, bool)
+            or not isinstance(self._applied_start_frame, int)
+            or self._applied_start_frame < 0
+        ):
+            msg = "The preloaded frame offset must be a non-negative integer."
+            raise ValueError(msg)
+        if start_frame < self._applied_start_frame:
+            msg = (
+                f"start_frame={start_frame} is unavailable: the data already starts "
+                f"at frame {self._applied_start_frame}; "
+                "earlier frames cannot be restored."
+            )
+            raise ValueError(msg)
+        relative_start = start_frame - self._applied_start_frame
+        if relative_start >= self.data.shape[1]:
+            msg = (
+                "start_frame must be in the range "
+                f"[{self._applied_start_frame}, "
+                f"{self._applied_start_frame + self.data.shape[1] - 1}], "
+                f"got {start_frame}."
+            )
+            raise ValueError(msg)
+        if relative_start:
+            self.data = self.data[:, relative_start:]
+        self._applied_start_frame = start_frame
 
         if channel_idxs is not None and not self._channel_idxs_applied:
             self.data = self.data[..., list(channel_idxs)]
@@ -113,9 +149,24 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             # - input: first n_steps_input timesteps
             # - output: all remaining timesteps for rollout comparison
             n_steps_output = self.data.shape[1] - n_steps_input
+            if n_steps_output < 1:
+                msg = (
+                    f"start_frame={start_frame} leaves no output frames after "
+                    f"the {n_steps_input} input frame(s)."
+                )
+                raise ValueError(msg)
+
+        window_size = n_steps_input + n_steps_output
+        if self.data.shape[1] < window_size:
+            msg = (
+                f"start_frame={start_frame} leaves {self.data.shape[1]} frames, "
+                f"but {window_size} are required for one sample."
+            )
+            raise ValueError(msg)
 
         self.full_trajectory_mode = full_trajectory_mode
         self.autoencoder_mode = autoencoder_mode
+        self.start_frame = start_frame
         self.n_steps_input = n_steps_input
         self.n_steps_output = n_steps_output
         self.stride = stride
@@ -135,6 +186,8 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         self.all_output_fields = []
         self.all_constant_scalars = []
         self.all_constant_fields = []
+        self.sample_trajectory_indices: list[int] = []
+        self.sample_window_indices: list[int] = []
 
         # Create input-output pairs
         for traj_idx in range(self.n_trajectories):
@@ -156,6 +209,8 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
 
             # Store each subtrajectory separately
             for sub_idx in range(input_fields.shape[0]):
+                self.sample_trajectory_indices.append(traj_idx)
+                self.sample_window_indices.append(sub_idx)
                 self.all_input_fields.append(
                     input_fields[sub_idx].to(self.dtype)
                 )  # [T_in, W, H, C]
@@ -206,6 +261,12 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             else None
         )
         self._channel_idxs_applied = bool(f.get("_channel_idxs_applied", False))
+        applied_start_frame = f.get("_applied_start_frame", 0)
+        self._applied_start_frame = (
+            applied_start_frame[()].item()
+            if isinstance(applied_start_frame, h5py.Dataset)
+            else applied_start_frame
+        )
 
     def read_data(self, data_path: str):
         """Read data.
@@ -230,6 +291,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             self.constant_scalars = data.get("constant_scalars", None)
             self.constant_fields = data.get("constant_fields", None)
             self._channel_idxs_applied = bool(data.get("_channel_idxs_applied", False))
+            self._applied_start_frame = data.get("_applied_start_frame", 0)
             return
         msg = "No data provided to parse."
         raise ValueError(msg)
@@ -241,6 +303,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             "constant_scalars": self.constant_scalars,
             "constant_fields": self.constant_fields,
             "_channel_idxs_applied": self._channel_idxs_applied,
+            "_applied_start_frame": self._applied_start_frame,
         }
 
     def __len__(self):  # noqa: D105
