@@ -556,6 +556,28 @@ def build_eval_overrides(
 # ---------------------------------------------------------------------------
 
 
+def clean_command(path: str | Path, *, dry_run: bool = False) -> tuple[int, int]:
+    """Remove checkpoint files below *path* and return count and bytes removed."""
+    root = Path(path).expanduser()
+    if not root.exists():
+        msg = f"Path does not exist: {root}"
+        raise FileNotFoundError(msg)
+
+    if root.is_file():
+        checkpoints = [root] if root.suffix == ".ckpt" else []
+    else:
+        checkpoints = sorted(p for p in root.rglob("*.ckpt") if p.is_file())
+
+    total_bytes = sum(checkpoint.stat().st_size for checkpoint in checkpoints)
+    if not dry_run:
+        for checkpoint in checkpoints:
+            checkpoint.unlink()
+
+    action = "Would remove" if dry_run else "Removed"
+    print(f"{action} {len(checkpoints)} checkpoint file(s) ({total_bytes} bytes).")
+    return len(checkpoints), total_bytes
+
+
 def train_command(
     *,
     kind: str,
