@@ -92,4 +92,6 @@ class WrappedEncoder(ChannelsFirstEncoder):
                 bc if global_cond is None else torch.cat([global_cond, bc], dim=1)
             )
 
-        return global_cond
+        # The Well can store scalars in float64. Match the fields before passing
+        # conditioning to the processor's linear layers.
+        return global_cond.to(batch.input_fields) if global_cond is not None else None

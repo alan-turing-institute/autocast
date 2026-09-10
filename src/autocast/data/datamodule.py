@@ -26,6 +26,7 @@ class TheWellDataModule(LightningDataModule):
         autoencoder_mode: bool = False,
         num_workers: int | None = None,  # Auto-detect if None
         normalization_path: str = "../stats.yaml",
+        full_trajectory_mode: bool = False,
         **well_kwargs,
     ):
         super().__init__()
@@ -45,6 +46,7 @@ class TheWellDataModule(LightningDataModule):
             normalization_type=normalization_type,
             normalization_path=normalization_path,
             autoencoder_mode=autoencoder_mode,
+            full_trajectory_mode=full_trajectory_mode,
             **well_kwargs,
         )
         self.val_dataset = TheWell(
@@ -56,6 +58,7 @@ class TheWellDataModule(LightningDataModule):
             normalization_type=normalization_type,
             normalization_path=normalization_path,
             autoencoder_mode=autoencoder_mode,
+            full_trajectory_mode=full_trajectory_mode,
             **well_kwargs,
         )
         self.test_dataset = TheWell(
@@ -67,6 +70,7 @@ class TheWellDataModule(LightningDataModule):
             normalization_type=normalization_type,
             normalization_path=normalization_path,
             autoencoder_mode=autoencoder_mode,
+            full_trajectory_mode=full_trajectory_mode,
             **well_kwargs,
         )
 

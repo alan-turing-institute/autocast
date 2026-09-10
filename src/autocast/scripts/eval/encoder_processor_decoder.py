@@ -2055,6 +2055,30 @@ def _resolve_auto_eval_mode(
     return "latent"
 
 
+def _inject_cached_autoencoder_components(
+    cfg: DictConfig, ae_cfg: DictConfig
+) -> DictConfig:
+    """Restore the native cache's autoencoder without replacing explicit overrides."""
+    with open_dict(cfg):
+        if not cfg.get("autoencoder_checkpoint") and ae_cfg.get(
+            "autoencoder_checkpoint"
+        ):
+            cfg.autoencoder_checkpoint = ae_cfg.autoencoder_checkpoint
+        if cfg.get("model") is None:
+            cfg.model = OmegaConf.create({})
+
+    # A processor checkpoint has no encoder/decoder weights. Reuse the cache's
+    # component configs (including LoLA runpath), resolving their original context.
+    ae_model = ae_cfg.get("model", {})
+    with open_dict(cfg.model):
+        for component in ("encoder", "decoder"):
+            if cfg.model.get(component) is None and ae_model.get(component) is not None:
+                cfg.model[component] = OmegaConf.to_container(
+                    ae_model[component], resolve=True
+                )
+    return cfg
+
+
 def _maybe_swap_to_ambient_datamodule(
     cfg: DictConfig,
     *,
@@ -2066,7 +2090,8 @@ def _maybe_swap_to_ambient_datamodule(
     ``ambient`` and ``encode_once`` need the encoder on raw fields, so when
     the current datamodule yields ``EncodedBatch`` we overwrite
     ``cfg.datamodule`` with the autoencoder's training datamodule read from
-    ``<cache_dir>/autoencoder_config.yaml``. No-op for ``eval.mode=latent``
+    ``<cache_dir>/autoencoder_config.yaml`` and backfill missing autoencoder
+    components and checkpoint references. No-op for ``eval.mode=latent``
     (the encoder is never invoked) and for raw-Batch datamodules. Raises if
     the swap is needed but the config is absent; pass ``datamodule=...``
     explicitly in that case.
@@ -2130,7 +2155,9 @@ def _maybe_swap_to_ambient_datamodule(
     # full_trajectory_mode=True for encoding. For eval we need windowed batches
     # matching processor training (n_steps_input / n_steps_output), otherwise
     # metric shapes become incompatible.
-    swapped_datamodule = OmegaConf.create(ae_datamodule)
+    swapped_datamodule = OmegaConf.create(
+        OmegaConf.to_container(ae_datamodule, resolve=True)
+    )
     if not isinstance(swapped_datamodule, DictConfig):
         msg = (
             f"autoencoder_config.yaml at {data_path} contains a non-mapping "
@@ -2176,7 +2203,7 @@ def _maybe_swap_to_ambient_datamodule(
     )
     with open_dict(cfg):
         cfg.datamodule = swapped_datamodule
-    return cfg
+    return _inject_cached_autoencoder_components(cfg, ae_cfg)
 
 
 def _resolve_eval_path(

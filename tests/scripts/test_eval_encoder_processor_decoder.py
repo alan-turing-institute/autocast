@@ -1469,6 +1469,86 @@ def test_maybe_swap_to_ambient_datamodule_loads_from_cache_dir(tmp_path):
     assert cfg.datamodule.use_normalization is True
 
 
+@pytest.mark.parametrize("checkpoint", [None, "/saved/autoencoder.ckpt"])
+@pytest.mark.parametrize("override_components", [False, True])
+def test_native_cache_restores_autoencoder_and_preserves_overrides(
+    tmp_path, checkpoint, override_components
+):
+    ae_cfg = OmegaConf.create(
+        {
+            "ae_run": "/saved/lola",
+            "raw_path": "/saved/datasets",
+            "autoencoder_checkpoint": checkpoint,
+            "datamodule": {
+                "_target_": THE_WELL_DATAMODULE_TARGET,
+                "well_base_path": "${raw_path}",
+                "full_trajectory_mode": True,
+                "n_steps_input": 1,
+                "n_steps_output": 100,
+            },
+            "model": {
+                "encoder": {
+                    "_target_": LOLA_WRAPPED_ENCODER_TARGET,
+                    "runpath": "${ae_run}",
+                    "log_scalars": False,
+                    "mean": [0.5],
+                },
+                "decoder": {
+                    "_target_": LOLA_WRAPPED_DECODER_TARGET,
+                    "runpath": "${ae_run}",
+                },
+            },
+        }
+    )
+    OmegaConf.save(ae_cfg, tmp_path / "autoencoder_config.yaml")
+    cfg = OmegaConf.create(
+        {
+            "datamodule": {
+                "data_path": str(tmp_path),
+                "n_steps_input": 2,
+                "n_steps_output": 5,
+                "stride": 3,
+            },
+            "model": {"processor": {"_target_": "fake.Processor"}},
+        }
+    )
+    if override_components:
+        cfg.model["encoder"] = {"_target_": "custom.Encoder"}
+        cfg.model["decoder"] = {"_target_": "custom.Decoder"}
+        cfg.autoencoder_checkpoint = "/override/autoencoder.ckpt"
+    OmegaConf.set_struct(cfg, True)
+    encoded = EncodedBatch(
+        encoded_inputs=torch.zeros(1, 2, 2, 2, 1),
+        encoded_output_fields=torch.zeros(1, 5, 2, 2, 1),
+        global_cond=None,
+        encoded_info={},
+    )
+
+    _maybe_swap_to_ambient_datamodule(
+        cfg, eval_mode="encode_once", example_batch=encoded
+    )
+
+    assert cfg.datamodule.well_base_path == "/saved/datasets"
+    assert cfg.datamodule.full_trajectory_mode is False
+    assert cfg.datamodule.n_steps_input == 2
+    assert cfg.datamodule.n_steps_output == 5
+    assert cfg.datamodule.min_dt_stride == 3
+    assert cfg.datamodule.max_dt_stride == 3
+    assert cfg.model.processor._target_ == "fake.Processor"
+    if override_components:
+        assert cfg.model.encoder._target_ == "custom.Encoder"
+        assert cfg.model.decoder._target_ == "custom.Decoder"
+        assert cfg.autoencoder_checkpoint == "/override/autoencoder.ckpt"
+    else:
+        assert cfg.model.encoder._target_ == LOLA_WRAPPED_ENCODER_TARGET
+        assert cfg.model.encoder.runpath == "/saved/lola"
+        assert cfg.model.encoder.log_scalars is False
+        assert list(cfg.model.encoder.mean) == [0.5]
+        assert cfg.model.decoder._target_ == LOLA_WRAPPED_DECODER_TARGET
+        assert cfg.model.decoder.runpath == "/saved/lola"
+        assert cfg.get("autoencoder_checkpoint") == checkpoint
+
+
 def test_maybe_swap_to_ambient_datamodule_errors_without_ae_config(tmp_path):
     cfg = OmegaConf.create(
         {
@@ -1737,10 +1817,11 @@ def test_build_lola_autoencoder_config_nodes_propagates_chunk_size(tmp_path):
     assert decoder_cfg.chunk_size == 8
 
 
-def test_wrapped_encoder_encode_cond_can_log_scalars():
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+def test_wrapped_encoder_encode_cond_can_log_scalars(dtype):
     encoder = WrappedEncoder.__new__(WrappedEncoder)
     object.__setattr__(encoder, "log_scalars", True)
-    scalars = torch.tensor([[1.0e7, 5.0]])
+    scalars = torch.tensor([[1.0e7, 5.0]], dtype=dtype)
     boundary_conditions = torch.tensor([[[2.0, 2.0], [0.0, 0.0]]])
     batch = Batch(
         input_fields=torch.zeros(1, 1, 2, 2, 1),
@@ -1754,7 +1835,8 @@ def test_wrapped_encoder_encode_cond_can_log_scalars():
 
     assert cond is not None
     expected = torch.cat([torch.log(scalars), boundary_conditions.flatten(1)], dim=1)
-    assert torch.allclose(cond, expected)
+    assert cond.dtype == batch.input_fields.dtype
+    assert torch.allclose(cond, expected.to(batch.input_fields))
 
 
 def test_wrapped_encoder_chunked_apply_matches_unchunked():
