@@ -58,3 +58,5 @@ reusing old checkpoints. Each cell has a
 downloads are cached, but notebook execution is repeated after library changes.
 
 CLI walkthrough pages are explanatory Markdown and are not executed by this build.
+The research-scale [Rayleigh–Bénard workflow](../walkthrough/rayleigh-benard.md)
+remains a non-executed guide.

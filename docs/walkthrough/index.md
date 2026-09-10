@@ -10,6 +10,7 @@ For a short Python introduction, start with the
 [focused notebooks](../tutorials/index.md) explore individual model and evaluation
 choices with small datasets and plots.
 
-After evaluating your experiments, use
+The [Rayleigh–Bénard guide](rayleigh-benard.md) extends the workflow to The Well
+and pretrained autoencoders. After evaluating your experiments, use
 [evaluation and results](../tutorials/evaluation_and_results.ipynb) to inspect
 metrics and compare saved runs.

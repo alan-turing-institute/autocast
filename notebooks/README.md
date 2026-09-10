@@ -24,4 +24,5 @@ uv run python docs/build.py
 The old notebooks remain recoverable from Git history. Their exploratory
 variants (such as direct learned-autoencoder/EPD assembly and additive or
 concatenated input noise) are not all maintained as separate runnable examples.
-Research-scale workflows belong in Markdown walkthroughs, not in notebook CI.
+Research-scale Rayleigh–Bénard instructions belong in the
+[Markdown walkthrough](../docs/walkthrough/rayleigh-benard.md), not in notebook CI.

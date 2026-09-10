@@ -24,6 +24,8 @@ chapters:
   - file: tutorials/diffusion_and_flow_matching
   - file: tutorials/deterministic_ensembles
 
+- file: walkthrough/rayleigh-benard
+
 - file: tutorials/evaluation_and_results
 
 - file: howto/index

@@ -1,0 +1,26 @@
+# @package _global_
+defaults:
+  - override /datamodule: rayleigh_benard
+  - override /encoder@model.encoder: the_well/rayleigh_benard/lola_f32c64
+  - override /decoder@model.decoder: the_well/rayleigh_benard/lola_f32c64
+  - _self_
+
+experiment_name: cache_latents_the_well_rayleigh_benard_lola_f32c64
+lola_autoencoder_path: ${hydra:runtime.cwd}/datasets/rayleigh_benard/1e3z5x2c_rayleigh_benard_dcae_f32c64_large
+
+# The supplied LoLA wrapper applies the checkpoint's normalization itself.
+datamodule:
+  well_base_path: ${hydra:runtime.cwd}/datasets
+  use_normalization: false
+  batch_size: 1
+  num_workers: 0
+  # Cache all frames, rather than the default 100-step evaluation horizon.
+  max_rollout_steps: .inf
+
+model:
+  encoder:
+    runpath: ${lola_autoencoder_path}
+    chunk_size: 1
+  decoder:
+    runpath: ${lola_autoencoder_path}
+    chunk_size: 1
