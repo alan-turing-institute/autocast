@@ -3,6 +3,7 @@
 from collections.abc import Sequence
 
 from azula.nn.vit import ViT
+from einops.layers.torch import Rearrange
 from torch import nn
 
 from autocast.nn.base import TemporalBackboneBase
@@ -49,6 +50,7 @@ class TemporalViTBackbone(TemporalBackboneBase):
         rpb: bool = True,
         window_size: int | Sequence[int] | None = None,
         include_time_embedding: bool = True,
+        spatial_modulation: bool = False,
     ):
         """Initialize Temporal ViT Backbone.
 
@@ -88,6 +90,7 @@ class TemporalViTBackbone(TemporalBackboneBase):
             include_time_embedding: Forwarded to the base; when False the
                 time-embedding module is not registered and ``t=None`` is
                 accepted at forward time (one-step processors).
+            spatial_modulation: Whether AdaLN receives one vector per patch token.
         """
         if window_size is not None:
             msg = (
@@ -113,6 +116,7 @@ class TemporalViTBackbone(TemporalBackboneBase):
             tcn_num_layers=tcn_num_layers,
             use_precomputed_modulation=use_precomputed_modulation,
             include_time_embedding=include_time_embedding,
+            spatial_modulation=spatial_modulation,
         )
 
         self.patch_size = patch_size
@@ -132,6 +136,18 @@ class TemporalViTBackbone(TemporalBackboneBase):
             rpb=rpb,
             checkpointing=checkpointing,
         )
+        if spatial_modulation:
+            for block in self.vit.get_submodule("blocks").children():
+                # Azula 0.7 inserts a singleton token axis for global AdaLN.
+                # Replace only that parameter-free reshape: local vectors keep
+                # their token axis, with identical weights and checkpoint keys.
+                ada_zero = block.get_submodule("ada_zero")
+                if not isinstance(ada_zero, nn.Sequential) or not isinstance(
+                    ada_zero[-1], Rearrange
+                ):
+                    msg = "Installed Azula has an unsupported AdaLN module layout."
+                    raise RuntimeError(msg)
+                ada_zero[-1] = Rearrange("b tokens (n c) -> n b tokens c", n=3)
 
     @property
     def backbone(self) -> nn.Module:
