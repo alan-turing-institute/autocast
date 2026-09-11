@@ -260,6 +260,58 @@ def test_channel_idxs_none_is_noop(deterministic_data):
     assert dataset[0].input_fields.shape[-1] == 2
 
 
+def test_start_frame_slices_before_windowing(deterministic_data):
+    """`start_frame` should shift windowed and full-trajectory samples."""
+    windowed = ReactionDiffusionDataset(
+        data_path=None,
+        data=deterministic_data,
+        n_steps_input=2,
+        n_steps_output=1,
+        start_frame=3,
+    )
+    rollout = ReactionDiffusionDataset(
+        data_path=None,
+        data=deterministic_data,
+        n_steps_input=2,
+        n_steps_output=1,
+        start_frame=3,
+        full_trajectory_mode=True,
+    )
+
+    expected = deterministic_data["data"][0]
+    assert torch.equal(windowed[0].input_fields, expected[3:5])
+    assert torch.equal(windowed[0].output_fields, expected[5:6])
+    assert torch.equal(rollout[0].input_fields, expected[3:5])
+    assert torch.equal(rollout[0].output_fields, expected[5:])
+
+
+def test_datamodule_threads_start_frame(deterministic_data):
+    """DataModule should propagate `start_frame` to every raw dataset."""
+    dm = SpatioTemporalDataModule(
+        data_path=None,
+        data={
+            "train": deterministic_data,
+            "valid": deterministic_data,
+            "test": deterministic_data,
+        },
+        dataset_cls=ReactionDiffusionDataset,
+        n_steps_input=2,
+        n_steps_output=1,
+        batch_size=1,
+        start_frame=3,
+    )
+
+    for ds in (
+        dm.train_dataset,
+        dm.val_dataset,
+        dm.test_dataset,
+        dm.rollout_val_dataset,
+        dm.rollout_test_dataset,
+    ):
+        assert ds.start_frame == 3
+        assert ds.data.shape[1] == 7
+
+
 def test_datamodule_threads_channel_idxs(deterministic_data, stats_dict):
     """DataModule should propagate `channel_idxs` to all sub-datasets."""
     dm = SpatioTemporalDataModule(

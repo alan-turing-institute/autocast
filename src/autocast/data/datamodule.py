@@ -181,6 +181,7 @@ class SpatioTemporalDataModule(LightningDataModule):
         normalization_stats: dict | DictConfig | None = None,
         num_workers: int | None = None,
         pin_memory: bool = torch.cuda.is_available(),
+        start_frame: int = 0,
     ):
         super().__init__()
         self.verbose = verbose
@@ -205,6 +206,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             n_steps_input=n_steps_input,
             n_steps_output=n_steps_output,
             stride=stride,
+            start_frame=start_frame,
             channel_idxs=channel_idxs,
             autoencoder_mode=self.autoencoder_mode,
             full_trajectory_mode=full_trajectory_mode,
@@ -236,6 +238,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             n_steps_input=n_steps_input,
             n_steps_output=n_steps_output,
             stride=stride,
+            start_frame=start_frame,
             channel_idxs=channel_idxs,
             autoencoder_mode=self.autoencoder_mode,
             full_trajectory_mode=full_trajectory_mode,
@@ -252,6 +255,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             n_steps_input=n_steps_input,
             n_steps_output=n_steps_output,
             stride=stride,
+            start_frame=start_frame,
             channel_idxs=channel_idxs,
             autoencoder_mode=self.autoencoder_mode,
             full_trajectory_mode=full_trajectory_mode,
@@ -266,14 +270,15 @@ class SpatioTemporalDataModule(LightningDataModule):
         self.batch_size = batch_size
 
         if not self.autoencoder_mode:
-            # Reuse loaded tensors; the payload records if channel_idxs were applied
-            # so rollout datasets do not slice the data a second time.
+            # Reuse loaded tensors; the payload records channel selection and frame
+            # cropping so rollout datasets do not slice the data a second time.
             self.rollout_val_dataset = dataset_cls(
                 data_path=None,
                 data=self.train_dataset.to_preloaded_data(),
                 n_steps_input=n_steps_input,
                 n_steps_output=n_steps_output,
                 stride=stride,
+                start_frame=start_frame,
                 channel_idxs=channel_idxs,
                 full_trajectory_mode=True,
                 dtype=dtype,
@@ -289,6 +294,7 @@ class SpatioTemporalDataModule(LightningDataModule):
                 n_steps_input=n_steps_input,
                 n_steps_output=n_steps_output,
                 stride=stride,
+                start_frame=start_frame,
                 channel_idxs=channel_idxs,
                 full_trajectory_mode=True,
                 dtype=dtype,

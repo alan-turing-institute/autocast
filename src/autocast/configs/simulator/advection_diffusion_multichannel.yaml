@@ -3,6 +3,7 @@ split:
   n_valid: 2
   n_test: 2
 simulator:
-  _target_: autocast.data.advection_diffusion.AdvectionDiffusionMultichannel
+  _target_: autosim.simulations.AdvectionDiffusionMultichannel
+  output_indices: [0, 1, 2, 3]
   return_timeseries: true
   log_level: error
