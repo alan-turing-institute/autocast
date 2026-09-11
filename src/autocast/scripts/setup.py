@@ -23,6 +23,7 @@ from autocast.models.processor import ProcessorModel
 from autocast.models.processor_ensemble import ProcessorModelEnsemble
 from autocast.scripts.data import batch_to_device, build_datamodule
 from autocast.types.batch import Batch, EncodedBatch
+from autocast.types.spec import FieldSpec, IOSpec
 
 log = logging.getLogger(__name__)
 
@@ -170,6 +171,30 @@ def _uses_masked_window_flow_matching(processor_config: DictConfig) -> bool:
     return target.endswith("FlowMatchingMaskedWindowProcessor")
 
 
+def _processor_kwargs_from_spec(spec: IOSpec) -> dict[str, Any]:
+    """Map an `IOSpec` onto the kwarg names processors use for their shapes.
+
+    Keeps the input and output channel counts distinct rather than collapsing
+    both onto a single value, so a processor can be built for outputs that
+    differ from its inputs.
+
+    Args:
+        spec: Shape contract for the space the processor operates in (latent
+            space for an encoder-processor-decoder, data space otherwise).
+
+    Returns:
+        Keyword arguments accepted by `_build_processor`.
+    """
+    return {
+        "in_channels": spec.inputs.n_channels,
+        "out_channels": spec.outputs.n_channels,
+        "n_channels_out": spec.outputs.n_channels,
+        "n_steps_input": spec.inputs.n_steps,
+        "n_steps_output": spec.outputs.n_steps,
+        "spatial_resolution": spec.inputs.spatial_resolution,
+    }
+
+
 def _apply_processor_channel_defaults(
     processor_config: DictConfig | None,
     *,
@@ -220,6 +245,41 @@ def _apply_processor_channel_defaults(
         _set_if_auto(backbone_config, "global_cond_channels", 0)
         if "include_global_cond" in backbone_config:
             backbone_config.include_global_cond = False
+
+
+def _resolve_supports_rollout(model_config: DictConfig, stats: dict) -> bool:
+    """Decide whether a model may be rolled out autoregressively.
+
+    Derived from the data's own shapes rather than asserted by hand: feeding
+    predictions back in as inputs requires the output fields to share the input
+    fields' channel count and spatial resolution. An explicit
+    `model.supports_rollout` in the config still wins, so a model can opt out
+    even when its shapes would allow it.
+
+    Args:
+        model_config: The `model` config group.
+        stats: Inferred data shapes from `setup_datamodule`.
+
+    Returns:
+        Whether autoregressive rollout is available for this model.
+    """
+    explicit = model_config.get("supports_rollout")
+    if explicit is not None and explicit != "auto":
+        return bool(explicit)
+    io_spec = stats.get("io_spec")
+    if io_spec is None:
+        return True
+    if not io_spec.is_autoregressive:
+        log.info(
+            "Disabling rollout: output fields (%s channels, %s) differ from "
+            "input fields (%s channels, %s), so predictions cannot be fed "
+            "back in as inputs.",
+            io_spec.outputs.n_channels,
+            io_spec.outputs.spatial_resolution,
+            io_spec.inputs.n_channels,
+            io_spec.inputs.spatial_resolution,
+        )
+    return io_spec.is_autoregressive
 
 
 def setup_datamodule(
@@ -289,7 +349,12 @@ def setup_datamodule(
 
     config = resolve_auto_params(config, input_shape, output_shape)
     logic_stats = {
+        "io_spec": IOSpec.from_batch_shapes(input_shape, output_shape),
         "channel_count": input_shape[-1],
+        # Output channels may differ from input channels (e.g. predicting a
+        # subset of the state, or different fields entirely). Equal for the
+        # symmetric datasets, so existing configs resolve exactly as before.
+        "output_channel_count": output_shape[-1],
         "n_steps_input": input_shape[1],
         "n_steps_output": output_shape[1],
         "n_constant_scalars": n_constant_scalars,
@@ -371,19 +436,22 @@ def setup_autoencoder_components(
     ):
         encoder_config["n_steps_input"] = stats.get("n_steps_input")
 
+    # The decoder produces the predicted fields, so it follows the output
+    # channel count, which `output_channel_idxs` can make differ from the input.
+    output_channels = stats.get("output_channel_count", base_channels)
     if decoder_config:
         if (
             "out_channels" in decoder_config
-            and isinstance(base_channels, int)
+            and isinstance(output_channels, int)
             and decoder_config.get("out_channels") in (None, "auto")
         ):
-            decoder_config["out_channels"] = base_channels
+            decoder_config["out_channels"] = output_channels
         if (
             "output_channels" in decoder_config
-            and isinstance(base_channels, int)
+            and isinstance(output_channels, int)
             and decoder_config.get("output_channels") in (None, "auto")
         ):
-            decoder_config["output_channels"] = base_channels
+            decoder_config["output_channels"] = output_channels
 
     log.info(
         "Model config after resolving auto channels:\nEncoder: %s\nDecoder: %s",
@@ -598,15 +666,22 @@ def setup_processor_model(
     if hasattr(example_batch, "global_cond") and example_batch.global_cond is not None:
         global_cond_channels = example_batch.global_cond.shape[-1]
 
-    proc_kwargs = {
-        "in_channels": stats["channel_count"] + extra_input_channels,
-        "out_channels": stats["channel_count"],
-        "n_steps_input": stats["n_steps_input"],
-        "n_steps_output": stats["n_steps_output"],
-        "n_channels_out": stats["channel_count"],
-        "spatial_resolution": tuple(stats["input_shape"][2:-1]),
-    }
-    processor = _build_processor(model_config, proc_kwargs, global_cond_channels)
+    spatial_resolution = tuple(stats["input_shape"][2:-1])
+    spec = IOSpec(
+        inputs=FieldSpec(
+            n_steps=stats["n_steps_input"],
+            n_channels=stats["channel_count"] + extra_input_channels,
+            spatial_resolution=spatial_resolution,
+        ),
+        outputs=FieldSpec(
+            n_steps=stats["n_steps_output"],
+            n_channels=stats.get("output_channel_count", stats["channel_count"]),
+            spatial_resolution=spatial_resolution,
+        ),
+    )
+    processor = _build_processor(
+        model_config, _processor_kwargs_from_spec(spec), global_cond_channels
+    )
     loss_func = _build_loss_func(model_config)
 
     is_ensemble = model_config.get("n_members", 1) > 1
@@ -618,6 +693,7 @@ def setup_processor_model(
     kwargs = {
         "processor": processor,
         "stride": data_config.get("stride", stats["n_steps_output"]),
+        "supports_rollout": _resolve_supports_rollout(model_config, stats),
         "loss_func": loss_func,
         "optimizer_config": optimizer_config,
         "noise_injector": noise_injector,
@@ -706,15 +782,21 @@ def setup_epd_model(
 
     # TODO: currently "out_channels" and "in_channels" are only used in the config for
     # ViT and FNO, while "n_channels_out" is used in flow_matching and diffusions
-    proc_kwargs = {
-        "in_channels": latent_channels,
-        "out_channels": latent_channels_out,
-        "n_channels_out": latent_channels_out,
-        "n_steps_input": proc_n_steps_input,
-        "n_steps_output": proc_n_steps_output,
-        "spatial_resolution": latent_spatial_resolution,
-    }
-    processor = _build_processor(model_config, proc_kwargs, global_cond_channels)
+    latent_spec = IOSpec(
+        inputs=FieldSpec(
+            n_steps=proc_n_steps_input,
+            n_channels=latent_channels,
+            spatial_resolution=latent_spatial_resolution,
+        ),
+        outputs=FieldSpec(
+            n_steps=proc_n_steps_output,
+            n_channels=latent_channels_out,
+            spatial_resolution=latent_spatial_resolution,
+        ),
+    )
+    processor = _build_processor(
+        model_config, _processor_kwargs_from_spec(latent_spec), global_cond_channels
+    )
     loss_func = _build_loss_func(model_config, processor)
     if model_config.get("train_in_latent_space", False) and getattr(
         loss_func,
@@ -742,6 +824,7 @@ def setup_epd_model(
         "train_in_latent_space": model_config.get("train_in_latent_space", False),
         "freeze_encoder_decoder": freeze_encoder_decoder,
         "stride": data_config.get("stride", stats["n_steps_output"]),
+        "supports_rollout": _resolve_supports_rollout(model_config, stats),
         "optimizer_config": optimizer_config,
         "loss_func": loss_func,
         "input_noise_injector": noise_injector,
