@@ -1,9 +1,15 @@
 import lightning as L
+import pytest
 import torch
 from conftest import get_optimizer_config
+from torch import nn
 
+from autocast.losses import MCDropoutMSEL2Loss
 from autocast.models.processor import ProcessorModel
-from autocast.processors.azula_vit import AzulaViTProcessor
+from autocast.processors.azula_vit import (
+    AzulaViTProcessor,
+    MCDropoutAzulaViTProcessor,
+)
 from autocast.processors.vit import AViTProcessor
 from autocast.types import EncodedBatch
 
@@ -112,3 +118,106 @@ def test_azula_vit_processor_checkpointing(encoded_batch):
     train_loss = model.training_step(encoded_batch, 0)
     assert train_loss.shape == ()
     train_loss.backward()
+
+
+def _make_mc_dropout_processor(*, dropout: float = 0.5) -> MCDropoutAzulaViTProcessor:
+    return MCDropoutAzulaViTProcessor(
+        in_channels=4,
+        out_channels=4,
+        spatial_resolution=(8, 8),
+        hidden_dim=64,
+        num_heads=4,
+        n_layers=2,
+        patch_size=1,
+        temporal_method="none",
+        dropout=dropout,
+    )
+
+
+def test_mc_dropout_azula_vit_uses_dropout_without_noise_modulation():
+    processor = _make_mc_dropout_processor(dropout=0.2)
+
+    assert processor.n_noise_channels is None
+    assert processor.n_noise_input_channels is None
+    assert processor.modulation_proj is None
+
+    dropout_modules = [
+        module for module in processor.modules() if isinstance(module, nn.Dropout)
+    ]
+
+    assert len(dropout_modules) == 2
+    assert all(module.p == 0.2 for module in dropout_modules)
+
+
+def test_mc_dropout_azula_vit_remains_stochastic_during_inference():
+    processor = _make_mc_dropout_processor()
+    processor.eval()
+    x = torch.randn(2, 1, 8, 8, 4)
+
+    first = processor.map(x)
+    second = processor.map(x)
+
+    assert not torch.equal(first, second)
+    assert processor.training is False
+    assert all(
+        not module.training
+        for module in processor.modules()
+        if isinstance(module, nn.Dropout)
+    )
+
+
+def test_mc_dropout_azula_vit_mse_l2_is_trainable():
+    processor = _make_mc_dropout_processor(dropout=0.1)
+    processor.train()
+    inputs = torch.randn(2, 1, 8, 8, 4)
+    targets = torch.randn_like(inputs)
+
+    prediction = processor.map(inputs)
+    loss_func = MCDropoutMSEL2Loss(
+        processor=processor,
+        l2_coefficient=1e-5,
+    )
+    loss = loss_func(prediction, targets)
+    loss.backward()
+
+    assert loss.shape == ()
+    assert torch.isfinite(loss)
+    assert loss_func.l2_penalty(loss) > 0
+    assert any(
+        parameter.grad is not None
+        and torch.isfinite(parameter.grad).all()
+        and torch.count_nonzero(parameter.grad) > 0
+        for parameter in processor.parameters()
+    )
+
+
+def test_standard_azula_vit_disables_dropout_during_inference():
+    processor = AzulaViTProcessor(
+        in_channels=4,
+        out_channels=4,
+        spatial_resolution=(8, 8),
+        hidden_dim=64,
+        num_heads=4,
+        n_layers=2,
+        patch_size=1,
+        temporal_method="none",
+        n_noise_channels=None,
+        dropout=0.5,
+    )
+    processor.eval()
+    x = torch.randn(2, 1, 8, 8, 4)
+
+    first = processor.map(x)
+    second = processor.map(x)
+
+    assert torch.equal(first, second)
+
+
+def test_mc_dropout_azula_vit_rejects_noise_modulation():
+    with pytest.raises(ValueError, match="dropout instead of stochastic modulation"):
+        MCDropoutAzulaViTProcessor(
+            in_channels=4,
+            out_channels=4,
+            spatial_resolution=(8, 8),
+            n_noise_channels=32,
+        )

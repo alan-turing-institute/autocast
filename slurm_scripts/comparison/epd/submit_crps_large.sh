@@ -23,6 +23,9 @@ declare -A COSINE_EPOCHS_BY_DATASET=(
 BUDGET_MAX_TIME="00:23:59:00"
 # SLURM timeout with 1-min buffer beyond the 24h budget.
 TIMEOUT_MIN=1439
+# Override for independent repeat fits, e.g.:
+#   TRAINING_SEED=43 ./slurm_scripts/comparison/epd/submit_crps_large.sh
+TRAINING_SEED="${TRAINING_SEED:-42}"
 RUN_DRY_STATES=("true" "false")
 
 # Per-dataset local_experiment configs.
@@ -53,10 +56,12 @@ for datamodule in "${!EXPERIMENTS[@]}"; do
         echo "  datamodule: ${datamodule}"
         echo "  local_experiment: ${experiment}"
         echo "  cosine_epochs: ${cosine_epochs}"
+        echo "  seed: ${TRAINING_SEED}"
 
         uv run autocast epd --mode slurm "${dry_run_arg[@]}" \
             datamodule="${datamodule}" \
             local_experiment="${experiment}" \
+            seed="${TRAINING_SEED}" \
             logging.wandb.enabled=true \
             optimizer.cosine_epochs="${cosine_epochs}" \
             hydra.launcher.timeout_min="${TIMEOUT_MIN}" \

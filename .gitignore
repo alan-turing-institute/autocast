@@ -6,7 +6,11 @@ dist/
 *.egg-info/
 exploratory/data
 .DS_Store
+
+# Ignore directories for datasets, outputs, and local and temporary files
 outputs
+tmp
+scratch
 lightning_logs
 datasets
 run_scripts
@@ -14,6 +18,7 @@ logs
 local_hydra/local_experiment/*.yaml
 !local_hydra/local_experiment/README.md
 core
+
 # AI rules currently ignored
 .clinerules
 .cursorrules

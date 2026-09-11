@@ -5,6 +5,7 @@ import torch
 from omegaconf import OmegaConf
 
 from autocast.encoders.base import Encoder
+from autocast.losses import MCDropoutMSEL2Loss
 from autocast.scripts.setup import (
     _apply_processor_channel_defaults,
     _build_loss_func,
@@ -283,6 +284,38 @@ def test_build_loss_func_instantiates_from_config():
     cfg = OmegaConf.create({"loss_func": {"_target_": "torch.nn.L1Loss"}})
     loss = _build_loss_func(cfg)
     assert isinstance(loss, torch.nn.L1Loss)
+
+
+def test_build_loss_func_injects_processor_when_requested():
+    processor = torch.nn.Linear(2, 2)
+    cfg = OmegaConf.create(
+        {
+            "loss_func": {
+                "_target_": "autocast.losses.MCDropoutMSEL2Loss",
+                "l2_coefficient": 1e-5,
+            }
+        }
+    )
+
+    loss = _build_loss_func(cfg, processor)
+
+    assert isinstance(loss, MCDropoutMSEL2Loss)
+    assert loss.processor is processor
+    assert loss.l2_coefficient == pytest.approx(1e-5)
+
+
+def test_build_loss_func_rejects_missing_required_processor():
+    cfg = OmegaConf.create(
+        {
+            "loss_func": {
+                "_target_": "autocast.losses.MCDropoutMSEL2Loss",
+                "l2_coefficient": 1e-5,
+            }
+        }
+    )
+
+    with pytest.raises(ValueError, match="requires a processor-bound EPD setup"):
+        _build_loss_func(cfg)
 
 
 # --- _infer_latent_channels ---

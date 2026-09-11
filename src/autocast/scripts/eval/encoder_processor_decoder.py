@@ -16,6 +16,7 @@ import yaml
 from einops import rearrange
 from omegaconf import DictConfig, OmegaConf, open_dict
 from the_well.data.normalization import ZScoreNormalization
+from torch.utils.data import DataLoader, SequentialSampler
 from torchmetrics import Metric
 
 from autocast.benchmarking import benchmark_model, benchmark_rollout
@@ -54,6 +55,12 @@ from autocast.metrics.ensemble import (
     SpreadSkillRatio,
     VariogramScore,
     WinklerScore,
+)
+from autocast.metrics.trajectory import (
+    CsvValue,
+    TrajectoryMetricAccumulator,
+    TrajectoryTask,
+    build_trajectory_metadata,
 )
 from autocast.models.encoder_processor_decoder import EncoderProcessorDecoder
 from autocast.models.encoder_processor_decoder_ensemble import (
@@ -374,6 +381,130 @@ def _resolve_csv_path(eval_cfg: DictConfig, work_dir: Path) -> Path:
     if csv_path is not None:
         return Path(csv_path).expanduser().resolve()
     return (work_dir / "evaluation_metrics.csv").resolve()
+
+
+def _resolve_trajectory_statistics_dir(
+    eval_cfg: DictConfig, evaluation_csv_path: Path
+) -> Path:
+    trajectory_cfg = eval_cfg.get("trajectory_statistics") or {}
+    output_dir = trajectory_cfg.get("output_dir")
+    if output_dir is None:
+        return (evaluation_csv_path.parent / "trajectory_statistics").resolve()
+
+    path = Path(str(output_dir)).expanduser()
+    if not path.is_absolute():
+        path = evaluation_csv_path.parent / path
+    return path.resolve()
+
+
+def _prepare_trajectory_statistics_dir(
+    output_dir: Path, *, overwrite_existing: bool
+) -> None:
+    """Create an isolated output directory without silently replacing artifacts."""
+    if output_dir.exists() and not output_dir.is_dir():
+        msg = f"Trajectory statistics output path is not a directory: {output_dir}."
+        raise NotADirectoryError(msg)
+    if (
+        output_dir.exists()
+        and not overwrite_existing
+        and next(output_dir.iterdir(), None) is not None
+    ):
+        msg = (
+            f"Trajectory statistics output directory is not empty: {output_dir}. "
+            "Choose a new eval.trajectory_statistics.output_dir or explicitly set "
+            "eval.trajectory_statistics.overwrite_existing=true."
+        )
+        raise FileExistsError(msg)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+
+def _trajectory_statistics_seed(eval_cfg: DictConfig) -> int:
+    trajectory_cfg = eval_cfg.get("trajectory_statistics") or {}
+    seed = trajectory_cfg.get("sampling_seed", 42)
+    if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
+        msg = (
+            "eval.trajectory_statistics.sampling_seed must be a non-negative "
+            f"integer, got {seed!r}."
+        )
+        raise ValueError(msg)
+    return seed
+
+
+def _seed_trajectory_sampling(seed: int) -> None:
+    """Reset torch sampling immediately before a trajectory inference pass."""
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+
+def _validate_trajectory_loader(dataloader: DataLoader, *, label: str) -> Any:
+    """Require the complete sequential loader semantics used by index metadata."""
+    if not isinstance(dataloader.sampler, SequentialSampler):
+        msg = f"{label} trajectory statistics require a sequential dataloader."
+        raise ValueError(msg)
+    if dataloader.drop_last:
+        msg = f"{label} trajectory statistics require drop_last=False."
+        raise ValueError(msg)
+
+    dataset = dataloader.dataset
+    missing = [
+        name
+        for name in ("sample_trajectory_indices", "sample_window_indices")
+        if not hasattr(dataset, name)
+    ]
+    if missing:
+        msg = (
+            f"{label} dataset {type(dataset).__name__} does not expose required "
+            f"trajectory metadata: {missing}."
+        )
+        raise TypeError(msg)
+    return dataset
+
+
+def _trajectory_row_context(
+    *,
+    cfg: DictConfig,
+    checkpoint_path: Path,
+    model: Any,
+    resolved_eval_path: str,
+    n_members: int,
+    sampling_seed: int,
+) -> dict[str, CsvValue]:
+    data_path = str(cfg.get("datamodule", {}).get("data_path", ""))
+    context: dict[str, CsvValue] = {
+        "dataset": Path(data_path).name if data_path else "unknown",
+        "dataset_path": data_path,
+        "checkpoint": str(checkpoint_path),
+        "model_class": type(_unwrap_module(model)).__name__,
+        "eval_path": resolved_eval_path,
+        "n_members": int(n_members),
+        "evaluation_sampling_seed": sampling_seed,
+    }
+    training_seed = cfg.get("seed")
+    if isinstance(training_seed, (int, float, str)) and not isinstance(
+        training_seed, bool
+    ):
+        context["training_seed"] = training_seed
+    return context
+
+
+def _build_trajectory_accumulator(
+    *,
+    dataset: Any,
+    metric_fns: dict[str, Callable[[], Metric]],
+    windows: list[tuple[int, int] | None] | None,
+    include_per_timestep: bool,
+    row_context: dict[str, CsvValue],
+) -> TrajectoryMetricAccumulator:
+    return TrajectoryMetricAccumulator(
+        sample_trajectory_indices=list(dataset.sample_trajectory_indices),
+        sample_window_indices=list(dataset.sample_window_indices),
+        windows=windows,
+        metric_fns=metric_fns,
+        include_per_timestep=include_per_timestep,
+        trajectory_metadata=build_trajectory_metadata(dataset),
+        row_context=row_context,
+    )
 
 
 def _resolve_video_dir(eval_cfg: DictConfig, work_dir: Path) -> Path:
@@ -986,7 +1117,7 @@ def _render_rollouts(  # noqa: PLR0912, PLR0915
     return saved_paths
 
 
-def _write_csv(rows: list[dict[str, float | str]], csv_path: Path):
+def _write_csv(rows: Sequence[Mapping[str, Any]], csv_path: Path):
     if not rows:
         log.warning("No evaluation rows to write; skipping CSV generation.")
         return
@@ -2055,7 +2186,7 @@ def _resolve_auto_eval_mode(
     return "latent"
 
 
-def _maybe_swap_to_ambient_datamodule(
+def _maybe_swap_to_ambient_datamodule(  # noqa: PLR0912
     cfg: DictConfig,
     *,
     eval_mode: str,
@@ -2148,6 +2279,17 @@ def _maybe_swap_to_ambient_datamodule(
             )
             if isinstance(step_value, int) and step_value > 0:
                 OmegaConf.update(swapped_datamodule, step_key, step_value, merge=True)
+        if (
+            isinstance(original_datamodule, Mapping)
+            and "start_frame" in original_datamodule
+        ):
+            # Zero explicitly resets the offset; leave validation to the dataset.
+            OmegaConf.update(
+                swapped_datamodule,
+                "start_frame",
+                original_datamodule["start_frame"],
+                merge=True,
+            )
         stride_value = (
             original_datamodule.get("stride")
             if isinstance(original_datamodule, Mapping)
@@ -2455,6 +2597,29 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     requested_eval_mode = _normalize_eval_mode(eval_cfg.get("mode"))
     eval_mode = requested_eval_mode
     latent_space_metrics = bool(eval_cfg.get("latent_space_metrics", False))
+    trajectory_cfg = eval_cfg.get("trajectory_statistics") or {}
+    trajectory_statistics_enabled = bool(trajectory_cfg.get("enabled", False))
+    trajectory_overwrite_existing = bool(
+        trajectory_cfg.get("overwrite_existing", False)
+    )
+    trajectory_include_per_timestep = bool(
+        trajectory_cfg.get("include_per_timestep", True)
+    )
+    trajectory_sampling_seed = (
+        _trajectory_statistics_seed(eval_cfg) if trajectory_statistics_enabled else None
+    )
+    if trajectory_statistics_enabled and (
+        (max_test_batches is not None and max_test_batches > 0)
+        or (max_rollout_batches is not None and max_rollout_batches > 0)
+    ):
+        msg = (
+            "Trajectory statistics require complete test and rollout loaders; "
+            "set eval.max_test_batches=null and eval.max_rollout_batches=null."
+        )
+        raise ValueError(msg)
+    if trajectory_statistics_enabled and latent_space_metrics:
+        msg = "Trajectory paper statistics must be computed in decoded data space."
+        raise ValueError(msg)
     _validate_latent_space_metrics_flag(
         requested_eval_mode=requested_eval_mode,
         latent_space_metrics=latent_space_metrics,
@@ -2476,11 +2641,35 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
         ),
     )
 
-    if cfg.get("output", {}).get("save_config"):
-        save_resolved_config(cfg, work_dir, filename="resolved_eval_config.yaml")
+    configured_csv_path = _resolve_csv_path(eval_cfg, work_dir)
+    trajectory_statistics_dir = _resolve_trajectory_statistics_dir(
+        eval_cfg, configured_csv_path
+    )
+    if trajectory_statistics_enabled:
+        # Keep every artifact from this seeded rerun together so enabling the
+        # feature cannot replace any CSV, coverage plot, or video from the
+        # original evaluation.
+        _prepare_trajectory_statistics_dir(
+            trajectory_statistics_dir,
+            overwrite_existing=trajectory_overwrite_existing,
+        )
+        csv_path = trajectory_statistics_dir / configured_csv_path.name
+        video_dir = trajectory_statistics_dir / "videos"
+        log.info(
+            "Trajectory-statistics rerun artifacts will be written under %s.",
+            trajectory_statistics_dir,
+        )
+    else:
+        csv_path = configured_csv_path
+        video_dir = _resolve_video_dir(eval_cfg, work_dir)
 
-    csv_path = _resolve_csv_path(eval_cfg, work_dir)
-    video_dir = _resolve_video_dir(eval_cfg, work_dir)
+    if cfg.get("output", {}).get("save_config"):
+        config_output_dir = (
+            trajectory_statistics_dir if trajectory_statistics_enabled else work_dir
+        )
+        save_resolved_config(
+            cfg, config_output_dir, filename="resolved_eval_config.yaml"
+        )
 
     # Load checkpoint payload early to detect model type
     log.info("Loading checkpoint from %s", checkpoint_path)
@@ -2658,6 +2847,13 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     # Get number of ensemble members from config if available
     n_members = cfg.get("model", {}).get("n_members", 1)
     has_ensemble = bool(n_members and n_members > 1)
+    if trajectory_statistics_enabled and not has_ensemble:
+        msg = (
+            "Trajectory statistics require eval.n_members > 1 so raw empirical "
+            "coverage and Coverage MAE can be computed."
+        )
+        raise ValueError(msg)
+
     rollout_member_indices = _normalize_ensemble_member_indices(
         eval_cfg.get("rollout_member_indices", []),
         n_members=n_members,
@@ -2713,6 +2909,12 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
         num_nodes=num_nodes,
     )
     fabric.launch()
+    if trajectory_statistics_enabled and int(fabric.world_size) != 1:
+        msg = (
+            "Trajectory statistics currently require eval.devices=1 so every source "
+            "sample is consumed once in sequential dataset order."
+        )
+        raise ValueError(msg)
 
     # Setup model and loader with Fabric
     log.info("Model configuration n_members: %s", n_members)
@@ -2724,9 +2926,14 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     model.eval()
     if decoder_module is not None:
         decoder_module.to(fabric.device)
+    raw_test_loader = datamodule.test_dataloader()
+    test_dataset_for_trajectories = (
+        _validate_trajectory_loader(raw_test_loader, label="Single-step")
+        if trajectory_statistics_enabled
+        else None
+    )
     test_loader = _limit_batches(
-        fabric.setup_dataloaders(datamodule.test_dataloader()),
-        max_test_batches,
+        fabric.setup_dataloaders(raw_test_loader), max_test_batches
     )
 
     # Evaluation
@@ -2737,7 +2944,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
         eval_cfg.get("skip_memory_intensive_metrics", True)
     )
 
-    if compute_test_metrics:
+    if compute_test_metrics or trajectory_statistics_enabled:
         compute_coverage = eval_cfg.get("compute_coverage", False)
         test_metric_fns: dict[str, Callable[[], Metric]] = {}
 
@@ -2798,6 +3005,26 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
             n_members=n_members if n_members and n_members > 1 else None,
         )
 
+        test_trajectory_accumulator = None
+        if trajectory_statistics_enabled:
+            assert trajectory_sampling_seed is not None
+            assert test_dataset_for_trajectories is not None
+            _seed_trajectory_sampling(trajectory_sampling_seed)
+            test_trajectory_accumulator = _build_trajectory_accumulator(
+                dataset=test_dataset_for_trajectories,
+                metric_fns=test_metric_fns,
+                windows=test_windows,
+                include_per_timestep=False,
+                row_context=_trajectory_row_context(
+                    cfg=cfg,
+                    checkpoint_path=checkpoint_path,
+                    model=model,
+                    resolved_eval_path=resolved_eval_path,
+                    n_members=int(n_members),
+                    sampling_seed=trajectory_sampling_seed,
+                ),
+            )
+
         test_metrics_results, _, test_per_batch_rows = compute_metrics_from_dataloader(
             dataloader=test_loader,
             metric_fns=test_metric_fns,
@@ -2805,7 +3032,28 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
             windows=test_windows,
             return_per_batch=True,
             device=fabric.device,
+            batch_result_callback=(
+                test_trajectory_accumulator.update
+                if test_trajectory_accumulator is not None
+                else None
+            ),
         )
+
+        if test_trajectory_accumulator is not None:
+            test_trajectory_accumulator.validate_complete()
+            if fabric.global_rank == 0:
+                trajectory_test_path = (
+                    trajectory_statistics_dir / "single_step_metrics_per_trajectory.csv"
+                )
+                _write_csv(
+                    test_trajectory_accumulator.window_rows(
+                        task=TrajectoryTask.SINGLE_STEP
+                    ),
+                    trajectory_test_path,
+                )
+                log.info(
+                    "Wrote single-step trajectory metrics to %s", trajectory_test_path
+                )
 
         if test_per_batch_rows:
             test_per_batch_rows = _gather_per_batch_rows(
@@ -2817,7 +3065,9 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
             test_metrics_results,
             per_batch_rows=test_per_batch_rows,  # pyright: ignore[reportArgumentType]
             log_prefix="Test",
-            plot_dir=work_dir,
+            plot_dir=(
+                trajectory_statistics_dir if trajectory_statistics_enabled else work_dir
+            ),
         )
 
         evaluation_rows.extend(test_rows)
@@ -2844,7 +3094,10 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     compute_rollout_coverage = eval_cfg.get("compute_rollout_coverage", False)
     compute_rollout_metrics = eval_cfg.get("compute_rollout_metrics", False)
     rollout_requested = bool(
-        batch_indices or compute_rollout_coverage or compute_rollout_metrics
+        batch_indices
+        or compute_rollout_coverage
+        or compute_rollout_metrics
+        or trajectory_statistics_enabled
     )
 
     # A model whose outputs differ from its inputs cannot be fed its own
@@ -2893,11 +3146,13 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 max_rollout_batches,
             )
             save_rollout_snapshots = bool(eval_cfg.get("save_rollout_snapshots", False))
-            rollout_snapshot_dir = (
-                _resolve_rollout_snapshot_dir(eval_cfg, video_dir)
-                if save_rollout_snapshots
-                else None
-            )
+            rollout_snapshot_dir = None
+            if save_rollout_snapshots:
+                rollout_snapshot_dir = (
+                    video_dir / "snapshots"
+                    if trajectory_statistics_enabled
+                    else _resolve_rollout_snapshot_dir(eval_cfg, video_dir)
+                )
             rollout_snapshot_timesteps = (
                 eval_cfg.get("rollout_snapshot_timesteps", [])
                 if save_rollout_snapshots
@@ -2949,7 +3204,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
         # Prepare metric functions for rollouts
         rollout_metric_fns: dict[str, Callable[[], Metric]] = {}
 
-        if compute_rollout_metrics:
+        if compute_rollout_metrics or trajectory_statistics_enabled:
             for name in metrics_list:
                 if _should_skip_metric(
                     name, skip_memory_intensive=skip_memory_intensive_metrics
@@ -2986,7 +3241,11 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                     msg = f"Metric {name} not found in available metrics"
                     log.warning(msg)
 
-        if compute_rollout_coverage and n_members and n_members > 1:
+        if (
+            (compute_rollout_coverage or trajectory_statistics_enabled)
+            and n_members
+            and n_members > 1
+        ):
             log.info("Adding rollout coverage to metrics...")
 
             def coverage_factory() -> Metric:
@@ -3094,13 +3353,43 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 metadata_csv_name: str,
                 per_timestep_stem: str,
                 log_prefix: str,
+                collect_trajectory_statistics: bool = False,
             ) -> None:
+                raw_rollout_metrics_loader = datamodule.rollout_test_dataloader(
+                    batch_size=eval_batch_size
+                )
+                rollout_dataset_for_trajectories = (
+                    _validate_trajectory_loader(
+                        raw_rollout_metrics_loader, label="Rollout"
+                    )
+                    if collect_trajectory_statistics
+                    else None
+                )
                 rollout_metrics_loader = _limit_batches(
-                    fabric.setup_dataloaders(
-                        datamodule.rollout_test_dataloader(batch_size=eval_batch_size)
-                    ),
+                    fabric.setup_dataloaders(raw_rollout_metrics_loader),
                     max_rollout_batches,
                 )
+
+                rollout_trajectory_accumulator = None
+                if collect_trajectory_statistics:
+                    assert trajectory_sampling_seed is not None
+                    assert rollout_dataset_for_trajectories is not None
+                    rollout_sampling_seed = trajectory_sampling_seed + 1
+                    _seed_trajectory_sampling(rollout_sampling_seed)
+                    rollout_trajectory_accumulator = _build_trajectory_accumulator(
+                        dataset=rollout_dataset_for_trajectories,
+                        metric_fns=rollout_metric_fns,
+                        windows=windows,
+                        include_per_timestep=trajectory_include_per_timestep,
+                        row_context=_trajectory_row_context(
+                            cfg=cfg,
+                            checkpoint_path=checkpoint_path,
+                            model=model,
+                            resolved_eval_path=resolved_eval_path,
+                            n_members=int(n_members),
+                            sampling_seed=rollout_sampling_seed,
+                        ),
+                    )
 
                 rollout_metrics_per_window, _, rollout_per_batch_rows = (
                     compute_metrics_from_dataloader(
@@ -3110,8 +3399,43 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                         windows=windows,
                         return_per_batch=True,
                         device=fabric.device,
+                        batch_result_callback=(
+                            rollout_trajectory_accumulator.update
+                            if rollout_trajectory_accumulator is not None
+                            else None
+                        ),
                     )
                 )
+                if rollout_trajectory_accumulator is not None:
+                    rollout_trajectory_accumulator.validate_complete()
+                    if fabric.global_rank == 0:
+                        trajectory_rollout_path = (
+                            trajectory_statistics_dir
+                            / "rollout_metrics_per_trajectory.csv"
+                        )
+                        _write_csv(
+                            rollout_trajectory_accumulator.window_rows(
+                                task=TrajectoryTask.ROLLOUT_WINDOW
+                            ),
+                            trajectory_rollout_path,
+                        )
+                        log.info(
+                            "Wrote rollout trajectory metrics to %s",
+                            trajectory_rollout_path,
+                        )
+                        if trajectory_include_per_timestep:
+                            trajectory_timestep_path = (
+                                trajectory_statistics_dir
+                                / "rollout_metrics_per_timestep_per_trajectory.csv"
+                            )
+                            _write_csv(
+                                rollout_trajectory_accumulator.per_timestep_rows(),
+                                trajectory_timestep_path,
+                            )
+                            log.info(
+                                "Wrote per-timestep rollout trajectory metrics to %s",
+                                trajectory_timestep_path,
+                            )
                 if rollout_per_batch_rows:
                     rollout_per_batch_rows = _gather_per_batch_rows(
                         rollout_per_batch_rows,
@@ -3206,6 +3530,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 metadata_csv_name="rollout_metadata.csv",
                 per_timestep_stem="rollout_metrics_per_timestep",
                 log_prefix="Rollout",
+                collect_trajectory_statistics=trajectory_statistics_enabled,
             )
 
             if eval_cfg.get("compute_rollout_autoencoded_target_metrics", False):
@@ -3241,7 +3566,12 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
         log.info("Wrote evaluation metadata to %s", metadata_csv_path)
 
     if benchmark_rows and fabric.global_rank == 0:
-        benchmark_csv_path = resolve_benchmark_csv_path(eval_cfg, work_dir)
+        configured_benchmark_csv_path = resolve_benchmark_csv_path(eval_cfg, work_dir)
+        benchmark_csv_path = (
+            trajectory_statistics_dir / configured_benchmark_csv_path.name
+            if trajectory_statistics_enabled
+            else configured_benchmark_csv_path
+        )
         benchmark_csv_path.parent.mkdir(parents=True, exist_ok=True)
         pd.DataFrame(benchmark_rows).to_csv(benchmark_csv_path, index=False)
         log.info("Wrote benchmark CSV to %s", benchmark_csv_path)
