@@ -530,6 +530,9 @@ class TheWell(SpatioTemporalDataset):
             min_std=min_std,
             storage_options=storage_options,
         )
+        # Model setup needs the same normalizer used by the loader to restore
+        # physical units in evaluation; unnormalized loaders expose None.
+        self.norm = self.well_dataset.norm
         self.well_metadata = self.well_dataset.metadata
 
     def __len__(self) -> int:  # noqa: D105
