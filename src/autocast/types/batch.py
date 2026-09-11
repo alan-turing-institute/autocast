@@ -110,6 +110,9 @@ class Sample:
     constant_scalars: TensorC | None
     constant_fields: TensorSC | None
     boundary_conditions: TensorS | None
+    #: Time-varying external drivers spanning the whole input+output window.
+    #: Never a prediction target, so it is not split into input/output halves.
+    forcing_fields: TensorTSC | None = None
 
 
 @dataclass
@@ -131,6 +134,9 @@ class Batch(TensorFieldsMixin):
     constant_scalars: TensorBC | None
     constant_fields: TensorBSC | None
     boundary_conditions: TensorS | None = None
+    #: Time-varying external drivers spanning the whole input+output window.
+    #: Never a prediction target, so it is not split into input/output halves.
+    forcing_fields: TensorBTSC | None = None
 
 
 @dataclass

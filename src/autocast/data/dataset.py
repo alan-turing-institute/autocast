@@ -25,6 +25,7 @@ class BatchMixin:
             constant_scalars=data.get("constant_scalars"),
             constant_fields=data.get("constant_fields"),
             boundary_conditions=data.get("boundary_conditions"),
+            forcing_fields=data.get("forcing_fields"),
         )
 
 
@@ -169,6 +170,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         self.all_output_fields = []
         self.all_constant_scalars = []
         self.all_constant_fields = []
+        self.all_forcing_fields = []
 
         # Create input-output pairs
         for traj_idx in range(self.n_trajectories):
@@ -179,6 +181,17 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
                 # [num_subtrajectories, T_in + T_out, W, H, C]
                 .permute(0, -1, 1, 2, 3)
             )
+
+            # Window the forcing over the same span, but do not split it: a
+            # forcing field is an input for every step of the window, including
+            # the steps being predicted.
+            forcing_windows = None
+            if self.forcing_fields is not None:
+                forcing_windows = (
+                    self.forcing_fields[traj_idx]
+                    .unfold(0, self.n_steps_input + self.n_steps_output, self.stride)
+                    .permute(0, -1, 1, 2, 3)
+                )
 
             # Split into input and output
             input_fields = fields[:, : self.n_steps_input, ...]
@@ -216,6 +229,12 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
                         self.constant_fields[traj_idx].to(self.dtype)
                     )
 
+                # Handle time-varying forcing
+                if forcing_windows is not None:
+                    self.all_forcing_fields.append(
+                        forcing_windows[sub_idx].to(self.dtype)
+                    )  # [T_in + T_out, W, H, C_forcing]
+
         if self.verbose:
             print(f"Created {len(self.all_input_fields)} subtrajectory samples")
             print(f"Each input sample shape: {self.all_input_fields[0].shape}")
@@ -246,6 +265,16 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             and f["constant_fields"] != {}
             else None
         )
+        # Time-varying forcing, aligned with `data` on the trajectory and time
+        # axes: [N, T, W, H, C_forcing].
+        self.forcing_fields = (
+            torch.Tensor(f["forcing_fields"][:]).to(self.dtype)  # type: ignore # noqa: PGH003
+            if "forcing_fields" in f
+            and f["forcing_fields"] is not None
+            and f["forcing_fields"] != {}
+            else None
+        )
+
         self._channel_idxs_applied = bool(f.get("_channel_idxs_applied", False))
 
     def read_data(self, data_path: str):
@@ -270,6 +299,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             )
             self.constant_scalars = data.get("constant_scalars", None)
             self.constant_fields = data.get("constant_fields", None)
+            self.forcing_fields = data.get("forcing_fields", None)
             self._channel_idxs_applied = bool(data.get("_channel_idxs_applied", False))
             return
         msg = "No data provided to parse."
@@ -281,6 +311,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             "data": self.data,
             "constant_scalars": self.constant_scalars,
             "constant_fields": self.constant_fields,
+            "forcing_fields": self.forcing_fields,
             "_channel_idxs_applied": self._channel_idxs_applied,
         }
 
@@ -311,6 +342,8 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             item["constant_scalars"] = self.all_constant_scalars[idx]
         if len(self.all_constant_fields) > 0:
             item["constant_fields"] = self.all_constant_fields[idx]
+        if len(self.all_forcing_fields) > 0:
+            item["forcing_fields"] = self.all_forcing_fields[idx]
 
         return self.to_sample(item)
 

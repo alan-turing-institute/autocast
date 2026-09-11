@@ -336,11 +336,15 @@ def setup_datamodule(
         n_constant_field_channels = (
             batch.constant_fields.shape[-1] if batch.constant_fields is not None else 0
         )
+        n_forcing_field_channels = (
+            batch.forcing_fields.shape[-1] if batch.forcing_fields is not None else 0
+        )
     elif isinstance(batch, EncodedBatch):
         train_inputs = batch.encoded_inputs
         train_outputs = batch.encoded_output_fields
         n_constant_scalars = None
         n_constant_field_channels = None
+        n_forcing_field_channels = None
     else:
         raise TypeError(f"Unsupported batch type: {type(batch)}")
 
@@ -359,6 +363,7 @@ def setup_datamodule(
         "n_steps_output": output_shape[1],
         "n_constant_scalars": n_constant_scalars,
         "n_constant_field_channels": n_constant_field_channels,
+        "n_forcing_field_channels": n_forcing_field_channels,
         "input_shape": input_shape,
         "output_shape": output_shape,
         "example_batch": batch,
@@ -426,6 +431,10 @@ def setup_autoencoder_components(
         if encoder_config.get("with_constants") and input_channels is not None:
             input_channels += stats.get("n_constant_scalars", 0)
             input_channels += stats.get("n_constant_field_channels", 0)
+        # Forcing channels are concatenated per input step, so they widen the
+        # encoder the same way constants do.
+        if encoder_config.get("with_forcing") and input_channels is not None:
+            input_channels += stats.get("n_forcing_field_channels", 0) or 0
         encoder_config["in_channels"] = input_channels
 
     # Update n_steps_input for encoders that need it (e.g., PermuteConcat)
