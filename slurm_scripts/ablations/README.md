@@ -21,10 +21,15 @@ small edit.
 | ensemble_size (m=16, fixed global eff. bs=1024) | sweep | GS / GPE / CNS / AD | 4 | timing ready |
 | planned_01 batch | mixed | CNS | 8 | timing scripted |
 | planned_02 batch | mixed | GS / GPE / AD | 6 | timing + production scripted |
+| planned_updates_01 batch | MC dropout | GS / GPE / CNS / AD | 4 | timing + production scripted |
+| planned_updates_02 batch | MC dropout MSE + L2 | GS / GPE / CNS / AD | 4 | timing + production + eval submitted |
+| planned_updates_03 batch | FNO architecture | GS / GPE / CNS / AD | 4 | timing + production + eval submitted |
 | noise_channels | sweep | CNS | 1 | config + planned |
+| mc_dropout (FFN, p=0.1) | comparison | GS / GPE / CNS / AD | 4 | timing + production scripted |
+| mc_dropout MSE + L2 (FFN, p=0.1) | comparison | CNS | 1 | ready |
 | crps_variants (AlphaFair / Fair / CRPS) | comparison | CNS | 2 new (+baseline) | config + planned |
 | fm_vs_diffusion | comparison | CNS | 1 | config + planned |
-| arch_unet_fno_vit | comparison | CNS | 1 U-Net (+ViT baseline) | config + planned |
+| arch_unet_fno_vit | comparison | all 4 FNO; CNS U-Net | 4 FNO + 1 U-Net (+ViT baselines) | FNO timing ready |
 | model_size | sweep | CNS | 2 active (+2 staged) | in progress |
 | vit_mae_pretrain | pretrain | CNS | 1 | staged |
 | cached_latent_crps | comparison | CNS | 1 (basis: 2026-04-20) | eval ready |
@@ -45,7 +50,7 @@ cross-ablation run list can be submitted consistently after timing. It covers:
 
 | planned run | study folder | implementation |
 |---|---|---|
-| U-Net m=8 CRPS CNS | `arch_unet_fno_vit` | `crps_unet_azula_80m`, ~80.9M params |
+| U-Net m=8 CRPS CNS | `arch_unet_fno_vit` | `crps_unet_azula_80m`, ~81.3M params |
 | Diffusion CNS | `fm_vs_diffusion` | diffusion processor with the FM 704/12/8 ViT backbone |
 | CNS m=8 fair CRPS | `crps_variants` | FairCRPS loss on the 80M CRPS ViT |
 | CNS m=8 CRPS | `crps_variants` | plain CRPS loss on the 80M CRPS ViT |
@@ -79,6 +84,34 @@ The m=4 GPE/AD follow-up follows the same timing-then-production pattern:
 `submit_planned_02_m4_followup_timing.sh` first, then
 `submit_planned_02_m4_followup_large.sh` after retrieving timing outputs.
 
+## Planned Updates Batch 01
+
+The first post-comparison update batch contains the parameter-matched
+four-dataset MC-dropout CRPS ablation. Its orchestration lives in
+`submit_planned_updates_01_timing.sh` and
+`submit_planned_updates_01_large.sh`; the reusable experiment configs and
+design notes remain under `ablations/mc_dropout/`.
+
+## Planned Updates Batch 02
+
+The second post-comparison update batch contains four-dataset MC-dropout MSE
+baselines. They use the same parameter-matched architecture and `p=0.1`
+sampler as the CRPS ablation, plus an explicit processor-local L2 penalty with
+coefficient `1e-5`. Evaluation uses the shared 10-member comparison protocol.
+Its
+orchestration lives in `submit_planned_updates_02_timing.sh`,
+`submit_planned_updates_02_large.sh`, and
+`submit_eval_planned_updates_02.sh`.
+
+## Planned Updates Batch 03
+
+The third post-comparison update batch adds parameter-matched CRPS FNO
+architecture runs for all four comparison datasets. Its orchestration lives in
+`submit_planned_updates_03_timing.sh` and
+`submit_planned_updates_03_large.sh`, with evaluation in
+`submit_eval_planned_updates_03.sh`. The experiment config and design notes
+remain under `ablations/arch_unet_fno_vit/`.
+
 ## Design notes
 
 - **Flexible by construction.** Each ablation is a self-contained
@@ -106,7 +139,5 @@ The m=4 GPE/AD follow-up follows the same timing-then-production pattern:
    and paste into `submit_*_large.sh`, or use a large script that derives
    them from matching timing checkpoints.
 3. `submit_*_large.sh` — 24h production runs, dry-run first.
-4. Eval from the script local to the study:
-   `slurm_scripts/comparison/eval/` for the canonical comparison suite, and
-   `slurm_scripts/ablations/<name>/eval/` for ablation-only run sets that have
-   not been promoted into the main comparison yet.
+4. Eval from the corresponding central `submit_eval_planned*.sh` script or a
+   study-local `eval/` submitter when the run set has not been centralized.

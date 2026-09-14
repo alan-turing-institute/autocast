@@ -1,0 +1,61 @@
+# @package _global_
+defaults:
+  - /distributed: ddp_4gpu_slurm
+  - override /datamodule: advection_diffusion
+  - override /encoder@model.encoder: permute_concat
+  - override /decoder@model.decoder: channels_last
+  - override /processor@model.processor: vit_azula_mc_dropout_large
+  - override /optimizer: adamw_half
+  - _self_
+
+experiment_name: ablation_mc_dropout_mse_vit_azula_large_advection_diffusion
+
+datamodule:
+  use_normalization: true
+  # Match the CRPS run's per-GPU processor workload: 32 examples x 8 members.
+  batch_size: 256
+
+float32_matmul_precision: high
+
+logging:
+  wandb:
+    enabled: true
+
+output:
+  skip_test: true
+
+optimizer:
+  # L2 is explicit in the loss; avoid double regularization.
+  learning_rate: 2e-4
+  weight_decay: 0.0
+  warmup: 0
+
+model:
+  train_in_latent_space: false
+  n_members: 1
+  encoder:
+    with_constants: true
+  processor:
+    hidden_dim: 704
+    num_heads: 8
+    n_layers: 12
+    n_noise_channels: null
+    dropout: 0.1
+  loss_func:
+    _target_: autocast.losses.MCDropoutMSEL2Loss
+    # Empirical coefficient from an official WeatherBench Probability config.
+    l2_coefficient: 1e-5
+  train_metrics:
+    mse:
+      _target_: autocast.metrics.MSE
+    mae:
+      _target_: autocast.metrics.MAE
+    rmse:
+      _target_: autocast.metrics.RMSE
+  val_metrics:
+    mse:
+      _target_: autocast.metrics.MSE
+    mae:
+      _target_: autocast.metrics.MAE
+    rmse:
+      _target_: autocast.metrics.RMSE

@@ -1,6 +1,9 @@
 from typing import TYPE_CHECKING
 
-from autocast.processors.azula_vit import AzulaViTProcessor
+from autocast.processors.azula_vit import (
+    AzulaViTProcessor,
+    MCDropoutAzulaViTProcessor,
+)
 from autocast.processors.base import Processor
 from autocast.processors.consistency import ConsistencyDistilledProcessor
 from autocast.processors.conv_coupling import ConvCouplingFlowProcessor
@@ -45,6 +48,7 @@ __all__ = [
     "DistilledProcessor",
     "FlowMatchingMaskedWindowProcessor",
     "FlowMatchingProcessor",
+    "MCDropoutAzulaViTProcessor",
     "NormalizingFlowProcessor",
     "Processor",
     "SigmaVAEProcessor",
