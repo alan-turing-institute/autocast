@@ -35,3 +35,24 @@ def test_file_backed_rollout_datasets_apply_slices_once(tmp_path, start_frame):
         dm.rollout_test_dataset[0].output_fields,
         payload["data"][0, start_frame + 1 :, :, :, 1:],
     )
+
+
+def test_datamodule_forwards_independent_channel_selectors():
+    data = torch.randn(2, 5, 3, 4, 3)
+    dm = SpatioTemporalDataModule(
+        data_path=None,
+        data={split: {"data": data} for split in ("train", "valid", "test")},
+        n_steps_input=2,
+        n_steps_output=1,
+        input_channel_idxs=(0, 2),
+        output_channel_idxs=(1,),
+        batch_size=2,
+        num_workers=0,
+    )
+
+    batch = next(iter(dm.train_dataloader()))
+
+    assert batch.input_fields.shape == (2, 2, 3, 4, 2)
+    assert batch.output_fields.shape == (2, 1, 3, 4, 1)
+    assert dm.rollout_test_dataset.input_channel_idxs == (0, 2)
+    assert dm.rollout_test_dataset.output_channel_idxs == (1,)
