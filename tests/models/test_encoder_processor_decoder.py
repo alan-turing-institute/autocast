@@ -214,6 +214,44 @@ def test_boundary_conditions_pass_with_identity_encoder():
     assert torch.allclose(processor.last_global_cond, expected)
 
 
+def _build_toy_epd(n_steps_input: int, n_steps_output: int, **kwargs) -> tuple:
+    encoder = PermuteConcat(
+        in_channels=1, n_steps_input=n_steps_input, with_constants=False
+    )
+    decoder = ChannelsLast(output_channels=1, time_steps=n_steps_output)
+    loss = nn.MSELoss()
+    encoder_decoder = EncoderDecoder(encoder=encoder, decoder=decoder, loss_func=loss)
+    processor = TinyProcessor(
+        in_channels=1 * n_steps_input, out_channels=1 * n_steps_output
+    )
+    model = EncoderProcessorDecoder(
+        encoder_decoder=encoder_decoder,
+        processor=processor,
+        loss_func=loss,
+        optimizer_config=get_optimizer_config(),
+        **kwargs,
+    )
+    return model, processor
+
+
+def test_encoder_processor_decoder_supports_rollout_defaults_to_true():
+    model, _ = _build_toy_epd(n_steps_input=2, n_steps_output=2)
+    assert model.supports_rollout is True
+
+
+def test_encoder_processor_decoder_supports_rollout_false_blocks_rollout(
+    make_toy_batch,
+):
+    """`supports_rollout=False` should fail fast instead of attempting rollout."""
+    model, _ = _build_toy_epd(
+        n_steps_input=2, n_steps_output=2, supports_rollout=False
+    )
+    batch = make_toy_batch(t_in=2, t_out=6)
+
+    with pytest.raises(NotImplementedError, match="supports_rollout=False"):
+        model.rollout(batch, stride=2)
+
+
 @pytest.mark.parametrize(
     ("n_steps_input", "n_steps_output", "stride"),
     [

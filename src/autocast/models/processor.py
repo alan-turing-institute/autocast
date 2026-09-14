@@ -35,6 +35,7 @@ class ProcessorModel(
         self,
         processor: Processor,
         stride: int = 1,
+        supports_rollout: bool = True,
         loss_func: nn.Module | None = None,
         optimizer_config: DictConfig | dict[str, Any] | None = None,
         train_metrics: Sequence[Metric] | None = [],
@@ -47,6 +48,7 @@ class ProcessorModel(
         super().__init__()
         self.processor = processor  # Register nn.Module parameters
         self.stride = stride
+        self.supports_rollout = supports_rollout
         self.loss_func = loss_func or nn.MSELoss()
         self.optimizer_config = optimizer_config
         self.train_metrics = self._build_metrics(train_metrics, "train_")
@@ -168,6 +170,9 @@ class ProcessorModel(
         if batch.encoded_output_fields.shape[1] >= stride:
             return batch.encoded_output_fields[:, :stride, ...], True
         return batch.encoded_output_fields, False
+
+    def _input_fields(self, batch: EncodedBatch) -> Tensor:
+        return batch.encoded_inputs
 
     def _advance_batch(
         self, batch: EncodedBatch, next_inputs: Tensor, stride: int

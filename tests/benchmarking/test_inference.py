@@ -127,3 +127,20 @@ def test_benchmark_rollout_raises_on_zero_n_benchmark():
             n_benchmark=0,
             batch_size=1,
         )
+
+
+def test_benchmark_rollout_refuses_models_that_cannot_roll_out():
+    """A model whose outputs differ from its inputs cannot be rolled out."""
+    model = _FakeRolloutModel()
+    model.supports_rollout = False
+    batch = _make_batch()
+    with pytest.raises(ValueError, match="supports_rollout=False"):
+        benchmark_rollout(
+            model,
+            batch,
+            stride=1,
+            max_rollout_steps=3,
+            n_warmup=1,
+            n_benchmark=2,
+            batch_size=1,
+        )

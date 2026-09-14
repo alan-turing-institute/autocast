@@ -3093,13 +3093,26 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     # Rollouts
     compute_rollout_coverage = eval_cfg.get("compute_rollout_coverage", False)
     compute_rollout_metrics = eval_cfg.get("compute_rollout_metrics", False)
-
-    if (
+    rollout_requested = bool(
         batch_indices
         or compute_rollout_coverage
         or compute_rollout_metrics
         or trajectory_statistics_enabled
-    ):
+    )
+
+    # A model whose outputs differ from its inputs cannot be fed its own
+    # predictions, so every rollout stage below is skipped rather than left to
+    # fail partway through evaluation.
+    supports_rollout = getattr(_unwrap_module(model), "supports_rollout", True)
+    if rollout_requested and not supports_rollout:
+        log.warning(
+            "Skipping all rollout evaluation: this model has "
+            "supports_rollout=False, so its predictions cannot be fed back in "
+            "as inputs. One-shot metrics above are unaffected."
+        )
+        rollout_requested = False
+
+    if rollout_requested:
         max_rollout_steps = eval_cfg.get("max_rollout_steps", 10)
         rollout_start = int(eval_cfg.get("rollout_start", 0) or 0)
         if rollout_start < 0:

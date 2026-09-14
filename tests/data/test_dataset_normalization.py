@@ -163,6 +163,89 @@ def test_channel_idxs_slices_data_and_subsets_norm(deterministic_data, stats_dic
     assert torch.allclose(dataset[0].input_fields[..., 0], expected)
 
 
+def test_output_channel_idxs_subsets_output_only(deterministic_data, stats_dict):
+    """`output_channel_idxs` should subset output_fields without touching input."""
+    dataset = ReactionDiffusionDataset(
+        data_path=None,
+        data=deterministic_data,
+        n_steps_input=2,
+        n_steps_output=1,
+        output_channel_idxs=(1,),
+        use_normalization=True,
+        normalization_type=ZScoreNormalization,
+        normalization_stats=stats_dict,
+    )
+
+    sample = dataset[0]
+    # Input keeps both channels; output is subset to channel 1 (V) only.
+    assert sample.input_fields.shape[-1] == 2
+    assert sample.output_fields.shape[-1] == 1
+
+    expected = (deterministic_data["data"][0][2:3, ..., 1] - 4.0) / 2.0
+    assert torch.allclose(sample.output_fields[..., 0], expected)
+
+
+def test_input_channel_idxs_subsets_input_only(deterministic_data, stats_dict):
+    """`input_channel_idxs` should subset input_fields without touching output."""
+    dataset = ReactionDiffusionDataset(
+        data_path=None,
+        data=deterministic_data,
+        n_steps_input=2,
+        n_steps_output=1,
+        input_channel_idxs=(0,),
+        use_normalization=True,
+        normalization_type=ZScoreNormalization,
+        normalization_stats=stats_dict,
+    )
+
+    sample = dataset[0]
+    assert sample.input_fields.shape[-1] == 1
+    assert sample.output_fields.shape[-1] == 2
+
+    expected = (deterministic_data["data"][0][:2, ..., 0] - 2.0) / 1.0
+    assert torch.allclose(sample.input_fields[..., 0], expected)
+
+
+def test_input_output_channel_idxs_none_matches_current_behavior(
+    deterministic_data, stats_dict
+):
+    """Unset input/output_channel_idxs must reproduce the shared-channel_idxs path."""
+    baseline = ReactionDiffusionDataset(
+        data_path=None,
+        data=deterministic_data,
+        n_steps_input=2,
+        n_steps_output=1,
+        use_normalization=True,
+        normalization_type=ZScoreNormalization,
+        normalization_stats=stats_dict,
+    )
+    explicit_none = ReactionDiffusionDataset(
+        data_path=None,
+        data=deterministic_data,
+        n_steps_input=2,
+        n_steps_output=1,
+        input_channel_idxs=None,
+        output_channel_idxs=None,
+        use_normalization=True,
+        normalization_type=ZScoreNormalization,
+        normalization_stats=stats_dict,
+    )
+
+    assert torch.equal(baseline[0].input_fields, explicit_none[0].input_fields)
+    assert torch.equal(baseline[0].output_fields, explicit_none[0].output_fields)
+
+
+def test_channel_idxs_autoencoder_mode_conflict_raises(deterministic_data):
+    """input/output_channel_idxs are incompatible with autoencoder_mode."""
+    with pytest.raises(ValueError, match="autoencoder_mode"):
+        ReactionDiffusionDataset(
+            data_path=None,
+            data=deterministic_data,
+            autoencoder_mode=True,
+            output_channel_idxs=(0,),
+        )
+
+
 def test_channel_idxs_none_is_noop(deterministic_data):
     """`channel_idxs=None` should leave all channels intact."""
     dataset = ReactionDiffusionDataset(

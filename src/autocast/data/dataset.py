@@ -39,6 +39,8 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         n_steps_output: int = 1,
         stride: int = 1,
         channel_idxs: tuple[int, ...] | None = None,
+        input_channel_idxs: tuple[int, ...] | None = None,
+        output_channel_idxs: tuple[int, ...] | None = None,
         full_trajectory_mode: bool = False,
         autoencoder_mode: bool = False,
         dtype: torch.dtype = torch.float32,
@@ -61,6 +63,14 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             channel_idxs: Indices of channels to select from the raw data
                 (applied to both input and output). If None, all channels are
                 used. Defaults to None.
+            input_channel_idxs: Indices of channels (from the post-`channel_idxs`
+                channel axis) to keep in `input_fields` only. If None, all
+                channels selected by `channel_idxs` are used. Defaults to None.
+                Cannot be used with `autoencoder_mode`.
+            output_channel_idxs: Indices of channels (from the post-`channel_idxs`
+                channel axis) to keep in `output_fields` only. If None, all
+                channels selected by `channel_idxs` are used. Defaults to None.
+                Cannot be used with `autoencoder_mode`.
             full_trajectory_mode: If True, use full trajectories without
                 creating subtrajectories.
             autoencoder_mode: If True, return (input, input) pairs for
@@ -140,6 +150,28 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         if autoencoder_mode and full_trajectory_mode:
             msg = "autoencoder_mode and full_trajectory_mode cannot both be True."
             raise ValueError(msg)
+        if autoencoder_mode and (
+            input_channel_idxs is not None or output_channel_idxs is not None
+        ):
+            msg = (
+                "input_channel_idxs/output_channel_idxs cannot be used with "
+                "autoencoder_mode, since output_fields is defined to equal "
+                "input_fields in that mode."
+            )
+            raise ValueError(msg)
+        self._input_core_field_names: list[str] | None = None
+        self._output_core_field_names: list[str] | None = None
+        if self.norm is not None:
+            self._input_core_field_names = (
+                [self.norm.core_field_names[i] for i in input_channel_idxs]
+                if input_channel_idxs is not None
+                else list(self.norm.core_field_names)
+            )
+            self._output_core_field_names = (
+                [self.norm.core_field_names[i] for i in output_channel_idxs]
+                if output_channel_idxs is not None
+                else list(self.norm.core_field_names)
+            )
         if autoencoder_mode:
             # In autoencoder mode, input and output steps are overridde
             n_steps_input = 1
@@ -171,6 +203,8 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         self.n_steps_output = n_steps_output
         self.stride = stride
         self.channel_idxs = channel_idxs
+        self.input_channel_idxs = input_channel_idxs
+        self.output_channel_idxs = output_channel_idxs
 
         # Destructured here
         (
@@ -206,6 +240,13 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
                 if not self.autoencoder_mode
                 else input_fields
             )
+
+            # Independently subset channels for input/output, if requested
+            # (mutually exclusive with autoencoder_mode, validated above).
+            if self.input_channel_idxs is not None:
+                input_fields = input_fields[..., list(self.input_channel_idxs)]
+            if self.output_channel_idxs is not None:
+                output_fields = output_fields[..., list(self.output_channel_idxs)]
 
             # Store each subtrajectory separately
             for sub_idx in range(input_fields.shape[0]):
@@ -316,34 +357,14 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             input_fields if self.autoencoder_mode else self.all_output_fields[idx]
         )
         if self.use_normalization and self.norm is not None:
-            field_names = (
-                self.norm.core_field_names + self.norm.core_constant_field_names
+            assert self._input_core_field_names is not None
+            assert self._output_core_field_names is not None
+            input_fields = self._normalize_fields(
+                input_fields, self._input_core_field_names
             )
-
-            # Normalize each channel separately
-            input_fields_list = []
-            output_fields_list = []
-
-            # TODO: assumes that channels are in same order as field names
-            for i, field_name in enumerate(field_names):
-                input_channel = input_fields[..., i]
-                output_channel = output_fields[..., i]
-
-                # Normalize and add channel dim back
-                input_normalized = self.norm.normalize(
-                    input_channel, field_name
-                ).unsqueeze(-1)
-                output_normalized = self.norm.normalize(
-                    output_channel, field_name
-                ).unsqueeze(-1)
-
-                input_fields_list.append(input_normalized)
-                output_fields_list.append(output_normalized)
-
-            # Concatenate back along channel dimension
-            if input_fields_list:
-                input_fields = torch.cat(input_fields_list, dim=-1)
-                output_fields = torch.cat(output_fields_list, dim=-1)
+            output_fields = self._normalize_fields(
+                output_fields, self._output_core_field_names
+            )
 
         item = {
             "input_fields": input_fields,
@@ -355,6 +376,26 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             item["constant_fields"] = self.all_constant_fields[idx]
 
         return self.to_sample(item)
+
+    def _normalize_fields(
+        self, fields: torch.Tensor, core_field_names: list[str]
+    ) -> torch.Tensor:
+        """Normalize each channel of `fields` given its list of field names.
+
+        `core_field_names` is combined with `self.norm.core_constant_field_names`,
+        matching how normalization stats are keyed. Input and output fields may
+        pass different `core_field_names` when `input_channel_idxs`/
+        `output_channel_idxs` select different channels for each.
+        """
+        assert self.norm is not None
+        field_names = core_field_names + self.norm.core_constant_field_names
+
+        # TODO: assumes that channels are in same order as field names
+        normalized = [
+            self.norm.normalize(fields[..., i], field_name).unsqueeze(-1)
+            for i, field_name in enumerate(field_names)
+        ]
+        return torch.cat(normalized, dim=-1) if normalized else fields
 
     def set_up_normalization(self):
         """Set up normalizer (`None` if `self.use_normalization = False`)."""

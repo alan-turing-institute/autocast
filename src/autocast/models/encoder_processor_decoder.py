@@ -41,6 +41,7 @@ class EncoderProcessorDecoder(
         max_rollout_steps: int = 10,
         train_in_latent_space: bool = False,
         freeze_encoder_decoder: bool = False,
+        supports_rollout: bool = True,
         loss_func: nn.Module | None = None,
         train_metrics: Sequence[Metric] | None = [],
         val_metrics: Sequence[Metric] | None = None,
@@ -59,6 +60,7 @@ class EncoderProcessorDecoder(
         self.max_rollout_steps = max_rollout_steps
         self.train_in_latent_space = train_in_latent_space
         self.freeze_encoder_decoder = freeze_encoder_decoder
+        self.supports_rollout = supports_rollout
         self.input_noise_injector = input_noise_injector
         self.norm = norm
 
@@ -207,6 +209,9 @@ class EncoderProcessorDecoder(
         if batch.output_fields.shape[1] >= stride:
             return batch.output_fields[:, :stride, ...], True
         return batch.output_fields, False
+
+    def _input_fields(self, batch: Batch) -> Tensor:
+        return batch.input_fields
 
     def _advance_batch(self, batch: Batch, next_inputs: Tensor, stride: int) -> Batch:
         """Shift the input/output windows forward by `stride` using `next_inputs`.

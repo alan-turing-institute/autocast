@@ -14,6 +14,14 @@ from autocast.types.batch import BatchT
 class RolloutMixin(ABC, Generic[BatchT]):
     """Rollout logic for generic batches."""
 
+    #: Whether this model can be fed its own predictions back in as inputs.
+    #: Autoregressive rollout requires output fields to match input fields
+    #: (same channels and spatial resolution). Models whose output fields
+    #: differ from their input fields (e.g. downscaling, or asymmetric
+    #: multi-modal/conditioned inputs) should set this to False and use
+    #: one-shot (non-rollout) training/evaluation instead.
+    supports_rollout: bool = True
+
     def rollout(
         self,
         batch: BatchT,
@@ -59,6 +67,17 @@ class RolloutMixin(ABC, Generic[BatchT]):
 
             requiring that the stride equals n_steps_output.
         """
+        if not self.supports_rollout:
+            msg = (
+                "This model has supports_rollout=False and cannot perform "
+                "autoregressive rollout. This is expected for models whose "
+                "output fields differ from their input fields (e.g. spatial "
+                "or temporal downscaling, or asymmetric multi-modal/"
+                "conditioned inputs). Use one-shot (non-rollout) training/"
+                "evaluation instead."
+            )
+            raise NotImplementedError(msg)
+
         pred_outs: list[Tensor] = []
         true_outs: list[Tensor] = []
         current_batch = self._clone_batch(batch)
@@ -93,6 +112,7 @@ class RolloutMixin(ABC, Generic[BatchT]):
             if next_inputs.shape[1] < stride:
                 break
 
+            self._check_feedback_compatible(current_batch, next_inputs)
             current_batch = self._advance_batch(current_batch, next_inputs, stride)
 
         # Construct rollout outputs
@@ -107,6 +127,40 @@ class RolloutMixin(ABC, Generic[BatchT]):
         if not return_windows:
             trues = rearrange(trues, "b r t ... -> b (r t) ...")  # (B, T*R, spatial, C)
         return preds, trues
+
+    def _check_feedback_compatible(self, batch: BatchT, next_inputs: Tensor) -> None:
+        """Verify predictions can be fed back in as inputs, before attempting it.
+
+        Compares everything but the time axis: feeding predictions back means
+        concatenating them onto the input window along time, so the channel
+        count and spatial resolution must already agree.
+
+        Args:
+            batch: The current rollout batch.
+            next_inputs: The tensor about to be fed back in as inputs.
+
+        Raises:
+            ValueError: If `next_inputs` cannot be concatenated onto the
+                batch's input fields.
+        """
+        current_inputs = self._input_fields(batch)
+        expected = tuple(current_inputs.shape[2:])
+        actual = tuple(next_inputs.shape[2:])
+        if expected == actual:
+            return
+        msg = (
+            "Cannot feed this model's predictions back in as inputs: they have "
+            f"shape (channels/spatial) {actual}, but its input fields have "
+            f"{expected}. Autoregressive rollout requires the two to match. "
+            "Models whose outputs differ from their inputs (downscaling, or "
+            "predicting different fields than they consume) should set "
+            "supports_rollout=False and use one-shot evaluation instead."
+        )
+        raise ValueError(msg)
+
+    @abstractmethod
+    def _input_fields(self, batch: BatchT) -> Tensor:
+        """Return the batch's input fields, the tensor predictions feed back into."""
 
     @abstractmethod
     def _clone_batch(self, batch: BatchT) -> BatchT: ...
