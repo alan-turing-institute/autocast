@@ -39,6 +39,7 @@ class TemporalBackboneBase(nn.Module, ABC):
         tcn_kernel_size: int = 3,
         tcn_num_layers: int = 2,
         use_precomputed_modulation: bool = False,
+        spatial_modulation: bool = False,
     ):
         """Initialize Temporal Backbone Base.
 
@@ -60,6 +61,7 @@ class TemporalBackboneBase(nn.Module, ABC):
             tcn_kernel_size: Kernel size for TCN
             tcn_num_layers: Number of TCN layers
             use_precomputed_modulation: Whether to use precomputed modulation tensors.
+            spatial_modulation: Whether precomputed modulation is per token (B, N, D).
         """
         super().__init__()
 
@@ -71,6 +73,10 @@ class TemporalBackboneBase(nn.Module, ABC):
         self.n_steps_input = n_steps_input
         self.mod_features = mod_features
         self.use_precomputed_modulation = use_precomputed_modulation
+        self.spatial_modulation = spatial_modulation
+        if spatial_modulation and not use_precomputed_modulation:
+            msg = "Spatial modulation requires use_precomputed_modulation=True."
+            raise ValueError(msg)
 
         # Validate global conditioning configuration
         if include_global_cond and (
@@ -218,6 +224,7 @@ class TemporalBackboneBase(nn.Module, ABC):
             t: Diffusion modulation input. Either:
                 - scalar timesteps with shape (B,), which are embedded via SineEncoding
                 - precomputed modulation vectors with shape (B, D), where D=mod_features
+                - per-token vectors (B, N, D) when spatial_modulation=True
             cond: Conditioning input (B, T_cond, W, H, C)
             global_cond: Optional global conditioning/modulation vector (B, D)
 
@@ -225,7 +232,12 @@ class TemporalBackboneBase(nn.Module, ABC):
             Denoised output (B, T, W, H, C)
         """
         # Accept either scalar timesteps (B,) or precomputed modulation vectors (B, D).
-        if t.ndim == 2 and t.shape[-1] == self.mod_features:
+        if self.spatial_modulation:
+            if t.ndim != 3 or t.shape[-1] != self.mod_features:
+                msg = "Expected spatial modulation with shape (B, N, mod_features)."
+                raise ValueError(msg)
+            t_emb = t
+        elif t.ndim == 2 and t.shape[-1] == self.mod_features:
             t_emb = t
         else:
             if self.time_embedding is None:
@@ -241,7 +253,10 @@ class TemporalBackboneBase(nn.Module, ABC):
             if global_cond is None:
                 msg = "Model init with global_cond_channels but no global_cond provided"
                 raise ValueError(msg)
-            t_emb = t_emb + self.global_cond_embedding(global_cond)
+            cond_emb = self.global_cond_embedding(global_cond)
+            if self.spatial_modulation:
+                cond_emb = rearrange(cond_emb, "b d -> b 1 d")
+            t_emb = t_emb + cond_emb
 
         # Apply temporal processing
         x_t_temporal, cond_temporal = self.apply_temporal_processing(x_t, cond)
