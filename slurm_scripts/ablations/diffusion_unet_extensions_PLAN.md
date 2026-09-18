@@ -236,6 +236,32 @@ module via `srun`; the run directory also keeps its Slurm logs and Hydra
 configuration snapshots. The three original production jobs already have
 these records, independently of this reusable launcher.
 
+## Reproducing the diffusion submission
+
+The diffusion counterpart reads the same manifest and the original 2026-04-27
+timing records; the manifest records each timing checkpoint explicitly.
+From the checkout root, preview with:
+
+```bash
+uv run --frozen --no-sync python slurm_scripts/ablations/submit_diffusion_extensions.py
+```
+
+It retains the AD/GS/GPE horizons of 2601/2249/2674 epochs and validates model,
+data, optimizer, callbacks, seed and precision against those timing configs.
+Comparison resolves the old checkout's output symlink to the shared cache
+directory and accounts for the original implicit `every_n_epochs=0` snapshot
+default. Neither normalization changes the submitted training config.
+All three commands use four GPUs, four tasks and a 23h59m Slurm limit.
+
+The default group is `YYYY-MM-DD/diffusion_unet_extensions`. For an intentional
+repeat, select a fresh `--run-group` and append `--submit`. Submission requires
+a clean checkout, validates all three destinations and previews every command
+before the first submission. This launcher selects diffusion production only.
+The original diffusion jobs 6673317, 6673318 and 6673319 were submitted from
+`d80b5b3a`; adding this reusable launcher does not restart those jobs. Their
+exact commands and submission scripts remain in the original output folders
+and the review records cited above.
+
 The post-fit NCCL fix from upstream PR #386 is present as backport
 `f5ee48356934e0e80f9da77c0922edcb8a4cf4b7` on this branch. Collective saves
 run on every rank and checkpoint decisions are broadcast. The PR merge commit

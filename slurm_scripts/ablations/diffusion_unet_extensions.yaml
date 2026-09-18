@@ -14,6 +14,7 @@ runs:
   dataset: advection_diffusion
   epoch_budget: 2601
   timing_basis: measured_existing_diffusion_timing
+  timing_checkpoint: outputs/2026-04-27/timing_planned_03/latent_diffusion_ad/timing.ckpt
   overrides:
   - local_experiment=processor/advection_diffusion/diffusion_vit_large
   - trainer=original_diffusion_ablation
@@ -52,6 +53,7 @@ runs:
   dataset: gray_scott
   epoch_budget: 2249
   timing_basis: measured_existing_diffusion_timing
+  timing_checkpoint: outputs/2026-04-27/timing_planned_03/latent_diffusion_gs/timing.ckpt
   overrides:
   - local_experiment=processor/gray_scott/diffusion_vit_large
   - trainer=original_diffusion_ablation
@@ -90,6 +92,7 @@ runs:
   dataset: gpe_laser_only_wake
   epoch_budget: 2674
   timing_basis: measured_existing_diffusion_timing
+  timing_checkpoint: outputs/2026-04-27/timing_planned_03/latent_diffusion_gpe/timing.ckpt
   overrides:
   - local_experiment=processor/gpe_laser_wake_only/diffusion_vit_large
   - trainer=original_diffusion_ablation

@@ -160,3 +160,22 @@ in the requested group and requires a clean checkout when submitting.
 It prints the source commit and uses the existing `autocast epd --mode slurm`
 workflow, which saves an exact `submit_job_*.sh` in each output directory.
 It submits only the three U-Net production jobs, not diffusion or timing jobs.
+
+## Measured diffusion extensions
+
+The corresponding AD, GS and GPE diffusion launcher uses the same manifest,
+with the original measured budgets of 2601, 2249 and 2674 epochs. Preview it
+from the checkout root with:
+
+```bash
+uv run --frozen --no-sync python slurm_scripts/ablations/submit_diffusion_extensions.py
+```
+
+It validates each config against the saved 2026-04-27 timing config, including
+the identity of the cached-latent directory, and checks four GPUs, four tasks
+and a 23h59m limit. The original timing records must remain accessible.
+The default date-prefixed group, `--run-group`, explicit `--submit`, clean
+checkout requirement and duplicate-submission checks match the U-Net launcher.
+It uses `autocast processor --mode slurm` and submits only the three diffusion
+production runs. The already-submitted diffusion jobs are not resubmitted by
+running the default preview.
