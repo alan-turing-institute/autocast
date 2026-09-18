@@ -1,12 +1,12 @@
 # Run specifications only; this manifest does not submit jobs.
-status: unet_production_budgets_require_measured_timings
+status: production_budgets_measured
 remote_checkout: /home/u6eo/ltcx7228.u6eo/autocast-02
 source_commit: c53d2b2c4314769e78b0cf7a4a01bb50cbeecde9
 budget_hours: 24
 timing_margin: 0.02
 training_seed: 42
-unet_budget_note: Measure five epochs on each dataset before assigning production
-  budgets. No estimated budgets are accepted.
+unet_budget_note: Production horizons use the completed 2026-09-18 five-epoch timings
+  and the original 24-hour budget with 2% margin.
 run_group: diffusion_unet_extensions
 runs:
 - run_id: latent_diffusion_ad
@@ -31,8 +31,8 @@ runs:
 - run_id: unet_m8_crps_ad
   kind: epd
   dataset: advection_diffusion
-  epoch_budget: null
-  timing_basis: pending_dataset_specific_unet_timing
+  epoch_budget: 644
+  timing_basis: measured_dataset_specific_unet_timing
   overrides:
   - local_experiment=ablations/arch_unet_fno_vit/advection_diffusion/crps_unet_azula_80m
   - trainer=original_unet_ablation
@@ -43,9 +43,10 @@ runs:
   - hydra.launcher.timeout_min=1439
   - datamodule=advection_diffusion
   - logging.wandb.name=unet_m8_crps_ad
-  - optimizer.cosine_epochs=???
-  - +trainer.max_epochs=???
-  production_budget_ready: false
+  - optimizer.cosine_epochs=644
+  - +trainer.max_epochs=644
+  production_budget_ready: true
+  timing_checkpoint: outputs/2026-09-18/timing_diffusion_unet_extensions/unet_m8_crps_ad/timing.ckpt
 - run_id: latent_diffusion_gs
   kind: processor
   dataset: gray_scott
@@ -68,8 +69,8 @@ runs:
 - run_id: unet_m8_crps_gs
   kind: epd
   dataset: gray_scott
-  epoch_budget: null
-  timing_basis: pending_dataset_specific_unet_timing
+  epoch_budget: 541
+  timing_basis: measured_dataset_specific_unet_timing
   overrides:
   - local_experiment=ablations/arch_unet_fno_vit/gray_scott/crps_unet_azula_80m
   - trainer=original_unet_ablation
@@ -80,9 +81,10 @@ runs:
   - hydra.launcher.timeout_min=1439
   - datamodule=gray_scott
   - logging.wandb.name=unet_m8_crps_gs
-  - optimizer.cosine_epochs=???
-  - +trainer.max_epochs=???
-  production_budget_ready: false
+  - optimizer.cosine_epochs=541
+  - +trainer.max_epochs=541
+  production_budget_ready: true
+  timing_checkpoint: outputs/2026-09-18/timing_diffusion_unet_extensions/unet_m8_crps_gs/timing.ckpt
 - run_id: latent_diffusion_gpe
   kind: processor
   dataset: gpe_laser_only_wake
@@ -105,8 +107,8 @@ runs:
 - run_id: unet_m8_crps_gpe
   kind: epd
   dataset: gpe_laser_only_wake
-  epoch_budget: null
-  timing_basis: pending_dataset_specific_unet_timing
+  epoch_budget: 632
+  timing_basis: measured_dataset_specific_unet_timing
   overrides:
   - local_experiment=ablations/arch_unet_fno_vit/gpe_laser_wake_only/crps_unet_azula_80m
   - trainer=original_unet_ablation
@@ -117,9 +119,10 @@ runs:
   - hydra.launcher.timeout_min=1439
   - datamodule=gpe_laser_only_wake
   - logging.wandb.name=unet_m8_crps_gpe
-  - optimizer.cosine_epochs=???
-  - +trainer.max_epochs=???
-  production_budget_ready: false
+  - optimizer.cosine_epochs=632
+  - +trainer.max_epochs=632
+  production_budget_ready: true
+  timing_checkpoint: outputs/2026-09-18/timing_diffusion_unet_extensions/unet_m8_crps_gpe/timing.ckpt
 timing_runs:
 - run_id: unet_m8_crps_ad
   kind: epd
@@ -142,8 +145,8 @@ timing_runs:
   - output.skip_test=true
   - output.save_config=false
   - output.checkpoint_path=timing.ckpt
-  note: Existing time-epochs command applies these timing-only overrides; production
-    remains blocked until measured epoch budgets are inserted.
+  note: Historical five-epoch timing specification; completed measurements are referenced
+    by the matching production run.
 - run_id: unet_m8_crps_gs
   kind: epd
   dataset: gray_scott
@@ -165,8 +168,8 @@ timing_runs:
   - output.skip_test=true
   - output.save_config=false
   - output.checkpoint_path=timing.ckpt
-  note: Existing time-epochs command applies these timing-only overrides; production
-    remains blocked until measured epoch budgets are inserted.
+  note: Historical five-epoch timing specification; completed measurements are referenced
+    by the matching production run.
 - run_id: unet_m8_crps_gpe
   kind: epd
   dataset: gpe_laser_only_wake
@@ -188,5 +191,5 @@ timing_runs:
   - output.skip_test=true
   - output.save_config=false
   - output.checkpoint_path=timing.ckpt
-  note: Existing time-epochs command applies these timing-only overrides; production
-    remains blocked until measured epoch budgets are inserted.
+  note: Historical five-epoch timing specification; completed measurements are referenced
+    by the matching production run.
