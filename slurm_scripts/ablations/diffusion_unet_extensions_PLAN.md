@@ -7,7 +7,8 @@ datasets, with training seed 42. The three five-epoch U-Net timing jobs
 completed on 2026-09-18 and their measured production budgets are now set.
 Diffusion uses its existing dataset-specific timing measurements. No CNS
 repeats, data regeneration, new autoencoders, or changes to the training
-implementation are included. U-Net production is prepared but not submitted.
+implementation are included. U-Net production was submitted on 2026-09-18
+from commit `138dd8cf`: AD job 6675374, GS job 6675381, GPE job 6675383.
 
 ## Reference runs and preserved settings
 
@@ -158,9 +159,12 @@ epoch times averaged 138.3811 seconds, yielding the original 611-epoch budget.
    timers with `uv run --frozen --no-sync autocast time-epochs --from-checkpoint
    <timing.ckpt> -b 24 -m 0.02`. Their measured counts are now recorded in both
    production horizons. No new timing jobs are needed for these configs.
-6. **Launch production in two stages.** The three diffusion jobs were submitted
-   on 2026-09-18. The three U-Net production jobs are ready for a later launch
-   instruction. Preview their completed override lists before submitting.
+6. **Launch production in two stages.** The three diffusion and three U-Net
+   production jobs were submitted on 2026-09-18. The committed
+   `submit_unet_extensions.py` launcher reads the U-Net override lists from
+   the manifest and validates them against the saved timing configs. It
+   previews by default; `--submit` explicitly enables submission. Existing
+   U-Net output directories in the requested group block duplicate submission.
    Use `outputs/YYYY-MM-DD/diffusion_unet_extensions/` for production
    and `outputs/YYYY-MM-DD/timing_diffusion_unet_extensions/` for timing.
    Do not execute the old batch launchers for these extensions:
@@ -206,8 +210,31 @@ After timing completion, each U-Net production config was fully resolved and
 compared against its actual timing config. Model, datamodule, validation
 metrics, callback policy, batch size, seed and precision are identical.
 Only the intended production horizon, time cap, logging and output settings
-differ. All three production commands pass a dry-run preview; no U-Net
-production job was submitted by this preparation.
+differ. All three production commands passed a dry-run preview before the
+authorized submission. The original one-off wrapper and submission log are
+preserved under `outputs/2026-09-18/diffusion_unet_extensions_review/`.
+
+## Reproducing the U-Net submission
+
+Run from the checkout root with the saved timing records accessible:
+
+```bash
+uv run --frozen --no-sync python slurm_scripts/ablations/submit_unet_extensions.py
+```
+
+This prints the current source commit and previews all three U-Net production
+commands using the committed manifest. For an intentional new launch, append
+`--submit`; use `--run-group YYYY-MM-DD/diffusion_unet_extensions_repeat` to
+select a fresh output group. Submission requires a clean checkout and checks
+all three destinations before submitting any job. The default output group
+is `YYYY-MM-DD/diffusion_unet_extensions`, using the launch date. The launcher
+does not submit diffusion or timing jobs.
+
+The existing workflow CLI writes `submit_job_*.sh` into each run directory
+and submits it with `sbatch`. Each generated script invokes the training
+module via `srun`; the run directory also keeps its Slurm logs and Hydra
+configuration snapshots. The three original production jobs already have
+these records, independently of this reusable launcher.
 
 The post-fit NCCL fix from upstream PR #386 is present as backport
 `f5ee48356934e0e80f9da77c0922edcb8a4cf4b7` on this branch. Collective saves

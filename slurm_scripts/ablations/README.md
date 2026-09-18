@@ -141,3 +141,22 @@ remain under `ablations/arch_unet_fno_vit/`.
 3. `submit_*_large.sh` — 24h production runs, dry-run first.
 4. Eval from the corresponding central `submit_eval_planned*.sh` script or a
    study-local `eval/` submitter when the run set has not been centralized.
+
+## Measured U-Net extensions
+
+The AD, GS and GPE U-Net production runs use the committed
+`diffusion_unet_extensions.yaml` manifest and the measured budgets documented
+in [the extension plan](diffusion_unet_extensions_PLAN.md). From the checkout
+root, preview their commands with:
+
+```bash
+uv run --frozen --no-sync python slurm_scripts/ablations/submit_unet_extensions.py
+```
+
+Append `--submit` to launch after validation. The default run group is
+`YYYY-MM-DD/diffusion_unet_extensions`; `--run-group` selects a different
+group for an intentional repeat. The launcher refuses existing U-Net runs
+in the requested group and requires a clean checkout when submitting.
+It prints the source commit and uses the existing `autocast epd --mode slurm`
+workflow, which saves an exact `submit_job_*.sh` in each output directory.
+It submits only the three U-Net production jobs, not diffusion or timing jobs.
