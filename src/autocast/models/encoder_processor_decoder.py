@@ -126,6 +126,7 @@ class EncoderProcessorDecoder(
             sync_dist=True,
             batch_size=batch.input_fields.shape[0],
         )
+        self._log_processor_diagnostics("train", batch.input_fields.shape[0])
         if self.train_metrics is not None:
             if y_pred is None:
                 y_pred = self(batch)
@@ -144,6 +145,7 @@ class EncoderProcessorDecoder(
             sync_dist=True,
             batch_size=batch.input_fields.shape[0],
         )
+        self._log_processor_diagnostics("val", batch.input_fields.shape[0])
         if self.val_metrics is not None:
             if y_pred is None:
                 y_pred = self(batch)
@@ -155,6 +157,28 @@ class EncoderProcessorDecoder(
             )
         return loss
 
+    def _log_processor_diagnostics(self, prefix: str, batch_size: int) -> None:
+        """Forward processor-internal diagnostics to the logger.
+
+        Processors may stash detached scalar tensors on
+        ``self.processor._latest_diagnostics`` (e.g. ``DriftingProcessor``
+        records within-cohort spread and per-scale force-RMS values to
+        catch the n_+ = 1 contrastive-collapse failure mode). The
+        Lightning module reads them here and writes them via
+        ``log_dict`` with a ``train/`` or ``val/`` prefix. Processors
+        that don't set the attribute are silently skipped.
+        """
+        diagnostics = getattr(self.processor, "_latest_diagnostics", None)
+        if diagnostics:
+            # sync_dist=False: each scalar is a per-rank batch-mean (cohort
+            # spread, force-RMS) — the per-rank value is a fine estimate
+            # and avoids a separate DDP all-reduce per diagnostic key.
+            self.log_dict(
+                {f"{prefix}/{name}": value for name, value in diagnostics.items()},
+                sync_dist=False,
+                batch_size=batch_size,
+            )
+
     def test_step(self, batch: Batch, batch_idx: int) -> Tensor:  # noqa: ARG002
         loss, y_pred = self.loss(batch)
         self.log(
@@ -164,6 +188,7 @@ class EncoderProcessorDecoder(
             sync_dist=True,
             batch_size=batch.input_fields.shape[0],
         )
+        self._log_processor_diagnostics("test", batch.input_fields.shape[0])
         if self.test_metrics is not None:
             if y_pred is None:
                 y_pred = self(batch)
