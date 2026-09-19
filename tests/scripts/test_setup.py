@@ -275,9 +275,16 @@ def test_resolve_auto_params_unchanged_if_no_datamodule():
 # --- _build_loss_func ---
 
 
-def test_build_loss_func_defaults_to_mse():
-    loss = _build_loss_func(OmegaConf.create({}))
-    assert isinstance(loss, torch.nn.MSELoss)
+def test_build_loss_func_returns_none_when_unspecified():
+    """No loss in the config means no cross-cutting loss, not a silent MSE.
+
+    Processors that own their objective in ``processor.loss()`` are configured
+    with ``loss_func: null``. ``ProcessorModelEnsemble.loss`` gates on
+    ``loss_func is None`` to reach that path, so a default here would send them
+    through the cross-cutting loss instead.
+    """
+    assert _build_loss_func(OmegaConf.create({})) is None
+    assert _build_loss_func(OmegaConf.create({"loss_func": None})) is None
 
 
 def test_build_loss_func_instantiates_from_config():

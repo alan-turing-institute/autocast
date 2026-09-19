@@ -8,10 +8,12 @@ from autocast.processors.base import Processor
 from autocast.processors.consistency import ConsistencyDistilledProcessor
 from autocast.processors.conv_coupling import ConvCouplingFlowProcessor
 from autocast.processors.distilled import DistilledProcessor
+from autocast.processors.drifting import DriftingProcessor
 from autocast.processors.flow_matching import FlowMatchingProcessor
 from autocast.processors.flow_matching_masked_window import (
     FlowMatchingMaskedWindowProcessor,
 )
+from autocast.processors.one_step_cohort import OneStepCohortProcessor
 from autocast.processors.sigma_vae import SigmaVAEProcessor
 from autocast.processors.swin_vit import SwinViTProcessor
 from autocast.processors.tarflow import TarFlowProcessor
@@ -46,10 +48,12 @@ __all__ = [
     "ConsistencyDistilledProcessor",
     "ConvCouplingFlowProcessor",
     "DistilledProcessor",
+    "DriftingProcessor",
     "FlowMatchingMaskedWindowProcessor",
     "FlowMatchingProcessor",
     "MCDropoutAzulaViTProcessor",
     "NormalizingFlowProcessor",
+    "OneStepCohortProcessor",
     "Processor",
     "SigmaVAEProcessor",
     "SwinViTProcessor",
