@@ -47,6 +47,8 @@ class TemporalUNetBackbone(TemporalBackboneBase):
         attention_heads: Mapping[int, int] | None = None,
         checkpointing: bool = False,
         use_precomputed_modulation: bool = False,
+        include_time_embedding: bool = True,
+        include_loss_weight: bool = False,
     ):
         """Initialize Temporal UNet Backbone.
 
@@ -80,7 +82,16 @@ class TemporalUNetBackbone(TemporalBackboneBase):
             identity_init: Whether to use identity initialization in UNet blocks
             attention_heads: Mapping of UNet levels to number of attention heads
             checkpointing: Whether to use gradient checkpointing in UNet
-            use_precomputed_modulation: Whether to use precomputed modulation tensors.
+            use_precomputed_modulation: Forwarded to the base; when True the
+                caller supplies precomputed modulation vectors as ``t``.
+            include_time_embedding: Forwarded to the base; when False the
+                time-embedding module is not registered and ``t=None`` is
+                accepted at forward time (one-step processors).
+            include_loss_weight: Forwarded to the base; when True an embedding
+                for the scalar loss-mixing weight ``w = 1/(1+lambda)`` is added
+                to the modulation bus, so a single model can be conditioned on
+                lambda and swept at inference (the lambda-conditioned drifting
+                path; previously exposed only on the MLP backbone).
         """
         # Initialize base class with common parameters
         super().__init__(
@@ -98,6 +109,8 @@ class TemporalUNetBackbone(TemporalBackboneBase):
             tcn_kernel_size=tcn_kernel_size,
             tcn_num_layers=tcn_num_layers,
             use_precomputed_modulation=use_precomputed_modulation,
+            include_time_embedding=include_time_embedding,
+            include_loss_weight=include_loss_weight,
         )
 
         # Build UNet backbone
