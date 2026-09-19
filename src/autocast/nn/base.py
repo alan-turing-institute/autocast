@@ -39,6 +39,8 @@ class TemporalBackboneBase(nn.Module, ABC):
         tcn_kernel_size: int = 3,
         tcn_num_layers: int = 2,
         use_precomputed_modulation: bool = False,
+        include_time_embedding: bool = True,
+        include_loss_weight: bool = False,
     ):
         """Initialize Temporal Backbone Base.
 
@@ -59,7 +61,21 @@ class TemporalBackboneBase(nn.Module, ABC):
             temporal_attention_hidden_dim: Hidden dimension for attention methods
             tcn_kernel_size: Kernel size for TCN
             tcn_num_layers: Number of TCN layers
-            use_precomputed_modulation: Whether to use precomputed modulation tensors.
+            use_precomputed_modulation: If True, callers pass precomputed
+                modulation vectors of shape ``(B, mod_features)`` directly as
+                ``t`` and no SineEncoding-based embedding is registered.
+            include_time_embedding: If False, skip the time-embedding
+                registration entirely. Used by one-step processors (e.g.
+                drifting) that have no integration time ``t`` to embed. When
+                False, callers may pass ``t=None`` to ``forward``.
+            include_loss_weight: If True, register an embedding for a scalar
+                loss-mixing weight ``w`` (the convex form ``w=1/(1+lambda)``)
+                that is added to the modulation vector, so a single model can
+                be conditioned on lambda and swept at inference. Default
+                False leaves all existing backbones byte-identical (no new
+                parameters), which is DDP-safe. Forwarded by the U-Net and
+                multi-layer-perceptron backbones; the vision-transformer
+                backbone does not expose it yet.
         """
         super().__init__()
 
@@ -71,6 +87,8 @@ class TemporalBackboneBase(nn.Module, ABC):
         self.n_steps_input = n_steps_input
         self.mod_features = mod_features
         self.use_precomputed_modulation = use_precomputed_modulation
+        self.include_time_embedding = include_time_embedding
+        self.include_loss_weight = include_loss_weight
 
         # Validate global conditioning configuration
         if include_global_cond and (
@@ -83,16 +101,17 @@ class TemporalBackboneBase(nn.Module, ABC):
 
         # Time embedding for scalar diffusion timesteps. Some models pass
         # precomputed modulation vectors directly and should not register
-        # unused embedding parameters under strict DDP.
+        # unused embedding parameters under strict DDP. One-step processors
+        # (drifting) opt out entirely via ``include_time_embedding=False``.
         self.time_embedding = (
-            None
-            if self.use_precomputed_modulation
-            else nn.Sequential(
+            nn.Sequential(
                 SineEncoding(mod_features),
                 nn.Linear(mod_features, mod_features),
                 nn.SiLU(),
                 nn.Linear(mod_features, mod_features),
             )
+            if include_time_embedding and not use_precomputed_modulation
+            else None
         )
 
         self.global_cond_embedding = (
@@ -104,6 +123,20 @@ class TemporalBackboneBase(nn.Module, ABC):
             if global_cond_channels is not None
             and global_cond_channels > 0
             and include_global_cond
+            else None
+        )
+
+        # Scalar loss-mixing-weight embedding. Mirrors the global-cond
+        # embedding but takes the single bounded weight w=1/(1+lambda) in [0,1].
+        # Registered only when include_loss_weight is True, so default backbones
+        # gain no parameters and stay byte-identical / DDP-safe.
+        self.lambda_embedding = (
+            nn.Sequential(
+                nn.Linear(1, mod_features),
+                nn.SiLU(),
+                nn.Linear(mod_features, mod_features),
+            )
+            if include_loss_weight
             else None
         )
 
@@ -207,9 +240,10 @@ class TemporalBackboneBase(nn.Module, ABC):
     def forward(
         self,
         x_t: TensorBTSC,
-        t: Tensor,
+        t: Tensor | None,
         cond: TensorBTSC,
         global_cond: Tensor | None = None,
+        loss_weight: Tensor | None = None,
     ) -> TensorBTSC:
         """Forward pass of the temporal backbone.
 
@@ -218,20 +252,44 @@ class TemporalBackboneBase(nn.Module, ABC):
             t: Diffusion modulation input. Either:
                 - scalar timesteps with shape (B,), which are embedded via SineEncoding
                 - precomputed modulation vectors with shape (B, D), where D=mod_features
+                - ``None``, when the backbone was built with
+                  ``include_time_embedding=False`` (one-step processors)
             cond: Conditioning input (B, T_cond, W, H, C)
             global_cond: Optional global conditioning/modulation vector (B, D)
+            loss_weight: Optional scalar loss-mixing weight ``w`` per sample,
+                shape ``(B,)`` or ``(B, 1)``. Only consumed when the backbone was
+                built with ``include_loss_weight=True``; embedded and added to the
+                modulation vector so the network can condition on lambda.
 
         Returns:
             Denoised output (B, T, W, H, C)
         """
-        # Accept either scalar timesteps (B,) or precomputed modulation vectors (B, D).
-        if t.ndim == 2 and t.shape[-1] == self.mod_features:
+        # Build modulation embedding. ``t`` may be None when
+        # ``include_time_embedding=False`` (one-step processors).
+        if t is None:
+            if self.include_time_embedding:
+                msg = (
+                    "Backbone was built with include_time_embedding=True "
+                    "but received t=None."
+                )
+                raise ValueError(msg)
+            # AdaLN/FiLM consumers still need a (B, mod_features) tensor;
+            # zeros are the neutral identity shift, leaving whichever other
+            # modulators are enabled (global conditioning, the loss weight) to
+            # carry the signal -- or none at all, if neither is.
+            t_emb = x_t.new_zeros((x_t.shape[0], self.mod_features))
+        elif t.ndim == 2 and t.shape[-1] == self.mod_features:
             t_emb = t
         else:
             if self.time_embedding is None:
+                reason = (
+                    "was built with include_time_embedding=False"
+                    if not self.include_time_embedding
+                    else "uses precomputed modulation vectors"
+                )
                 msg = (
-                    "Expected precomputed modulation vectors with shape "
-                    "(B, mod_features), but received scalar timesteps."
+                    f"Backbone {reason}, so it cannot embed scalar timesteps; "
+                    f"received t with shape {tuple(t.shape)}."
                 )
                 raise ValueError(msg)
             t_emb = self.time_embedding(t)
@@ -242,6 +300,27 @@ class TemporalBackboneBase(nn.Module, ABC):
                 msg = "Model init with global_cond_channels but no global_cond provided"
                 raise ValueError(msg)
             t_emb = t_emb + self.global_cond_embedding(global_cond)
+
+        # Combine with the loss-mixing-weight embedding if conditioning on lambda.
+        if self.lambda_embedding is None:
+            if loss_weight is not None:
+                msg = (
+                    "loss_weight was passed to forward() but the backbone was "
+                    "built with include_loss_weight=False, so it would be "
+                    "silently ignored and the model would train unconditioned."
+                )
+                raise ValueError(msg)
+        else:
+            if loss_weight is None:
+                msg = (
+                    "Backbone was built with include_loss_weight=True but no "
+                    "loss_weight was provided to forward()."
+                )
+                raise ValueError(msg)
+            # ``reshape(-1, 1)`` also accepts a 0-d scalar weight; the device is
+            # pinned because a caller may build the weight on the CPU.
+            w = loss_weight.reshape(-1, 1).to(device=t_emb.device, dtype=t_emb.dtype)
+            t_emb = t_emb + self.lambda_embedding(w)
 
         # Apply temporal processing
         x_t_temporal, cond_temporal = self.apply_temporal_processing(x_t, cond)
