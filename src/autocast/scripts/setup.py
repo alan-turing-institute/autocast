@@ -525,11 +525,18 @@ def _build_processor(
 def _build_loss_func(
     model_config: DictConfig,
     processor: nn.Module | None = None,
-) -> nn.Module:
-    """Build a loss and satisfy explicit processor-binding requirements."""
+) -> nn.Module | None:
+    """Build a loss and satisfy explicit processor-binding requirements.
+
+    Returns ``None`` when the config does not name a loss, rather than
+    falling back to ``MSELoss``. Processors that own their objective in
+    ``processor.loss()`` (flow matching, drifting) are configured with
+    ``loss_func: null``; a default here masks that intent and sends them
+    down the cross-cutting loss path instead of their own.
+    """
     loss_func_config = model_config.get("loss_func")
     if loss_func_config is None:
-        return nn.MSELoss()
+        return None
 
     target = loss_func_config.get("_target_")
     loss_kwargs: dict[str, Any] = {}

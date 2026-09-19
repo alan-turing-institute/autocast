@@ -47,7 +47,10 @@ class ProcessorModel(
         super().__init__()
         self.processor = processor  # Register nn.Module parameters
         self.stride = stride
-        self.loss_func = loss_func or nn.MSELoss()
+        # Honour an explicit None: ProcessorModelEnsemble.loss() gates on
+        # `loss_func is None` to fall back to the processor's own loss.
+        # Masking it here makes that branch unreachable.
+        self.loss_func = loss_func
         self.optimizer_config = optimizer_config
         self.train_metrics = self._build_metrics(train_metrics, "train_")
         self.val_metrics = self._build_metrics(val_metrics, "val_")
