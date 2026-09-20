@@ -304,18 +304,25 @@ class TrainingTimerCallback(Callback):
         self._train_start: float | None = None
         self._epoch_start: float | None = None
         self._epoch_times_s: list[float] = []
+        self._elapsed_runtime_offset_s = 0.0
+        self._resume_pending = False
         self.training_runtime_total_s: float | None = None
 
     def _current_elapsed_runtime_s(self) -> float | None:
-        """Return elapsed runtime since train start (wall-clock seconds)."""
+        """Return cumulative training runtime, excluding gaps between jobs."""
         if self._train_start is None:
-            return None
-        return perf_counter() - self._train_start
+            return self._elapsed_runtime_offset_s if self._resume_pending else None
+        return self._elapsed_runtime_offset_s + perf_counter() - self._train_start
 
     def on_train_start(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
         del trainer, pl_module
+        if not self._resume_pending:
+            self._epoch_times_s = []
+            self._elapsed_runtime_offset_s = 0.0
         self._train_start = perf_counter()
-        self._epoch_times_s = []
+        self._epoch_start = None
+        self.training_runtime_total_s = None
+        self._resume_pending = False
 
     def on_train_epoch_start(
         self, trainer: L.Trainer, pl_module: L.LightningModule
@@ -334,7 +341,9 @@ class TrainingTimerCallback(Callback):
         if self._epoch_start is not None:
             self._epoch_times_s.append(now - self._epoch_start)
         if self._train_start is not None:
-            self.training_runtime_total_s = now - self._train_start
+            self.training_runtime_total_s = (
+                self._elapsed_runtime_offset_s + now - self._train_start
+            )
 
         # Emit human-readable timing info into stdout/stderr logs so timing
         # runs are inspectable without loading timing.ckpt.
@@ -375,6 +384,16 @@ class TrainingTimerCallback(Callback):
     ) -> None:
         self.training_runtime_total_s = state_dict.get("training_runtime_total_s")
         self._epoch_times_s = list(state_dict.get("epoch_times_s", []))
+        elapsed = self.training_runtime_total_s
+        if elapsed is None:
+            elapsed = state_dict.get("training_runtime_elapsed_s")
+        self._elapsed_runtime_offset_s = float(elapsed or 0.0)
+        # A legacy checkpoint may contain an unfinished epoch-timing interval.
+        # Its elapsed time is included in the offset; retain the recorded
+        # intervals without inventing a duration for that incomplete interval.
+        self._train_start = None
+        self._epoch_start = None
+        self._resume_pending = True
 
 
 def run_training(  # noqa: PLR0915
