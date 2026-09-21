@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -52,6 +53,202 @@ def test_run_hue_uses_explicit_fm_label_for_semantic_run_style():
 
     assert styles[crps_pg]["linestyle"] == "--"
     assert styles[fm_pg]["linestyle"] == "-"
+
+
+def test_skill_is_backfilled_without_inventing_spread_or_overwriting_direct_values():
+    legacy = pd.DataFrame({"rmse": [2.0, 4.0], "ssr": [0.5, 1.5]})
+
+    derived = pdc._with_spread_skill_metrics(legacy)
+
+    assert derived["skill"].tolist() == pytest.approx([2.0, 4.0])
+    assert "spread" not in derived.columns
+    assert derived["ssr"].tolist() == legacy["ssr"].tolist()
+    assert "skill" not in legacy.columns
+    assert "spread" not in legacy.columns
+
+    direct = pd.DataFrame(
+        {
+            "rmse": [2.0],
+            "ssr": [0.5],
+            "skill": [3.0],
+            "spread": [7.0],
+        }
+    )
+    preserved = pdc._with_spread_skill_metrics(direct)
+    assert preserved["skill"].tolist() == pytest.approx([3.0])
+    assert preserved["spread"].tolist() == pytest.approx([7.0])
+
+
+@pytest.mark.parametrize("trajectory_statistics", [False, True])
+def test_lead_time_spread_requires_direct_export(
+    tmp_path: Path,
+    trajectory_statistics: bool,
+):
+    eval_dir = tmp_path / "run1" / "eval"
+    eval_dir.mkdir(parents=True)
+    data = pd.DataFrame({"rmse": [2.0, 4.0], "ssr": [0.5, 1.5]})
+    row = {
+        "run_path": "run1",
+        "eval_subdir": "eval",
+        "dataset_label": "AD",
+        "plot_group": "model",
+    }
+    if trajectory_statistics:
+        path = eval_dir / "rollout_metrics_per_timestep_per_trajectory.csv"
+        data["trajectory_id"] = ["test_0", "test_0"]
+        data["lead_time"] = [0, 1]
+        row["trajectory_statistics_dir"] = str(eval_dir)
+    else:
+        path = eval_dir / "rollout_metrics_per_timestep_channel_all.csv"
+
+    def write_metrics():
+        if trajectory_statistics:
+            data.to_csv(path, index=False)
+        else:
+            data.T.to_csv(path)
+
+    write_metrics()
+    df = pd.DataFrame([row])
+    styles = {"model": {"color": "black", "label": "model", "linestyle": "-"}}
+
+    # The same legacy export remains usable for existing SSR figures.
+    fig = pdc.plot_lead_time_panel(
+        df,
+        ["ssr"],
+        tmp_path,
+        tmp_path,
+        "unused.png",
+        styles,
+        save=False,
+    )
+    assert isinstance(fig, Figure)
+    np.testing.assert_array_equal(fig.axes[0].lines[0].get_ydata(), [0.5, 1.5])
+    plt.close(fig)
+
+    with pytest.raises(
+        ValueError, match="Direct ensemble spread is unavailable"
+    ) as exc:
+        pdc.plot_lead_time_panel(
+            df,
+            ["spread"],
+            tmp_path,
+            tmp_path,
+            "unused.png",
+            styles,
+            save=False,
+        )
+    assert str(path) in str(exc.value)
+
+    # These measured values intentionally differ from SSR * RMSE ([1, 6]).
+    data["spread"] = [0.25, 0.75]
+    write_metrics()
+    fig = pdc.plot_lead_time_panel(
+        df,
+        ["spread"],
+        tmp_path,
+        tmp_path,
+        "unused.png",
+        styles,
+        save=False,
+    )
+    assert isinstance(fig, Figure)
+    np.testing.assert_array_equal(fig.axes[0].lines[0].get_ydata(), [0.25, 0.75])
+    plt.close(fig)
+
+
+@pytest.mark.parametrize("paper_only", [False, True])
+@pytest.mark.parametrize("spread_skill", [False, True])
+def test_cli_spread_summary_requires_explicit_flag(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    paper_only: bool,
+    spread_skill: bool,
+):
+    run = "diff_ad64_flow_matching_vit_example"
+    eval_dir = tmp_path / run / "eval"
+    eval_dir.mkdir(parents=True)
+    metrics = [
+        "vrmse",
+        "crps",
+        "ssr",
+        "energy",
+        "psrmse_high",
+        "psrmse_mid",
+        "psrmse_low",
+        "rmse",
+        "spread",
+    ]
+    pd.DataFrame({metric: [0.1, 0.2] for metric in metrics}).T.to_csv(
+        eval_dir / "rollout_metrics_per_timestep_channel_all.csv"
+    )
+    names: list[str] = []
+
+    def capture_figure(fig: Figure, _out_dir: Path, name: str):
+        names.append(name)
+        plt.close(fig)
+
+    monkeypatch.setattr(pdc, "save_fig", capture_figure)
+    argv = [
+        "autocast-plots",
+        "--results-dir",
+        str(tmp_path),
+        "--run",
+        run,
+        "--paper-main-figures",
+        "--metric-groups",
+        "none",
+    ]
+    if paper_only:
+        argv.append("--paper-only")
+    if spread_skill:
+        argv.append("--paper-spread-skill")
+    monkeypatch.setattr(sys, "argv", argv)
+
+    pdc.main()
+
+    assert "paper_lead_time_panel_summary.png" in names
+    assert ("paper_lead_time_panel_summary_spread_skill.png" in names) == spread_skill
+
+
+def test_paper_summary_can_add_separate_spread_and_skill_rows(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    captured_metrics: list[str] = []
+
+    def fake_plot_lead_time_panel(
+        _df_in: pd.DataFrame,
+        metrics: list[str],
+        *_args: Any,
+        **_kwargs: Any,
+    ) -> None:
+        captured_metrics.extend(metrics)
+
+    monkeypatch.setattr(pdc, "plot_lead_time_panel", fake_plot_lead_time_panel)
+    monkeypatch.setattr(pdc, "_paper_legend", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(pdc, "save_fig", lambda *_args, **_kwargs: None)
+
+    pdc.plot_paper_lead_time_summary_figure(
+        pd.DataFrame({"dataset_label": ["AD"]}),
+        tmp_path,
+        tmp_path,
+        {},
+        dataset_order=["AD"],
+        include_spread_skill=True,
+    )
+
+    assert captured_metrics == [
+        "vrmse",
+        "crps",
+        "ssr",
+        "spread",
+        "skill",
+        "energy",
+        "psrmse_high",
+        "psrmse_mid",
+        "psrmse_low",
+    ]
+    plt.close("all")
 
 
 def test_default_plot_metrics_include_overall_crps_and_ssr():

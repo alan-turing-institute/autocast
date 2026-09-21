@@ -898,6 +898,33 @@ def _as_nonnegative_int(value: object) -> int | None:
     return round(numeric)
 
 
+def _with_spread_skill_metrics(
+    data: pd.DataFrame,
+    *,
+    require_spread: bool = False,
+    source: Path | None = None,
+) -> pd.DataFrame:
+    """Backfill ensemble skill and require direct spread when requested.
+
+    Ensemble skill is the RMSE of the ensemble mean. Multiplying exported SSR
+    and skill does not recover spread: their independent averaging
+    over channels, samples or trajectories breaks the pointwise identity.
+    Directly evaluated columns always take precedence, including missing values.
+    """
+    if require_spread and "spread" not in data.columns:
+        location = f" in {source}" if source is not None else ""
+        msg = (
+            f"Direct ensemble spread is unavailable{location}. Re-evaluate with "
+            "the spread metric before requesting spread plots; reconstructing "
+            "spread from averaged SSR and RMSE is not supported."
+        )
+        raise ValueError(msg)
+    result = data.copy()
+    if "skill" not in result.columns and "rmse" in result.columns:
+        result["skill"] = pd.to_numeric(result["rmse"], errors="coerce")
+    return result
+
+
 def _trajectory_metric_columns(data: pd.DataFrame) -> list[str]:
     """Return metric columns from a trajectory-statistics export."""
     if "mse" not in data.columns:
@@ -3030,6 +3057,12 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
             )
             if stats_path.exists():
                 trajectory_data = pd.read_csv(stats_path)
+                if {"spread", "skill"}.intersection(metrics):
+                    trajectory_data = _with_spread_skill_metrics(
+                        trajectory_data,
+                        require_spread="spread" in metrics,
+                        source=stats_path,
+                    )
                 summary = _summarize_trajectory_metrics(
                     trajectory_data,
                     metrics,
@@ -3056,6 +3089,13 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
         raw = pd.read_csv(p, index_col=0)
         if raw.empty:
             continue
+        if {"spread", "skill"}.intersection(metrics):
+            enriched = _with_spread_skill_metrics(
+                raw.T,
+                require_spread="spread" in metrics,
+                source=p,
+            )
+            raw = enriched.T
         long = raw.reset_index().rename(columns={raw.index.name or "index": "metric"})
         long = long.melt(
             id_vars="metric", var_name="timestep", value_name="value"
@@ -4395,6 +4435,8 @@ def _paper_summary_metric_label(metric: str) -> str:
         "vrmse": "VRMSE",
         "crps": "CRPS",
         "ssr": "SSR",
+        "spread": "Spread",
+        "skill": "Skill",
         "energy": "Energy",
         "winkler": "Winkler",
         "psrmse_high": "PSRMSE-H",
@@ -4438,6 +4480,7 @@ def plot_paper_lead_time_summary_figure(
     dataset_order: list[str] | None = None,
     hue_order: list[str] | None = None,
     name: str = "paper_lead_time_panel_summary.png",
+    include_spread_skill: bool = False,
 ) -> None:
     """Render the multi-metric lead-time summary at paper linewidth."""
     preset = METRIC_GROUP_PRESETS["summary"]
@@ -4450,6 +4493,8 @@ def plot_paper_lead_time_summary_figure(
         "psrmse_mid",
         "psrmse_low",
     ]
+    if include_spread_skill:
+        metrics[3:3] = ["spread", "skill"]
     datasets = _paper_datasets(df_in, dataset_order)
     n_ds = max(1, len(datasets))
     if not metrics:
@@ -4459,7 +4504,10 @@ def plot_paper_lead_time_summary_figure(
         fig, axes = plt.subplots(
             len(metrics),
             n_ds,
-            figsize=(PAPER_FIGURE_WIDTH_IN, 6.68),
+            figsize=(
+                PAPER_FIGURE_WIDTH_IN,
+                6.68 + 0.94 * (len(metrics) - 7),
+            ),
             sharex=True,
             squeeze=False,
         )
@@ -4468,7 +4516,11 @@ def plot_paper_lead_time_summary_figure(
             metrics,
             results_root,
             out_dir,
-            "paper_lead_time_summary_inner.png",
+            (
+                "paper_lead_time_summary_spread_skill_inner.png"
+                if include_spread_skill
+                else "paper_lead_time_summary_inner.png"
+            ),
             styles,
             dataset_order=dataset_order,
             hue_order=hue_order,
@@ -5251,6 +5303,15 @@ def main():  # noqa: PLR0912, PLR0915
         ),
     )
     parser.add_argument(
+        "--paper-spread-skill",
+        action="store_true",
+        help=(
+            "Render an additional paper summary with spread and skill. Requires "
+            "directly exported spread; skill can use ensemble-mean RMSE. "
+            "Fails if a selected export lacks spread; no approximation is used."
+        ),
+    )
+    parser.add_argument(
         "--paper-only",
         action="store_true",
         help="Only render requested paper_* figures; skip standard plot outputs.",
@@ -5877,6 +5938,17 @@ def main():  # noqa: PLR0912, PLR0915
                 dataset_order=ds_order,
                 hue_order=hu_order,
             )
+        if args.paper_spread_skill:
+            plot_paper_lead_time_summary_figure(
+                df,
+                results_dir,
+                out_dir,
+                styles,
+                dataset_order=ds_order,
+                hue_order=hu_order,
+                name="paper_lead_time_panel_summary_spread_skill.png",
+                include_spread_skill=True,
+            )
         if args.four_ds_ablation:
             plot_four_ds_ablation_figure(
                 df,
@@ -6127,6 +6199,17 @@ def main():  # noqa: PLR0912, PLR0915
             styles,
             dataset_order=ds_order,
             hue_order=hu_order,
+        )
+    if args.paper_spread_skill:
+        plot_paper_lead_time_summary_figure(
+            df,
+            results_dir,
+            out_dir,
+            styles,
+            dataset_order=ds_order,
+            hue_order=hu_order,
+            name="paper_lead_time_panel_summary_spread_skill.png",
+            include_spread_skill=True,
         )
     if args.four_ds_ablation:
         plot_four_ds_ablation_figure(

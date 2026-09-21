@@ -801,6 +801,8 @@ if [[ "$PAPER_MAIN_FIGURES" == true || "$FOUR_DS_ABLATION" == true || "$ONE_DS_A
 	)
 	for ext in png pdf; do
 		rm -f "$PAPER_OUTPUT_DIR/$ext/"*_paper_one_ds_ablation_b."$ext"
+		# Old WIP spread figures may contain the removed SSR * RMSE fallback.
+		rm -f "$PAPER_OUTPUT_DIR/$ext/"*_paper_lead_time_panel_summary_spread_skill*."$ext"
 		for skipped_dir in "${SKIPPED_PAPER_DIRS[@]}"; do
 			rm -f "$PAPER_OUTPUT_DIR/$ext/${skipped_dir}_"*."$ext"
 		done
@@ -811,7 +813,7 @@ if [[ "$PAPER_MAIN_FIGURES" == true || "$FOUR_DS_ABLATION" == true || "$ONE_DS_A
 		src_dir=$(basename "$(dirname "$fig")")
 		fig_name=$(basename "$fig")
 		case "$fig_name" in
-			paper_one_ds_ablation_b.*)
+			paper_one_ds_ablation_b.* | paper_lead_time_panel_summary_spread_skill*)
 				continue
 				;;
 		esac
