@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-PLOTS_PATH=${PLOTS_PATH:-2026-07-27_final_plots}
+PLOTS_PATH=${PLOTS_PATH:-2026-09-21_final_plots}
 RESULTS_DIR=${RESULTS_DIR:-outputs/2026-07-24_collated}
 OUTPUT_DIR=${OUTPUT_DIR:-$RESULTS_DIR/$PLOTS_PATH/main_comparison_m8_complete_no_fm_amb_best_winkler}
 FIGURE_FORMATS=${FIGURE_FORMATS:-png}
@@ -11,7 +11,7 @@ PAPER_USE_TEX=${PAPER_USE_TEX:-false}
 PAPER_PANEL_LABELS=${PAPER_PANEL_LABELS:-true}
 
 autocast-plots() {
-	uv run autocast-plots "$@"
+	uv run --frozen --no-sync autocast-plots "$@"
 }
 
 # Keep colours stable across all final plots. These are indices into matplotlib's
@@ -263,6 +263,22 @@ all_evaluations_available() {
 			return 1
 		fi
 	done
+}
+
+all_ablation_evaluations_available() {
+	local eval_path metric_file
+	local complete=true
+	for eval_path in "$@"; do
+		for metric_file in evaluation_metrics.csv rollout_metrics.csv \
+			rollout_metrics_per_timestep_channel_all.csv test_coverage_window_all.csv \
+			rollout_coverage_window_{0-4,6-12,13-30,31-99}.csv; do
+			if [[ ! -s "$RESULTS_DIR/$eval_path/$metric_file" ]]; then
+				echo "Missing: $RESULTS_DIR/$eval_path/$metric_file" >&2
+				complete=false
+			fi
+		done
+	done
+	[[ "$complete" == true ]]
 }
 
 MAIN_COMPARISON_EVALUATIONS=(
@@ -580,6 +596,19 @@ if all_evaluations_available "${PUBLISHED_TEST_COMPARISON_EVALUATIONS[@]}"; then
 		--paper-main-figures \
 		--figure-formats png pdf \
 		--output-dir "$REVIEWER_OUTPUT_DIR/reviewer_training_data_published_test_comparison"
+
+	# Same test data and trajectory means, with only the shaded bands hidden.
+	autocast-plots --results-dir "$RESULTS_DIR" \
+		"${ALL_DATASET_COMMON_ARGS[@]}" \
+		"${PUBLISHED_TEST_COMPARISON_TRAJECTORY_STATS_ARGS[@]}" \
+		--dataset-order AD CNS GS GPE \
+		--base-first-run-hue-color \
+		"${PUBLISHED_TEST_COMPARISON_RUN_ARGS[@]}" \
+		--no-error-bands \
+		--paper-main-figures \
+		--four-ds-ablation \
+		--figure-formats png pdf \
+		--output-dir "$REVIEWER_OUTPUT_DIR/reviewer_training_data_published_test_comparison_mean_only"
 else
 	echo "Skipping reviewer published-test comparison: evaluations are not yet available."
 fi
@@ -720,11 +749,60 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "FM (latent)" "$HUE_FM_LATENT" \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_ambient_fm_latent_crps_m8"
 
-autocast-plots --results-dir "$RESULTS_DIR" \
-	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" "$HUE_FM_LATENT" \
-	--run diff_cns64_diffusion_vit_0c75022_80967c4 "DM (latent)" "$HUE_DM" eval=eval_encode_once \
-	"${COMMON_ARGS[@]}" \
-	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_cns_dm_latent"
+# Retain the original CNS diffusion result; epoch matching is a separate follow-up.
+ABLATION_DM_LATENT_EVALUATIONS=(
+	diff_ad64_flow_matching_vit_09490da_dae1382/eval
+	diff_cns64_flow_matching_vit_09490da_636fcc3/eval
+	diff_gs64_flow_matching_vit_09490da_7e9e331/eval
+	diff_gpe64_flow_matching_vit_09490da_47bf39a/eval
+	diff_ad64_diffusion_vit_d80b5b3_eceb84e/eval_encode_once
+	diff_cns64_diffusion_vit_0c75022_80967c4/eval_encode_once
+	diff_gs64_diffusion_vit_d80b5b3_9476ca0/eval_encode_once
+	diff_gpe64_diffusion_vit_d80b5b3_4856c88/eval_encode_once
+)
+if all_ablation_evaluations_available "${ABLATION_DM_LATENT_EVALUATIONS[@]}"; then
+	autocast-plots --results-dir "$RESULTS_DIR" \
+		--run diff_ad64_flow_matching_vit_09490da_dae1382 "FM (latent)" "$HUE_FM_LATENT" eval=eval \
+		--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (latent)" "$HUE_FM_LATENT" eval=eval \
+		--run diff_gs64_flow_matching_vit_09490da_7e9e331 "FM (latent)" "$HUE_FM_LATENT" eval=eval \
+		--run diff_gpe64_flow_matching_vit_09490da_47bf39a "FM (latent)" "$HUE_FM_LATENT" eval=eval \
+		--run diff_ad64_diffusion_vit_d80b5b3_eceb84e "DM (latent)" "$HUE_DM" eval=eval_encode_once \
+		--run diff_cns64_diffusion_vit_0c75022_80967c4 "DM (latent)" "$HUE_DM" eval=eval_encode_once \
+		--run diff_gs64_diffusion_vit_d80b5b3_9476ca0 "DM (latent)" "$HUE_DM" eval=eval_encode_once \
+		--run diff_gpe64_diffusion_vit_d80b5b3_4856c88 "DM (latent)" "$HUE_DM" eval=eval_encode_once \
+		"${ALL_DATASET_COMMON_ARGS[@]}" \
+		--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_dm_latent"
+else
+	echo "Skipping ablation_dm_latent: evaluation exports are incomplete." >&2
+fi
+
+# Compare raw and EMA weights from the same selected checkpoints.
+ABLATION_FM_EMA_EVALUATIONS=(
+	diff_ad64_flow_matching_vit_09490da_dae1382/eval
+	diff_cns64_flow_matching_vit_09490da_636fcc3/eval
+	diff_gs64_flow_matching_vit_09490da_7e9e331/eval
+	diff_gpe64_flow_matching_vit_09490da_47bf39a/eval
+	diff_ad64_flow_matching_vit_09490da_dae1382/eval_encode_once_ema
+	diff_cns64_flow_matching_vit_09490da_636fcc3/eval_encode_once_ema
+	diff_gs64_flow_matching_vit_09490da_7e9e331/eval_encode_once_ema
+	diff_gpe64_flow_matching_vit_09490da_47bf39a/eval_encode_once_ema
+)
+if all_ablation_evaluations_available "${ABLATION_FM_EMA_EVALUATIONS[@]}"; then
+	autocast-plots --results-dir "$RESULTS_DIR" \
+		--run diff_ad64_flow_matching_vit_09490da_dae1382 "FM (no EMA)" "$HUE_FM_LATENT" eval=eval linestyle=solid \
+		--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (no EMA)" "$HUE_FM_LATENT" eval=eval linestyle=solid \
+		--run diff_gs64_flow_matching_vit_09490da_7e9e331 "FM (no EMA)" "$HUE_FM_LATENT" eval=eval linestyle=solid \
+		--run diff_gpe64_flow_matching_vit_09490da_47bf39a "FM (no EMA)" "$HUE_FM_LATENT" eval=eval linestyle=solid \
+		--run diff_ad64_flow_matching_vit_09490da_dae1382 "FM (EMA)" "$HUE_ABLATION_ALT_2" eval=eval_encode_once_ema linestyle=dashed \
+		--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (EMA)" "$HUE_ABLATION_ALT_2" eval=eval_encode_once_ema linestyle=dashed \
+		--run diff_gs64_flow_matching_vit_09490da_7e9e331 "FM (EMA)" "$HUE_ABLATION_ALT_2" eval=eval_encode_once_ema linestyle=dashed \
+		--run diff_gpe64_flow_matching_vit_09490da_47bf39a "FM (EMA)" "$HUE_ABLATION_ALT_2" eval=eval_encode_once_ema linestyle=dashed \
+		"${ALL_DATASET_COMMON_ARGS[@]}" \
+		--uniform-run-hue-color \
+		--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_fm_ema"
+else
+	echo "Skipping ablation_fm_ema: evaluation exports are incomplete." >&2
+fi
 
 autocast-plots --results-dir "$RESULTS_DIR" \
 	--run diff_ad64_flow_matching_vit_09490da_dae1382 "ODE=1" "$HUE_ODE_ABLATION_STEPS" eval=eval_encode_once_ode001 \
@@ -797,11 +875,75 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 	"${COMMON_ARGS[@]}" \
 	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_cns_global_conditioning_m8"
 
-autocast-plots --results-dir "$RESULTS_DIR" \
-	--run crps_cns64_vit_azula_large_bed4611_c99f534 "ViT" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
-	--run crps_cns64_unet_azula_large_9c98db0_65f8f71 "U-Net" "$HUE_ABLATION_ALT_2" eval=eval_best_multiwinkler_from0p25 \
-	"${COMMON_ARGS[@]}" \
-	--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_cns_vit_unet_m8"
+# CNS retains its historical post-25% selection; extensions use overall best.
+ABLATION_VIT_UNET_M8_EVALUATIONS=(
+	crps_ad64_vit_azula_large_bed4611_da01a04/eval_best_multiwinkler_from0p25
+	crps_cns64_vit_azula_large_bed4611_c99f534/eval_best_multiwinkler_from0p25
+	crps_gs64_vit_azula_large_bed4611_828a161/eval_best_multiwinkler_from0p25
+	crps_gpe64_vit_azula_large_bed4611_e0a6df5/eval_best_multiwinkler_from0p25
+	crps_ad64_unet_azula_large_138dd8c_79a7707/eval_best_multiwinkler_overall
+	crps_cns64_unet_azula_large_9c98db0_65f8f71/eval_best_multiwinkler_from0p25
+	crps_gs64_unet_azula_large_138dd8c_03eb2bf/eval_best_multiwinkler_overall
+	crps_gpe64_unet_azula_large_138dd8c_79c0d48/eval_best_multiwinkler_overall
+)
+if all_ablation_evaluations_available "${ABLATION_VIT_UNET_M8_EVALUATIONS[@]}"; then
+	autocast-plots --results-dir "$RESULTS_DIR" \
+		--run crps_ad64_vit_azula_large_bed4611_da01a04 "ViT" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+		--run crps_cns64_vit_azula_large_bed4611_c99f534 "ViT" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+		--run crps_gs64_vit_azula_large_bed4611_828a161 "ViT" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+		--run crps_gpe64_vit_azula_large_bed4611_e0a6df5 "ViT" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+		--run crps_ad64_unet_azula_large_138dd8c_79a7707 "U-Net" "$HUE_ABLATION_ALT_2" eval=eval_best_multiwinkler_overall \
+		--run crps_cns64_unet_azula_large_9c98db0_65f8f71 "U-Net" "$HUE_ABLATION_ALT_2" eval=eval_best_multiwinkler_from0p25 \
+		--run crps_gs64_unet_azula_large_138dd8c_03eb2bf "U-Net" "$HUE_ABLATION_ALT_2" eval=eval_best_multiwinkler_overall \
+		--run crps_gpe64_unet_azula_large_138dd8c_79c0d48 "U-Net" "$HUE_ABLATION_ALT_2" eval=eval_best_multiwinkler_overall \
+		"${ALL_DATASET_COMMON_ARGS[@]}" \
+		--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_vit_unet_m8"
+else
+	echo "Skipping ablation_vit_unet_m8: evaluation exports are incomplete." >&2
+fi
+
+# Four-dataset loss comparison, separate from the original CRPS variants.
+# Historical checkpoint selections are recorded in EXTENDED_ABLATIONS.md.
+ABLATION_FCRPS_AFCRPS_EVALUATIONS=(
+	crps_ad64_vit_azula_large_bed4611_da01a04/eval_best_multiwinkler_from0p25
+	crps_cns64_vit_azula_large_bed4611_c99f534/eval_best_multiwinkler_from0p25
+	crps_gs64_vit_azula_large_bed4611_828a161/eval_best_multiwinkler_from0p25
+	crps_gpe64_vit_azula_large_bed4611_e0a6df5/eval_best_multiwinkler_from0p25
+	crps_ad64_vit_azula_large_5a8c216_9978d9b/eval_best_multiwinkler_from0p25
+	crps_cns64_vit_azula_large_9c98db0_d2a0496/eval_best_multiwinkler_from0p25
+	crps_gs64_vit_azula_large_5a8c216_2ced703/eval_best_multiwinkler_from0p25
+	crps_gpe64_vit_azula_large_5a8c216_2b1460a/eval_best_multiwinkler_from0p25
+)
+if all_ablation_evaluations_available "${ABLATION_FCRPS_AFCRPS_EVALUATIONS[@]}"; then
+	autocast-plots --results-dir "$RESULTS_DIR" \
+		--run crps_ad64_vit_azula_large_bed4611_da01a04 "CRPS (\$\alpha\$fCRPS loss)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+		--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS (\$\alpha\$fCRPS loss)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+		--run crps_gs64_vit_azula_large_bed4611_828a161 "CRPS (\$\alpha\$fCRPS loss)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+		--run crps_gpe64_vit_azula_large_bed4611_e0a6df5 "CRPS (\$\alpha\$fCRPS loss)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+		--run crps_ad64_vit_azula_large_5a8c216_9978d9b "CRPS (fCRPS loss)" "$HUE_ABLATION_ALT_2" eval=eval_best_multiwinkler_from0p25 \
+		--run crps_cns64_vit_azula_large_9c98db0_d2a0496 "CRPS (fCRPS loss)" "$HUE_ABLATION_ALT_2" eval=eval_best_multiwinkler_from0p25 \
+		--run crps_gs64_vit_azula_large_5a8c216_2ced703 "CRPS (fCRPS loss)" "$HUE_ABLATION_ALT_2" eval=eval_best_multiwinkler_from0p25 \
+		--run crps_gpe64_vit_azula_large_5a8c216_2b1460a "CRPS (fCRPS loss)" "$HUE_ABLATION_ALT_2" eval=eval_best_multiwinkler_from0p25 \
+		"${ALL_DATASET_COMMON_ARGS[@]}" \
+		--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_fcrps_afcrps"
+
+	# Main CRPS uses alpha-fair CRPS; this clearer name contains only two methods.
+	autocast-plots --results-dir "$RESULTS_DIR" \
+		--run crps_ad64_vit_azula_large_bed4611_da01a04 "CRPS (main, \$\alpha\$fCRPS loss)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+		--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS (main, \$\alpha\$fCRPS loss)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+		--run crps_gs64_vit_azula_large_bed4611_828a161 "CRPS (main, \$\alpha\$fCRPS loss)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+		--run crps_gpe64_vit_azula_large_bed4611_e0a6df5 "CRPS (main, \$\alpha\$fCRPS loss)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25 \
+		--run crps_ad64_vit_azula_large_5a8c216_9978d9b "CRPS (fCRPS loss)" "$HUE_ABLATION_ALT_2" eval=eval_best_multiwinkler_from0p25 \
+		--run crps_cns64_vit_azula_large_9c98db0_d2a0496 "CRPS (fCRPS loss)" "$HUE_ABLATION_ALT_2" eval=eval_best_multiwinkler_from0p25 \
+		--run crps_gs64_vit_azula_large_5a8c216_2ced703 "CRPS (fCRPS loss)" "$HUE_ABLATION_ALT_2" eval=eval_best_multiwinkler_from0p25 \
+		--run crps_gpe64_vit_azula_large_5a8c216_2b1460a "CRPS (fCRPS loss)" "$HUE_ABLATION_ALT_2" eval=eval_best_multiwinkler_from0p25 \
+		"${ALL_DATASET_COMMON_ARGS[@]}" \
+		--four-ds-ablation \
+		--figure-formats png pdf \
+		--output-dir "$RESULTS_DIR/$PLOTS_PATH/ablation_fcrps_vs_main_crps"
+else
+	echo "Skipping ablation_fcrps_afcrps: evaluation exports are incomplete." >&2
+fi
 
 autocast-plots --results-dir "$RESULTS_DIR" \
 	"${ALL_DATASET_COMMON_ARGS[@]}" \
@@ -866,17 +1008,10 @@ autocast-plots --results-dir "$RESULTS_DIR" \
 
 if [[ "$PAPER_MAIN_FIGURES" == true || "$FOUR_DS_ABLATION" == true || "$ONE_DS_ABLATION" == true ]]; then
 	mkdir -p "$PAPER_OUTPUT_DIR/png" "$PAPER_OUTPUT_DIR/pdf" "$PAPER_OUTPUT_DIR/tables"
-	SKIPPED_PAPER_DIRS=(
-		ablation_cns_dm
-		ablation_fm_ema
-	)
 	for ext in png pdf; do
 		rm -f "$PAPER_OUTPUT_DIR/$ext/"*_paper_one_ds_ablation_b."$ext"
 		# Old WIP spread figures may contain the removed SSR * RMSE fallback.
 		rm -f "$PAPER_OUTPUT_DIR/$ext/"*_paper_lead_time_panel_summary_spread_skill*."$ext"
-		for skipped_dir in "${SKIPPED_PAPER_DIRS[@]}"; do
-			rm -f "$PAPER_OUTPUT_DIR/$ext/${skipped_dir}_"*."$ext"
-		done
 	done
 	rm -f "$PAPER_OUTPUT_DIR/tables/"*.csv "$PAPER_OUTPUT_DIR/tables/"*.tex "$PAPER_OUTPUT_DIR/tables/"*.md
 	copied=0
@@ -888,11 +1023,6 @@ if [[ "$PAPER_MAIN_FIGURES" == true || "$FOUR_DS_ABLATION" == true || "$ONE_DS_A
 				continue
 				;;
 		esac
-		case "$src_dir" in
-			ablation_cns_dm | ablation_fm_ema)
-				continue
-				;;
-		esac
 		ext=${fig##*.}
 		dest_name="${src_dir}_${fig_name}"
 		cp "$fig" "$PAPER_OUTPUT_DIR/$ext/$dest_name"
@@ -900,8 +1030,6 @@ if [[ "$PAPER_MAIN_FIGURES" == true || "$FOUR_DS_ABLATION" == true || "$ONE_DS_A
 	done < <(
 		find "$RESULTS_DIR/$PLOTS_PATH" \
 			-path "$PAPER_OUTPUT_DIR" -prune -o \
-			-path "$RESULTS_DIR/$PLOTS_PATH/ablation_fm_ema" -prune -o \
-			-path "$RESULTS_DIR/$PLOTS_PATH/ablation_cns_dm" -prune -o \
 			-type f \( -name 'paper_*.png' -o -name 'paper_*.pdf' \) \
 			-print
 	)
@@ -909,18 +1037,11 @@ if [[ "$PAPER_MAIN_FIGURES" == true || "$FOUR_DS_ABLATION" == true || "$ONE_DS_A
 	copied_tables=0
 	while IFS= read -r table; do
 		src_dir=$(basename "$(dirname "$table")")
-		case "$src_dir" in
-			ablation_cns_dm | ablation_fm_ema)
-				continue
-				;;
-		esac
 		cp "$table" "$PAPER_OUTPUT_DIR/tables/${src_dir}_$(basename "$table")"
 		copied_tables=$((copied_tables + 1))
 	done < <(
 		find "$RESULTS_DIR/$PLOTS_PATH" \
 			-path "$PAPER_OUTPUT_DIR" -prune -o \
-			-path "$RESULTS_DIR/$PLOTS_PATH/ablation_fm_ema" -prune -o \
-			-path "$RESULTS_DIR/$PLOTS_PATH/ablation_cns_dm" -prune -o \
 			-type f \( \
 				-name 'single_step_overall_results*.csv' -o \
 				-name 'single_step_overall_results*.tex' -o \

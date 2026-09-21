@@ -1948,6 +1948,7 @@ def build_family_style(
     group_hues: list[int] | None = None,
     color_by_label: bool = False,
     hue_group_by_run: dict[str, int] | None = None,
+    linestyle_by_run: dict[str, str] | None = None,
 ) -> dict:
     """Build a style dict (color, label, marker, linestyle) for each plot_group."""
     styles: dict = {}
@@ -1991,6 +1992,14 @@ def build_family_style(
             "marker": "^" if loss == "diff" else "o",
             "linestyle": "-" if loss == "diff" else "--",
         }
+    # Apply overrides last so every colour-selection mode supports paired runs.
+    for pg, style in styles.items():
+        run_name = _run_name_from_plot_group(pg)
+        if run_name and linestyle_by_run:
+            for alias in _run_ref_aliases(run_name):
+                if alias in linestyle_by_run:
+                    style["linestyle"] = linestyle_by_run[alias]
+                    break
     return styles
 
 
@@ -2933,7 +2942,7 @@ def plot_coverage_calibration_panel(  # noqa: PLR0912, PLR0915
                     lw=line_width,
                     linestyle=st.get("linestyle", "-"),
                 )
-                if "observed_se" in mean_curve:
+                if st.get("show_error_bands", True) and "observed_se" in mean_curve:
                     se = cast(
                         pd.Series,
                         pd.to_numeric(mean_curve["observed_se"], errors="coerce"),
@@ -3226,7 +3235,7 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
                     lw=line_width,
                     linestyle=st.get("linestyle", "-"),
                 )
-                if uncertainty.notna().any():
+                if st.get("show_error_bands", True) and uncertainty.notna().any():
                     if is_cov_delta and cov_target is not None:
                         y1 = ((mean - uncertainty) / cov_target) - 1.0
                         y2 = ((mean + uncertainty) / cov_target) - 1.0
@@ -4963,9 +4972,18 @@ def main():  # noqa: PLR0912, PLR0915
         metavar="RUN_ID",
         help=(
             "Add a run, with optional label: "
-            '--run <id> ["label"] [hue] [eval=<subdir>] [dataset=<label>]. '
+            '--run <id> ["label"] [hue] [eval=<subdir>] [dataset=<label>] '
+            "[linestyle=solid|dashed|dashdot|dotted]. "
             "Repeat for each run. Integer hue overrides --color-by-label "
             "for that run and groups runs into a shared hue family."
+        ),
+    )
+    parser.add_argument(
+        "--no-error-bands",
+        action="store_true",
+        help=(
+            "Hide shaded uncertainty bands in coverage and lead-time plots. "
+            "Keep trajectory means and table standard errors unchanged."
         ),
     )
     parser.add_argument(
@@ -5403,20 +5421,21 @@ def main():  # noqa: PLR0912, PLR0915
         out_dir.mkdir(parents=True, exist_ok=True)
 
     # Merge --run entries into --runs / --label-run for unified handling.
-    # Each --run entry is: <id> [label] [hue] [eval=<subdir>] in any order
+    # Each --run entry accepts a label, hue, eval, dataset and linestyle in any order
     # for optional fields, with backward-compatible support for:
     #   <id>
     #   <id> <label>
     #   <id> <hue>
     #   <id> <label> <hue>
     hue_group_by_run: dict[str, int] = {}
+    linestyle_by_run: dict[str, str] = {}
     eval_subdir_by_run: dict[str, str] = {}
     dataset_override_by_run: dict[str, tuple[str, str]] = {}
     run_order: list[str] = []
 
-    def _parse_run_entry(
+    def _parse_run_entry(  # noqa: PLR0912
         entry: list[str],
-    ) -> tuple[str, str | None, int | None, str | None, str | None]:
+    ) -> tuple[str, str | None, int | None, str | None, str | None, str | None]:
         if not entry:
             msg = "Error: --run requires at least <id>."
             raise ValueError(msg)
@@ -5426,6 +5445,7 @@ def main():  # noqa: PLR0912, PLR0915
         hue: int | None = None
         eval_subdir: str | None = None
         dataset_override: str | None = None
+        linestyle: str | None = None
 
         for tok in entry[1:]:
             tok_s = str(tok)
@@ -5464,6 +5484,30 @@ def main():  # noqa: PLR0912, PLR0915
                 dataset_override = dataset_value
                 continue
 
+            if tok_l.startswith("linestyle="):
+                if linestyle is not None:
+                    msg = f"Error: duplicate linestyle in --run {run_id!r}."
+                    raise ValueError(msg)
+                value = tok_l.split("=", 1)[1]
+                aliases = {
+                    "solid": "-",
+                    "dashed": "--",
+                    "dashdot": "-.",
+                    "dotted": ":",
+                    "-": "-",
+                    "--": "--",
+                    "-.": "-.",
+                    ":": ":",
+                }
+                if value not in aliases:
+                    msg = (
+                        f"Error: invalid linestyle {value!r} in --run {run_id!r}. "
+                        "Use solid, dashed, dashdot or dotted (or -, --, -., :)."
+                    )
+                    raise ValueError(msg)
+                linestyle = aliases[value]
+                continue
+
             if hue is None and tok_s.lstrip("-").isdigit():
                 hue = int(tok_s)
                 continue
@@ -5475,22 +5519,22 @@ def main():  # noqa: PLR0912, PLR0915
             msg = (
                 f"Error: unrecognized extra token {tok_s!r} in --run {run_id!r}. "
                 "Expected optional [label] [hue], eval=<subdir>, "
-                "and/or dataset=<label>."
+                "dataset=<label>, and/or linestyle=<style>."
             )
             raise ValueError(msg)
 
-        return run_id, label, hue, eval_subdir, dataset_override
+        return run_id, label, hue, eval_subdir, dataset_override, linestyle
 
     if args.run:
         merged_runs: list[str] = []
         merged_labels: list[list[str]] = list(args.label_run or [])
         parsed_entries: list[
-            tuple[str, str | None, int | None, str, tuple[str, str] | None]
+            tuple[str, str | None, int | None, str, tuple[str, str] | None, str | None]
         ] = []
         for entry in args.run:
             try:
-                run_id, label, hue, run_eval_subdir, run_dataset = _parse_run_entry(
-                    entry
+                run_id, label, hue, run_eval_subdir, run_dataset, linestyle = (
+                    _parse_run_entry(entry)
                 )
             except ValueError as e:
                 print(e)
@@ -5503,6 +5547,7 @@ def main():  # noqa: PLR0912, PLR0915
                     hue,
                     normalize_eval_subdir(run_eval_subdir),
                     dataset_override,
+                    linestyle,
                 )
             )
             merged_runs.append(run_id)
@@ -5511,7 +5556,14 @@ def main():  # noqa: PLR0912, PLR0915
         # Build stable per-entry refs so repeated run_ids with different eval/labels
         # are treated as distinct series in style/legend/hue mapping.
         ref_counts: dict[str, int] = {}
-        for run_id, label, hue, run_eval_subdir, dataset_override in parsed_entries:
+        for (
+            run_id,
+            label,
+            hue,
+            run_eval_subdir,
+            dataset_override,
+            linestyle,
+        ) in parsed_entries:
             base_ref = run_id
             if run_eval_subdir != DEFAULT_EVAL_SUBDIR:
                 base_ref = f"{run_id}::eval={run_eval_subdir}"
@@ -5523,6 +5575,8 @@ def main():  # noqa: PLR0912, PLR0915
                 merged_labels.append([run_ref, label])
             if hue is not None:
                 hue_group_by_run[run_ref] = hue
+            if linestyle is not None:
+                linestyle_by_run[run_ref] = linestyle
             if dataset_override is not None:
                 dataset_override_by_run[run_ref] = dataset_override
         # --run takes precedence; append any extra --runs
@@ -5548,7 +5602,7 @@ def main():  # noqa: PLR0912, PLR0915
         if args.run:
             ref_counts = {}
             for entry in args.run:
-                run_id, _, _, run_eval_subdir, _ = _parse_run_entry(entry)
+                run_id, _, _, run_eval_subdir, _, _ = _parse_run_entry(entry)
                 eval_subdir = normalize_eval_subdir(run_eval_subdir)
                 base_ref = run_id
                 if eval_subdir != DEFAULT_EVAL_SUBDIR:
@@ -5835,7 +5889,12 @@ def main():  # noqa: PLR0912, PLR0915
         group_hues=args.group_hues,
         color_by_label=args.color_by_label,
         hue_group_by_run=hue_group_by_run or None,
+        linestyle_by_run=linestyle_by_run or None,
     )
+
+    if args.no_error_bands:
+        for style in styles.values():
+            style["show_error_bands"] = False
 
     n_ds = df["dataset_label"].nunique()
     n_mv = df["plot_group"].nunique()

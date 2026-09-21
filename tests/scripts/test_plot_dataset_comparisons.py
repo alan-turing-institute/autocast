@@ -14,6 +14,110 @@ from matplotlib.figure import Figure
 from autocast.scripts import plot_dataset_comparisons as pdc
 
 
+def test_cli_linestyles_distinguish_evaluations_of_same_checkpoint(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    run = "diff_ad64_flow_matching_vit_example"
+    for subdir, values in [("eval", [0.1, 0.2]), ("eval_ema", [0.2, 0.3])]:
+        eval_dir = tmp_path / run / subdir
+        eval_dir.mkdir(parents=True)
+        pd.DataFrame({"vrmse": values}).T.to_csv(
+            eval_dir / "rollout_metrics_per_timestep_channel_all.csv"
+        )
+
+    captured = []
+
+    def capture_ablation(df, results_root, out_dir, styles, *_args, **_kwargs):
+        assert df["eval_subdir"].tolist() == ["eval", "eval_ema"]
+        fig = pdc.plot_lead_time_panel(
+            df,
+            ["vrmse"],
+            results_root,
+            out_dir,
+            "unused.png",
+            styles,
+            save=False,
+        )
+        assert isinstance(fig, Figure)
+        lines = fig.axes[0].lines
+        assert len(lines) == 2
+        assert [line.get_linestyle() for line in lines] == ["-", "--"]
+        assert lines[0].get_color() == lines[1].get_color()
+        np.testing.assert_allclose(np.asarray(lines[0].get_ydata()), [0.1, 0.2])
+        np.testing.assert_allclose(np.asarray(lines[1].get_ydata()), [0.2, 0.3])
+        legend = fig.legends[0]
+        assert [text.get_text() for text in legend.get_texts()] == [
+            "FM (no EMA)",
+            "FM (EMA)",
+        ]
+        assert [line.get_linestyle() for line in legend.get_lines()] == ["-", "--"]
+        captured.append(True)
+        plt.close(fig)
+
+    monkeypatch.setattr(pdc, "plot_four_ds_ablation_figure", capture_ablation)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "autocast-plots",
+            "--results-dir",
+            str(tmp_path),
+            "--run",
+            run,
+            "FM (no EMA)",
+            "1",
+            "eval=eval",
+            "dataset=AD",
+            "linestyle=solid",
+            "--run",
+            run,
+            "FM (EMA)",
+            "1",
+            "eval=eval_ema",
+            "dataset=AD",
+            "linestyle=dashed",
+            "--uniform-run-hue-color",
+            "--paper-only",
+            "--four-ds-ablation",
+        ],
+    )
+    pdc.main()
+    assert captured == [True]
+
+
+@pytest.mark.parametrize(
+    "tokens",
+    [
+        ["linestyle=invalid"],
+        ["linestyle="],
+        ["linestyle=solid", "linestyle=dashed"],
+    ],
+)
+def test_cli_rejects_invalid_linestyle(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture,
+    tokens: list[str],
+):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "autocast-plots",
+            "--results-dir",
+            str(tmp_path),
+            "--list",
+            "--run",
+            "example",
+            *tokens,
+        ],
+    )
+    with pytest.raises(SystemExit, match="1"):
+        pdc.main()
+    assert "linestyle" in capsys.readouterr().out
+
+
 def test_base_first_run_hue_keeps_main_color_and_darkens_variant():
     main_pg = "vit__crps__large__main_run"
     variant_pg = "vit__crps__large__training_data_run"
@@ -959,7 +1063,11 @@ def test_lead_time_error_labels_are_uppercase(tmp_path: Path):
     plt.close(fig)
 
 
-def test_lead_time_panel_shades_trajectory_standard_error(tmp_path: Path):
+@pytest.mark.parametrize("show_error_bands", [True, False])
+def test_trajectory_bands_can_be_hidden_without_changing_means(
+    tmp_path: Path,
+    show_error_bands: bool,
+):
     stats_dir = tmp_path / "trajectory_statistics"
     stats_dir.mkdir()
     pd.DataFrame(
@@ -980,7 +1088,14 @@ def test_lead_time_panel_shades_trajectory_standard_error(tmp_path: Path):
             "trajectory_statistics_dir": [str(stats_dir)],
         }
     )
-    styles = {"model": {"color": "black", "label": "model", "linestyle": "-"}}
+    styles = {
+        "model": {
+            "color": "black",
+            "label": "model",
+            "linestyle": "-",
+            "show_error_bands": show_error_bands,
+        }
+    }
 
     fig = pdc.plot_lead_time_panel(
         df,
@@ -994,8 +1109,33 @@ def test_lead_time_panel_shades_trajectory_standard_error(tmp_path: Path):
 
     assert isinstance(fig, Figure)
     assert np.asarray(fig.axes[0].lines[0].get_ydata()).tolist() == [2.5, 3.5]
-    assert len(fig.axes[0].collections) == 1
-    band = fig.axes[0].collections[0]
-    assert isinstance(band, PolyCollection)
-    assert np.asarray(band.get_linewidth()).tolist() == [0]
+    assert len(fig.axes[0].collections) == int(show_error_bands)
+    if show_error_bands:
+        band = fig.axes[0].collections[0]
+        assert isinstance(band, PolyCollection)
+        assert np.asarray(band.get_linewidth()).tolist() == [0]
+    plt.close(fig)
+
+    pd.DataFrame(
+        {
+            "dataset": ["advection_diffusion"] * 4,
+            "trajectory_id": [f"test_{i}" for i in range(4)],
+            "coverage_0.20": [0.1, 0.2, 0.3, 0.4],
+            "coverage_0.80": [0.5, 0.6, 0.7, 0.8],
+        }
+    ).to_csv(stats_dir / "single_step_metrics_per_trajectory.csv", index=False)
+    fig = pdc.plot_coverage_calibration_panel(
+        df,
+        tmp_path,
+        tmp_path,
+        styles,
+        window_rows=["all"],
+        save=False,
+    )
+    assert isinstance(fig, Figure)
+    # The first line is the diagonal reference; the second is the model curve.
+    np.testing.assert_allclose(
+        np.asarray(fig.axes[0].lines[1].get_ydata()), [0.25, 0.65]
+    )
+    assert len(fig.axes[0].collections) == int(show_error_bands)
     plt.close(fig)
