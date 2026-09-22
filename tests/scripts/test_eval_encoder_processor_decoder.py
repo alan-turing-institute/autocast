@@ -7,6 +7,8 @@ import pytest
 import torch
 from omegaconf import OmegaConf
 
+from autocast.data.datamodule import SpatioTemporalDataModule
+from autocast.data.dataset import ReactionDiffusionDataset
 from autocast.metrics.ensemble import CRPS, AlphaFairCRPS, SpreadSkillRatio
 from autocast.scripts.eval.encoder_processor_decoder import (
     DEFAULT_EVAL_METRICS,
@@ -629,7 +631,7 @@ class _FakeRolloutDatamodule:
         self.calls.append(("test", batch_size))
         return "test_loader"
 
-    def rollout_val_dataloader(self, batch_size=None):
+    def rollout_valid_dataloader(self, batch_size=None):
         self.calls.append(("valid", batch_size))
         return "valid_loader"
 
@@ -654,6 +656,54 @@ def test_resolve_dump_rollout_dataloader_switches_to_validation_split():
 
     assert loader == "valid_loader"
     assert datamodule.calls == [("valid", 4)]
+
+
+def test_resolve_dump_rollout_dataloader_valid_needs_validation_rollouts():
+    class NoValidationRollouts:
+        """E.g. ``TheWellDataModule``, which only rolls out train and test."""
+
+    with pytest.raises(TypeError, match="rollout_valid_dataloader"):
+        _resolve_dump_rollout_dataloader(
+            NoValidationRollouts(), dump_split=DumpSplit.VALID, batch_size=4
+        )
+
+
+def test_resolve_dump_rollout_dataloader_valid_reads_validation_trajectories():
+    """``dump_split=valid`` must roll out ``valid/``, not the training split.
+
+    Each split holds a different constant and trajectory count, so the loaded
+    fields show which split was read.
+    """
+
+    def split(value: float, n_traj: int) -> dict[str, Any]:
+        return {
+            "data": torch.full((n_traj, 6, 2, 2, 1), value),
+            "constant_scalars": None,
+            "constant_fields": None,
+        }
+
+    datamodule = SpatioTemporalDataModule(
+        data_path=None,
+        data={"train": split(0.0, 3), "valid": split(1.0, 2), "test": split(2.0, 4)},
+        dataset_cls=ReactionDiffusionDataset,
+        n_steps_input=1,
+        n_steps_output=1,
+        batch_size=8,
+    )
+
+    for dump_split, value, n_traj in (
+        (DumpSplit.VALID, 1.0, 2),
+        (DumpSplit.TEST, 2.0, 4),
+    ):
+        batches = list(
+            _resolve_dump_rollout_dataloader(
+                datamodule, dump_split=dump_split, batch_size=8
+            )
+        )
+        outputs = torch.cat([batch.output_fields for batch in batches])
+        # Full trajectories: every frame after the single input frame.
+        assert outputs.shape == (n_traj, 5, 2, 2, 1)
+        assert torch.all(outputs == value)
 
 
 def _rollout_predict_batch(n_members: int | None):

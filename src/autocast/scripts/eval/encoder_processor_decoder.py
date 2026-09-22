@@ -177,8 +177,9 @@ class DumpSplit(StrEnum):
 
     ``TEST`` matches the split used by this module's own rollout metrics
     (``datamodule.rollout_test_dataloader``); ``VALID`` switches the dump to
-    the validation rollout split (``datamodule.rollout_val_dataloader``) for
-    held-out post-hoc UQ calibration.
+    the validation split (``datamodule.rollout_valid_dataloader``) for
+    held-out post-hoc UQ calibration. ``datamodule.rollout_val_dataloader`` is
+    not used: it rolls out the training split.
     """
 
     TEST = "test"
@@ -330,11 +331,17 @@ def _resolve_dump_rollout_dataloader(
     """Select the rollout dataloader ``eval.dump_split`` names.
 
     ``test`` (the default) matches the split used by this module's own
-    rollout metrics; ``valid`` dumps the validation rollout split instead,
-    for calibration held out from the split the metrics are reported on.
+    rollout metrics; ``valid`` dumps the validation split instead, for
+    calibration held out from the split the metrics are reported on.
     """
     if dump_split == DumpSplit.VALID:
-        return datamodule.rollout_val_dataloader(batch_size=batch_size)
+        if not hasattr(datamodule, "rollout_valid_dataloader"):
+            msg = (
+                "eval.dump_split=valid needs a datamodule with "
+                f"rollout_valid_dataloader; {type(datamodule).__name__} has none."
+            )
+            raise TypeError(msg)
+        return datamodule.rollout_valid_dataloader(batch_size=batch_size)
     return datamodule.rollout_test_dataloader(batch_size=batch_size)
 
 
