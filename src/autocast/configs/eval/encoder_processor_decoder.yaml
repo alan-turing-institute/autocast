@@ -42,6 +42,18 @@ batch_size: 1
 max_test_batches: null
 max_rollout_batches: null
 
+# Dump-only mode: run the rollout once and save raw ensemble tensors to disk
+# for offline post-hoc UQ calibration, skipping the benchmark and test/rollout
+# metric passes. dump_rollout_path defaults to <work_dir>/rollout_tensors.pt
+# when null. dump_split selects which rollout split gets dumped ("test" or
+# "valid"); it only takes effect once dump_rollout_tensors is enabled, and
+# also requires compute_rollout_metrics (or trajectory_statistics) to be
+# enabled so the rollout section below is entered at all.
+dump_rollout_tensors: false
+dump_rollout_path: null
+dump_max_traj: null
+dump_split: test
+
 benchmark:
   enabled: true
   batch_size: 1
