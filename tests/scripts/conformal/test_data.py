@@ -1,3 +1,5 @@
+import pickle
+
 import pytest
 import torch
 
@@ -182,3 +184,20 @@ def test_git_commit_is_a_full_sha():
 
 def test_autouq_version_is_nonempty():
     assert data.autouq_version()
+
+
+class _NotATensor:
+    """Stands in for an arbitrary object a crafted dump could carry."""
+
+
+def test_load_prediction_dump_refuses_arbitrary_objects(tmp_path):
+    payload = {
+        "preds": torch.zeros(2, 1, 2, 2, 1, 3),
+        "trues": torch.zeros(2, 1, 2, 2, 1),
+        "constant_scalars": None,
+        "meta": {"split": "test", "extra": _NotATensor()},
+    }
+    path = tmp_path / "crafted.pt"
+    torch.save(payload, path)
+    with pytest.raises(pickle.UnpicklingError):
+        data.load_prediction_dump(path)

@@ -137,10 +137,13 @@ def load_prediction_dump(path: str | Path) -> PredictionDump:
     PredictionDump
         The loaded tensors (cast to float32, CPU) plus the file's md5 digest
         for manifest provenance.
+
+    Loaded with ``weights_only=True``: a dump holds only tensors, strings and
+    numbers, so nothing else in a file is ever unpickled.
     """
     resolved = Path(path)
     digest = _md5sum(resolved)
-    payload = torch.load(resolved, map_location="cpu", weights_only=False)
+    payload = torch.load(resolved, map_location="cpu", weights_only=True)
     constant_scalars = payload.get("constant_scalars")
     return PredictionDump(
         path=resolved,
