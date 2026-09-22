@@ -27,6 +27,7 @@ from autocast.scripts.conformal.scoring import (
     per_frame_excess_kurtosis,
     per_frame_ingredients,
     per_frame_member_metric_values,
+    per_frame_observed_coverage,
     per_lead_winkler,
     rank_histogram_per_frame,
     window_row,
@@ -95,6 +96,22 @@ def write_rollout_coverage_window_csvs(
         )
 
 
+def per_level_coverage_rows(observed: np.ndarray) -> dict[str, np.ndarray]:
+    """Per-frame coverage at each of :data:`LEVELS`, averaged over channels.
+
+    Named ``coverage_<level>`` as in the eval's own
+    ``rollout_metrics_per_timestep_channel_all.csv``
+    (`autocast.utils.plots.compute_metrics_per_timestep_from_dataloader`).
+
+    Parameters
+    ----------
+    observed
+        Observed coverage, shape ``(T, C, len(LEVELS))``.
+    """
+    per_level = observed.mean(axis=1)  # (T, len(LEVELS))
+    return {f"coverage_{level}": per_level[:, i] for i, level in enumerate(LEVELS)}
+
+
 def write_per_timestep_csv(
     out_dir: Path, fitted: FittedMethod, true: TensorBTSC
 ) -> None:
@@ -102,8 +119,10 @@ def write_per_timestep_csv(
 
     Every metric is computed for all ``T`` frames in one broadcast call (no
     Python loop over frames) via the ``per_frame_*`` family in
-    :mod:`autocast.scripts.conformal.scoring`. Raw/EMOS
-    (``fitted.samples is not None``) additionally get an ``exkurt`` row.
+    :mod:`autocast.scripts.conformal.scoring`. ``coverage`` is the calibration
+    error; the ``coverage_<level>`` rows after it are the coverage itself.
+    Raw/EMOS (``fitted.samples is not None``) additionally get an ``exkurt``
+    row.
     """
     level_index = LEVELS.index(NOMINAL_LEVEL)
     columns: dict[str, np.ndarray] = per_frame_member_metric_values(fitted, true)
@@ -113,9 +132,9 @@ def write_per_timestep_csv(
         fitted.upper[..., level_index],
         NOMINAL_ALPHA,
     )
-    columns["coverage"] = per_frame_coverage_calibration_error(
-        true, fitted.lower, fitted.upper, LEVELS
-    )
+    observed = per_frame_observed_coverage(true, fitted.lower, fitted.upper)
+    columns["coverage"] = per_frame_coverage_calibration_error(observed, LEVELS)
+    columns.update(per_level_coverage_rows(observed))
     if fitted.samples is not None:
         columns["exkurt"] = per_frame_excess_kurtosis(true, fitted.samples)
 
@@ -292,7 +311,12 @@ _COMBINATION_TEXT = {
 
 
 def write_readme(out_dir: Path, manifest: dict[str, Any]) -> None:
-    """Write ``README.md``: a plain-language guide to the folder, from the manifest."""
+    """Write ``README.md``: a plain-language guide to the folder, from the manifest.
+
+    Each entry of the manifest's optional ``amendments`` list (``date``,
+    ``git_commit``, ``change``) becomes a paragraph under the header, for
+    files changed after the run that produced the folder.
+    """
     inputs, split = manifest["inputs"], manifest["split"]
     counts = {
         "new": inputs["new"]["n_trajectories"],
@@ -326,13 +350,18 @@ def write_readme(out_dir: Path, manifest: dict[str, Any]) -> None:
         f"- `{name}/`: {text.format(**counts)}"
         for name, text in _COMBINATION_TEXT.items()
     )
+    amendments = "".join(
+        f"\n\nAmended on {entry['date']} at commit `{entry['git_commit']}`: "
+        f"{entry['change']}"
+        for entry in manifest.get("amendments", [])
+    )
     text = f"""# Calibrated forecasts: {out_dir.resolve().parent.name}
 
 Uncertainty calibration of this run's saved ensemble forecasts, made with
 `autocast.scripts.conformal` at commit `{manifest["git_commit"]}` (autouq
 {manifest["autouq_version"]}) on {manifest["generated_at_utc"][:10]}.
 `manifest.json` records the same information in machine-readable form, including
-the exact trajectory indices of every split.
+the exact trajectory indices of every split.{amendments}
 
 ## Forecasts (`predictions/`)
 
@@ -362,13 +391,16 @@ Each holds three methods:
 In each method folder: `rollout_metrics.csv` (scores per forecast window, in the
 paper's format), `rollout_coverage_window_<window>.csv` (coverage at each
 nominal level from 5% to 95%), `rollout_metrics_per_timestep_channel_all.csv`
-(the same scores frame by frame), `per_frame_ingredients.csv` (per-frame sums
+(the same scores frame by frame, plus rows `coverage_0.05` to `coverage_0.95`:
+the coverage at each nominal level and frame, averaged over channels, named as in
+the eval's own file), `per_frame_ingredients.csv` (per-frame sums
 from which any window's scores can be rebuilt exactly) and, for `raw/` and
-`EMOS/`, `rank_histogram.csv` (one row per frame). As in the eval's own CSVs, the
-`coverage` column of the first and third files is the coverage error, not the
-coverage itself: the gap between observed and nominal coverage, taken at each frame,
-level and channel and then averaged over the window's frames, the 19 levels and the
-channels. The {level}% coverage is in `summary.csv` and `per_frame_ingredients.csv`.
+`EMOS/`, `rank_histogram.csv` (one row per frame). As in the eval's own
+`rollout_metrics.csv`, the `coverage` column of the first file, and the `coverage`
+row of the third, is the coverage error, not the coverage itself: the gap between
+observed and nominal coverage, taken at each frame, level and channel and then
+averaged over the window's frames, the 19 levels and the channels. The {level}%
+coverage is also in `summary.csv` and `per_frame_ingredients.csv`.
 
 Next to them: `summary.csv` (headline scores at the {level}% level over the
 whole forecast, with bootstrap standard deviations over test trajectories),

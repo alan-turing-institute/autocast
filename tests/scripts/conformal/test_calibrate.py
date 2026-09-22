@@ -6,7 +6,7 @@ import torch
 from autouq.calibrators import EMOS, AxisRole
 from autouq.calibrators.mathutils import gaussian_crps
 
-from autocast.scripts.conformal import calibrate
+from autocast.scripts.conformal import calibrate, writers
 from autocast.scripts.conformal.data import CalibrationSource, TestSource
 
 from .conftest import make_grouped_dump, make_synthetic_dump, save_dump
@@ -48,6 +48,15 @@ def test_calibrate_writes_full_layout_for_all_four_combinations(tmp_path):
         for test_source in TestSource:
             name = f"calib-{calibration_source.value}__test-{test_source.value}"
             assert f"- `{name}/`: calibrated on" in readme
+    assert "Amended on" not in readme
+    manifest["amendments"] = [
+        {"date": "2026-09-22", "git_commit": "abc1234", "change": "Added rows."}
+    ]
+    writers.write_readme(out_dir, manifest)
+    assert (
+        "every split.\n\nAmended on 2026-09-22 at commit `abc1234`: Added rows."
+        "\n\n## Forecasts"
+    ) in (out_dir / "README.md").read_text()
 
     for calibration_source in CalibrationSource:
         for test_source in TestSource:

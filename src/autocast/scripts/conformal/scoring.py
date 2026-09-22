@@ -345,9 +345,8 @@ def coverage_calibration_error(
     levels
         Coverage levels matching the trailing axis of ``lower``/``upper``.
     """
-    return float(
-        per_frame_coverage_calibration_error(true, lower, upper, levels).mean()
-    )
+    observed = per_frame_observed_coverage(true, lower, upper)
+    return float(per_frame_coverage_calibration_error(observed, levels).mean())
 
 
 def coverage_reliability_table(
@@ -434,28 +433,30 @@ def per_frame_member_metric_values(
     }
 
 
-def per_frame_coverage_calibration_error(
+def per_frame_observed_coverage(
     true: TensorBTSC,
     lower: torch.Tensor,
     upper: torch.Tensor,
-    levels: Sequence[float],
     *,
     frame_block_size: int = DEFAULT_FRAME_BLOCK_SIZE,
 ) -> np.ndarray:
-    """Average absolute calibration error across ``levels``, at every frame.
+    """Observed coverage per frame, channel and level, pooled over batch and space.
 
-    Keeps the frame axis (:func:`coverage_calibration_error` is the mean of
-    this over a window's frames), no loop over levels. When run on the full
-    ``T``-frame test set -- like
+    No loop over levels. When run on the full ``T``-frame test set -- like
     :func:`per_frame_ingredients` -- it processes ``frame_block_size`` frames
     at a time via :func:`band_coverage_multi` rather than broadcasting the
-    full ``(B, T, H, W, C, len(levels))`` tensor at once; measured
+    full ``(B, T, H, W, C, n_levels)`` tensor at once; measured
     empirically (see this package's memory investigation) to be one of this
     module's largest peak-memory contributors when left unblocked at the
     real H=W=64 scale, since it duplicates a tensor the same size as the
     already-held ``fitted.lower``/``fitted.upper``.
+
+    Returns
+    -------
+    numpy.ndarray
+        Shape ``(T, C, n_levels)``, float64; ``n_levels`` is the trailing axis
+        of ``lower``/``upper``.
     """
-    levels_tensor = torch.tensor(levels, dtype=torch.float64, device=true.device)
     n_frames = true.shape[1]
     observed_blocks: list[torch.Tensor] = []
     for start in range(0, n_frames, frame_block_size):
@@ -468,10 +469,30 @@ def per_frame_coverage_calibration_error(
             .mean(dim=(0, 2, 3))
         )  # (block, C, len(levels))
         observed_blocks.append(block)
-    observed = torch.cat(observed_blocks, dim=0)  # (T, C, len(levels))
-    # average the per-level error over channel too.
-    error = (observed - levels_tensor).abs().mean(dim=1)  # (T, len(levels))
-    return error.mean(dim=-1).cpu().numpy()
+    return torch.cat(observed_blocks, dim=0).cpu().numpy()
+
+
+def per_frame_coverage_calibration_error(
+    observed: np.ndarray, levels: Sequence[float]
+) -> np.ndarray:
+    """Average absolute calibration error across channels and ``levels``, per frame.
+
+    Parameters
+    ----------
+    observed
+        Observed coverage, shape ``(T, C, len(levels))``: from
+        :func:`per_frame_observed_coverage` or
+        :func:`observed_coverage_from_ingredients`.
+    levels
+        Coverage levels matching the trailing axis of ``observed``.
+
+    Returns
+    -------
+    numpy.ndarray
+        Shape ``(T,)``. :func:`coverage_calibration_error` is its mean over a
+        window's frames.
+    """
+    return np.abs(observed - np.asarray(levels)).mean(axis=(1, 2))
 
 
 def per_frame_excess_kurtosis(true: TensorBTSC, samples: TensorBTSCM) -> np.ndarray:
@@ -627,19 +648,37 @@ def reconstruct_window_coverage(
     error is taken, so the counts are never pooled over the window's frames.
     """
     start, end = window
-    subset = ingredients[(ingredients["frame"] >= start) & (ingredients["frame"] < end)]
+    subset = ingredients.loc[
+        (ingredients["frame"] >= start) & (ingredients["frame"] < end)
+    ]
+    observed = observed_coverage_from_ingredients(subset, levels)
+    return float(per_frame_coverage_calibration_error(observed, levels).mean())
+
+
+def observed_coverage_from_ingredients(
+    ingredients: pd.DataFrame, levels: Sequence[float] = LEVELS
+) -> np.ndarray:
+    """Observed coverage per frame, channel and level from the ingredient counts.
+
+    The same array :func:`per_frame_observed_coverage` computes from the
+    bands, for the frames (rows) in ``ingredients``.
+
+    Returns
+    -------
+    numpy.ndarray
+        Shape ``(frames, C, len(levels))``, float64.
+    """
     prefix = f"covered_{levels[0]:.2f}_channel_"
     n_channels = sum(column.startswith(prefix) for column in ingredients.columns)
     covered = np.stack(
         [
-            subset[[f"covered_{level:.2f}_channel_{c}" for c in range(n_channels)]]
+            ingredients[[f"covered_{level:.2f}_channel_{c}" for c in range(n_channels)]]
             for level in levels
         ],
         axis=-1,
     )  # (frames, C, len(levels))
-    counts = np.asarray(subset["coverage_count_per_channel"], dtype=np.float64)
-    observed = covered / counts[:, None, None]
-    return float(np.abs(observed - np.asarray(levels)).mean())
+    counts = np.asarray(ingredients["coverage_count_per_channel"], dtype=np.float64)
+    return covered / counts[:, None, None]
 
 
 def _pooled_excess_kurtosis(

@@ -1,11 +1,14 @@
 import json
 
+import numpy as np
 import pandas as pd
 import torch
 
+from autocast.metrics.coverage import MultiCoverage
 from autocast.scripts.conformal import scoring, writers
 from autocast.scripts.conformal.calibrate import fit_conformal, fit_emos, fit_raw
 from autocast.scripts.conformal.scoring import WINDOWS
+from autocast.utils.plots import compute_metrics_per_timestep_from_dataloader
 
 from .conftest import make_synthetic_dump
 
@@ -78,6 +81,36 @@ def test_write_method_outputs_layout_and_headers(tmp_path):
             assert rank_df.shape[1] == fitted.samples.shape[-1] + 1
         else:
             assert not rank_histogram_path.exists()
+
+
+def test_per_timestep_coverage_rows_match_eval_and_ingredients(tmp_path):
+    """``coverage_<level>`` rows: the eval's names and values, rebuildable exactly."""
+    n_frames = 6
+    dump = make_synthetic_dump(b_total=20, n_frames=n_frames, seed=14)
+    # under-covered early, over-covered late, so each frame's value differs
+    true = dump["trues"] * torch.linspace(2.0, 0.3, n_frames).view(1, -1, 1, 1, 1)
+    fitted = fit_raw(dump["preds"])
+    writers.write_method_outputs(tmp_path, fitted, true)
+
+    per_timestep = pd.read_csv(
+        tmp_path / "rollout_metrics_per_timestep_channel_all.csv", index_col=0
+    )
+    reference = compute_metrics_per_timestep_from_dataloader(
+        dataloader=[None],
+        metric_fns={"coverage": MultiCoverage},
+        predict_fn=lambda _: (dump["preds"], true),
+    )
+    assert [row for row in per_timestep.index if row.startswith("coverage_")] == list(
+        reference
+    )
+    ingredients = pd.read_csv(tmp_path / "per_frame_ingredients.csv")
+    rebuilt = writers.per_level_coverage_rows(
+        scoring.observed_coverage_from_ingredients(ingredients)
+    )
+    for name, values in reference.items():
+        written = per_timestep.loc[name].to_numpy()
+        np.testing.assert_allclose(written, values.mean(axis=1), atol=1e-6)
+        np.testing.assert_allclose(rebuilt[name], written, rtol=0, atol=1e-12)
 
 
 def test_write_coverage_map_and_bands(tmp_path):
