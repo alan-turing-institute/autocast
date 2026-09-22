@@ -59,7 +59,11 @@ stores, per frame, ``sum_<metric> = value_at_frame * n`` and ``n`` (the
 trajectory count, constant across frames); a window's value is
 ``sum(sum_<metric> for frames in window) / sum(n for frames in window)``.
 Coverage is linear (a proportion), so its ingredients are plain covered/total
-counts, additive with no caveat. The same per-(batch, frame) linearity is
+counts per frame and channel. Its calibration error is not: as
+`autocast.metrics.coverage.MultiCoverage`, the absolute error is taken per
+frame, channel and level before averaging, so a window's value is rebuilt
+frame by frame, never from counts summed over the window. The same
+per-(batch, frame) linearity is
 what makes the vectorized bootstrap below exact: resampling trajectories and
 averaging their (batch, frame) values is identical to resampling then
 recomputing the metric from scratch.
@@ -323,12 +327,14 @@ def coverage_map_slice(
 def coverage_calibration_error(
     true: TensorBTSC, lower: TensorBTSC, upper: TensorBTSC, levels: Sequence[float]
 ) -> float:
-    """Average absolute calibration error across ``levels`` and channels.
+    """Average absolute calibration error across frames, channels and ``levels``.
 
     As `autocast.metrics.coverage.MultiCoverage`: coverage is pooled over
-    everything but the channel, the absolute error is taken per channel and
-    level, then averaged. Computed for every level in one broadcast via
-    :func:`band_coverage_multi` -- no Python loop over ``levels``.
+    batch and space only, the absolute error is taken per frame, channel and
+    level, then averaged -- i.e. the mean over the slice's frames of
+    :func:`per_frame_coverage_calibration_error`. Pooling the frames before
+    the absolute error would understate any window whose per-frame coverage
+    crosses or scatters around nominal.
 
     Parameters
     ----------
@@ -339,11 +345,9 @@ def coverage_calibration_error(
     levels
         Coverage levels matching the trailing axis of ``lower``/``upper``.
     """
-    levels_tensor = torch.tensor(levels, dtype=torch.float64, device=true.device)
-    observed = band_coverage_multi(true, lower, upper).mean(
-        dim=tuple(range(true.ndim - 1))
-    )  # (C, len(levels))
-    return float((observed.double() - levels_tensor).abs().mean())
+    return float(
+        per_frame_coverage_calibration_error(true, lower, upper, levels).mean()
+    )
 
 
 def coverage_reliability_table(
@@ -440,10 +444,9 @@ def per_frame_coverage_calibration_error(
 ) -> np.ndarray:
     """Average absolute calibration error across ``levels``, at every frame.
 
-    The per-frame analogue of :func:`coverage_calibration_error` (which pools
-    every frame into one scalar): keeps the frame axis, no loop over levels.
-    Unlike :func:`coverage_calibration_error` (called on small window
-    slices only), this runs on the full ``T``-frame test set, so -- like
+    Keeps the frame axis (:func:`coverage_calibration_error` is the mean of
+    this over a window's frames), no loop over levels. When run on the full
+    ``T``-frame test set -- like
     :func:`per_frame_ingredients` -- it processes ``frame_block_size`` frames
     at a time via :func:`band_coverage_multi` rather than broadcasting the
     full ``(B, T, H, W, C, len(levels))`` tensor at once; measured
@@ -619,19 +622,24 @@ def reconstruct_window_coverage(
 ) -> float:
     """Rebuild a window's coverage calibration error from the ingredients.
 
-    Per channel, as :func:`coverage_calibration_error`.
+    Per frame and channel, as :func:`coverage_calibration_error`: each
+    frame's covered count becomes a coverage fraction before the absolute
+    error is taken, so the counts are never pooled over the window's frames.
     """
     start, end = window
     subset = ingredients[(ingredients["frame"] >= start) & (ingredients["frame"] < end)]
-    total = subset["coverage_count_per_channel"].sum()
     prefix = f"covered_{levels[0]:.2f}_channel_"
     n_channels = sum(column.startswith(prefix) for column in ingredients.columns)
-    errors = [
-        abs(subset[f"covered_{level:.2f}_channel_{channel}"].sum() / total - level)
-        for level in levels
-        for channel in range(n_channels)
-    ]
-    return sum(errors) / len(errors)
+    covered = np.stack(
+        [
+            subset[[f"covered_{level:.2f}_channel_{c}" for c in range(n_channels)]]
+            for level in levels
+        ],
+        axis=-1,
+    )  # (frames, C, len(levels))
+    counts = np.asarray(subset["coverage_count_per_channel"], dtype=np.float64)
+    observed = covered / counts[:, None, None]
+    return float(np.abs(observed - np.asarray(levels)).mean())
 
 
 def _pooled_excess_kurtosis(

@@ -48,12 +48,15 @@ def test_band_winkler_matches_repo_winkler_class_on_raw_interval():
 
 
 def test_coverage_calibration_error_matches_repo_multicoverage():
-    """Per-channel absolute errors, as MultiCoverage -- not channel-pooled coverage."""
+    """Per-frame, per-channel absolute errors, as MultiCoverage -- nothing pooled."""
     torch.manual_seed(2)
     pred = torch.randn(6, 4, 3, 3, 3, 10)
     true = torch.randn(6, 4, 3, 3, 3)
     true[..., 0] *= 3.0  # channel 0 under-covered ...
     true[..., 1] *= 0.2  # ... channel 1 over-covered: the two orders now differ
+    # channel 2 goes from over- to under-covered across the frames, so pooling
+    # the frames before the absolute error would understate it
+    true[..., 2] *= torch.linspace(0.2, 3.0, 4).view(1, 4, 1, 1)
     levels = [0.5, 0.8, 0.9]
 
     lower, upper = scoring.raw_interval_multi(pred, levels)
@@ -68,7 +71,9 @@ def test_window_row_reconstructable_from_per_frame_ingredients():
     """Any window rebuilt from per_frame_ingredients.csv == the direct value."""
     dump = make_synthetic_dump(b_total=30, n_frames=10, seed=2)
     fitted = fit_raw(dump["preds"])
-    true = dump["trues"]
+    # over-covered early, under-covered late: a window's coverage error then
+    # depends on taking the absolute error frame by frame
+    true = dump["trues"] * torch.linspace(0.3, 2.5, 10).view(1, 10, 1, 1, 1)
 
     ingredients = scoring.per_frame_ingredients(fitted, true)
 
@@ -79,6 +84,10 @@ def test_window_row_reconstructable_from_per_frame_ingredients():
             assert abs(rebuilt - direct[metric]) < 1e-4, metric
         rebuilt_coverage = scoring.reconstruct_window_coverage(ingredients, window)
         assert abs(rebuilt_coverage - direct["coverage"]) < 1e-6
+        reference = MultiCoverage(coverage_levels=list(scoring.LEVELS))
+        start, end = window
+        reference.update(dump["preds"][:, start:end], true[:, start:end])
+        assert abs(direct["coverage"] - float(reference.compute())) < 1e-6
 
 
 def test_conformal_coverage_close_to_nominal_on_exchangeable_data():

@@ -365,9 +365,10 @@ nominal level from 5% to 95%), `rollout_metrics_per_timestep_channel_all.csv`
 (the same scores frame by frame), `per_frame_ingredients.csv` (per-frame sums
 from which any window's scores can be rebuilt exactly) and, for `raw/` and
 `EMOS/`, `rank_histogram.csv` (one row per frame). As in the eval's own CSVs, the
-`coverage` column of the first and third files is the coverage error averaged over
-the 19 levels and the channels, not the coverage itself; the {level}% coverage is in
-`summary.csv` and `per_frame_ingredients.csv`.
+`coverage` column of the first and third files is the coverage error, not the
+coverage itself: the gap between observed and nominal coverage, taken at each frame,
+level and channel and then averaged over the window's frames, the 19 levels and the
+channels. The {level}% coverage is in `summary.csv` and `per_frame_ingredients.csv`.
 
 Next to them: `summary.csv` (headline scores at the {level}% level over the
 whole forecast, with bootstrap standard deviations over test trajectories),
