@@ -4262,6 +4262,39 @@ def plot_paper_overall_coverage_figure(
         save_fig(fig, out_dir, name)
 
 
+def _set_coverage_limits_with_overflow(
+    axes: np.ndarray, limits: tuple[float, float]
+) -> None:
+    """Fix coverage axes and mark each contiguous off-scale excursion."""
+    lo, hi = limits
+    if not np.isfinite(limits).all() or lo >= hi:
+        msg = "Coverage limits must be finite and increasing"
+        raise ValueError(msg)
+    for ax in axes.flat:
+        # Snapshot the curves before adding boundary markers to the same axes.
+        for line in list(ax.lines):
+            x = np.asarray(line.get_xdata(), dtype=float)
+            y = np.asarray(line.get_ydata(), dtype=float)
+            for bound, mask, marker in ((lo, y < lo, "v"), (hi, y > hi, "^")):
+                indices = np.flatnonzero(mask & np.isfinite(y))
+                if not indices.size:
+                    continue
+                groups = np.split(indices, np.flatnonzero(np.diff(indices) > 1) + 1)
+                for group in groups:
+                    peak = group[np.argmax(np.abs(y[group] - bound))]
+                    ax.plot(
+                        x[peak],
+                        bound,
+                        marker=marker,
+                        markersize=3,
+                        color=line.get_color(),
+                        linestyle="none",
+                        clip_on=False,
+                        zorder=4,
+                    )
+        ax.set_ylim(lo, hi)
+
+
 def plot_paper_uq_reliability_figure(
     df_in: pd.DataFrame,
     results_root: Path,
@@ -4272,6 +4305,8 @@ def plot_paper_uq_reliability_figure(
     hue_order: list[str] | None = None,
     name: str = "paper_uq_reliability_by_lead_time.png",
     panel_labels: bool = True,
+    legend_ncol: int | None = None,
+    coverage_delta_ylim: tuple[float, float] | None = None,
 ) -> None:
     """Render rollout-window calibration and coverage-delta panels together."""
     datasets = _paper_datasets(df_in, dataset_order)
@@ -4279,6 +4314,11 @@ def plot_paper_uq_reliability_figure(
     delta_metrics = _paper_coverage_metrics(coverage_metrics)
     if not delta_metrics:
         return
+
+    legend_count = len(
+        _dedup_legend_handles(_ordered_plot_groups(df_in, styles, hue_order), styles)
+    )
+    legend_rows = math.ceil(legend_count / legend_ncol) if legend_ncol else 1
 
     with mpl.rc_context(PAPER_RC_PARAMS):
         fig = plt.figure(figsize=(PAPER_FIGURE_WIDTH_IN, 3.45))
@@ -4354,6 +4394,8 @@ def plot_paper_uq_reliability_figure(
             coverage_delta_row_labels=True,
             **_paper_style_kwargs(),
         )
+        if coverage_delta_ylim is not None:
+            _set_coverage_limits_with_overflow(right_axes, coverage_delta_ylim)
         _replace_figure_text(
             right,
             r"Rel. $\Delta$ empirical coverage",
@@ -4373,7 +4415,8 @@ def plot_paper_uq_reliability_figure(
             df_in,
             styles,
             hue_order,
-            bbox_to_anchor=(0.06, 1.03),
+            bbox_to_anchor=(0.06, 1.03 + 0.075 * max(0, legend_rows - 1)),
+            ncol=legend_ncol,
         )
         save_fig(fig, out_dir, name)
 
