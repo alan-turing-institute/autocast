@@ -34,6 +34,7 @@ Smoke-test one model on two trajectories, then run everything for it::
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -284,6 +285,65 @@ def build_eval_config(
     return cfg
 
 
+def _dataset_split_files(dataset_dir: Path) -> list[Path]:
+    """Every file one dataset directory's datamodule opens.
+
+    The datamodule opens all three splits even when only one is scored (see
+    ``_dump_split``), so a predict run needs every one of them on disk.
+    """
+    splits = [dataset_dir / split / "data.pt" for split in ("train", "valid", "test")]
+    return [*splits, dataset_dir / "stats.yml"]
+
+
+def preflight_predict(
+    root: Path, key: str, pred_sets: list[PredictionSet]
+) -> DictConfig:
+    """Validate every artefact a real ``predict`` run would open, without running it.
+
+    Used for the Isambard submit gate's compose-only check (``--cfg job``):
+    ``isambard_submit.sh`` leg 1 runs the job script with ``AUTOCAST_PREFLIGHT=1``
+    to prove the command composes before any GPU is allocated. The real
+    ``predict()`` launches a subprocess per (model, set) that leg 1 must not
+    run, so this checks the same artefacts a different way: ``build_eval_config``
+    already fails loudly if the two YAML configs it loads are missing
+    (``OmegaConf.load`` raises), but the checkpoint and dataset files it only
+    stores as strings are not otherwise checked -- this checks those.
+
+    Returns the last set's composed eval config. ``trainer.devices`` -- a
+    training-run leftover the eval script itself never reads (it builds its
+    ``lightning.Fabric`` from ``eval.devices``/``eval.accelerator`` instead,
+    see ``encoder_processor_decoder.py``) -- is identical across sets for one
+    model, so any one of them is representative for the gate's GPU-count check.
+    """
+    model = MODELS[key]
+    run_dir = root / "outputs" / model.run
+    missing: list[Path] = []
+
+    if model.autoencoder_run is not None:
+        ae_ckpt = root / "outputs" / model.autoencoder_run / "autoencoder.ckpt"
+        if not ae_ckpt.is_file():
+            missing.append(ae_ckpt)
+    ckpt = run_dir / model.checkpoint
+    if not ckpt.is_file():
+        missing.append(ckpt)
+
+    cfg: DictConfig | None = None
+    for pred_set in pred_sets:
+        dataset_dir = _dataset_path(root, model, pred_set)
+        missing.extend(f for f in _dataset_split_files(dataset_dir) if not f.is_file())
+        out_dir = run_dir / "eval_conformal" / "predictions" / str(pred_set)
+        cfg = build_eval_config(root, model, pred_set, out_dir, max_traj=None)
+
+    if missing:
+        listed = "\n  ".join(str(path) for path in missing)
+        msg = f"[{key}] --cfg job: missing artefact(s) this run would open:\n  {listed}"
+        raise FileNotFoundError(msg)
+    if cfg is None:
+        msg = "pred_sets was empty -- nothing to compose"
+        raise ValueError(msg)
+    return cfg
+
+
 def predict(
     root: Path,
     key: str,
@@ -407,10 +467,32 @@ def main() -> None:
         default="cuda",
         help="device for the calibrate and sufficiency stages",
     )
+    parser.add_argument(
+        "--cfg",
+        choices=["job"],
+        default=None,
+        help=(
+            "compose-only check, named after Hydra's own flag: for the predict "
+            "stage, validate every artefact the run would open and print the "
+            "composed eval config, without launching anything. Used by the "
+            "Isambard submit gate's leg 1."
+        ),
+    )
     args = parser.parse_args()
 
     stage = Stage(args.stage)
     pred_sets = [PredictionSet(s) for s in args.pred_sets or list(PredictionSet)]
+    if args.cfg == "job":
+        if stage is not Stage.PREDICT:
+            msg = "--cfg job is only implemented for the predict stage"
+            raise ValueError(msg)
+        cfg = preflight_predict(args.root, args.model, pred_sets)
+        text = OmegaConf.to_yaml(cfg)
+        print(text, end="")
+        cfg_out = os.environ.get("AUTOCAST_PREFLIGHT_CFG_OUT")
+        if cfg_out:
+            Path(cfg_out).write_text(text)
+        return
     if stage in (Stage.PREDICT, Stage.ALL):
         for pred_set in pred_sets:
             predict(args.root, args.model, pred_set, args.max_traj, args.batch_size)
