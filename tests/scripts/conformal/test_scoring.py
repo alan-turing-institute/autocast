@@ -78,17 +78,38 @@ def test_conformal_coverage_close_to_nominal_on_exchangeable_data():
     assert abs(observed - scoring.NOMINAL_LEVEL) < 0.05
 
 
-def test_rank_histogram_shape():
-    dump = make_synthetic_dump(b_total=10, n_frames=1, n_members=6, seed=5)
-    histogram = scoring.rank_histogram(dump["trues"][:, 0], dump["preds"][:, 0])
-    assert histogram.shape == (7,)
-    assert histogram.sum() == dump["trues"][:, 0].numel()
+def _reference_rank_histogram(true, ensemble):
+    """July's ``field_autouq.py::rank_hist`` at one frame, pooled over all axes."""
+    ranks = (ensemble < true.unsqueeze(-1)).sum(dim=-1).flatten()
+    return torch.bincount(ranks, minlength=ensemble.shape[-1] + 1).numpy()
 
 
-def test_excess_kurtosis_zero_for_gaussian():
-    generator = np.random.default_rng(0)
-    z = generator.standard_normal(200_000)
-    assert abs(scoring.excess_kurtosis(z)) < 0.05
+def _reference_excess_kurtosis(true, samples):
+    """July's ``field_autouq.py`` excess kurtosis of z-scores at one frame."""
+    std = samples.std(dim=-1).clamp_min(scoring._Z_STD_FLOOR)
+    z = ((true - samples.mean(dim=-1)) / std).flatten().double().numpy()
+    return ((z - z.mean()) ** 4).mean() / z.var() ** 2 - 3.0
+
+
+def test_rank_histogram_per_frame_matches_reference():
+    dump = make_synthetic_dump(b_total=10, n_frames=5, n_members=6, seed=5)
+    trues, preds = dump["trues"], dump["preds"]
+    histograms = scoring.rank_histogram_per_frame(trues, preds, frame_block_size=2)
+    assert histograms.shape == (5, 7)
+    for frame in range(5):
+        np.testing.assert_array_equal(
+            histograms[frame],
+            _reference_rank_histogram(trues[:, frame], preds[:, frame]),
+        )
+
+
+def test_per_frame_excess_kurtosis_matches_reference():
+    dump = make_synthetic_dump(b_total=10, n_frames=4, n_members=6, seed=6)
+    trues, preds = dump["trues"], dump["preds"]
+    kurtosis = scoring.per_frame_excess_kurtosis(trues, preds)
+    for frame in range(4):
+        reference = _reference_excess_kurtosis(trues[:, frame], preds[:, frame])
+        assert abs(kurtosis[frame] - reference) < 1e-4
 
 
 def test_ecc_verdict_clean_and_degenerate():

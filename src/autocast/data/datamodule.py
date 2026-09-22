@@ -303,7 +303,8 @@ class SpatioTemporalDataModule(LightningDataModule):
             )
             # `rollout_val_dataset` above rolls out the training split. Rollouts of
             # the validation split are built on first request, with the same
-            # settings as the test rollouts (see `rollout_valid_dataloader`).
+            # settings as the test rollouts (see `rollout_valid_dataloader`), so
+            # the many runs that never ask for them do not load them.
             self._make_rollout_valid_dataset = partial(
                 dataset_cls,
                 data_path=str(valid_path) if valid_path is not None else None,

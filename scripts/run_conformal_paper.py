@@ -265,7 +265,6 @@ def build_eval_config(
     ev.rollout_snapshot_dir = str(out_dir / "videos" / "snapshots")
     # Dump mode reuses the rollout pass, which only runs with rollout metrics on.
     ev.compute_rollout_metrics = True
-    ev.compute_test_metrics = False
     ev.benchmark.enabled = False
     ev.benchmark_rollout.enabled = False
     # No per-trajectory videos or snapshot images: only the saved tensors are needed.

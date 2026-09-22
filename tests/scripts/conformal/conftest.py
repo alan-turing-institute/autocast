@@ -49,23 +49,18 @@ def make_grouped_dump(
     seed: int = 0,
 ) -> dict:
     """Fabricate a Gray-Scott-shaped dump: ``n_groups`` distinct scalar rows."""
-    generator = torch.Generator().manual_seed(seed)
-    b_total = n_groups * n_per_group
-    trues = torch.randn(
-        b_total, n_frames, height, width, n_channels, generator=generator
+    dump = make_synthetic_dump(
+        b_total=n_groups * n_per_group,
+        n_frames=n_frames,
+        height=height,
+        width=width,
+        n_channels=n_channels,
+        n_members=n_members,
+        seed=seed,
     )
-    noise = torch.randn(
-        b_total, n_frames, height, width, n_channels, n_members, generator=generator
-    )
-    preds = trues.unsqueeze(-1) + noise
     group_ids = torch.arange(n_groups).repeat_interleave(n_per_group)
-    constant_scalars = group_ids.float().unsqueeze(-1)
-    return {
-        "preds": preds.float(),
-        "trues": trues.float(),
-        "constant_scalars": constant_scalars,
-        "meta": {"n_members": n_members},
-    }
+    dump["constant_scalars"] = group_ids.float().unsqueeze(-1)
+    return dump
 
 
 def save_dump(dump: dict, path) -> None:

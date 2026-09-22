@@ -49,7 +49,11 @@ _MD5_CHUNK_SIZE = 8 * 1024 * 1024
 
 
 def default_device() -> str:
-    """Return "cuda" if a GPU is available, else "cpu" (the ``--device`` default)."""
+    """Return "cuda" if a GPU is available, else "cpu" (the ``--device`` default).
+
+    Not `autocast.scripts.execution.resolve_device`, which can also pick MPS:
+    MPS has no float64, and the EMOS fit runs in float64.
+    """
     return "cuda" if torch.cuda.is_available() else "cpu"
 
 

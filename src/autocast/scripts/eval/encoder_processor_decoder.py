@@ -2808,8 +2808,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                     fabric=fabric,
                     n_traj_cap=eval_cfg.get("dump_max_traj", None),
                 )
-
-            if not dump_requested:
+            else:
                 raw_rollout_metrics_loader = datamodule.rollout_test_dataloader(
                     batch_size=eval_batch_size
                 )

@@ -470,8 +470,9 @@ def per_frame_coverage_calibration_error(
 def per_frame_excess_kurtosis(true: TensorBTSC, samples: TensorBTSCM) -> np.ndarray:
     """Excess kurtosis of standardized residuals, at every frame, in one broadcast.
 
-    The per-frame analogue of ``excess_kurtosis(frame_z_scores(...))``, kept
-    as a single tensor reduction over ``(batch, spatial, channel)`` at every
+    The per-frame, vectorized form of ``field_autouq.py``'s
+    ``excess_kurtosis`` of standardized residuals, kept as a single tensor
+    reduction over ``(batch, spatial, channel)`` at every
     frame rather than a Python loop. Does not filter non-finite residuals
     (the ``_Z_STD_FLOOR`` clamp keeps them finite in practice) -- see
     :func:`_z_score_moment_sums`'s docstring for the same caveat.
@@ -648,13 +649,9 @@ def _z_score_moment_sums(
 
     Enough to reconstruct the pooled excess kurtosis of ANY resampled subset
     of trajectories exactly (via :func:`_pooled_excess_kurtosis`), without
-    re-touching per-pixel data -- the vectorized-bootstrap analogue of
-    :func:`frame_z_scores` + :func:`excess_kurtosis`. Unlike those, this does
-    not filter non-finite residuals (the ``_Z_STD_FLOOR`` clamp on ``std``
-    already keeps ``z`` finite in practice); this is a deliberate, documented
-    simplification for the bootstrap standard deviation specifically -- the
-    non-resampled point estimate still goes through the exact
-    ``excess_kurtosis``/``frame_z_scores`` path.
+    re-touching per-pixel data. Like :func:`per_frame_excess_kurtosis`, it
+    does not filter non-finite residuals (the ``_Z_STD_FLOOR`` clamp on
+    ``std`` keeps ``z`` finite in practice).
     """
     mean = samples_frame.mean(dim=-1)
     std = samples_frame.std(dim=-1).clamp_min(_Z_STD_FLOOR)
@@ -768,16 +765,6 @@ def bootstrap_summary(
     return result
 
 
-def rank_histogram(true: TensorBTSC, ensemble: TensorBTSCM) -> np.ndarray:
-    """Talagrand rank histogram, pooled over every non-member axis.
-
-    Ported verbatim from ``field_autouq.py::rank_hist``.
-    """
-    ranks = (ensemble < true.unsqueeze(-1)).sum(dim=-1).flatten()
-    n_members = ensemble.shape[-1]
-    return torch.bincount(ranks, minlength=n_members + 1).float().cpu().numpy()
-
-
 def rank_histogram_per_frame(
     true: TensorBTSC,
     ensemble: TensorBTSCM,
@@ -811,25 +798,6 @@ def rank_histogram_per_frame(
         counts = torch.bincount(combined.flatten(), minlength=block_frames * n_bins)
         histograms.append(counts.view(block_frames, n_bins))
     return torch.cat(histograms, dim=0).cpu().numpy()
-
-
-def excess_kurtosis(z: np.ndarray) -> float:
-    """Excess kurtosis of standardized residuals (0 for a Gaussian).
-
-    Ported verbatim from ``field_autouq.py::excess_kurtosis``.
-    """
-    finite = z[np.isfinite(z)]
-    return float(
-        ((finite - finite.mean()) ** 4).mean() / (finite.var() ** 2)
-        - _EXCESS_KURTOSIS_NORMAL
-    )
-
-
-def frame_z_scores(true_t: TensorBTSC, samples_t: TensorBTSCM) -> np.ndarray:
-    """Standardized residuals ``(true - member_mean) / member_std`` at one frame."""
-    mean = samples_t.mean(dim=-1)
-    std = samples_t.std(dim=-1).clamp_min(_Z_STD_FLOOR)
-    return ((true_t - mean) / std).flatten().cpu().numpy()
 
 
 def spatial_mean_spread_skill(ensemble: TensorBTSCM, true: TensorBTSC) -> torch.Tensor:
