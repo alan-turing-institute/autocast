@@ -1,6 +1,7 @@
 import json
 
 import pandas as pd
+import pytest
 
 from autocast.scripts.conformal import sufficiency
 from autocast.scripts.conformal.data import load_prediction_dump
@@ -45,3 +46,14 @@ def test_sufficiency_filters_k_grid_to_pool_size(tmp_path):
 
     assert result["k_grid"] == [9, 15]
     assert result["k_grid_requested"] == [9, 15, 100]
+
+
+def test_sufficiency_usage_errors(tmp_path):
+    save_dump(make_synthetic_dump(b_total=30, n_frames=2), tmp_path / "new.pt")
+    new_dump = load_prediction_dump(tmp_path / "new.pt")
+    with pytest.raises(ValueError, match="requires constant_scalars"):
+        sufficiency.run_sufficiency(new_dump, balance_by_scalars=True)
+    with pytest.raises(ValueError, match="no K in grid"):
+        sufficiency.run_sufficiency(new_dump, k_grid=(500,))
+    with pytest.raises(RuntimeError, match="n_draws must be"):
+        sufficiency.run_sufficiency(new_dump, k_grid=(9,), n_draws=0)

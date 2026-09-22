@@ -308,6 +308,9 @@ def write_readme(out_dir: Path, manifest: dict[str, Any]) -> None:
     )
     level = round(100 * (1 - manifest["alpha"]))
     windows = ", ".join(_paper_window_label(tuple(w)) for w in manifest["windows"])
+    in_a_window = {f for start, end in manifest["windows"] for f in range(start, end)}
+    last_end = max(end for _, end in manifest["windows"])
+    outside = ", ".join(str(f) for f in range(last_end + 1) if f not in in_a_window)
     table_rows = "\n".join(
         [
             f"| `new/` | {counts['new']} | New simulated trajectories, split once "
@@ -361,7 +364,10 @@ paper's format), `rollout_coverage_window_<window>.csv` (coverage at each
 nominal level from 5% to 95%), `rollout_metrics_per_timestep_channel_all.csv`
 (the same scores frame by frame), `per_frame_ingredients.csv` (per-frame sums
 from which any window's scores can be rebuilt exactly) and, for `raw/` and
-`EMOS/`, `rank_histogram.csv` (one row per frame).
+`EMOS/`, `rank_histogram.csv` (one row per frame). As in the eval's own CSVs, the
+`coverage` column of the first and third files is the coverage error averaged over
+the 19 levels and the channels, not the coverage itself; the {level}% coverage is in
+`summary.csv` and `per_frame_ingredients.csv`.
 
 Next to them: `summary.csv` (headline scores at the {level}% level over the
 whole forecast, with bootstrap standard deviations over test trajectories),
@@ -373,8 +379,10 @@ test trajectories at the first and last frame) and `dependence.csv` (spread
 over error of each channel's whole-field average, for raw, EMOS, and EMOS with
 ensemble copula coupling).
 
-Forecast windows: {windows}. A window `a-b` covers frames a to b-1, as in the
-paper's own CSVs.
+Forecast windows: {windows}. A window `a-b` covers frames a to b-1, sliced as in
+the paper's own CSVs, so a few frames fall in no window ({outside}); the
+per-frame files cover every frame, and `per_frame_ingredients.csv` rebuilds any
+range exactly.
 
 ## Data sufficiency (`data_sufficiency/`)
 

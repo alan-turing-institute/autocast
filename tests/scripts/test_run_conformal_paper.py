@@ -226,3 +226,12 @@ def test_cfg_job_refuses_non_predict_stage(fm_layout, monkeypatch):
 
     with pytest.raises(ValueError, match="predict stage"):
         r.main()
+
+
+def test_max_traj_refuses_calibration_stages(fm_layout, monkeypatch):
+    for stage in ("calibrate", "sufficiency"):
+        argv = ["run_conformal_paper.py", "--root", str(fm_layout), stage]
+        argv += ["--model", "fm_test", "--max-traj", "2"]
+        monkeypatch.setattr(sys, "argv", argv)
+        with pytest.raises(ValueError, match="smoke-test predictions"):
+            r.main()

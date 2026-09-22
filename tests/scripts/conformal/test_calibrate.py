@@ -1,6 +1,7 @@
 import json
 
 import pandas as pd
+import pytest
 import torch
 from autouq.calibrators import EMOS, AxisRole
 from autouq.calibrators.mathutils import gaussian_crps
@@ -218,3 +219,22 @@ def test_fit_emos_per_frame_does_not_stall_in_float32():
         rtol=1e-5,
         atol=0.0,
     )
+
+
+def test_emos_state_dict_refuses_an_unfitted_emos():
+    with pytest.raises(RuntimeError, match="calibrate must be called"):
+        calibrate.emos_state_dict(EMOS(per=(AxisRole.TIME,)))
+
+
+def test_calibrate_balanced_split_needs_constant_scalars(tmp_path):
+    for name in ("new", "paper_valid", "paper_test"):
+        save_dump(make_synthetic_dump(b_total=30, n_frames=2), tmp_path / f"{name}.pt")
+    with pytest.raises(ValueError, match="requires constant_scalars"):
+        calibrate.calibrate(
+            new_path=tmp_path / "new.pt",
+            paper_valid_path=tmp_path / "paper_valid.pt",
+            paper_test_path=tmp_path / "paper_test.pt",
+            out_dir=tmp_path / "out",
+            balance_by_scalars=True,
+            device="cpu",
+        )

@@ -20,6 +20,7 @@ from autocast.scripts.eval.encoder_processor_decoder import (
     DumpSplit,
     _build_eval_predict_fn,
     _build_per_timestep_metric_factory,
+    _check_dump_request,
     _decode_tensor,
     _dump_rollout_tensors,
     _maybe_inject_encoder_decoder_from_autoencoder_checkpoint,
@@ -1332,3 +1333,36 @@ def test_maybe_swap_to_ambient_datamodule_errors_without_data_path():
         _maybe_swap_to_ambient_datamodule(
             cfg, eval_mode="ambient", example_batch=encoded
         )
+
+
+def test_check_dump_request_refuses_a_dump_the_rollout_pass_would_skip():
+    with pytest.raises(ValueError, match="compute_rollout_metrics"):
+        _check_dump_request(
+            dump_requested=True,
+            compute_rollout_metrics=False,
+            trajectory_statistics_enabled=False,
+        )
+    for rollout_metrics, trajectories in ((True, False), (False, True)):
+        _check_dump_request(
+            dump_requested=True,
+            compute_rollout_metrics=rollout_metrics,
+            trajectory_statistics_enabled=trajectories,
+        )
+    _check_dump_request(
+        dump_requested=False,
+        compute_rollout_metrics=False,
+        trajectory_statistics_enabled=False,
+    )
+
+
+def test_dump_rollout_tensors_keeps_the_member_axis_for_one_member(tmp_path):
+    out_path = tmp_path / "rollout_tensors.pt"
+    _dump_rollout_tensors(
+        rollout_predict=_rollout_predict_batch(n_members=None),
+        dataloader=_dump_batches(1),
+        out_path=out_path,
+        meta={"split": DumpSplit.TEST.value},
+        fabric=SimpleNamespace(world_size=1, global_rank=0),
+    )
+    saved = torch.load(out_path, weights_only=True)
+    assert saved["preds"].shape == (2, 3, 4, 4, 2, 1)

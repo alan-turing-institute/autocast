@@ -184,7 +184,11 @@ def run_sufficiency(
 
 
 def summary_rows(result: dict[str, Any]) -> list[dict[str, Any]]:
-    """One row per ``(K, method)``: mean/std coverage and Winkler over frames."""
+    """One row per ``(K, method)``: coverage and Winkler averaged over frames.
+
+    The ``_std`` columns are the spread of those frame averages across the
+    calibration draws.
+    """
     rows = []
     for k in result["k_grid"]:
         for method in (Method.RAW.value, Method.EMOS.value, Method.CONFORMAL.value):

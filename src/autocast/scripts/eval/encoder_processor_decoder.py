@@ -199,6 +199,26 @@ def _normalize_dump_split(split: Any) -> DumpSplit:
         raise ValueError(msg) from None
 
 
+def _check_dump_request(
+    *,
+    dump_requested: bool,
+    compute_rollout_metrics: bool,
+    trajectory_statistics_enabled: bool,
+) -> None:
+    """Refuse a dump request that the rollout pass would silently skip.
+
+    The dump reuses the rollout closure built for rollout metrics, so it only
+    runs when ``eval.compute_rollout_metrics`` (or trajectory statistics) is on.
+    """
+    rollout_pass_runs = compute_rollout_metrics or trajectory_statistics_enabled
+    if dump_requested and not rollout_pass_runs:
+        msg = (
+            "eval.dump_rollout_tensors=true needs eval.compute_rollout_metrics=true: "
+            "the dump reuses the rollout pass built for rollout metrics."
+        )
+        raise ValueError(msg)
+
+
 def _decode_tensor(
     x: torch.Tensor,
     decode_fn: Callable[[torch.Tensor], torch.Tensor],
@@ -383,8 +403,8 @@ def _dump_rollout_tensors(
         )
         raise RuntimeError(msg)
 
-    preds_all: list[torch.Tensor] = []
-    trues_all: list[torch.Tensor] = []
+    preds_all: list[TensorBTSCM] = []
+    trues_all: list[TensorBTSC] = []
     scalars_all: list[torch.Tensor] = []
     n_done = 0
     t_start = time.perf_counter()
@@ -399,6 +419,8 @@ def _dump_rollout_tensors(
                 continue
             preds = preds.detach().to("cpu")
             trues = trues.detach().to("cpu")
+            if preds.ndim == trues.ndim:  # one member: keep the documented M axis
+                preds = preds.unsqueeze(-1)
             b = int(preds.shape[0])
             preds_all.append(preds)
             trues_all.append(trues)
@@ -2155,6 +2177,11 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     latent_space_metrics = bool(eval_cfg.get("latent_space_metrics", False))
     trajectory_cfg = eval_cfg.get("trajectory_statistics") or {}
     trajectory_statistics_enabled = bool(trajectory_cfg.get("enabled", False))
+    _check_dump_request(
+        dump_requested=dump_requested,
+        compute_rollout_metrics=bool(eval_cfg.get("compute_rollout_metrics", False)),
+        trajectory_statistics_enabled=trajectory_statistics_enabled,
+    )
     trajectory_overwrite_existing = bool(
         trajectory_cfg.get("overwrite_existing", False)
     )

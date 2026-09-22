@@ -64,7 +64,12 @@ class PredictionSet(StrEnum):
 
 
 class DumpSplit(StrEnum):
-    """Dataset split the evaluation reads (``eval.dump_split``)."""
+    """Dataset split the evaluation reads (``eval.dump_split``).
+
+    Mirrors the eval script's own ``DumpSplit``: this launcher runs the eval as a
+    subprocess and imports nothing from ``autocast``, so its ``--cfg job`` check
+    stays fast (no torch or lightning import).
+    """
 
     TEST = "test"
     VALID = "valid"
@@ -480,6 +485,9 @@ def main() -> None:
     args = parser.parse_args()
 
     stage = Stage(args.stage)
+    if args.max_traj is not None and stage in (Stage.CALIBRATE, Stage.SUFFICIENCY):
+        msg = "--max-traj is for smoke-test predictions; calibration uses full sets"
+        raise ValueError(msg)
     pred_sets = [PredictionSet(s) for s in args.pred_sets or list(PredictionSet)]
     if args.cfg == "job":
         if stage is not Stage.PREDICT:
