@@ -99,7 +99,7 @@ from autocast.metrics.ensemble import (
     EnsembleSpread,
     SpreadSkillRatio,
 )
-from autocast.types import TensorBTSC, TensorBTSCM
+from autocast.types import TensorBTSC, TensorBTSCM, TensorC
 
 #: Headline miscoverage level: 90% central intervals.
 NOMINAL_ALPHA = 0.1
@@ -323,10 +323,12 @@ def coverage_map_slice(
 def coverage_calibration_error(
     true: TensorBTSC, lower: TensorBTSC, upper: TensorBTSC, levels: Sequence[float]
 ) -> float:
-    """Average absolute calibration error across ``levels`` (MultiCoverage-style).
+    """Average absolute calibration error across ``levels`` and channels.
 
-    Computed for every level in one broadcast via :func:`band_coverage_multi`
-    -- no Python loop over ``levels``.
+    As `autocast.metrics.coverage.MultiCoverage`: coverage is pooled over
+    everything but the channel, the absolute error is taken per channel and
+    level, then averaged. Computed for every level in one broadcast via
+    :func:`band_coverage_multi` -- no Python loop over ``levels``.
 
     Parameters
     ----------
@@ -338,7 +340,9 @@ def coverage_calibration_error(
         Coverage levels matching the trailing axis of ``lower``/``upper``.
     """
     levels_tensor = torch.tensor(levels, dtype=torch.float64, device=true.device)
-    observed = band_coverage_multi(true, lower, upper).mean(dim=tuple(range(true.ndim)))
+    observed = band_coverage_multi(true, lower, upper).mean(
+        dim=tuple(range(true.ndim - 1))
+    )  # (C, len(levels))
     return float((observed.double() - levels_tensor).abs().mean())
 
 
@@ -544,8 +548,11 @@ def per_frame_ingredients(
     pandas.DataFrame
         One row per frame, columns ``frame``, ``n``, ``sum_<metric>`` for
         each metric available to ``fitted`` (all seven for raw/EMOS; only
-        ``sum_winkler`` for conformal), ``coverage_total_count``, and
-        ``covered_<level>`` for each level in :data:`LEVELS`.
+        ``sum_winkler`` for conformal), ``coverage_total_count`` and
+        ``covered_<level>`` for each level in :data:`LEVELS` (pooled over
+        channels), and ``coverage_count_per_channel`` and
+        ``covered_<level>_channel_<c>`` (per channel, which the coverage
+        calibration error needs).
     """
     n_frames = true.shape[1]
     n_trajectories = true.shape[0]
@@ -570,8 +577,11 @@ def per_frame_ingredients(
     winkler_sum_per_frame = winkler_vals.double().mean(dim=(2, 3, 4)).sum(dim=0)  # (T,)
     data["sum_winkler"] = winkler_sum_per_frame.cpu().numpy()
 
+    n_channels = true.shape[-1]
     data["coverage_total_count"] = np.full(n_frames, int(true[:, 0].numel()))
-    covered_columns = [f"covered_{level:.2f}" for level in LEVELS]
+    data["coverage_count_per_channel"] = np.full(
+        n_frames, int(true[:, 0].numel()) // n_channels
+    )
     covered_blocks: list[torch.Tensor] = []
     for start in range(0, n_frames, frame_block_size):
         end = min(start + frame_block_size, n_frames)
@@ -579,13 +589,16 @@ def per_frame_ingredients(
             true[:, start:end], fitted.lower[:, start:end], fitted.upper[:, start:end]
         )  # (B, block, H, W, C, len(LEVELS))
         covered_blocks.append(
-            covered.double().sum(dim=(0, 2, 3, 4))
-        )  # (block, len(LEVELS))
-    covered_by_frame_level = (
-        torch.cat(covered_blocks, dim=0).cpu().numpy()
-    )  # (T, len(LEVELS))
-    for i, column in enumerate(covered_columns):
-        data[column] = covered_by_frame_level[:, i]
+            covered.double().sum(dim=(0, 2, 3))
+        )  # (block, C, len(LEVELS))
+    covered_by_frame = torch.cat(covered_blocks, dim=0).cpu().numpy()  # (T, C, L)
+    for i, level in enumerate(LEVELS):
+        data[f"covered_{level:.2f}"] = covered_by_frame[:, :, i].sum(axis=1)
+    for i, level in enumerate(LEVELS):
+        for channel in range(n_channels):
+            data[f"covered_{level:.2f}_channel_{channel}"] = covered_by_frame[
+                :, channel, i
+            ]
 
     return pd.DataFrame(data)
 
@@ -604,12 +617,19 @@ def reconstruct_window_coverage(
     window: tuple[int, int],
     levels: Sequence[float] = LEVELS,
 ) -> float:
-    """Rebuild a window's coverage calibration error from the ingredients."""
+    """Rebuild a window's coverage calibration error from the ingredients.
+
+    Per channel, as :func:`coverage_calibration_error`.
+    """
     start, end = window
     subset = ingredients[(ingredients["frame"] >= start) & (ingredients["frame"] < end)]
-    total = subset["coverage_total_count"].sum()
+    total = subset["coverage_count_per_channel"].sum()
+    prefix = f"covered_{levels[0]:.2f}_channel_"
+    n_channels = sum(column.startswith(prefix) for column in ingredients.columns)
     errors = [
-        abs(subset[f"covered_{level:.2f}"].sum() / total - level) for level in levels
+        abs(subset[f"covered_{level:.2f}_channel_{channel}"].sum() / total - level)
+        for level in levels
+        for channel in range(n_channels)
     ]
     return sum(errors) / len(errors)
 
@@ -800,15 +820,17 @@ def rank_histogram_per_frame(
     return torch.cat(histograms, dim=0).cpu().numpy()
 
 
-def spatial_mean_spread_skill(ensemble: TensorBTSCM, true: TensorBTSC) -> torch.Tensor:
+def spatial_mean_spread_skill(ensemble: TensorBTSCM, true: TensorBTSC) -> TensorC:
     """Spread-skill ratio of the whole-field (spatial mean), per channel.
 
     Generalizes ``field_autouq.py::run_spatial``'s ``spatial_mean_ssr`` (there
     a single pooled scalar) to a per-channel vector, pooling over batch and
-    time. SSR near 1.0 means the whole-field mean's ensemble spread matches
-    its actual error; independent per-site calibration collapses it towards 0
-    when the true field mean is nearly conserved, while ECC (restoring
-    cross-site dependence) should recover it.
+    time, in the same convention as the ``ssr`` column (variance and squared
+    error averaged before the square roots). SSR near 1.0 means the
+    whole-field mean's ensemble spread matches its actual error; independent
+    per-site calibration collapses it towards 0 when the true field mean is
+    nearly conserved, while ECC (restoring cross-site dependence) should
+    recover it.
 
     Parameters
     ----------
@@ -819,7 +841,7 @@ def spatial_mean_spread_skill(ensemble: TensorBTSCM, true: TensorBTSC) -> torch.
 
     Returns
     -------
-    torch.Tensor
+    TensorC
         Per-channel spread-skill ratio, shape ``(C,)``.
     """
     n_members = ensemble.shape[-1]
@@ -827,13 +849,15 @@ def spatial_mean_spread_skill(ensemble: TensorBTSCM, true: TensorBTSC) -> torch.
     field_mean = ensemble.mean(dim=spatial_dims)  # (B, T, C, M)
     true_field_mean = true.mean(dim=tuple(range(2, true.ndim - 1)))  # (B, T, C)
 
-    spread = field_mean.std(dim=-1)  # (B, T, C)
-    skill = (field_mean.mean(dim=-1) - true_field_mean).abs()  # (B, T, C)
-
+    # Same convention as `autocast.metrics.ensemble.SpreadSkillRatio`: unbiased
+    # member variance and squared error of the ensemble mean are averaged (here
+    # over batch and time) before the square roots, then the sqrt((M+1)/M)
+    # small-ensemble correction; a calibrated ensemble gives ~1.
+    spread_var = field_mean.var(dim=-1, unbiased=True).mean(dim=(0, 1))  # (C,)
+    skill_sq = (field_mean.mean(dim=-1) - true_field_mean).pow(2).mean(dim=(0, 1))
     correction = ((n_members + 1) / n_members) ** 0.5
-    per_channel_spread = (correction * spread).mean(dim=(0, 1))
-    per_channel_skill = skill.mean(dim=(0, 1)).clamp_min(_SSR_SKILL_FLOOR)
-    return per_channel_spread / per_channel_skill
+    skill = skill_sq.sqrt().clamp_min(_SSR_SKILL_FLOOR)
+    return correction * spread_var.sqrt() / skill
 
 
 def ecc_verdict(raw: float, indep: float, ecc: float) -> str:

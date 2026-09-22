@@ -297,9 +297,7 @@ def run_combination(
     summary_rows.append(
         {
             "method": Method.RAW.value,
-            **bootstrap_summary(
-                raw, true_test, n_boot=N_BOOTSTRAP, seed=DEFAULT_SPLIT_SEED
-            ),
+            **bootstrap_summary(raw, true_test, n_boot=N_BOOTSTRAP, seed=sample_seed),
         }
     )
     del raw  # frees its (..., len(LEVELS)) bands; `pred_test` itself lives on
@@ -315,7 +313,7 @@ def run_combination(
         {
             "method": Method.EMOS.value,
             **bootstrap_summary(
-                emos_fitted, true_test, n_boot=N_BOOTSTRAP, seed=DEFAULT_SPLIT_SEED + 1
+                emos_fitted, true_test, n_boot=N_BOOTSTRAP, seed=sample_seed + 1
             ),
         }
     )
@@ -343,7 +341,7 @@ def run_combination(
                 conformal_fitted,
                 true_test,
                 n_boot=N_BOOTSTRAP,
-                seed=DEFAULT_SPLIT_SEED + 2,
+                seed=sample_seed + 2,
             ),
         }
     )

@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 
-from autocast.metrics.coverage import Coverage
+from autocast.metrics.coverage import Coverage, MultiCoverage
 from autocast.metrics.ensemble import WinklerScore
 from autocast.scripts.conformal import scoring
 from autocast.scripts.conformal.calibrate import fit_conformal, fit_raw
@@ -45,6 +45,23 @@ def test_band_winkler_matches_repo_winkler_class_on_raw_interval():
     reference_value = float(reference.compute())
 
     assert abs(band_value - reference_value) < 1e-6
+
+
+def test_coverage_calibration_error_matches_repo_multicoverage():
+    """Per-channel absolute errors, as MultiCoverage -- not channel-pooled coverage."""
+    torch.manual_seed(2)
+    pred = torch.randn(6, 4, 3, 3, 3, 10)
+    true = torch.randn(6, 4, 3, 3, 3)
+    true[..., 0] *= 3.0  # channel 0 under-covered ...
+    true[..., 1] *= 0.2  # ... channel 1 over-covered: the two orders now differ
+    levels = [0.5, 0.8, 0.9]
+
+    lower, upper = scoring.raw_interval_multi(pred, levels)
+    value = scoring.coverage_calibration_error(true, lower, upper, levels)
+
+    reference = MultiCoverage(coverage_levels=levels)
+    reference.update(pred, true)
+    assert abs(value - float(reference.compute())) < 1e-6
 
 
 def test_window_row_reconstructable_from_per_frame_ingredients():
@@ -133,3 +150,14 @@ def test_bootstrap_summary_has_boot_std_keys():
         assert key in summary
         assert f"{key}_boot_std" in summary
         assert summary[f"{key}_boot_std"] >= 0
+
+
+def test_spatial_mean_spread_skill_is_one_for_a_calibrated_ensemble():
+    """Truth and members drawn alike -> ratio ~1 (the old formula gave ~1.25)."""
+    generator = torch.Generator().manual_seed(7)
+    field = torch.randn(400, 5, 1, 1, 2, 11, generator=generator)
+    field = field.expand(-1, -1, 4, 4, -1, -1)  # spatially constant fields
+    true, members = field[..., 0], field[..., 1:]
+    ratio = scoring.spatial_mean_spread_skill(members, true)
+    assert ratio.shape == (2,)
+    assert torch.allclose(ratio, torch.ones(2), atol=0.05)
