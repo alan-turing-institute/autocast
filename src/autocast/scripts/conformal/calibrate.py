@@ -28,6 +28,7 @@ Usage
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 import torch
@@ -75,6 +76,47 @@ N_SAMPLE_FIELD_TRAJECTORIES = 5
 
 _ALPHAS_FOR_LEVELS = [round(1.0 - level, 2) for level in LEVELS]
 
+#: How many of :data:`LEVELS` a single `.predict()` call requests at once
+#: (see :func:`_predict_intervals_chunked`). Both `EMOS.predict` and
+#: `Ensemble.predict` build every requested level's interval as several
+#: simultaneous full ``(B, T, H, W, C, n_alphas)`` tensors before returning
+#: (broadcast intermediates plus the final `torch.stack`); measured
+#: empirically (this package's memory investigation) that requesting all 19
+#: levels in one call, as `EMOS.predict` does, peaks at ~4.45 GB on a
+#: `(10, 100, 64, 64, 3)`-shaped test set, chunks of 4 down to ~2.3 GB, for
+#: bit-identical results (each level's interval is a pure per-level function
+#: of the already-fitted calibrator, independent of which other levels are
+#: requested in the same call).
+_PREDICT_LEVEL_CHUNK_SIZE = 4
+
+
+def _predict_intervals_chunked(
+    predict: Callable[[Tensor, Sequence[float]], Tensor],
+    pred_test: Tensor,
+    alphas: Sequence[float],
+    *,
+    chunk_size: int = _PREDICT_LEVEL_CHUNK_SIZE,
+) -> tuple[Tensor, Tensor]:
+    """Call a calibrator's ``predict(pred_test, alphas=...)`` in level chunks.
+
+    Writes directly into preallocated, full-size ``lower``/``upper`` tensors
+    (rather than collecting per-chunk pieces and concatenating them at the
+    end, which would hold close to the full size twice at the last step) --
+    the same "allocate once, fill by block" shape as
+    :func:`autocast.scripts.conformal.scoring.per_frame_ingredients`'s frame
+    blocking.
+    """
+    n_levels = len(alphas)
+    out_shape = (*pred_test.shape[:-1], n_levels)
+    lower = torch.empty(out_shape, dtype=pred_test.dtype, device=pred_test.device)
+    upper = torch.empty(out_shape, dtype=pred_test.dtype, device=pred_test.device)
+    for start in range(0, n_levels, chunk_size):
+        end = min(start + chunk_size, n_levels)
+        intervals = predict(pred_test, alphas[start:end])
+        lower[..., start:end] = intervals[..., 0, :]
+        upper[..., start:end] = intervals[..., 1, :]
+    return lower, upper
+
 
 def _channel_names(n_channels: int) -> list[str]:
     return [f"channel_{index}" for index in range(n_channels)]
@@ -103,12 +145,12 @@ def fit_emos(
     """
     emos = EMOS(per=(AxisRole.TIME,))
     emos.calibrate(true_cal.detach(), pred_cal.detach())
-    intervals = emos.predict(pred_test, alphas=_ALPHAS_FOR_LEVELS)
+    lower, upper = _predict_intervals_chunked(
+        emos.predict, pred_test, _ALPHAS_FOR_LEVELS
+    )
     generator = seeded_generator(sample_seed, pred_test.device)
     samples = emos.sample(pred_test, n_members=pred_test.shape[-1], generator=generator)
-    fitted = FittedMethod(
-        Method.EMOS, intervals[..., 0, :], intervals[..., 1, :], samples=samples
-    )
+    fitted = FittedMethod(Method.EMOS, lower, upper, samples=samples)
     return fitted, emos
 
 
@@ -118,10 +160,10 @@ def fit_conformal(
     """Fit the per-pixel/frame/channel conformal `Ensemble(mode="std")` calibrator."""
     ensemble = Ensemble(mode="std")
     ensemble.calibrate(true_cal, pred_cal)
-    intervals = ensemble.predict(pred_test, alphas=_ALPHAS_FOR_LEVELS)
-    fitted = FittedMethod(
-        Method.CONFORMAL, intervals[..., 0, :], intervals[..., 1, :], samples=None
+    lower, upper = _predict_intervals_chunked(
+        ensemble.predict, pred_test, _ALPHAS_FOR_LEVELS
     )
+    fitted = FittedMethod(Method.CONFORMAL, lower, upper, samples=None)
     return fitted, ensemble
 
 
@@ -315,10 +357,21 @@ def calibrate(
     """Run all four calibration-source x test-source combinations.
 
     ``device`` defaults to CUDA if available (:func:`autocast.scripts.
-    conformal.data.default_device`). Every input tensor is moved to it once,
-    right after loading; every fit and score in :func:`run_combination` then
-    runs on that device (the ``autouq`` calibrators are plain torch, so this
-    needs no calibrator-side changes). Also sets
+    conformal.data.default_device`). The three loaded dumps themselves stay
+    on CPU for this function's whole lifetime; only each combination's four
+    selected tensors (``true_cal``/``pred_cal``/``true_test``/``pred_test``)
+    are moved to ``device``, right before that combination's
+    :func:`run_combination` call. Measured directly (this package's memory
+    investigation): holding all three dumps on CUDA for all four
+    combinations, as an earlier version of this function did, costs ~9.6 GB
+    of permanently-resident device memory at the real 150/20/20 x T=100 x
+    64x64 x C=3 x M=10 shape -- for data most combinations don't touch
+    (``paper_valid``/``paper_test`` combined are only ~2.7 GB of that, so the
+    bulk is the 150-trajectory ``new`` dump sitting on-device even during the
+    two ``calib-paper-valid__test-paper`` .. combinations that never read
+    it). Every fit and score in :func:`run_combination` then runs on
+    ``device`` (the ``autouq`` calibrators are plain torch, so this needs no
+    calibrator-side changes). Also sets
     ``torch.set_float32_matmul_precision("high")`` -- measured neutral-to-
     positive for this workload on this machine, per the
     ``gpu-job-settings`` guidance; no bf16, no ``torch.compile`` (both
@@ -326,9 +379,9 @@ def calibrate(
     """
     resolved_device = device if device is not None else default_device()
     torch.set_float32_matmul_precision("high")
-    new_dump = load_prediction_dump(new_path).to(resolved_device)
-    paper_valid_dump = load_prediction_dump(paper_valid_path).to(resolved_device)
-    paper_test_dump = load_prediction_dump(paper_test_path).to(resolved_device)
+    new_dump = load_prediction_dump(new_path)
+    paper_valid_dump = load_prediction_dump(paper_valid_path)
+    paper_test_dump = load_prediction_dump(paper_test_path)
 
     if balance_by_scalars:
         if new_dump.constant_scalars is None:
@@ -358,19 +411,23 @@ def calibrate(
     writers.write_manifest(out_dir, manifest)
 
     for calibration_source in CalibrationSource:
-        true_cal, pred_cal = _select_calibration(
+        true_cal_cpu, pred_cal_cpu = _select_calibration(
             calibration_source,
             new_dump=new_dump,
             paper_valid_dump=paper_valid_dump,
             new_split=new_split,
         )
+        true_cal = true_cal_cpu.to(resolved_device)
+        pred_cal = pred_cal_cpu.to(resolved_device)
         for test_source in TestSource:
-            true_test, pred_test = _select_test(
+            true_test_cpu, pred_test_cpu = _select_test(
                 test_source,
                 new_dump=new_dump,
                 paper_test_dump=paper_test_dump,
                 new_split=new_split,
             )
+            true_test = true_test_cpu.to(resolved_device)
+            pred_test = pred_test_cpu.to(resolved_device)
             combo_name = f"calib-{calibration_source.value}__test-{test_source.value}"
             combo_dir = out_dir / combo_name
             run_combination(

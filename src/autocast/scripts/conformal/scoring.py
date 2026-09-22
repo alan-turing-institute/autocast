@@ -181,10 +181,49 @@ def seeded_generator(seed: int, device: torch.device | str) -> torch.Generator:
     return torch.Generator(device=device).manual_seed(seed)
 
 
+def _linear_order_statistic(sorted_pred: torch.Tensor, quantile: float) -> torch.Tensor:
+    """One quantile from an already-sorted ``(..., M)`` tensor's last axis.
+
+    Reimplements ``torch.quantile``'s default ``interpolation="linear"``
+    formula by hand (linear interpolation between the two bracketing order
+    statistics) rather than calling ``torch.quantile`` -- see
+    :func:`raw_interval_multi`'s docstring for why. ``quantile`` is a plain
+    Python float (not a tensor), so every operation here is a cheap
+    ``(..., 1)``-sized slice/lerp, independent of how many quantiles the
+    caller needs in total.
+    """
+    n_members = sorted_pred.shape[-1]
+    position = quantile * (n_members - 1)
+    lower_index = min(int(position), n_members - 1)
+    fraction = position - lower_index
+    lower_value = sorted_pred[..., lower_index]
+    if fraction == 0.0 or lower_index >= n_members - 1:
+        return lower_value
+    upper_value = sorted_pred[..., lower_index + 1]
+    return lower_value + (upper_value - lower_value) * fraction
+
+
 def raw_interval_multi(
     pred: TensorBTSCM, levels: Sequence[float]
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Empirical ensemble-quantile interval at multiple coverage levels at once.
+
+    Sorts ``pred`` along the member axis exactly once and reads every
+    requested quantile off that one sorted copy (:func:`_linear_order_statistic`)
+    instead of calling ``torch.quantile(pred, quantiles, dim=-1)`` with a
+    batched ``quantiles`` tensor. That batched call is *not* the O(input-size)
+    operation it looks like: measured directly (this machine, CUDA, a
+    ``(10, 100, 64, 64, 3, 10)`` input), passing a 38-element ``q`` tensor
+    peaks at ~14.8 GB -- ~32x the ~0.46 GB input -- and peak memory scales
+    linearly in the *number* of quantiles requested, not just the input size
+    (1 quantile: ~1.8 GB; 38 quantiles: ~14.8 GB), i.e. PyTorch's CUDA
+    multi-quantile kernel does not share one sort across quantiles the way
+    this function does. The one-sort-many-reads version above measured ~5.4
+    GB for the same 38-quantile call (bit-identical results, float32
+    round-off only) -- this was the single largest contributor to this
+    package's excess GPU memory (:func:`fit_raw` calls this with the full
+    19-level :data:`LEVELS` grid, i.e. 38 quantiles, as the very first step
+    of every calibration combination).
 
     Parameters
     ----------
@@ -199,14 +238,14 @@ def raw_interval_multi(
         ``(lower, upper)``, each shape ``(..., len(levels))``.
     """
     alphas = [1.0 - level for level in levels]
-    quantiles = torch.tensor(
-        [q for alpha in alphas for q in (alpha / 2, 1 - alpha / 2)],
-        dtype=pred.dtype,
-        device=pred.device,
-    )
-    computed = torch.quantile(pred, quantiles, dim=-1)  # (2*len(levels), ...)
-    moved = torch.moveaxis(computed, 0, -1)  # (..., 2*len(levels))
-    return moved[..., 0::2], moved[..., 1::2]
+    sorted_pred, _ = torch.sort(pred, dim=-1)
+    out_shape = (*pred.shape[:-1], len(levels))
+    lower = torch.empty(out_shape, dtype=pred.dtype, device=pred.device)
+    upper = torch.empty(out_shape, dtype=pred.dtype, device=pred.device)
+    for index, alpha in enumerate(alphas):
+        lower[..., index] = _linear_order_statistic(sorted_pred, alpha / 2)
+        upper[..., index] = _linear_order_statistic(sorted_pred, 1 - alpha / 2)
+    return lower, upper
 
 
 def band_coverage(true: TensorBTSC, lower: TensorBTSC, upper: TensorBTSC) -> TensorBTSC:
@@ -388,17 +427,42 @@ def per_frame_member_metric_values(
 
 
 def per_frame_coverage_calibration_error(
-    true: TensorBTSC, lower: torch.Tensor, upper: torch.Tensor, levels: Sequence[float]
+    true: TensorBTSC,
+    lower: torch.Tensor,
+    upper: torch.Tensor,
+    levels: Sequence[float],
+    *,
+    frame_block_size: int = DEFAULT_FRAME_BLOCK_SIZE,
 ) -> np.ndarray:
     """Average absolute calibration error across ``levels``, at every frame.
 
     The per-frame analogue of :func:`coverage_calibration_error` (which pools
-    every frame into one scalar): keeps the frame axis, still one broadcast
-    call via :func:`band_coverage_multi`, no loop over frames or levels.
+    every frame into one scalar): keeps the frame axis, no loop over levels.
+    Unlike :func:`coverage_calibration_error` (called on small window
+    slices only), this runs on the full ``T``-frame test set, so -- like
+    :func:`per_frame_ingredients` -- it processes ``frame_block_size`` frames
+    at a time via :func:`band_coverage_multi` rather than broadcasting the
+    full ``(B, T, H, W, C, len(levels))`` tensor at once; measured
+    empirically (see this package's memory investigation) to be one of this
+    module's largest peak-memory contributors when left unblocked at the
+    real H=W=64 scale, since it duplicates a tensor the same size as the
+    already-held ``fitted.lower``/``fitted.upper``.
     """
     levels_tensor = torch.tensor(levels, dtype=torch.float64, device=true.device)
-    observed = band_coverage_multi(true, lower, upper).double().mean(dim=(0, 2, 3))
-    # observed: (T, C, len(levels)); average the per-level error over channel too.
+    n_frames = true.shape[1]
+    observed_blocks: list[torch.Tensor] = []
+    for start in range(0, n_frames, frame_block_size):
+        end = min(start + frame_block_size, n_frames)
+        block = (
+            band_coverage_multi(
+                true[:, start:end], lower[:, start:end], upper[:, start:end]
+            )
+            .double()
+            .mean(dim=(0, 2, 3))
+        )  # (block, C, len(levels))
+        observed_blocks.append(block)
+    observed = torch.cat(observed_blocks, dim=0)  # (T, C, len(levels))
+    # average the per-level error over channel too.
     error = (observed - levels_tensor).abs().mean(dim=1)  # (T, len(levels))
     return error.mean(dim=-1).cpu().numpy()
 
