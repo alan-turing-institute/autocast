@@ -5,7 +5,9 @@ the paper's validation split, and the paper's test split), computes all four
 calibration-source x test-source combinations and writes::
 
     <out>/
-      manifest.json            inputs (paths, md5), split indices, seeds, versions
+      README.md                plain-language guide to the folder
+      manifest.json            inputs (relative paths, md5), split indices, seeds,
+                               versions
       calib-{new,paper-valid}__test-{new,paper}/
         raw/ EMOS/ conformal/  rollout_metrics.csv,
                                rollout_coverage_window_<window>.csv,
@@ -63,7 +65,7 @@ from autocast.scripts.conformal.scoring import (
     seeded_generator,
     spatial_mean_spread_skill,
 )
-from autocast.types import Tensor
+from autocast.types import Tensor, TensorBTSC, TensorBTSCM
 
 _LEVEL_INDEX = LEVELS.index(NOMINAL_LEVEL)
 
@@ -128,6 +130,70 @@ def fit_raw(pred_test: Tensor) -> FittedMethod:
     return FittedMethod(Method.RAW, lower, upper, samples=pred_test)
 
 
+#: Fitted-coefficient attributes of `autouq`'s `EMOS`, one entry per frame
+#: under ``per=TIME`` (see :func:`emos_state_dict` on why they are private).
+_EMOS_FITTED_ATTRS = (
+    "_beta0",
+    "_beta1",
+    "_raw_gamma0",
+    "_raw_gamma1",
+    "_loc",
+    "_scale",
+)
+
+
+def fit_emos_per_frame(true_cal: TensorBTSC, pred_cal: TensorBTSCM) -> EMOS:
+    """Fit `EMOS(per=TIME)` one frame at a time, returned as a single calibrator.
+
+    Under ``per=TIME`` every frame has its own coefficients and its own
+    standardization, so the fitting loss separates into one independent
+    problem per frame. `EMOS.calibrate` still solves all frames in one L-BFGS
+    run with a single shared line search, and that run stops before most
+    frames reach their optimum. Measured on the flow-matching Navier--Stokes
+    model: 90% test coverage 0.746 from the joint fit vs 0.852 fitted frame by
+    frame, with a lower calibration CRPS for the per-frame fit, and where the
+    joint fit stops differs between CPU and CUDA (0.848 vs 0.764 on the same
+    forecasts). Fitting each frame separately reaches every frame's optimum,
+    which is the optimum of the same model.
+
+    The loop over frames is deliberate: L-BFGS's line search cannot be
+    vectorized over independent problems, and one frame fits in well under a
+    second. Each frame is fit in float64 and the coefficients are cast back
+    to the input dtype, so everything downstream stays in the input
+    precision. In float32 some frames' fits stall close to their starting
+    point: on the crps_cns64 forecasts 4 of 100 frames ended with a 0.1-2.8%
+    higher calibration CRPS than the float64 fit, and on
+    ``test_gpu.py``'s synthetic data 2 of 8 frames never moved their
+    ``gamma0`` from its initial value, on CPU and CUDA alike.
+
+    Parameters
+    ----------
+    true_cal
+        Calibration truth, ``[B, T, H, W, C]``.
+    pred_cal
+        Calibration ensemble forecasts, ``[B, T, H, W, C, M]``.
+
+    Returns
+    -------
+    EMOS
+        A calibrator whose per-frame coefficients are the individual fits.
+    """
+    true_cal, pred_cal = true_cal.detach(), pred_cal.detach()
+    frame_fits = []
+    for frame in range(true_cal.shape[1]):
+        frame_fit = EMOS(per=(AxisRole.TIME,))
+        frame_fit.calibrate(
+            true_cal[:, frame : frame + 1].double(),
+            pred_cal[:, frame : frame + 1].double(),
+        )
+        frame_fits.append(frame_fit)
+    combined = EMOS(per=(AxisRole.TIME,))
+    for name in _EMOS_FITTED_ATTRS:
+        coefficients = torch.cat([getattr(fit, name) for fit in frame_fits])
+        setattr(combined, name, coefficients.to(pred_cal.dtype))
+    return combined
+
+
 def fit_emos(
     true_cal: Tensor,
     pred_cal: Tensor,
@@ -137,14 +203,14 @@ def fit_emos(
 ) -> tuple[FittedMethod, EMOS]:
     """Fit `EMOS(per=TIME)` and evaluate it on the test set at every level.
 
-    ``sample_seed`` makes ``.sample()`` (and therefore every diagnostic
-    derived from it -- CRPS/SSR/spread/skill in ``rollout_metrics.csv``,
-    rank histograms, excess kurtosis, ``sample_fields.pt``) reproducible
-    across runs; ``.predict()``-based coverage/Winkler are already exact
-    (no sampling), so only this draw needed seeding.
+    The fit is :func:`fit_emos_per_frame`. ``sample_seed`` makes ``.sample()``
+    (and therefore every diagnostic derived from it -- CRPS/SSR/spread/skill
+    in ``rollout_metrics.csv``, rank histograms, excess kurtosis,
+    ``sample_fields.pt``) reproducible across runs; ``.predict()``-based
+    coverage/Winkler are already exact (no sampling), so only this draw needed
+    seeding.
     """
-    emos = EMOS(per=(AxisRole.TIME,))
-    emos.calibrate(true_cal.detach(), pred_cal.detach())
+    emos = fit_emos_per_frame(true_cal, pred_cal)
     lower, upper = _predict_intervals_chunked(
         emos.predict, pred_test, _ALPHAS_FOR_LEVELS
     )
@@ -407,8 +473,10 @@ def calibrate(
         alpha=NOMINAL_ALPHA,
         levels=list(LEVELS),
         windows=list(WINDOWS),
+        relative_to=out_dir,
     )
     writers.write_manifest(out_dir, manifest)
+    writers.write_readme(out_dir, manifest)
 
     for calibration_source in CalibrationSource:
         true_cal_cpu, pred_cal_cpu = _select_calibration(

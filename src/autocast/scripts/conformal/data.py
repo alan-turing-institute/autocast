@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.metadata
+import os
 import subprocess
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
@@ -332,6 +333,7 @@ def build_manifest(
     alpha: float,
     levels: list[float],
     windows: list[tuple[int, int]],
+    relative_to: Path | None = None,
 ) -> dict[str, Any]:
     """Assemble the run manifest written as ``manifest.json``.
 
@@ -352,25 +354,35 @@ def build_manifest(
         Coverage-level grid used for reliability curves.
     windows
         Rollout windows used for ``rollout_metrics.csv``.
+    relative_to
+        If given, input paths are recorded relative to this directory (the
+        output folder), so the manifest stays valid when the folder moves to
+        another machine.
 
     Returns
     -------
     dict
-        JSON-serializable manifest: input paths + md5, split indices, seeds,
+        JSON-serializable manifest: input paths, md5 and trajectory counts,
+        split indices, seeds,
         alpha, levels, windows, this repository's git commit, the installed
         autouq version, and a UTC timestamp.
     """
+
+    def describe(dump: PredictionDump) -> dict[str, Any]:
+        path = Path(dump.path)
+        if relative_to is not None:
+            path = Path(os.path.relpath(path.resolve(), Path(relative_to).resolve()))
+        return {
+            "path": str(path),
+            "md5": dump.md5,
+            "n_trajectories": dump.n_trajectories,
+        }
+
     return {
         "inputs": {
-            "new": {"path": str(new_dump.path), "md5": new_dump.md5},
-            "paper_valid": {
-                "path": str(paper_valid_dump.path),
-                "md5": paper_valid_dump.md5,
-            },
-            "paper_test": {
-                "path": str(paper_test_dump.path),
-                "md5": paper_test_dump.md5,
-            },
+            "new": describe(new_dump),
+            "paper_valid": describe(paper_valid_dump),
+            "paper_test": describe(paper_test_dump),
         },
         "split": {
             "balanced_by_scalars": balanced_by_scalars,

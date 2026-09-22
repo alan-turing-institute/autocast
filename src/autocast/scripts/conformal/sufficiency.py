@@ -32,9 +32,9 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import torch
-from autouq.calibrators import EMOS, AxisRole
 from autouq.calibrators.conformal import Ensemble
 
+from autocast.scripts.conformal.calibrate import fit_emos_per_frame
 from autocast.scripts.conformal.data import (
     DEFAULT_SPLIT_SEED,
     PredictionDump,
@@ -80,9 +80,8 @@ def _fit_conformal_single(
 def _fit_emos_single(
     true_cal: Tensor, pred_cal: Tensor, pred_test: Tensor
 ) -> tuple[Tensor, Tensor]:
-    """`EMOS(per=TIME)`, fit and evaluated at one alpha only."""
-    emos = EMOS(per=(AxisRole.TIME,))
-    emos.calibrate(true_cal.detach(), pred_cal.detach())
+    """`EMOS(per=TIME)`, fit frame by frame and evaluated at one alpha only."""
+    emos = fit_emos_per_frame(true_cal, pred_cal)
     intervals = emos.predict(pred_test, alphas=NOMINAL_ALPHA)
     return intervals[..., 0, 0], intervals[..., 1, 0]
 

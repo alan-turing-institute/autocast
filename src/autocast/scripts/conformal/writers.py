@@ -268,3 +268,120 @@ def write_summary_csv(out_dir: Path, rows: list[dict[str, Any]]) -> None:
 def write_manifest(out_dir: Path, manifest: dict[str, Any]) -> None:
     """Write the top-level ``manifest.json``."""
     (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
+
+
+#: One line per ``calib-X__test-Y/`` folder, in the order `calibrate` writes them.
+_COMBINATION_TEXT = {
+    "calib-new__test-new": (
+        "calibrated on the new set's {new_cal} calibration trajectories, tested "
+        "on its {new_test} test trajectories"
+    ),
+    "calib-new__test-paper": (
+        "calibrated on the new set's {new_cal} calibration trajectories, tested "
+        "on the paper's {paper_test} test trajectories"
+    ),
+    "calib-paper-valid__test-new": (
+        "calibrated on the paper's {paper_valid} validation trajectories, "
+        "tested on the new set's {new_test} test trajectories"
+    ),
+    "calib-paper-valid__test-paper": (
+        "calibrated on the paper's {paper_valid} validation trajectories, "
+        "tested on the paper's {paper_test} test trajectories"
+    ),
+}
+
+
+def write_readme(out_dir: Path, manifest: dict[str, Any]) -> None:
+    """Write ``README.md``: a plain-language guide to the folder, from the manifest."""
+    inputs, split = manifest["inputs"], manifest["split"]
+    counts = {
+        "new": inputs["new"]["n_trajectories"],
+        "new_cal": len(split["new_calibration_idx"]),
+        "new_test": len(split["new_test_idx"]),
+        "paper_valid": inputs["paper_valid"]["n_trajectories"],
+        "paper_test": inputs["paper_test"]["n_trajectories"],
+    }
+    split_rule = (
+        "balanced across the parameter settings (`constant_scalars`)"
+        if split["balanced_by_scalars"]
+        else "at random"
+    )
+    level = round(100 * (1 - manifest["alpha"]))
+    windows = ", ".join(_paper_window_label(tuple(w)) for w in manifest["windows"])
+    table_rows = "\n".join(
+        [
+            f"| `new/` | {counts['new']} | New simulated trajectories, split once "
+            f"({split_rule}, seed {split['seed']}) into {counts['new_cal']} for "
+            f"calibration and {counts['new_test']} for testing |",
+            f"| `paper_valid/` | {counts['paper_valid']} | The paper dataset's "
+            "validation split: calibration |",
+            f"| `paper_test/` | {counts['paper_test']} | The paper dataset's test "
+            "split: testing |",
+        ]
+    )
+    combinations = "\n".join(
+        f"- `{name}/`: {text.format(**counts)}"
+        for name, text in _COMBINATION_TEXT.items()
+    )
+    text = f"""# Calibrated forecasts: {out_dir.resolve().parent.name}
+
+Uncertainty calibration of this run's saved ensemble forecasts, made with
+`autocast.scripts.conformal` at commit `{manifest["git_commit"]}` (autouq
+{manifest["autouq_version"]}) on {manifest["generated_at_utc"][:10]}.
+`manifest.json` records the same information in machine-readable form, including
+the exact trajectory indices of every split.
+
+## Forecasts (`predictions/`)
+
+| Folder | Trajectories | Used for |
+|---|---|---|
+{table_rows}
+
+`rollout_tensors.pt` holds the forecasts (`preds`, shape [trajectory, frame,
+height, width, channel, member]) and the true fields (`trues`); the
+`resolved_eval_config.yaml` next to it records the checkpoint and data that
+produced them.
+
+## Results: one folder per calibration source and test source
+
+{combinations}
+
+Each holds three methods:
+
+- `raw/`: the model's own ensemble, uncalibrated.
+- `EMOS/`: a Gaussian forecast at every pixel, whose mean and variance are
+  affine maps of the ensemble's mean and variance, with coefficients fitted
+  separately for each frame on the calibration trajectories.
+- `conformal/`: conformal bands scaled by the ensemble spread, fitted
+  separately for every frame, pixel and channel. There are no forecast members,
+  so no CRPS or rank histogram.
+
+In each method folder: `rollout_metrics.csv` (scores per forecast window, in the
+paper's format), `rollout_coverage_window_<window>.csv` (coverage at each
+nominal level from 5% to 95%), `rollout_metrics_per_timestep_channel_all.csv`
+(the same scores frame by frame), `per_frame_ingredients.csv` (per-frame sums
+from which any window's scores can be rebuilt exactly) and, for `raw/` and
+`EMOS/`, `rank_histogram.csv` (one row per frame).
+
+Next to them: `summary.csv` (headline scores at the {level}% level over the
+whole forecast, with bootstrap standard deviations over test trajectories),
+`coverage_map.pt` ({level}% coverage per pixel and channel, averaged over test
+trajectories and all frames), `bands.pt` (the conformal {level}% bands),
+`calibrator.pt` (the fitted conformal multipliers and EMOS coefficients),
+`sample_fields.pt` (truth, raw, EMOS and EMOS+ECC members for the first few
+test trajectories at the first and last frame) and `dependence.csv` (spread
+over error of each channel's whole-field average, for raw, EMOS, and EMOS with
+ensemble copula coupling).
+
+Forecast windows: {windows}. A window `a-b` covers frames a to b-1, as in the
+paper's own CSVs.
+
+## Data sufficiency (`data_sufficiency/`)
+
+How coverage and band width change with the number of calibration trajectories:
+random subsets of the new set's calibration trajectories, each tested on its
+{counts["new_test"]} test trajectories. `sufficiency.json` holds every draw,
+`sufficiency.csv` the summary per calibration-set size and
+`sufficiency_per_frame.csv` the same per frame.
+"""
+    (out_dir / "README.md").write_text(text)
