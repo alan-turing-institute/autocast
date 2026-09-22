@@ -22,7 +22,6 @@ from autocast.scripts.conformal.scoring import (
     WINDOWS,
     FittedMethod,
     coverage_reliability_table,
-    ecc_verdict,
     per_frame_coverage_calibration_error,
     per_frame_excess_kurtosis,
     per_frame_ingredients,
@@ -263,16 +262,13 @@ def write_dependence_csv(
     indep_ssr: torch.Tensor,
     ecc_ssr: torch.Tensor,
 ) -> None:
-    """Write ``dependence.csv``: per-channel spatial-mean SSR + the ECC verdict."""
+    """Write ``dependence.csv``: per-channel spatial-mean SSR, raw / indep / ECC."""
     rows = [
         {
             "channel": name,
             "raw": float(raw_ssr[i]),
             "indep": float(indep_ssr[i]),
             "ecc": float(ecc_ssr[i]),
-            "verdict": ecc_verdict(
-                float(raw_ssr[i]), float(indep_ssr[i]), float(ecc_ssr[i])
-            ),
         }
         for i, name in enumerate(channel_names)
     ]

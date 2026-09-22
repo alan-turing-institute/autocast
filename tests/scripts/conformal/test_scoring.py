@@ -138,12 +138,6 @@ def test_per_frame_excess_kurtosis_matches_reference():
         assert abs(kurtosis[frame] - reference) < 1e-4
 
 
-def test_ecc_verdict_clean_and_degenerate():
-    assert scoring.ecc_verdict(raw=1.0, indep=0.5, ecc=1.0) == "CLEAN ECC win"
-    assert scoring.ecc_verdict(raw=1.0, indep=0.9, ecc=1.0) == "degenerate"
-    assert scoring.ecc_verdict(raw=1.0, indep=0.5, ecc=2.0) == "degenerate"
-
-
 def test_spatial_mean_spread_skill_shape():
     dump = make_synthetic_dump(b_total=12, n_frames=4, n_channels=3, seed=6)
     result = scoring.spatial_mean_spread_skill(dump["preds"], dump["trues"])
@@ -170,3 +164,11 @@ def test_spatial_mean_spread_skill_is_one_for_a_calibrated_ensemble():
     ratio = scoring.spatial_mean_spread_skill(members, true)
     assert ratio.shape == (2,)
     assert torch.allclose(ratio, torch.ones(2), atol=0.05)
+
+
+def test_tail_split_windows_cover_the_paper_tail_exactly():
+    """D30: the two extra windows split the paper's [31, 99) tail, no frame lost."""
+    paper_tail, first_half, second_half = (31, 99), (31, 65), (65, 99)
+    assert {paper_tail, first_half, second_half} <= set(scoring.WINDOWS)
+    halves = [*range(*first_half), *range(*second_half)]
+    assert halves == list(range(*paper_tail))

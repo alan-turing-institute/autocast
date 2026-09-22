@@ -37,9 +37,7 @@ Which score comes from where
   across every frame/bootstrap draw at once (see below).
 - **Dependence** (spatial-mean spread-skill of raw / EMOS-indep / EMOS+ECC)
   generalizes ``field_autouq.py``'s ``spatial_mean_ssr`` (there a single
-  pooled scalar) to a per-channel vector, and the "CLEAN ECC win" / "degenerate"
-  verdict is ``build_productionization_nb.py``'s rule verbatim:
-  ``indep < 0.75 * raw and 0.5 <= ecc <= 1.6``.
+  pooled scalar) to a per-channel vector.
 
 Window-reconstruction note (why ``per_frame_ingredients.csv`` works)
 ---------------------------------------------------------------------
@@ -114,8 +112,8 @@ NOMINAL_LEVEL = round(1.0 - NOMINAL_ALPHA, 2)
 LEVELS: tuple[float, ...] = tuple(round(0.05 * i, 2) for i in range(1, 20))
 
 #: Rollout windows: the paper's own (`encoder_processor_decoder.yaml`'s
-#: `metric_windows_rollout` convention, extended to T=100) plus the two extra
-#: windows splitting its `[31,99]` tail (D9).
+#: `metric_windows_rollout`), sliced ``[start, end)`` as the eval does, plus two
+#: extra windows that split its ``[31, 99)`` tail exactly (D9, D30).
 WINDOWS: tuple[tuple[int, int], ...] = (
     (0, 1),
     (0, 4),
@@ -123,7 +121,7 @@ WINDOWS: tuple[tuple[int, int], ...] = (
     (13, 30),
     (31, 99),
     (31, 65),
-    (66, 99),
+    (65, 99),
 )
 
 #: Default frame-block size for `per_frame_ingredients`/`rank_histogram_per_frame`:
@@ -135,13 +133,6 @@ DEFAULT_FRAME_BLOCK_SIZE = 20
 _Z_STD_FLOOR = 1e-8
 _SSR_SKILL_FLOOR = 1e-8
 _EXCESS_KURTOSIS_NORMAL = 3.0
-
-#: The July verdict rule (`build_productionization_nb.py::metrics_table`):
-#: ECC "cleanly wins" when independent calibration collapses spread well
-#: below raw AND ECC's spread-skill lands in a plausible, non-degenerate band.
-_CLEAN_ECC_INDEP_RATIO = 0.75
-_CLEAN_ECC_LOWER = 0.5
-_CLEAN_ECC_UPPER = 1.6
 
 
 class Method(StrEnum):
@@ -905,14 +896,3 @@ def spatial_mean_spread_skill(ensemble: TensorBTSCM, true: TensorBTSC) -> Tensor
     correction = ((n_members + 1) / n_members) ** 0.5
     skill = skill_sq.sqrt().clamp_min(_SSR_SKILL_FLOOR)
     return correction * spread_var.sqrt() / skill
-
-
-def ecc_verdict(raw: float, indep: float, ecc: float) -> str:
-    """Apply the July "CLEAN ECC win" vs "degenerate" rule, verbatim.
-
-    Ported from ``build_productionization_nb.py::metrics_table``.
-    """
-    clean = (indep < _CLEAN_ECC_INDEP_RATIO * raw) and (
-        _CLEAN_ECC_LOWER <= ecc <= _CLEAN_ECC_UPPER
-    )
-    return "CLEAN ECC win" if clean else "degenerate"

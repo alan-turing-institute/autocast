@@ -21,7 +21,7 @@ PAPER_COVERAGE_WINDOW_HEADER = ["coverage_level", "observed_mean", "channel_0"]
 
 def test_windows_within_clips_and_skips_out_of_range_windows():
     # T=8: (0,1),(0,4) fit unchanged; (6,12) clips to (6,8); everything
-    # starting at or past frame 8 -- (13,30),(31,99),(31,65),(66,99) -- is
+    # starting at or past frame 8 -- (13,30),(31,99),(31,65),(65,99) -- is
     # dropped rather than scored on an empty slice.
     assert writers._windows_within(8) == [(0, 1), (0, 4), (6, 8)]
     # T=100 (the real rollout length): every window survives unclipped.
@@ -39,7 +39,7 @@ def _fit_all(calibration, test):
 
 def test_write_method_outputs_layout_and_headers(tmp_path):
     # n_frames=100 matches the real T=100 rollout so every configured window
-    # (up to 66-99) survives unclipped -- this is the layout/header
+    # (up to 65-99) survives unclipped -- this is the layout/header
     # test, so it deliberately exercises the full WINDOWS list rather than
     # the smaller T used for speed elsewhere.
     n_frames = 100
@@ -166,8 +166,9 @@ def test_write_dependence_csv(tmp_path):
 
     writers.write_dependence_csv(tmp_path, ["smoke", "u"], raw_ssr, indep_ssr, ecc_ssr)
     rows = pd.read_csv(tmp_path / "dependence.csv")
+    assert list(rows.columns) == ["channel", "raw", "indep", "ecc"]
     assert list(rows["channel"]) == ["smoke", "u"]
-    assert list(rows["verdict"]) == ["CLEAN ECC win", "degenerate"]
+    np.testing.assert_allclose(rows["ecc"], [1.1, 3.0], rtol=1e-6)
 
 
 def test_write_manifest(tmp_path):
