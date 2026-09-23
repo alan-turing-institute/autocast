@@ -92,7 +92,9 @@ def check_coverage(eval_dir: Path) -> list[Path]:
     return paths
 
 
-def collect_inputs(results: Path, split: str) -> tuple[pd.DataFrame, dict]:
+def collect_inputs(
+    results: Path, split: str, methods: tuple[str, ...] = METHODS
+) -> tuple[pd.DataFrame, dict]:
     """Select main runs and audit differences from the historical raw curves."""
     rows, inputs, audit = [], [], []
     for model, datasets in RUNS.items():
@@ -148,7 +150,7 @@ def collect_inputs(results: Path, split: str) -> tuple[pd.DataFrame, dict]:
                     "max_absolute_raw_vs_historical_coverage": differences or None,
                 }
             )
-            for method in METHODS:
+            for method in methods:
                 eval_subdir = f"eval_conformal/{split}/{method}"
                 inputs.extend(check_coverage(run_dir / eval_subdir))
                 rows.append(
@@ -163,18 +165,21 @@ def collect_inputs(results: Path, split: str) -> tuple[pd.DataFrame, dict]:
     provenance = {
         "baseline": "raw forecasts from the same eval_conformal export",
         "calibration_test_pairing": split,
+        "methods": list(methods),
         "runs": audit,
         "inputs": [fingerprint(path, results) for path in sorted(set(inputs))],
     }
     return pd.DataFrame(rows), provenance
 
 
-def styles_for(models: list[str], *, combined: bool) -> tuple[dict, list[str]]:
-    """Keep main colours; use paired line styles in the six-line comparison."""
+def styles_for(
+    models: list[str], *, combined: bool, methods: tuple[str, ...] = METHODS
+) -> tuple[dict, list[str]]:
+    """Keep line styles tied to models and distinguish calibration by colour."""
     palette = plt.get_cmap("tab10")
     styles = {}
     for model in models:
-        for method in METHODS:
+        for method in methods:
             if method == "raw":
                 label = f"{model} (main)"
                 hue = 0 if model == "CRPS" else 1
@@ -183,25 +188,36 @@ def styles_for(models: list[str], *, combined: bool) -> tuple[dict, list[str]]:
                 if combined:
                     label = f"{model} + {method}"
                 hue = 2 if method == "EMOS" else 4
+                if methods == ("raw", "conformal"):
+                    label = f"{model} + CP"
+                    hue = 0 if model == "CRPS" else 1
+            color = palette(hue)
+            if methods == ("raw", "conformal") and method == "conformal":
+                color = plots._base_then_dark_variant(color, 1, 2)
             styles[f"{model}_{method}"] = {
-                "color": palette(hue),
+                "color": color,
                 "label": label,
                 "linestyle": "--" if model == "CRPS" else "-",
             }
     # Matplotlib fills legend columns first: keep one model per legend row.
     order = [
-        styles[f"{model}_{method}"]["label"] for method in METHODS for model in models
+        styles[f"{model}_{method}"]["label"] for method in methods for model in models
     ]
     return styles, order
 
 
 def main() -> None:
-    """Validate inputs, render three comparisons and archive their provenance."""
+    """Validate inputs, render the selected comparisons and archive their provenance."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--results-dir", type=Path, default=Path("outputs/2026-07-24_collated")
     )
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument(
+        "--cp-only",
+        action="store_true",
+        help="Render one combined original/CP comparison without EMOS.",
+    )
     parser.add_argument(
         "--split",
         choices=[
@@ -214,17 +230,23 @@ def main() -> None:
     args = parser.parse_args()
     if args.output_dir.exists():
         raise FileExistsError(f"Choose a new output directory: {args.output_dir}")
-    frame, provenance = collect_inputs(args.results_dir, args.split)
+    methods = ("raw", "conformal") if args.cp_only else METHODS
+    frame, provenance = collect_inputs(args.results_dir, args.split, methods)
     args.output_dir.mkdir(parents=True)
     plots.FIGURE_FORMATS[:] = ["pdf", "png"]
-    for name, models in (
-        ("crps_calibration", ["CRPS"]),
-        ("fm_calibration", ["FM"]),
-        ("combined_calibration", ["CRPS", "FM"]),
-    ):
+    comparisons = (
+        (("combined_cp_calibration", ["CRPS", "FM"]),)
+        if args.cp_only
+        else (
+            ("crps_calibration", ["CRPS"]),
+            ("fm_calibration", ["FM"]),
+            ("combined_calibration", ["CRPS", "FM"]),
+        )
+    )
+    for name, models in comparisons:
         output = args.output_dir / name
         output.mkdir()
-        styles, order = styles_for(models, combined=len(models) == 2)
+        styles, order = styles_for(models, combined=len(models) == 2, methods=methods)
         plots.plot_paper_uq_reliability_figure(
             cast(pd.DataFrame, frame[frame["model"].isin(models)]),
             args.results_dir,
@@ -233,7 +255,7 @@ def main() -> None:
             COVERAGE_METRICS,
             dataset_order=DATASETS,
             hue_order=order,
-            legend_ncol=3,
+            legend_ncol=4 if args.cp_only else 3,
             coverage_delta_ylim=REFERENCE_COVERAGE_YLIM,
         )
     repo = Path(__file__).resolve().parents[1]
@@ -327,6 +349,7 @@ def main() -> None:
                 str(args.output_dir),
                 "--split",
                 args.split,
+                *(["--cp-only"] if args.cp_only else []),
             ],
         }
     )
