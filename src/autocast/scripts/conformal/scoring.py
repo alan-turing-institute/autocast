@@ -315,6 +315,25 @@ def coverage_map_slice(
     return band_coverage(true, lower, upper).mean(dim=(0, 1)).cpu()
 
 
+def coverage_map_by_window(
+    true: TensorBTSC, lower: TensorBTSC, upper: TensorBTSC
+) -> dict[tuple[int, int], torch.Tensor]:
+    """:func:`coverage_map_slice` within each of :func:`windows_within`'s windows.
+
+    Each value is ``(H, W, ..., C)``, pooled over the batch and that window's
+    frames only, so the maps show how the spatial pattern of coverage changes
+    with lead time.
+    """
+    return {
+        window: coverage_map_slice(
+            _window_slice(true, window),
+            _window_slice(lower, window),
+            _window_slice(upper, window),
+        )
+        for window in windows_within(true.shape[1])
+    }
+
+
 def coverage_calibration_error(
     true: TensorBTSC, lower: TensorBTSC, upper: TensorBTSC, levels: Sequence[float]
 ) -> float:
@@ -362,6 +381,19 @@ def coverage_reliability_table(
     per_channel_np = per_channel.movedim(-1, 0).cpu().numpy()  # (len(levels), C)
     observed_means = per_channel_np.mean(axis=1).tolist()
     return list(levels), observed_means, per_channel_np
+
+
+def windows_within(n_frames: int) -> list[tuple[int, int]]:
+    """`WINDOWS` clipped to `[0, n_frames)`, dropping any that become empty.
+
+    Production dumps always have T=100 frames, so every configured window
+    fits. Test dumps are often shorter; mirrors
+    ``autocast.metrics.trajectory.TrajectoryMetricAccumulator.update``'s own
+    windowing convention (clip ``end``, skip when ``start >= end``) rather
+    than silently scoring an empty slice.
+    """
+    clipped = ((start, min(end, n_frames)) for start, end in WINDOWS)
+    return [(start, end) for start, end in clipped if start < end]
 
 
 def _window_slice(tensor: torch.Tensor, window: tuple[int, int]) -> torch.Tensor:

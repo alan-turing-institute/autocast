@@ -19,15 +19,6 @@ PAPER_ROLLOUT_METRICS_HEADER = ["window", "batch_idx"]
 PAPER_COVERAGE_WINDOW_HEADER = ["coverage_level", "observed_mean", "channel_0"]
 
 
-def test_windows_within_clips_and_skips_out_of_range_windows():
-    # T=8: (0,1),(0,4) fit unchanged; (6,12) clips to (6,8); everything
-    # starting at or past frame 8 -- (13,30),(31,99),(31,65),(65,99) -- is
-    # dropped rather than scored on an empty slice.
-    assert writers._windows_within(8) == [(0, 1), (0, 4), (6, 8)]
-    # T=100 (the real rollout length): every window survives unclipped.
-    assert writers._windows_within(100) == list(WINDOWS)
-
-
 def _fit_all(calibration, test):
     raw = fit_raw(test["preds"])
     emos, _ = fit_emos(calibration["trues"], calibration["preds"], test["preds"])
@@ -127,11 +118,27 @@ def test_write_coverage_map_and_bands(tmp_path):
         )
         for name, fitted in fitted_by_method.items()
     }
-    writers.write_coverage_map(tmp_path, coverage_by_method)
+    coverage_by_method_window = {
+        name: scoring.coverage_map_by_window(
+            test["trues"],
+            fitted.lower[..., level_index],
+            fitted.upper[..., level_index],
+        )
+        for name, fitted in fitted_by_method.items()
+    }
+    writers.write_coverage_map(tmp_path, coverage_by_method, coverage_by_method_window)
     coverage_map = torch.load(tmp_path / "coverage_map.pt", weights_only=False)
     assert set(coverage_map) == {"raw", "EMOS", "conformal"}
     for value in coverage_map.values():
         assert value.shape == test["trues"].shape[2:]
+    windows_map = torch.load(tmp_path / "coverage_map_windows.pt", weights_only=False)
+    assert set(windows_map) == {"raw", "EMOS", "conformal"}
+    for name, by_label in windows_map.items():
+        # T=6: (0,1), (0,4) and (6,12)->(6,6) empty, so only two windows.
+        assert list(by_label) == ["0-1", "0-4"]
+        torch.testing.assert_close(
+            by_label["0-4"], coverage_by_method_window[name][(0, 4)]
+        )
 
     writers.write_bands(tmp_path, fitted_by_method["conformal"])
     bands = torch.load(tmp_path / "bands.pt", weights_only=False)

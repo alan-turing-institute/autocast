@@ -72,6 +72,7 @@ def test_calibrate_writes_full_layout_for_all_four_combinations(tmp_path):
                 ).exists()
                 assert (method_dir / "per_frame_ingredients.csv").exists()
             assert (combo_dir / "coverage_map.pt").exists()
+            assert (combo_dir / "coverage_map_windows.pt").exists()
             assert (combo_dir / "bands.pt").exists()
             assert (combo_dir / "calibrator.pt").exists()
             assert (combo_dir / "sample_fields.pt").exists()

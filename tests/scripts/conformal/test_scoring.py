@@ -172,3 +172,32 @@ def test_tail_split_windows_cover_the_paper_tail_exactly():
     assert {paper_tail, first_half, second_half} <= set(scoring.WINDOWS)
     halves = [*range(*first_half), *range(*second_half)]
     assert halves == list(range(*paper_tail))
+
+
+def test_windows_within_clips_and_skips_out_of_range_windows():
+    # T=8: (0,1),(0,4) fit unchanged; (6,12) clips to (6,8); everything
+    # starting at or past frame 8 -- (13,30),(31,99),(31,65),(65,99) -- is
+    # dropped rather than scored on an empty slice.
+    assert scoring.windows_within(8) == [(0, 1), (0, 4), (6, 8)]
+    # T=100 (the real rollout length): every window survives unclipped.
+    assert scoring.windows_within(100) == list(scoring.WINDOWS)
+
+
+def test_coverage_map_by_window_pools_only_each_windows_frames():
+    """Frames 0-5 covered everywhere, frames 6-7 only at one pixel."""
+    true = torch.zeros(3, 8, 2, 2, 1)
+    lower = torch.full_like(true, -1.0)
+    upper = torch.full_like(true, 1.0)
+    lower[:, 6:] = 0.5  # truth 0 falls below the band on frames 6-7 ...
+    lower[:, 6:, 0, 0] = -1.0  # ... except at pixel (0, 0)
+
+    maps = scoring.coverage_map_by_window(true, lower, upper)
+
+    assert list(maps) == [(0, 1), (0, 4), (6, 8)]
+    torch.testing.assert_close(maps[(0, 4)], torch.ones(2, 2, 1))
+    expected_late = torch.zeros(2, 2, 1)
+    expected_late[0, 0] = 1.0
+    torch.testing.assert_close(maps[(6, 8)], expected_late)
+    # Pooled over all frames the late miss is diluted: 6/8 away from (0, 0).
+    pooled = scoring.coverage_map_slice(true, lower, upper)
+    torch.testing.assert_close(pooled[1, 1], torch.tensor([0.75]))

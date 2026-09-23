@@ -19,7 +19,6 @@ from autocast.scripts.conformal.scoring import (
     LEVELS,
     NOMINAL_ALPHA,
     NOMINAL_LEVEL,
-    WINDOWS,
     FittedMethod,
     coverage_reliability_table,
     per_frame_coverage_calibration_error,
@@ -30,6 +29,7 @@ from autocast.scripts.conformal.scoring import (
     per_lead_winkler,
     rank_histogram_per_frame,
     window_row,
+    windows_within,
 )
 from autocast.types import TensorBTSC
 
@@ -44,25 +44,12 @@ def _paper_window_label(window: tuple[int, int]) -> str:
     return f"{start}-{end}"
 
 
-def _windows_within(n_frames: int) -> list[tuple[int, int]]:
-    """`WINDOWS` clipped to `[0, n_frames)`, dropping any that become empty.
-
-    Production dumps always have T=100 frames, so every configured window
-    fits. Test dumps are often shorter; mirrors
-    ``autocast.metrics.trajectory.TrajectoryMetricAccumulator.update``'s own
-    windowing convention (clip ``end``, skip when ``start >= end``) rather
-    than silently scoring an empty slice.
-    """
-    clipped = ((start, min(end, n_frames)) for start, end in WINDOWS)
-    return [(start, end) for start, end in clipped if start < end]
-
-
 def write_rollout_metrics_csv(
     out_dir: Path, fitted: FittedMethod, true: TensorBTSC
 ) -> None:
     """Write ``rollout_metrics.csv``: one row per window, paper format."""
     rows = []
-    for window in _windows_within(true.shape[1]):
+    for window in windows_within(true.shape[1]):
         row: dict[str, Any] = {
             "window": _paper_window_label(window),
             "batch_idx": _BATCH_IDX_ALL,
@@ -76,7 +63,7 @@ def write_rollout_coverage_window_csvs(
     out_dir: Path, fitted: FittedMethod, true: TensorBTSC
 ) -> None:
     """Write one ``rollout_coverage_window_<w>.csv`` per window."""
-    for start, end in _windows_within(true.shape[1]):
+    for start, end in windows_within(true.shape[1]):
         true_w = true[:, start:end]
         lower_w = fitted.lower[:, start:end]
         upper_w = fitted.upper[:, start:end]
@@ -179,17 +166,31 @@ def write_method_outputs(
 
 
 def write_coverage_map(
-    out_dir: Path, coverage_by_method: dict[str, torch.Tensor]
+    out_dir: Path,
+    coverage_by_method: dict[str, torch.Tensor],
+    coverage_by_method_window: dict[str, dict[tuple[int, int], torch.Tensor]],
 ) -> None:
-    """Write ``coverage_map.pt`` from precomputed per-method coverage slices.
+    """Write ``coverage_map.pt`` and ``coverage_map_windows.pt``.
 
     Takes already-reduced ``(H, W, ..., C)`` tensors (see
-    :func:`autocast.scripts.conformal.scoring.coverage_map_slice`), not full
-    :class:`FittedMethod` objects -- the caller computes and drops each
+    :func:`autocast.scripts.conformal.scoring.coverage_map_slice` and
+    :func:`~autocast.scripts.conformal.scoring.coverage_map_by_window`), not
+    full :class:`FittedMethod` objects -- the caller computes and drops each
     method's much larger reliability-grid tensor before moving to the next
     method, so this function must not be handed one that's still alive.
+    ``coverage_map_windows.pt`` keys each method's maps by window label.
     """
     torch.save(coverage_by_method, out_dir / "coverage_map.pt")
+    torch.save(
+        {
+            method: {
+                _paper_window_label(window): coverage
+                for window, coverage in by_window.items()
+            }
+            for method, by_window in coverage_by_method_window.items()
+        },
+        out_dir / "coverage_map_windows.pt",
+    )
 
 
 def write_bands(out_dir: Path, conformal: FittedMethod) -> None:
@@ -401,7 +402,9 @@ coverage is also in `summary.csv` and `per_frame_ingredients.csv`.
 Next to them: `summary.csv` (headline scores at the {level}% level over the
 whole forecast, with bootstrap standard deviations over test trajectories),
 `coverage_map.pt` ({level}% coverage per pixel and channel, averaged over test
-trajectories and all frames), `bands.pt` (the conformal {level}% bands),
+trajectories and all frames), `coverage_map_windows.pt` (the same, averaged
+within each forecast window instead of over all frames), `bands.pt` (the
+conformal {level}% bands),
 `calibrator.pt` (the fitted conformal multipliers and EMOS coefficients),
 `sample_fields.pt` (truth, raw, EMOS and EMOS+ECC members for the first few
 test trajectories at the first and last frame) and `dependence.csv` (spread

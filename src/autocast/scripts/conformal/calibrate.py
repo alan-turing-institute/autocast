@@ -14,7 +14,8 @@ calibration-source x test-source combinations and writes::
                                rollout_metrics_per_timestep_channel_all.csv
                                (the eval's own formats), per_frame_ingredients.csv
         raw/ EMOS/             also rank_histogram.csv
-        coverage_map.pt  bands.pt  calibrator.pt  sample_fields.pt
+        coverage_map.pt  coverage_map_windows.pt  bands.pt  calibrator.pt
+        sample_fields.pt
         dependence.csv  summary.csv
 
 Usage
@@ -60,6 +61,7 @@ from autocast.scripts.conformal.scoring import (
     FittedMethod,
     Method,
     bootstrap_summary,
+    coverage_map_by_window,
     coverage_map_slice,
     raw_interval_multi,
     seeded_generator,
@@ -287,13 +289,21 @@ def run_combination(
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     coverage_by_method: dict[str, Tensor] = {}
+    coverage_by_method_window: dict[str, dict[tuple[int, int], Tensor]] = {}
     summary_rows: list[dict[str, float | str]] = []
+
+    def record_coverage_maps(fitted: FittedMethod) -> None:
+        lower = fitted.lower[..., _LEVEL_INDEX]
+        upper = fitted.upper[..., _LEVEL_INDEX]
+        method = fitted.method.value
+        coverage_by_method[method] = coverage_map_slice(true_test, lower, upper)
+        coverage_by_method_window[method] = coverage_map_by_window(
+            true_test, lower, upper
+        )
 
     raw = fit_raw(pred_test)
     writers.write_method_outputs(out_dir / Method.RAW.value, raw, true_test)
-    coverage_by_method[Method.RAW.value] = coverage_map_slice(
-        true_test, raw.lower[..., _LEVEL_INDEX], raw.upper[..., _LEVEL_INDEX]
-    )
+    record_coverage_maps(raw)
     summary_rows.append(
         {
             "method": Method.RAW.value,
@@ -304,11 +314,7 @@ def run_combination(
 
     emos_fitted, emos = fit_emos(true_cal, pred_cal, pred_test, sample_seed=sample_seed)
     writers.write_method_outputs(out_dir / Method.EMOS.value, emos_fitted, true_test)
-    coverage_by_method[Method.EMOS.value] = coverage_map_slice(
-        true_test,
-        emos_fitted.lower[..., _LEVEL_INDEX],
-        emos_fitted.upper[..., _LEVEL_INDEX],
-    )
+    record_coverage_maps(emos_fitted)
     summary_rows.append(
         {
             "method": Method.EMOS.value,
@@ -327,11 +333,7 @@ def run_combination(
     writers.write_method_outputs(
         out_dir / Method.CONFORMAL.value, conformal_fitted, true_test
     )
-    coverage_by_method[Method.CONFORMAL.value] = coverage_map_slice(
-        true_test,
-        conformal_fitted.lower[..., _LEVEL_INDEX],
-        conformal_fitted.upper[..., _LEVEL_INDEX],
-    )
+    record_coverage_maps(conformal_fitted)
     writers.write_bands(out_dir, conformal_fitted)
     conformal_multiplier = ensemble.score_quantile(NOMINAL_ALPHA)
     summary_rows.append(
@@ -347,7 +349,7 @@ def run_combination(
     )
     del conformal_fitted, ensemble  # frees its bands and calibration scores
 
-    writers.write_coverage_map(out_dir, coverage_by_method)
+    writers.write_coverage_map(out_dir, coverage_by_method, coverage_by_method_window)
     writers.write_calibrator(out_dir, conformal_multiplier, emos_state_dict(emos))
 
     # EMOS+ECC, reusing the already-fitted EMOS marginal (no refit) -- shared
