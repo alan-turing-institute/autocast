@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -1185,7 +1185,10 @@ def test_coverage_difference_preserves_standard_error(tmp_path: Path, nominal: f
     plt.close(fig)
 
 
-def test_shared_coverage_difference_axes_include_every_nominal_level(tmp_path: Path):
+@pytest.mark.parametrize("axis_sharing", [False, "row", True])
+def test_shared_coverage_difference_axes_include_every_nominal_level(
+    tmp_path: Path, axis_sharing: bool | Literal["row"]
+):
     folder = tmp_path / "run1" / "eval"
     folder.mkdir(parents=True)
     pd.DataFrame(
@@ -1201,7 +1204,7 @@ def test_shared_coverage_difference_axes_include_every_nominal_level(tmp_path: P
             "eval_subdir": ["eval"],
         }
     )
-    fig, axes = plt.subplots(2, 1, sharey=True, squeeze=False)
+    fig, axes = plt.subplots(2, 1, sharey=axis_sharing, squeeze=False)
     pdc.plot_lead_time_panel(
         df,
         ["coverage_0.9", "coverage_0.1"],
@@ -1218,4 +1221,38 @@ def test_shared_coverage_difference_axes_include_every_nominal_level(tmp_path: P
     for ax in fig.axes:
         assert ax.get_ylim()[0] < -0.8
         assert ax.get_ylim()[1] > 0.02
+    plt.close(fig)
+
+
+@pytest.mark.parametrize("max_error", [0.02, 0.8])
+def test_coverage_scale_is_local_to_panel_and_excludes_other_metrics(
+    tmp_path: Path, max_error: float
+):
+    folder = tmp_path / "run1" / "eval"
+    folder.mkdir(parents=True)
+    pd.DataFrame(
+        [[0.9 - max_error, 0.9], [0.1, 0.11], [10.0, 20.0]],
+        index=pd.Index(["coverage_0.9", "coverage_0.1", "vrmse"]),
+        columns=pd.Index([0, 1]),
+    ).to_csv(folder / "rollout_metrics_per_timestep_channel_all.csv")
+    frame = pd.DataFrame(
+        {"dataset_label": ["AD"], "plot_group": ["model"], "run_path": ["run1"]}
+    )
+    fig = pdc.plot_lead_time_panel(
+        frame,
+        ["coverage_0.9", "coverage_0.1", "vrmse"],
+        tmp_path,
+        tmp_path,
+        "difference.png",
+        {"model": {"color": "black", "label": "model"}},
+        coverage_delta=True,
+        save=False,
+    )
+    assert isinstance(fig, Figure)
+    expected = 1.1 * max_error
+    for ax in fig.axes[:2]:
+        np.testing.assert_allclose(ax.get_ylim(), [-expected, expected])
+        assert ax.get_yscale() == "linear"
+    assert fig.axes[2].get_yscale() == "log"
+    assert fig.axes[2].get_ylim()[1] > 20
     plt.close(fig)

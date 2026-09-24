@@ -3041,7 +3041,10 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
     ``error_ylim`` (low, high) overrides auto y-limits for non-coverage rows;
     raw coverage rows remain fixed at [0, 1]. Either bound may be ``None``.
     ``coverage_delta`` plots observed minus nominal coverage on a linear
-    axis centred on zero. Subtracting a constant leaves band widths unchanged.
+    axis centred on zero. All coverage-error axes in this panel share limits
+    across datasets and nominal levels, including visible uncertainty bands.
+    Limits depend only on this panel; other metrics retain their own scales.
+    Subtracting a constant leaves band widths unchanged.
     When ``axes`` is provided, draw into that pre-made grid with shape
     (len(metrics_to_plot), n_datasets).
 
@@ -3174,6 +3177,8 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
     assert fig is not None
 
     shared_row_limits: list[list[tuple[float, float]]] = [[] for _ in range(nrows)]
+    coverage_error_axes: list[MplAxes] = []
+    coverage_error_limits: list[tuple[float, float]] = []
     for r, metric in enumerate(metrics_to_plot):
         sub = metrics_long[metrics_long["metric"] == metric]
         for c, ds_label in enumerate(datasets):
@@ -3338,6 +3343,9 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
                     top=next_hi,
                 )
                 y_limit = (float(next_lo), float(next_hi))
+            if is_cov_delta and y_limit is not None:
+                coverage_error_axes.append(ax)
+                coverage_error_limits.append(y_limit)
             if (
                 sharey
                 and y_limit is not None
@@ -3369,6 +3377,13 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
                 ymin = max(ymin, 1e-12)
             for ax in row_axes:
                 ax.set_ylim(ymin, ymax)
+    if coverage_error_limits:
+        # The same probability difference must have the same visual size,
+        # even in layouts whose axes are linked only within individual rows.
+        lower = min(lo for lo, _ in coverage_error_limits)
+        upper = max(hi for _, hi in coverage_error_limits)
+        for ax in coverage_error_axes:
+            ax.set_ylim(lower, upper)
     if shared_ylabel is not None:
         _set_shared_ylabel(fig, shared_ylabel, axis_label_scale)
     if shared_axis_labels:

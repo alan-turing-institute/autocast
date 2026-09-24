@@ -7,7 +7,7 @@ calibration/test pairings separately:
 for split in calib-new__test-paper calib-paper-valid__test-paper calib-new__test-new; do
   uv run --frozen --no-sync python scripts/plot_calibration_comparisons.py \
     --split "$split" \
-    --output-dir "outputs/2026-07-24_collated/2026-09-23_coverage_difference/calibration_with_emos/$split"
+    --output-dir "outputs/2026-07-24_collated/2026-09-24_coverage_shared_scales/calibration_with_emos/$split"
 done
 ```
 
@@ -34,7 +34,7 @@ figure, without EMOS:
 ```sh
 uv run --frozen --no-sync python scripts/plot_calibration_comparisons.py \
   --cp-only --split calib-new__test-paper \
-  --output-dir outputs/2026-07-24_collated/2026-09-23_coverage_difference/calibration/calib-new__test-paper
+  --output-dir outputs/2026-07-24_collated/2026-09-24_coverage_shared_scales/calibration/calib-new__test-paper
 ```
 
 This writes one PDF/PNG pair in `combined_cp_calibration/`, plus the usual
@@ -57,16 +57,13 @@ The layout reuses the paper's Figure 4 renderer: coverage for windows
 orange. In the comparisons including EMOS, EMOS is green and conformal
 prediction is purple; the CP-only variant uses the darker model colours above.
 
-Every right-hand panel uses the same symmetric limits as the updated Figure 4,
-computed from observed-minus-nominal errors across its eight historical
-baseline evaluations, with 10% padding. The nominal level is not used as a
-divisor. This retains the source forecasts while expressing both figures in
-the new units. The reference PDF and input CSV hashes are recorded in each
-new export; the historical PDF itself uses the old relative units.
-Lead-time axes retain their original range.
-Boundary triangles mark the largest excursion within each contiguous segment
-outside the displayed range. Curve values are unchanged, and the provenance
-records the numbers and extrema of off-scale observations for every curve.
+Within each figure, all right-hand panels share symmetric limits across
+datasets, methods and nominal levels. The bounds include every displayed
+curve with 10% padding (minimum half-range 0.02). Each figure chooses its own
+range: bounds are not fixed across separate comparisons or taken from the
+historical main results. The nominal level is not used as a divisor.
+Lead-time axes retain their original range. The provenance records each
+figure's limits and checks for off-scale observations.
 
 ## Data selection
 

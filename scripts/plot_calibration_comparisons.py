@@ -39,26 +39,19 @@ METHODS = ("raw", "EMOS", "conformal")
 DATASETS = ["AD", "CNS", "GS", "GPE"]
 COVERAGE_METRICS = ["coverage_0.9", "coverage_0.5", "coverage_0.1"]
 WINDOWS = ("0-4", "6-12", "13-30", "31-99")
-REFERENCE_RESULTS = Path("outputs/2026-05-15_collated")
-REFERENCE_FIGURE = REFERENCE_RESULTS / (
-    "2026-05-19_final_plots/main_comparison_m8_complete_no_fm_amb_best_winkler/"
-    "paper_uq_reliability_by_lead_time.pdf"
-)
 
 
-def reference_coverage_limits() -> tuple[float, float]:
-    """Match Figure 4's shared limits in observed-minus-nominal units."""
+def coverage_limits(frame: pd.DataFrame, results: Path) -> tuple[float, float]:
+    """Share limits across the curves and nominal levels in one comparison."""
     max_error = 0.0
-    for model, runs in RUNS.items():
-        eval_subdir = "eval_best_multiwinkler_from0p25" if model == "CRPS" else "eval"
-        for run in runs.values():
-            path = REFERENCE_RESULTS / run / eval_subdir
-            lead = pd.read_csv(
-                path / "rollout_metrics_per_timestep_channel_all.csv", index_col=0
-            )
-            for metric in COVERAGE_METRICS:
-                delta = lead.loc[metric] - float(metric.split("_")[1])
-                max_error = max(max_error, float(delta.abs().max()))
+    for row in frame.to_dict(orient="records"):
+        path = results / str(row["run_path"]) / str(row["eval_subdir"])
+        lead = pd.read_csv(
+            path / "rollout_metrics_per_timestep_channel_all.csv", index_col=0
+        )
+        for metric in COVERAGE_METRICS:
+            delta = lead.loc[metric] - float(metric.split("_")[1])
+            max_error = max(max_error, float(delta.abs().max()))
     limit = max(0.02, max_error + max(1e-6, 0.1 * max_error))
     return -limit, limit
 
@@ -246,7 +239,6 @@ def main() -> None:
         raise FileExistsError(f"Choose a new output directory: {args.output_dir}")
     methods = ("raw", "conformal") if args.cp_only else METHODS
     frame, provenance = collect_inputs(args.results_dir, args.split, methods)
-    coverage_ylim = reference_coverage_limits()
     args.output_dir.mkdir(parents=True)
     plots.FIGURE_FORMATS[:] = ["pdf", "png"]
     comparisons = (
@@ -258,12 +250,24 @@ def main() -> None:
             ("combined_calibration", ["CRPS", "FM"]),
         )
     )
+    provenance["rhs_axes"] = {}
+    provenance["off_scale_values"] = []
     for name, models in comparisons:
+        selected = cast(pd.DataFrame, frame[frame["model"].isin(models)])
+        coverage_ylim = coverage_limits(selected, args.results_dir)
+        provenance["rhs_axes"][name] = {
+            "ylim": coverage_ylim,
+            "coverage_error": "observed - nominal (unnormalised)",
+            "limits": (
+                "Symmetric limits across all displayed datasets, methods and "
+                "nominal levels in this figure, with 10% padding."
+            ),
+        }
         output = args.output_dir / name
         output.mkdir()
         styles, order = styles_for(models, combined=len(models) == 2, methods=methods)
         plots.plot_paper_uq_reliability_figure(
-            cast(pd.DataFrame, frame[frame["model"].isin(models)]),
+            selected,
             args.results_dir,
             output,
             styles,
@@ -273,59 +277,31 @@ def main() -> None:
             legend_ncol=4 if args.cp_only else 3,
             coverage_delta_ylim=coverage_ylim,
         )
-    repo = Path(__file__).resolve().parents[1]
-    reference_inputs = []
-    for model, runs in RUNS.items():
-        for run in runs.values():
-            eval_subdir = (
-                "eval_best_multiwinkler_from0p25" if model == "CRPS" else "eval"
-            )
+        lo, hi = coverage_ylim
+        for row in selected.to_dict(orient="records"):
             path = (
-                REFERENCE_RESULTS
-                / run
-                / eval_subdir
+                args.results_dir
+                / row["run_path"]
+                / row["eval_subdir"]
                 / "rollout_metrics_per_timestep_channel_all.csv"
             )
-            reference_inputs.append(fingerprint(repo / path, repo))
-    provenance["rhs_axis_reference"] = {
-        "figure": fingerprint(repo / REFERENCE_FIGURE, repo),
-        "inputs": reference_inputs,
-        "ylim": coverage_ylim,
-        "coverage_error": "observed - nominal (unnormalised)",
-        "limits": (
-            "Symmetric limits from the original eight baseline evaluations, "
-            "with 10% padding."
-        ),
-        "xlim": [-4.95, 103.95],
-        "overflow": (
-            "Boundary triangles mark the largest excursion in each contiguous "
-            "off-scale segment; curve values are not clamped."
-        ),
-    }
-    provenance["off_scale_values"] = []
-    lo, hi = coverage_ylim
-    for row in frame.to_dict(orient="records"):
-        path = (
-            args.results_dir
-            / row["run_path"]
-            / row["eval_subdir"]
-            / "rollout_metrics_per_timestep_channel_all.csv"
-        )
-        lead = pd.read_csv(path, index_col=0)
-        for metric in COVERAGE_METRICS:
-            delta = lead.loc[metric] - float(metric.split("_")[1])
-            provenance["off_scale_values"].append(
-                {
-                    "model": row["model"],
-                    "dataset": row["dataset_label"],
-                    "method": row["plot_group"].split("_", 1)[1],
-                    "metric": metric,
-                    "below": int((delta < lo).sum()),
-                    "above": int((delta > hi).sum()),
-                    "min": float(delta.min()),
-                    "max": float(delta.max()),
-                }
-            )
+            lead = pd.read_csv(path, index_col=0)
+            for metric in COVERAGE_METRICS:
+                delta = lead.loc[metric] - float(metric.split("_")[1])
+                provenance["off_scale_values"].append(
+                    {
+                        "comparison": name,
+                        "model": row["model"],
+                        "dataset": row["dataset_label"],
+                        "method": row["plot_group"].split("_", 1)[1],
+                        "metric": metric,
+                        "below": int((delta < lo).sum()),
+                        "above": int((delta > hi).sum()),
+                        "min": float(delta.min()),
+                        "max": float(delta.max()),
+                    }
+                )
+    repo = Path(__file__).resolve().parents[1]
     head = subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=repo, text=True
     ).strip()
