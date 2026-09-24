@@ -573,18 +573,18 @@ PUBLISHED_TEST_COMPARISON_RUN_ARGS=(
 	--run crps_cns64_vit_azula_large_bed4611_c99f534 "CRPS (main)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25
 	--run crps_gpe64_vit_azula_large_bed4611_e0a6df5 "CRPS (main)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25
 	--run crps_gs64_vit_azula_large_bed4611_828a161 "CRPS (main)" "$HUE_CRPS" eval=eval_best_multiwinkler_from0p25
-	--run crps_ad64_vit_azula_large_90d59a9_20cc80f "CRPS (training data)" "$HUE_CRPS" eval="$PUBLISHED_TEST_EVAL" dataset=AD
-	--run training_data_cns_crps_vit_azula_large "CRPS (training data)" "$HUE_CRPS" eval="$PUBLISHED_TEST_EVAL" dataset=CNS
-	--run crps_gpe64_vit_azula_large_90d59a9_11091e1 "CRPS (training data)" "$HUE_CRPS" eval="$PUBLISHED_TEST_EVAL" dataset=GPE
-	--run crps_gs64_vit_azula_large_90d59a9_329f457 "CRPS (training data)" "$HUE_CRPS" eval="$PUBLISHED_TEST_EVAL" dataset=GS
+	--run crps_ad64_vit_azula_large_90d59a9_20cc80f "CRPS (new training data)" "$HUE_CRPS" eval="$PUBLISHED_TEST_EVAL" dataset=AD
+	--run training_data_cns_crps_vit_azula_large "CRPS (new training data)" "$HUE_CRPS" eval="$PUBLISHED_TEST_EVAL" dataset=CNS
+	--run crps_gpe64_vit_azula_large_90d59a9_11091e1 "CRPS (new training data)" "$HUE_CRPS" eval="$PUBLISHED_TEST_EVAL" dataset=GPE
+	--run crps_gs64_vit_azula_large_90d59a9_329f457 "CRPS (new training data)" "$HUE_CRPS" eval="$PUBLISHED_TEST_EVAL" dataset=GS
 	--run diff_ad64_flow_matching_vit_09490da_dae1382 "FM (main)" "$HUE_FM_LATENT"
 	--run diff_cns64_flow_matching_vit_09490da_636fcc3 "FM (main)" "$HUE_FM_LATENT"
 	--run diff_gpe64_flow_matching_vit_09490da_47bf39a "FM (main)" "$HUE_FM_LATENT"
 	--run diff_gs64_flow_matching_vit_09490da_7e9e331 "FM (main)" "$HUE_FM_LATENT"
-	--run diff_ad64_flow_matching_vit_90d59a9_6443f4c "FM (training data)" "$HUE_FM_LATENT" eval="$PUBLISHED_TEST_EVAL" dataset=AD
-	--run training_data_cns_fm_vit_large_published_ae "FM (training data)" "$HUE_FM_LATENT" eval="$PUBLISHED_TEST_EVAL" dataset=CNS
-	--run diff_gpe64_flow_matching_vit_90d59a9_880dee2 "FM (training data)" "$HUE_FM_LATENT" eval="$PUBLISHED_TEST_EVAL" dataset=GPE
-	--run diff_gs64_flow_matching_vit_90d59a9_fb95d30 "FM (training data)" "$HUE_FM_LATENT" eval="$PUBLISHED_TEST_EVAL" dataset=GS
+	--run diff_ad64_flow_matching_vit_90d59a9_6443f4c "FM (new training data)" "$HUE_FM_LATENT" eval="$PUBLISHED_TEST_EVAL" dataset=AD
+	--run training_data_cns_fm_vit_large_published_ae "FM (new training data)" "$HUE_FM_LATENT" eval="$PUBLISHED_TEST_EVAL" dataset=CNS
+	--run diff_gpe64_flow_matching_vit_90d59a9_880dee2 "FM (new training data)" "$HUE_FM_LATENT" eval="$PUBLISHED_TEST_EVAL" dataset=GPE
+	--run diff_gs64_flow_matching_vit_90d59a9_fb95d30 "FM (new training data)" "$HUE_FM_LATENT" eval="$PUBLISHED_TEST_EVAL" dataset=GS
 )
 if all_evaluations_available "${PUBLISHED_TEST_COMPARISON_EVALUATIONS[@]}"; then
 	autocast-plots --results-dir "$RESULTS_DIR" \
