@@ -954,7 +954,7 @@ def test_coverage_calibration_panel_can_use_shared_xlabel_and_taller_height(
     plt.close(fig)
 
 
-def test_lead_time_coverage_delta_is_proportional(tmp_path: Path):
+def test_lead_time_coverage_delta_is_observed_minus_nominal(tmp_path: Path):
     eval_dir = tmp_path / "run1" / "eval"
     eval_dir.mkdir(parents=True)
     pd.DataFrame(
@@ -986,10 +986,10 @@ def test_lead_time_coverage_delta_is_proportional(tmp_path: Path):
     assert isinstance(fig, Figure)
     ax = fig.axes[0]
     assert ax.get_ylabel() == ""
-    assert r"$\Delta$ empirical coverage (proportional)" in [
+    assert r"Empirical coverage minus nominal" in [
         text.get_text() for text in fig.texts
     ]
-    assert np.asarray(ax.lines[0].get_ydata(), dtype=float).tolist() == [-0.5, 0.5]
+    assert np.asarray(ax.lines[0].get_ydata(), dtype=float).tolist() == [-0.25, 0.25]
     plt.close(fig)
 
 
@@ -1024,9 +1024,7 @@ def test_short_axis_labels_use_compact_shared_coverage_delta(tmp_path: Path):
     )
 
     assert isinstance(fig, Figure)
-    assert r"Rel. $\Delta$ empirical coverage" in [
-        text.get_text() for text in fig.texts
-    ]
+    assert r"$\Delta$ empirical coverage" in [text.get_text() for text in fig.texts]
     plt.close(fig)
 
 
@@ -1138,4 +1136,86 @@ def test_trajectory_bands_can_be_hidden_without_changing_means(
         np.asarray(fig.axes[0].lines[1].get_ydata()), [0.25, 0.65]
     )
     assert len(fig.axes[0].collections) == int(show_error_bands)
+    plt.close(fig)
+
+
+@pytest.mark.parametrize("nominal", [0.1, 0.5, 0.9])
+def test_coverage_difference_preserves_standard_error(tmp_path: Path, nominal: float):
+    stats = tmp_path / "statistics"
+    stats.mkdir()
+    metric = f"coverage_{nominal}"
+    pd.DataFrame(
+        {
+            "dataset": ["advection_diffusion"] * 4,
+            "trajectory_id": ["a", "b", "a", "b"],
+            "lead_time": [0, 0, 1, 1],
+            metric: [0.2, 0.4, 0.6, 0.8],
+        }
+    ).to_csv(stats / "rollout_metrics_per_timestep_per_trajectory.csv", index=False)
+    df = pd.DataFrame(
+        {
+            "dataset_label": ["AD"],
+            "plot_group": ["model"],
+            "run_path": ["run1"],
+            "eval_subdir": ["eval"],
+            "trajectory_statistics_dir": [str(stats)],
+        }
+    )
+    fig = pdc.plot_lead_time_panel(
+        df,
+        [metric],
+        tmp_path,
+        tmp_path,
+        "difference.png",
+        {"model": {"color": "black", "label": "model"}},
+        coverage_delta=True,
+        save=False,
+    )
+    assert isinstance(fig, Figure)
+    ax = fig.axes[0]
+    np.testing.assert_allclose(
+        np.asarray(ax.lines[0].get_ydata(), dtype=float), np.array([0.3, 0.7]) - nominal
+    )
+    vertices = np.asarray(ax.collections[0].get_paths()[0].vertices, dtype=float)
+    for time, mean in enumerate([0.3, 0.7]):
+        bounds = vertices[vertices[:, 0] == time, 1]
+        np.testing.assert_allclose(
+            [bounds.min(), bounds.max()], np.array([mean - 0.1, mean + 0.1]) - nominal
+        )
+    plt.close(fig)
+
+
+def test_shared_coverage_difference_axes_include_every_nominal_level(tmp_path: Path):
+    folder = tmp_path / "run1" / "eval"
+    folder.mkdir(parents=True)
+    pd.DataFrame(
+        [[0.1, 0.2], [0.11, 0.12]],
+        index=pd.Index(["coverage_0.9", "coverage_0.1"]),
+        columns=pd.Index([0, 1]),
+    ).to_csv(folder / "rollout_metrics_per_timestep_channel_all.csv")
+    df = pd.DataFrame(
+        {
+            "dataset_label": ["AD"],
+            "plot_group": ["model"],
+            "run_path": ["run1"],
+            "eval_subdir": ["eval"],
+        }
+    )
+    fig, axes = plt.subplots(2, 1, sharey=True, squeeze=False)
+    pdc.plot_lead_time_panel(
+        df,
+        ["coverage_0.9", "coverage_0.1"],
+        tmp_path,
+        tmp_path,
+        "difference.png",
+        {"model": {"color": "black", "label": "model"}},
+        coverage_delta=True,
+        axes=axes,
+        fig=fig,
+        sharey=True,
+        save=False,
+    )
+    for ax in fig.axes:
+        assert ax.get_ylim()[0] < -0.8
+        assert ax.get_ylim()[1] > 0.02
     plt.close(fig)

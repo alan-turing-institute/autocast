@@ -416,9 +416,9 @@ def _paper_empirical_coverage_label() -> str:
     return r"Empirical Coverage ($1-\hat{\alpha}$)"
 
 
-def _paper_relative_coverage_label() -> str:
-    """Return the full relative coverage label for paper figures."""
-    return r"Relative $\Delta$ Empirical Coverage"
+def _paper_coverage_error_label() -> str:
+    """Return the signed, unnormalised coverage-error label for paper figures."""
+    return r"$\Delta$ Empirical Coverage"
 
 
 # ---------------------------------------------------------------------------
@@ -3039,7 +3039,9 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
     """Plot per-metric, per-dataset lead-time curves as a panel figure.
 
     ``error_ylim`` (low, high) overrides auto y-limits for non-coverage rows;
-    coverage rows remain fixed at [0, 1]. Either bound may be ``None``.
+    raw coverage rows remain fixed at [0, 1]. Either bound may be ``None``.
+    ``coverage_delta`` plots observed minus nominal coverage on a linear
+    axis centred on zero. Subtracting a constant leaves band widths unchanged.
     When ``axes`` is provided, draw into that pre-made grid with shape
     (len(metrics_to_plot), n_datasets).
 
@@ -3144,9 +3146,9 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
 
     nrows, ncols = len(metrics_to_plot), len(datasets)
     shared_ylabel = (
-        r"Rel. $\Delta$ empirical coverage"
+        r"$\Delta$ empirical coverage"
         if coverage_delta and short_axis_labels
-        else r"$\Delta$ empirical coverage (proportional)"
+        else r"Empirical coverage minus nominal"
         if coverage_delta
         else None
     )
@@ -3218,7 +3220,7 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
                 uncertainty = uncertainty.where(uncertainty.notna(), fallback)
 
                 if is_cov_delta and cov_target is not None:
-                    m = (mean / cov_target) - 1.0
+                    m = mean - cov_target
                     vals.extend(m.dropna().tolist())
                 else:
                     m = (
@@ -3237,8 +3239,8 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
                 )
                 if st.get("show_error_bands", True) and uncertainty.notna().any():
                     if is_cov_delta and cov_target is not None:
-                        y1 = ((mean - uncertainty) / cov_target) - 1.0
-                        y2 = ((mean + uncertainty) / cov_target) - 1.0
+                        y1 = mean - uncertainty - cov_target
+                        y2 = mean + uncertainty - cov_target
                         vals.extend(y1.dropna().tolist())
                         vals.extend(y2.dropna().tolist())
                     elif is_cov:
@@ -3355,6 +3357,12 @@ def plot_lead_time_panel(  # noqa: PLR0912, PLR0915
                 ]
             if not finite_limits:
                 continue
+            # Respect all linked axes, including grids sharing y across rows.
+            # Otherwise the last nominal level can clip errors in earlier rows.
+            linked = set(row_axes[0].get_shared_y_axes().get_siblings(row_axes[0]))
+            for other_r, other_axes in enumerate(axes_arr):
+                if other_r != r and any(ax in linked for ax in other_axes):
+                    finite_limits = [*finite_limits, *shared_row_limits[other_r]]
             ymin = min(lo for lo, _ in finite_limits)
             ymax = max(hi for _, hi in finite_limits)
             if any(ax.get_yscale() == "log" for ax in row_axes):
@@ -4034,7 +4042,7 @@ def _paper_datasets(
 
 
 def _paper_coverage_metrics(metrics: list[str]) -> list[str]:
-    """Keep only nominal coverage metrics used by proportional-delta panels."""
+    """Keep only nominal coverage metrics used by coverage-error panels."""
     return [m for m in metrics if m.startswith("coverage_")]
 
 
@@ -4164,8 +4172,8 @@ def _plot_paper_combined_lead_time_panel(
         )
         _replace_figure_text(
             fig,
-            r"Rel. $\Delta$ empirical coverage",
-            _paper_relative_coverage_label(),
+            r"$\Delta$ empirical coverage",
+            _paper_coverage_error_label(),
             x=delta_ylabel_x,
             y=0.62,
         )
@@ -4398,8 +4406,8 @@ def plot_paper_uq_reliability_figure(
             _set_coverage_limits_with_overflow(right_axes, coverage_delta_ylim)
         _replace_figure_text(
             right,
-            r"Rel. $\Delta$ empirical coverage",
-            _paper_relative_coverage_label(),
+            r"$\Delta$ empirical coverage",
+            _paper_coverage_error_label(),
             x=-0.094,
         )
         for ax in right_axes[:, 0]:
@@ -4890,12 +4898,12 @@ def plot_one_ds_ablation_figure_b(
             sharey=True,
             **_paper_style_kwargs(shared_axis_labels=False),
         )
-        _remove_figure_text(bottom, {r"Rel. $\Delta$ empirical coverage"})
+        _remove_figure_text(bottom, {r"$\Delta$ empirical coverage"})
         for i, metric in enumerate(delta_metrics):
             ax = delta_axes_visual[0][i]
             ax.set_title(_coverage_level_label(metric))
             ax.set_xlabel("Lead time")
-            ax.set_ylabel(_paper_relative_coverage_label() if i == 0 else "")
+            ax.set_ylabel(_paper_coverage_error_label() if i == 0 else "")
 
         error_axes = np.asarray(
             [
@@ -5204,8 +5212,8 @@ def main():  # noqa: PLR0912, PLR0915
         action="store_true",
         help=(
             "Also render an additional lead-time coverage panel where each "
-            "coverage_<p> curve is transformed to coverage / p - 1, i.e. "
-            "proportional deviation from the nominal coverage level. Output: "
+            "coverage_<p> curve is transformed to coverage - p, i.e. "
+            "observed minus nominal coverage, without normalisation. Output: "
             "lead_time_panel_coverage_delta.png"
         ),
     )

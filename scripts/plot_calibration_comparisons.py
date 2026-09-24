@@ -39,14 +39,28 @@ METHODS = ("raw", "EMOS", "conformal")
 DATASETS = ["AD", "CNS", "GS", "GPE"]
 COVERAGE_METRICS = ["coverage_0.9", "coverage_0.5", "coverage_0.1"]
 WINDOWS = ("0-4", "6-12", "13-30", "31-99")
-# Recovered by rendering the original Figure 4's eight historical evaluations.
-# Keep its exact limits rather than expanding them for the calibrated curves.
-REFERENCE_COVERAGE_YLIM = (-0.914115395769477, 0.914115395769477)
 REFERENCE_RESULTS = Path("outputs/2026-05-15_collated")
 REFERENCE_FIGURE = REFERENCE_RESULTS / (
     "2026-05-19_final_plots/main_comparison_m8_complete_no_fm_amb_best_winkler/"
     "paper_uq_reliability_by_lead_time.pdf"
 )
+
+
+def reference_coverage_limits() -> tuple[float, float]:
+    """Match Figure 4's shared limits in observed-minus-nominal units."""
+    max_error = 0.0
+    for model, runs in RUNS.items():
+        eval_subdir = "eval_best_multiwinkler_from0p25" if model == "CRPS" else "eval"
+        for run in runs.values():
+            path = REFERENCE_RESULTS / run / eval_subdir
+            lead = pd.read_csv(
+                path / "rollout_metrics_per_timestep_channel_all.csv", index_col=0
+            )
+            for metric in COVERAGE_METRICS:
+                delta = lead.loc[metric] - float(metric.split("_")[1])
+                max_error = max(max_error, float(delta.abs().max()))
+    limit = max(0.02, max_error + max(1e-6, 0.1 * max_error))
+    return -limit, limit
 
 
 def fingerprint(path: Path, root: Path) -> dict[str, str]:
@@ -232,6 +246,7 @@ def main() -> None:
         raise FileExistsError(f"Choose a new output directory: {args.output_dir}")
     methods = ("raw", "conformal") if args.cp_only else METHODS
     frame, provenance = collect_inputs(args.results_dir, args.split, methods)
+    coverage_ylim = reference_coverage_limits()
     args.output_dir.mkdir(parents=True)
     plots.FIGURE_FORMATS[:] = ["pdf", "png"]
     comparisons = (
@@ -256,7 +271,7 @@ def main() -> None:
             dataset_order=DATASETS,
             hue_order=order,
             legend_ncol=4 if args.cp_only else 3,
-            coverage_delta_ylim=REFERENCE_COVERAGE_YLIM,
+            coverage_delta_ylim=coverage_ylim,
         )
     repo = Path(__file__).resolve().parents[1]
     reference_inputs = []
@@ -275,8 +290,12 @@ def main() -> None:
     provenance["rhs_axis_reference"] = {
         "figure": fingerprint(repo / REFERENCE_FIGURE, repo),
         "inputs": reference_inputs,
-        "ylim": REFERENCE_COVERAGE_YLIM,
-        "visible_yticks": [-0.5, 0.0, 0.5],
+        "ylim": coverage_ylim,
+        "coverage_error": "observed - nominal (unnormalised)",
+        "limits": (
+            "Symmetric limits from the original eight baseline evaluations, "
+            "with 10% padding."
+        ),
         "xlim": [-4.95, 103.95],
         "overflow": (
             "Boundary triangles mark the largest excursion in each contiguous "
@@ -284,7 +303,7 @@ def main() -> None:
         ),
     }
     provenance["off_scale_values"] = []
-    lo, hi = REFERENCE_COVERAGE_YLIM
+    lo, hi = coverage_ylim
     for row in frame.to_dict(orient="records"):
         path = (
             args.results_dir
@@ -294,7 +313,7 @@ def main() -> None:
         )
         lead = pd.read_csv(path, index_col=0)
         for metric in COVERAGE_METRICS:
-            delta = lead.loc[metric] / float(metric.split("_")[1]) - 1
+            delta = lead.loc[metric] - float(metric.split("_")[1])
             provenance["off_scale_values"].append(
                 {
                     "model": row["model"],

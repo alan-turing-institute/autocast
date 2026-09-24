@@ -7,7 +7,7 @@ calibration/test pairings separately:
 for split in calib-new__test-paper calib-paper-valid__test-paper calib-new__test-new; do
   uv run --frozen --no-sync python scripts/plot_calibration_comparisons.py \
     --split "$split" \
-    --output-dir "outputs/2026-07-24_collated/2026-09-22_calibration_splits_committed/$split"
+    --output-dir "outputs/2026-07-24_collated/2026-09-23_coverage_difference/calibration_with_emos/$split"
 done
 ```
 
@@ -34,7 +34,7 @@ figure, without EMOS:
 ```sh
 uv run --frozen --no-sync python scripts/plot_calibration_comparisons.py \
   --cp-only --split calib-new__test-paper \
-  --output-dir outputs/2026-07-24_collated/2026-09-23_calibration_cp_committed/calib-new__test-paper
+  --output-dir outputs/2026-07-24_collated/2026-09-23_coverage_difference/calibration/calib-new__test-paper
 ```
 
 This writes one PDF/PNG pair in `combined_cp_calibration/`, plus the usual
@@ -52,16 +52,18 @@ The existing three-comparison recipe is unchanged.
 ## Axes and appearance
 
 The layout reuses the paper's Figure 4 renderer: coverage for windows
-`[0:4)`, `[6:12)`, `[13:30)`, `[31:99)` and relative coverage error over lead
-time at nominal levels 0.9, 0.5 and 0.1. Main CRPS is blue and main latent FM is
+`[0:4)`, `[6:12)`, `[13:30)`, `[31:99)` and signed coverage error
+(observed minus nominal) over lead time at nominal levels 0.9, 0.5 and 0.1. Main CRPS is blue and main latent FM is
 orange. In the comparisons including EMOS, EMOS is green and conformal
 prediction is purple; the CP-only variant uses the darker model colours above.
 
-Every right-hand panel uses the original Figure 4 limits,
-`[-0.914115395769477, 0.914115395769477]`, with visible ticks at -0.5, 0 and 0.5.
-These exact bounds were recovered by rendering the eight original evaluations
-from `outputs/2026-05-15_collated/`; the reference PDF and input CSV hashes are
-recorded in each new export. Lead-time axes also retain their original range.
+Every right-hand panel uses the same symmetric limits as the updated Figure 4,
+computed from observed-minus-nominal errors across its eight historical
+baseline evaluations, with 10% padding. The nominal level is not used as a
+divisor. This retains the source forecasts while expressing both figures in
+the new units. The reference PDF and input CSV hashes are recorded in each
+new export; the historical PDF itself uses the old relative units.
+Lead-time axes retain their original range.
 Boundary triangles mark the largest excursion within each contiguous segment
 outside the displayed range. Curve values are unchanged, and the provenance
 records the numbers and extrema of off-scale observations for every curve.
