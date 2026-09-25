@@ -32,6 +32,16 @@ comparison numbers do not silently drift if the global eval default changes.
 | `submit_eval_fm_ambient_0p25.sh` | same 2026-04-20 FM cached-latent runs at 25% progress | explicit `ambient` | 4 |
 | `submit_eval_fm_ambient_0p50.sh` | same 2026-04-20 FM cached-latent runs at 50% progress | explicit `ambient` | 4 |
 | `submit_eval_fm_ambient_0p75.sh` | same 2026-04-20 FM cached-latent runs at 75% progress | explicit `ambient` | 4 |
+| `submit_seed43_models_on_published_test_20260823.sh` | seed-43 CRPS/FM models on the original published test sets | explicit `ambient` / `encode_once` | 8 / 4 |
+
+The seed-43 cross-test submitter writes each eval to a new
+`eval_published_test_<git7>_<uuid7>/` subdirectory of its seed-43 model run.
+The dated `outputs/2026-08-23/campaign_*_<git7>_<uuid7>/` directory contains
+only Slurm logs. The submitter retains the aggregate, rollout, trajectory,
+coverage, benchmark, video, and snapshot outputs and records `spread`,
+`skill`, and `ssr` independently. It refuses to reuse the log campaign or any
+individual eval directory and verifies that the existing seed-43-test evals
+remain at distinct paths.
 
 ## Batch-size rationale
 

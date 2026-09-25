@@ -1,0 +1,198 @@
+# Run specifications only; this manifest does not submit jobs.
+status: production_budgets_measured
+remote_checkout: /home/u6eo/ltcx7228.u6eo/autocast-02
+source_commit: c53d2b2c4314769e78b0cf7a4a01bb50cbeecde9
+budget_hours: 24
+timing_margin: 0.02
+training_seed: 42
+unet_budget_note: Production horizons use the completed 2026-09-18 five-epoch timings
+  and the original 24-hour budget with 2% margin.
+run_group: diffusion_unet_extensions
+runs:
+- run_id: latent_diffusion_ad
+  kind: processor
+  dataset: advection_diffusion
+  epoch_budget: 2601
+  timing_basis: measured_existing_diffusion_timing
+  timing_checkpoint: outputs/2026-04-27/timing_planned_03/latent_diffusion_ad/timing.ckpt
+  overrides:
+  - local_experiment=processor/advection_diffusion/diffusion_vit_large
+  - trainer=original_diffusion_ablation
+  - seed=42
+  - logging.wandb.enabled=true
+  - output.skip_test=true
+  - trainer.max_time=00:23:59:00
+  - hydra.launcher.timeout_min=1439
+  - datamodule=cached_latents
+  - datamodule.data_path=/lus/lfs1aip2/projects/u6eo/autocast/outputs/2026-04-17/ae_ad64_3a7999b_1a1e300/cached_latents
+  - logging.wandb.name=latent_diffusion_ad
+  - optimizer.cosine_epochs=2601
+  - +trainer.max_epochs=2601
+  production_budget_ready: true
+- run_id: unet_m8_crps_ad
+  kind: epd
+  dataset: advection_diffusion
+  epoch_budget: 644
+  timing_basis: measured_dataset_specific_unet_timing
+  overrides:
+  - local_experiment=ablations/arch_unet_fno_vit/advection_diffusion/crps_unet_azula_80m
+  - trainer=original_unet_ablation
+  - seed=42
+  - logging.wandb.enabled=true
+  - output.skip_test=true
+  - trainer.max_time=00:23:59:00
+  - hydra.launcher.timeout_min=1439
+  - datamodule=advection_diffusion
+  - logging.wandb.name=unet_m8_crps_ad
+  - optimizer.cosine_epochs=644
+  - +trainer.max_epochs=644
+  production_budget_ready: true
+  timing_checkpoint: outputs/2026-09-18/timing_diffusion_unet_extensions/unet_m8_crps_ad/timing.ckpt
+- run_id: latent_diffusion_gs
+  kind: processor
+  dataset: gray_scott
+  epoch_budget: 2249
+  timing_basis: measured_existing_diffusion_timing
+  timing_checkpoint: outputs/2026-04-27/timing_planned_03/latent_diffusion_gs/timing.ckpt
+  overrides:
+  - local_experiment=processor/gray_scott/diffusion_vit_large
+  - trainer=original_diffusion_ablation
+  - seed=42
+  - logging.wandb.enabled=true
+  - output.skip_test=true
+  - trainer.max_time=00:23:59:00
+  - hydra.launcher.timeout_min=1439
+  - datamodule=cached_latents
+  - datamodule.data_path=/lus/lfs1aip2/projects/u6eo/autocast/outputs/2026-04-17/ae_gs64_3a7999b_ed36b8e/cached_latents
+  - logging.wandb.name=latent_diffusion_gs
+  - optimizer.cosine_epochs=2249
+  - +trainer.max_epochs=2249
+  production_budget_ready: true
+- run_id: unet_m8_crps_gs
+  kind: epd
+  dataset: gray_scott
+  epoch_budget: 541
+  timing_basis: measured_dataset_specific_unet_timing
+  overrides:
+  - local_experiment=ablations/arch_unet_fno_vit/gray_scott/crps_unet_azula_80m
+  - trainer=original_unet_ablation
+  - seed=42
+  - logging.wandb.enabled=true
+  - output.skip_test=true
+  - trainer.max_time=00:23:59:00
+  - hydra.launcher.timeout_min=1439
+  - datamodule=gray_scott
+  - logging.wandb.name=unet_m8_crps_gs
+  - optimizer.cosine_epochs=541
+  - +trainer.max_epochs=541
+  production_budget_ready: true
+  timing_checkpoint: outputs/2026-09-18/timing_diffusion_unet_extensions/unet_m8_crps_gs/timing.ckpt
+- run_id: latent_diffusion_gpe
+  kind: processor
+  dataset: gpe_laser_only_wake
+  epoch_budget: 2674
+  timing_basis: measured_existing_diffusion_timing
+  timing_checkpoint: outputs/2026-04-27/timing_planned_03/latent_diffusion_gpe/timing.ckpt
+  overrides:
+  - local_experiment=processor/gpe_laser_wake_only/diffusion_vit_large
+  - trainer=original_diffusion_ablation
+  - seed=42
+  - logging.wandb.enabled=true
+  - output.skip_test=true
+  - trainer.max_time=00:23:59:00
+  - hydra.launcher.timeout_min=1439
+  - datamodule=cached_latents
+  - datamodule.data_path=/lus/lfs1aip2/projects/u6eo/autocast/outputs/2026-04-17/ae_gpe64_3a7999b_31e1c9f/cached_latents
+  - logging.wandb.name=latent_diffusion_gpe
+  - optimizer.cosine_epochs=2674
+  - +trainer.max_epochs=2674
+  production_budget_ready: true
+- run_id: unet_m8_crps_gpe
+  kind: epd
+  dataset: gpe_laser_only_wake
+  epoch_budget: 632
+  timing_basis: measured_dataset_specific_unet_timing
+  overrides:
+  - local_experiment=ablations/arch_unet_fno_vit/gpe_laser_wake_only/crps_unet_azula_80m
+  - trainer=original_unet_ablation
+  - seed=42
+  - logging.wandb.enabled=true
+  - output.skip_test=true
+  - trainer.max_time=00:23:59:00
+  - hydra.launcher.timeout_min=1439
+  - datamodule=gpe_laser_only_wake
+  - logging.wandb.name=unet_m8_crps_gpe
+  - optimizer.cosine_epochs=632
+  - +trainer.max_epochs=632
+  production_budget_ready: true
+  timing_checkpoint: outputs/2026-09-18/timing_diffusion_unet_extensions/unet_m8_crps_gpe/timing.ckpt
+timing_runs:
+- run_id: unet_m8_crps_ad
+  kind: epd
+  dataset: advection_diffusion
+  num_epochs: 5
+  budget_hours: 24
+  margin: 0.02
+  overrides:
+  - local_experiment=ablations/arch_unet_fno_vit/advection_diffusion/crps_unet_azula_80m
+  - trainer=original_unet_ablation
+  - seed=42
+  - output.skip_test=true
+  - datamodule=advection_diffusion
+  - logging.wandb.name=unet_m8_crps_ad
+  - hydra.launcher.timeout_min=240
+  timing_workflow_overrides:
+  - ++trainer.max_epochs=5
+  - ++trainer.max_time=null
+  - logging.wandb.enabled=false
+  - output.skip_test=true
+  - output.save_config=false
+  - output.checkpoint_path=timing.ckpt
+  note: Historical five-epoch timing specification; completed measurements are referenced
+    by the matching production run.
+- run_id: unet_m8_crps_gs
+  kind: epd
+  dataset: gray_scott
+  num_epochs: 5
+  budget_hours: 24
+  margin: 0.02
+  overrides:
+  - local_experiment=ablations/arch_unet_fno_vit/gray_scott/crps_unet_azula_80m
+  - trainer=original_unet_ablation
+  - seed=42
+  - output.skip_test=true
+  - datamodule=gray_scott
+  - logging.wandb.name=unet_m8_crps_gs
+  - hydra.launcher.timeout_min=240
+  timing_workflow_overrides:
+  - ++trainer.max_epochs=5
+  - ++trainer.max_time=null
+  - logging.wandb.enabled=false
+  - output.skip_test=true
+  - output.save_config=false
+  - output.checkpoint_path=timing.ckpt
+  note: Historical five-epoch timing specification; completed measurements are referenced
+    by the matching production run.
+- run_id: unet_m8_crps_gpe
+  kind: epd
+  dataset: gpe_laser_only_wake
+  num_epochs: 5
+  budget_hours: 24
+  margin: 0.02
+  overrides:
+  - local_experiment=ablations/arch_unet_fno_vit/gpe_laser_wake_only/crps_unet_azula_80m
+  - trainer=original_unet_ablation
+  - seed=42
+  - output.skip_test=true
+  - datamodule=gpe_laser_only_wake
+  - logging.wandb.name=unet_m8_crps_gpe
+  - hydra.launcher.timeout_min=240
+  timing_workflow_overrides:
+  - ++trainer.max_epochs=5
+  - ++trainer.max_time=null
+  - logging.wandb.enabled=false
+  - output.skip_test=true
+  - output.save_config=false
+  - output.checkpoint_path=timing.ckpt
+  note: Historical five-epoch timing specification; completed measurements are referenced
+    by the matching production run.

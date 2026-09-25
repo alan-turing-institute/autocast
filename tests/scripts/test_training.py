@@ -577,14 +577,14 @@ def test_validation_metric_plot_callback_wandb_log_omits_step(tmp_path: Path):
         )
 
 
-def test_default_trainer_config_tracks_coverage_winkler_and_plots(config_dir: str):
+def test_default_trainer_config_omits_validation_plots(config_dir: str):
     trainer_cfg = OmegaConf.load(Path(config_dir) / "trainer" / "default.yaml")
     callbacks = list(trainer_cfg.callbacks)
     monitors = [callback.get("monitor") for callback in callbacks]
 
     assert "val_multicoverage" in monitors
     assert "val_multiwinkler" in monitors
-    assert any(
+    assert not any(
         callback.get("_target_")
         == "autocast.callbacks.metrics.ValidationMetricPlotCallback"
         for callback in callbacks
@@ -629,6 +629,40 @@ def test_epd_config_forward_smoke(config_dir: str, toy_batch: Batch, dummy_datam
 
     output = model(toy_batch)
     assert output.shape == toy_batch.output_fields.shape
+
+
+def test_epd_rejects_ambient_only_loss_for_latent_training(
+    config_dir: str,
+    toy_batch: Batch,
+    dummy_datamodule,
+):
+    model_cfg = _load_config(
+        config_dir,
+        "model/encoder_processor_decoder",
+        overrides=[
+            "encoder@model.encoder=dc",
+            "decoder@model.decoder=dc",
+            "processor@model.processor=flow_matching",
+        ],
+    )
+    cfg = _wrap_model_config(model_cfg)
+    with open_dict(cfg):
+        cfg.optimizer = get_optimizer_config()
+        cfg.datamodule = {
+            "stride": 1,
+            "n_steps_input": toy_batch.input_fields.shape[1],
+            "n_steps_output": toy_batch.output_fields.shape[1],
+        }
+        cfg.model.processor.backbone.include_global_cond = False
+        cfg.model.processor.backbone.global_cond_channels = 0
+        cfg.model.loss_func = {
+            "_target_": "autocast.losses.MCDropoutMSEL2Loss",
+            "l2_coefficient": 1e-5,
+        }
+
+    stats = _stats_from_batch(toy_batch)
+    with pytest.raises(ValueError, match="requires ambient predictions"):
+        setup_epd_model(cfg, stats, dummy_datamodule)
 
 
 def test_epd_metric_overrides_are_forwarded(

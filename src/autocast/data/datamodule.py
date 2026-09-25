@@ -1,4 +1,5 @@
 import os
+from functools import partial
 from pathlib import Path
 
 import torch
@@ -180,6 +181,7 @@ class SpatioTemporalDataModule(LightningDataModule):
         normalization_path: None | str = None,
         normalization_stats: dict | DictConfig | None = None,
         num_workers: int | None = None,
+        start_frame: int = 0,
     ):
         super().__init__()
         self.verbose = verbose
@@ -203,6 +205,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             n_steps_input=n_steps_input,
             n_steps_output=n_steps_output,
             stride=stride,
+            start_frame=start_frame,
             channel_idxs=channel_idxs,
             autoencoder_mode=self.autoencoder_mode,
             full_trajectory_mode=full_trajectory_mode,
@@ -234,6 +237,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             n_steps_input=n_steps_input,
             n_steps_output=n_steps_output,
             stride=stride,
+            start_frame=start_frame,
             channel_idxs=channel_idxs,
             autoencoder_mode=self.autoencoder_mode,
             full_trajectory_mode=full_trajectory_mode,
@@ -250,6 +254,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             n_steps_input=n_steps_input,
             n_steps_output=n_steps_output,
             stride=stride,
+            start_frame=start_frame,
             channel_idxs=channel_idxs,
             autoencoder_mode=self.autoencoder_mode,
             full_trajectory_mode=full_trajectory_mode,
@@ -270,6 +275,7 @@ class SpatioTemporalDataModule(LightningDataModule):
                 n_steps_input=n_steps_input,
                 n_steps_output=n_steps_output,
                 stride=stride,
+                start_frame=start_frame,
                 channel_idxs=channel_idxs,
                 full_trajectory_mode=True,
                 dtype=dtype,
@@ -285,6 +291,7 @@ class SpatioTemporalDataModule(LightningDataModule):
                 n_steps_input=n_steps_input,
                 n_steps_output=n_steps_output,
                 stride=stride,
+                start_frame=start_frame,
                 channel_idxs=channel_idxs,
                 full_trajectory_mode=True,
                 dtype=dtype,
@@ -294,6 +301,28 @@ class SpatioTemporalDataModule(LightningDataModule):
                 normalization_path=normalization_path,
                 normalization_stats=normalization_stats,
             )
+            # `rollout_val_dataset` above rolls out the training split. Rollouts of
+            # the validation split are built on first request, with the same
+            # settings as the test rollouts (see `rollout_valid_dataloader`), so
+            # the many runs that never ask for them do not load them.
+            self._make_rollout_valid_dataset = partial(
+                dataset_cls,
+                data_path=str(valid_path) if valid_path is not None else None,
+                data=data["valid"] if data is not None else None,
+                n_steps_input=n_steps_input,
+                n_steps_output=n_steps_output,
+                stride=stride,
+                start_frame=start_frame,
+                channel_idxs=channel_idxs,
+                full_trajectory_mode=True,
+                dtype=dtype,
+                verbose=self.verbose,
+                use_normalization=use_normalization,
+                normalization_type=normalization_type,
+                normalization_path=normalization_path,
+                normalization_stats=normalization_stats,
+            )
+            self._rollout_valid_dataset: SpatioTemporalDataset | None = None
 
     def train_dataloader(self) -> DataLoader:
         """DataLoader for training."""
@@ -318,7 +347,10 @@ class SpatioTemporalDataModule(LightningDataModule):
         )
 
     def rollout_val_dataloader(self, batch_size: int | None = None) -> DataLoader:
-        """DataLoader for full trajectory rollouts on validation data."""
+        """DataLoader for full trajectory rollouts on the training split.
+
+        For rollouts of the validation split use `rollout_valid_dataloader`.
+        """
         if self.autoencoder_mode:
             msg = (
                 "Rollout dataloaders not available when autoencoder_mode="
@@ -327,6 +359,28 @@ class SpatioTemporalDataModule(LightningDataModule):
             raise RuntimeError(msg)
         return DataLoader(
             self.rollout_val_dataset,
+            batch_size=batch_size or self.batch_size,
+            shuffle=False,
+            num_workers=self.num_workers,
+            collate_fn=collate_batches,
+            pin_memory=True,
+        )
+
+    def rollout_valid_dataloader(self, batch_size: int | None = None) -> DataLoader:
+        """DataLoader for full trajectory rollouts on the validation split.
+
+        The dataset is built on the first call and reused afterwards.
+        """
+        if self.autoencoder_mode:
+            msg = (
+                "Rollout dataloaders not available when autoencoder_mode="
+                f"{self.autoencoder_mode}"
+            )
+            raise RuntimeError(msg)
+        if self._rollout_valid_dataset is None:
+            self._rollout_valid_dataset = self._make_rollout_valid_dataset()
+        return DataLoader(
+            self._rollout_valid_dataset,
             batch_size=batch_size or self.batch_size,
             shuffle=False,
             num_workers=self.num_workers,

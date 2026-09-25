@@ -1,4 +1,5 @@
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 
 import torch
 from einops import rearrange
@@ -37,6 +38,7 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
         checkpointing: bool = False,
         n_steps_input: int = 1,
         n_steps_output: int = 1,
+        dropout: float = 0.0,
     ):
         super().__init__()
         self.n_spatial_dims = len(spatial_resolution)
@@ -50,6 +52,7 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
         self.include_global_cond = include_global_cond
         self.n_steps_input = n_steps_input
         self.n_steps_output = n_steps_output
+        self.dropout = dropout
 
         if self.n_noise_channels is None and n_noise_input_channels is not None:
             msg = (
@@ -91,6 +94,7 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
             temporal_method=temporal_method,
             temporal_attention_heads=num_heads,
             temporal_attention_hidden_dim=hidden_dim // num_heads,
+            dropout=dropout,
             checkpointing=checkpointing,
             use_precomputed_modulation=True,
         )
@@ -198,3 +202,96 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
     def loss(self, batch: EncodedBatch) -> Tensor:
         pred = self.map(batch.encoded_inputs, batch.global_cond)
         return self.loss_func(pred, batch.encoded_output_fields)
+
+
+class MCDropoutAzulaViTProcessor(AzulaViTProcessor):
+    """Azula ViT using Monte Carlo dropout as its stochasticity source.
+
+    Unlike :class:`AzulaViTProcessor`, this processor does not sample a random
+    modulation vector. It passes a deterministic zero vector through the
+    modulation path, preserving optional physical ``global_cond`` conditioning,
+    and keeps the ViT's dropout active during inference.
+
+    Dropout masks are sampled independently on every forward pass, including
+    successive autoregressive rollout steps.
+    """
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        spatial_resolution: Sequence[int],
+        hidden_dim: int = 768,
+        num_heads: int = 12,
+        n_layers: int = 6,
+        patch_size: int = 4,
+        temporal_method: str = "attention",
+        loss_func: nn.Module | None = None,
+        n_noise_channels: int | None = None,
+        n_noise_input_channels: int | None = None,
+        global_cond_channels: int | None = None,
+        include_global_cond: bool = False,
+        dropout: float = 0.1,
+        checkpointing: bool = False,
+        n_steps_input: int = 1,
+        n_steps_output: int = 1,
+    ):
+        if n_noise_channels is not None or n_noise_input_channels is not None:
+            msg = (
+                "MCDropoutAzulaViTProcessor uses dropout instead of stochastic "
+                "modulation; n_noise_channels and n_noise_input_channels must be None."
+            )
+            raise ValueError(msg)
+        if not 0.0 <= dropout < 1.0:
+            msg = f"dropout must be in [0, 1), got {dropout}."
+            raise ValueError(msg)
+
+        super().__init__(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            spatial_resolution=spatial_resolution,
+            hidden_dim=hidden_dim,
+            num_heads=num_heads,
+            n_layers=n_layers,
+            patch_size=patch_size,
+            temporal_method=temporal_method,
+            loss_func=loss_func,
+            n_noise_channels=None,
+            n_noise_input_channels=None,
+            global_cond_channels=global_cond_channels,
+            include_global_cond=include_global_cond,
+            dropout=dropout,
+            checkpointing=checkpointing,
+            n_steps_input=n_steps_input,
+            n_steps_output=n_steps_output,
+        )
+
+    @contextmanager
+    def _inference_dropout(self) -> Iterator[None]:
+        """Temporarily enable only the Azula ViT dropout mechanisms."""
+        stochastic_modules = [
+            module for module in self.model.modules() if isinstance(module, nn.Dropout)
+        ]
+        training_states = [module.training for module in stochastic_modules]
+        try:
+            for module in stochastic_modules:
+                module.train()
+            yield
+        finally:
+            for module, training in zip(
+                stochastic_modules, training_states, strict=True
+            ):
+                module.train(training)
+
+    def forward(
+        self,
+        x: Tensor,
+        x_noise: Tensor | None = None,
+        global_cond: Tensor | None = None,
+    ) -> Tensor:
+        """Run with dropout active in both training and inference modes."""
+        if self.training:
+            return super().forward(x, x_noise=x_noise, global_cond=global_cond)
+
+        with self._inference_dropout():
+            return super().forward(x, x_noise=x_noise, global_cond=global_cond)

@@ -95,6 +95,14 @@ class ProgressModelCheckpoint(ModelCheckpoint):
         super().on_fit_start(trainer, pl_module)
         self._maybe_resolve_fractional_train_steps(trainer)
 
+    def on_load_checkpoint(
+        self, trainer: L.Trainer, pl_module: L.LightningModule, checkpoint: dict
+    ) -> None:
+        del pl_module, checkpoint
+        # Lightning matches callback state after this hook. Older checkpoints
+        # already include the resolved step interval in their state key.
+        self._maybe_resolve_fractional_train_steps(trainer)
+
     @property
     def state_key(self) -> str:
         return self._generate_state_key(

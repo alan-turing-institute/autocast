@@ -1,0 +1,13 @@
+# @package _global_
+defaults:
+  - /local_experiment/cache_latents/conditioned_navier_stokes/cache_latents
+  - _self_
+
+# Encode the new data with the fixed, published main-comparison AE.
+experiment_name: rerun_main_comparison_cns_seed43_cache_latents_published_ae
+
+datamodule:
+  data_path: /projects/u6eo/autocast/datasets/conditioned_navier_stokes_2d_seed43_20260801
+  # Keep the coordinate system in which the published AE was trained.
+  normalization_path: /projects/u6eo/autocast/datasets/conditioned_navier_stokes_2d_5e1f575/stats.yml
+  use_normalization: true

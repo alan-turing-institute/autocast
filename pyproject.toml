@@ -7,6 +7,7 @@ authors = [{ name = "Anonymous Authors" }]
 requires-python = ">=3.11,<3.13"
 dependencies = [
     "autoemulate>=1.2.0",
+    "autouq",
     "azula>=0.7.0",
     "beartype>=0.22.8",
     "einops>=0.8.1",
@@ -113,6 +114,7 @@ explicit = true
 
 [tool.uv.sources]
 autoemulate = { git = "https://github.com/alan-turing-institute/autoemulate.git" }
+autouq = { git = "https://github.com/alan-turing-institute/autouq.git", rev = "3d3626f149bdfc76161bbb0075f419a9b83fd7a2" }
 torch = [
     { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
 ]

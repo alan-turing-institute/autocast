@@ -125,9 +125,20 @@ def _link_checkpoint_target_to_latest(trainer: L.Trainer, target_path: Path) -> 
 
 
 def _save_or_link_checkpoint_target(trainer: L.Trainer, target_path: Path) -> None:
-    if not _link_checkpoint_target_to_latest(trainer, target_path):
+    # Linking the alias to the latest callback checkpoint is a rank-0-only
+    # filesystem op, but the fallback ``trainer.save_checkpoint`` is collective
+    # (it ends in a strategy barrier) and must run on every rank. Decide on
+    # rank 0 and broadcast, so all ranks agree whether to take the collective
+    # save path (otherwise non-zero ranks miss the barrier; see #381).
+    linked = trainer.is_global_zero and _link_checkpoint_target_to_latest(
+        trainer, target_path
+    )
+    if trainer.strategy.broadcast(linked):
+        return
+    if trainer.is_global_zero:
         target_path.parent.mkdir(parents=True, exist_ok=True)
-        trainer.save_checkpoint(target_path)
+    trainer.save_checkpoint(target_path)
+    if trainer.is_global_zero:
         log.info("Saved checkpoint to %s", target_path.resolve())
 
 
@@ -293,18 +304,25 @@ class TrainingTimerCallback(Callback):
         self._train_start: float | None = None
         self._epoch_start: float | None = None
         self._epoch_times_s: list[float] = []
+        self._elapsed_runtime_offset_s = 0.0
+        self._resume_pending = False
         self.training_runtime_total_s: float | None = None
 
     def _current_elapsed_runtime_s(self) -> float | None:
-        """Return elapsed runtime since train start (wall-clock seconds)."""
+        """Return cumulative training runtime, excluding gaps between jobs."""
         if self._train_start is None:
-            return None
-        return perf_counter() - self._train_start
+            return self._elapsed_runtime_offset_s if self._resume_pending else None
+        return self._elapsed_runtime_offset_s + perf_counter() - self._train_start
 
     def on_train_start(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
         del trainer, pl_module
+        if not self._resume_pending:
+            self._epoch_times_s = []
+            self._elapsed_runtime_offset_s = 0.0
         self._train_start = perf_counter()
-        self._epoch_times_s = []
+        self._epoch_start = None
+        self.training_runtime_total_s = None
+        self._resume_pending = False
 
     def on_train_epoch_start(
         self, trainer: L.Trainer, pl_module: L.LightningModule
@@ -323,7 +341,9 @@ class TrainingTimerCallback(Callback):
         if self._epoch_start is not None:
             self._epoch_times_s.append(now - self._epoch_start)
         if self._train_start is not None:
-            self.training_runtime_total_s = now - self._train_start
+            self.training_runtime_total_s = (
+                self._elapsed_runtime_offset_s + now - self._train_start
+            )
 
         # Emit human-readable timing info into stdout/stderr logs so timing
         # runs are inspectable without loading timing.ckpt.
@@ -364,9 +384,19 @@ class TrainingTimerCallback(Callback):
     ) -> None:
         self.training_runtime_total_s = state_dict.get("training_runtime_total_s")
         self._epoch_times_s = list(state_dict.get("epoch_times_s", []))
+        elapsed = self.training_runtime_total_s
+        if elapsed is None:
+            elapsed = state_dict.get("training_runtime_elapsed_s")
+        self._elapsed_runtime_offset_s = float(elapsed or 0.0)
+        # A legacy checkpoint may contain an unfinished epoch-timing interval.
+        # Its elapsed time is included in the offset; retain the recorded
+        # intervals without inventing a duration for that incomplete interval.
+        self._train_start = None
+        self._epoch_start = None
+        self._resume_pending = True
 
 
-def run_training(
+def run_training(  # noqa: PLR0915
     config: DictConfig,
     model: L.LightningModule,
     datamodule: L.LightningDataModule,
@@ -490,13 +520,24 @@ def run_training(
 
     # Save stable checkpoint target (prefer callback checkpoint) immediately
     # after fit so a checkpoint exists even if optional test later fails.
-    if trainer.is_global_zero:
-        _save_or_link_checkpoint_target(trainer, checkpoint_path)
+    #
+    # ``trainer.save_checkpoint`` is a collective operation: it ends in a
+    # ``strategy.barrier()``, so it must be invoked on *every* rank. Only the
+    # alias bookkeeping (symlink/unlink) is rank-0-only.
+    # Calling it under ``if trainer.is_global_zero`` left non-zero ranks out of
+    # that barrier and hung large DDP runs at the NCCL watchdog timeout (#381).
+    _save_or_link_checkpoint_target(trainer, checkpoint_path)
 
-        # If the stable target is a symlink, replace with a final concrete checkpoint.
-        if checkpoint_path.is_symlink():
+    # If the stable target is a symlink, replace it with a final concrete
+    # checkpoint. The symlink check + unlink are rank-0 filesystem ops; broadcast
+    # the decision so the collective save runs on all ranks together.
+    replace_symlink = trainer.strategy.broadcast(
+        trainer.is_global_zero and checkpoint_path.is_symlink()
+    )
+    if replace_symlink:
+        if trainer.is_global_zero:
             checkpoint_path.unlink()
-            trainer.save_checkpoint(checkpoint_path)
+        trainer.save_checkpoint(checkpoint_path)
 
     # Ensure non-zero ranks observe the finalized checkpoint before test.
     trainer.strategy.barrier("checkpoint-alias-finalize")
@@ -656,10 +697,13 @@ def train_autoencoder(
         output_cfg.get("checkpoint_path"),
         default_name="autoencoder.ckpt",
     )
+    # ``trainer.save_checkpoint`` is collective (it ends in a strategy barrier)
+    # and must run on every rank; the log line and reconstruction plots are
+    # rank-0-only. Guarding the save under ``is_global_zero`` left non-zero ranks
+    # out of that barrier and hung DDP runs at the NCCL watchdog timeout (#381).
+    trainer.save_checkpoint(checkpoint_path)
     if trainer.is_global_zero:
-        trainer.save_checkpoint(checkpoint_path)
         log.info("Saved checkpoint to %s", checkpoint_path.resolve())
-
         _save_reconstructions(model, datamodule, work_dir)
 
     trainer.strategy.barrier("autoencoder-post-training-finalize")

@@ -1,4 +1,6 @@
 # ruff: noqa: ARG002
+import copy
+
 from lightning.pytorch.callbacks import Callback
 from torch.optim.swa_utils import AveragedModel, get_ema_multi_avg_fn
 
@@ -33,7 +35,8 @@ class EMACallback(Callback):
         """
         if self.ema_model is not None:
             checkpoint[EMA_CHECKPOINT_KEY] = {
-                k: v.clone() for k, v in self.ema_model.module.state_dict().items()
+                k: copy.deepcopy(v)
+                for k, v in self.ema_model.module.state_dict().items()
             }
 
     def state_dict(self) -> dict:
