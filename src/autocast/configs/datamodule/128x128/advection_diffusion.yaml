@@ -1,0 +1,5 @@
+defaults:
+  - advection_diffusion
+  - _self_
+
+data_path: "${oc.env:AUTOCAST_DATASETS,./datasets}/128x128/advection_diffusion_7e52122"

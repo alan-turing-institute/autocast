@@ -19,8 +19,7 @@ class EnsembleLoss(nn.Module):
             preds: Predictions of shape (B, ..., M)
             targets: Targets of shape (B, ...)
 
-        Returns
-        -------
+        Returns:
             Scalar loss (or tensor if reduction is 'none')
         """
         # Ensure targets do not have the ensemble dimension

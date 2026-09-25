@@ -6,4 +6,5 @@ _target_: autocast.processors.flow_matching.FlowMatchingProcessor
 flow_ode_steps: 4
 n_steps_output: null
 n_channels_out: null
+integrator: euler
 

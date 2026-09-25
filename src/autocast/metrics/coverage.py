@@ -13,8 +13,7 @@ from autocast.types import Tensor, TensorBTSC, TensorBTSCM
 
 
 class Coverage(BTSCMMetric):
-    """
-    Coverage probability for a fixed coverage level.
+    """Coverage probability for a fixed coverage level.
 
     Calculates the proportion of true values that fall within the symmetric
     prediction interval defined by the coverage level.
@@ -36,17 +35,15 @@ class Coverage(BTSCMMetric):
         self.coverage_level = coverage_level
 
     def _score(self, y_pred: TensorBTSCM, y_true: TensorBTSC) -> TensorBTSC:
-        """
-        Compute per-gridpoint coverage indicator.
+        """Compute per-gridpoint coverage indicator.
 
         Args:
             y_pred: (B, T, S, C, M)
             y_true: (B, T, S, C)
 
-        Returns
-        -------
-            coverage: (B, T, S, C) — 1.0 where y_true falls inside the interval,
-                else 0.0
+        Returns:
+            coverage: (B, T, S, C) — 1.0 where y_true falls inside the
+                interval, else 0.0
         """
         # e.g. coverage_level=0.95 -> 0.025 and 0.975 quantiles
         q_low = 0.5 - self.coverage_level / 2
@@ -62,8 +59,7 @@ class Coverage(BTSCMMetric):
 
 
 class MultiCoverage(Metric):
-    """
-    Computes coverage for multiple coverage levels at once.
+    """Computes coverage for multiple coverage levels at once.
 
     This is a wrapper around multiple Coverage metrics. It inherits from Metric
     to integrate with PyTorch Lightning and TorchMetrics.
@@ -120,25 +116,18 @@ class MultiCoverage(Metric):
         cmap_str: str = "viridis",
         save_csv: bool = True,
     ):
-        """
-        Plot reliability diagram showing expected vs observed coverage.
+        """Plot reliability diagram showing expected vs observed coverage.
 
-        Parameters
-        ----------
-        save_path: str, optional
-            Path to save the plot (PNG). If provided and save_csv=True,
-            a CSV file with the same name will also be saved.
-        title: str
-            Plot title.
-        cmap_str: str
-            Color map string from matplotlib.
-        save_csv: bool, default=True
-            If True and save_path is provided, save plot data as CSV
-            before creating the plot.
+        Args:
+            save_path: Path to save the plot (PNG). If provided and save_csv=True,
+                a CSV file with the same name will also be saved.
+            title: Plot title.
+            cmap_str: Color map string from matplotlib.
+            save_csv: If True and save_path is provided, save plot data as CSV
+                before creating the plot.
 
-        Returns
-        -------
-        matplotlib.figure.Figure
+        Returns:
+            matplotlib.figure.Figure
         """
         # Prepare data structure: levels -> [val_c1, val_c2, ...]
         levels = self.coverage_levels
@@ -221,19 +210,14 @@ class MultiCoverage(Metric):
         observed_means: list[float],
         observed_channels: np.ndarray,
     ) -> None:
-        """
-        Save coverage plot data to CSV file.
+        """Save coverage plot data to CSV file.
 
-        Parameters
-        ----------
-        save_path: Path or str
-            Path for the PNG file. CSV will use the same path with .csv extension.
-        levels: list of float
-            Coverage levels (expected coverage values).
-        observed_means: list of float
-            Mean observed coverage across all channels for each level.
-        observed_channels: np.ndarray, shape (L, C)
-            Observed coverage per level per channel.
+        Args:
+            save_path: Path for the PNG file. CSV will use the same path
+                with .csv extension.
+            levels: Coverage levels (expected coverage values).
+            observed_means: Mean observed coverage across all channels for each level.
+            observed_channels: Observed coverage per level per channel, shape (L, C).
         """
         # Generate CSV path from PNG path
         csv_path = Path(save_path).with_suffix(".csv")

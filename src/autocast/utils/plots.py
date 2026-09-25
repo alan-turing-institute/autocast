@@ -1,4 +1,4 @@
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from typing import Literal, TypeAlias, cast
 
@@ -60,6 +60,7 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     pred: TensorBTSC | None = None,
     pred_uq: TensorBTSC | None = None,
     coverage: TensorBTSC | None = None,
+    extra_preds: Sequence[tuple[TensorBTSC, str]] | None = None,
     batch_idx: int = 0,
     fps: int = 5,
     vmin: float | None = None,
@@ -67,52 +68,50 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     cmap: str = "viridis",
     save_path: str | None = None,
     title: str = "Ground Truth vs Prediction",
+    pred_label: str = "Prediction",
     pred_uq_label: str = "Prediction UQ",
     coverage_label: str = "Coverage",
     colorbar_mode: Literal["none", "row", "column", "all"] = "none",
     colorbar_mode_uq: Literal["none", "row"] = "none",
     channel_names: list[str] | None = None,
     preserve_aspect: bool = False,
+    transpose_spatial: bool = False,
 ):
     """Create a video comparing ground truth and predicted spatiotemporal time series.
 
-    Parameters
-    ----------
-    true: array_like (B, T, W, H, C)
-        Ground-truth tensor.
-    pred: array_like
-        Optional predicted tensor of shape (B, T, W, H, C).
-    batch_idx: int
-        Which batch index to visualize (default: 0).
-    fps: int, optional
-        Frames per second for the video (default: 5).
-    vmin: float, optional
-        Minimum value for color scale (default: auto from data).
-    vmax: float, optional
-        Maximum value for color scale (default: auto from data).
-    cmap: str, optional
-        Colormap to use (default: "viridis").
-    save_path: str, optional
-        Optional path to save the video (e.g., "output.mp4").
-    title: str, optional
-        Title for the video (default: "Ground Truth vs Prediction").
-    colorbar_mode: {"none", "row", "column", "all"}
-        Select how colorbars (and underlying color scales) are shared for the
-        first two rows (true vs prediction):
-        - "none": every subplot gets its own colorbar (default).
-        - "row": a single colorbar per row (first two rows only).
-        - "column": a single colorbar per column (true/pred share per channel).
-        - "all": one colorbar shared across the first two rows.
-    channel_names: list[str] | None
-        Optional list of channel names for titles.
-    preserve_aspect: bool
-        If True, resize each subplot panel to match the spatial WxH ratio of the
-        data so the image fills the panel without distortion. If False (default),
-        panels are square and the image is stretched to fill via ``aspect='auto'``.
+    Args:
+        true: Ground-truth tensor of shape (B, T, W, H, C).
+        pred: Optional predicted tensor of shape (B, T, W, H, C).
+        pred_uq: Optional predicted uncertainty tensor of shape (B, T, W, H, C).
+        coverage: Optional coverage tensor of shape (B, T, W, H, C).
+        extra_preds: Optional extra prediction rows as ``(tensor, label)`` pairs.
+        batch_idx: Which batch index to visualize (default: 0).
+        fps: Frames per second for the video (default: 5).
+        vmin: Minimum value for color scale (default: auto from data).
+        vmax: Maximum value for color scale (default: auto from data).
+        cmap: Colormap to use (default: "viridis").
+        save_path: Optional path to save the video (e.g., "output.mp4").
+        title: Title for the video (default: "Ground Truth vs Prediction").
+        pred_label: Label for the main prediction row.
+        pred_uq_label: Label for the prediction uncertainty row.
+        coverage_label: Label for the coverage row.
+        colorbar_mode: Select how colorbars (and underlying color scales) are
+            shared for the first two rows (true vs prediction):
+            - "none": every subplot gets its own colorbar (default).
+            - "row": a single colorbar per row (first two rows only).
+            - "column": a single colorbar per column (true/pred share per channel).
+            - "all": one colorbar shared across the first two rows.
+        colorbar_mode_uq: Colorbar sharing mode for the UQ/coverage rows.
+        channel_names: Optional list of channel names for titles.
+        preserve_aspect: If True, resize each subplot panel to match the spatial
+            WxH ratio of the data so the image fills the panel without distortion.
+            If False (default), panels are square and the image is stretched to
+            fill via ``aspect='auto'``.
+        transpose_spatial: If True, swap the two spatial axes before plotting.
+            This only changes visualization orientation; tensor values and
+            metrics are unchanged.
 
-    Returns
-    -------
-    animation.FuncAnimation
+    Returns:
         Animation object that can be displayed in notebooks.
     """
     colorbar_mode_str = colorbar_mode.lower()
@@ -127,6 +126,9 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     pred_batch = pred[batch_idx] if pred is not None else None
     pred_uq_batch = pred_uq[batch_idx] if pred_uq is not None else None
     coverage_batch = coverage[batch_idx] if coverage is not None else None
+    extra_pred_batches = [
+        (extra_pred[batch_idx], label) for extra_pred, label in (extra_preds or [])
+    ]
 
     # Extract dims and move to CPU
     T, *spatial, C = true_batch.shape
@@ -137,6 +139,10 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
         pred_uq_batch = pred_uq_batch.detach().cpu().numpy()
     if coverage_batch is not None:
         coverage_batch = coverage_batch.detach().cpu().numpy()
+    extra_pred_batches_np = [
+        (extra_pred_batch.detach().cpu().numpy(), label)
+        for extra_pred_batch, label in extra_pred_batches
+    ]
 
     primary_rows = [true_batch]
 
@@ -145,6 +151,7 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     if pred_batch is not None:
         diff_batch = true_batch - pred_batch
         primary_rows.append(pred_batch)
+    primary_rows.extend(extra_pred for extra_pred, _ in extra_pred_batches_np)
 
     # Set-up rows
     n_primary_rows = len(primary_rows)
@@ -191,7 +198,10 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
         (true_batch, "Ground Truth", cmap),
     ]
     if pred is not None:
-        rows_to_plot.append((pred_batch, "Prediction", cmap))
+        rows_to_plot.append((pred_batch, pred_label, cmap))
+    for extra_pred_batch, label in extra_pred_batches_np:
+        rows_to_plot.append((extra_pred_batch, label, cmap))
+    if pred is not None:
         rows_to_plot.append((diff_batch, "Difference (True - Pred)", "RdBu"))
     if pred_uq is not None:
         rows_to_plot.append((pred_uq_batch, pred_uq_label, "inferno"))
@@ -203,6 +213,8 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
     _base = 4.0
     if preserve_aspect and len(spatial) == 2:
         W, H = spatial
+        if transpose_spatial:
+            W, H = H, W
         # _to_imshow_frame does NOT transpose by default, so imshow receives (W, H):
         # rows = W (figure height), cols = H (figure width).
         # Scale the smaller base dimension and cap to avoid excessively large figures.
@@ -245,19 +257,26 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
             if data is None:
                 msg = "Data for plotting cannot be None."
                 raise ValueError(msg)
-            frame0 = _to_imshow_frame(data[0, :, :, ch])
+            frame0 = _to_imshow_frame(data[0, :, :, ch], transpose=transpose_spatial)
 
-            # Row indices: 0=true, 1=pred, 2=diff, 3=pred_uq (if present),
-            # 4=coverage (if both present) or 3=coverage (if only coverage)
-            pred_uq_row_idx = 3 if pred_uq_batch is not None else None
+            diff_row_idx = n_primary_rows if diff_batch is not None else None
+            pred_uq_row_idx = (
+                n_primary_rows + int(diff_batch is not None)
+                if pred_uq_batch is not None
+                else None
+            )
             coverage_row_idx = (
-                (4 if pred_uq_batch is not None else 3)
+                n_primary_rows
+                + int(diff_batch is not None)
+                + int(pred_uq_batch is not None)
                 if coverage_batch is not None
                 else None
             )
 
             if row_idx < n_primary_rows:
                 norm = norms[row_idx][ch]
+            elif row_idx == diff_row_idx:
+                norm = diff_norm
             elif row_idx == pred_uq_row_idx and pred_uq_batch is not None:
                 uq_min = (
                     float(pred_uq_batch[..., ch].min())
@@ -273,7 +292,7 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
             elif row_idx == coverage_row_idx:
                 norm = Normalize(vmin=0, vmax=1)
             else:
-                norm = diff_norm
+                norm = None
             im = ax.imshow(frame0, cmap=row_cmap, aspect="auto", norm=norm)
 
             if row_idx == 0:
@@ -307,18 +326,57 @@ def plot_spatiotemporal_video(  # noqa: PLR0915, PLR0912
 
     def update(frame):
         for ch in range(C):
-            images[0][ch].set_array(_to_imshow_frame(true_batch[frame, :, :, ch]))
+            images[0][ch].set_array(
+                _to_imshow_frame(
+                    true_batch[frame, :, :, ch],
+                    transpose=transpose_spatial,
+                )
+            )
             if pred_batch is not None:
-                images[1][ch].set_array(_to_imshow_frame(pred_batch[frame, :, :, ch]))
+                images[1][ch].set_array(
+                    _to_imshow_frame(
+                        pred_batch[frame, :, :, ch], transpose=transpose_spatial
+                    )
+                )
+            for extra_idx, (extra_pred_batch, _) in enumerate(extra_pred_batches_np):
+                images[1 + int(pred_batch is not None) + extra_idx][ch].set_array(
+                    _to_imshow_frame(
+                        extra_pred_batch[frame, :, :, ch],
+                        transpose=transpose_spatial,
+                    )
+                )
             if diff_batch is not None:
-                images[2][ch].set_array(_to_imshow_frame(diff_batch[frame, :, :, ch]))
+                diff_row = 1 + int(pred_batch is not None) + len(extra_pred_batches_np)
+                images[diff_row][ch].set_array(
+                    _to_imshow_frame(
+                        diff_batch[frame, :, :, ch], transpose=transpose_spatial
+                    )
+                )
             if pred_uq_batch is not None:
-                images[3][ch].set_array(
-                    _to_imshow_frame(pred_uq_batch[frame, :, :, ch])
+                uq_row = (
+                    1
+                    + int(pred_batch is not None)
+                    + len(extra_pred_batches_np)
+                    + int(diff_batch is not None)
+                )
+                images[uq_row][ch].set_array(
+                    _to_imshow_frame(
+                        pred_uq_batch[frame, :, :, ch], transpose=transpose_spatial
+                    )
                 )
             if coverage_batch is not None:
-                coverage_row = 4 if pred_uq_batch is not None else 3
-                images[coverage_row][ch].set_array(coverage_batch[frame, :, :, ch])
+                coverage_row = (
+                    1
+                    + int(pred_batch is not None)
+                    + len(extra_pred_batches_np)
+                    + int(diff_batch is not None)
+                    + int(pred_uq_batch is not None)
+                )
+                images[coverage_row][ch].set_array(
+                    _to_imshow_frame(
+                        coverage_batch[frame, :, :, ch], transpose=transpose_spatial
+                    )
+                )
         suptitle_text.set_text(
             f"{title} - Batch {batch_idx} - Time Step: {frame}/{T - 1}"
         )
@@ -348,6 +406,7 @@ def plot_spatiotemporal_snapshots(  # noqa: PLR0912, PLR0915
     pred_uq: TensorBTSC | None = None,
     *,
     timesteps: Iterable[int],
+    extra_preds: Sequence[tuple[TensorBTSC, str]] | None = None,
     channel: int = 0,
     batch_idx: int = 0,
     vmin: float | None = None,
@@ -356,17 +415,26 @@ def plot_spatiotemporal_snapshots(  # noqa: PLR0912, PLR0915
     save_path: str | None = None,
     extra_formats: Iterable[str] | None = None,
     title: str = "Ground Truth vs Prediction",
+    pred_label: str = "Prediction",
     pred_uq_label: str = "Std Dev",
     channel_names: list[str] | None = None,
     preserve_aspect: bool = False,
+    transpose_spatial: bool = False,
     target_width_in: float = A4_LINEWIDTH_IN,
     diff_log: bool = False,
     uq_log: bool = False,
 ) -> Figure:
-    """Create a still panel at selected timesteps for one spatial channel."""
+    """Create a still panel at selected timesteps for one spatial channel.
+
+    ``extra_preds`` adds extra prediction rows as ``(tensor, label)`` pairs;
+    ``pred_label`` names the main prediction row.
+    """
     true_batch = true[batch_idx]
     pred_batch = pred[batch_idx] if pred is not None else None
     pred_uq_batch = pred_uq[batch_idx] if pred_uq is not None else None
+    extra_pred_batches = [
+        (extra_pred[batch_idx], label) for extra_pred, label in (extra_preds or [])
+    ]
 
     T, *spatial, C = true_batch.shape
     if len(spatial) != 2:
@@ -396,13 +464,21 @@ def plot_spatiotemporal_snapshots(  # noqa: PLR0912, PLR0915
     pred_uq_np = (
         pred_uq_batch.detach().cpu().numpy() if pred_uq_batch is not None else None
     )
+    extra_pred_np = [
+        (extra_pred_batch.detach().cpu().numpy(), label)
+        for extra_pred_batch, label in extra_pred_batches
+    ]
     true_channel = true_np[:, :, :, channel]
     pred_channel = pred_np[:, :, :, channel] if pred_np is not None else None
     pred_uq_channel = pred_uq_np[:, :, :, channel] if pred_uq_np is not None else None
+    extra_pred_channels = [
+        (extra_pred[:, :, :, channel], label) for extra_pred, label in extra_pred_np
+    ]
 
     primary_arrays = [true_channel]
     if pred_channel is not None:
         primary_arrays.append(pred_channel)
+    primary_arrays.extend(extra_pred for extra_pred, _ in extra_pred_channels)
 
     min_val = (
         vmin if vmin is not None else min(float(arr.min()) for arr in primary_arrays)
@@ -433,7 +509,10 @@ def plot_spatiotemporal_snapshots(  # noqa: PLR0912, PLR0915
         (true_channel, "Ground Truth", cmap, primary_norm),
     ]
     if pred_channel is not None:
-        rows_to_plot.append((pred_channel, "Prediction", cmap, primary_norm))
+        rows_to_plot.append((pred_channel, pred_label, cmap, primary_norm))
+    for extra_pred_channel, label in extra_pred_channels:
+        rows_to_plot.append((extra_pred_channel, label, cmap, primary_norm))
+    if pred_channel is not None:
         assert diff_channel is not None
         rows_to_plot.append((diff_channel, "Difference", "RdBu", diff_norm))
     if pred_uq_channel is not None:
@@ -454,8 +533,11 @@ def plot_spatiotemporal_snapshots(  # noqa: PLR0912, PLR0915
 
     nrows = len(rows_to_plot)
     ncols = len(selected_timesteps)
+    spatial_for_layout = (
+        tuple(reversed(spatial)) if transpose_spatial else tuple(spatial)
+    )
     panel_width, panel_height = _panel_size_for_width(
-        target_width_in, ncols, tuple(spatial), preserve_aspect
+        target_width_in, ncols, spatial_for_layout, preserve_aspect
     )
 
     with plt.rc_context(_SNAPSHOT_PAPER_RC):
@@ -477,6 +559,8 @@ def plot_spatiotemporal_snapshots(  # noqa: PLR0912, PLR0915
                     plot_data = np.clip(data[timestep], floor, None)
                 else:
                     plot_data = data[timestep]
+                if transpose_spatial:
+                    plot_data = np.asarray(rearrange(plot_data, "s1 s2 -> s2 s1"))
                 im = ax.imshow(plot_data, cmap=row_cmap, aspect="auto", norm=norm)
                 row_images.append(im)
                 ax.set_xticks([])
@@ -612,39 +696,26 @@ def compute_metrics_from_dataloader(
     tuple[TensorBTSCM, TensorBTSC] | None,
     list[dict[str, float | str]] | None,
 ]:
-    """
-    Compute metrics from a dataloader by running model forward passes.
+    """Compute metrics from a dataloader by running model forward passes.
 
-    Parameters
-    ----------
-    dataloader: Iterable
-        DataLoader that yields batches.
-    metric_fns: dict[str, Callable[[], Metric]]
-        Dictionary of functions that return fresh metric instances, keyed by metric
-        name.
-    predict_fn: Callable
-        Custom function (batch) -> (preds, trues) for cases like rollout or simply
-        the model forward. Should return a tuple of (preds, trues) tensors or a
-        single tensor of predictions (in which case trues will be taken from batch).
-    windows: list[tuple[int, int] | None], optional
-        List of (t_start, t_end) windows to evaluate. None means use all timesteps.
-        If multiple windows provided, evaluates each independently.
-    return_tensors: bool
-        If True, also return concatenated (pred, true) tensors.
-    return_per_batch: bool
-        If True, also return a list of dictionaries containing metrics for each batch.
-    batch_result_callback: callable, optional
-        Called once for each successful inference batch with the unsliced prediction
-        and target tensors. This allows streaming derived outputs without retaining
-        all predictions or launching another inference pass.
+    Args:
+        dataloader: DataLoader that yields batches.
+        metric_fns: Dictionary of functions that return fresh metric instances,
+            keyed by metric name.
+        predict_fn: Custom function (batch) -> (preds, trues) for cases like
+            rollout or simply the model forward. Should return a tuple of
+            (preds, trues) tensors or a
+            single tensor of predictions (in which case trues will be taken from batch).
+        windows: List of (t_start, t_end) windows to evaluate. None means use
+            all timesteps. If multiple windows provided, evaluates each independently.
+        return_tensors: If True, also return concatenated (pred, true) tensors.
+        return_per_batch: If True, also return per-batch metric dictionaries.
+        device: Device to move metrics to before updating.
+        batch_result_callback: Called once per successful inference batch with
+            unsliced predictions and targets, allowing streaming derived outputs
+            without retaining predictions or launching another inference pass.
 
-    Returns
-    -------
-    tuple[
-        dict[None | tuple[int, int], dict[str, Metric]],
-        tuple[TensorBTSCM, TensorBTSC] | None,
-        list[dict[str, float | str]] | None,
-    ]
+    Returns:
         The populated metrics, optionally the tensors, and optionally per-batch metrics.
     """
     metrics_per_window = {
@@ -743,8 +814,7 @@ def compute_metrics_per_timestep_from_dataloader(  # noqa: PLR0912, PLR0915
     max_timesteps: int | None = None,
     device: str | torch.device | None = None,
 ) -> dict[str, np.ndarray]:
-    """
-    Compute metrics at each rollout timestep, batch-averaged, with per-channel values.
+    """Compute per-channel, per-timestep metrics from a dataloader, batch-averaged.
 
     For each timestep t, metrics are computed on the slice (B, t:t+1, ...) and
     averaged over batches. Returns one (T, C) array per metric (T = timesteps,
@@ -752,25 +822,19 @@ def compute_metrics_per_timestep_from_dataloader(  # noqa: PLR0912, PLR0915
     (e.g. coverage_0.05, coverage_0.10, ...) so reliability curves can be built
     per timestep.
 
-    Parameters
-    ----------
-    dataloader: Iterable
-        DataLoader that yields batches (e.g. rollout test dataloader).
-    metric_fns: dict[str, Callable[[], Metric]]
-        Metric factory functions. Metrics should return (1, C) when updated with
-        (B, 1, S, C) and reduce_all=False (deterministic metrics) or be
-        MultiCoverage (expanded to one key per alpha).
-    predict_fn: Callable
-        (batch) -> (preds, trues) returning tensors of shape (B, T, S, C) or
-        (B, T, S, C, M). Returns None, None to skip a batch.
-    max_timesteps: int | None, optional
-        Cap the number of timesteps (uses min over batches otherwise).
+    Args:
+        dataloader: DataLoader that yields batches (e.g. rollout test dataloader).
+        metric_fns: Metric factory functions. Metrics should return (1, C) when
+            updated with (B, 1, S, C) and reduce_all=False (deterministic metrics)
+            or be MultiCoverage (expanded to one key per alpha).
+        predict_fn: (batch) -> (preds, trues) returning tensors of shape
+            (B, T, S, C) or (B, T, S, C, M). Returns None, None to skip a batch.
+        max_timesteps: Cap the number of timesteps (uses min over batches otherwise).
+        device: Device to move metrics to before updating.
 
-    Returns
-    -------
-    dict[str, np.ndarray]
+    Returns:
         Keys are metric names (and coverage_0.05, coverage_0.10, ... for
-        MultiCoverage). Values are arrays of shape (T, C), batch-averaged.
+            MultiCoverage). Values are arrays of shape (T, C), batch-averaged.
     """
     with torch.no_grad():
         T_min: int | None = None
@@ -866,33 +930,20 @@ def compute_coverage_scores_from_dataloader(
 ) -> tuple[
     dict[None | tuple[int, int], MultiCoverage], tuple[TensorBTSCM, TensorBTSC] | None
 ]:
-    """
-    Compute coverage scores from a dataloader by running model forward passes.
+    """Compute coverage scores from a dataloader by running model forward passes.
 
-    Parameters
-    ----------
-    dataloader: DataLoader
-        DataLoader that yields batches.
-    model: nn.Module, optional
-        Model with forward(batch) that returns predictions with ensemble dimension.
-        Either model or predict_fn must be provided.
-    predict_fn: Callable, optional
-        Custom function (batch) -> (preds, trues) for cases like rollout.
-        Either model or predict_fn must be provided.
-    coverage_levels: list[float], optional
-        Coverage levels to evaluate (default: 0.05 to 0.95).
-    windows: list[tuple[int, int] | None], optional
-        List of (t_start, t_end) windows to evaluate. None means use all timesteps.
-        If multiple windows provided, evaluates each independently.
-    return_tensors: bool
-        If True, also return concatenated (pred, true) tensors.
+    Args:
+        dataloader: DataLoader that yields batches.
+        model: Model with forward(batch) that returns predictions with ensemble
+            dimension. Either model or predict_fn must be provided.
+        predict_fn: Custom function (batch) -> (preds, trues) for cases like rollout.
+            Either model or predict_fn must be provided.
+        coverage_levels: Coverage levels to evaluate (default: 0.05 to 0.95).
+        windows: List of (t_start, t_end) windows to evaluate. None means use
+            all timesteps. If multiple windows provided, evaluates each independently.
+        return_tensors: If True, also return concatenated (pred, true) tensors.
 
-    Returns
-    -------
-    tuple[
-        dict[None | tuple[int, int], MultiCoverage],
-        tuple[TensorBTSCM, TensorBTSC] | None,
-    ]
+    Returns:
         The populated MultiCoverage metric and optionally the tensors.
     """
     coverage_levels_ = (
@@ -923,27 +974,19 @@ def plot_coverage(
     save_path: str | None = None,
     title: str = "Coverage plot",
 ):
-    """
-    Plot reliability diagram showing expected vs observed coverage.
+    """Plot reliability diagram showing expected vs observed coverage.
 
     This is a convenience wrapper around MultiCoverage.plot().
 
-    Parameters
-    ----------
-    pred: TensorBTSCM
-        Ensemble predictions (last dimension is ensemble members).
-    true: TensorBTSC
-        Ground truth tensor.
-    coverage_levels: list[float], optional
-        Coverage levels to evaluate (default: 0.05 to 0.95).
-    save_path: str, optional
-        Path to save the plot.
-    title: str
-        Plot title.
+    Args:
+        pred: Ensemble predictions (last dimension is ensemble members).
+        true: Ground truth tensor.
+        coverage_levels: Coverage levels to evaluate (default: 0.05 to 0.95).
+        save_path: Path to save the plot.
+        title: Plot title.
 
-    Returns
-    -------
-    matplotlib.figure.Figure
+    Returns:
+        matplotlib.figure.Figure
     """
     coverage_levels_ = (
         coverage_levels or np.linspace(0.05, 0.95, 10, endpoint=True).tolist()

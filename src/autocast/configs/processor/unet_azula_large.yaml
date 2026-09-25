@@ -19,6 +19,7 @@ gradient_checkpointing: false  # Enable gradient checkpointing to save memory
 
 # Noise injection
 n_noise_channels: 256
+include_global_cond: false
 
 # Loss function (defaults to MSELoss if not specified)
 loss_func: null

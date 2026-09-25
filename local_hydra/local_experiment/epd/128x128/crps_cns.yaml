@@ -1,0 +1,11 @@
+# @package _global_
+defaults:
+  - epd/conditioned_navier_stokes/crps_vit_azula_large
+  - override /datamodule: 128x128/conditioned_navier_stokes
+  - _self_
+
+experiment_name: epd_crps_vit_azula_large_conditioned_navier_stokes_128
+
+model:
+  processor:
+    patch_size: 8

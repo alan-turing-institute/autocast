@@ -1,0 +1,9 @@
+# 3 downsampling stages (8x spatial reduction) with 8 output channels.
+# For 64x64 input this gives 8x8x8; for 128x128 this gives 16x16x8.
+
+defaults:
+  - dc_large
+
+out_channels: 8
+hid_channels: [64, 128, 256, 512]
+hid_blocks: [3, 3, 3, 3]

@@ -13,4 +13,7 @@ stride: 1
 
 # DataLoader configuration
 batch_size: 16
-num_workers: 0  # Use 0 for h5py compatibility
+num_workers: 8
+pin_memory: true
+persistent_workers: true
+prefetch_factor: 2

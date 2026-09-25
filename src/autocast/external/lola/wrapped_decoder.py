@@ -19,8 +19,10 @@ class WrappedDecoder(Decoder):
     def __init__(self, device: str = "cpu", **kwargs):
         super().__init__()
         self.batch_size = kwargs.pop("batch_size", 16)
-        self.mean = kwargs.pop("mean")
-        self.std = kwargs.pop("std")
+        self.chunk_size = kwargs.pop("chunk_size", None)
+        self.latent_channels = kwargs["lat_channels"]
+        self.register_buffer("mean", torch.as_tensor(kwargs.pop("mean")))
+        self.register_buffer("std", torch.as_tensor(kwargs.pop("std")))
         runpath = kwargs.pop("runpath", None)
         self.wrapped_autoencoder = get_autoencoder(**kwargs)
         if runpath is not None:
@@ -37,7 +39,7 @@ class WrappedDecoder(Decoder):
     def decode(self, z: torch.Tensor) -> torch.Tensor:
         b, t, *_ = z.shape
         z = rearrange(z, "B T ... C -> (B T) C ...")
-        decoded = self.wrapped_decode_func(z)
+        decoded = self._chunked_apply(self.wrapped_decode_func, z)
         stacked = rearrange(decoded, "(B T) C ... -> B T ... C", B=b, T=t)
         stacked = self.postprocess(stacked)
         return stacked

@@ -20,6 +20,12 @@ from autocast.types.types import (
 BatchT = TypeVar("BatchT")
 
 
+def _pin_memory_if_available(tensor: Tensor) -> Tensor:
+    if not torch.cuda.is_available():
+        return tensor
+    return tensor.pin_memory()
+
+
 @dataclass
 class Sample:
     """A batch in input data space."""
@@ -103,6 +109,28 @@ class Batch:
             ),
         )
 
+    def pin_memory(self) -> "Batch":
+        """Pin CPU tensors for faster host-to-device transfer."""
+        return Batch(
+            input_fields=_pin_memory_if_available(self.input_fields),
+            output_fields=_pin_memory_if_available(self.output_fields),
+            constant_scalars=(
+                _pin_memory_if_available(self.constant_scalars)
+                if self.constant_scalars is not None
+                else None
+            ),
+            constant_fields=(
+                _pin_memory_if_available(self.constant_fields)
+                if self.constant_fields is not None
+                else None
+            ),
+            boundary_conditions=(
+                _pin_memory_if_available(self.boundary_conditions)
+                if self.boundary_conditions is not None
+                else None
+            ),
+        )
+
 
 @dataclass
 class EncodedBatch:
@@ -148,4 +176,19 @@ class EncodedBatch:
                 self.global_cond.to(device) if self.global_cond is not None else None
             ),
             encoded_info={k: v.to(device) for k, v in self.encoded_info.items()},
+        )
+
+    def pin_memory(self) -> "EncodedBatch":
+        """Pin CPU tensors for faster host-to-device transfer."""
+        return EncodedBatch(
+            encoded_inputs=_pin_memory_if_available(self.encoded_inputs),
+            encoded_output_fields=_pin_memory_if_available(self.encoded_output_fields),
+            global_cond=(
+                _pin_memory_if_available(self.global_cond)
+                if self.global_cond is not None
+                else None
+            ),
+            encoded_info={
+                k: _pin_memory_if_available(v) for k, v in self.encoded_info.items()
+            },
         )

@@ -1,0 +1,64 @@
+# @package _global_
+defaults:
+  - /distributed: ddp_4gpu_slurm
+  - override /datamodule: miniwell
+  - override /processor@model.processor: diffusion_vit
+  - override /backbone@model.processor.backbone: vit
+  - override /optimizer: adamw_half
+  - _self_
+
+experiment_name: the_well_rayleigh_benard_diffusion_vit_large_lola
+
+datamodule:
+  data_path: ${oc.env:AUTOCAST_DATASETS,./datasets}/rayleigh_benard/1e3z5x2c_rayleigh_benard_dcae_f32c64_large/cache/rayleigh_benard
+  n_steps_input: 1
+  n_steps_output: 4
+  stride: 1
+  batch_size: 256
+  num_workers: 8
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 2
+
+float32_matmul_precision: high
+
+logging:
+  wandb:
+    enabled: true
+
+output:
+  skip_test: true
+
+trainer:
+  max_time: "00:23:59:00"
+  gradient_clip_val: 1.0
+
+optimizer:
+  learning_rate: 1e-4
+  warmup: 0
+
+model:
+  processor:
+    denoiser_type: lola
+    sampler: euler
+    sampler_steps: 50
+    schedule:
+      _target_: autocast.processors.noise.LogLogitSchedule
+      sigma_min: 1e-3
+      sigma_max: 1e3
+      scale: 1.0
+      shift: 0.0
+    backbone:
+      mod_features: 256
+      hid_channels: 1024
+      hid_blocks: 16
+      ffn_factor: 4
+      attention_heads: 8
+      patch_size: 1
+      dropout: 0.05
+      qk_norm: true
+      rope: true
+      rpb: false
+      window_size: null
+      checkpointing: false
+  val_metrics: []

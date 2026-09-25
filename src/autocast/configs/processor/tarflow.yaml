@@ -1,0 +1,23 @@
+_target_: autocast.processors.tarflow.TarFlowProcessor
+# Output field dims are auto-filled from the datamodule by scripts/setup.py.
+n_steps_output: null
+n_channels_out: null
+# Conditioning field dims + spatial shape are set per toy in the experiment
+# config. Square 2D fields only (gs [8, 8]); the conditioner patchifies x_t.
+n_steps_input: 1
+n_channels_in: 1
+spatial_shape: [1, 1]
+global_cond_features: 0
+# Capacity (set per toy). The latent prior variance and the transform scales
+# are learned; only patch/channels/depth are configured.
+# patch_size=2 on the 8x8 gs grid (16 patches) keeps sampling fast (~55s full
+# one-step ensemble with batched members); patch_size=1 (64 patches) is ~15x
+# slower because the reverse pass is sequential over patches -- score TarFlow
+# with batched member draws (one reverse for all members), not a looped draw.
+patch_size: 2
+channels: 64
+num_blocks: 8
+layers_per_block: 2
+head_dim: 64
+expansion: 4
+var_lr: 0.1

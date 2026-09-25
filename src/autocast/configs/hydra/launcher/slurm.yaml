@@ -3,4 +3,4 @@ timeout_min: 240
 gpus_per_node: 1
 tasks_per_node: 1
 additional_parameters:
-  mem: 216G
+  mem: 115G

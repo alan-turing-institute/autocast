@@ -7,6 +7,8 @@ from conftest import CondCaptureProcessor, get_optimizer_config
 from torch import nn
 
 from autocast.decoders.channels_last import ChannelsLast
+from autocast.decoders.identity import IdentityDecoder
+from autocast.encoders.identity import IdentityEncoder
 from autocast.encoders.permute_concat import PermuteConcat
 from autocast.models.encoder_decoder import EncoderDecoder
 from autocast.models.encoder_processor_decoder import EncoderProcessorDecoder
@@ -126,6 +128,90 @@ def test_global_cond_passes_from_encoder_to_processor():
 
     assert processor.last_global_cond is not None
     assert torch.allclose(processor.last_global_cond, constant_scalars)
+
+
+def test_boundary_conditions_pass_from_encoder_to_processor_with_input_noise():
+    batch_size = 2
+    t_steps = 1
+    w = 8
+    h = 8
+    channels = 2
+
+    input_fields = torch.randn(batch_size, t_steps, w, h, channels)
+    output_fields = torch.randn(batch_size, t_steps, w, h, channels)
+    constant_scalars = torch.tensor([[5.0], [7.0]])
+    boundary_conditions = torch.tensor([[1.0, 0.0], [0.0, 1.0]])
+
+    batch = Batch(
+        input_fields=input_fields,
+        output_fields=output_fields,
+        constant_scalars=constant_scalars,
+        constant_fields=None,
+        boundary_conditions=boundary_conditions,
+    )
+
+    class ZeroNoise(nn.Module):
+        def forward(self, x: Tensor) -> Tensor:
+            return x
+
+    encoder = PermuteConcat(
+        in_channels=channels, n_steps_input=t_steps, with_constants=False
+    )
+    decoder = ChannelsLast(output_channels=channels, time_steps=t_steps)
+    encoder_decoder = EncoderDecoder(encoder=encoder, decoder=decoder)
+
+    processor = CondCaptureProcessor()
+    model = EncoderProcessorDecoder(
+        encoder_decoder=encoder_decoder,
+        processor=processor,
+        input_noise_injector=ZeroNoise(),  # type: ignore  # noqa: PGH003
+        optimizer_config=get_optimizer_config(),
+    )
+
+    _ = model(batch)
+
+    expected = torch.cat([constant_scalars, boundary_conditions], dim=1)
+    assert processor.last_global_cond is not None
+    assert torch.allclose(processor.last_global_cond, expected)
+
+
+def test_boundary_conditions_pass_with_identity_encoder():
+    batch_size = 2
+    t_steps = 1
+    w = 8
+    h = 8
+    channels = 2
+
+    input_fields = torch.randn(batch_size, t_steps, w, h, channels)
+    output_fields = torch.randn(batch_size, t_steps, w, h, channels)
+    constant_scalars = torch.tensor([[5.0], [7.0]])
+    boundary_conditions = torch.tensor([[1.0, 0.0], [0.0, 1.0]])
+
+    batch = Batch(
+        input_fields=input_fields,
+        output_fields=output_fields,
+        constant_scalars=constant_scalars,
+        constant_fields=None,
+        boundary_conditions=boundary_conditions,
+    )
+
+    encoder_decoder = EncoderDecoder(
+        encoder=IdentityEncoder(in_channels=channels),
+        decoder=IdentityDecoder(in_channels=channels),
+    )
+
+    processor = CondCaptureProcessor()
+    model = EncoderProcessorDecoder(
+        encoder_decoder=encoder_decoder,
+        processor=processor,
+        optimizer_config=get_optimizer_config(),
+    )
+
+    _ = model(batch)
+
+    expected = torch.cat([constant_scalars, boundary_conditions], dim=1)
+    assert processor.last_global_cond is not None
+    assert torch.allclose(processor.last_global_cond, expected)
 
 
 @pytest.mark.parametrize(

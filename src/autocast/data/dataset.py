@@ -49,47 +49,35 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         normalization_stats: dict | DictConfig | None = None,
         start_frame: int = 0,
     ):
-        """
-        Initialize the dataset.
+        """Initialize the dataset.
 
-        Parameters
-        ----------
-        data_path: str
-            Path to the HDF5 file containing the dataset.
-        data: dict | None
-            Preloaded data. Defaults to None.
-        n_steps_input: int
-            Number of input time steps.
-        n_steps_output: int
-            Number of output time steps.
-        stride: int
-            Stride for sampling the data.
-        data: dict | None
-            Preloaded data. Defaults to None.
-        channel_idxs: tuple[int, ...] | None
-            Indices of channels to select from the raw data (applied to both
-            input and output). If None, all channels are used. Defaults to None.
-        full_trajectory_mode: bool
-            If True, use full trajectories without creating subtrajectories.
-        autoencoder_mode: bool
-            If True, return (input, input) pairs for autoencoder training.
-            Defaults to False.
-        dtype: torch.dtype
-            Data type for tensors. Defaults to torch.float32.
-        verbose: bool
-            If True, print dataset information.
-        use_normalization: bool
-            Whether to apply Z-score normalization. Defaults to False.
-        normalization_type: type[ZScoreNormalization] | None
-            Normalization object (computed from training data). Defaults to
-            ZScoreNormalization.
-        normalization_path: str | None
-            Path to normalization statistics file (yaml). Defaults to None.
-        normalization_stats: dict | None
-            Preloaded normalization statistics. Defaults to None.
-        start_frame: int
-            Number of leading frames to remove from every trajectory before
-            constructing input/output windows. Defaults to 0.
+        Args:
+            data_path: Path to the HDF5 file containing the dataset.
+            data: Preloaded data. Defaults to None.
+            n_steps_input: Number of input time steps.
+            n_steps_output: Number of output time steps.
+            stride: Stride for sampling the data.
+            data: Preloaded data. Defaults to None.
+            channel_idxs: Indices of channels to select from the raw data
+                (applied to both input and output). If None, all channels are
+                used. Defaults to None.
+            full_trajectory_mode: If True, use full trajectories without
+                creating subtrajectories.
+            autoencoder_mode: If True, return (input, input) pairs for
+                autoencoder training. Defaults to False.
+            dtype: Data type for tensors. Defaults to torch.float32.
+            verbose: If True, print dataset information.
+            use_normalization: Whether to apply Z-score normalization.
+                Defaults to False.
+            normalization_type: Normalization object (computed from training
+                data). Defaults to ZScoreNormalization.
+            normalization_path: Path to normalization statistics file (yaml).
+                Defaults to None.
+            normalization_stats: Preloaded normalization statistics. Defaults to None.
+            start_frame: Number of leading frames to remove from every trajectory
+                before constructing input/output windows. This is an absolute
+                offset in the original data, including when reusing preloaded
+                tensors. Already removed frames cannot be restored. Defaults to 0.
         """
         self.dtype = dtype
         self.verbose = verbose
@@ -98,6 +86,8 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         self.normalization_path = normalization_path
         self.normalization_stats = normalization_stats
         self.autoencoder_mode = autoencoder_mode
+        self._channel_idxs_applied = False
+        self._applied_start_frame = 0
 
         if data_path is not None:
             self.read_data(data_path)
@@ -108,16 +98,36 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         if isinstance(start_frame, bool) or not isinstance(start_frame, int):
             msg = f"start_frame must be an integer, got {start_frame!r}."
             raise TypeError(msg)
-        if start_frame < 0 or start_frame >= self.data.shape[1]:
+        if (
+            isinstance(self._applied_start_frame, bool)
+            or not isinstance(self._applied_start_frame, int)
+            or self._applied_start_frame < 0
+        ):
+            msg = "The preloaded frame offset must be a non-negative integer."
+            raise ValueError(msg)
+        if start_frame < self._applied_start_frame:
             msg = (
-                "start_frame must be in the range "
-                f"[0, {self.data.shape[1] - 1}], got {start_frame}."
+                f"start_frame={start_frame} is unavailable: the data already starts "
+                f"at frame {self._applied_start_frame}; "
+                "earlier frames cannot be restored."
             )
             raise ValueError(msg)
-        self.data = self.data[:, start_frame:]
+        relative_start = start_frame - self._applied_start_frame
+        if relative_start >= self.data.shape[1]:
+            msg = (
+                "start_frame must be in the range "
+                f"[{self._applied_start_frame}, "
+                f"{self._applied_start_frame + self.data.shape[1] - 1}], "
+                f"got {start_frame}."
+            )
+            raise ValueError(msg)
+        if relative_start:
+            self.data = self.data[:, relative_start:]
+        self._applied_start_frame = start_frame
 
-        if channel_idxs is not None:
+        if channel_idxs is not None and not self._channel_idxs_applied:
             self.data = self.data[..., list(channel_idxs)]
+            self._channel_idxs_applied = True
 
         self.set_up_normalization()
 
@@ -250,6 +260,13 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             and f["constant_fields"] != {}
             else None
         )
+        self._channel_idxs_applied = bool(f.get("_channel_idxs_applied", False))
+        applied_start_frame = f.get("_applied_start_frame", 0)
+        self._applied_start_frame = (
+            applied_start_frame[()].item()
+            if isinstance(applied_start_frame, h5py.Dataset)
+            else applied_start_frame
+        )
 
     def read_data(self, data_path: str):
         """Read data.
@@ -273,9 +290,21 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             )
             self.constant_scalars = data.get("constant_scalars", None)
             self.constant_fields = data.get("constant_fields", None)
+            self._channel_idxs_applied = bool(data.get("_channel_idxs_applied", False))
+            self._applied_start_frame = data.get("_applied_start_frame", 0)
             return
         msg = "No data provided to parse."
         raise ValueError(msg)
+
+    def to_preloaded_data(self) -> dict[str, Any]:
+        """Return the in-memory payload accepted by ``data=`` without copying."""
+        return {
+            "data": self.data,
+            "constant_scalars": self.constant_scalars,
+            "constant_fields": self.constant_fields,
+            "_channel_idxs_applied": self._channel_idxs_applied,
+            "_applied_start_frame": self._applied_start_frame,
+        }
 
     def __len__(self):  # noqa: D105
         return len(self.all_input_fields)
@@ -501,6 +530,9 @@ class TheWell(SpatioTemporalDataset):
             min_std=min_std,
             storage_options=storage_options,
         )
+        # Model setup needs the same normalizer used by the loader to restore
+        # physical units in evaluation; unnormalized loaders expose None.
+        self.norm = self.well_dataset.norm
         self.well_metadata = self.well_dataset.metadata
 
     def __len__(self) -> int:  # noqa: D105

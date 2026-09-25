@@ -1,0 +1,14 @@
+_target_: autocast.processors.distilled.DistilledProcessor
+# Output field dims are auto-filled from the datamodule by scripts/setup.py.
+n_steps_output: null
+n_channels_out: null
+# Conditioning field dims + spatial shape are set per toy in the experiment
+# config. The teacher is injected at train time (cal_study/distill_student.py),
+# not configured here, so the saved student checkpoint stands alone.
+n_steps_input: 1
+n_channels_in: 1
+spatial_shape: [1, 1]
+global_cond_features: 0
+# Student capacity (set per toy by field size). The predictive spread is not a
+# hyperparameter here: it is learned from the teacher's noise->sample map.
+hidden_features: [256, 256]

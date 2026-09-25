@@ -10,6 +10,8 @@ from autocast.types import EncodedBatch, Tensor
 class FlowMatchingProcessor(Processor):
     """Processor that wraps a flow-matching generative model."""
 
+    _INTEGRATORS = ("euler", "heun")
+
     def __init__(
         self,
         *,
@@ -17,13 +19,21 @@ class FlowMatchingProcessor(Processor):
         flow_ode_steps: int = 1,
         n_steps_output: int = 4,
         n_channels_out: int = 1,
+        integrator: str = "euler",
     ) -> None:
         # Store core hyperparameters and optional prebuilt backbone.
         super().__init__()
+        if integrator not in self._INTEGRATORS:
+            msg = (
+                "FlowMatchingProcessor integrator must be one of "
+                f"{self._INTEGRATORS}; got {integrator!r}."
+            )
+            raise ValueError(msg)
         self.flow_matching_model = backbone
         self.flow_ode_steps = max(flow_ode_steps, 1)
         self.n_steps_output = n_steps_output
         self.n_channels_out = n_channels_out
+        self.integrator = integrator
 
     def flow_field(
         self, z: Tensor, t: Tensor, x: Tensor, global_cond: Tensor | None = None
@@ -39,8 +49,7 @@ class FlowMatchingProcessor(Processor):
             x: Conditioning inputs of shape (B, T_in, *spatial, C_in).
             global_cond: Optional non-spatial conditioning/modulation tensor.
 
-        Returns
-        -------
+        Returns:
             Time derivative of output states with the same shape as `z`.
         """
         return self.flow_matching_model(z, t=t, cond=x, global_cond=global_cond)
@@ -52,13 +61,17 @@ class FlowMatchingProcessor(Processor):
     def map(self, x: Tensor, global_cond: Tensor | None) -> Tensor:
         """Map inputs states (x) to output states (z) by integrating the flow ODE.
 
-        Starting from noise, Euler-integrate the learned vector field until t=1.
+        Starting from noise, integrate the learned vector field until t=1 with
+        the configured fixed-step scheme: forward Euler (``integrator="euler"``,
+        one field evaluation per step) or Heun's explicit trapezoid method
+        (``integrator="heun"``, two field evaluations per step, second-order
+        accurate).
 
         Args:
             x: Conditioning inputs of shape (B, T_in, *spatial, C_in).
+            global_cond: Optional non-spatial conditioning/modulation tensor.
 
-        Returns
-        -------
+        Returns:
             Generated outputs of shape (B, T_out, *spatial, C_out).
         """
         batch_size = x.shape[0]
@@ -70,10 +83,15 @@ class FlowMatchingProcessor(Processor):
         z = torch.randn(z_shape, device=device, dtype=dtype)
         t = torch.zeros(batch_size, device=device, dtype=dtype)
 
-        # Simple fixed-step Euler integration over the flow field.
+        # Fixed-step integration over the flow field.
         dt = torch.tensor(1.0 / self.flow_ode_steps, device=device, dtype=dtype)
         for _ in range(self.flow_ode_steps):
-            z = z + dt * self.flow_field(z, t, x, global_cond)
+            if self.integrator == "heun":
+                k1 = self.flow_field(z, t, x, global_cond)
+                k2 = self.flow_field(z + dt * k1, t + dt, x, global_cond)
+                z = z + dt * 0.5 * (k1 + k2)
+            else:
+                z = z + dt * self.flow_field(z, t, x, global_cond)
             t = t + dt
         return z
 
@@ -82,16 +100,7 @@ class FlowMatchingProcessor(Processor):
         input_states = batch.encoded_inputs
         target_states = batch.encoded_output_fields
 
-        if (
-            target_states.shape[1] != self.n_steps_output
-            or target_states.shape[-1] != self.n_channels_out
-        ):
-            msg = (
-                "Target shape does not match configured output dimensions "
-                f"(expected T_out={self.n_steps_output}, C_out={self.n_channels_out}, "
-                f"got T_out={target_states.shape[1]}, C_out={target_states.shape[-1]})."
-            )
-            raise ValueError(msg)
+        self._validate_output_shape(target_states)
 
         batch_size = target_states.shape[0]
 
@@ -105,3 +114,16 @@ class FlowMatchingProcessor(Processor):
         target_velocity = target_states - z0
         v_pred = self.flow_field(zt, t, input_states, global_cond=batch.global_cond)
         return torch.mean((v_pred - target_velocity) ** 2)
+
+    def _validate_output_shape(self, target_states: Tensor) -> None:
+        """Validate output-window shape against processor configuration."""
+        if (
+            target_states.shape[1] != self.n_steps_output
+            or target_states.shape[-1] != self.n_channels_out
+        ):
+            msg = (
+                "Target shape does not match configured output dimensions "
+                f"(expected T_out={self.n_steps_output}, C_out={self.n_channels_out}, "
+                f"got T_out={target_states.shape[1]}, C_out={target_states.shape[-1]})."
+            )
+            raise ValueError(msg)
