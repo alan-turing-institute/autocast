@@ -389,7 +389,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             shuffle=False,
             num_workers=self.num_workers,
             collate_fn=collate_batches,
-            pin_memory=True,
+            pin_memory=self.pin_memory,
         )
 
     def test_dataloader(self) -> DataLoader:
