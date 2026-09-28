@@ -4,6 +4,19 @@ import torch
 from autocast.data.datamodule import SpatioTemporalDataModule
 
 
+@pytest.mark.parametrize("pin_memory", [False, True])
+def test_rollout_valid_dataloader_respects_pin_memory(pin_memory):
+    payload = {"data": torch.randn(2, 4, 3, 4, 1)}
+    dm = SpatioTemporalDataModule(
+        data_path=None,
+        data=dict.fromkeys(("train", "valid", "test"), payload),
+        num_workers=0,
+        pin_memory=pin_memory,
+    )
+
+    assert dm.rollout_valid_dataloader().pin_memory is pin_memory
+
+
 @pytest.mark.parametrize("start_frame", [0, 2, 4])
 def test_file_backed_rollout_datasets_apply_slices_once(tmp_path, start_frame):
     payload = {"data": torch.randn(2, 6, 3, 4, 2)}
