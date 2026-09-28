@@ -175,7 +175,7 @@ def fit_emos_per_frame(true_cal: TensorBTSC, pred_cal: TensorBTSCM) -> EMOS:
     pred_cal
         Calibration ensemble forecasts, ``[B, T, H, W, C, M]``.
 
-    Returns
+    Returns:
     -------
     EMOS
         A calibrator whose per-frame coefficients are the individual fits.

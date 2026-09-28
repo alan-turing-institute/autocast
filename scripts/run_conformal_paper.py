@@ -21,7 +21,7 @@ Every path is relative to ``--root``, a directory laid out like the Isambard pro
 area (``outputs/`` and ``datasets/``), so the same script runs on the cluster or on a
 local mirror.
 
-Examples
+Examples:
 --------
 Smoke-test one model on two trajectories, then run everything for it::
 

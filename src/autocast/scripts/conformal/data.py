@@ -132,7 +132,7 @@ def load_prediction_dump(path: str | Path) -> PredictionDump:
         ``[B,T,H,W,C]``, ``constant_scalars`` ``[B,K]`` or ``None``, and
         ``meta`` (a dict).
 
-    Returns
+    Returns:
     -------
     PredictionDump
         The loaded tensors (cast to float32, CPU) plus the file's md5 digest
@@ -185,7 +185,7 @@ def fixed_split(
     min_calibration
         Minimum calibration-set size to preserve when clamping ``test_size``.
 
-    Returns
+    Returns:
     -------
     SplitIndices
         Disjoint ``calibration``/``test`` trajectory-index tensors covering
@@ -235,13 +235,13 @@ def balanced_split_by_scalars(
         by July's ``sufficiency_common.draw_cal_subset``), so groups don't
         share draws.
 
-    Returns
+    Returns:
     -------
     SplitIndices
         Disjoint ``calibration``/``test`` trajectory-index tensors, sorted
         ascending.
 
-    Raises
+    Raises:
     ------
     ValueError
         If any group has fewer than
@@ -298,7 +298,7 @@ def draw_calibration_subset(
     seed0
         Base seed.
 
-    Returns
+    Returns:
     -------
     torch.Tensor
         ``k`` trajectory indices drawn from ``pool_idx``.
@@ -366,7 +366,7 @@ def build_manifest(
         output folder), so the manifest stays valid when the folder moves to
         another machine.
 
-    Returns
+    Returns:
     -------
     dict
         JSON-serializable manifest: input paths, md5 and trajectory counts,

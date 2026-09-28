@@ -147,7 +147,7 @@ class Method(StrEnum):
 class FittedMethod:
     """One method's fitted intervals (+ members, if any) on the full test set.
 
-    Attributes
+    Attributes:
     ----------
     method
         Which method this is.
@@ -227,7 +227,7 @@ def raw_interval_multi(
     levels
         Central coverage levels (e.g. 0.9 for a 90% interval).
 
-    Returns
+    Returns:
     -------
     tuple of Tensor
         ``(lower, upper)``, each shape ``(..., len(levels))``.
@@ -367,7 +367,7 @@ def coverage_reliability_table(
     Computed for every level in one broadcast via :func:`band_coverage_multi`
     -- no Python loop over ``levels``.
 
-    Returns
+    Returns:
     -------
     tuple
         ``(levels, observed_mean_per_level, observed_per_channel)`` where
@@ -474,7 +474,7 @@ def per_frame_observed_coverage(
     real H=W=64 scale, since it duplicates a tensor the same size as the
     already-held ``fitted.lower``/``fitted.upper``.
 
-    Returns
+    Returns:
     -------
     numpy.ndarray
         Shape ``(T, C, n_levels)``, float64; ``n_levels`` is the trailing axis
@@ -509,7 +509,7 @@ def per_frame_coverage_calibration_error(
     levels
         Coverage levels matching the trailing axis of ``observed``.
 
-    Returns
+    Returns:
     -------
     numpy.ndarray
         Shape ``(T,)``. :func:`coverage_calibration_error` is its mean over a
@@ -590,7 +590,7 @@ def per_frame_ingredients(
     at the real H=W=64 scale; each block still covers many frames per
     iteration, not one. All sums are accumulated in float64.
 
-    Returns
+    Returns:
     -------
     pandas.DataFrame
         One row per frame, columns ``frame``, ``n``, ``sum_<metric>`` for
@@ -686,7 +686,7 @@ def observed_coverage_from_ingredients(
     The same array :func:`per_frame_observed_coverage` computes from the
     bands, for the frames (rows) in ``ingredients``.
 
-    Returns
+    Returns:
     -------
     numpy.ndarray
         Shape ``(frames, C, len(levels))``, float64.
@@ -796,7 +796,7 @@ def bootstrap_summary(
         are independent (as ``calibrate_full_cell.py`` does with
         ``seed + 1``, ``seed + 2``, ...).
 
-    Returns
+    Returns:
     -------
     dict
         ``coverage_90``, ``winkler_90``, and -- for raw/EMOS only --
@@ -909,7 +909,7 @@ def spatial_mean_spread_skill(ensemble: TensorBTSCM, true: TensorBTSC) -> Tensor
     true
         Truth, shape ``(B, T, H, W, ..., C)``.
 
-    Returns
+    Returns:
     -------
     TensorC
         Per-channel spread-skill ratio, shape ``(C,)``.
