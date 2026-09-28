@@ -3,7 +3,9 @@
 import contextlib
 import logging
 import os
+import time
 from collections.abc import Callable, Mapping, Sequence
+from enum import StrEnum
 from pathlib import Path
 from types import MethodType
 from typing import Any
@@ -86,6 +88,7 @@ from autocast.scripts.setup import (
 )
 from autocast.scripts.training import apply_float32_matmul_precision
 from autocast.scripts.utils import get_default_config_path
+from autocast.types import TensorBTSC, TensorBTSCM
 from autocast.types.batch import Batch, EncodedBatch
 from autocast.utils import plot_spatiotemporal_snapshots, plot_spatiotemporal_video
 from autocast.utils.plots import (
@@ -176,6 +179,53 @@ EVAL_PATH_LATENT_CACHED_LATENT_ONLY = "latent_cached_latent_only"
 LOLA_WRAPPED_ENCODER_TARGET = "autocast.external.lola.wrapped_encoder.WrappedEncoder"
 LOLA_WRAPPED_DECODER_TARGET = "autocast.external.lola.wrapped_decoder.WrappedDecoder"
 THE_WELL_DATAMODULE_TARGET = "autocast.data.datamodule.TheWellDataModule"
+
+
+class DumpSplit(StrEnum):
+    """Which rollout split ``eval.dump_rollout_tensors`` saves.
+
+    ``TEST`` matches the split used by this module's own rollout metrics
+    (``datamodule.rollout_test_dataloader``); ``VALID`` switches the dump to
+    the validation split (``datamodule.rollout_valid_dataloader``) for
+    held-out post-hoc UQ calibration. ``datamodule.rollout_val_dataloader`` is
+    not used: it rolls out the training split.
+    """
+
+    TEST = "test"
+    VALID = "valid"
+
+
+def _normalize_dump_split(split: Any) -> DumpSplit:
+    """Normalize and validate ``eval.dump_split``, defaulting to ``test``."""
+    if split is None:
+        return DumpSplit.TEST
+    split_str = str(split).strip().lower()
+    try:
+        return DumpSplit(split_str)
+    except ValueError:
+        valid = ", ".join(member.value for member in DumpSplit)
+        msg = f"Unknown eval.dump_split={split!r}. Valid values: {valid}."
+        raise ValueError(msg) from None
+
+
+def _check_dump_request(
+    *,
+    dump_requested: bool,
+    compute_rollout_metrics: bool,
+    trajectory_statistics_enabled: bool,
+) -> None:
+    """Refuse a dump request that the rollout pass would silently skip.
+
+    The dump reuses the rollout closure built for rollout metrics, so it only
+    runs when ``eval.compute_rollout_metrics`` (or trajectory statistics) is on.
+    """
+    rollout_pass_runs = compute_rollout_metrics or trajectory_statistics_enabled
+    if dump_requested and not rollout_pass_runs:
+        msg = (
+            "eval.dump_rollout_tensors=true needs eval.compute_rollout_metrics=true: "
+            "the dump reuses the rollout pass built for rollout metrics."
+        )
+        raise ValueError(msg)
 
 
 def _decode_tensor(
@@ -318,6 +368,140 @@ def _build_encode_once_rollout_predict(
         return preds[:, :min_len], trues[:, :min_len]
 
     return rollout_predict_encode_once
+
+
+def _resolve_dump_rollout_dataloader(
+    datamodule: Any, *, dump_split: DumpSplit, batch_size: int
+) -> DataLoader:
+    """Select the rollout dataloader ``eval.dump_split`` names.
+
+    ``test`` (the default) matches the split used by this module's own
+    rollout metrics; ``valid`` dumps the validation split instead, for
+    calibration held out from the split the metrics are reported on.
+    """
+    if dump_split == DumpSplit.VALID:
+        if not hasattr(datamodule, "rollout_valid_dataloader"):
+            msg = (
+                "eval.dump_split=valid needs a datamodule with "
+                f"rollout_valid_dataloader; {type(datamodule).__name__} has none."
+            )
+            raise TypeError(msg)
+        return datamodule.rollout_valid_dataloader(batch_size=batch_size)
+    return datamodule.rollout_test_dataloader(batch_size=batch_size)
+
+
+def _dump_rollout_tensors(
+    *,
+    rollout_predict: Callable[
+        [Any], tuple[TensorBTSC | TensorBTSCM | None, TensorBTSC | None]
+    ],
+    dataloader: Any,
+    out_path: Path,
+    meta: dict[str, Any],
+    fabric: Any,
+    n_traj_cap: int | None = None,
+) -> None:
+    """Single-pass dump of ensemble rollout tensors for post-hoc UQ calibration.
+
+    Runs the family-agnostic ``rollout_predict`` closure (``_standard_rollout_predict``
+    for ambient/latent-cached-with-decoder eval, or
+    ``_build_encode_once_rollout_predict`` for the encode-once FM latent path)
+    over one rollout split exactly once, moving each batch's
+    ``preds[B,T,H,W,C,M]`` / ``trues[B,T,H,W,C]`` to CPU, then saves
+    ``{preds, trues, constant_scalars, meta}``. ``meta["value_space"]``
+    (set by the caller) records whether these tensors are in denormalized
+    ambient/physical space or raw latent space -- the same space this
+    module's own rollout metrics are computed in for the resolved eval path.
+
+    Dump-only: the caller skips the metric passes so the (expensive) rollout
+    is computed once instead of several times. Requires a single device
+    (``eval.devices=1``); tensors are NOT gathered across ranks, so a
+    multi-rank run would silently dump only rank 0's shard -- guarded
+    against below.
+    """
+    world_size = int(getattr(fabric, "world_size", 1) or 1)
+    if world_size > 1:
+        msg = (
+            "eval.dump_rollout_tensors requires eval.devices=1 (single process); "
+            f"got world_size={world_size}. Rollout tensors are not gathered "
+            "across ranks -- rerun with devices=1."
+        )
+        raise RuntimeError(msg)
+
+    preds_all: list[TensorBTSCM] = []
+    trues_all: list[TensorBTSC] = []
+    scalars_all: list[torch.Tensor] = []
+    n_done = 0
+    t_start = time.perf_counter()
+    with torch.no_grad():
+        for bi, batch in enumerate(dataloader):
+            if n_traj_cap is not None and n_done >= n_traj_cap:
+                break
+            t_batch = time.perf_counter()
+            preds, trues = rollout_predict(batch)
+            if preds is None or trues is None:
+                log.warning("[dump] batch %d produced no tensors; skipping.", bi)
+                continue
+            preds = preds.detach().to("cpu")
+            trues = trues.detach().to("cpu")
+            if preds.ndim == trues.ndim:  # one member: keep the documented M axis
+                preds = preds.unsqueeze(-1)
+            b = int(preds.shape[0])
+            preds_all.append(preds)
+            trues_all.append(trues)
+            scalars = getattr(batch, "constant_scalars", None)
+            if scalars is not None:
+                scalars_all.append(scalars.detach().to("cpu"))
+            n_done += b
+            dt = time.perf_counter() - t_batch
+            log.info(
+                "[dump] batch %d: B=%d preds%s trues%s %.1fs (%.2fs/traj)",
+                bi,
+                b,
+                tuple(preds.shape),
+                tuple(trues.shape),
+                dt,
+                dt / max(b, 1),
+            )
+
+    if not preds_all:
+        log.warning("[dump] no batches produced tensors; nothing written.")
+        return
+
+    preds = torch.cat(preds_all, dim=0)
+    del preds_all
+    trues = torch.cat(trues_all, dim=0)
+    del trues_all
+    scalars = torch.cat(scalars_all, dim=0) if scalars_all else None
+    value_space = meta.get("value_space", "denormalized")
+    out_meta = {
+        **meta,
+        "n_traj": int(preds.shape[0]),
+        "dims": (
+            f"preds=(B,T,H,W,C,M) trues=(B,T,H,W,C) {value_space} space "
+            "(same space as this module's own rollout metrics)"
+        ),
+    }
+    if int(getattr(fabric, "global_rank", 0)) == 0:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(
+            {
+                "preds": preds,
+                "trues": trues,
+                "constant_scalars": scalars,
+                "meta": out_meta,
+            },
+            out_path,
+        )
+        gb = (preds.numel() * preds.element_size()) / 1e9
+        total = time.perf_counter() - t_start
+        log.info(
+            "[dump] wrote %s (%d traj, %.1f GB) in %.1fs",
+            out_path,
+            int(preds.shape[0]),
+            gb,
+            total,
+        )
 
 
 def _crop_rollout_batch_start(batch: Any, rollout_start: int) -> Any:
@@ -2102,12 +2286,51 @@ def _load_autoencoder_run_config_from_checkpoint(
     return None
 
 
+# Parameter-free encoder/decoder targets used as training-time placeholders
+# for models trained purely on pre-cached latents (the real autoencoder ran
+# offline to produce the cache and is never part of the training graph).
+# These carry no weights to restore, so for ambient-reconstruction eval they
+# must be swapped for the real architecture rather than treated as an
+# already-configured encoder/decoder.
+STATELESS_ENCODER_TARGETS = {
+    "autocast.encoders.identity.IdentityEncoder",
+    "autocast.encoders.permute_concat.PermuteConcat",
+}
+STATELESS_DECODER_TARGETS = {
+    "autocast.decoders.identity.IdentityDecoder",
+    "autocast.decoders.channels_last.ChannelsLast",
+}
+
+
+def _needs_autoencoder_injection(
+    component_cfg: Any, stateless_targets: set[str]
+) -> bool:
+    """Return True if a model.encoder/decoder slot should be filled from the AE.
+
+    True both when the slot is unset and when it holds a parameter-free
+    placeholder target (see ``STATELESS_ENCODER_TARGETS``/
+    ``STATELESS_DECODER_TARGETS``) -- such placeholders have no weights to
+    restore and must be replaced, not merely left in place, to reconstruct
+    ambient space from an explicitly-supplied autoencoder checkpoint.
+    """
+    if component_cfg is None:
+        return True
+    target = component_cfg.get("_target_") if hasattr(component_cfg, "get") else None
+    return str(target) in stateless_targets
+
+
 def _maybe_inject_encoder_decoder_from_autoencoder_checkpoint(
     cfg: DictConfig,
 ) -> DictConfig:
-    """Backfill missing model.encoder/decoder from autoencoder checkpoint config."""
+    """Backfill missing/stateless model.encoder/decoder from AE checkpoint config."""
     model_cfg = cfg.get("model", {})
-    if model_cfg.get("encoder") is not None and model_cfg.get("decoder") is not None:
+    needs_encoder = _needs_autoencoder_injection(
+        model_cfg.get("encoder"), STATELESS_ENCODER_TARGETS
+    )
+    needs_decoder = _needs_autoencoder_injection(
+        model_cfg.get("decoder"), STATELESS_DECODER_TARGETS
+    )
+    if not needs_encoder and not needs_decoder:
         return cfg
 
     ae_cfg = _load_autoencoder_run_config_from_checkpoint(
@@ -2132,14 +2355,14 @@ def _maybe_inject_encoder_decoder_from_autoencoder_checkpoint(
         return cfg
 
     with open_dict(model_cfg):
-        if model_cfg.get("encoder") is None:
+        if needs_encoder:
             model_cfg["encoder"] = ae_encoder_cfg
-        if model_cfg.get("decoder") is None:
+        if needs_decoder:
             model_cfg["decoder"] = ae_decoder_cfg
 
     log.info(
-        "Ambient eval: injected missing model.encoder/model.decoder from "
-        "autoencoder checkpoint config."
+        "Ambient eval: injected missing/stateless model.encoder/model.decoder "
+        "from autoencoder checkpoint config."
     )
     return cfg
 
@@ -2591,6 +2814,13 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
 
     # Get eval config
     eval_cfg = cfg.get("eval", {})
+    # Dump-only mode runs the rollout once to save raw ensemble tensors; metrics
+    # are recomputed offline from the dump. Benchmarks and the test-metric pass
+    # are unrelated extra rollout/inference passes that dump mode doesn't need,
+    # so gate them here rather than requiring every dump job to also pass
+    # `benchmark.enabled=false benchmark_rollout.enabled=false` by hand.
+    dump_requested = bool(eval_cfg.get("dump_rollout_tensors", False))
+    dump_split = _normalize_dump_split(eval_cfg.get("dump_split"))
     eval_batch_size: int = eval_cfg.get("batch_size", 1)
     max_test_batches = eval_cfg.get("max_test_batches")
     max_rollout_batches = _resolve_rollout_batch_limit(eval_cfg)
@@ -2599,6 +2829,11 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     latent_space_metrics = bool(eval_cfg.get("latent_space_metrics", False))
     trajectory_cfg = eval_cfg.get("trajectory_statistics") or {}
     trajectory_statistics_enabled = bool(trajectory_cfg.get("enabled", False))
+    _check_dump_request(
+        dump_requested=dump_requested,
+        compute_rollout_metrics=bool(eval_cfg.get("compute_rollout_metrics", False)),
+        trajectory_statistics_enabled=trajectory_statistics_enabled,
+    )
     trajectory_overwrite_existing = bool(
         trajectory_cfg.get("overwrite_existing", False)
     )
@@ -2944,7 +3179,12 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
         eval_cfg.get("skip_memory_intensive_metrics", True)
     )
 
-    if compute_test_metrics or trajectory_statistics_enabled:
+    if dump_requested:
+        log.info(
+            "Skipping test metrics computation: dump-only mode requested "
+            "(eval.dump_rollout_tensors=true)."
+        )
+    elif compute_test_metrics or trajectory_statistics_enabled:
         compute_coverage = eval_cfg.get("compute_coverage", False)
         test_metric_fns: dict[str, Callable[[], Metric]] = {}
 
@@ -3080,15 +3320,22 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
             model=model,  # pyright: ignore[reportArgumentType]
         )
     )
-    benchmark_rows = _collect_benchmark_rows(
-        eval_cfg=eval_cfg,
-        cfg=cfg,
-        stats=stats,
-        model=model,  # pyright: ignore[reportArgumentType]
-        checkpoint_path=checkpoint_path,
-        device=str(fabric.device),
-        eval_batch_size=eval_batch_size,
-    )
+    if dump_requested:
+        log.info(
+            "Skipping inference/rollout benchmarks: dump-only mode requested "
+            "(eval.dump_rollout_tensors=true)."
+        )
+        benchmark_rows = []
+    else:
+        benchmark_rows = _collect_benchmark_rows(
+            eval_cfg=eval_cfg,
+            cfg=cfg,
+            stats=stats,
+            model=model,  # pyright: ignore[reportArgumentType]
+            checkpoint_path=checkpoint_path,
+            device=str(fabric.device),
+            eval_batch_size=eval_batch_size,
+        )
 
     # Rollouts
     compute_rollout_coverage = eval_cfg.get("compute_rollout_coverage", False)
@@ -3511,35 +3758,91 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                     )
 
             rollout_predict = _build_rollout_predict()
-            _write_rollout_metric_outputs(
-                rollout_predict=rollout_predict,
-                csv_name="rollout_metrics.csv",
-                metadata_csv_name="rollout_metadata.csv",
-                per_timestep_stem="rollout_metrics_per_timestep",
-                log_prefix="Rollout",
-                collect_trajectory_statistics=trajectory_statistics_enabled,
-            )
-
-            if eval_cfg.get("compute_rollout_autoencoded_target_metrics", False):
-                if resolved_eval_path == EVAL_PATH_ENCODE_ONCE:
-                    rollout_predict_ae_target = _build_rollout_predict(
-                        compare_to_autoencoded_target=True
-                    )
-                    _write_rollout_metric_outputs(
-                        rollout_predict=rollout_predict_ae_target,
-                        csv_name="rollout_metrics_autoencoded_target.csv",
-                        metadata_csv_name="rollout_metadata_autoencoded_target.csv",
-                        per_timestep_stem=(
-                            "rollout_metrics_per_timestep_autoencoded_target"
+            if dump_requested:
+                # Dump-only: run the rollout ONCE to save raw ensemble tensors
+                # and skip the (2x) metric passes below entirely. Metrics can
+                # be recomputed offline from the dump by the calibration
+                # harness. Note this branch is only reached when
+                # eval.compute_rollout_metrics (or trajectory statistics) is
+                # also enabled, since dump mode reuses the rollout_predict
+                # closure built for the metrics pass above.
+                dump_loader = _limit_batches(
+                    fabric.setup_dataloaders(
+                        _resolve_dump_rollout_dataloader(
+                            datamodule,
+                            dump_split=dump_split,
+                            batch_size=eval_batch_size,
+                        )
+                    ),
+                    max_rollout_batches,
+                )
+                dump_path_cfg = eval_cfg.get("dump_rollout_path", None)
+                dump_out_path = (
+                    Path(dump_path_cfg)
+                    if dump_path_cfg
+                    else csv_path.parent / "rollout_tensors.pt"
+                )
+                # Same space this module's own rollout metrics are computed
+                # in for this resolved eval path: raw latent codes only for
+                # the opt-in latent-only dev sense check (no decoder loaded),
+                # denormalized ambient/physical data space otherwise -- see
+                # `_standard_rollout_predict` / `_build_encode_once_rollout_predict`.
+                dump_value_space = (
+                    "latent"
+                    if resolved_eval_path == EVAL_PATH_LATENT_CACHED_LATENT_ONLY
+                    else "denormalized"
+                )
+                _dump_rollout_tensors(
+                    rollout_predict=rollout_predict,
+                    dataloader=dump_loader,
+                    out_path=dump_out_path,
+                    meta={
+                        "split": dump_split.value,
+                        "checkpoint": str(checkpoint_path),
+                        "n_members": int(n_members) if n_members else 1,
+                        "max_rollout_steps": int(max_rollout_steps),
+                        "rollout_stride": int(rollout_stride),
+                        "eval_mode": eval_mode,
+                        "resolved_eval_path": str(resolved_eval_path),
+                        "data_path": str(
+                            cfg.get("datamodule", {}).get("data_path", "")
                         ),
-                        log_prefix="Rollout AE-target",
-                    )
-                else:
-                    log.warning(
-                        "Skipping rollout autoencoded-target metrics for eval path %s; "
-                        "this diagnostic is only defined for encode_once raw batches.",
-                        resolved_eval_path,
-                    )
+                        "value_space": dump_value_space,
+                    },
+                    fabric=fabric,
+                    n_traj_cap=eval_cfg.get("dump_max_traj", None),
+                )
+            else:
+                _write_rollout_metric_outputs(
+                    rollout_predict=rollout_predict,
+                    csv_name="rollout_metrics.csv",
+                    metadata_csv_name="rollout_metadata.csv",
+                    per_timestep_stem="rollout_metrics_per_timestep",
+                    log_prefix="Rollout",
+                    collect_trajectory_statistics=trajectory_statistics_enabled,
+                )
+
+                if eval_cfg.get("compute_rollout_autoencoded_target_metrics", False):
+                    if resolved_eval_path == EVAL_PATH_ENCODE_ONCE:
+                        rollout_predict_ae_target = _build_rollout_predict(
+                            compare_to_autoencoded_target=True
+                        )
+                        _write_rollout_metric_outputs(
+                            rollout_predict=rollout_predict_ae_target,
+                            csv_name="rollout_metrics_autoencoded_target.csv",
+                            metadata_csv_name="rollout_metadata_autoencoded_target.csv",
+                            per_timestep_stem=(
+                                "rollout_metrics_per_timestep_autoencoded_target"
+                            ),
+                            log_prefix="Rollout AE-target",
+                        )
+                    else:
+                        log.warning(
+                            "Skipping rollout autoencoded-target metrics for eval "
+                            "path %s; this diagnostic is only defined for "
+                            "encode_once raw batches.",
+                            resolved_eval_path,
+                        )
 
     metric_rows, metadata_rows = _split_metric_and_metadata_rows(evaluation_rows)
 

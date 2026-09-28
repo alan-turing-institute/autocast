@@ -1,0 +1,162 @@
+# Evaluation protocol copied from the original CNS ablation results.
+# Diffusion defaults to the final raw checkpoint; change a reviewed run to
+# best_val only if its validation history supports an overfitting decision.
+reference_evaluations:
+  diffusion: outputs/2026-05-01/planned_03/diff_cns64_diffusion_vit_0c75022_80967c4/eval_encode_once/resolved_eval_config.yaml
+  unet: outputs/2026-04-25/planned_cns/crps_cns64_unet_azula_large_9c98db0_65f8f71/eval_best_multiwinkler_from0p25/resolved_eval_config.yaml
+eval:
+  accelerator: auto
+  batch_indices:
+  - 0
+  - 1
+  - 2
+  - 3
+  - 4
+  - 5
+  - 6
+  - 7
+  benchmark:
+    batch_size: 1
+    enabled: true
+    n_benchmark: 50
+    n_warmup: 5
+  benchmark_rollout:
+    batch_size: 1
+    enabled: true
+    max_rollout_steps: null
+    n_benchmark: 50
+    n_warmup: 5
+    stride: null
+  compute_rollout_coverage: true
+  compute_rollout_metrics: true
+  fps: 5
+  free_running_only: true
+  latent_space_metrics: false
+  max_rollout_batches: null
+  max_rollout_steps: 25
+  max_test_batches: null
+  metric_windows:
+  - null
+  metric_windows_rollout:
+  - - 0
+    - 1
+  - - 0
+    - 4
+  - - 6
+    - 12
+  - - 13
+    - 30
+  - - 31
+    - 99
+  metrics:
+  - mse
+  - mae
+  - nmse
+  - nmae
+  - rmse
+  - nrmse
+  - vmse
+  - vrmse
+  - linf
+  - psrmse
+  - psrmse_low
+  - psrmse_mid
+  - psrmse_high
+  - psrmse_tail
+  - pscc
+  - pscc_low
+  - pscc_mid
+  - pscc_high
+  - pscc_tail
+  - crps
+  - fcrps
+  - afcrps
+  - energy
+  - ssr
+  - winkler
+  n_members: 10
+  preserve_aspect: true
+  rollout_snapshot_channels: null
+  rollout_snapshot_format: png
+  rollout_snapshot_timesteps:
+  - 0
+  - 4
+  - 12
+  - 30
+  - 99
+  save_rollout_snapshots: true
+  video_format: mp4
+  video_sample_index: 0
+  use_ema: false
+  trajectory_statistics:
+    enabled: false
+  skip_memory_intensive_metrics: false
+profiles:
+  diffusion:
+    final_checkpoint: processor.ckpt
+    output_subdir: eval_encode_once
+    timeout_min: 360
+    eval:
+      mode: encode_once
+      batch_size: 4
+  unet:
+    final_checkpoint: encoder_processor_decoder.ckpt
+    output_subdir: eval_best_multiwinkler_overall
+    timeout_min: 240
+    eval:
+      mode: ambient
+      batch_size: 8
+runs:
+- run_id: latent_diffusion_ad
+  profile: diffusion
+  run_dir: outputs/2026-09-18/diffusion_unet_extensions/diff_ad64_diffusion_vit_d80b5b3_eceb84e
+  training_job: 6673317
+  epochs: 2601
+  final_global_step: 161262
+  checkpoint: last
+  autoencoder_checkpoint: outputs/2026-04-17/ae_ad64_3a7999b_1a1e300/autoencoder.ckpt
+- run_id: latent_diffusion_gs
+  profile: diffusion
+  run_dir: outputs/2026-09-18/diffusion_unet_extensions/diff_gs64_diffusion_vit_d80b5b3_9476ca0
+  training_job: 6673318
+  epochs: 2249
+  final_global_step: 168675
+  checkpoint: last
+  autoencoder_checkpoint: outputs/2026-04-17/ae_gs64_3a7999b_ed36b8e/autoencoder.ckpt
+- run_id: latent_diffusion_gpe
+  profile: diffusion
+  run_dir: outputs/2026-09-18/diffusion_unet_extensions/diff_gpe64_diffusion_vit_d80b5b3_4856c88
+  training_job: 6673319
+  epochs: 2674
+  final_global_step: 165788
+  checkpoint: last
+  autoencoder_checkpoint: outputs/2026-04-17/ae_gpe64_3a7999b_31e1c9f/autoencoder.ckpt
+- run_id: unet_m8_crps_ad
+  profile: unet
+  run_dir: outputs/2026-09-18/diffusion_unet_extensions/crps_ad64_unet_azula_large_138dd8c_79a7707
+  training_job: 6675374
+  epochs: 644
+  final_global_step: 319424
+  checkpoint: best_multiwinkler
+- run_id: unet_m8_crps_gs
+  profile: unet
+  run_dir: outputs/2026-09-18/diffusion_unet_extensions/crps_gs64_unet_azula_large_138dd8c_03eb2bf
+  training_job: 6729286
+  epochs: 541
+  final_global_step: 321895
+  checkpoint: best_multiwinkler
+- run_id: unet_m8_crps_gpe
+  profile: unet
+  run_dir: outputs/2026-09-18/diffusion_unet_extensions/crps_gpe64_unet_azula_large_138dd8c_79c0d48
+  training_job: 6675383
+  epochs: 632
+  final_global_step: 313472
+  checkpoint: best_multiwinkler
+- run_id: latent_diffusion_cns_epoch_matched
+  profile: diffusion
+  run_dir: outputs/2026-09-20/diffusion_cns_epoch_matched/diff_cns64_diffusion_vit_bd2e845_4bc0f77
+  training_job: 6727237
+  epochs: 3223
+  final_global_step: 199826
+  checkpoint: last
+  autoencoder_checkpoint: outputs/2026-04-17/ae_cns64_3a7999b_b9c29f8/autoencoder.ckpt
