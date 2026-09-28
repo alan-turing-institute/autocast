@@ -364,7 +364,7 @@ def build_manifest(
     relative_to
         If given, input paths are recorded relative to this directory (the
         output folder), so the manifest stays valid when the folder moves to
-        another machine.
+        another machine. Paths use forward slashes on every platform.
 
     Returns:
     -------
@@ -380,7 +380,7 @@ def build_manifest(
         if relative_to is not None:
             path = Path(os.path.relpath(path.resolve(), Path(relative_to).resolve()))
         return {
-            "path": str(path),
+            "path": path.as_posix(),
             "md5": dump.md5,
             "n_trajectories": dump.n_trajectories,
         }

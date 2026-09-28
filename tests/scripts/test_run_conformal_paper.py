@@ -8,6 +8,7 @@ loaded from its file path rather than imported by module name (same pattern as
 from __future__ import annotations
 
 import importlib.util
+import re
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -126,7 +127,7 @@ def test_preflight_predict_missing_checkpoint_raises_with_path(fm_layout):
     ckpt = fm_layout / "outputs" / run / "processor.ckpt"
     ckpt.unlink()
 
-    with pytest.raises(FileNotFoundError, match=str(ckpt)):
+    with pytest.raises(FileNotFoundError, match=re.escape(str(ckpt))):
         r.preflight_predict(fm_layout, "fm_test", [r.PredictionSet.PAPER_TEST])
 
 
@@ -135,7 +136,7 @@ def test_preflight_predict_missing_dataset_split_raises_with_path(fm_layout):
     missing = fm_layout / "datasets" / paper_dataset / "test" / "data.pt"
     missing.unlink()
 
-    with pytest.raises(FileNotFoundError, match=str(missing)):
+    with pytest.raises(FileNotFoundError, match=re.escape(str(missing))):
         r.preflight_predict(fm_layout, "fm_test", [r.PredictionSet.PAPER_TEST])
 
 
@@ -144,7 +145,7 @@ def test_preflight_predict_missing_autoencoder_checkpoint_raises(fm_layout):
     ae_ckpt = fm_layout / "outputs" / ae_run / "autoencoder.ckpt"
     ae_ckpt.unlink()
 
-    with pytest.raises(FileNotFoundError, match=str(ae_ckpt)):
+    with pytest.raises(FileNotFoundError, match=re.escape(str(ae_ckpt))):
         r.preflight_predict(fm_layout, "fm_test", [r.PredictionSet.PAPER_TEST])
 
 
