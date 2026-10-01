@@ -2,7 +2,6 @@ from pathlib import Path
 from typing import Any
 
 import torch
-from autoemulate.simulations.reaction_diffusion import ReactionDiffusion
 from autosim.cli import (
     build_simulator,
     compute_normalization_stats,
@@ -11,9 +10,10 @@ from autosim.cli import (
     save_normalization_stats,
     save_resolved_config,
 )
+from autosim.simulations import AdvectionDiffusionMultichannel
+from autosim.simulations.reaction_diffusion import ReactionDiffusion
 from omegaconf import OmegaConf
 
-from autocast.data.advection_diffusion import AdvectionDiffusion
 from autocast.data.datamodule import SpatioTemporalDataModule, TheWellDataModule
 from autocast.data.dataset import SpatioTemporalDataset
 
@@ -47,7 +47,7 @@ _AUTOSIM_SIMULATOR_CONFIGS: dict[str, dict[str, Any]] = {
         },
     },
     "reaction_diffusion": {
-        "_target_": "autosim.experimental.simulations.ReactionDiffusion",
+        "_target_": "autosim.simulations.reaction_diffusion.ReactionDiffusion",
         "return_timeseries": True,
         "log_level": "warning",
         "n": 32,
@@ -234,7 +234,7 @@ def get_datamodule(
 
     if not the_well:
         if simulation_name.startswith("advection_diffusion"):
-            Sim = AdvectionDiffusion
+            Sim = AdvectionDiffusionMultichannel
         elif simulation_name == "reaction_diffusion":
             Sim = ReactionDiffusion
         else:

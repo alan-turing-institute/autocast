@@ -141,3 +141,17 @@ callbacks:
   # unaffected.
   - _target_: autocast.callbacks.ema.EMACallback
     decay: 0.999
+  # Gradient-norm diagnostics: logs grad_<p>_norm_total per optimizer
+  # step. Per-parameter breakdown is opt-in via log_per_param=true (wide
+  # W&B namespace; useful when diagnosing per-block training pathologies).
+  - _target_: autocast.callbacks.grad_norm.GradNormCallback
+    norm_type: 2.0
+    log_per_param: false
+  # Parameter-norm diagnostics: logs param_<p>_norm_total at the end of
+  # each training epoch. Cleanest available signal for weight-decay
+  # calibration in AdamW — too-low wd lets ||theta||_p grow unboundedly,
+  # too-high wd collapses weights toward zero. Per-parameter breakdown is
+  # opt-in via log_per_param=true.
+  - _target_: autocast.callbacks.param_norm.ParamNormCallback
+    norm_type: 2.0
+    log_per_param: false

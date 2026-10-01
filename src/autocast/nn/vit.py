@@ -48,6 +48,7 @@ class TemporalViTBackbone(TemporalBackboneBase):
         rope: bool = False,
         rpb: bool = True,
         window_size: int | Sequence[int] | None = None,
+        include_time_embedding: bool = True,
     ):
         """Initialize Temporal ViT Backbone.
 
@@ -82,7 +83,11 @@ class TemporalViTBackbone(TemporalBackboneBase):
             window_size: Local attention window size. Only None is supported by
                 the installed Azula ViT used here.
             checkpointing: Whether to use gradient checkpointing in ViT
-            use_precomputed_modulation: Whether to use precomputed modulation tensors.
+            use_precomputed_modulation: Forwarded to the base; when True the
+                caller supplies precomputed modulation vectors as ``t``.
+            include_time_embedding: Forwarded to the base; when False the
+                time-embedding module is not registered and ``t=None`` is
+                accepted at forward time (one-step processors).
         """
         if window_size is not None:
             msg = (
@@ -107,6 +112,7 @@ class TemporalViTBackbone(TemporalBackboneBase):
             tcn_kernel_size=tcn_kernel_size,
             tcn_num_layers=tcn_num_layers,
             use_precomputed_modulation=use_precomputed_modulation,
+            include_time_embedding=include_time_embedding,
         )
 
         self.patch_size = patch_size

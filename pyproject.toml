@@ -8,8 +8,8 @@ authors = [
 ]
 requires-python = ">=3.11,<3.13"
 dependencies = [
-    "autoemulate>=1.2.0",
     "autosim",
+    "autouq",
     "azula>=0.7.0",
     "beartype>=0.22.8",
     "einops>=0.8.1",
@@ -19,6 +19,7 @@ dependencies = [
     "jaxtyping>=0.3.3",
     "lightning>=2.5.6",
     "neuraloperator>=2.0.0",
+    "pandas>=2.1",
     "the-well>=1.1.0",
     "timm>=0.9",
     "torch>=2.9.1",
@@ -130,8 +131,8 @@ url = "https://download.pytorch.org/whl/cu126"
 explicit = true
 
 [tool.uv.sources]
-autoemulate = { git = "https://github.com/alan-turing-institute/autoemulate.git" }
 autosim = { git = "https://github.com/alan-turing-institute/autosim.git" }
+autouq = { git = "https://github.com/alan-turing-institute/autouq.git", rev = "3d3626f149bdfc76161bbb0075f419a9b83fd7a2" }
 torch = [
     { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
 ]

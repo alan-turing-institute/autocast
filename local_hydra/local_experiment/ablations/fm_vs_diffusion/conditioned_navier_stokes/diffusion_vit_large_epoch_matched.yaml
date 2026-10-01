@@ -1,0 +1,27 @@
+# @package _global_
+defaults:
+  - /local_experiment/processor/conditioned_navier_stokes/diffusion_vit_large
+  - override /trainer: original_diffusion_ablation
+  - _self_
+
+experiment_name: ablation_diffusion_vit_large_epoch_matched_conditioned_navier_stokes
+seed: 42
+
+datamodule:
+  data_path: /lus/lfs1aip2/projects/u6eo/autocast/outputs/2026-04-17/ae_cns64_3a7999b_b9c29f8/cached_latents
+
+# Match the completed main-comparison CNS latent flow-matching run:
+# diff_cns64_flow_matching_vit_09490da_636fcc3 (3223 epochs, 199826 steps).
+# Start from scratch: extending the old 2639-epoch diffusion checkpoint would
+# retain its already-completed, shorter cosine schedule.
+optimizer:
+  cosine_epochs: 3223
+
+trainer:
+  max_epochs: 3223
+  max_time: 00:23:59:00
+
+logging:
+  wandb:
+    name: latent_diffusion_cns_epoch_matched
+    group: diffusion_cns_epoch_matched

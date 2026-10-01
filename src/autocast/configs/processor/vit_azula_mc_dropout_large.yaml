@@ -1,0 +1,13 @@
+# ~80M params: replaces stochastic modulation with MC dropout.
+_target_: autocast.processors.MCDropoutAzulaViTProcessor
+in_channels: auto
+out_channels: auto
+spatial_resolution: auto
+hidden_dim: 768
+num_heads: 4
+n_layers: 10
+patch_size: 4
+temporal_method: none
+n_noise_channels: null
+include_global_cond: false
+dropout: 0.1

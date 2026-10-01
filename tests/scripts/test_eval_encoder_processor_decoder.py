@@ -9,6 +9,8 @@ import pytest
 import torch
 from omegaconf import OmegaConf
 
+from autocast.data.datamodule import SpatioTemporalDataModule
+from autocast.data.dataset import ReactionDiffusionDataset
 from autocast.decoders.base import Decoder
 from autocast.encoders.base import GenericEncoder
 from autocast.external.lola.wrapped_decoder import WrappedDecoder
@@ -26,35 +28,45 @@ from autocast.scripts.eval.encoder_processor_decoder import (
     LOLA_WRAPPED_DECODER_TARGET,
     LOLA_WRAPPED_ENCODER_TARGET,
     THE_WELL_DATAMODULE_TARGET,
+    DumpSplit,
     _build_encode_once_rollout_predict,
     _build_eval_predict_fn,
     _build_lola_autoencoder_config_nodes,
     _build_member_average_metric_factory,
     _build_metric_factory,
     _build_per_timestep_metric_factory,
+    _check_dump_request,
     _crop_rollout_batch_start,
     _decode_tensor,
     _deterministic_member_average_metric_name,
     _deterministic_member_metric_name,
+    _dump_rollout_tensors,
     _load_lola_autoencoder_config_from_cache,
+    _maybe_inject_encoder_decoder_from_autoencoder_checkpoint,
     _maybe_swap_to_ambient_datamodule,
+    _needs_autoencoder_injection,
+    _normalize_dump_split,
     _normalize_ensemble_member_indices,
     _normalize_eval_mode,
     _normalize_per_batch_rows,
     _parse_deterministic_member_average_metric_name,
     _parse_deterministic_member_metric_name,
+    _prepare_trajectory_statistics_dir,
     _read_eval_chunk_size,
     _reindex_per_batch_rows_by_rank,
     _render_rollouts,
     _require_decoder_unless_latent_metrics_opt_in,
     _resolve_auto_eval_mode,
+    _resolve_dump_rollout_dataloader,
     _resolve_eval_path,
     _resolve_rollout_batch_limit,
     _resolve_rollout_channel_names,
     _resolve_rollout_timestep_limit,
+    _resolve_trajectory_statistics_dir,
     _should_skip_metric,
     _split_metric_and_metadata_rows,
     _training_runtime_rows,
+    _trajectory_statistics_seed,
     _try_build_decode_fn,
     _validate_latent_space_metrics_flag,
     _validate_resolved_eval_path,
@@ -85,6 +97,59 @@ def test_resolve_rollout_batch_limit_prefers_explicit_rollout_limit():
     )
 
     assert _resolve_rollout_batch_limit(eval_cfg) == 5
+
+
+def test_trajectory_statistics_default_to_dedicated_sibling_directory(tmp_path):
+    evaluation_csv = tmp_path / "evaluation_metrics.csv"
+
+    result = _resolve_trajectory_statistics_dir(
+        OmegaConf.create({"trajectory_statistics": {}}), evaluation_csv
+    )
+
+    assert result == tmp_path / "trajectory_statistics"
+
+
+def test_trajectory_statistics_relative_directory_uses_csv_parent(tmp_path):
+    evaluation_csv = tmp_path / "evaluation_metrics.csv"
+
+    result = _resolve_trajectory_statistics_dir(
+        OmegaConf.create(
+            {"trajectory_statistics": {"output_dir": "paper_trajectory_stats"}}
+        ),
+        evaluation_csv,
+    )
+
+    assert result == tmp_path / "paper_trajectory_stats"
+
+
+def test_trajectory_statistics_refuse_non_empty_output_by_default(tmp_path):
+    output_dir = tmp_path / "trajectory_statistics"
+    output_dir.mkdir()
+    (output_dir / "existing.csv").write_text("old results")
+
+    with pytest.raises(FileExistsError, match="output directory is not empty"):
+        _prepare_trajectory_statistics_dir(output_dir, overwrite_existing=False)
+
+    assert (output_dir / "existing.csv").read_text() == "old results"
+
+
+def test_trajectory_statistics_can_explicitly_allow_existing_output(tmp_path):
+    output_dir = tmp_path / "trajectory_statistics"
+    output_dir.mkdir()
+    existing = output_dir / "existing.csv"
+    existing.write_text("old results")
+
+    _prepare_trajectory_statistics_dir(output_dir, overwrite_existing=True)
+
+    assert existing.read_text() == "old results"
+
+
+@pytest.mark.parametrize("seed", [-1, True, 1.5, "42"])
+def test_trajectory_statistics_seed_requires_non_negative_integer(seed):
+    eval_cfg = OmegaConf.create({"trajectory_statistics": {"sampling_seed": seed}})
+
+    with pytest.raises(ValueError, match="non-negative integer"):
+        _trajectory_statistics_seed(eval_cfg)
 
 
 def test_crop_rollout_batch_start_shifts_raw_full_trajectory_batch():
@@ -930,6 +995,371 @@ def test_normalize_eval_mode_rejects_unknown():
         _normalize_eval_mode("something-else")
 
 
+# ---------------------------------------------------------------------------
+# eval.dump_split + rollout-tensor dump mode
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_dump_split_defaults_to_test():
+    assert _normalize_dump_split(None) == DumpSplit.TEST
+
+
+def test_normalize_dump_split_accepts_known_values_case_insensitively():
+    assert _normalize_dump_split("test") == DumpSplit.TEST
+    assert _normalize_dump_split("Valid") == DumpSplit.VALID
+    assert _normalize_dump_split("VALID") == DumpSplit.VALID
+
+
+def test_normalize_dump_split_rejects_unknown():
+    with pytest.raises(ValueError, match=r"Unknown eval\.dump_split"):
+        _normalize_dump_split("holdout")
+
+
+class _FakeRolloutDatamodule:
+    """Records which rollout loader was requested, at what batch size."""
+
+    def __init__(self):
+        self.calls: list[tuple[str, int | None]] = []
+
+    def rollout_test_dataloader(self, batch_size=None):
+        self.calls.append(("test", batch_size))
+        return "test_loader"
+
+    def rollout_valid_dataloader(self, batch_size=None):
+        self.calls.append(("valid", batch_size))
+        return "valid_loader"
+
+
+def test_resolve_dump_rollout_dataloader_uses_test_split_by_default():
+    datamodule = _FakeRolloutDatamodule()
+
+    loader = _resolve_dump_rollout_dataloader(
+        datamodule, dump_split=DumpSplit.TEST, batch_size=4
+    )
+
+    assert loader == "test_loader"
+    assert datamodule.calls == [("test", 4)]
+
+
+def test_resolve_dump_rollout_dataloader_switches_to_validation_split():
+    datamodule = _FakeRolloutDatamodule()
+
+    loader = _resolve_dump_rollout_dataloader(
+        datamodule, dump_split=DumpSplit.VALID, batch_size=4
+    )
+
+    assert loader == "valid_loader"
+    assert datamodule.calls == [("valid", 4)]
+
+
+def test_resolve_dump_rollout_dataloader_valid_needs_validation_rollouts():
+    class NoValidationRollouts:
+        """E.g. ``TheWellDataModule``, which only rolls out train and test."""
+
+    with pytest.raises(TypeError, match="rollout_valid_dataloader"):
+        _resolve_dump_rollout_dataloader(
+            NoValidationRollouts(), dump_split=DumpSplit.VALID, batch_size=4
+        )
+
+
+def test_resolve_dump_rollout_dataloader_valid_reads_validation_trajectories():
+    """``dump_split=valid`` must roll out ``valid/``, not the training split.
+
+    Each split holds a different constant and trajectory count, so the loaded
+    fields show which split was read.
+    """
+
+    def split(value: float, n_traj: int) -> dict[str, Any]:
+        return {
+            "data": torch.full((n_traj, 6, 2, 2, 1), value),
+            "constant_scalars": None,
+            "constant_fields": None,
+        }
+
+    datamodule = SpatioTemporalDataModule(
+        data_path=None,
+        data={"train": split(0.0, 3), "valid": split(1.0, 2), "test": split(2.0, 4)},
+        dataset_cls=ReactionDiffusionDataset,
+        n_steps_input=1,
+        n_steps_output=1,
+        batch_size=8,
+    )
+
+    for dump_split, value, n_traj in (
+        (DumpSplit.VALID, 1.0, 2),
+        (DumpSplit.TEST, 2.0, 4),
+    ):
+        batches = list(
+            _resolve_dump_rollout_dataloader(
+                datamodule, dump_split=dump_split, batch_size=8
+            )
+        )
+        outputs = torch.cat([batch.output_fields for batch in batches])
+        # Full trajectories: every frame after the single input frame.
+        assert outputs.shape == (n_traj, 5, 2, 2, 1)
+        assert torch.all(outputs == value)
+
+
+def _rollout_predict_batch(n_members: int | None):
+    """Build a rollout_predict closure returning fixed-shape preds/trues.
+
+    preds: (B=2, T=3, H=4, W=4, C=2[, M]) trues: (B=2, T=3, H=4, W=4, C=2),
+    matching the dump schema documented on ``_dump_rollout_tensors``.
+    """
+    shape = (2, 3, 4, 4, 2, n_members) if n_members else (2, 3, 4, 4, 2)
+
+    def rollout_predict(batch):  # noqa: ARG001
+        preds = torch.ones(shape)
+        trues = torch.zeros(2, 3, 4, 4, 2)
+        return preds, trues
+
+    return rollout_predict
+
+
+def _dump_batches(n_batches: int, *, with_scalars: bool = True):
+    return [
+        Batch(
+            input_fields=torch.zeros(2, 1, 4, 4, 2),
+            output_fields=torch.zeros(2, 1, 4, 4, 2),
+            constant_scalars=torch.full((2, 1), float(i)) if with_scalars else None,
+            constant_fields=None,
+        )
+        for i in range(n_batches)
+    ]
+
+
+def test_dump_rollout_tensors_rejects_multi_rank(tmp_path):
+    fabric = SimpleNamespace(world_size=2, global_rank=0)
+
+    with pytest.raises(RuntimeError, match=r"eval\.devices=1"):
+        _dump_rollout_tensors(
+            rollout_predict=_rollout_predict_batch(n_members=3),
+            dataloader=_dump_batches(1),
+            out_path=tmp_path / "rollout_tensors.pt",
+            meta={},
+            fabric=fabric,
+        )
+
+
+def test_dump_rollout_tensors_writes_schema_and_meta(tmp_path):
+    fabric = SimpleNamespace(world_size=1, global_rank=0)
+    out_path = tmp_path / "rollout_tensors.pt"
+
+    _dump_rollout_tensors(
+        rollout_predict=_rollout_predict_batch(n_members=3),
+        dataloader=_dump_batches(2),
+        out_path=out_path,
+        meta={
+            "split": DumpSplit.TEST.value,
+            "checkpoint": "/ckpt/model.ckpt",
+            "n_members": 3,
+            "max_rollout_steps": 3,
+            "rollout_stride": 1,
+            "eval_mode": "ambient",
+            "resolved_eval_path": EVAL_PATH_AMBIENT_EPD,
+            "data_path": "/data/reaction_diffusion",
+            "value_space": "denormalized",
+        },
+        fabric=fabric,
+    )
+
+    saved = torch.load(out_path, weights_only=False)
+    assert saved["preds"].shape == (4, 3, 4, 4, 2, 3)
+    assert saved["trues"].shape == (4, 3, 4, 4, 2)
+    assert saved["constant_scalars"].shape == (4, 1)
+    assert saved["meta"]["split"] == "test"
+    assert saved["meta"]["checkpoint"] == "/ckpt/model.ckpt"
+    assert saved["meta"]["n_members"] == 3
+    assert saved["meta"]["max_rollout_steps"] == 3
+    assert saved["meta"]["rollout_stride"] == 1
+    assert saved["meta"]["eval_mode"] == "ambient"
+    assert saved["meta"]["resolved_eval_path"] == EVAL_PATH_AMBIENT_EPD
+    assert saved["meta"]["data_path"] == "/data/reaction_diffusion"
+    assert saved["meta"]["value_space"] == "denormalized"
+    assert saved["meta"]["n_traj"] == 4
+    assert "denormalized" in saved["meta"]["dims"]
+
+
+def test_dump_rollout_tensors_respects_max_traj_cap(tmp_path):
+    fabric = SimpleNamespace(world_size=1, global_rank=0)
+    out_path = tmp_path / "rollout_tensors.pt"
+
+    _dump_rollout_tensors(
+        rollout_predict=_rollout_predict_batch(n_members=None),
+        dataloader=_dump_batches(3, with_scalars=False),
+        out_path=out_path,
+        meta={"value_space": "denormalized"},
+        fabric=fabric,
+        n_traj_cap=3,
+    )
+
+    saved = torch.load(out_path, weights_only=False)
+    # Each batch contributes B=2 trajectories; the cap stops after the batch
+    # that reaches or exceeds 3, so 4 trajectories are written (not the full 6).
+    assert saved["preds"].shape[0] == 4
+    assert saved["constant_scalars"] is None
+
+
+def test_dump_rollout_tensors_skips_none_batches_without_crashing(tmp_path):
+    fabric = SimpleNamespace(world_size=1, global_rank=0)
+    out_path = tmp_path / "rollout_tensors.pt"
+
+    def rollout_predict(batch):
+        if batch is None:
+            return None, None
+        return torch.ones(2, 3, 4, 4, 2), torch.zeros(2, 3, 4, 4, 2)
+
+    _dump_rollout_tensors(
+        rollout_predict=rollout_predict,
+        dataloader=[None, *_dump_batches(1, with_scalars=False)],
+        out_path=out_path,
+        meta={"value_space": "denormalized"},
+        fabric=fabric,
+    )
+
+    saved = torch.load(out_path, weights_only=False)
+    assert saved["preds"].shape[0] == 2
+
+
+def test_dump_rollout_tensors_writes_nothing_when_all_batches_are_none(tmp_path):
+    fabric = SimpleNamespace(world_size=1, global_rank=0)
+    out_path = tmp_path / "rollout_tensors.pt"
+
+    def rollout_predict(batch):  # noqa: ARG001
+        return None, None
+
+    _dump_rollout_tensors(
+        rollout_predict=rollout_predict,
+        dataloader=_dump_batches(1),
+        out_path=out_path,
+        meta={"value_space": "denormalized"},
+        fabric=fabric,
+    )
+
+    assert not out_path.exists()
+
+
+def test_dump_rollout_tensors_does_not_write_on_non_zero_rank(tmp_path):
+    fabric = SimpleNamespace(world_size=1, global_rank=1)
+    out_path = tmp_path / "rollout_tensors.pt"
+
+    _dump_rollout_tensors(
+        rollout_predict=_rollout_predict_batch(n_members=None),
+        dataloader=_dump_batches(1, with_scalars=False),
+        out_path=out_path,
+        meta={"value_space": "denormalized"},
+        fabric=fabric,
+    )
+
+    assert not out_path.exists()
+
+
+# ---------------------------------------------------------------------------
+# Stateless encoder/decoder placeholders need AE injection (b5a896b4)
+# ---------------------------------------------------------------------------
+
+
+def test_needs_autoencoder_injection_true_when_unset():
+    assert _needs_autoencoder_injection(None, {"pkg.Identity"}) is True
+
+
+def test_needs_autoencoder_injection_true_for_stateless_placeholder():
+    placeholder_cfg = OmegaConf.create({"_target_": "pkg.Identity", "in_channels": 3})
+    assert _needs_autoencoder_injection(placeholder_cfg, {"pkg.Identity"}) is True
+
+
+def test_needs_autoencoder_injection_false_for_real_component():
+    real_cfg = OmegaConf.create({"_target_": "pkg.DCEncoder", "in_channels": 3})
+    assert _needs_autoencoder_injection(real_cfg, {"pkg.Identity"}) is False
+
+
+def _write_autoencoder_run_config(run_dir, *, encoder_target, decoder_target):
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "autoencoder.ckpt").touch()
+    OmegaConf.save(
+        OmegaConf.create(
+            {
+                "model": {
+                    "encoder": {"_target_": encoder_target, "in_channels": 3},
+                    "decoder": {"_target_": decoder_target, "out_channels": 3},
+                }
+            }
+        ),
+        run_dir / "resolved_autoencoder_config.yaml",
+    )
+    return run_dir / "autoencoder.ckpt"
+
+
+def test_maybe_inject_encoder_decoder_replaces_stateless_placeholders(tmp_path):
+    ae_ckpt = _write_autoencoder_run_config(
+        tmp_path / "ae_run",
+        encoder_target="autocast.encoders.dc.DCEncoder",
+        decoder_target="autocast.decoders.dc.DCDecoder",
+    )
+    cfg = OmegaConf.create(
+        {
+            "autoencoder_checkpoint": str(ae_ckpt),
+            "model": {
+                "encoder": {
+                    "_target_": "autocast.encoders.identity.IdentityEncoder",
+                    "in_channels": 3,
+                },
+                "decoder": {
+                    "_target_": "autocast.decoders.identity.IdentityDecoder",
+                    "in_channels": 3,
+                },
+            },
+        }
+    )
+
+    injected = _maybe_inject_encoder_decoder_from_autoencoder_checkpoint(cfg)
+
+    assert injected.model.encoder._target_ == "autocast.encoders.dc.DCEncoder"
+    assert injected.model.decoder._target_ == "autocast.decoders.dc.DCDecoder"
+
+
+def test_maybe_inject_encoder_decoder_fills_missing_slots(tmp_path):
+    ae_ckpt = _write_autoencoder_run_config(
+        tmp_path / "ae_run",
+        encoder_target="autocast.encoders.dc.DCEncoder",
+        decoder_target="autocast.decoders.dc.DCDecoder",
+    )
+    cfg = OmegaConf.create({"autoencoder_checkpoint": str(ae_ckpt)})
+
+    injected = _maybe_inject_encoder_decoder_from_autoencoder_checkpoint(cfg)
+
+    assert injected.model.encoder._target_ == "autocast.encoders.dc.DCEncoder"
+    assert injected.model.decoder._target_ == "autocast.decoders.dc.DCDecoder"
+
+
+def test_maybe_inject_encoder_decoder_leaves_real_components_untouched(tmp_path):
+    ae_ckpt = _write_autoencoder_run_config(
+        tmp_path / "ae_run",
+        encoder_target="autocast.encoders.dc.DCEncoder",
+        decoder_target="autocast.decoders.dc.DCDecoder",
+    )
+    cfg = OmegaConf.create(
+        {
+            "autoencoder_checkpoint": str(ae_ckpt),
+            "model": {
+                "encoder": {
+                    "_target_": "autocast.encoders.dc.DCEncoder",
+                    "in_channels": 1,
+                },
+                "decoder": {
+                    "_target_": "autocast.decoders.dc.DCDecoder",
+                    "out_channels": 1,
+                },
+            },
+        }
+    )
+
+    injected = _maybe_inject_encoder_decoder_from_autoencoder_checkpoint(cfg)
+
+    assert injected.model.encoder.in_channels == 1
+    assert injected.model.decoder.out_channels == 1
+
+
 def _example_batch(kind):
     if kind == "batch":
         return Batch(
@@ -1469,6 +1899,42 @@ def test_maybe_swap_to_ambient_datamodule_loads_from_cache_dir(tmp_path):
     assert cfg.datamodule.use_normalization is True
 
 
+@pytest.mark.parametrize("eval_mode", ["ambient", "encode_once"])
+@pytest.mark.parametrize(
+    ("raw_start_frame", "overrides", "expected_start_frame"),
+    [
+        (None, {}, None),
+        (7, {}, 7),
+        (7, {"start_frame": 0}, 0),
+        (None, {"start_frame": 3}, 3),
+    ],
+)
+def test_maybe_swap_to_ambient_datamodule_preserves_start_frame(
+    tmp_path, encoded_batch, eval_mode, raw_start_frame, overrides, expected_start_frame
+):
+    raw_datamodule = {
+        "_target_": "autocast.data.datamodule.SpatioTemporalDataModule",
+        "data_path": "/path/to/raw",
+    }
+    if raw_start_frame is not None:
+        raw_datamodule["start_frame"] = raw_start_frame
+    OmegaConf.save(
+        OmegaConf.create({"datamodule": raw_datamodule}),
+        tmp_path / "autoencoder_config.yaml",
+    )
+    cfg = OmegaConf.create({"datamodule": {"data_path": str(tmp_path), **overrides}})
+
+    _maybe_swap_to_ambient_datamodule(
+        cfg, eval_mode=eval_mode, example_batch=encoded_batch
+    )
+
+    assert cfg.datamodule.data_path == "/path/to/raw"
+    if expected_start_frame is None:
+        assert "start_frame" not in cfg.datamodule
+    else:
+        assert cfg.datamodule.start_frame == expected_start_frame
+
+
 def test_maybe_swap_to_ambient_datamodule_errors_without_ae_config(tmp_path):
     cfg = OmegaConf.create(
         {
@@ -1504,6 +1970,39 @@ def test_maybe_swap_to_ambient_datamodule_errors_without_data_path():
         _maybe_swap_to_ambient_datamodule(
             cfg, eval_mode="ambient", example_batch=encoded
         )
+
+
+def test_check_dump_request_refuses_a_dump_the_rollout_pass_would_skip():
+    with pytest.raises(ValueError, match="compute_rollout_metrics"):
+        _check_dump_request(
+            dump_requested=True,
+            compute_rollout_metrics=False,
+            trajectory_statistics_enabled=False,
+        )
+    for rollout_metrics, trajectories in ((True, False), (False, True)):
+        _check_dump_request(
+            dump_requested=True,
+            compute_rollout_metrics=rollout_metrics,
+            trajectory_statistics_enabled=trajectories,
+        )
+    _check_dump_request(
+        dump_requested=False,
+        compute_rollout_metrics=False,
+        trajectory_statistics_enabled=False,
+    )
+
+
+def test_dump_rollout_tensors_keeps_the_member_axis_for_one_member(tmp_path):
+    out_path = tmp_path / "rollout_tensors.pt"
+    _dump_rollout_tensors(
+        rollout_predict=_rollout_predict_batch(n_members=None),
+        dataloader=_dump_batches(1),
+        out_path=out_path,
+        meta={"split": DumpSplit.TEST.value},
+        fabric=SimpleNamespace(world_size=1, global_rank=0),
+    )
+    saved = torch.load(out_path, weights_only=True)
+    assert saved["preds"].shape == (2, 3, 4, 4, 2, 1)
 
 
 def test_run_evaluation_auto_resolves_stateless_epd_to_ambient(tmp_path, monkeypatch):

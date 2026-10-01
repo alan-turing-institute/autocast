@@ -522,12 +522,32 @@ def _build_processor(
     return instantiate(processor_config, **filtered_kwargs)
 
 
-def _build_loss_func(model_config: DictConfig) -> nn.Module:
-    """Build loss function from config, defaulting to MSELoss."""
+def _build_loss_func(
+    model_config: DictConfig,
+    processor: nn.Module | None = None,
+) -> nn.Module | None:
+    """Build a loss and satisfy explicit processor-binding requirements.
+
+    Returns ``None`` when the config does not name a loss, rather than
+    falling back to ``MSELoss``. Processors that own their objective in
+    ``processor.loss()`` (flow matching, drifting) are configured with
+    ``loss_func: null``; a default here masks that intent and sends them
+    down the cross-cutting loss path instead of their own.
+    """
     loss_func_config = model_config.get("loss_func")
     if loss_func_config is None:
-        return nn.MSELoss()
-    return instantiate(loss_func_config)
+        return None
+
+    target = loss_func_config.get("_target_")
+    loss_kwargs: dict[str, Any] = {}
+    loss_cls = get_class(target) if target is not None else None
+    if getattr(loss_cls, "requires_processor", False):
+        if processor is None:
+            msg = f"{target} requires a processor-bound EPD setup."
+            raise ValueError(msg)
+        loss_kwargs["processor"] = processor
+
+    return instantiate(loss_func_config, **loss_kwargs)
 
 
 def _resolve_metric_overrides(metric_cfg: Any) -> Any:
@@ -702,7 +722,17 @@ def setup_epd_model(
         "spatial_resolution": latent_spatial_resolution,
     }
     processor = _build_processor(model_config, proc_kwargs, global_cond_channels)
-    loss_func = _build_loss_func(model_config)
+    loss_func = _build_loss_func(model_config, processor)
+    if model_config.get("train_in_latent_space", False) and getattr(
+        loss_func,
+        "requires_ambient_predictions",
+        False,
+    ):
+        msg = (
+            f"{type(loss_func).__name__} requires ambient predictions; "
+            "set model.train_in_latent_space=false."
+        )
+        raise ValueError(msg)
 
     is_ensemble = model_config.get("n_members", 1) > 1
     cls = EncoderProcessorDecoderEnsemble if is_ensemble else EncoderProcessorDecoder

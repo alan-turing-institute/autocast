@@ -21,10 +21,15 @@ small edit.
 | ensemble_size (m=16, fixed global eff. bs=1024) | sweep | GS / GPE / CNS / AD | 4 | timing ready |
 | planned_01 batch | mixed | CNS | 8 | timing scripted |
 | planned_02 batch | mixed | GS / GPE / AD | 6 | timing + production scripted |
+| planned_updates_01 batch | MC dropout | GS / GPE / CNS / AD | 4 | timing + production scripted |
+| planned_updates_02 batch | MC dropout MSE + L2 | GS / GPE / CNS / AD | 4 | timing + production + eval submitted |
+| planned_updates_03 batch | FNO architecture | GS / GPE / CNS / AD | 4 | timing + production + eval submitted |
 | noise_channels | sweep | CNS | 1 | config + planned |
+| mc_dropout (FFN, p=0.1) | comparison | GS / GPE / CNS / AD | 4 | timing + production scripted |
+| mc_dropout MSE + L2 (FFN, p=0.1) | comparison | CNS | 1 | ready |
 | crps_variants (AlphaFair / Fair / CRPS) | comparison | CNS | 2 new (+baseline) | config + planned |
 | fm_vs_diffusion | comparison | CNS | 1 | config + planned |
-| arch_unet_fno_vit | comparison | CNS | 1 U-Net (+ViT baseline) | config + planned |
+| arch_unet_fno_vit | comparison | all 4 FNO; CNS U-Net | 4 FNO + 1 U-Net (+ViT baselines) | FNO timing ready |
 | model_size | sweep | CNS | 2 active (+2 staged) | in progress |
 | vit_mae_pretrain | pretrain | CNS | 1 | staged |
 | cached_latent_crps | comparison | CNS | 1 (basis: 2026-04-20) | eval ready |
@@ -45,7 +50,7 @@ cross-ablation run list can be submitted consistently after timing. It covers:
 
 | planned run | study folder | implementation |
 |---|---|---|
-| U-Net m=8 CRPS CNS | `arch_unet_fno_vit` | `crps_unet_azula_80m`, ~80.9M params |
+| U-Net m=8 CRPS CNS | `arch_unet_fno_vit` | `crps_unet_azula_80m`, ~81.3M params |
 | Diffusion CNS | `fm_vs_diffusion` | diffusion processor with the FM 704/12/8 ViT backbone |
 | CNS m=8 fair CRPS | `crps_variants` | FairCRPS loss on the 80M CRPS ViT |
 | CNS m=8 CRPS | `crps_variants` | plain CRPS loss on the 80M CRPS ViT |
@@ -79,6 +84,34 @@ The m=4 GPE/AD follow-up follows the same timing-then-production pattern:
 `submit_planned_02_m4_followup_timing.sh` first, then
 `submit_planned_02_m4_followup_large.sh` after retrieving timing outputs.
 
+## Planned Updates Batch 01
+
+The first post-comparison update batch contains the parameter-matched
+four-dataset MC-dropout CRPS ablation. Its orchestration lives in
+`submit_planned_updates_01_timing.sh` and
+`submit_planned_updates_01_large.sh`; the reusable experiment configs and
+design notes remain under `ablations/mc_dropout/`.
+
+## Planned Updates Batch 02
+
+The second post-comparison update batch contains four-dataset MC-dropout MSE
+baselines. They use the same parameter-matched architecture and `p=0.1`
+sampler as the CRPS ablation, plus an explicit processor-local L2 penalty with
+coefficient `1e-5`. Evaluation uses the shared 10-member comparison protocol.
+Its
+orchestration lives in `submit_planned_updates_02_timing.sh`,
+`submit_planned_updates_02_large.sh`, and
+`submit_eval_planned_updates_02.sh`.
+
+## Planned Updates Batch 03
+
+The third post-comparison update batch adds parameter-matched CRPS FNO
+architecture runs for all four comparison datasets. Its orchestration lives in
+`submit_planned_updates_03_timing.sh` and
+`submit_planned_updates_03_large.sh`, with evaluation in
+`submit_eval_planned_updates_03.sh`. The experiment config and design notes
+remain under `ablations/arch_unet_fno_vit/`.
+
 ## Design notes
 
 - **Flexible by construction.** Each ablation is a self-contained
@@ -106,7 +139,43 @@ The m=4 GPE/AD follow-up follows the same timing-then-production pattern:
    and paste into `submit_*_large.sh`, or use a large script that derives
    them from matching timing checkpoints.
 3. `submit_*_large.sh` — 24h production runs, dry-run first.
-4. Eval from the script local to the study:
-   `slurm_scripts/comparison/eval/` for the canonical comparison suite, and
-   `slurm_scripts/ablations/<name>/eval/` for ablation-only run sets that have
-   not been promoted into the main comparison yet.
+4. Eval from the corresponding central `submit_eval_planned*.sh` script or a
+   study-local `eval/` submitter when the run set has not been centralized.
+
+## Measured U-Net extensions
+
+The AD, GS and GPE U-Net production runs use the committed
+`diffusion_unet_extensions.yaml` manifest and the measured budgets documented
+in [the extension plan](diffusion_unet_extensions_PLAN.md). From the checkout
+root, preview their commands with:
+
+```bash
+uv run --frozen --no-sync python slurm_scripts/ablations/submit_unet_extensions.py
+```
+
+Append `--submit` to launch after validation. The default run group is
+`YYYY-MM-DD/diffusion_unet_extensions`; `--run-group` selects a different
+group for an intentional repeat. The launcher refuses existing U-Net runs
+in the requested group and requires a clean checkout when submitting.
+It prints the source commit and uses the existing `autocast epd --mode slurm`
+workflow, which saves an exact `submit_job_*.sh` in each output directory.
+It submits only the three U-Net production jobs, not diffusion or timing jobs.
+
+## Measured diffusion extensions
+
+The corresponding AD, GS and GPE diffusion launcher uses the same manifest,
+with the original measured budgets of 2601, 2249 and 2674 epochs. Preview it
+from the checkout root with:
+
+```bash
+uv run --frozen --no-sync python slurm_scripts/ablations/submit_diffusion_extensions.py
+```
+
+It validates each config against the saved 2026-04-27 timing config, including
+the identity of the cached-latent directory, and checks four GPUs, four tasks
+and a 23h59m limit. The original timing records must remain accessible.
+The default date-prefixed group, `--run-group`, explicit `--submit`, clean
+checkout requirement and duplicate-submission checks match the U-Net launcher.
+It uses `autocast processor --mode slurm` and submits only the three diffusion
+production runs. The already-submitted diffusion jobs are not resubmitted by
+running the default preview.
