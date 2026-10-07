@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import sys
 from datetime import timedelta
 from pathlib import Path
 from typing import Any, cast
@@ -305,6 +306,12 @@ class TestTimeCosineSchedule:
         with pytest.raises(ValueError, match="fraction"):
             self._build(warmup=100)
 
+    # Windows wheels report Gloo availability but lack a usable transport.
+    # https://github.com/pytorch/pytorch/issues/150381
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="Windows PyTorch wheels lack a usable Gloo transport",
+    )
     @pytest.mark.skipif(
         not torch.distributed.is_gloo_available(), reason="Gloo is unavailable"
     )
