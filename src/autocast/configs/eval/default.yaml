@@ -112,6 +112,9 @@ trajectory_statistics:
 # Rollout settings
 max_rollout_steps: 10
 free_running_only: true
+# Supply truth at rollout-window boundaries with free_running_only=false.
+# Zero preserves the existing free-running evaluation behaviour.
+teacher_forcing_ratio: 0.0
 
 # Inference benchmark settings (synthetic batch with matching tensor shapes)
 benchmark:
