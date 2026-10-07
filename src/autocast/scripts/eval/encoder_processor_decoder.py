@@ -1070,6 +1070,7 @@ def _render_rollouts(  # noqa: PLR0912, PLR0915
     snapshot_channels: Sequence[int] | None = None,
     member_indices: Sequence[int] | None = None,
     member_render_mode: str = DEFAULT_ROLLOUT_MEMBER_RENDER_MODE,
+    rollout_start: int = 0,
 ) -> list[Path]:
     # Return early if no rollout indices are requested
     if not batch_indices:
@@ -1095,8 +1096,10 @@ def _render_rollouts(  # noqa: PLR0912, PLR0915
                 break
 
             if rollout_predict_fn is None:
+                # Match the metric path; custom predictors apply their own crop.
+                rollout_batch = _crop_rollout_batch_start(batch, rollout_start)
                 preds, trues = model.rollout(
-                    batch,
+                    rollout_batch,
                     stride=stride,
                     max_rollout_steps=max_rollout_steps,
                     free_running_only=free_running_only,
@@ -3433,6 +3436,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 snapshot_channels=rollout_snapshot_channels,
                 member_indices=rollout_member_indices,
                 member_render_mode=rollout_member_render_mode,
+                rollout_start=rollout_start,
             )
 
         # Prepare metric functions for rollouts

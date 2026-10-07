@@ -760,6 +760,7 @@ def test_render_rollouts_can_use_custom_rollout_predict(tmp_path, monkeypatch):
         free_running_only=True,
         n_members=None,
         rollout_predict_fn=_custom_predict,
+        rollout_start=16,
     )
 
     assert len(out_paths) == 1
@@ -2368,3 +2369,44 @@ def test_try_build_decode_fn_passes_chunk_size_to_lola_decoder(tmp_path, monkeyp
     decoder, _ = _try_build_decode_fn(cfg)
     assert isinstance(decoder, FakeWrappedDecoder)
     assert captured.get("chunk_size") == 8
+
+
+@pytest.mark.parametrize("start", [0, 16])
+def test_render_rollouts_initializes_at_requested_start(tmp_path, monkeypatch, start):
+    fields = torch.arange(101, dtype=torch.float32).reshape(1, 101, 1, 1, 1)
+    batch = Batch(
+        input_fields=fields[:, :1],
+        output_fields=fields[:, 1:],
+        constant_scalars=None,
+        constant_fields=None,
+    )
+    rendered = []
+
+    class DummyModel:
+        def rollout(self, selected, **_kwargs):
+            assert selected.input_fields.flatten().tolist() == [float(start)]
+            targets = selected.output_fields
+            return targets + 1000, targets
+
+    monkeypatch.setattr(
+        "autocast.scripts.eval.encoder_processor_decoder.plot_spatiotemporal_video",
+        lambda **kwargs: rendered.append(kwargs),
+    )
+    _render_rollouts(
+        model=cast(Any, DummyModel()),
+        dataloader=[batch],
+        batch_indices=[0],
+        video_dir=tmp_path,
+        sample_index=0,
+        fmt="mp4",
+        fps=5,
+        stride=4,
+        max_rollout_steps=46,
+        free_running_only=True,
+        rollout_start=start,
+    )
+    assert len(rendered) == 1
+    assert rendered[0]["true"].flatten().tolist() == list(range(start + 1, 101))
+    assert torch.equal(rendered[0]["pred"], rendered[0]["true"] + 1000)
+    assert batch.input_fields.flatten().tolist() == [0.0]
+    assert batch.output_fields.shape[1] == 100
