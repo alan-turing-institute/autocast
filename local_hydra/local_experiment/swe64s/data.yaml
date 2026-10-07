@@ -1,0 +1,12 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/common
+  - override /datamodule: shallow_water2d
+  - _self_
+
+datamodule:
+  data_path: "${oc.env:AUTOCAST_DATASETS,./datasets}/shallow_water2d_stochastic_64_b43bd32"
+  normalization_path: ${.data_path}/stats.yml
+  use_normalization: true
+  batch_size: 32
+  start_frame: 0  # The generated data already excludes the t < 40 spin-up.

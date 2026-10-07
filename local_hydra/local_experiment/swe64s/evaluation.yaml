@@ -1,0 +1,43 @@
+# @package _global_
+# Applied to the saved training config; do not replace its model/data settings.
+defaults:
+  - _self_
+
+eval:
+  mode: auto
+  use_ema: false
+  latent_space_metrics: false
+  n_members: 16
+  devices: 1
+  num_nodes: 1
+  strategy: auto
+  batch_size: 1
+  max_test_batches: null
+  max_rollout_batches: null
+  # Generic evaluator uses four-frame blocks: 25 calls = 100 saved-time leads.
+  max_rollout_steps: 25
+  rollout_start: 0
+  free_running_only: true
+  teacher_forcing_ratio: 0.0
+  metrics: [vrmse, vrmse_v2, crps, afcrps, spread, skill, ssr, psrmse, pscc]
+  coverage_levels: [0.9]
+  compute_test_metrics: true
+  compute_rollout_metrics: true
+  compute_rollout_coverage: true
+  metric_windows: [null]
+  metric_windows_rollout: [[0, 4], [4, 20], [20, 100]]
+  deterministic_metric_member_average: true
+  trajectory_statistics:
+    enabled: true
+    overwrite_existing: false
+    sampling_seed: 42
+    include_per_timestep: true
+  batch_indices: [0]
+  rollout_member_indices: [0]
+  rollout_member_render_mode: inline
+  save_rollout_snapshots: true
+  rollout_snapshot_timesteps: [0, 3, 11, 31, 99]
+  benchmark:
+    enabled: false
+  benchmark_rollout:
+    enabled: false

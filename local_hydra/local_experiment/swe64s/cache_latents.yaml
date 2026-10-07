@@ -1,0 +1,38 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/data
+  - override /encoder@model.encoder: dc_large
+  - override /decoder@model.decoder: dc_large
+  - _self_
+
+experiment_name: swe64s_cache_latents
+autoencoder_checkpoint: ???  # Only the newly trained SWE64 autoencoder.
+
+datamodule:
+  batch_size: 1  # One full 321-frame trajectory per encoding call.
+  autoencoder_mode: false
+
+model:
+  encoder:
+    periodic: true
+    pixel_shuffle: true
+    patch_size: 1
+    out_channels: 8
+    hid_channels: [128, 256, 512]
+    hid_blocks: [3, 3, 3]
+    stride: 2
+  decoder:
+    periodic: true
+    pixel_shuffle: true
+    patch_size: 1
+    in_channels: 8
+    hid_channels: [512, 256, 128]
+    hid_blocks: [3, 3, 3]
+    stride: 2
+
+cache_latents:
+  output_dir: ???  # Choose a fresh, empty directory outside Git.
+  device: auto
+
+trainer:
+  max_epochs: 0  # This command encodes only; it does not train.

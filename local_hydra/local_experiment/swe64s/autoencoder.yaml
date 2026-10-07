@@ -1,0 +1,42 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/data
+  - override /model: autoencoder_dc_large
+  - override /optimizer: psgd
+  - _self_
+
+experiment_name: swe64s_autoencoder
+
+datamodule:
+  batch_size: 16
+  autoencoder_mode: true
+
+model:
+  encoder:
+    # Paper AE capacity: two stride-2 transitions; circular padding for SWE.
+    periodic: true
+    pixel_shuffle: true
+    patch_size: 1
+    out_channels: 8
+    hid_channels: [128, 256, 512]
+    hid_blocks: [3, 3, 3]
+    stride: 2
+  decoder:
+    periodic: true
+    pixel_shuffle: true
+    patch_size: 1
+    in_channels: 8
+    hid_channels: [512, 256, 128]
+    hid_blocks: [3, 3, 3]
+    stride: 2
+
+optimizer:
+  learning_rate: 1e-5
+  weight_decay: 0.0
+  scheduler: cosine
+  scheduler_interval: epoch
+  cosine_epochs: ${trainer.max_epochs}
+  warmup: 0
+
+trainer:
+  gradient_clip_val: 1.0

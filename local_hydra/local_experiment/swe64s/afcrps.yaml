@@ -1,0 +1,62 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/data
+  - override /encoder@model.encoder: permute_concat
+  - override /decoder@model.decoder: channels_last
+  - override /processor@model.processor: vit_azula_large
+  - override /optimizer: adamw_half
+  - override /trainer: crps_main_comparison_rerun
+  - _self_
+
+experiment_name: swe64s_afcrps
+
+model:
+  train_in_latent_space: false
+  n_members: 8
+  # Paper-style full-field targets, not the earlier 32x32 residual pilot.
+  encoder:
+    with_constants: false
+  processor:
+    hidden_dim: 568
+    num_heads: 8
+    n_layers: 12
+    patch_size: 4
+    temporal_method: none
+    n_noise_channels: 1024
+    n_noise_input_channels: 1024
+    include_global_cond: false
+    dropout: 0.0
+    ffn_factor: 4
+    qk_norm: true
+    rope: false
+    rpb: true
+  loss_func:
+    _target_: autocast.losses.ensemble.AlphaFairCRPSLoss
+    alpha: 0.95
+  train_metrics:
+    afcrps:
+      _target_: autocast.metrics.ensemble.AlphaFairCRPS
+      alpha: 0.95
+  val_metrics:
+    afcrps:
+      _target_: autocast.metrics.ensemble.AlphaFairCRPS
+      alpha: 0.95
+    spread:
+      _target_: autocast.metrics.ensemble.EnsembleSpread
+    multicoverage:
+      _target_: autocast.metrics.MultiCoverage
+    multiwinkler:
+      _target_: autocast.metrics.ensemble.MultiWinkler
+
+optimizer:
+  learning_rate: 2e-4
+  scheduler: cosine
+  scheduler_interval: epoch
+  cosine_epochs: ${trainer.max_epochs}
+  warmup: 0
+
+# Override the common settings after the trainer preset is selected.
+trainer:
+  max_epochs: ???
+  max_steps: -1
+  max_time: null

@@ -1,0 +1,37 @@
+# @package _global_
+# Shared across raw-field and cached-latent jobs; no machine-specific launcher.
+defaults:
+  - _self_
+
+seed: 42
+experiment_name: swe64s
+umask: "0007"
+float32_matmul_precision: high
+
+datamodule:
+  n_steps_input: 1
+  n_steps_output: 4
+  stride: 1
+  num_workers: 0
+
+trainer:
+  # Set after timing on the target GPU. A compose-only check may use 1.
+  max_epochs: ???
+  max_steps: -1
+  max_time: null
+  accelerator: auto
+  devices: 1
+  num_nodes: 1
+  strategy: auto
+
+logging:
+  wandb:
+    enabled: false
+
+output:
+  skip_test: true
+  save_config: true
+
+hydra:
+  run:
+    dir: ${oc.env:SWE64S_OUTPUTS,outputs/swe64s}/${experiment_name}/${now:%Y-%m-%d_%H-%M-%S}
