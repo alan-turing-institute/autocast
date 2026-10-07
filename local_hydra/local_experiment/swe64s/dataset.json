@@ -1,0 +1,52 @@
+{
+  "directory": "shallow_water2d_stochastic_64_b43bd32",
+  "uuid": "b43bd32d-28bc-4dfa-af55-683e44d7f93f",
+  "field_names": ["h", "u", "v"],
+  "frames": 321,
+  "resolution": [64, 64],
+  "splits": {"train": 200, "valid": 20, "test": 20},
+  "saved_times": {"start": 40.0, "stop": 120.0, "interval": 0.25},
+  "simulator_parameters_varied": false,
+  "simulator": {
+    "nx": 64,
+    "ny": 64,
+    "Lx": 6.283185307179586,
+    "Ly": 6.283185307179586,
+    "g": 9.81,
+    "h_mean": 1.0,
+    "f0": 1.0,
+    "beta": 0.5,
+    "nu": 0.0001,
+    "drag": 0.05,
+    "coriolis_mode": "periodic_beta",
+    "dealias": true,
+    "initial_condition": "balanced_random_pv",
+    "initial_wavenumber": 4.0,
+    "initial_bandwidth": 1.5,
+    "forcing_type": "vortical",
+    "forcing_energy_rate": 0.0015,
+    "forcing_wavenumber": 3.0,
+    "forcing_bandwidth": 0.7,
+    "forcing_correlation_time": 0.0,
+    "forcing_backscatter_fraction": 0.0,
+    "T": 120.0,
+    "dt_save": 0.25,
+    "skip_nt": 160,
+    "parameters_range": {"amp": [0.1, 0.1]}
+  },
+  "sha256": {
+    "train/data.pt": "ed5c3fefd4cd3adc6b7178a021b7313f506d2371a36f533594cfa1aec7d49dba",
+    "valid/data.pt": "c1eba3d0546c0df122d613d356fb88cf8aa90ca1e13235eccdb230c8c75ea5f6",
+    "test/data.pt": "a4e0debfccf069875f3a04a8cd07ce222ddaa27290645e0e6b5ce2006b3de1aa"
+  },
+  "generation": {
+    "date": "2026-10-02",
+    "config": "generate_data_swe_crps_64_matched",
+    "autosim_base_commit": "47376c8cf5695e59f82a779998634020404197b5",
+    "matching_later_commit": "1bf963f775f8587eea840a4f4c8f5a0e55abc619",
+    "source_archive_sha256": "53c79d6639cb5c615658539feebd286288f3668949f9406af80abd3ddf833c27",
+    "original_path": "/data/aiphys/scratch/swe-crps-issue-153/dataset-generation-64-20261002/results/production/matched_64_200_20_20_321f",
+    "provenance_note": "The source archive is the launch-time identity. The later matching commit is not claimed as the original generation HEAD. The UUID was assigned during the 2026-10-06 transfer."
+  },
+  "existing_copy": "/projects/u6eo/autocast/datasets/shallow_water2d_stochastic_64_b43bd32"
+}

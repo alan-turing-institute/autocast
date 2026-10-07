@@ -1,0 +1,49 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/common
+  - override /datamodule: cached_latents
+  - override /processor@model.processor: flow_matching_vit
+  - override /backbone@model.processor.backbone: vit
+  - override /optimizer: adamw_half
+  - override /trainer: fm_main_comparison
+  - _self_
+
+experiment_name: swe64s_flow_matching
+
+datamodule:
+  data_path: ???  # Directory produced by swe64s/cache_latents.
+  batch_size: 256
+
+model:
+  loss_func: null  # FlowMatchingProcessor owns its flow-field objective.
+  train_metrics: []
+  val_metrics: []
+  processor:
+    flow_ode_steps: 50
+    integrator: euler
+    backbone:
+      hid_channels: 704
+      hid_blocks: 12
+      attention_heads: 8
+      patch_size: 1  # 16x16x8 latents -> 256 tokens.
+      mod_features: 256
+      temporal_method: none
+      include_global_cond: false
+      include_time_embedding: true
+      dropout: 0.05
+      ffn_factor: 4
+      qk_norm: true
+      rope: false
+      rpb: true
+
+optimizer:
+  learning_rate: 1e-4
+  scheduler: cosine
+  scheduler_interval: epoch
+  cosine_epochs: ${trainer.max_epochs}
+  warmup: 0
+
+trainer:
+  max_epochs: ???
+  max_steps: -1
+  max_time: null
