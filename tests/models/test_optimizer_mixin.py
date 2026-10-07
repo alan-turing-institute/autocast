@@ -13,7 +13,7 @@ import torch
 from lightning.pytorch.callbacks import Timer
 from lightning.pytorch.strategies import DDPStrategy
 from torch import nn
-from torch.multiprocessing.spawn import spawn
+from torch.multiprocessing.spawn import ProcessRaisedException, spawn
 
 from autocast.models.optimizer_mixin import OptimizerMixin
 
@@ -306,19 +306,22 @@ class TestTimeCosineSchedule:
         with pytest.raises(ValueError, match="fraction"):
             self._build(warmup=100)
 
-    # Windows wheels report Gloo availability but lack a usable transport.
-    # https://github.com/pytorch/pytorch/issues/150381
-    @pytest.mark.skipif(
-        sys.platform == "win32",
-        reason="Windows PyTorch wheels lack a usable Gloo transport",
-    )
     @pytest.mark.skipif(
         not torch.distributed.is_gloo_available(), reason="Gloo is unavailable"
     )
     def test_distributed_clocks_produce_identical_updates(self, tmp_path: Path) -> None:
-        spawn(
-            _check_distributed_time_schedule,
-            args=((tmp_path / "gloo-rendezvous").as_uri(),),
-            nprocs=2,
-            join=True,
-        )
+        try:
+            spawn(
+                _check_distributed_time_schedule,
+                args=((tmp_path / "gloo-rendezvous").as_uri(),),
+                nprocs=2,
+                join=True,
+            )
+        except ProcessRaisedException as exc:
+            # Some Windows builds advertise Gloo but cannot initialize it.
+            if sys.platform == "win32" and (
+                "RuntimeError: makeDeviceForHostname(): unsupported gloo device"
+                in str(exc)
+            ):
+                pytest.skip("This Windows PyTorch build cannot initialize Gloo")
+            raise
