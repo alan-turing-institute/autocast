@@ -5,7 +5,7 @@ defaults:
   - override /decoder@model.decoder: channels_last
   - override /processor@model.processor: vit_azula_large
   - override /optimizer: adamw_half
-  - override /trainer: crps_main_comparison_rerun
+  - override /trainer: swe64s_time
   - _self_
 
 experiment_name: swe64s_afcrps
@@ -51,12 +51,6 @@ model:
 optimizer:
   learning_rate: 2e-4
   scheduler: cosine
-  scheduler_interval: epoch
-  cosine_epochs: ${trainer.max_epochs}
+  scheduler_interval: time
+  cosine_epochs: null
   warmup: 0
-
-# Override the common settings after the trainer preset is selected.
-trainer:
-  max_epochs: ???
-  max_steps: -1
-  max_time: null

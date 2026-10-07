@@ -88,12 +88,12 @@ uv run --frozen python scripts/swe64s/check_inputs.py --verify-hashes
 export AUTOCAST_DATASETS=/projects/u6eo/autocast/datasets
 export SWE64S_OUTPUTS=/path/to/approved/scratch/swe64s
 
-# Compose only: no dataset load or model fit. The one-epoch value is for inspection.
+# Compose only: no dataset load or model fit.
 uv run --frozen train_encoder_processor_decoder \
-  local_experiment=swe64s/afcrps trainer.max_epochs=1 --cfg job
+  local_experiment=swe64s/afcrps --cfg job
 
 uv run --frozen train_autoencoder \
-  local_experiment=swe64s/autoencoder trainer.max_epochs=1 --cfg job
+  local_experiment=swe64s/autoencoder --cfg job
 
 uv run --frozen cache_latents \
   local_experiment=swe64s/cache_latents \
@@ -102,23 +102,74 @@ uv run --frozen cache_latents \
 
 uv run --frozen python -m autocast.scripts.train.processor \
   local_experiment=swe64s/flow_matching \
-  datamodule.data_path=/path/to/new-cache trainer.max_epochs=1 --cfg job
+  datamodule.data_path=/path/to/new-cache --cfg job
 ```
 
-The real epoch budget is deliberately required (`trainer.max_epochs=???`).
-Choose it after target-GPU timing and review; the cosine schedule follows the
-explicit epoch budget. Learning rates are 2e-4 for afCRPS and 1e-4 for FM.
+All three fits use the existing wall-clock cosine scheduler:
+`scheduler=cosine`, `scheduler_interval=time`, zero warmup and a
+`trainer.max_time` of 23h59m. LR decay follows Lightning's resume-aware Timer;
+no timing runs, estimated epoch counts or `cosine_epochs` are needed.
+The finite ceiling of one million epochs only keeps progress callbacks
+well-defined; elapsed time is the binding budget. Learning rates remain
+2e-4 for afCRPS, 1e-4 for FM and 1e-5 for the PSGD autoencoder.
+
+This retains the previous nominal 24-hour budget on four GPUs per fit, using
+the budget caps from the main-comparison launch scripts. It does not reuse
+CNS's 473/3223 epoch estimates. The AE is now time-budgeted too, rather than
+reusing the historical 512-epoch schedule. Update counts and AE epochs will
+therefore differ. The portable presets retain one-device defaults; use the
+four-GPU launch settings below to match the intended compute allocation.
+
+The study-local `trainer=swe64s_time` policy saves hourly snapshots and
+`last.ckpt`, best validation loss and, when logged, overall/post-25% MultiWinkler
+checkpoints. It uses existing callbacks, not a new scheduler implementation.
+The post-25% window follows elapsed time. EMA remains stored separately;
+the main evaluation uses raw weights.
+
 Record batch/device count, updates, wall time, overrides, code/lock hashes,
 dataset checksums and the selected checkpoint hash with each run. Evaluate raw
 weights for the main comparison, even if the inherited callback stores EMA.
 
-For a real fit, remove `--cfg job` and replace the inspection budget with the
-reviewed one. Fit and review the AE before caching and launching FM. Check
+Fit and review the AE before caching and launching FM. Check
 reconstruction error and each channel's spectrum, plus divergence/vorticity
 balance: decoder artifacts must not be mistaken for FM uncertainty artifacts.
 The cache must retain the raw split counts and `(321,16,16,8)` trajectory shape.
 The existing cacher writes into its output directory, so use a fresh directory;
 do not reuse a completed cache destination.
+
+## Four GPU launch previews
+
+Run these from the repository root on the target machine after environment
+and data preflight. They are previews: `--dry-run` does not submit a job.
+Use fresh work directories. Only remove `--dry-run` after approving launch.
+The explicit time override prevents the distributed preset's 12-hour default
+from replacing the study budget. The allocation is one node, four GPUs and
+four tasks for up to 24 hours; the fit cap leaves one minute for finalization.
+
+```bash
+swe64_launch_overrides=(
+  '+distributed=ddp_4gpu_slurm'
+  'trainer.max_time=00:23:59:00'
+  '++hydra.launcher.nodes=1'
+  '++hydra.launcher.cpus_per_task=72'
+  'hydra.launcher.timeout_min=1440'
+)
+
+uv run --frozen autocast epd --mode slurm --dry-run \
+  --workdir "$SWE64S_OUTPUTS/afcrps" \
+  local_experiment=swe64s/afcrps "${swe64_launch_overrides[@]}"
+
+uv run --frozen autocast ae --mode slurm --dry-run \
+  --workdir "$SWE64S_OUTPUTS/autoencoder" \
+  local_experiment=swe64s/autoencoder "${swe64_launch_overrides[@]}"
+
+# Only after the matching AE has been reviewed and its fresh cache verified.
+uv run --frozen autocast processor --mode slurm --dry-run \
+  --workdir "$SWE64S_OUTPUTS/flow_matching" \
+  local_experiment=swe64s/flow_matching \
+  datamodule.data_path="$SWE64S_OUTPUTS/cached_latents" \
+  "${swe64_launch_overrides[@]}"
+```
 
 ## Common evaluation
 
@@ -146,11 +197,12 @@ block boundary, not at every frame inside a jointly predicted block. The
 25-call cap covers 100 saved-time leads, or 25 simulator time units, on all test
 trajectories. Review evaluation cost on the target GPU before executing.
 
-The shared metric runner is not yet the complete structural evaluation. Before
-launch, add exports of mean member power, mean member-anomaly power and
-divergence/vorticity balance using the existing SWE helpers, with the same
-channels, leads and checkpoints. Prepare the matching 64x64 conditional-redraw
-reference separately. These remain launch gates, not completed measurements.
+The shared metric runner is not yet the complete structural evaluation.
+Exports of mean member power, mean member-anomaly power and divergence/vorticity
+balance, plus a matching 64x64 conditional-redraw reference, are follow-on
+evaluation work. They are not dependencies of the afCRPS/FM fits or common
+metric evaluations, but are required before drawing uncertainty-structure
+conclusions from those runs. The generic diagnostic port is deferred.
 
 ## Environment before deployment
 

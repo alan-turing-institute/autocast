@@ -41,8 +41,6 @@ def check_configs() -> dict[str, DictConfig]:
                 "autoencoder_checkpoint=/preflight/autoencoder.ckpt",
                 "cache_latents.output_dir=/preflight/cache",
             ]
-        else:
-            overrides += ["trainer.max_epochs=1"]
         if name == "flow_matching":
             overrides += ["datamodule.data_path=/preflight/cache"]
         with initialize_config_dir(
@@ -54,7 +52,18 @@ def check_configs() -> dict[str, DictConfig]:
         )
         _require(windows == (1, 4, 1), f"{name}: inconsistent training windows")
         if name != "cache_latents":
-            _require(cfg.optimizer.cosine_epochs == 1, f"{name}: schedule mismatch")
+            _require(
+                cfg.optimizer.scheduler == "cosine"
+                and cfg.optimizer.scheduler_interval == "time"
+                and cfg.optimizer.cosine_epochs is None,
+                f"{name}: expected wall-clock cosine without an epoch estimate",
+            )
+            _require(
+                cfg.trainer.max_time == "00:23:59:00"
+                and cfg.trainer.max_epochs == 1000000
+                and cfg.trainer.max_steps == -1,
+                f"{name}: training budget changed",
+            )
         configs[name] = cfg
 
     afcrps = configs["afcrps"]
@@ -235,7 +244,18 @@ def main() -> None:
             Path(configs[name].datamodule.data_path).name == manifest["directory"],
             f"{name}: config/manifest dataset mismatch",
         )
-    result: dict[str, Any] = {"presets": list(configs), "training_executed": False}
+    result: dict[str, Any] = {
+        "presets": list(configs),
+        "training_executed": False,
+        "fit_budgets": {
+            name: {
+                "max_time": cfg.trainer.max_time,
+                "scheduler_interval": cfg.optimizer.scheduler_interval,
+            }
+            for name, cfg in configs.items()
+            if name != "cache_latents"
+        },
+    }
     if not args.configs_only:
         dataset = (
             args.dataset

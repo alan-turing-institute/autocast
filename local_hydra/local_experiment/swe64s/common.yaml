@@ -15,10 +15,11 @@ datamodule:
   num_workers: 0
 
 trainer:
-  # Set after timing on the target GPU. A compose-only check may use 1.
-  max_epochs: ???
+  # A finite, nonbinding ceiling keeps progress callbacks well-defined.
+  # Training and LR decay are bounded by elapsed time, not this epoch count.
+  max_epochs: 1000000
   max_steps: -1
-  max_time: null
+  max_time: "00:23:59:00"
   accelerator: auto
   devices: 1
   num_nodes: 1
