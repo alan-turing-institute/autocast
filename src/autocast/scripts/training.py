@@ -11,6 +11,7 @@ import lightning as L
 import torch
 from hydra.utils import instantiate
 from lightning.pytorch.callbacks import Callback, ModelCheckpoint, Timer
+from lightning.pytorch.trainer.states import TrainerFn
 from matplotlib import pyplot as plt
 from omegaconf import DictConfig, OmegaConf
 
@@ -208,7 +209,8 @@ class CheckpointAliasSymlinkCallback(Callback):
         self.target_path = Path(target_path)
 
     def _refresh_alias(self, trainer: L.Trainer):
-        if not trainer.is_global_zero:
+        # Standalone validation must preserve the concrete post-fit endpoint.
+        if not trainer.is_global_zero or trainer.state.fn != TrainerFn.FITTING:
             return
         _link_checkpoint_target_to_latest(trainer, self.target_path)
 

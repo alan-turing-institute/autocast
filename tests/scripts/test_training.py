@@ -15,6 +15,7 @@ from hydra.utils import instantiate
 from lightning.pytorch.callbacks import ModelCheckpoint, Timer
 from matplotlib import pyplot as plt
 from omegaconf import DictConfig, OmegaConf, open_dict
+from torch.utils.data import DataLoader, TensorDataset
 from torchmetrics import Metric, MetricCollection
 
 from autocast.callbacks.checkpoint import ProgressModelCheckpoint
@@ -31,6 +32,7 @@ from autocast.scripts.training import (
     TrainingTimerCallback,
     _attach_reset_timer_callback,
     _validate_resume_settings,
+    run_training,
 )
 from autocast.types import Batch, EncodedBatch
 
@@ -968,3 +970,78 @@ def test_infer_latent_spatial_resolution_channels_first_time_concat():
         encoded, cast(EncoderWithCond, DummyEncoder())
     )
     assert spatial == (16, 16)
+
+
+def test_final_checkpoint_survives_standalone_validation(tmp_path: Path):
+    """Post-fit validation must not replace the endpoint with an older alias."""
+    final_path = tmp_path / "final.ckpt"
+
+    class Toy(L.LightningModule):
+        def __init__(self):
+            super().__init__()
+            self.weight = torch.nn.Parameter(torch.tensor(0.5))
+
+        def training_step(self, batch, batch_idx):
+            del batch, batch_idx
+            return self.weight.square()
+
+        def validation_step(self, batch, batch_idx):
+            del batch, batch_idx
+            # Keep the best checkpoint at epoch zero, before the endpoint.
+            self.log("val_loss", self.weight * 0 + self.current_epoch + 1, batch_size=1)
+
+        def on_train_epoch_start(self):
+            if self.current_epoch > 0:
+                assert final_path.is_symlink()
+
+        def configure_optimizers(self):
+            return torch.optim.AdamW(self.parameters(), lr=0.01)
+
+    class Data(L.LightningDataModule):
+        def train_dataloader(self):
+            return DataLoader(TensorDataset(torch.arange(4.0)), batch_size=1)
+
+        def val_dataloader(self):
+            return DataLoader(TensorDataset(torch.arange(2.0)), batch_size=1)
+
+    cfg = OmegaConf.create(
+        {
+            "logging": {"wandb": {"enabled": False}},
+            "output": {"save_config": False},
+            "trainer": {
+                "_target_": "lightning.pytorch.Trainer",
+                "accelerator": "cpu",
+                "devices": 1,
+                "logger": False,
+                "max_epochs": 3,
+                "max_steps": -1,
+                "enable_model_summary": False,
+                "enable_progress_bar": False,
+                "num_sanity_val_steps": 0,
+                "callbacks": [
+                    {
+                        "_target_": "lightning.pytorch.callbacks.ModelCheckpoint",
+                        "dirpath": str(tmp_path / "checkpoints"),
+                        "monitor": "val_loss",
+                        "mode": "min",
+                        "save_top_k": 1,
+                        "save_last": False,
+                        "save_on_train_epoch_end": False,
+                    }
+                ],
+            },
+        }
+    )
+    model, data = Toy(), Data()
+    run_training(
+        cfg, model, data, tmp_path, skip_test=True, output_checkpoint_path=final_path
+    )
+    assert model.trainer.global_step == 12
+    assert not final_path.is_symlink()
+    assert torch.load(final_path, weights_only=False)["global_step"] == 12
+    saved_endpoint = final_path.read_bytes()
+
+    model.trainer.validate(model, datamodule=data, ckpt_path=None, verbose=False)
+
+    assert not final_path.is_symlink()
+    assert final_path.read_bytes() == saved_endpoint

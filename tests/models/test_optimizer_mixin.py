@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import math
+import sys
+from datetime import timedelta
+from pathlib import Path
 from typing import Any, cast
 
 import pytest
 import torch
 from lightning.pytorch.callbacks import Timer
+from lightning.pytorch.strategies import DDPStrategy
 from torch import nn
+from torch.multiprocessing.spawn import ProcessRaisedException, spawn
 
 from autocast.models.optimizer_mixin import OptimizerMixin
 
@@ -174,6 +179,45 @@ class _FakeTrainer:
         self.callbacks = [] if timer is None else [timer]
 
 
+def _check_distributed_time_schedule(rank: int, rendezvous: str) -> None:
+    """Verify real broadcasts keep LR and updates equal despite clock skew."""
+    torch.distributed.init_process_group(
+        "gloo",
+        rank=rank,
+        world_size=2,
+        init_method=rendezvous,
+        timeout=timedelta(seconds=60),
+    )
+    try:
+        torch.manual_seed(7)
+        model = _ToyMixinUser()
+        timer = Timer(duration="00:01:00:00")
+        trainer = _FakeTrainer(timer)
+        trainer.strategy = DDPStrategy(  # type: ignore[attr-defined]
+            parallel_devices=[torch.device("cpu"), torch.device("cpu")]
+        )
+        model.trainer = trainer  # type: ignore[attr-defined]
+        optimizer = torch.optim.SGD(model.parameters(), lr=1.0)
+        scheduler = model._create_scheduler(
+            optimizer, {"scheduler": "cosine", "scheduler_interval": "time"}
+        )
+        for elapsed in [0, 900, 1800, 3600]:
+            for parameter in model.parameters():
+                parameter.grad = torch.ones_like(parameter)
+            optimizer.step()
+            # Deliberately skew rank one's clock. Both must follow rank zero.
+            timer._offset = elapsed + rank * 300
+            scheduler.step()
+            expected = 0.5 * (1 + math.cos(math.pi * elapsed / 3600))
+            assert scheduler.get_last_lr()[0] == pytest.approx(expected)
+        values = torch.cat([p.detach().flatten() for p in model.parameters()])
+        peers = [torch.empty_like(values) for _ in range(2)]
+        torch.distributed.all_gather(peers, values)
+        assert torch.equal(peers[0], peers[1])
+    finally:
+        torch.distributed.destroy_process_group()
+
+
 class TestTimeCosineSchedule:
     """Wall-clock cosine: LR annealed over trainer.max_time via Lightning's Timer."""
 
@@ -261,3 +305,23 @@ class TestTimeCosineSchedule:
     def test_rejects_absolute_warmup_in_time_mode(self) -> None:
         with pytest.raises(ValueError, match="fraction"):
             self._build(warmup=100)
+
+    @pytest.mark.skipif(
+        not torch.distributed.is_gloo_available(), reason="Gloo is unavailable"
+    )
+    def test_distributed_clocks_produce_identical_updates(self, tmp_path: Path) -> None:
+        try:
+            spawn(
+                _check_distributed_time_schedule,
+                args=((tmp_path / "gloo-rendezvous").as_uri(),),
+                nprocs=2,
+                join=True,
+            )
+        except ProcessRaisedException as exc:
+            # Some Windows builds advertise Gloo but cannot initialize it.
+            if sys.platform == "win32" and (
+                "RuntimeError: makeDeviceForHostname(): unsupported gloo device"
+                in str(exc)
+            ):
+                pytest.skip("This Windows PyTorch build cannot initialize Gloo")
+            raise
