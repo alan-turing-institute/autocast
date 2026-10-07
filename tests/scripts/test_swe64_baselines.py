@@ -2,6 +2,7 @@
 
 import json
 import runpy
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,7 @@ from hydra import compose, initialize_config_dir
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 
+from autocast.callbacks.checkpoint import ProgressModelCheckpoint
 from autocast.types import Batch
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -19,6 +21,64 @@ HELPERS = REPO_ROOT / "scripts/swe64s"
 @pytest.fixture(scope="module")
 def swe64_configs() -> dict[str, DictConfig]:
     return runpy.run_path(str(HELPERS / "check_inputs.py"))["check_configs"]()
+
+
+@pytest.mark.parametrize("name", ["afcrps", "autoencoder", "flow_matching"])
+def test_swe64_time_budget_and_checkpoint_policy(swe64_configs, name):
+    cfg = swe64_configs[name]
+    assert cfg.optimizer.scheduler == "cosine"
+    assert cfg.optimizer.scheduler_interval == "time"
+    assert cfg.optimizer.cosine_epochs is None
+    assert cfg.optimizer.warmup == 0
+    assert cfg.trainer.max_time == "00:23:59:00"
+    assert cfg.trainer.max_epochs == 1000000
+    assert cfg.trainer.max_steps == -1
+    callbacks = [instantiate(callback) for callback in cfg.trainer.callbacks]
+    snapshot = callbacks[0]
+    assert isinstance(snapshot, ProgressModelCheckpoint)
+    assert snapshot.every_n_train_steps_fraction is None
+    assert snapshot._train_time_interval == timedelta(hours=1)
+    assert snapshot._every_n_epochs == 0
+    assert snapshot.save_last
+    assert snapshot.save_top_k == -1
+
+
+@pytest.mark.parametrize(
+    ("name", "top_level"),
+    [
+        ("afcrps", "encoder_processor_decoder"),
+        ("autoencoder", "autoencoder"),
+        ("flow_matching", "processor"),
+    ],
+)
+def test_swe64_four_gpu_launch_keeps_time_budget(name, top_level):
+    # These are the README's launch overrides; composition does not submit jobs.
+    with initialize_config_dir(
+        version_base=None, config_dir=str(REPO_ROOT / "src/autocast/configs")
+    ):
+        cfg = compose(
+            config_name=top_level,
+            overrides=[
+                f"local_experiment=swe64s/{name}",
+                f"hydra.searchpath=[file://{REPO_ROOT / 'local_hydra'}]",
+                "+distributed=ddp_4gpu_slurm",
+                "trainer.max_time=00:23:59:00",
+                "++hydra.launcher.nodes=1",
+                "++hydra.launcher.cpus_per_task=72",
+                "hydra.launcher.timeout_min=1440",
+            ],
+            return_hydra_config=True,
+        )
+    assert cfg.trainer.devices == 4
+    assert cfg.trainer.num_nodes == 1
+    assert cfg.trainer.strategy == "ddp"
+    assert cfg.trainer.max_time == "00:23:59:00"
+    assert cfg.optimizer.scheduler_interval == "time"
+    assert cfg.hydra.launcher.gpus_per_node == 4
+    assert cfg.hydra.launcher.tasks_per_node == 4
+    assert cfg.hydra.launcher.nodes == 1
+    assert cfg.hydra.launcher.cpus_per_task == 72
+    assert cfg.hydra.launcher.timeout_min == 1440
 
 
 def test_swe64_afcrps_uses_standard_global_processor(swe64_configs):

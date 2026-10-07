@@ -3,6 +3,7 @@ defaults:
   - /local_experiment/swe64s/data
   - override /model: autoencoder_dc_large
   - override /optimizer: psgd
+  - override /trainer: swe64s_time
   - _self_
 
 experiment_name: swe64s_autoencoder
@@ -34,8 +35,8 @@ optimizer:
   learning_rate: 1e-5
   weight_decay: 0.0
   scheduler: cosine
-  scheduler_interval: epoch
-  cosine_epochs: ${trainer.max_epochs}
+  scheduler_interval: time
+  cosine_epochs: null
   warmup: 0
 
 trainer:

@@ -5,7 +5,7 @@ defaults:
   - override /processor@model.processor: flow_matching_vit
   - override /backbone@model.processor.backbone: vit
   - override /optimizer: adamw_half
-  - override /trainer: fm_main_comparison
+  - override /trainer: swe64s_time
   - _self_
 
 experiment_name: swe64s_flow_matching
@@ -39,11 +39,6 @@ model:
 optimizer:
   learning_rate: 1e-4
   scheduler: cosine
-  scheduler_interval: epoch
-  cosine_epochs: ${trainer.max_epochs}
+  scheduler_interval: time
+  cosine_epochs: null
   warmup: 0
-
-trainer:
-  max_epochs: ???
-  max_steps: -1
-  max_time: null
