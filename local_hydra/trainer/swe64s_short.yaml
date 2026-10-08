@@ -1,0 +1,57 @@
+# Full validation and diagnostics for the bounded capacity/LR comparison.
+defaults:
+  - swe64s_time
+  - _self_
+
+max_time: "00:02:00:00"
+num_sanity_val_steps: 2
+limit_val_batches: 1.0
+
+callbacks:
+  - _target_: autocast.callbacks.checkpoint.ProgressModelCheckpoint
+    auto_insert_metric_name: false
+    every_n_epochs: 0
+    train_time_interval:
+      _target_: datetime.timedelta
+      minutes: 30
+    filename: snapshot-{progress_token}-{epoch:04d}-{step:08d}
+    save_last: true
+    save_top_k: -1
+  - _target_: lightning.pytorch.callbacks.ModelCheckpoint
+    auto_insert_metric_name: false
+    filename: best-val-{epoch:04d}-{step:08d}-{val_loss:.6f}
+    mode: min
+    monitor: val_loss
+    save_last: false
+    save_top_k: 1
+  - _target_: autocast.callbacks.checkpoint.ProgressModelCheckpoint
+    auto_insert_metric_name: false
+    filename: best-multiwinkler-from0p25-{epoch:04d}-{val_multiwinkler:.6f}
+    mode: min
+    monitor: val_multiwinkler
+    monitor_optional: true
+    save_last: false
+    save_top_k: 1
+    start_after_fraction: 0.25
+  - _target_: autocast.callbacks.checkpoint.ProgressModelCheckpoint
+    auto_insert_metric_name: false
+    filename: best-multiwinkler-overall-{epoch:04d}-{val_multiwinkler:.6f}
+    mode: min
+    monitor: val_multiwinkler
+    monitor_optional: true
+    save_last: false
+    save_top_k: 1
+    start_after_fraction: 0.05
+  - _target_: autocast.callbacks.grad_norm.GradNormCallback
+    norm_type: 2.0
+    log_per_param: false
+  - _target_: autocast.callbacks.metrics.ValidationMetricPlotCallback
+    dirname: validation_metrics
+    filename: validation_metrics.png
+    log_to_logger: true
+    max_cols: 3
+    metric_prefixes: [val_, train_, grad_, lr]
+    plot_metric_objects: true
+    save_local: true
+  - _target_: autocast.callbacks.ema.EMACallback
+    decay: 0.999

@@ -226,6 +226,49 @@ The shorter time cap compresses afCRPS's cosine schedule; the AE keeps its
 diagnostic runs. FM needs its own pilot once a reviewed SWE AE and matching
 cache are available; an afCRPS/AE pilot does not validate latent FM.
 
+## Bounded capacity and AE refinement comparison
+
+The separate `afcrps_large_2h` and `afcrps_small_2h` presets use a fresh
+two-hour time-cosine fit at LR 2e-4. The large model retains width 568 and
+12 blocks (80.85M parameters); the small model uses width 256 and four
+blocks (10.69M). Both retain patch 4, eight heads, 1024D global AdaLN noise,
+eight training members, zero dropout/weight decay and the original data and
+one-input/four-output task. Full validation, half-hour checkpoints and
+gradient/LR logging use `trainer=swe64s_short`. The original full-run presets
+are unchanged. Equal wall time is a compute-budget comparison, not a pure
+capacity ablation: compare curves against updates as well as elapsed time.
+
+`autoencoder_refine` is a separate 30-minute, constant-LR 3e-6 continuation
+from a selected best AE checkpoint. It preserves the architecture, optimizer
+moments/preconditioners and epoch/step counters. Prepare a new full-state
+checkpoint first; simply overriding the config LR would restore the old LR.
+Only use trusted checkpoints. The helper refuses existing outputs, checks an
+optional source SHA256 and writes source/derived hashes beside the result.
+Old checkpoint paths and diagnostic histories are removed; the existing timer
+reset callback gives the continuation its own budget.
+
+```sh
+uv run --frozen python scripts/swe64s/prepare_ae_refinement.py \
+  --source /path/to/best-ae.ckpt --target /path/to/new/resume.ckpt \
+  --expected-sha256 SELECTED_SOURCE_SHA256
+
+uv run --frozen autocast ae --mode slurm --dry-run \
+  --workdir "$SWE64S_OUTPUTS/autoencoder_refine" \
+  local_experiment=swe64s/autoencoder_refine \
+  resume_from_checkpoint=/path/to/new/resume.ckpt \
+  +distributed=ddp_4gpu_slurm trainer.max_time=00:00:30:00 \
+  ++hydra.launcher.nodes=1 ++hydra.launcher.cpus_per_task=72 \
+  hydra.launcher.timeout_min=45
+```
+
+For each fresh afCRPS fit, use the same distributed overrides but
+`trainer.max_time=00:02:00:00` and `hydra.launcher.timeout_min=135`.
+The two 2h15 allocations, one 45-minute AE allocation and a reserved
+45-minute matched evaluation allowance total at most six node-hours on
+one four-GPU node per allocation. The short evaluation should be labelled
+as a bounded preview, use identical test subsets/seeds and raw best-validation
+checkpoints, and not be presented as the full test protocol below.
+
 ## Common evaluation
 
 `evaluation.yaml` defines the common physical-field metric settings: 16 members,

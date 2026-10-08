@@ -1,0 +1,11 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/afcrps
+  - override /trainer: swe64s_short
+  - _self_
+
+experiment_name: swe64s_afcrps_large_2h
+
+trainer:
+  # Repeat after the common preset so its full-run cap cannot win.
+  max_time: "00:02:00:00"

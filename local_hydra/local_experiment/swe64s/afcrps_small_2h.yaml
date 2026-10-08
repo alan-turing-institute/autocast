@@ -1,0 +1,12 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/afcrps_large_2h
+  - _self_
+
+experiment_name: swe64s_afcrps_small_2h
+
+model:
+  processor:
+    # 10,694,272 parameters; retain the baseline's 1024D noise path.
+    hidden_dim: 256
+    n_layers: 4
