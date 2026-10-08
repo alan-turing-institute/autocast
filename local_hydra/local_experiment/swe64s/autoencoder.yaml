@@ -35,9 +35,11 @@ optimizer:
   learning_rate: 1e-5
   weight_decay: 0.0
   scheduler: cosine
-  scheduler_interval: time
-  cosine_epochs: null
+  scheduler_interval: epoch
+  cosine_epochs: 512
   warmup: 0
 
 trainer:
+  # Preserve the paper AE schedule; max_time remains a safety cap.
+  max_epochs: 512
   gradient_clip_val: 1.0

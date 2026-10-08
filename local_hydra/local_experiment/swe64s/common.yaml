@@ -16,7 +16,7 @@ datamodule:
 
 trainer:
   # A finite, nonbinding ceiling keeps progress callbacks well-defined.
-  # Training and LR decay are bounded by elapsed time, not this epoch count.
+  # afCRPS/FM are time-bounded; the AE overrides this with its fixed schedule.
   max_epochs: 1000000
   max_steps: -1
   max_time: "00:23:30:00"
