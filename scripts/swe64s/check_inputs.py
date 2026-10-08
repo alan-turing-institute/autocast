@@ -59,7 +59,7 @@ def check_configs() -> dict[str, DictConfig]:
                 f"{name}: expected wall-clock cosine without an epoch estimate",
             )
             _require(
-                cfg.trainer.max_time == "00:23:59:00"
+                cfg.trainer.max_time == "00:23:30:00"
                 and cfg.trainer.max_epochs == 1000000
                 and cfg.trainer.max_steps == -1,
                 f"{name}: training budget changed",

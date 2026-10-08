@@ -5,7 +5,7 @@ defaults:
 
 max_epochs: 1000000
 max_steps: -1
-max_time: "00:23:59:00"
+max_time: "00:23:30:00"
 
 callbacks:
   - _target_: autocast.callbacks.checkpoint.ProgressModelCheckpoint
