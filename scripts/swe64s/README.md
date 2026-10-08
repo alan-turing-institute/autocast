@@ -107,14 +107,15 @@ uv run --frozen python -m autocast.scripts.train.processor \
 
 All three fits use the existing wall-clock cosine scheduler:
 `scheduler=cosine`, `scheduler_interval=time`, zero warmup and a
-`trainer.max_time` of 23h59m. LR decay follows Lightning's resume-aware Timer;
+`trainer.max_time` of 23h30m. LR decay follows Lightning's resume-aware Timer;
 no timing runs, estimated epoch counts or `cosine_epochs` are needed.
 The finite ceiling of one million epochs only keeps progress callbacks
 well-defined; elapsed time is the binding budget. Learning rates remain
 2e-4 for afCRPS, 1e-4 for FM and 1e-5 for the PSGD autoencoder.
 
-This retains the previous nominal 24-hour budget on four GPUs per fit, using
-the budget caps from the main-comparison launch scripts. It does not reuse
+This retains the previous 23h30m training budget inside a nominal 24-hour
+allocation on four GPUs per fit, with a 30-minute allocation buffer for startup
+and finalization. It does not reuse
 CNS's 473/3223 epoch estimates. The AE is now time-budgeted too, rather than
 reusing the historical 512-epoch schedule. Update counts and AE epochs will
 therefore differ. The portable presets retain one-device defaults; use the
@@ -144,12 +145,13 @@ and data preflight. They are previews: `--dry-run` does not submit a job.
 Use fresh work directories. Only remove `--dry-run` after approving launch.
 The explicit time override prevents the distributed preset's 12-hour default
 from replacing the study budget. The allocation is one node, four GPUs and
-four tasks for up to 24 hours; the fit cap leaves one minute for finalization.
+four tasks for up to 24 hours; the fit cap leaves a 30-minute allocation buffer
+for startup and finalization.
 
 ```bash
 swe64_launch_overrides=(
   '+distributed=ddp_4gpu_slurm'
-  'trainer.max_time=00:23:59:00'
+  'trainer.max_time=00:23:30:00'
   '++hydra.launcher.nodes=1'
   '++hydra.launcher.cpus_per_task=72'
   'hydra.launcher.timeout_min=1440'
@@ -170,6 +172,27 @@ uv run --frozen autocast processor --mode slurm --dry-run \
   datamodule.data_path="$SWE64S_OUTPUTS/cached_latents" \
   "${swe64_launch_overrides[@]}"
 ```
+
+## Recommended training pilots
+
+Before the full allocations, run a short target-GPU smoke test of afCRPS and
+the AE with the intended four-GPU model, batch, precision and data settings.
+A proposed pilot uses a 30-minute fit cap inside a 60-minute allocation,
+at most 200 optimizer updates, validation every 50 updates and four validation
+batches. These are proposed runtime overrides, not changes to the full presets;
+no pilot has been launched. This is a training check, not a timing calibration.
+
+Check finite losses/gradients, nonzero parameter updates, functioning DDP,
+memory headroom, LR evolution, at least two validation passes and successful
+checkpoint save/reload. Inspect initial versus final validation loss and a few
+predictions/reconstructions, without treating a short pilot as evidence of
+convergence or requiring calibrated uncertainty already. If the time cap is
+reached before enough updates/validation, the pilot is inconclusive, not passed.
+
+A shorter time cap compresses the cosine schedule. Start the full fits fresh;
+do not resume pilot weights or scheduler state as if they were the opening
+30 minutes of the 23h30m run. FM needs its own pilot once a reviewed SWE AE and
+matching cache are available; an afCRPS/AE pilot does not validate latent FM.
 
 ## Common evaluation
 

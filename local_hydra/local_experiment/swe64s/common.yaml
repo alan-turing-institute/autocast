@@ -19,7 +19,7 @@ trainer:
   # Training and LR decay are bounded by elapsed time, not this epoch count.
   max_epochs: 1000000
   max_steps: -1
-  max_time: "00:23:59:00"
+  max_time: "00:23:30:00"
   accelerator: auto
   devices: 1
   num_nodes: 1

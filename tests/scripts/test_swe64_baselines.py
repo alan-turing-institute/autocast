@@ -30,7 +30,7 @@ def test_swe64_time_budget_and_checkpoint_policy(swe64_configs, name):
     assert cfg.optimizer.scheduler_interval == "time"
     assert cfg.optimizer.cosine_epochs is None
     assert cfg.optimizer.warmup == 0
-    assert cfg.trainer.max_time == "00:23:59:00"
+    assert cfg.trainer.max_time == "00:23:30:00"
     assert cfg.trainer.max_epochs == 1000000
     assert cfg.trainer.max_steps == -1
     callbacks = [instantiate(callback) for callback in cfg.trainer.callbacks]
@@ -62,7 +62,7 @@ def test_swe64_four_gpu_launch_keeps_time_budget(name, top_level):
                 f"local_experiment=swe64s/{name}",
                 f"hydra.searchpath=[file://{REPO_ROOT / 'local_hydra'}]",
                 "+distributed=ddp_4gpu_slurm",
-                "trainer.max_time=00:23:59:00",
+                "trainer.max_time=00:23:30:00",
                 "++hydra.launcher.nodes=1",
                 "++hydra.launcher.cpus_per_task=72",
                 "hydra.launcher.timeout_min=1440",
@@ -72,7 +72,7 @@ def test_swe64_four_gpu_launch_keeps_time_budget(name, top_level):
     assert cfg.trainer.devices == 4
     assert cfg.trainer.num_nodes == 1
     assert cfg.trainer.strategy == "ddp"
-    assert cfg.trainer.max_time == "00:23:59:00"
+    assert cfg.trainer.max_time == "00:23:30:00"
     assert cfg.optimizer.scheduler_interval == "time"
     assert cfg.hydra.launcher.gpus_per_node == 4
     assert cfg.hydra.launcher.tasks_per_node == 4
