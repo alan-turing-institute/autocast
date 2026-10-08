@@ -1,0 +1,23 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/autoencoder
+  - override /trainer: swe64s_short
+  - _self_
+
+experiment_name: swe64s_autoencoder_refine
+
+# Use prepare_ae_refinement.py first: a config override alone does not replace
+# the learning rate restored from a full-state checkpoint.
+resume_from_checkpoint: ???
+reset_resume_time_budget: true
+
+optimizer:
+  learning_rate: 3e-6
+  # Keep the restored epoch scheduler counter, but make its multiplier one.
+  min_lr_ratio: 1.0
+
+trainer:
+  max_time: "00:00:30:00"
+  max_epochs: 512
+  val_check_interval: 250
+  check_val_every_n_epoch: null
