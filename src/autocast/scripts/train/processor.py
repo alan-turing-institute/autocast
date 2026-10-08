@@ -10,6 +10,7 @@ from autocast.scripts.execution import resolve_hydra_work_dir
 from autocast.scripts.setup import setup_datamodule, setup_processor_model
 from autocast.scripts.training import run_training
 from autocast.scripts.utils import get_default_config_path
+from autocast.utils.device import pin_local_cuda_device
 
 log = logging.getLogger(__name__)
 
@@ -23,6 +24,7 @@ def main(cfg: DictConfig) -> None:
     """CLI entrypoint for training the processor."""
     # Setup logging
     logging.basicConfig(level=logging.INFO)
+    pin_local_cuda_device()
 
     # Work directory is managed by Hydra
     work_dir = resolve_hydra_work_dir(None)
