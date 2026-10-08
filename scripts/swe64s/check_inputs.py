@@ -52,15 +52,19 @@ def check_configs() -> dict[str, DictConfig]:
         )
         _require(windows == (1, 4, 1), f"{name}: inconsistent training windows")
         if name != "cache_latents":
+            is_autoencoder = name == "autoencoder"
+            expected_interval = "epoch" if is_autoencoder else "time"
+            expected_cosine_epochs = 512 if is_autoencoder else None
+            expected_max_epochs = 512 if is_autoencoder else 1000000
             _require(
                 cfg.optimizer.scheduler == "cosine"
-                and cfg.optimizer.scheduler_interval == "time"
-                and cfg.optimizer.cosine_epochs is None,
-                f"{name}: expected wall-clock cosine without an epoch estimate",
+                and cfg.optimizer.scheduler_interval == expected_interval
+                and cfg.optimizer.cosine_epochs == expected_cosine_epochs,
+                f"{name}: unexpected cosine schedule",
             )
             _require(
                 cfg.trainer.max_time == "00:23:30:00"
-                and cfg.trainer.max_epochs == 1000000
+                and cfg.trainer.max_epochs == expected_max_epochs
                 and cfg.trainer.max_steps == -1,
                 f"{name}: training budget changed",
             )
@@ -250,7 +254,9 @@ def main() -> None:
         "fit_budgets": {
             name: {
                 "max_time": cfg.trainer.max_time,
+                "max_epochs": cfg.trainer.max_epochs,
                 "scheduler_interval": cfg.optimizer.scheduler_interval,
+                "cosine_epochs": cfg.optimizer.cosine_epochs,
             }
             for name, cfg in configs.items()
             if name != "cache_latents"

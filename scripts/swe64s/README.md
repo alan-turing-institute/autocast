@@ -105,21 +105,23 @@ uv run --frozen python -m autocast.scripts.train.processor \
   datamodule.data_path=/path/to/new-cache --cfg job
 ```
 
-All three fits use the existing wall-clock cosine scheduler:
-`scheduler=cosine`, `scheduler_interval=time`, zero warmup and a
-`trainer.max_time` of 23h30m. LR decay follows Lightning's resume-aware Timer;
-no timing runs, estimated epoch counts or `cosine_epochs` are needed.
-The finite ceiling of one million epochs only keeps progress callbacks
-well-defined; elapsed time is the binding budget. Learning rates remain
-2e-4 for afCRPS, 1e-4 for FM and 1e-5 for the PSGD autoencoder.
+afCRPS and FM use the existing wall-clock cosine scheduler:
+`scheduler=cosine`, `scheduler_interval=time` and zero warmup. LR decay follows
+Lightning's resume-aware Timer, with a 23h30m training cap and no timing runs or
+estimated epoch counts. Their finite ceiling of one million epochs only keeps
+progress callbacks well-defined; elapsed time is the binding budget.
 
-This retains the previous 23h30m training budget inside a nominal 24-hour
-allocation on four GPUs per fit, with a 30-minute allocation buffer for startup
-and finalization. It does not reuse
-CNS's 473/3223 epoch estimates. The AE is now time-budgeted too, rather than
-reusing the historical 512-epoch schedule. Update counts and AE epochs will
-therefore differ. The portable presets retain one-device defaults; use the
-four-GPU launch settings below to match the intended compute allocation.
+The AE retains the historical fixed schedule: `max_epochs=512`,
+`scheduler_interval=epoch`, `cosine_epochs=512` and zero warmup. Its 23h30m
+`max_time` is a safety cap, not the cosine horizon; if time expires early, record
+the completed epochs rather than claiming the full 512. The original setting is
+in [`submit_ae_large.sh`](../../slurm_scripts/comparison/ae/submit_ae_large.sh).
+Learning rates remain 2e-4 for afCRPS, 1e-4 for FM and 1e-5 for the PSGD AE.
+
+The allocation is nominally 24 hours on four GPUs per fit, leaving a 30-minute
+buffer for startup and finalization. afCRPS/FM do not reuse CNS's 473/3223 epoch
+estimates. The portable presets retain one-device defaults; use the four-GPU
+launch settings below to match the intended compute allocation.
 
 The study-local `trainer=swe64s_time` policy saves hourly snapshots and
 `last.ckpt`, best validation loss and, when logged, overall/post-25% MultiWinkler
@@ -173,14 +175,44 @@ uv run --frozen autocast processor --mode slurm --dry-run \
   "${swe64_launch_overrides[@]}"
 ```
 
-## Recommended training pilots
+## Training pilots
 
 Before the full allocations, run a short target-GPU smoke test of afCRPS and
 the AE with the intended four-GPU model, batch, precision and data settings.
-A proposed pilot uses a 30-minute fit cap inside a 60-minute allocation,
-at most 200 optimizer updates, validation every 50 updates and four validation
-batches. These are proposed runtime overrides, not changes to the full presets;
-no pilot has been launched. This is a training check, not a timing calibration.
+The `trainer=swe64s_pilot` profile uses a 30-minute fit cap inside a 60-minute
+allocation, at most 200 optimizer updates, validation every 50 updates and four
+validation batches. It keeps the model, optimizer, training data and batch size
+unchanged, and enables anomaly detection. Step checkpoints are saved every 50
+updates, alongside best validation loss and `last.ckpt`. Existing callbacks log
+gradient norms/LR and each rank's GPU utilization; local metric plots and saved
+callback histories include training/validation loss, gradients and LR. This is
+a training check, not a timing calibration.
+
+```bash
+swe64_pilot_overrides=(
+  'trainer=swe64s_pilot'
+  '+distributed=ddp_4gpu_slurm'
+  'trainer.max_time=00:00:30:00'
+  'trainer.max_steps=200'
+  '++hydra.launcher.nodes=1'
+  '++hydra.launcher.cpus_per_task=72'
+  'hydra.launcher.timeout_min=60'
+)
+
+uv run --frozen autocast epd --mode slurm --dry-run \
+  --workdir "$SWE64S_OUTPUTS/pilot_afcrps" \
+  local_experiment=swe64s/afcrps "${swe64_pilot_overrides[@]}"
+
+uv run --frozen autocast ae --mode slurm --dry-run \
+  --workdir "$SWE64S_OUTPUTS/pilot_autoencoder" \
+  local_experiment=swe64s/autoencoder "${swe64_pilot_overrides[@]}"
+```
+
+Use fresh directories and remove `--dry-run` only for an approved submission.
+The explicit cap/step overrides prevent the distributed/common presets from
+restoring their full-run limits. Record the code/lock/dataset identity and Slurm
+job ID, and check CUDA/driver visibility inside the allocated compute node, not
+by trying GPU training on a login node.
 
 Check finite losses/gradients, nonzero parameter updates, functioning DDP,
 memory headroom, LR evolution, at least two validation passes and successful
@@ -189,10 +221,10 @@ predictions/reconstructions, without treating a short pilot as evidence of
 convergence or requiring calibrated uncertainty already. If the time cap is
 reached before enough updates/validation, the pilot is inconclusive, not passed.
 
-A shorter time cap compresses the cosine schedule. Start the full fits fresh;
-do not resume pilot weights or scheduler state as if they were the opening
-30 minutes of the 23h30m run. FM needs its own pilot once a reviewed SWE AE and
-matching cache are available; an afCRPS/AE pilot does not validate latent FM.
+The shorter time cap compresses afCRPS's cosine schedule; the AE keeps its
+512-epoch horizon. Start both full fits fresh rather than continuing these
+diagnostic runs. FM needs its own pilot once a reviewed SWE AE and matching
+cache are available; an afCRPS/AE pilot does not validate latent FM.
 
 ## Common evaluation
 

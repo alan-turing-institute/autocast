@@ -24,14 +24,15 @@ def swe64_configs() -> dict[str, DictConfig]:
 
 
 @pytest.mark.parametrize("name", ["afcrps", "autoencoder", "flow_matching"])
-def test_swe64_time_budget_and_checkpoint_policy(swe64_configs, name):
+def test_swe64_scheduler_and_checkpoint_policy(swe64_configs, name):
     cfg = swe64_configs[name]
+    is_autoencoder = name == "autoencoder"
     assert cfg.optimizer.scheduler == "cosine"
-    assert cfg.optimizer.scheduler_interval == "time"
-    assert cfg.optimizer.cosine_epochs is None
+    assert cfg.optimizer.scheduler_interval == ("epoch" if is_autoencoder else "time")
+    assert cfg.optimizer.cosine_epochs == (512 if is_autoencoder else None)
     assert cfg.optimizer.warmup == 0
     assert cfg.trainer.max_time == "00:23:30:00"
-    assert cfg.trainer.max_epochs == 1000000
+    assert cfg.trainer.max_epochs == (512 if is_autoencoder else 1000000)
     assert cfg.trainer.max_steps == -1
     callbacks = [instantiate(callback) for callback in cfg.trainer.callbacks]
     snapshot = callbacks[0]
@@ -73,12 +74,63 @@ def test_swe64_four_gpu_launch_keeps_time_budget(name, top_level):
     assert cfg.trainer.num_nodes == 1
     assert cfg.trainer.strategy == "ddp"
     assert cfg.trainer.max_time == "00:23:30:00"
-    assert cfg.optimizer.scheduler_interval == "time"
+    assert cfg.optimizer.scheduler_interval == (
+        "epoch" if name == "autoencoder" else "time"
+    )
     assert cfg.hydra.launcher.gpus_per_node == 4
     assert cfg.hydra.launcher.tasks_per_node == 4
     assert cfg.hydra.launcher.nodes == 1
     assert cfg.hydra.launcher.cpus_per_task == 72
     assert cfg.hydra.launcher.timeout_min == 1440
+
+
+@pytest.mark.parametrize(
+    ("name", "top_level", "batch_size"),
+    [("afcrps", "encoder_processor_decoder", 32), ("autoencoder", "autoencoder", 16)],
+)
+def test_swe64_pilot_preserves_model_and_limits_training(
+    swe64_configs, name, top_level, batch_size
+):
+    with initialize_config_dir(
+        version_base=None, config_dir=str(REPO_ROOT / "src/autocast/configs")
+    ):
+        cfg = compose(
+            config_name=top_level,
+            overrides=[
+                f"local_experiment=swe64s/{name}",
+                f"hydra.searchpath=[file://{REPO_ROOT / 'local_hydra'}]",
+                "trainer=swe64s_pilot",
+                "+distributed=ddp_4gpu_slurm",
+                "trainer.max_time=00:00:30:00",
+                "trainer.max_steps=200",
+                "++hydra.launcher.nodes=1",
+                "++hydra.launcher.cpus_per_task=72",
+                "hydra.launcher.timeout_min=60",
+            ],
+            return_hydra_config=True,
+        )
+    assert OmegaConf.to_container(cfg.model) == OmegaConf.to_container(
+        swe64_configs[name].model
+    )
+    assert OmegaConf.to_container(cfg.optimizer) == OmegaConf.to_container(
+        swe64_configs[name].optimizer
+    )
+    assert cfg.datamodule.batch_size == batch_size
+    assert cfg.trainer.devices == 4
+    assert cfg.trainer.strategy == "ddp"
+    assert cfg.trainer.max_time == "00:00:30:00"
+    assert cfg.trainer.max_steps == 200
+    assert cfg.trainer.max_epochs == (512 if name == "autoencoder" else 1000000)
+    assert cfg.trainer.val_check_interval == 50
+    assert cfg.trainer.check_val_every_n_epoch is None
+    assert cfg.trainer.limit_val_batches == 4
+    assert cfg.trainer.detect_anomaly
+    assert cfg.hydra.launcher.timeout_min == 60
+    callbacks = [instantiate(callback) for callback in cfg.trainer.callbacks]
+    assert callbacks[0]._every_n_train_steps == 50
+    assert callbacks[0].save_last
+    assert callbacks[1].monitor == "val_loss"
+    assert any(type(callback).__name__ == "GradNormCallback" for callback in callbacks)
 
 
 def test_swe64_afcrps_uses_standard_global_processor(swe64_configs):

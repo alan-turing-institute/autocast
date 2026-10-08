@@ -1,0 +1,44 @@
+# Training smoke tests only; never resume these into the full comparison.
+defaults:
+  - default
+  - _self_
+
+max_epochs: 1000000
+max_steps: 200
+max_time: "00:00:30:00"
+val_check_interval: 50
+check_val_every_n_epoch: null
+limit_val_batches: 4
+num_sanity_val_steps: 2
+log_every_n_steps: 1
+detect_anomaly: true
+
+callbacks:
+  - _target_: lightning.pytorch.callbacks.ModelCheckpoint
+    auto_insert_metric_name: false
+    every_n_epochs: 0
+    every_n_train_steps: 50
+    filename: pilot-{epoch:04d}-{step:08d}
+    save_last: true
+    save_top_k: -1
+  - _target_: lightning.pytorch.callbacks.ModelCheckpoint
+    auto_insert_metric_name: false
+    filename: best-val-{epoch:04d}-{val_loss:.4f}
+    mode: min
+    monitor: val_loss
+    save_last: false
+    save_top_k: 1
+  - _target_: autocast.callbacks.grad_norm.GradNormCallback
+    norm_type: 2.0
+    log_per_param: false
+  - _target_: autocast.callbacks.gpu_util.GpuUtilizationLogCallback
+  - _target_: autocast.callbacks.metrics.ValidationMetricPlotCallback
+    dirname: validation_metrics
+    filename: validation_metrics.png
+    log_to_logger: true
+    max_cols: 3
+    metric_prefixes: [val_, train_, grad_, lr]
+    plot_metric_objects: true
+    save_local: true
+  - _target_: autocast.callbacks.ema.EMACallback
+    decay: 0.999
