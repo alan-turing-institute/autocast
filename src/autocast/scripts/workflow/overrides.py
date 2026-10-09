@@ -6,8 +6,8 @@ import itertools
 
 
 def normalized_override(override: str) -> str:
-    """Strip leading ``+`` from a Hydra override."""
-    return override[1:] if override.startswith("+") else override
+    """Strip Hydra add/force-add prefixes when inspecting an override key."""
+    return override.lstrip("+")
 
 
 def extract_override_value(overrides: list[str], key: str) -> str | None:
