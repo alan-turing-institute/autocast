@@ -1,5 +1,6 @@
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
+from enum import Enum
 
 import torch
 from einops import rearrange
@@ -8,6 +9,13 @@ from torch import Tensor, nn
 from autocast.nn.vit import TemporalViTBackbone
 from autocast.processors.base import Processor
 from autocast.types import EncodedBatch
+
+
+class AdaLNNoiseMode(str, Enum):
+    """Whether AdaLN noise is shared globally or independent per patch token."""
+
+    GLOBAL = "global"
+    SPATIAL = "spatial"
 
 
 class AzulaViTProcessor(Processor[EncodedBatch]):
@@ -43,12 +51,30 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
         qk_norm: bool = True,
         rope: bool = False,
         rpb: bool = True,
+        noise_mode: AdaLNNoiseMode | str = AdaLNNoiseMode.GLOBAL,
     ):
         super().__init__()
         self.n_spatial_dims = len(spatial_resolution)
         if self.n_spatial_dims != 2:
             msg = "Diffusion wrapper expects 2D spatial resolution inputs (H, W)"
             raise ValueError(msg)
+
+        self.noise_mode = AdaLNNoiseMode(noise_mode)
+        self.patch_size = (
+            (patch_size, patch_size)
+            if isinstance(patch_size, int)
+            else tuple(patch_size)
+        )
+        if self.noise_mode == AdaLNNoiseMode.SPATIAL:
+            if n_noise_channels is None or n_noise_channels <= 0:
+                msg = "Spatial AdaLN requires positive n_noise_channels."
+                raise ValueError(msg)
+            if n_noise_input_channels is not None and n_noise_input_channels <= 0:
+                msg = "Spatial AdaLN requires positive n_noise_input_channels."
+                raise ValueError(msg)
+            if len(self.patch_size) != 2 or any(p <= 0 for p in self.patch_size):
+                msg = "Spatial AdaLN requires two positive patch_size dimensions."
+                raise ValueError(msg)
 
         self.n_noise_channels = n_noise_channels
         self.n_noise_input_channels = n_noise_input_channels or n_noise_channels
@@ -105,7 +131,26 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
             rpb=rpb,
             checkpointing=checkpointing,
             use_precomputed_modulation=True,
+            spatial_modulation=self.noise_mode == AdaLNNoiseMode.SPATIAL,
         )
+
+    def _noise_shape(self, x: Tensor) -> tuple[int, ...]:
+        """Return the noise shape on the processor's actual input patch grid."""
+        channels = self.n_noise_input_channels or self.model.mod_features
+        if self.noise_mode == AdaLNNoiseMode.GLOBAL:
+            return (x.shape[0], channels)
+        if x.ndim not in (4, 5):
+            msg = "Spatial AdaLN expects 4D or 5D input fields."
+            raise ValueError(msg)
+        height, width = x.shape[-2:] if x.ndim == 4 else x.shape[2:4]
+        ph, pw = self.patch_size
+        if height % ph or width % pw:
+            msg = (
+                f"Input grid {(height, width)} must be divisible by patch_size "
+                f"{self.patch_size}."
+            )
+            raise ValueError(msg)
+        return (x.shape[0], (height // ph) * (width // pw), channels)
 
     def forward(
         self,
@@ -124,7 +169,10 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
         Args:
             x: Input tensor with shape (B, C, H, W) or
                 (B, T=n_steps_input, H, W, C).
-            x_noise: Optional noise/modulation tensor.
+            x_noise: Noise of shape (B, D) in global mode, or (B, N, D) in
+                spatial mode. D is n_noise_input_channels (defaulting to
+                n_noise_channels); N is the number of input patch tokens,
+                ordered with width varying fastest. Use map() to draw noise.
             global_cond: Optional global conditioning tensor with shape
                 (B, C_global). Used only when include_global_cond=True.
 
@@ -132,30 +180,13 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
             Output tensor with the same rank as ``x``: (B, C, H, W) if ``x`` was
             4D, (B, T=n_steps_output, H, W, C) otherwise.
         """
-        if x_noise is not None and self.modulation_proj is not None:
+        expected_shape = self._noise_shape(x)
+        if x_noise is None or tuple(x_noise.shape) != expected_shape:
+            received = None if x_noise is None else tuple(x_noise.shape)
+            msg = f"Expected x_noise with shape {expected_shape}, got {received}."
+            raise ValueError(msg)
+        if self.modulation_proj is not None:
             x_noise = self.modulation_proj(x_noise)
-
-        if (
-            self.n_noise_channels
-            and x_noise is not None
-            and x_noise.shape[-1] != self.n_noise_channels
-        ):
-            msg = (
-                f"Expected x_noise with last dim {self.n_noise_channels}, "
-                f"got {x_noise.shape[-1]}."
-            )
-            raise ValueError(msg)
-
-        if (
-            not self.n_noise_channels
-            and x_noise is not None
-            and x_noise.shape[-1] != self.model.mod_features
-        ):
-            msg = (
-                f"Expected x_noise with last dim {self.model.mod_features}, "
-                f"got {x_noise.shape[-1]}."
-            )
-            raise ValueError(msg)
 
         model_global_cond = None
         if self.include_global_cond:
@@ -192,18 +223,12 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
         ).contiguous()
 
     def map(self, x: Tensor, global_cond: Tensor | None = None) -> Tensor:
-        noise_channels = self.n_noise_input_channels or self.n_noise_channels
-        if noise_channels is None:
-            noise_channels = self.model.mod_features
-
+        # One draw per member/forecast step, reused across all transformer blocks.
+        noise_shape = self._noise_shape(x)
         if self.n_noise_channels:
-            noise = torch.randn(
-                x.shape[0], noise_channels, dtype=x.dtype, device=x.device
-            )
+            noise = torch.randn(noise_shape, dtype=x.dtype, device=x.device)
         else:
-            noise = torch.zeros(
-                x.shape[0], noise_channels, dtype=x.dtype, device=x.device
-            )
+            noise = torch.zeros(noise_shape, dtype=x.dtype, device=x.device)
         return self(x, noise, global_cond=global_cond)
 
     def loss(self, batch: EncodedBatch) -> Tensor:
