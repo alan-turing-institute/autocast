@@ -65,8 +65,9 @@ def test_normalized_override_plain():
     assert normalized_override("key=val") == "key=val"
 
 
-def test_normalized_override_plus_prefix():
-    assert normalized_override("+key=val") == "key=val"
+@pytest.mark.parametrize("prefix", ["+", "++"])
+def test_normalized_override_plus_prefix(prefix):
+    assert normalized_override(f"{prefix}key=val") == "key=val"
 
 
 def test_extract_override_value_found():
@@ -81,8 +82,9 @@ def test_extract_override_value_last_wins():
     assert extract_override_value(["k=1", "k=2"], "k") == "2"
 
 
-def test_extract_override_value_plus_prefix():
-    assert extract_override_value(["+k=42"], "k") == "42"
+@pytest.mark.parametrize("prefix", ["+", "++"])
+def test_extract_override_value_plus_prefix(prefix):
+    assert extract_override_value([f"{prefix}k=42"], "k") == "42"
 
 
 def test_contains_override_present():
@@ -101,6 +103,10 @@ def test_set_override_new_key():
 def test_set_override_replace():
     result = set_override(["a=1", "b=old"], "b", "new")
     assert result == ["a=1", "b=new"]
+
+
+def test_set_override_replaces_force_add():
+    assert set_override(["++b=old", "a=1"], "b", "new") == ["a=1", "b=new"]
 
 
 def test_strip_hydra_sweep_controls_removes_mode_and_sweep():
@@ -828,7 +834,10 @@ def test_eval_command_explicit_resolved_config_skips_defaults(monkeypatch, tmp_p
     assert any(o.startswith("eval.checkpoint=") for o in overrides)
 
 
-def test_eval_command_preserves_explicit_checkpoint_override(monkeypatch, tmp_path):
+@pytest.mark.parametrize("prefix", ["", "+", "++"])
+def test_eval_command_preserves_explicit_checkpoint_override(
+    monkeypatch, tmp_path, prefix
+):
     (tmp_path / "encoder_processor_decoder.ckpt").touch()
     captured: dict[str, object] = {}
 
@@ -844,15 +853,17 @@ def test_eval_command_preserves_explicit_checkpoint_override(monkeypatch, tmp_pa
         mode="local",
         dataset="reaction_diffusion",
         work_dir=str(tmp_path),
-        overrides=["eval.checkpoint=manual.ckpt"],
+        overrides=[f"{prefix}eval.checkpoint=manual.ckpt"],
         dry_run=True,
     )
 
     overrides = captured["overrides"]
     assert isinstance(overrides, list)
-    assert "eval.checkpoint=manual.ckpt" in overrides
-    inferred = [o for o in overrides if o.startswith("eval.checkpoint=")]
-    assert inferred == ["eval.checkpoint=manual.ckpt"]
+    assert f"{prefix}eval.checkpoint=manual.ckpt" in overrides
+    checkpoints = [
+        o for o in overrides if normalized_override(o).startswith("eval.checkpoint=")
+    ]
+    assert checkpoints == [f"{prefix}eval.checkpoint=manual.ckpt"]
 
 
 def test_eval_command_quotes_inferred_checkpoint_with_equals(monkeypatch, tmp_path):
