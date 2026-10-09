@@ -244,12 +244,15 @@ moments/preconditioners and epoch/step counters. Prepare a new full-state
 checkpoint first; simply overriding the config LR would restore the old LR.
 Only use trusted checkpoints. The helper refuses existing outputs, checks an
 optional source SHA256 and writes source/derived hashes beside the result.
+AE checkpoints need the original resolved training config supplied explicitly;
+the helper checks its base LR against the checkpoint and records its hash.
 Old checkpoint paths and diagnostic histories are removed; the existing timer
 reset callback gives the continuation its own budget.
 
 ```sh
 uv run --frozen python scripts/swe64s/prepare_ae_refinement.py \
   --source /path/to/best-ae.ckpt --target /path/to/new/resume.ckpt \
+  --source-config /path/to/original/resolved_autoencoder_config.yaml \
   --expected-sha256 SELECTED_SOURCE_SHA256
 
 uv run --frozen autocast ae --mode slurm --dry-run \

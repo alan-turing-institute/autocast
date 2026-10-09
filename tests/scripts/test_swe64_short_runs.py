@@ -143,13 +143,37 @@ def _checkpoint():
     }
 
 
-def test_lr_retarget_preserves_state_and_restores_constant_schedule(tmp_path):
+@pytest.mark.parametrize("saved_optimizer_config", [True, False])
+def test_lr_retarget_preserves_state_and_restores_constant_schedule(
+    tmp_path, saved_optimizer_config
+):
     helpers = runpy.run_path(str(HELPERS / "prepare_ae_refinement.py"))
     source, target = tmp_path / "source.ckpt", tmp_path / "derived.ckpt"
     original = _checkpoint()
+    source_config = None
+    if not saved_optimizer_config:
+        # Real AE checkpoints do not save optimizer_config as a hyperparameter.
+        original.pop("hyper_parameters")
+        source_config = tmp_path / "resolved_autoencoder_config.yaml"
+        OmegaConf.save(
+            OmegaConf.create(
+                {
+                    "optimizer": {
+                        "scheduler": "cosine",
+                        "learning_rate": 1e-5,
+                        "scheduler_interval": "epoch",
+                        "cosine_epochs": 512,
+                    }
+                }
+            ),
+            source_config,
+        )
     torch.save(original, source)
     source_hash = helpers["sha256"](source)
-    record = helpers["prepare_checkpoint"](source, target, expected_sha256=source_hash)
+    kwargs = {"source_config": source_config} if source_config is not None else {}
+    record = helpers["prepare_checkpoint"](
+        source, target, expected_sha256=source_hash, **kwargs
+    )
     derived = torch.load(target, weights_only=False)
     assert helpers["sha256"](source) == source_hash
     assert derived["global_step"] == original["global_step"]
@@ -164,6 +188,10 @@ def test_lr_retarget_preserves_state_and_restores_constant_schedule(tmp_path):
     assert set(derived["callbacks"]) == {"EMACallback", "Timer"}
     assert record["learning_rate"] == 3e-6
     assert target.with_suffix(".provenance.json").is_file()
+    if source_config is not None:
+        assert "hyper_parameters" not in derived
+        assert record["source_config"] == str(source_config.resolve())
+        assert record["source_config_sha256"] == helpers["sha256"](source_config)
 
     # Exercise the actual scheduler restore rather than only its serialized LR.
     model = OptimizerMixin()
@@ -186,6 +214,41 @@ def test_lr_retarget_preserves_state_and_restores_constant_schedule(tmp_path):
         helpers["prepare_checkpoint"](
             source, tmp_path / "wrong.ckpt", expected_sha256="wrong"
         )
+
+
+def test_lr_retarget_requires_explicit_config_when_metadata_is_missing(tmp_path):
+    helper = runpy.run_path(str(HELPERS / "prepare_ae_refinement.py"))
+    checkpoint = _checkpoint()
+    checkpoint.pop("hyper_parameters")
+    source, target = tmp_path / "source.ckpt", tmp_path / "derived.ckpt"
+    torch.save(checkpoint, source)
+    with pytest.raises(ValueError, match="source-config"):
+        helper["prepare_checkpoint"](source, target)
+    assert not target.exists()
+
+
+def test_lr_retarget_rejects_config_from_a_different_base_lr(tmp_path):
+    helper = runpy.run_path(str(HELPERS / "prepare_ae_refinement.py"))
+    checkpoint = _checkpoint()
+    checkpoint.pop("hyper_parameters")
+    source, target = tmp_path / "source.ckpt", tmp_path / "derived.ckpt"
+    torch.save(checkpoint, source)
+    config = tmp_path / "wrong.yaml"
+    OmegaConf.save(
+        OmegaConf.create(
+            {
+                "optimizer": {
+                    "scheduler": "cosine",
+                    "learning_rate": 5e-5,
+                    "scheduler_interval": "epoch",
+                }
+            }
+        ),
+        config,
+    )
+    with pytest.raises(ValueError, match="base learning rate"):
+        helper["prepare_checkpoint"](source, target, source_config=config)
+    assert not target.exists()
 
 
 @pytest.mark.parametrize("learning_rate", [0, -1, float("nan"), float("inf")])
