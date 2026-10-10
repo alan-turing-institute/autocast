@@ -6,8 +6,10 @@ from pathlib import Path
 from typing import Any
 
 import torch
+import yaml
 from hydra.utils import get_class, instantiate
 from omegaconf import DictConfig
+from the_well.data.normalization import ZScoreNormalization
 from torch import nn
 
 from autocast.data.datamodule import SpatioTemporalDataModule, TheWellDataModule
@@ -598,6 +600,13 @@ def setup_processor_model(
 ) -> ProcessorModel:
     """Set up just the processor model for training on latents."""
     model_config = config.get("model", {})
+    if model_config.get("residual_prediction", False):
+        msg = (
+            "model.residual_prediction requires a full EncoderProcessorDecoder "
+            "with decoded state predictions; processor-only latent training and "
+            "evaluation do not have a physical persistence baseline."
+        )
+        raise ValueError(msg)
     noise_injector, extra_input_channels = _resolve_input_noise_injector(model_config)
 
     example_batch = stats["example_batch"]
@@ -635,6 +644,18 @@ def setup_processor_model(
         kwargs["n_members"] = model_config.get("n_members")
 
     return cls(**kwargs)
+
+
+def _load_residual_delta_normalizer(
+    stats_path: str | Path, channel_idxs: tuple[int, ...] | None
+) -> ZScoreNormalization:
+    """Load AutoSim statistics in the dataset's selected field order."""
+    with Path(stats_path).open() as stats_file:
+        delta_stats = yaml.safe_load(stats_file)
+    field_names = delta_stats["core_field_names"]
+    if channel_idxs is not None:
+        field_names = [field_names[i] for i in channel_idxs]
+    return ZScoreNormalization(delta_stats["stats"], field_names, [])
 
 
 def setup_epd_model(
@@ -739,6 +760,16 @@ def setup_epd_model(
 
     optimizer_config = _get_optimizer_config(config)
     norm = getattr(datamodule.train_dataset, "norm", None)
+    delta_norm = None
+    delta_stats_path = model_config.get("residual_delta_stats_path")
+    if (
+        delta_stats_path
+        and model_config.get("residual_prediction", False)
+        and model_config.get("residual_use_delta_stats", True)
+    ):
+        delta_norm = _load_residual_delta_normalizer(
+            delta_stats_path, getattr(datamodule.train_dataset, "channel_idxs", None)
+        )
     kwargs = {
         "encoder_decoder": EncoderDecoder(
             encoder,
@@ -753,6 +784,9 @@ def setup_epd_model(
         "loss_func": loss_func,
         "input_noise_injector": noise_injector,
         "norm": norm,
+        "residual_prediction": model_config.get("residual_prediction", False),
+        "residual_use_delta_stats": model_config.get("residual_use_delta_stats", True),
+        "delta_norm": delta_norm,
     }
     _maybe_add_metric_overrides(kwargs, model_config)
     if is_ensemble:

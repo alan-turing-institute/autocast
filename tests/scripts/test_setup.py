@@ -2,7 +2,10 @@
 
 import pytest
 import torch
+from autosim.cli import compute_normalization_stats, save_normalization_stats
+from conftest import CondCaptureProcessor
 from omegaconf import OmegaConf
+from the_well.data.normalization import ZScoreNormalization
 
 from autocast.encoders.base import Encoder
 from autocast.losses import MCDropoutMSEL2Loss
@@ -18,6 +21,8 @@ from autocast.scripts.setup import (
     _set_if_auto,
     resolve_auto_params,
     setup_autoencoder_components,
+    setup_epd_model,
+    setup_processor_model,
 )
 from autocast.types import Batch
 
@@ -390,3 +395,112 @@ def test_setup_autoencoder_components_resolves_decoder_in_channels_auto():
 
     assert encoder.latent_channels == 3
     assert decoder.latent_channels == 3
+
+
+@pytest.mark.parametrize("n_members", [1, 3])
+@pytest.mark.parametrize("use_normalization", [False, True])
+@pytest.mark.parametrize("stats_channels", [None, (0,), (1,)])
+@pytest.mark.parametrize(
+    ("residual_options", "expected_value"),
+    [
+        ({}, 1.0),
+        ({"residual_prediction": True}, 6.0),
+        ({"residual_prediction": True, "residual_use_delta_stats": False}, 4.0),
+        ({"residual_prediction": False, "residual_use_delta_stats": False}, 1.0),
+    ],
+)
+def test_setup_epd_wires_residual_options_and_dataset_normalizer(
+    tmp_path,
+    monkeypatch,
+    make_toy_batch,
+    dummy_datamodule,
+    n_members,
+    residual_options,
+    expected_value,
+    use_normalization,
+    stats_channels,
+):
+    processor = CondCaptureProcessor()
+    monkeypatch.setattr(
+        processor, "map", lambda x, _: x.new_ones(x.shape[0], 4, *x.shape[2:])
+    )
+    monkeypatch.setattr(
+        "autocast.scripts.setup._build_processor", lambda *_args: processor
+    )
+    cfg = OmegaConf.create(
+        {
+            "model": {
+                "encoder": {
+                    "_target_": "autocast.encoders.identity.IdentityEncoder",
+                    "in_channels": "auto",
+                },
+                "decoder": {
+                    "_target_": "autocast.decoders.identity.IdentityDecoder",
+                    "in_channels": "auto",
+                },
+                "train_in_latent_space": False,
+                "n_members": n_members,
+                "loss_func": {"_target_": "torch.nn.MSELoss"},
+                **residual_options,
+            },
+            "optimizer": {"_target_": "torch.optim.Adam", "lr": 0.001},
+        }
+    )
+    batch = make_toy_batch(t_in=2, t_out=4, w=2, h=2)
+    batch.input_fields.fill_(3.0)
+    norm = ZScoreNormalization(
+        stats={
+            "mean": {"u": 10.0},
+            "std": {"u": 2.0},
+            "mean_delta": {"u": 2.0},
+            "std_delta": {"u": 4.0},
+        },
+        core_field_names=["u"],
+        core_constant_field_names=[],
+    )
+    dummy_datamodule.train_dataset.norm = norm
+    if not use_normalization:
+        dummy_datamodule.train_dataset.norm = None
+        if residual_options.get("residual_prediction", False):
+            expected_value = 4.0
+    dummy_datamodule.train_dataset.channel_idxs = stats_channels
+    if stats_channels is not None:
+        stats_path = tmp_path / "stats.yml"
+        cfg.model.residual_delta_stats_path = str(stats_path)
+        if residual_options.get("residual_prediction", False) and residual_options.get(
+            "residual_use_delta_stats", True
+        ):
+            # Real AutoSim statistics: deltas [-2, 6] and [1, 5].
+            payload = {
+                "data": torch.tensor([[0.0, 0.0], [-2.0, 1.0], [4.0, 6.0]]).reshape(
+                    1, 3, 1, 1, 2
+                )
+            }
+            save_normalization_stats(
+                compute_normalization_stats(payload, core_field_names=["u", "v"]),
+                stats_path,
+            )
+            increment = 6.0 if stats_channels == (0,) else 5.0
+            expected_value = 3.0 + increment / (2.0 if use_normalization else 1.0)
+    stats = {
+        "channel_count": 1,
+        "n_steps_input": 2,
+        "n_steps_output": 4,
+        "example_batch": batch,
+    }
+
+    model = setup_epd_model(cfg, stats, dummy_datamodule)
+    predictions = model(batch)
+
+    assert model.norm is (norm if use_normalization else None)
+    expected_shape = (2, 4, 2, 2, 1) + ((n_members,) if n_members > 1 else ())
+    torch.testing.assert_close(predictions, torch.full(expected_shape, expected_value))
+
+
+def test_setup_processor_rejects_residual_prediction_before_building_latents(
+    dummy_datamodule,
+):
+    cfg = OmegaConf.create({"model": {"residual_prediction": True}})
+
+    with pytest.raises(ValueError, match="requires a full EncoderProcessorDecoder"):
+        setup_processor_model(cfg, {}, dummy_datamodule)

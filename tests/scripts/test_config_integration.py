@@ -53,6 +53,28 @@ def test_top_level_config_has_trainer(config_dir: str, config_name: str):
     assert "trainer" in cfg
 
 
+def test_epd_residual_config_is_opt_in_and_accepts_overrides(config_dir: str):
+    default_cfg = _load_config(config_dir, "encoder_processor_decoder")
+    assert default_cfg.model.residual_prediction is False
+    assert default_cfg.model.residual_use_delta_stats is True
+    assert default_cfg.model.residual_delta_stats_path is None
+
+    cfg = _load_config(
+        config_dir,
+        "encoder_processor_decoder",
+        overrides=[
+            "model.residual_prediction=true",
+            "model.residual_use_delta_stats=false",
+            "model.train_in_latent_space=false",
+            "model.residual_delta_stats_path=/tmp/stats.yml",
+        ],
+    )
+    assert cfg.model.residual_prediction is True
+    assert cfg.model.residual_use_delta_stats is False
+    assert cfg.model.train_in_latent_space is False
+    assert cfg.model.residual_delta_stats_path == "/tmp/stats.yml"
+
+
 def test_multinode_distributed_config_sets_trainer_nodes(config_dir: str):
     cfg = _load_config(
         config_dir,

@@ -8,5 +8,15 @@ defaults:
   - _self_
 train_in_latent_space: true
 freeze_encoder_decoder: true
+# Decode cumulative residuals from the last clean observed state. Requires
+# train_in_latent_space=false and a loss on the reconstructed state fields.
+residual_prediction: false
+# Reuse one-step delta statistics for every lead (not lead-specific statistics).
+# Uses the state normalizer's delta stats unless an explicit stats file is supplied.
+# False adds increments in the input state's units.
+residual_use_delta_stats: true
+# Optional AutoSim stats.yml; enables delta scaling even for unnormalized states.
+# Null preserves existing behavior (raw increments when state normalization is off).
+residual_delta_stats_path: null
 loss_func:
   _target_: torch.nn.MSELoss

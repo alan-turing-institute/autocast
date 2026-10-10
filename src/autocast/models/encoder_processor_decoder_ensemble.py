@@ -38,6 +38,13 @@ class EncoderProcessorDecoderEnsemble(EncoderProcessorDecoder):
         """Prediction for rollout (retains flattened batch dim)."""
         return super().forward(batch)
 
+    def _denormalize_prediction(self, prediction: Tensor) -> Tensor:
+        """Use the known forward member axis even when members equal channels."""
+        b = prediction.shape[0]
+        flat_members = rearrange(prediction, "b ... c m -> (b m) ... c")
+        denorm = super().denormalize_tensor(flat_members)
+        return rearrange(denorm, "(b m) ... c -> b ... c m", b=b, m=self.n_members)
+
     def denormalize_tensor(self, tensor: Tensor, delta: bool = False) -> Tensor:
         """Denormalize ensemble outputs with member dim as the last axis.
 
