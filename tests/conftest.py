@@ -11,6 +11,7 @@ from torch.utils.data import DataLoader, Dataset
 
 from autocast.data.datamodule import SpatioTemporalDataModule
 from autocast.processors.base import Processor
+from autocast.scripts.setup import setup_epd_model
 from autocast.types import Batch, EncodedBatch
 from autocast.utils import get_optimizer_config
 
@@ -41,6 +42,22 @@ def epd_config():
             "optimizer": get_optimizer_config(),
         }
     )
+
+
+@pytest.fixture
+def setup_epd(epd_config):
+    """Build the configured EPD from a batch, using its real setup path."""
+
+    def setup(datamodule, batch):
+        stats = {
+            "channel_count": batch.input_fields.shape[-1],
+            "n_steps_input": batch.input_fields.shape[1],
+            "n_steps_output": batch.output_fields.shape[1],
+            "example_batch": batch,
+        }
+        return setup_epd_model(epd_config, stats, datamodule)
+
+    return setup
 
 
 def _make_batch(

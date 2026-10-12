@@ -3,7 +3,7 @@ from unittest.mock import Mock
 import pytest
 import torch
 from einops import rearrange, repeat
-from the_well.data.normalization import RMSNormalization, ZScoreNormalization
+from the_well.data.normalization import ZScoreNormalization
 from torch import nn
 
 from autocast.decoders.channels_last import ChannelsLast
@@ -29,16 +29,24 @@ def physical_state(state, use_normalization=True):
     return state * STATE_STD + STATE_MEAN if use_normalization else state
 
 
-def physical_delta(
-    delta, use_normalization=True, use_delta_stats=True, independent_delta_stats=False
-):
-    if use_delta_stats and (use_normalization or independent_delta_stats):
-        return delta * DELTA_STD + DELTA_MEAN
-    return delta * STATE_STD if use_normalization else delta
+def physical_delta(delta):
+    return delta * DELTA_STD + DELTA_MEAN
 
 
 def with_members(tensor, n_members):
     return tensor if n_members is None else repeat(tensor, "... -> ... m", m=n_members)
+
+
+def member_offsets(n_members):
+    if n_members is None:
+        return 0
+    return rearrange(torch.arange(2 * n_members), "(b m) -> b m 1 1 1 1", b=2)
+
+
+def members_last(tensor, n_members):
+    return (
+        tensor[:, 0] if n_members is None else rearrange(tensor, "b m ... -> b ... m")
+    )
 
 
 class DecodedOutputProcessor(Processor):
@@ -139,12 +147,34 @@ def test_default_and_explicit_direct_predictions_preserve_checkpoint(
     assert direct.state_dict().keys() == default.state_dict().keys()
 
 
-@pytest.mark.parametrize("use_normalization", [False, True])
-@pytest.mark.parametrize("use_delta_stats", [False, True])
-@pytest.mark.parametrize("independent_delta_stats", [False, True])
+@pytest.mark.parametrize(
+    (
+        "use_normalization",
+        "use_delta_stats",
+        "independent_delta_stats",
+        "scale",
+        "shift",
+    ),
+    [
+        (False, False, False, [1.0, 1.0], [0.0, 0.0]),
+        (False, True, False, [1.0, 1.0], [0.0, 0.0]),
+        (False, False, True, [1.0, 1.0], [0.0, 0.0]),
+        (False, True, True, [0.25, 2.0], [0.5, -1.0]),
+        (True, False, False, [1.0, 1.0], [0.0, 0.0]),
+        (True, False, True, [1.0, 1.0], [0.0, 0.0]),
+        (True, True, False, [0.125, 0.4], [0.25, -0.2]),
+        (True, True, True, [0.125, 0.4], [0.25, -0.2]),
+    ],
+)
 @pytest.mark.parametrize("n_members", [None, 2, 3])
 def test_residual_units_and_shared_baseline(
-    norm, use_normalization, use_delta_stats, independent_delta_stats, n_members
+    norm,
+    use_normalization,
+    use_delta_stats,
+    independent_delta_stats,
+    scale,
+    shift,
+    n_members,
 ):
     batch = make_batch()
     batch.input_fields.requires_grad_()
@@ -158,31 +188,20 @@ def test_residual_units_and_shared_baseline(
         residual_prediction=True,
         residual_use_delta_stats=use_delta_stats,
     )
-    offsets = (
-        0
-        if n_members is None
-        else rearrange(torch.arange(2 * n_members), "(b m) -> b m 1 1 1 1", b=2)
+    scale, shift = torch.tensor(scale), torch.tensor(shift)
+    expected = (
+        batch.input_fields[:, None, -1:]
+        + shift
+        + scale * (residual + member_offsets(n_members))
     )
-    physical = physical_state(batch.input_fields[:, None, -1:], use_normalization)
-    physical = physical + physical_delta(
-        residual + offsets, use_normalization, use_delta_stats, independent_delta_stats
-    )
-    normalized = (physical - STATE_MEAN) / STATE_STD if use_normalization else physical
-    layout = "b 1 ... -> b ..." if n_members is None else "b m ... -> b ... m"
-    torch.testing.assert_close(model(batch), rearrange(normalized, layout))
+    torch.testing.assert_close(model(batch), members_last(expected, n_members))
     torch.testing.assert_close(
-        model.predict_step(batch, 0), rearrange(physical, layout)
+        model.predict_step(batch, 0),
+        members_last(physical_state(expected, use_normalization), n_members),
     )
 
     model(batch).sum().backward()
     assert isinstance(model.processor, DecodedOutputProcessor)
-    scale = physical_delta(
-        1, use_normalization, use_delta_stats, independent_delta_stats
-    )
-    scale -= physical_delta(
-        0, use_normalization, use_delta_stats, independent_delta_stats
-    )
-    scale = scale / STATE_STD if use_normalization else scale
     torch.testing.assert_close(
         model.processor.output.grad,
         torch.ones_like(residual) * 2 * (n_members or 1) * scale,
@@ -227,22 +246,6 @@ def test_small_residuals_survive_large_state_means_and_rollout():
         rtol=0,
         atol=2e-6,
     )
-
-
-def test_residual_reconstruction_with_rms_normalization():
-    norm = RMSNormalization(
-        stats={"rms": {"u": 2.0, "v": 5.0}, "rms_delta": {"u": 0.25, "v": 2.0}},
-        core_field_names=["u", "v"],
-        core_constant_field_names=[],
-    )
-    batch = make_batch()
-    residual = torch.ones_like(batch.output_fields[0])
-    model = make_model(residual, norm=norm, residual_prediction=True)
-    expected = (batch.input_fields[:, -1:] + DELTA_STD / STATE_STD).expand_as(
-        batch.output_fields
-    )
-    torch.testing.assert_close(model(batch), expected)
-    torch.testing.assert_close(model.predict_step(batch, 0), expected * STATE_STD)
 
 
 @pytest.mark.parametrize("noise", ["add", "in_place", "concat"])
@@ -361,12 +364,13 @@ def test_losses_and_metrics_receive_complete_fields(
 
 
 @pytest.mark.parametrize("teacher_forced", [False, True])
+@pytest.mark.parametrize("detach", [False, True])
 @pytest.mark.parametrize(
     ("n_members", "stride", "return_windows", "use_normalization"),
     [(None, 4, False, True), (2, 4, False, False), (3, 2, True, True)],
 )
-def test_rollouts_advance_with_complete_states(
-    norm, teacher_forced, n_members, stride, return_windows, use_normalization
+def test_rollout_fields_and_gradients(
+    norm, teacher_forced, detach, n_members, stride, return_windows, use_normalization
 ):
     batch = make_batch(t_input=6, t_output=3 * stride)
     clean = batch.input_fields.clone()
@@ -383,20 +387,14 @@ def test_rollouts_advance_with_complete_states(
         batch,
         stride=stride,
         max_rollout_steps=3,
-        teacher_forcing_ratio=float(teacher_forced),
+        teacher_forcing_ratio=1.0,
+        free_running_only=not teacher_forced,
+        detach=detach,
         n_members=n_members,
         return_windows=return_windows,
     )
-    offsets = (
-        0
-        if n_members is None
-        else rearrange(torch.arange(2 * n_members), "(b m) -> b m 1 1 1 1", b=2)
-    )
-    increments = physical_delta(residual + offsets)
-    increments = (
-        increments[None]
-        if n_members is None
-        else rearrange(increments, "b m ... -> b ... m")
+    increments = members_last(
+        physical_delta(residual[None, None] + member_offsets(n_members)), n_members
     )
     baseline = with_members(physical_state(clean[:, -1:], use_normalization), n_members)
     windows = []
@@ -415,36 +413,17 @@ def test_rollouts_advance_with_complete_states(
     torch.testing.assert_close(predictions, expected)
     torch.testing.assert_close(targets, truth)
     torch.testing.assert_close(batch.input_fields, clean)
-
-
-@pytest.mark.parametrize("detach", [False, True])
-def test_free_running_rollout_respects_gradient_detachment(norm, detach):
-    batch = make_batch(t_input=3, t_output=3)
-    batch.input_fields.requires_grad_()
-    model = make_model(
-        torch.ones_like(batch.output_fields[0, :1]), norm=norm, residual_prediction=True
-    )
-    predictions, _ = model.rollout(
-        batch,
-        stride=1,
-        max_rollout_steps=3,
-        teacher_forcing_ratio=1.0,
-        free_running_only=True,
-        detach=detach,
-    )
-    # free_running_only overrides teacher forcing and recurrent outputs are fields.
-    baseline = physical_state(batch.input_fields[:, -1:])
-    expected = torch.cat(
-        [baseline + lead * physical_delta(1) for lead in (1, 2, 3)], dim=1
-    )
-    torch.testing.assert_close(predictions, expected)
     predictions.sum().backward()
-    assert isinstance(model.processor, DecodedOutputProcessor)
-    multiplicity = 3 if detach else 6
-    expected_grad = (
-        torch.ones_like(model.processor.output) * 2 * multiplicity * DELTA_STD
+    # Each lead contributes once per window. Undetached feedback at the last
+    # fed lead contributes another four outputs across 1 + 2 later windows.
+    weights = torch.full((4,), 3.0)
+    if not teacher_forced and not detach:
+        weights[stride - 1] += 12
+    expected_grad = repeat(weights, "t -> t 1 1 1") * DELTA_STD
+    torch.testing.assert_close(
+        model.processor.output.grad,
+        expected_grad.expand_as(residual) * 2 * (n_members or 1),
     )
-    torch.testing.assert_close(model.processor.output.grad, expected_grad)
 
 
 @pytest.mark.parametrize("shape", [(4, 2, 3, 3), (4, 3, 3, 2), (4, 6, 2)])

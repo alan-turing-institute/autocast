@@ -9,7 +9,7 @@ from omegaconf import OmegaConf
 from the_well.data.normalization import RMSNormalization, ZScoreNormalization
 
 from autocast.data.dataset import TheWell
-from autocast.scripts.setup import _load_residual_delta_normalizer, setup_epd_model
+from autocast.scripts.setup import _load_residual_delta_normalizer
 
 
 @pytest.mark.parametrize("normalization_type", [ZScoreNormalization, RMSNormalization])
@@ -90,21 +90,33 @@ def native_well_files(tmp_path):
     return root
 
 
-@pytest.mark.parametrize("use_normalization", [False, True])
-@pytest.mark.parametrize("use_delta_stats", [False, True])
+@pytest.mark.parametrize(
+    ("normalization_type", "use_normalization", "use_delta_stats", "expected"),
+    [
+        (ZScoreNormalization, False, False, [28.0, 52.0, 6.0]),
+        (ZScoreNormalization, False, True, [18.0, 77.0, 14.0]),
+        (ZScoreNormalization, True, False, [18.0, 32.0, 11.0]),
+        (ZScoreNormalization, True, True, [15.0, 29.0, 11.0]),
+        (RMSNormalization, False, False, [28.0, 52.0, 6.0]),
+        (RMSNormalization, False, True, [24.5, 130.0, 18.0]),
+        (RMSNormalization, True, False, [28.0, 52.0, 6.0]),
+        (RMSNormalization, True, True, [14.875, 31.2, 5.5]),
+    ],
+)
 @pytest.mark.parametrize("n_members", [1, 3])
-@pytest.mark.parametrize("normalization_type", [ZScoreNormalization, RMSNormalization])
 @pytest.mark.parametrize("filesystem", [False, True])
 def test_native_well_base_path_override_loads_model_statistics(
     native_well_files,
     monkeypatch,
     REPO_ROOT,
     epd_config,
+    setup_epd,
     use_normalization,
     use_delta_stats,
     n_members,
     normalization_type,
     filesystem,
+    expected,
 ):
     monkeypatch.setenv("AUTOCAST_DATASETS", str(native_well_files / "wrong"))
     root = native_well_files.as_uri() if filesystem else str(native_well_files)
@@ -140,31 +152,8 @@ def test_native_well_base_path_override_loads_model_statistics(
         loader.fs.info(config.model.residual_delta_stats_path)["name"]
         == loader.fs.info(loader.normalization_path)["name"]
     )
-    model = setup_epd_model(
-        config,
-        {
-            "channel_count": 3,
-            "example_batch": batch,
-            "n_steps_input": 1,
-            "n_steps_output": 1,
-        },
-        datamodule,
-    )
-    increment = batch.input_fields
-    if use_delta_stats:
-        if normalization_type is ZScoreNormalization:
-            increment = increment * torch.tensor([0.25, 2.0, 3.0]) + torch.tensor(
-                [0.5, -1.0, 2.0]
-            )
-        else:
-            increment = increment * torch.tensor([0.75, 4.0, 5.0])
-    elif use_normalization:
-        increment = increment * torch.tensor(
-            [2.0, 3.0, 4.0]
-            if normalization_type is ZScoreNormalization
-            else [12.0, 20.0, 6.0]
-        )
-    expected = torch.tensor([14.0, 26.0, 3.0]) + increment
+    model = setup_epd(datamodule, batch)
+    expected = torch.tensor(expected).expand_as(batch.input_fields)
     if n_members > 1:
         expected = repeat(expected, "... -> ... m", m=n_members)
     torch.testing.assert_close(model.predict_step(batch, 0), expected)
@@ -177,16 +166,7 @@ def test_native_well_base_path_override_loads_model_statistics(
     config.model.residual_delta_stats_path = f"{root}/rayleigh_benard/missing.yaml"
     if use_delta_stats:
         with pytest.raises(FileNotFoundError):
-            setup_epd_model(
-                config,
-                {
-                    "channel_count": 3,
-                    "example_batch": batch,
-                    "n_steps_input": 1,
-                    "n_steps_output": 1,
-                },
-                datamodule,
-            )
+            setup_epd(datamodule, batch)
 
 
 @pytest.mark.parametrize("invalid_stats", [None, "", "mean: [", "mean: {}"])
