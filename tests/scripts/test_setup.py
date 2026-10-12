@@ -419,6 +419,7 @@ def test_setup_epd_wires_residual_options_and_dataset_normalizer(
     expected_value,
     use_normalization,
     stats_channels,
+    epd_config,
 ):
     processor = CondCaptureProcessor()
     monkeypatch.setattr(
@@ -427,25 +428,8 @@ def test_setup_epd_wires_residual_options_and_dataset_normalizer(
     monkeypatch.setattr(
         "autocast.scripts.setup._build_processor", lambda *_args: processor
     )
-    cfg = OmegaConf.create(
-        {
-            "model": {
-                "encoder": {
-                    "_target_": "autocast.encoders.identity.IdentityEncoder",
-                    "in_channels": "auto",
-                },
-                "decoder": {
-                    "_target_": "autocast.decoders.identity.IdentityDecoder",
-                    "in_channels": "auto",
-                },
-                "train_in_latent_space": False,
-                "n_members": n_members,
-                "loss_func": {"_target_": "torch.nn.MSELoss"},
-                **residual_options,
-            },
-            "optimizer": {"_target_": "torch.optim.Adam", "lr": 0.001},
-        }
-    )
+    cfg = epd_config
+    cfg.model.update(n_members=n_members, **residual_options)
     batch = make_toy_batch(t_in=2, t_out=4, w=2, h=2)
     batch.input_fields.fill_(3.0)
     norm = ZScoreNormalization(

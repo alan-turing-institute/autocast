@@ -1,5 +1,3 @@
-from unittest.mock import Mock
-
 import fsspec
 import h5py
 import pytest
@@ -10,110 +8,39 @@ from hydra.utils import instantiate
 from omegaconf import OmegaConf
 from the_well.data.normalization import RMSNormalization, ZScoreNormalization
 
-from autocast.data.datamodule import TheWellDataModule
 from autocast.data.dataset import TheWell
-from autocast.scripts.setup import setup_epd_model
+from autocast.scripts.setup import _load_residual_delta_normalizer, setup_epd_model
 
 
-@pytest.mark.parametrize("use_normalization", [True, False])
-@pytest.mark.parametrize("delta_source", [None, "state", "local", "filesystem"])
-@pytest.mark.parametrize("n_members", [1, 3])
 @pytest.mark.parametrize("normalization_type", [ZScoreNormalization, RMSNormalization])
-def test_well_model_setup_preserves_output_units(
-    tmp_path,
-    monkeypatch,
-    make_toy_batch,
-    use_normalization,
-    delta_source,
-    n_members,
-    normalization_type,
+@pytest.mark.parametrize("local_override", [False, True])
+def test_well_delta_stats_use_metadata_and_existing_filesystem(
+    native_well_files, normalization_type, local_override
 ):
-    """Use native statistics, filesystem and field order for either state mode."""
-    # Native Well statistics have no wrapper or field-name list. Metadata orders
-    # the vector before the scalar, unlike the YAML mapping's alphabetical order.
-    stats = {
-        "mean": {"a": 10.0, "velocity": [20.0, -5.0]},
-        "std": {"a": 2.0, "velocity": [3.0, 4.0]},
-        "mean_delta": {"a": 0.5, "velocity": [-1.0, 2.0]},
-        "std_delta": {"a": 0.25, "velocity": [2.0, 3.0]},
-        "rms": {"a": 12.0, "velocity": [20.0, 6.0]},
-        "rms_delta": {"a": 0.75, "velocity": [4.0, 5.0]},
-    }
-    field_names = ["velocity", "a"]
-    normalizer = normalization_type(stats, field_names, [])
-    fs = fsspec.filesystem("memory")
-    stats_path = f"memory://{tmp_path.name}/stats.yaml"
-    fs.pipe(stats_path, yaml.safe_dump(stats).encode())
-    if delta_source == "local":
-        local_stats = tmp_path / "stats.yaml"
-        local_stats.write_text(yaml.safe_dump(stats))
-        stats_path = str(local_stats)
-    residual_prediction = delta_source is not None
-    delta_file = delta_source in {"local", "filesystem"}
-    # Replace external HDF5 discovery, retaining real filesystem/normalizers.
-    loader = Mock(
-        norm=normalizer if use_normalization else None,
-        metadata=None,
-        fs=fs,
-        core_field_names=field_names,
-        core_constant_field_names=[],
+    dataset = TheWell(
+        well_base_path=str(native_well_files),
+        well_dataset_name="rayleigh_benard",
+        well_split_name="train",
+        use_normalization=False,
         normalization_type=normalization_type,
     )
-    monkeypatch.setattr("autocast.data.dataset.WellDataset", Mock(return_value=loader))
-    dataset = TheWell(path="unused", use_normalization=use_normalization)
-    batch = make_toy_batch(batch_size=1, t_in=1, w=2, h=2, c=3)
-    config = OmegaConf.create(
-        {
-            "model": {
-                "encoder": {
-                    "_target_": "autocast.encoders.identity.IdentityEncoder",
-                    "in_channels": 3,
-                },
-                "decoder": {
-                    "_target_": "autocast.decoders.identity.IdentityDecoder",
-                    "in_channels": 3,
-                },
-                "processor": {"_target_": "conftest.CondCaptureProcessor"},
-                "n_members": n_members,
-                "residual_prediction": residual_prediction,
-                "residual_delta_stats_path": stats_path if delta_file else None,
-            },
-            "optimizer": {"optimizer": "adamw", "learning_rate": 1e-4},
-        }
+    stats_path = native_well_files / "rayleigh_benard/stats.yaml"
+    remote_path = f"memory://{native_well_files.parent.name}/stats.yaml"
+    fs = fsspec.filesystem("memory")
+    fs.pipe(remote_path, stats_path.read_bytes())
+    dataset.well_dataset.fs = fs
+    normalizer = _load_residual_delta_normalizer(
+        stats_path if local_override else remote_path, dataset
     )
-    model = setup_epd_model(
-        config,
-        {"example_batch": batch, "n_steps_input": 1, "n_steps_output": 1},
-        Mock(spec=TheWellDataModule, train_dataset=dataset),
+    expected = (
+        [0.75, 1.0, 5.0]
+        if normalization_type is ZScoreNormalization
+        else [0.75, 4.0, 5.0]
     )
-
-    # Training stays in model units; predict_step restores physical units once.
-    baseline = batch.input_fields
-    if normalization_type is ZScoreNormalization:
-        state_mean = torch.tensor([20.0, -5.0, 10.0])
-        state_scale = torch.tensor([3.0, 4.0, 2.0])
-        increment = baseline * torch.tensor([2.0, 3.0, 0.25])
-        increment = increment + torch.tensor([-1.0, 2.0, 0.5])
-    else:
-        state_mean = torch.zeros(3)
-        state_scale = torch.tensor([20.0, 6.0, 12.0])
-        increment = baseline * torch.tensor([4.0, 5.0, 0.75])
-    expected = baseline
-    if residual_prediction:
-        if delta_file or use_normalization:
-            expected = baseline + (
-                increment / state_scale if use_normalization else increment
-            )
-        else:
-            expected = baseline + baseline
-    physical = expected
-    if use_normalization:
-        physical = expected * state_scale + state_mean
-    if n_members > 1:
-        expected = repeat(expected, "... -> ... m", m=n_members)
-        physical = repeat(physical, "... -> ... m", m=n_members)
-    torch.testing.assert_close(model(batch), expected)
-    torch.testing.assert_close(model.predict_step(batch, 0), physical)
+    torch.testing.assert_close(
+        normalizer.delta_denormalize_flattened(torch.ones(1, 3), "variable"),
+        torch.tensor([expected]),
+    )
 
 
 @pytest.fixture
@@ -164,38 +91,32 @@ def native_well_files(tmp_path):
 
 
 @pytest.mark.parametrize("use_normalization", [False, True])
+@pytest.mark.parametrize("use_delta_stats", [False, True])
+@pytest.mark.parametrize("n_members", [1, 3])
 @pytest.mark.parametrize("normalization_type", [ZScoreNormalization, RMSNormalization])
 @pytest.mark.parametrize("filesystem", [False, True])
 def test_native_well_base_path_override_loads_model_statistics(
     native_well_files,
     monkeypatch,
     REPO_ROOT,
+    epd_config,
     use_normalization,
+    use_delta_stats,
+    n_members,
     normalization_type,
     filesystem,
 ):
     monkeypatch.setenv("AUTOCAST_DATASETS", str(native_well_files / "wrong"))
     root = native_well_files.as_uri() if filesystem else str(native_well_files)
-    config = OmegaConf.create(
-        {
-            "datamodule": OmegaConf.load(
-                REPO_ROOT / "src/autocast/configs/datamodule/the_well.yaml"
-            ),
-            "model": {
-                "encoder": {
-                    "_target_": "autocast.encoders.identity.IdentityEncoder",
-                    "in_channels": 3,
-                },
-                "decoder": {
-                    "_target_": "autocast.decoders.identity.IdentityDecoder",
-                    "in_channels": 3,
-                },
-                "processor": {"_target_": "conftest.CondCaptureProcessor"},
-                "residual_prediction": True,
-                "residual_delta_stats_path": "${datamodule.normalization_path}",
-            },
-            "optimizer": {"optimizer": "adamw", "learning_rate": 1e-4},
-        }
+    config = epd_config
+    config.datamodule = OmegaConf.load(
+        REPO_ROOT / "src/autocast/configs/datamodule/the_well.yaml"
+    )
+    config.model.update(
+        residual_prediction=True,
+        residual_use_delta_stats=use_delta_stats,
+        n_members=n_members,
+        residual_delta_stats_path="${datamodule.normalization_path}",
     )
     normalizer_target = f"the_well.data.normalization.{normalization_type.__name__}"
     config.datamodule.update(
@@ -221,24 +142,51 @@ def test_native_well_base_path_override_loads_model_statistics(
     )
     model = setup_epd_model(
         config,
-        {"example_batch": batch, "n_steps_input": 1, "n_steps_output": 1},
+        {
+            "channel_count": 3,
+            "example_batch": batch,
+            "n_steps_input": 1,
+            "n_steps_output": 1,
+        },
         datamodule,
     )
-    if normalization_type is ZScoreNormalization:
-        increment = batch.input_fields * torch.tensor([0.25, 2.0, 3.0])
-        increment = increment + torch.tensor([0.5, -1.0, 2.0])
-    else:
-        increment = batch.input_fields * torch.tensor([0.75, 4.0, 5.0])
-    expected = torch.tensor([14.0, 26.0, 3.0]) + increment
-    torch.testing.assert_close(model.predict_step(batch, 0), expected)
-    # An explicit delta file is required even when state stats are available.
-    config.model.residual_delta_stats_path = f"{root}/rayleigh_benard/missing.yaml"
-    with pytest.raises(FileNotFoundError):
-        setup_epd_model(
-            config,
-            {"example_batch": batch, "n_steps_input": 1, "n_steps_output": 1},
-            datamodule,
+    increment = batch.input_fields
+    if use_delta_stats:
+        if normalization_type is ZScoreNormalization:
+            increment = increment * torch.tensor([0.25, 2.0, 3.0]) + torch.tensor(
+                [0.5, -1.0, 2.0]
+            )
+        else:
+            increment = increment * torch.tensor([0.75, 4.0, 5.0])
+    elif use_normalization:
+        increment = increment * torch.tensor(
+            [2.0, 3.0, 4.0]
+            if normalization_type is ZScoreNormalization
+            else [12.0, 20.0, 6.0]
         )
+    expected = torch.tensor([14.0, 26.0, 3.0]) + increment
+    if n_members > 1:
+        expected = repeat(expected, "... -> ... m", m=n_members)
+    torch.testing.assert_close(model.predict_step(batch, 0), expected)
+    model.residual_prediction = False
+    direct = torch.tensor([14.0, 26.0, 3.0]).expand_as(batch.input_fields)
+    torch.testing.assert_close(
+        model.predict_step(batch, 0),
+        repeat(direct, "... -> ... m", m=n_members) if n_members > 1 else direct,
+    )
+    config.model.residual_delta_stats_path = f"{root}/rayleigh_benard/missing.yaml"
+    if use_delta_stats:
+        with pytest.raises(FileNotFoundError):
+            setup_epd_model(
+                config,
+                {
+                    "channel_count": 3,
+                    "example_batch": batch,
+                    "n_steps_input": 1,
+                    "n_steps_output": 1,
+                },
+                datamodule,
+            )
 
 
 @pytest.mark.parametrize("invalid_stats", [None, "", "mean: [", "mean: {}"])

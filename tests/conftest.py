@@ -5,18 +5,42 @@ from unittest.mock import Mock
 import pytest
 import torch
 from einops import rearrange
+from omegaconf import OmegaConf
 from torch import Tensor, nn
 from torch.utils.data import DataLoader, Dataset
 
 from autocast.data.datamodule import SpatioTemporalDataModule
 from autocast.processors.base import Processor
 from autocast.types import Batch, EncodedBatch
-from autocast.utils import get_optimizer_config  # noqa: F401 as imported in tests
+from autocast.utils import get_optimizer_config
 
 
 @pytest.fixture
 def REPO_ROOT() -> Path:
     return Path(__file__).parent.parent
+
+
+@pytest.fixture
+def epd_config():
+    """Small real model configuration shared by residual setup tests."""
+    return OmegaConf.create(
+        {
+            "model": {
+                "encoder": {
+                    "_target_": "autocast.encoders.identity.IdentityEncoder",
+                    "in_channels": "auto",
+                },
+                "decoder": {
+                    "_target_": "autocast.decoders.identity.IdentityDecoder",
+                    "in_channels": "auto",
+                },
+                "processor": {"_target_": "conftest.CondCaptureProcessor"},
+                "train_in_latent_space": False,
+                "loss_func": {"_target_": "torch.nn.MSELoss"},
+            },
+            "optimizer": get_optimizer_config(),
+        }
+    )
 
 
 def _make_batch(

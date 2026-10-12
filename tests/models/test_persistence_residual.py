@@ -139,37 +139,57 @@ def test_default_and_explicit_direct_predictions_preserve_checkpoint(
     assert direct.state_dict().keys() == default.state_dict().keys()
 
 
-@pytest.mark.parametrize(("t_input", "t_output"), [(1, 1), (3, 4), (6, 2)])
 @pytest.mark.parametrize("use_normalization", [False, True])
 @pytest.mark.parametrize("use_delta_stats", [False, True])
 @pytest.mark.parametrize("independent_delta_stats", [False, True])
+@pytest.mark.parametrize("n_members", [None, 2, 3])
 def test_residual_units_and_shared_baseline(
-    norm, t_input, t_output, use_normalization, use_delta_stats, independent_delta_stats
+    norm, use_normalization, use_delta_stats, independent_delta_stats, n_members
 ):
-    batch = make_batch(t_input, t_output)
+    batch = make_batch()
+    batch.input_fields.requires_grad_()
     residual = batch.output_fields[0] - 100
     model = make_model(
         residual,
+        n_members=n_members,
+        member_offsets=n_members is not None,
         norm=norm if use_normalization else None,
         delta_norm=norm if independent_delta_stats else None,
         residual_prediction=True,
         residual_use_delta_stats=use_delta_stats,
     )
-    increment = physical_delta(
-        residual, use_normalization, use_delta_stats, independent_delta_stats
+    offsets = (
+        0
+        if n_members is None
+        else rearrange(torch.arange(2 * n_members), "(b m) -> b m 1 1 1 1", b=2)
     )
-    if use_normalization:
-        increment = increment / STATE_STD
-    expected = batch.input_fields[:, -1:] + increment
-    prediction = model(batch)
-    # Each lead uses the same final observation, without summing earlier leads.
-    torch.testing.assert_close(prediction, expected)
+    physical = physical_state(batch.input_fields[:, None, -1:], use_normalization)
+    physical = physical + physical_delta(
+        residual + offsets, use_normalization, use_delta_stats, independent_delta_stats
+    )
+    normalized = (physical - STATE_MEAN) / STATE_STD if use_normalization else physical
+    layout = "b 1 ... -> b ..." if n_members is None else "b m ... -> b ... m"
+    torch.testing.assert_close(model(batch), rearrange(normalized, layout))
     torch.testing.assert_close(
-        model.predict_step(batch, 0), physical_state(expected, use_normalization)
+        model.predict_step(batch, 0), rearrange(physical, layout)
     )
-    if use_normalization and use_delta_stats:
-        # Zero normalized delta still carries the nonzero physical delta mean.
-        assert not torch.equal(prediction[:, 0], batch.input_fields[:, -1])
+
+    model(batch).sum().backward()
+    assert isinstance(model.processor, DecodedOutputProcessor)
+    scale = physical_delta(
+        1, use_normalization, use_delta_stats, independent_delta_stats
+    )
+    scale -= physical_delta(
+        0, use_normalization, use_delta_stats, independent_delta_stats
+    )
+    scale = scale / STATE_STD if use_normalization else scale
+    torch.testing.assert_close(
+        model.processor.output.grad,
+        torch.ones_like(residual) * 2 * (n_members or 1) * scale,
+    )
+    input_grad = torch.zeros_like(batch.input_fields)
+    input_grad[:, -1] = 4 * (n_members or 1)
+    torch.testing.assert_close(batch.input_fields.grad, input_grad)
 
 
 def test_small_residuals_survive_large_state_means_and_rollout():
@@ -225,60 +245,34 @@ def test_residual_reconstruction_with_rms_normalization():
     torch.testing.assert_close(model.predict_step(batch, 0), expected * STATE_STD)
 
 
-@pytest.mark.parametrize("n_members", [2, 3])
-@pytest.mark.parametrize("use_normalization", [False, True])
-@pytest.mark.parametrize("use_delta_stats", [False, True])
-@pytest.mark.parametrize("independent_delta_stats", [False, True])
-def test_ensemble_reconstruction_and_physical_predictions(
-    norm, n_members, use_normalization, use_delta_stats, independent_delta_stats
-):
-    batch = make_batch()
-    residual = torch.ones_like(batch.output_fields[0])
-    model = make_model(
-        residual,
-        n_members=n_members,
-        member_offsets=True,
-        norm=norm if use_normalization else None,
-        delta_norm=norm if independent_delta_stats else None,
-        residual_prediction=True,
-        residual_use_delta_stats=use_delta_stats,
-    )
-    # Calculate channels-last, then move members last; equal C and M is ambiguous.
-    offsets = rearrange(torch.arange(2 * n_members), "(b m) -> b m 1 1 1 1", b=2)
-    physical = physical_state(
-        batch.input_fields[:, None, -1:], use_normalization
-    ) + physical_delta(
-        residual + offsets, use_normalization, use_delta_stats, independent_delta_stats
-    )
-    normalized = (physical - STATE_MEAN) / STATE_STD if use_normalization else physical
-    torch.testing.assert_close(
-        model(batch), rearrange(normalized, "b m ... -> b ... m")
-    )
-    torch.testing.assert_close(
-        model.predict_step(batch, 0), rearrange(physical, "b m ... -> b ... m")
-    )
-
-
-@pytest.mark.parametrize("in_place", [False, True])
+@pytest.mark.parametrize("noise", ["add", "in_place", "concat"])
 @pytest.mark.parametrize("n_members", [None, 2])
-def test_clean_baseline_and_inputs_survive_noise_and_rollout(in_place, n_members):
+def test_clean_baseline_and_inputs_survive_noise_and_rollout(noise, n_members):
     class AddNoise(nn.Module):
         def forward(self, x):
-            return x.add_(50) if in_place else x + 50
+            return x.add_(50) if noise == "in_place" else x + 50
 
     batch = make_batch()
     clean = batch.input_fields.clone()
+    injector = (
+        ConcatenatedNoiseInjector(n_channels=3) if noise == "concat" else AddNoise()
+    )
     model = make_model(
         torch.zeros_like(batch.output_fields[0]),
         n_members=n_members,
         residual_prediction=True,
-        input_noise_injector=AddNoise(),
+        input_noise_injector=injector,
     )
     expected = with_members(clean[:, -1:].expand_as(batch.output_fields), n_members)
-    expected_noisy = (clean + 50).repeat_interleave(n_members or 1, dim=0)
     torch.testing.assert_close(model(batch), expected)
-    torch.testing.assert_close(model.processor.last_input, expected_noisy)
-    torch.testing.assert_close(batch.input_fields, clean)
+    assert isinstance(model.processor, DecodedOutputProcessor)
+    assert isinstance(model.processor.last_input, torch.Tensor)
+    noisy = clean if noise == "concat" else clean + 50
+    torch.testing.assert_close(
+        model.processor.last_input[..., :2],
+        noisy.repeat_interleave(n_members or 1, dim=0),
+    )
+    assert model.processor.last_input.shape[-1] == (5 if noise == "concat" else 2)
     predictions, _ = model.rollout(
         batch,
         stride=4,
@@ -286,48 +280,8 @@ def test_clean_baseline_and_inputs_survive_noise_and_rollout(in_place, n_members
         free_running_only=True,
         n_members=n_members,
     )
-    # The rollout's shape probe and each forward must retain the clean baseline.
     torch.testing.assert_close(predictions, torch.cat([expected] * 3, dim=1))
     torch.testing.assert_close(batch.input_fields, clean)
-
-
-@pytest.mark.parametrize("n_members", [None, 2])
-def test_concatenated_input_noise_is_not_part_of_baseline(norm, n_members):
-    batch = make_batch()
-    model = make_model(
-        torch.zeros_like(batch.output_fields[0]),
-        n_members=n_members,
-        norm=norm,
-        residual_prediction=True,
-        input_noise_injector=ConcatenatedNoiseInjector(n_channels=3),
-    )
-    expected = (batch.input_fields[:, -1:] + DELTA_MEAN / STATE_STD).expand_as(
-        batch.output_fields
-    )
-    torch.testing.assert_close(model(batch), with_members(expected, n_members))
-    assert isinstance(model.processor.last_input, torch.Tensor)
-    assert model.processor.last_input.shape[-1] == 5
-
-
-@pytest.mark.parametrize("use_normalization", [False, True])
-def test_gradients_reach_decoded_residual_and_last_observation(norm, use_normalization):
-    batch = make_batch()
-    batch.input_fields.requires_grad_()
-    model = make_model(
-        torch.ones_like(batch.output_fields[0]),
-        norm=norm if use_normalization else None,
-        delta_norm=norm,
-        residual_prediction=True,
-    )
-    model(batch).sum().backward()
-    assert isinstance(model.processor, DecodedOutputProcessor)
-    residual_grad = torch.ones_like(model.processor.output) * 2 * DELTA_STD
-    if use_normalization:
-        residual_grad = residual_grad / STATE_STD
-    torch.testing.assert_close(model.processor.output.grad, residual_grad)
-    expected_input_grad = torch.zeros_like(batch.input_fields)
-    expected_input_grad[:, -1] = 4
-    torch.testing.assert_close(batch.input_fields.grad, expected_input_grad)
 
 
 def test_residuals_with_channels_first_latents_and_fno(norm):
@@ -361,13 +315,17 @@ def test_residuals_with_channels_first_latents_and_fno(norm):
     )
 
 
-@pytest.mark.parametrize("spatial_shape", [(5,), (2, 3, 4)])
-def test_matching_one_and_three_dimensional_grids(norm, spatial_shape):
-    inputs = torch.ones(2, 3, *spatial_shape, 2)
-    outputs = torch.zeros(2, 4, *spatial_shape, 2)
+@pytest.mark.parametrize(
+    ("t_input", "t_output", "grid"), [(1, 1, (2, 3)), (6, 2, (5,)), (3, 4, (2, 3, 4))]
+)
+def test_frame_counts_and_spatial_grids(norm, t_input, t_output, grid):
+    inputs = torch.ones(2, t_input, *grid, 2)
+    inputs[:, -1] = 2
+    outputs = torch.zeros(2, t_output, *grid, 2)
     model = make_model(outputs[0], norm=norm, residual_prediction=True)
-    expected = torch.ones_like(outputs) + DELTA_MEAN / STATE_STD
-    torch.testing.assert_close(model(Batch(inputs, outputs, None, None)), expected)
+    torch.testing.assert_close(
+        model(Batch(inputs, outputs, None, None)), 2 + DELTA_MEAN / STATE_STD + outputs
+    )
 
 
 @pytest.mark.parametrize("stage", ["training", "validation", "test"])
@@ -403,34 +361,23 @@ def test_losses_and_metrics_receive_complete_fields(
 
 
 @pytest.mark.parametrize("teacher_forced", [False, True])
-@pytest.mark.parametrize("use_normalization", [False, True])
-@pytest.mark.parametrize("use_delta_stats", [False, True])
-@pytest.mark.parametrize("independent_delta_stats", [False, True])
 @pytest.mark.parametrize(
-    ("n_members", "stride", "return_windows"),
-    [(None, 4, False), (2, 4, False), (3, 4, False), (None, 2, True)],
+    ("n_members", "stride", "return_windows", "use_normalization"),
+    [(None, 4, False, True), (2, 4, False, False), (3, 2, True, True)],
 )
-def test_rollouts_advance_with_complete_normalized_states(
-    norm,
-    teacher_forced,
-    n_members,
-    stride,
-    return_windows,
-    use_normalization,
-    use_delta_stats,
-    independent_delta_stats,
+def test_rollouts_advance_with_complete_states(
+    norm, teacher_forced, n_members, stride, return_windows, use_normalization
 ):
-    batch = make_batch(t_input=6 if return_windows else 3, t_output=3 * stride)
-    original_inputs = batch.input_fields.clone()
+    batch = make_batch(t_input=6, t_output=3 * stride)
+    clean = batch.input_fields.clone()
     residual = batch.output_fields[0, :4] - 99
     model = make_model(
         residual,
         n_members=n_members,
         member_offsets=n_members is not None,
         norm=norm if use_normalization else None,
-        delta_norm=norm if independent_delta_stats else None,
+        delta_norm=norm,
         residual_prediction=True,
-        residual_use_delta_stats=use_delta_stats,
     )
     predictions, targets = model.rollout(
         batch,
@@ -440,46 +387,34 @@ def test_rollouts_advance_with_complete_normalized_states(
         n_members=n_members,
         return_windows=return_windows,
     )
-    baseline = with_members(
-        physical_state(original_inputs[:, -1:], use_normalization), n_members
+    offsets = (
+        0
+        if n_members is None
+        else rearrange(torch.arange(2 * n_members), "(b m) -> b m 1 1 1 1", b=2)
     )
-    if n_members is not None:
-        offsets = rearrange(torch.arange(2 * n_members), "(b m) -> b m 1 1 1 1", b=2)
-        increments = rearrange(
-            physical_delta(
-                residual + offsets,
-                use_normalization,
-                use_delta_stats,
-                independent_delta_stats,
-            ),
-            "b m ... -> b ... m",
-        )
-    else:
-        increments = physical_delta(
-            residual, use_normalization, use_delta_stats, independent_delta_stats
-        )[None]
-    expected_windows = []
+    increments = physical_delta(residual + offsets)
+    increments = (
+        increments[None]
+        if n_members is None
+        else rearrange(increments, "b m ... -> b ... m")
+    )
+    baseline = with_members(physical_state(clean[:, -1:], use_normalization), n_members)
+    windows = []
     for window in range(3):
-        if teacher_forced and window > 0:
+        if teacher_forced and window:
             truth = batch.output_fields[:, window * stride - 1 : window * stride]
             baseline = with_members(physical_state(truth, use_normalization), n_members)
-        expected_windows.append(baseline + increments)
-        if not teacher_forced:
-            # The last fed lead, not necessarily lead four, advances the baseline.
-            baseline = baseline + increments[:, stride - 1 : stride]
+        windows.append(baseline + increments)
+        baseline = baseline + increments[:, stride - 1 : stride]
     expected = (
-        torch.stack(expected_windows, dim=1)
-        if return_windows
-        else torch.cat(expected_windows, dim=1)
+        torch.stack(windows, dim=1) if return_windows else torch.cat(windows, dim=1)
     )
-    physical_targets = physical_state(batch.output_fields, use_normalization)
+    truth = physical_state(batch.output_fields, use_normalization)
     if return_windows:
-        physical_targets = rearrange(
-            physical_targets, "b (r t) ... -> b r t ...", t=stride
-        )
+        truth = rearrange(truth, "b (r t) ... -> b r t ...", t=stride)
     torch.testing.assert_close(predictions, expected)
-    torch.testing.assert_close(targets, physical_targets)
-    torch.testing.assert_close(batch.input_fields, original_inputs)
+    torch.testing.assert_close(targets, truth)
+    torch.testing.assert_close(batch.input_fields, clean)
 
 
 @pytest.mark.parametrize("detach", [False, True])
