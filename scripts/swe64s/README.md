@@ -341,17 +341,27 @@ conditional uncertainty diagnostics against the existing simulator redraws.
 The prepared spatial control remains direct-state; it is not a matched
 spatial-residual arm and should not be described as one.
 
+Use `afcrps_global_residual_small_2h30` for the extended decision pilot. It
+inherits the two-hour residual preset and changes only the experiment name
+and training cap to 2h30m. Constant LR 2e-4, the backbone and all scientific
+settings remain unchanged. The two-hour preset is retained for provenance.
+Previous effective throughput was approximately 14.6 optimizer updates/s,
+giving about 130k updates in 2h30m, or 105k with a 20 percent slowdown. Check
+throughput during the fit and aim for at least 100k updates before judging
+late overfitting; a time cap cannot guarantee that count. No automatic
+continuation is approved if the run falls short.
+
 ```sh
 uv run --frozen autocast epd --mode slurm --dry-run \
-  --workdir "$SWE64S_OUTPUTS/afcrps_global_residual_small_2h" \
-  local_experiment=swe64s/afcrps_global_residual_small_2h \
-  +distributed=ddp_4gpu_slurm trainer.max_time=00:02:00:00 \
+  --workdir "$SWE64S_OUTPUTS/afcrps_global_residual_small_2h30" \
+  local_experiment=swe64s/afcrps_global_residual_small_2h30 \
+  +distributed=ddp_4gpu_slurm trainer.max_time=00:02:30:00 \
   ++hydra.launcher.nodes=1 ++hydra.launcher.cpus_per_task=72 \
-  hydra.launcher.timeout_min=135
+  hydra.launcher.timeout_min=165
 ```
 
-This command is a preview only. The two-hour training timer is distinct from
-the 135-minute Slurm allocation's setup/checkpoint buffer. No fit, evaluation
+This command is a preview only. The 2h30m training timer is distinct from
+the 165-minute Slurm allocation's setup/checkpoint buffer. No fit, evaluation
 or continuation is launched by adding the preset. After an approved fit,
 use its saved config with the common evaluator below so residual flags and
 normalization remain intact for both teacher-forced and free-running tests.

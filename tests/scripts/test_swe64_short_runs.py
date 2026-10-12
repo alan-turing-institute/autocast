@@ -27,6 +27,13 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 HELPERS = REPO_ROOT / "scripts/swe64s"
 
 
+def _training_cap(name):
+    return {
+        "autoencoder_refine": "00:00:30:00",
+        "afcrps_global_residual_small_2h30": "00:02:30:00",
+    }.get(name, "00:02:00:00")
+
+
 def _config(name, *, four_gpu=False):
     overrides = [
         f"local_experiment=swe64s/{name}",
@@ -38,7 +45,7 @@ def _config(name, *, four_gpu=False):
     if four_gpu:
         overrides += [
             "+distributed=ddp_4gpu_slurm",
-            f"trainer.max_time={'00:00:30:00' if is_ae else '00:02:00:00'}",
+            f"trainer.max_time={_training_cap(name)}",
         ]
     with initialize_config_dir(
         version_base=None, config_dir=str(REPO_ROOT / "src/autocast/configs")
@@ -90,6 +97,7 @@ def test_short_afcrps_pair_changes_capacity_only():
         "afcrps_small_2h",
         "afcrps_spatial_small_2h",
         "afcrps_global_residual_small_2h",
+        "afcrps_global_residual_small_2h30",
         "autoencoder_refine",
     ],
 )
@@ -97,9 +105,7 @@ def test_short_distributed_launch_preserves_explicit_cap(name):
     cfg = _config(name, four_gpu=True)
     assert cfg.trainer.devices == 4
     assert cfg.trainer.strategy == "ddp"
-    assert cfg.trainer.max_time == (
-        "00:00:30:00" if name == "autoencoder_refine" else "00:02:00:00"
-    )
+    assert cfg.trainer.max_time == _training_cap(name)
 
 
 def test_spatial_small_profile_changes_noise_and_scheduler_only():
@@ -134,7 +140,12 @@ def test_spatial_small_profile_changes_noise_and_scheduler_only():
 
 
 @pytest.mark.parametrize(
-    "name", ["afcrps_spatial_small_2h", "afcrps_global_residual_small_2h"]
+    "name",
+    [
+        "afcrps_spatial_small_2h",
+        "afcrps_global_residual_small_2h",
+        "afcrps_global_residual_small_2h30",
+    ],
 )
 def test_small_constant_profiles_keep_lr_without_scheduler(name):
     cfg = _config(name, four_gpu=True)
@@ -195,8 +206,52 @@ def test_global_residual_profile_changes_prediction_and_scheduler_only():
     assert sum(p.numel() for p in processor.parameters()) == 10_694_272
 
 
-def test_global_residual_setup_four_frame_loss_gradients_and_rollout():
-    cfg = _config("afcrps_global_residual_small_2h")
+def test_residual_2h30_changes_only_name_and_time_cap():
+    original = _config("afcrps_global_residual_small_2h")
+    longer = _config("afcrps_global_residual_small_2h30")
+    original_config = OmegaConf.to_container(original, resolve=False)
+    longer_config = OmegaConf.to_container(longer, resolve=False)
+    assert isinstance(original_config, dict)
+    assert isinstance(longer_config, dict)
+    longer_config["experiment_name"] = original_config["experiment_name"]
+    longer_config["trainer"]["max_time"] = original_config["trainer"]["max_time"]
+    assert longer_config == original_config
+    assert original.trainer.max_time == "00:02:00:00"
+    assert longer.trainer.max_time == "00:02:30:00"
+    assert longer.optimizer.learning_rate == 2e-4
+    assert longer.optimizer.scheduler is None
+
+
+def test_residual_2h30_distributed_allocation_has_saving_buffer():
+    with initialize_config_dir(
+        version_base=None, config_dir=str(REPO_ROOT / "src/autocast/configs")
+    ):
+        cfg = compose(
+            config_name="encoder_processor_decoder",
+            overrides=[
+                "local_experiment=swe64s/afcrps_global_residual_small_2h30",
+                f"hydra.searchpath=[file://{REPO_ROOT / 'local_hydra'}]",
+                "+distributed=ddp_4gpu_slurm",
+                "trainer.max_time=00:02:30:00",
+                "++hydra.launcher.nodes=1",
+                "++hydra.launcher.cpus_per_task=72",
+                "hydra.launcher.timeout_min=165",
+            ],
+            return_hydra_config=True,
+        )
+    assert cfg.trainer.max_time == "00:02:30:00"
+    assert cfg.trainer.devices == cfg.hydra.launcher.gpus_per_node == 4
+    assert cfg.trainer.num_nodes == cfg.hydra.launcher.nodes == 1
+    assert cfg.hydra.launcher.tasks_per_node == 4
+    assert cfg.hydra.launcher.cpus_per_task == 72
+    assert cfg.hydra.launcher.timeout_min == 165
+
+
+@pytest.mark.parametrize(
+    "name", ["afcrps_global_residual_small_2h", "afcrps_global_residual_small_2h30"]
+)
+def test_global_residual_setup_four_frame_loss_gradients_and_rollout(name):
+    cfg = _config(name)
     # Retain the real grid, patching, 1024D noise and member count on CPU.
     cfg.model.processor.hidden_dim = 16
     cfg.model.processor.n_layers = 1
@@ -258,9 +313,9 @@ def test_global_residual_setup_four_frame_loss_gradients_and_rollout():
     torch.testing.assert_close(loss, model.loss_func(prediction, batch.output_fields))
     assert torch.isfinite(loss)
     loss.backward()
-    for name, parameter in model.processor.named_parameters():
-        assert parameter.grad is not None, name
-        assert torch.isfinite(parameter.grad).all(), name
+    for parameter_name, parameter in model.processor.named_parameters():
+        assert parameter.grad is not None, parameter_name
+        assert torch.isfinite(parameter.grad).all(), parameter_name
 
     batch.output_fields = torch.randn(1, 8, 64, 64, 3)
     model.eval()

@@ -1,0 +1,10 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/afcrps_global_residual_small_2h
+  - _self_
+
+experiment_name: swe64s_afcrps_global_residual_small_2h30
+
+trainer:
+  # Margin to reach the previous small model's late validation interval.
+  max_time: "00:02:30:00"
