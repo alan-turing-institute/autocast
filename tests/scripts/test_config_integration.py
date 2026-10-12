@@ -75,6 +75,30 @@ def test_epd_residual_config_is_opt_in_and_accepts_overrides(config_dir: str):
     assert cfg.model.residual_delta_stats_path == "/tmp/stats.yml"
 
 
+@pytest.mark.parametrize("datasets_root", [None, "/original/well"])
+@pytest.mark.parametrize("well_base_path", [None, "/scratch/well", "s3://bucket/well"])
+def test_well_stats_path_tracks_base_path_overrides(
+    config_dir: str, monkeypatch, datasets_root, well_base_path
+):
+    if datasets_root is None:
+        monkeypatch.delenv("AUTOCAST_DATASETS", raising=False)
+    else:
+        monkeypatch.setenv("AUTOCAST_DATASETS", datasets_root)
+    overrides = ["datamodule=the_well"]
+    if well_base_path is not None:
+        overrides.append(f"datamodule.well_base_path={well_base_path}")
+    cfg = _load_config(config_dir, "encoder_processor_decoder", overrides)
+    base_path = well_base_path or datasets_root or "./datasets"
+    expected = f"{base_path}/{cfg.datamodule.well_dataset_name}/stats.yaml"
+
+    assert cfg.datamodule.normalization_path == expected
+    assert cfg.datamodule.use_normalization is True
+    assert cfg.model.residual_prediction is False
+    assert cfg.model.residual_delta_stats_path is None
+    cfg.model.residual_delta_stats_path = "${datamodule.normalization_path}"
+    assert cfg.model.residual_delta_stats_path == expected
+
+
 def test_multinode_distributed_config_sets_trainer_nodes(config_dir: str):
     cfg = _load_config(
         config_dir,
