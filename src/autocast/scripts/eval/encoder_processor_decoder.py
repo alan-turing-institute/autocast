@@ -2598,8 +2598,16 @@ def _resolve_eval_path(
     return EVAL_PATH_LATENT_CACHED_LATENT_ONLY
 
 
-def _validate_resolved_eval_path(*, eval_mode: str, resolved_path: str) -> None:
-    """Raise if the resolved code path disagrees with the user-requested mode."""
+def _validate_resolved_eval_path(
+    *, eval_mode: str, resolved_path: str, residual_prediction: bool = False
+) -> None:
+    """Raise if the resolved path disagrees with the evaluation or model settings."""
+    if residual_prediction and resolved_path != EVAL_PATH_AMBIENT_EPD:
+        msg = (
+            "model.residual_prediction requires ambient EPD evaluation; "
+            f"{resolved_path!r} bypasses decoded-state persistence reconstruction."
+        )
+        raise ValueError(msg)
     if eval_mode == "ambient" and resolved_path != EVAL_PATH_AMBIENT_EPD:
         msg = (
             "eval.mode=ambient but the resolved eval path is "
@@ -3084,6 +3092,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     _validate_resolved_eval_path(
         eval_mode=eval_mode,
         resolved_path=resolved_eval_path,
+        residual_prediction=cfg.get("model", {}).get("residual_prediction", False),
     )
     _require_decoder_unless_latent_metrics_opt_in(
         resolved_path=resolved_eval_path,

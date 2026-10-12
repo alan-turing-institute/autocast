@@ -354,6 +354,30 @@ def test_encode_once_rollout_predict_can_use_autoencoded_targets():
     assert torch.allclose(trues_relative, encoded_outputs * 2)
 
 
+@pytest.mark.parametrize(
+    "resolved_path",
+    [
+        EVAL_PATH_ENCODE_ONCE,
+        EVAL_PATH_LATENT_CACHED_WITH_DECODER,
+        EVAL_PATH_LATENT_CACHED_LATENT_ONLY,
+    ],
+)
+def test_residual_eval_rejects_paths_without_state_reconstruction(resolved_path):
+    with pytest.raises(ValueError, match="requires ambient EPD evaluation"):
+        _validate_resolved_eval_path(
+            eval_mode="auto", resolved_path=resolved_path, residual_prediction=True
+        )
+    _validate_resolved_eval_path(eval_mode="auto", resolved_path=resolved_path)
+
+
+def test_residual_eval_accepts_ambient_epd_path():
+    _validate_resolved_eval_path(
+        eval_mode="ambient",
+        resolved_path=EVAL_PATH_AMBIENT_EPD,
+        residual_prediction=True,
+    )
+
+
 def test_resolve_rollout_timestep_limit_multiplies_by_stride():
     assert (
         _resolve_rollout_timestep_limit(max_rollout_steps=50, rollout_stride=4) == 200
@@ -2006,7 +2030,10 @@ def test_dump_rollout_tensors_keeps_the_member_axis_for_one_member(tmp_path):
     assert saved["preds"].shape == (2, 3, 4, 4, 2, 1)
 
 
-def test_run_evaluation_auto_resolves_stateless_epd_to_ambient(tmp_path, monkeypatch):
+@pytest.mark.parametrize("residual_prediction", [False, True])
+def test_run_evaluation_auto_resolves_stateless_epd_to_ambient(
+    tmp_path, monkeypatch, residual_prediction
+):
     """Regression: a full EPD checkpoint with a stateless encoder/decoder.
 
     Stateless encoders/decoders (PermuteConcat/ChannelsLast, Identity, ...)
@@ -2027,6 +2054,7 @@ def test_run_evaluation_auto_resolves_stateless_epd_to_ambient(tmp_path, monkeyp
                 # Stateless encoder/decoder: present in config, no learned params.
                 "encoder": {"_target_": "autocast.models.encoders.PermuteConcat"},
                 "decoder": {"_target_": "autocast.models.decoders.ChannelsLast"},
+                "residual_prediction": residual_prediction,
             },
         }
     )
@@ -2066,6 +2094,51 @@ def test_run_evaluation_auto_resolves_stateless_epd_to_ambient(tmp_path, monkeyp
         run_evaluation(cast(Any, cfg), work_dir=tmp_path)
 
     assert captured["eval_mode"] == "ambient"
+
+
+@pytest.mark.parametrize("eval_mode", ["auto", "encode_once"])
+def test_run_evaluation_rejects_encode_once_for_decoded_residuals(
+    tmp_path, monkeypatch, eval_mode
+):
+    """Reject paths that bypass reconstruction before accelerator setup."""
+    eval_mod = "autocast.scripts.eval.encoder_processor_decoder"
+    cfg = OmegaConf.create(
+        {
+            "eval": {"mode": eval_mode, "checkpoint": str(tmp_path / "ckpt.ckpt")},
+            "autoencoder_checkpoint": str(tmp_path / "autoencoder.ckpt"),
+            "model": {"residual_prediction": True},
+        }
+    )
+    raw_batch = _example_batch("batch")
+    monkeypatch.setattr(
+        f"{eval_mod}.resolve_checkpoint_path",
+        lambda *_args, **_kwargs: tmp_path / "ckpt.ckpt",
+    )
+    monkeypatch.setattr(
+        f"{eval_mod}.load_checkpoint_payload",
+        lambda _path: {"state_dict": {"processor.weight": torch.zeros(1, 1)}},
+    )
+    monkeypatch.setattr(
+        f"{eval_mod}.setup_datamodule",
+        lambda config: (object(), config, {"example_batch": raw_batch}),
+    )
+    monkeypatch.setattr(
+        f"{eval_mod}._maybe_inject_encoder_decoder_from_autoencoder_checkpoint",
+        lambda config: config,
+    )
+    monkeypatch.setattr(
+        f"{eval_mod}.setup_epd_model",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            processor=torch.nn.Linear(1, 1, bias=False)
+        ),
+    )
+    monkeypatch.setattr(
+        f"{eval_mod}.L.Fabric",
+        lambda **_kwargs: pytest.fail("Residual path must be rejected before Fabric."),
+    )
+
+    with pytest.raises(ValueError, match="requires ambient EPD evaluation"):
+        run_evaluation(cast(Any, cfg), work_dir=tmp_path)
 
 
 def test_run_evaluation_auto_uses_standard_cached_latent_metadata(

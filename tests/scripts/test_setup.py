@@ -2,7 +2,9 @@
 
 import pytest
 import torch
+from autosim.cli import compute_normalization_stats, save_normalization_stats
 from omegaconf import OmegaConf
+from the_well.data.normalization import ZScoreNormalization
 
 from autocast.encoders.base import Encoder
 from autocast.losses import MCDropoutMSEL2Loss
@@ -18,6 +20,7 @@ from autocast.scripts.setup import (
     _set_if_auto,
     resolve_auto_params,
     setup_autoencoder_components,
+    setup_processor_model,
 )
 from autocast.types import Batch
 
@@ -390,3 +393,103 @@ def test_setup_autoencoder_components_resolves_decoder_in_channels_auto():
 
     assert encoder.latent_channels == 3
     assert decoder.latent_channels == 3
+
+
+def _state_normalizer(fields=("u", "v")):
+    stats = {
+        name: dict.fromkeys(fields, value)
+        for name, value in {
+            "mean": 10.0,
+            "std": 2.0,
+            "mean_delta": 2.0,
+            "std_delta": 4.0,
+        }.items()
+    }
+    return ZScoreNormalization(stats, list(fields), [])
+
+
+@pytest.mark.parametrize("n_members", [1, 3])
+@pytest.mark.parametrize("use_normalization", [False, True])
+@pytest.mark.parametrize(
+    ("options", "expected_values"),
+    [
+        ({}, [3.0, 3.0]),
+        ({"residual_prediction": True}, [6.0, 10.0]),
+        ({"residual_prediction": True, "residual_use_delta_stats": False}, [6.0, 6.0]),
+        ({"residual_prediction": False, "residual_use_delta_stats": False}, [3.0, 3.0]),
+    ],
+)
+def test_setup_epd_residual_defaults_and_options(
+    tmp_path,
+    epd_config,
+    setup_epd,
+    dummy_datamodule,
+    make_toy_batch,
+    n_members,
+    use_normalization,
+    options,
+    expected_values,
+):
+    epd_config.model.update(n_members=n_members, **options)
+    if (
+        not options.get("residual_prediction")
+        or options.get("residual_use_delta_stats") is False
+    ):
+        epd_config.model.residual_delta_stats_path = str(tmp_path / "missing.yml")
+    norm = _state_normalizer() if use_normalization else None
+    dummy_datamodule.train_dataset.norm = norm
+    batch = make_toy_batch(t_in=2, t_out=2, w=2, h=2, c=2)
+    batch.input_fields.fill_(3.0)
+    model = setup_epd(dummy_datamodule, batch)
+    shape = batch.output_fields.shape + ((n_members,) if n_members > 1 else ())
+    torch.testing.assert_close(
+        model(batch), torch.full(shape, expected_values[use_normalization])
+    )
+    assert model.norm is norm
+
+
+@pytest.mark.parametrize("use_normalization", [False, True])
+@pytest.mark.parametrize("channels", [None, (0,), (1,), (1, 0)])
+def test_setup_epd_autosim_delta_file_and_channel_selection(
+    tmp_path,
+    epd_config,
+    setup_epd,
+    dummy_datamodule,
+    make_toy_batch,
+    use_normalization,
+    channels,
+):
+    # AutoSim's adjacent-frame deltas are [-2, 6] and [1, 5]; mean + std = [6, 5].
+    payload = {
+        "data": torch.tensor([[0.0, 0.0], [-2.0, 1.0], [4.0, 6.0]]).reshape(
+            1, 3, 1, 1, 2
+        )
+    }
+    path = tmp_path / "stats.yml"
+    save_normalization_stats(
+        compute_normalization_stats(payload, core_field_names=["u", "v"]), path
+    )
+    selected = channels or (0, 1)
+    fields = [["u", "v"][index] for index in selected]
+    dummy_datamodule.train_dataset.channel_idxs = channels
+    dummy_datamodule.train_dataset.norm = (
+        _state_normalizer(fields) if use_normalization else None
+    )
+    epd_config.model.update(
+        residual_prediction=True, residual_delta_stats_path=str(path)
+    )
+    batch = make_toy_batch(t_in=2, t_out=2, w=2, h=2, c=len(selected))
+    batch.input_fields.fill_(1.0)
+    model = setup_epd(dummy_datamodule, batch)
+    increment = torch.tensor([6.0, 5.0])[list(selected)]
+    expected = 1 + increment / (2 if use_normalization else 1)
+    torch.testing.assert_close(model(batch), expected.expand_as(batch.output_fields))
+
+
+def test_setup_processor_rejects_residual_prediction_before_building_latents(
+    dummy_datamodule,
+):
+    cfg = OmegaConf.create({"model": {"residual_prediction": True}})
+
+    with pytest.raises(ValueError, match="requires a full EncoderProcessorDecoder"):
+        setup_processor_model(cfg, {}, dummy_datamodule)
