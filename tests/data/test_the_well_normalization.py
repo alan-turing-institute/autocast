@@ -175,15 +175,7 @@ def test_native_well_base_path_override_loads_model_statistics(
     filesystem,
 ):
     monkeypatch.setenv("AUTOCAST_DATASETS", str(native_well_files / "wrong"))
-    root = str(native_well_files)
-    if filesystem:
-        root = f"memory://{native_well_files.parent.name}/well"
-        fs = fsspec.filesystem("memory")
-        for path in native_well_files.rglob("*"):
-            if path.is_file():
-                fs.pipe(
-                    f"{root}/{path.relative_to(native_well_files)}", path.read_bytes()
-                )
+    root = native_well_files.as_uri() if filesystem else str(native_well_files)
     config = OmegaConf.create(
         {
             "datamodule": OmegaConf.load(
@@ -221,10 +213,11 @@ def test_native_well_base_path_override_loads_model_statistics(
     )
     datamodule = instantiate(config.datamodule)
     batch = next(iter(datamodule.train_dataloader()))
-    assert datamodule.train_dataset.well_dataset.core_field_names == ["z", "velocity"]
+    loader = datamodule.train_dataset.well_dataset
+    assert loader.core_field_names == ["z", "velocity"]
     assert (
-        config.model.residual_delta_stats_path
-        == datamodule.train_dataset.well_dataset.normalization_path
+        loader.fs.info(config.model.residual_delta_stats_path)["name"]
+        == loader.fs.info(loader.normalization_path)["name"]
     )
     model = setup_epd_model(
         config,
