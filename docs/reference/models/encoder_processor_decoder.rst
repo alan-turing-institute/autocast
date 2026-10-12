@@ -69,6 +69,8 @@ matching its existing state-normalization path. Python callers can instead pass
 The path defaults to ``null``: without it, the state normalizer supplies delta
 statistics when available, and unnormalized states retain raw addition
 :math:`X+r_k`. Setting ``residual_use_delta_stats: false`` disables either source.
+Explicit delta files and requested The Well state normalization require readable,
+valid statistics; loading failures raise an error rather than use raw fields.
 
 During fitting, the loss compares reconstructed states with state targets.
 With z-score delta scaling, the decoder learns

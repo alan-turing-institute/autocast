@@ -533,6 +533,12 @@ class TheWell(SpatioTemporalDataset):
         # Model setup needs the same normalizer used by the loader to restore
         # physical units in evaluation; unnormalized loaders expose None.
         self.norm = self.well_dataset.norm
+        if use_normalization and normalization_type and self.norm is None:
+            msg = (
+                "The Well normalization was requested, but statistics could not "
+                f"be loaded from {self.well_dataset.normalization_path!r}."
+            )
+            raise ValueError(msg)
         self.well_metadata = self.well_dataset.metadata
 
     def __len__(self) -> int:  # noqa: D105
