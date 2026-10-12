@@ -253,7 +253,8 @@ def test_swe64_cache_contract_uses_actual_compression(
             check_cache(cache, manifest, swe64_configs["cache_latents"])
 
 
-def test_swe64_evaluation_commands_preserve_saved_model(swe64_configs):
+@pytest.mark.parametrize("name", ["afcrps", "afcrps_global_residual_small_2h"])
+def test_swe64_evaluation_commands_preserve_saved_model(name):
     build_commands = runpy.run_path(str(HELPERS / "evaluate.py"))["build_commands"]
     commands = build_commands(
         run_dir=Path("/preview/run"),
@@ -261,6 +262,16 @@ def test_swe64_evaluation_commands_preserve_saved_model(swe64_configs):
         output_root=Path("/preview/eval"),
         autoencoder_checkpoint=None,
     )
+    with initialize_config_dir(
+        version_base=None, config_dir=str(REPO_ROOT / "src/autocast/configs")
+    ):
+        saved = compose(
+            config_name="encoder_processor_decoder",
+            overrides=[
+                f"local_experiment=swe64s/{name}",
+                f"hydra.searchpath=[file://{REPO_ROOT / 'local_hydra'}]",
+            ],
+        )
     for index, command in enumerate(commands):
         with initialize_config_dir(
             version_base=None, config_dir=str(REPO_ROOT / "src/autocast/configs")
@@ -268,13 +279,13 @@ def test_swe64_evaluation_commands_preserve_saved_model(swe64_configs):
             cfg = compose(
                 config_name="encoder_processor_decoder",
                 overrides=[
-                    "local_experiment=swe64s/afcrps",
+                    f"local_experiment=swe64s/{name}",
                     "trainer.max_epochs=1",
                     f"hydra.searchpath=[file://{REPO_ROOT / 'local_hydra'}]",
                     *[arg for arg in command if arg.startswith("++")],
                 ],
             )
-        assert cfg.model == swe64_configs["afcrps"].model
+        assert cfg.model == saved.model
         assert cfg.eval.teacher_forcing_ratio == float(index)
         assert cfg.eval.free_running_only == (index == 0)
         assert list(cfg.eval.coverage_levels) == [0.9]

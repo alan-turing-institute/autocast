@@ -312,6 +312,50 @@ the training timer itself is two hours. Save both best and last checkpoints.
 Assess the loss curves and conditional uncertainty before approving a
 continuation; do not automatically resume or start another fit.
 
+## Persistence-residual control
+
+`afcrps_global_residual_small_2h` inherits `afcrps_small_2h` and enables the
+general EPD persistence-residual API from main. The processor predicts four
+cumulative corrections from the same last clean observed frame. Reconstruction
+adds each correction to that frame, not to the preceding predicted lead;
+afCRPS, metrics and rollouts receive complete next-state fields.
+
+Use the dataset normalizer's existing `mean_delta` and `std_delta` from
+`stats.yml`, with no new statistics file or dataset generation. These are
+one-step statistics reused at every lead, not lead-specific cumulative
+statistics. A zero normalized correction represents the saved mean increment,
+not necessarily exact persistence. Backbone initialization is unchanged.
+
+Retain the small 10,694,272-parameter model, global 1024D AdaLN noise, patch 4,
+eight members, alpha 0.95, one-input/four-output/stride-one windows, dataset,
+parameter-conditioning settings and full validation protocol. Set constant
+LR 2e-4 (no scheduler) and a two-hour training cap. The earlier global fit
+used time-cosine scheduling: comparing against it changes both the prediction
+form and scheduler, so it is not a residual-only ablation.
+
+Start fresh, even though the parameter shapes are unchanged: the old output
+weights represented states rather than increments. Keep best-validation,
+30-minute snapshots and last checkpoints. Decide whether to continue only
+after reviewing train/validation curves by updates and elapsed time, and the
+conditional uncertainty diagnostics against the existing simulator redraws.
+The prepared spatial control remains direct-state; it is not a matched
+spatial-residual arm and should not be described as one.
+
+```sh
+uv run --frozen autocast epd --mode slurm --dry-run \
+  --workdir "$SWE64S_OUTPUTS/afcrps_global_residual_small_2h" \
+  local_experiment=swe64s/afcrps_global_residual_small_2h \
+  +distributed=ddp_4gpu_slurm trainer.max_time=00:02:00:00 \
+  ++hydra.launcher.nodes=1 ++hydra.launcher.cpus_per_task=72 \
+  hydra.launcher.timeout_min=135
+```
+
+This command is a preview only. The two-hour training timer is distinct from
+the 135-minute Slurm allocation's setup/checkpoint buffer. No fit, evaluation
+or continuation is launched by adding the preset. After an approved fit,
+use its saved config with the common evaluator below so residual flags and
+normalization remain intact for both teacher-forced and free-running tests.
+
 ## Common evaluation
 
 `evaluation.yaml` defines the common physical-field metric settings: 16 members,

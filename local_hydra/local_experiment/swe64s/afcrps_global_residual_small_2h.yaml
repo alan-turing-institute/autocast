@@ -1,0 +1,23 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/afcrps_small_2h
+  - _self_
+
+experiment_name: swe64s_afcrps_global_residual_small_2h
+
+optimizer:
+  learning_rate: 2e-4
+  # Keep learning active throughout the bounded overfitting check.
+  scheduler: null
+
+trainer:
+  max_time: "00:02:00:00"
+
+model:
+  # Four cumulative corrections from the same last clean input state.
+  residual_prediction: true
+  residual_use_delta_stats: true
+  # Reuse the loaded dataset normalizer's one-step delta statistics.
+  residual_delta_stats_path: null
+  processor:
+    noise_mode: global

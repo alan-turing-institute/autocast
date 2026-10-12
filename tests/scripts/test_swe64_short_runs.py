@@ -5,18 +5,22 @@ import runpy
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
+from unittest.mock import patch
 
 import pytest
 import torch
+from einops import rearrange
 from hydra import compose, initialize_config_dir
 from hydra.utils import instantiate
 from omegaconf import OmegaConf
+from the_well.data.normalization import ZScoreNormalization
 
 from autocast.models.encoder_decoder import EncoderDecoder
 from autocast.models.encoder_processor_decoder_ensemble import (
     EncoderProcessorDecoderEnsemble,
 )
 from autocast.models.optimizer_mixin import OptimizerMixin
+from autocast.scripts.setup import setup_epd_model
 from autocast.types import Batch
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -85,6 +89,7 @@ def test_short_afcrps_pair_changes_capacity_only():
         "afcrps_large_2h",
         "afcrps_small_2h",
         "afcrps_spatial_small_2h",
+        "afcrps_global_residual_small_2h",
         "autoencoder_refine",
     ],
 )
@@ -128,8 +133,11 @@ def test_spatial_small_profile_changes_noise_and_scheduler_only():
     assert sum(p.numel() for p in processor.parameters()) == 10_699_392
 
 
-def test_spatial_small_optimizer_keeps_constant_lr_without_scheduler():
-    cfg = _config("afcrps_spatial_small_2h", four_gpu=True)
+@pytest.mark.parametrize(
+    "name", ["afcrps_spatial_small_2h", "afcrps_global_residual_small_2h"]
+)
+def test_small_constant_profiles_keep_lr_without_scheduler(name):
+    cfg = _config(name, four_gpu=True)
     model = OptimizerMixin()
     model.register_parameter("weight", torch.nn.Parameter(torch.ones(1)))
     model.optimizer_config = cfg.optimizer
@@ -141,6 +149,136 @@ def test_spatial_small_optimizer_keeps_constant_lr_without_scheduler():
         optimizer.step()
         assert all(group["lr"] == 2e-4 for group in optimizer.param_groups)
     assert any(cb.get("save_last", False) for cb in cfg.trainer.callbacks)
+
+
+def test_global_residual_profile_changes_prediction_and_scheduler_only():
+    baseline = _config("afcrps_small_2h")
+    residual = _config("afcrps_global_residual_small_2h")
+    baseline_config = OmegaConf.to_container(baseline, resolve=False)
+    residual_config = OmegaConf.to_container(residual, resolve=False)
+    assert isinstance(baseline_config, dict)
+    assert isinstance(residual_config, dict)
+    residual_config["experiment_name"] = baseline_config["experiment_name"]
+    residual_config["model"]["residual_prediction"] = False
+    residual_config["optimizer"]["scheduler"] = baseline_config["optimizer"][
+        "scheduler"
+    ]
+    assert residual_config == baseline_config
+    assert residual.model.residual_prediction
+    assert residual.model.residual_use_delta_stats
+    assert residual.model.residual_delta_stats_path is None
+    assert residual.model.processor.noise_mode == "global"
+    assert residual.model.processor.n_noise_input_channels == 1024
+    assert residual.model.processor.n_noise_channels == 1024
+    assert not residual.model.encoder.with_constants
+    assert not residual.model.processor.include_global_cond
+    assert not residual.model.train_in_latent_space
+    assert residual.model.n_members == 8
+    assert residual.model.loss_func.alpha == 0.95
+    assert OmegaConf.select(residual, "resume_from_checkpoint") is None
+    assert residual.optimizer.learning_rate == 2e-4
+    assert residual.optimizer.scheduler is None
+    assert residual.trainer.max_time == "00:02:00:00"
+    assert residual.trainer.max_steps == -1
+    assert (
+        residual.datamodule.n_steps_input,
+        residual.datamodule.n_steps_output,
+        residual.datamodule.stride,
+    ) == (1, 4, 1)
+    with torch.device("meta"):
+        processor = instantiate(
+            residual.model.processor,
+            in_channels=3,
+            out_channels=12,
+            spatial_resolution=[64, 64],
+        )
+    assert sum(p.numel() for p in processor.parameters()) == 10_694_272
+
+
+def test_global_residual_setup_four_frame_loss_gradients_and_rollout():
+    cfg = _config("afcrps_global_residual_small_2h")
+    # Retain the real grid, patching, 1024D noise and member count on CPU.
+    cfg.model.processor.hidden_dim = 16
+    cfg.model.processor.n_layers = 1
+    norm = ZScoreNormalization(
+        stats={
+            "mean": {"h": 1.0, "u": 0.2, "v": -0.3},
+            "std": {"h": 0.02, "u": 0.1, "v": 0.2},
+            "mean_delta": {"h": 0.001, "u": 0.02, "v": -0.04},
+            "std_delta": {"h": 0.003, "u": 0.04, "v": 0.06},
+        },
+        core_field_names=["h", "u", "v"],
+        core_constant_field_names=[],
+    )
+    batch = Batch(
+        input_fields=torch.randn(1, 1, 64, 64, 3),
+        output_fields=torch.randn(1, 4, 64, 64, 3),
+        constant_scalars=torch.tensor([[0.1]]),
+        constant_fields=None,
+    )
+    stats = {
+        "channel_count": 3,
+        "n_steps_input": 1,
+        "n_steps_output": 4,
+        "input_shape": tuple(batch.input_fields.shape),
+        "output_shape": tuple(batch.output_fields.shape),
+        "example_batch": batch,
+    }
+    datamodule = SimpleNamespace(train_dataset=SimpleNamespace(norm=norm))
+    model = setup_epd_model(cfg, stats, cast(Any, datamodule))
+    assert isinstance(model, EncoderProcessorDecoderEnsemble)
+    assert model.residual_prediction
+    assert model.residual_use_delta_stats
+    assert model.norm is norm
+    assert model.delta_norm is None
+    decoded_residuals: list[torch.Tensor] = []
+    original_decode = model.encoder_decoder.decoder.decode
+
+    def capture_decode(mapped):
+        decoded = original_decode(mapped)
+        decoded_residuals.append(decoded)
+        return decoded
+
+    with patch.object(
+        model.encoder_decoder.decoder, "decode", side_effect=capture_decode
+    ):
+        loss, prediction = model.loss(batch)
+    assert prediction is not None
+    assert prediction.shape == (1, 4, 64, 64, 3, 8)
+    decoded = decoded_residuals[0].detach()
+    # Independent arithmetic verifies field order and cumulative lead semantics.
+    physical_delta = decoded * torch.tensor([0.003, 0.04, 0.06])
+    physical_delta += torch.tensor([0.001, 0.02, -0.04])
+    correction = physical_delta / torch.tensor([0.02, 0.1, 0.2])
+    expected = batch.input_fields[..., None] + rearrange(
+        correction, "(b m) t ... c -> b t ... c m", b=1, m=8
+    )
+    torch.testing.assert_close(prediction, expected)
+    assert model.loss_func is not None
+    torch.testing.assert_close(loss, model.loss_func(prediction, batch.output_fields))
+    assert torch.isfinite(loss)
+    loss.backward()
+    for name, parameter in model.processor.named_parameters():
+        assert parameter.grad is not None, name
+        assert torch.isfinite(parameter.grad).all(), name
+
+    batch.output_fields = torch.randn(1, 8, 64, 64, 3)
+    model.eval()
+    with torch.no_grad():
+        for ratio in (0.0, 1.0):
+            prediction, truth = model.rollout(
+                batch,
+                stride=4,
+                max_rollout_steps=2,
+                n_members=2,
+                teacher_forcing_ratio=ratio,
+                free_running_only=ratio == 0.0,
+            )
+            assert prediction.shape == (1, 8, 64, 64, 3, 2)
+            assert torch.isfinite(prediction).all()
+            torch.testing.assert_close(
+                truth, norm.denormalize_flattened(batch.output_fields, "variable")
+            )
 
 
 def test_spatial_small_four_frame_ensemble_training_and_rollout():
