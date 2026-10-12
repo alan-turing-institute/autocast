@@ -1,0 +1,20 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/afcrps_small_2h
+  - _self_
+
+experiment_name: swe64s_afcrps_spatial_small_2h
+
+optimizer:
+  # Keep learning active at the endpoint when checking for overfitting.
+  scheduler: null
+
+trainer:
+  max_time: "00:02:00:00"
+
+model:
+  processor:
+    # 256 patch tokens x 4 values = 1024 random scalars per member.
+    # Retain the inherited 1024-wide modulation; shared projection adds 5120 params.
+    noise_mode: spatial
+    n_noise_input_channels: 4

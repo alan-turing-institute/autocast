@@ -12,7 +12,12 @@ from hydra import compose, initialize_config_dir
 from hydra.utils import instantiate
 from omegaconf import OmegaConf
 
+from autocast.models.encoder_decoder import EncoderDecoder
+from autocast.models.encoder_processor_decoder_ensemble import (
+    EncoderProcessorDecoderEnsemble,
+)
 from autocast.models.optimizer_mixin import OptimizerMixin
+from autocast.types import Batch
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 HELPERS = REPO_ROOT / "scripts/swe64s"
@@ -75,7 +80,13 @@ def test_short_afcrps_pair_changes_capacity_only():
 
 
 @pytest.mark.parametrize(
-    "name", ["afcrps_large_2h", "afcrps_small_2h", "autoencoder_refine"]
+    "name",
+    [
+        "afcrps_large_2h",
+        "afcrps_small_2h",
+        "afcrps_spatial_small_2h",
+        "autoencoder_refine",
+    ],
 )
 def test_short_distributed_launch_preserves_explicit_cap(name):
     cfg = _config(name, four_gpu=True)
@@ -84,6 +95,117 @@ def test_short_distributed_launch_preserves_explicit_cap(name):
     assert cfg.trainer.max_time == (
         "00:00:30:00" if name == "autoencoder_refine" else "00:02:00:00"
     )
+
+
+def test_spatial_small_profile_changes_noise_and_scheduler_only():
+    baseline = _config("afcrps_small_2h")
+    spatial = _config("afcrps_spatial_small_2h")
+    # Compare interpolation expressions, since log names include experiment_name.
+    spatial_config = OmegaConf.to_container(spatial, resolve=False)
+    baseline_config = OmegaConf.to_container(baseline, resolve=False)
+    assert isinstance(spatial_config, dict)
+    assert isinstance(baseline_config, dict)
+    spatial_config["experiment_name"] = baseline_config["experiment_name"]
+    spatial_config["model"]["processor"].update(
+        noise_mode="global", n_noise_input_channels=1024
+    )
+    spatial_config["optimizer"]["scheduler"] = baseline_config["optimizer"]["scheduler"]
+    assert spatial_config == baseline_config
+    assert spatial.model.processor.noise_mode == "spatial"
+    assert spatial.model.processor.n_noise_input_channels == 4
+    assert spatial.model.processor.n_noise_channels == 1024
+    assert spatial.optimizer.learning_rate == 2e-4
+    assert spatial.optimizer.scheduler is None
+    assert spatial.trainer.max_time == "00:02:00:00"
+    assert OmegaConf.select(spatial, "resume_from_checkpoint") is None
+    with torch.device("meta"):
+        processor = instantiate(
+            spatial.model.processor,
+            in_channels=3,
+            out_channels=12,
+            spatial_resolution=[64, 64],
+        )
+    assert sum(p.numel() for p in processor.parameters()) == 10_699_392
+
+
+def test_spatial_small_optimizer_keeps_constant_lr_without_scheduler():
+    cfg = _config("afcrps_spatial_small_2h", four_gpu=True)
+    model = OptimizerMixin()
+    model.register_parameter("weight", torch.nn.Parameter(torch.ones(1)))
+    model.optimizer_config = cfg.optimizer
+    optimizer = model.configure_optimizers()
+    assert isinstance(optimizer, torch.optim.AdamW)
+    for _ in range(2):
+        optimizer.zero_grad()
+        model.get_parameter("weight").square().sum().backward()
+        optimizer.step()
+        assert all(group["lr"] == 2e-4 for group in optimizer.param_groups)
+    assert any(cb.get("save_last", False) for cb in cfg.trainer.callbacks)
+
+
+def test_spatial_small_four_frame_ensemble_training_and_rollout():
+    cfg = _config("afcrps_spatial_small_2h")
+    # Keep the real grid, patching, modulation and member count; shrink capacity.
+    processor = instantiate(
+        cfg.model.processor,
+        in_channels=3,
+        out_channels=12,
+        spatial_resolution=[64, 64],
+        hidden_dim=16,
+        n_layers=1,
+    )
+    model = EncoderProcessorDecoderEnsemble(
+        encoder_decoder=EncoderDecoder(
+            encoder=instantiate(cfg.model.encoder, in_channels=3, n_steps_input=1),
+            decoder=instantiate(cfg.model.decoder, output_channels=3, time_steps=4),
+        ),
+        processor=processor,
+        n_members=cfg.model.n_members,
+        loss_func=instantiate(cfg.model.loss_func),
+        train_in_latent_space=cfg.model.train_in_latent_space,
+    )
+    batch = Batch(
+        input_fields=torch.randn(1, 1, 64, 64, 3),
+        output_fields=torch.randn(1, 4, 64, 64, 3),
+        constant_scalars=torch.tensor([[0.1]]),
+        constant_fields=None,
+    )
+    noise_draws = []
+    assert processor.modulation_proj is not None
+    handle = processor.modulation_proj.register_forward_pre_hook(
+        lambda _module, args: noise_draws.append(args[0].detach().clone())
+    )
+    try:
+        loss, prediction = model.loss(batch)
+    finally:
+        handle.remove()
+    assert prediction is not None
+    assert prediction.shape == (1, 4, 64, 64, 3, 8)
+    assert noise_draws[0].shape == (8, 256, 4)
+    assert not torch.equal(noise_draws[0][0], noise_draws[0][1])
+    assert not torch.equal(noise_draws[0][:, 0], noise_draws[0][:, 1])
+    assert loss.ndim == 0
+    assert torch.isfinite(loss)
+    loss.backward()
+    for name, parameter in processor.named_parameters():
+        assert parameter.grad is not None, name
+        assert torch.isfinite(parameter.grad).all(), name
+
+    batch.output_fields = torch.randn(1, 8, 64, 64, 3)
+    model.eval()
+    with torch.no_grad():
+        for ratio in (0.0, 1.0):
+            prediction, truth = model.rollout(
+                batch,
+                stride=4,
+                max_rollout_steps=2,
+                n_members=2,
+                teacher_forcing_ratio=ratio,
+                free_running_only=ratio == 0.0,
+            )
+            assert prediction.shape == (1, 8, 64, 64, 3, 2)
+            assert torch.isfinite(prediction).all()
+            torch.testing.assert_close(truth, batch.output_fields)
 
 
 def test_ae_refinement_keeps_architecture_and_constant_lr():

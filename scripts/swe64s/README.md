@@ -272,6 +272,46 @@ one four-GPU node per allocation. The short evaluation should be labelled
 as a bounded preview, use identical test subsets/seeds and raw best-validation
 checkpoints, and not be presented as the full test protocol below.
 
+## Spatial noise control
+
+`afcrps_spatial_small_2h` inherits `afcrps_small_2h` and changes only the
+experiment name, AdaLN noise mode, input noise width and LR schedule.
+Patch 4 on the 64x64 grid gives 256 tokens, each with an independent four-dimensional
+Gaussian draw: 1,024 random scalars per member, matching the global baseline.
+The shared 4-to-1024 projection adds 5,120 parameters (10,699,392 total).
+The 1024-wide modulation layers, width 256, four blocks, afCRPS alpha 0.95,
+eight members, data and parameter-conditioning settings remain the same.
+Use constant LR 2e-4 (no scheduler) with a two-hour training cap to check for
+overfitting while learning remains active. The earlier global runs used a
+two-hour cosine schedule, so this is not a noise-only comparison against
+their loss curves. One draw is reused across blocks and generates
+all four output frames jointly; each prediction call draws fresh noise.
+
+Start a fresh fit: the new input projection is absent from the global
+checkpoint. Use the same data splits and validation protocol. Compare loss
+curves by updates and elapsed time, since spatial modulation can change
+throughput under the fixed time budget. Evaluate both the train/validation
+gap and uncertainty structure; lower DC power alone could conceal an
+increase in high-wavenumber anomaly power. Reuse the existing conditional
+simulator redraws and report total spread, DC/high-wavenumber fractions and
+anomaly divergence/vorticity balance alongside common forecast scores.
+
+```sh
+uv run --frozen autocast epd --mode slurm --dry-run \
+  --workdir "$SWE64S_OUTPUTS/afcrps_spatial_small_2h" \
+  local_experiment=swe64s/afcrps_spatial_small_2h \
+  +distributed=ddp_4gpu_slurm trainer.max_time=00:02:00:00 \
+  ++hydra.launcher.nodes=1 ++hydra.launcher.cpus_per_task=72 \
+  hydra.launcher.timeout_min=135
+```
+
+This previews submission only. Use the common evaluator below with the new
+run's saved config and raw best-validation checkpoint after an approved fit.
+The 135-minute Slurm allocation leaves 15 minutes for setup and final saving;
+the training timer itself is two hours. Save both best and last checkpoints.
+Assess the loss curves and conditional uncertainty before approving a
+continuation; do not automatically resume or start another fit.
+
 ## Common evaluation
 
 `evaluation.yaml` defines the common physical-field metric settings: 16 members,
@@ -299,11 +339,12 @@ block boundary, not at every frame inside a jointly predicted block. The
 trajectories. Review evaluation cost on the target GPU before executing.
 
 The shared metric runner is not yet the complete structural evaluation.
-Exports of mean member power, mean member-anomaly power and divergence/vorticity
-balance, plus a matching 64x64 conditional-redraw reference, are follow-on
-evaluation work. They are not dependencies of the afCRPS/FM fits or common
-metric evaluations, but are required before drawing uncertainty-structure
-conclusions from those runs. The generic diagnostic port is deferred.
+Mean member power, mean member-anomaly power and divergence/vorticity balance
+are evaluated separately against the existing 64x64 conditional simulator
+redraws. Retain the reference's fixed states, generator identity and scoring
+protocol when comparing another model; no new simulator draws are needed for
+the spatial control. These diagnostics are required before drawing
+uncertainty-structure conclusions. The generic diagnostic port is deferred.
 
 ## Environment before deployment
 
