@@ -4,7 +4,7 @@ from typing import Any
 import lightning as L
 import torch
 from omegaconf import DictConfig
-from the_well.data.normalization import ZScoreNormalization
+from the_well.data.normalization import RMSNormalization, ZScoreNormalization
 from torch import nn
 from torchmetrics import Metric, MetricCollection
 
@@ -55,7 +55,7 @@ class EncoderProcessorDecoder(
         norm: ZScoreNormalization | None = None,
         residual_prediction: bool = False,
         residual_use_delta_stats: bool = True,
-        delta_norm: ZScoreNormalization | None = None,
+        delta_norm: ZScoreNormalization | RMSNormalization | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__()

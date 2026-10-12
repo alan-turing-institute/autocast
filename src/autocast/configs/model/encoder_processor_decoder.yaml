@@ -15,7 +15,7 @@ residual_prediction: false
 # Uses the state normalizer's delta stats unless an explicit stats file is supplied.
 # False adds increments in the input state's units.
 residual_use_delta_stats: true
-# Optional AutoSim stats.yml; enables delta scaling even for unnormalized states.
+# Optional AutoSim stats.yml or native The Well stats.yaml for delta-only scaling.
 # Null preserves existing behavior (raw increments when state normalization is off).
 residual_delta_stats_path: null
 loss_func:

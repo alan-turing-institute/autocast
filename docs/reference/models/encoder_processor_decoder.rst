@@ -26,8 +26,8 @@ the weights, since the residual flag changes their prediction semantics.
 
 All supplied state and delta means/scales describe raw fields in physical units.
 They come from precomputed training-statistics files or explicit configuration;
-the model never fits statistics during training or inference. Normalized-state
-increment mean/scale are derived as :math:`\mu_\Delta/\sigma_s` and
+the model never fits statistics during training or inference. For z-score scaling,
+normalized-state increment mean/scale are derived as :math:`\mu_\Delta/\sigma_s` and
 :math:`\sigma_\Delta/\sigma_s`; do not supply normalized-space statistics separately.
 
 With delta statistics enabled, The Well's z-score normalizer converts the decoded
@@ -42,12 +42,13 @@ physical-unit round trip. For normalized baseline :math:`x` and residual
    \frac{\sigma_\Delta r_k + \mu_\Delta}{\sigma_s}.
 
 Here :math:`\sigma_s` is the state scale and :math:`\mu_\Delta,\sigma_\Delta`
-are the delta mean and scale. Zero decoded output implies a physical increment
+are the delta mean and scale. RMS normalization uses RMS scales with no mean
+offset. Zero z-score decoded output implies a physical increment
 of :math:`\mu_\Delta`, which need not be zero. With
 ``residual_use_delta_stats: false``, addition is directly in state-normalized
 units, giving physical increment :math:`\sigma_s r_k` without a mean offset.
 For delta scaling without state normalization, explicitly supply the existing
-AutoSim ``stats.yml``:
+AutoSim ``stats.yml`` or native The Well ``stats.yaml``:
 
 .. code-block:: yaml
 
@@ -56,19 +57,23 @@ AutoSim ``stats.yml``:
    model:
      residual_prediction: true
      train_in_latent_space: false
-     residual_delta_stats_path: /path/to/stats.yml
+     residual_delta_stats_path: ${datamodule.normalization_path}
 
 This reconstructs :math:`\hat{Y}_k = X + \sigma_\Delta r_k + \mu_\Delta` in
 physical units. The file's field order follows the dataset's channel selection;
 no statistics are recomputed. It overrides the delta statistics only, leaving
-state normalization unchanged. Python callers can instead pass ``delta_norm``.
+state normalization unchanged. Native The Well files use the dataset's field
+metadata, configured normalizer (z-score or RMS), and filesystem for remote reads,
+matching its existing state-normalization path. Python callers can instead pass
+``delta_norm``.
 The path defaults to ``null``: without it, the state normalizer supplies delta
 statistics when available, and unnormalized states retain raw addition
 :math:`X+r_k`. Setting ``residual_use_delta_stats: false`` disables either source.
 
 During fitting, the loss compares reconstructed states with state targets.
-The decoder therefore learns :math:`r_k=(Y_k-X-\mu_\Delta)/\sigma_\Delta`
-when delta scaling is enabled; no separate residual-target transform is needed.
+With z-score delta scaling, the decoder learns
+:math:`r_k=(Y_k-X-\mu_\Delta)/\sigma_\Delta`; no separate residual-target transform
+is needed.
 
 Delta scaling uses the configured statistics as supplied. The shipped
 ``advection_diffusion_multichannel_64_64`` config has placeholder delta means/scales

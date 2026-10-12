@@ -9,10 +9,11 @@ import torch
 import yaml
 from hydra.utils import get_class, instantiate
 from omegaconf import DictConfig
-from the_well.data.normalization import ZScoreNormalization
+from the_well.data.normalization import RMSNormalization, ZScoreNormalization
 from torch import nn
 
 from autocast.data.datamodule import SpatioTemporalDataModule, TheWellDataModule
+from autocast.data.dataset import SpatioTemporalDataset, TheWell
 from autocast.decoders.base import Decoder
 from autocast.encoders.base import Encoder, EncoderWithCond
 from autocast.models.autoencoder import AE, AELoss
@@ -647,12 +648,25 @@ def setup_processor_model(
 
 
 def _load_residual_delta_normalizer(
-    stats_path: str | Path, channel_idxs: tuple[int, ...] | None
-) -> ZScoreNormalization:
-    """Load AutoSim statistics in the dataset's selected field order."""
-    with Path(stats_path).open() as stats_file:
+    stats_path: str | Path, dataset: SpatioTemporalDataset
+) -> ZScoreNormalization | RMSNormalization:
+    """Load delta statistics using the dataset's format and field order."""
+    well = dataset.well_dataset if isinstance(dataset, TheWell) else None
+    # Keep local-file overrides working, and reuse The Well's configured
+    # filesystem for remote statistics instead of opening a second connection.
+    with (
+        well.fs.open(str(stats_path), mode="r")
+        if well is not None and not Path(stats_path).is_file()
+        else Path(stats_path).open()
+    ) as stats_file:
         delta_stats = yaml.safe_load(stats_file)
+    if "stats" not in delta_stats and well is not None:
+        normalization_type = well.normalization_type or ZScoreNormalization
+        return normalization_type(
+            delta_stats, well.core_field_names, well.core_constant_field_names
+        )
     field_names = delta_stats["core_field_names"]
+    channel_idxs = getattr(dataset, "channel_idxs", None)
     if channel_idxs is not None:
         field_names = [field_names[i] for i in channel_idxs]
     return ZScoreNormalization(delta_stats["stats"], field_names, [])
@@ -768,7 +782,7 @@ def setup_epd_model(
         and model_config.get("residual_use_delta_stats", True)
     ):
         delta_norm = _load_residual_delta_normalizer(
-            delta_stats_path, getattr(datamodule.train_dataset, "channel_idxs", None)
+            delta_stats_path, datamodule.train_dataset
         )
     kwargs = {
         "encoder_decoder": EncoderDecoder(
