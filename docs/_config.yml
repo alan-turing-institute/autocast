@@ -6,12 +6,12 @@ theme:
   logo_only: true
   display_navbar_logo_on_scroll: true
 
-# Do not force re-execution of notebooks on each build.
-# See https://jupyterbook.org/content/execute.html
+# docs/build.py executes a fresh copy in TOC order, then renders those outputs.
+# Book-level caching cannot manage the checkpoints shared between tutorials.
 execute:
-  execute_notebooks: cache
+  execute_notebooks: 'off'
   allow_errors: false
-  timeout: 3600
+  timeout: 180
 
 # Define the name of the latex output file for PDF builds
 latex:
