@@ -255,7 +255,12 @@ def test_swe64_cache_contract_uses_actual_compression(
 
 @pytest.mark.parametrize(
     "name",
-    ["afcrps", "afcrps_global_residual_small_2h", "afcrps_global_residual_small_2h30"],
+    [
+        "afcrps",
+        "afcrps_global_residual_small_2h",
+        "afcrps_global_residual_small_2h30",
+        "afcrps_spatial_residual_small_2h30",
+    ],
 )
 def test_swe64_evaluation_commands_preserve_saved_model(name):
     build_commands = runpy.run_path(str(HELPERS / "evaluate.py"))["build_commands"]

@@ -338,8 +338,8 @@ weights represented states rather than increments. Keep best-validation,
 30-minute snapshots and last checkpoints. Decide whether to continue only
 after reviewing train/validation curves by updates and elapsed time, and the
 conditional uncertainty diagnostics against the existing simulator redraws.
-The prepared spatial control remains direct-state; it is not a matched
-spatial-residual arm and should not be described as one.
+The older `afcrps_spatial_small_2h` control remains direct-state; it is not
+the matched spatial-residual arm described below.
 
 Use `afcrps_global_residual_small_2h30` for the extended decision pilot. It
 inherits the two-hour residual preset and changes only the experiment name
@@ -365,6 +365,39 @@ the 165-minute Slurm allocation's setup/checkpoint buffer. No fit, evaluation
 or continuation is launched by adding the preset. After an approved fit,
 use its saved config with the common evaluator below so residual flags and
 normalization remain intact for both teacher-forced and free-running tests.
+
+### Matched spatial-4D residual control
+
+`afcrps_spatial_residual_small_2h30` inherits the global two-hour-thirty-minute
+residual preset. Only the experiment name, `noise_mode=spatial` and
+`n_noise_input_channels=4` differ. It retains the backbone, patch 4, 1024-wide
+modulation, eight members, alpha 0.95, delta statistics, one-input/four-output
+task, full validation and constant LR 2e-4. Parameter conditioning stays off.
+
+Four IID Gaussian values are sampled per patch token, not per grid cell.
+At 64x64 with patch 4, 256 tokens use 1024 random scalars per member, the same
+total as the global latent. A shared 4-to-1024 input projection adds 5120
+parameters: 10,699,392 versus 10,694,272 for global (under 0.05 percent).
+The draw is reused across blocks and generates the four leads jointly;
+each new prediction call draws fresh noise. Start a fresh fit, not a global
+checkpoint continuation.
+
+```sh
+uv run --frozen autocast epd --mode slurm --dry-run \
+  --workdir "$SWE64S_OUTPUTS/afcrps_spatial_residual_small_2h30" \
+  local_experiment=swe64s/afcrps_spatial_residual_small_2h30 \
+  +distributed=ddp_4gpu_slurm trainer.max_time=00:02:30:00 \
+  ++hydra.launcher.nodes=1 ++hydra.launcher.cpus_per_task=72 \
+  hydra.launcher.timeout_min=165 \
+  logging.wandb.enabled=true logging.wandb.mode=online
+```
+
+This remains a preview, with W&B enabled only by the explicit launch override.
+The fit cap is 2h30m inside the same 165-minute allocation. Compare curves
+against both updates and wall time: this is an equal-time control, not a
+guaranteed equal-update comparison. Keep best-validation and last checkpoints
+and inspect uncertainty against the existing redraws. No continuation is
+approved automatically.
 
 ## Common evaluation
 

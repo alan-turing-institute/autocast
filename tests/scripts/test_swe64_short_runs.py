@@ -31,6 +31,7 @@ def _training_cap(name):
     return {
         "autoencoder_refine": "00:00:30:00",
         "afcrps_global_residual_small_2h30": "00:02:30:00",
+        "afcrps_spatial_residual_small_2h30": "00:02:30:00",
     }.get(name, "00:02:00:00")
 
 
@@ -98,6 +99,7 @@ def test_short_afcrps_pair_changes_capacity_only():
         "afcrps_spatial_small_2h",
         "afcrps_global_residual_small_2h",
         "afcrps_global_residual_small_2h30",
+        "afcrps_spatial_residual_small_2h30",
         "autoencoder_refine",
     ],
 )
@@ -145,6 +147,7 @@ def test_spatial_small_profile_changes_noise_and_scheduler_only():
         "afcrps_spatial_small_2h",
         "afcrps_global_residual_small_2h",
         "afcrps_global_residual_small_2h30",
+        "afcrps_spatial_residual_small_2h30",
     ],
 )
 def test_small_constant_profiles_keep_lr_without_scheduler(name):
@@ -222,20 +225,91 @@ def test_residual_2h30_changes_only_name_and_time_cap():
     assert longer.optimizer.scheduler is None
 
 
-def test_residual_2h30_distributed_allocation_has_saving_buffer():
+def test_spatial_residual_2h30_changes_noise_only():
+    global_cfg = _config("afcrps_global_residual_small_2h30")
+    spatial = _config("afcrps_spatial_residual_small_2h30")
+    global_config = OmegaConf.to_container(global_cfg, resolve=False)
+    spatial_config = OmegaConf.to_container(spatial, resolve=False)
+    assert isinstance(global_config, dict)
+    assert isinstance(spatial_config, dict)
+    spatial_config["experiment_name"] = global_config["experiment_name"]
+    spatial_config["model"]["processor"].update(
+        noise_mode="global", n_noise_input_channels=1024
+    )
+    assert spatial_config == global_config
+    assert spatial.model.processor.noise_mode == "spatial"
+    assert spatial.model.processor.n_noise_input_channels == 4
+    assert spatial.model.processor.n_noise_channels == 1024
+    assert spatial.model.residual_prediction
+    assert spatial.model.residual_use_delta_stats
+    assert spatial.model.residual_delta_stats_path is None
+    assert spatial.trainer.max_time == "00:02:30:00"
+    assert spatial.optimizer.learning_rate == 2e-4
+    assert spatial.optimizer.scheduler is None
+    assert OmegaConf.select(spatial, "resume_from_checkpoint") is None
+    assert not spatial.logging.wandb.enabled
+    # The only extra weights are the shared per-token 4 -> 1024 projection.
+    with torch.device("meta"):
+        processor = instantiate(
+            spatial.model.processor,
+            in_channels=3,
+            out_channels=12,
+            spatial_resolution=[64, 64],
+        )
+    assert sum(p.numel() for p in processor.parameters()) == 10_699_392
+    assert 256 * spatial.model.processor.n_noise_input_channels == 1024
+
+
+def test_spatial_residual_preset_draws_four_values_per_patch():
+    cfg = _config("afcrps_spatial_residual_small_2h30")
+    processor = instantiate(
+        cfg.model.processor,
+        in_channels=3,
+        out_channels=12,
+        spatial_resolution=[64, 64],
+        hidden_dim=16,
+        n_layers=1,
+    ).eval()
+    noise_draws = []
+    assert processor.modulation_proj is not None
+    handle = processor.modulation_proj.register_forward_pre_hook(
+        lambda _module, args: noise_draws.append(args[0].detach().clone())
+    )
+    inputs = torch.randn(2, 3, 64, 64)
+    try:
+        with torch.no_grad():
+            first = processor.map(inputs)
+            processor.map(inputs)
+    finally:
+        handle.remove()
+    assert first.shape == (2, 12, 64, 64)
+    assert len(noise_draws) == 2
+    assert noise_draws[0].shape == (2, 256, 4)
+    assert not torch.equal(noise_draws[0][0], noise_draws[0][1])
+    assert not torch.equal(noise_draws[0][:, 0], noise_draws[0][:, 1])
+    assert not torch.equal(noise_draws[0], noise_draws[1])
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["afcrps_global_residual_small_2h30", "afcrps_spatial_residual_small_2h30"],
+)
+def test_residual_2h30_distributed_allocation_has_saving_buffer(name):
     with initialize_config_dir(
         version_base=None, config_dir=str(REPO_ROOT / "src/autocast/configs")
     ):
         cfg = compose(
             config_name="encoder_processor_decoder",
             overrides=[
-                "local_experiment=swe64s/afcrps_global_residual_small_2h30",
+                f"local_experiment=swe64s/{name}",
                 f"hydra.searchpath=[file://{REPO_ROOT / 'local_hydra'}]",
                 "+distributed=ddp_4gpu_slurm",
                 "trainer.max_time=00:02:30:00",
                 "++hydra.launcher.nodes=1",
                 "++hydra.launcher.cpus_per_task=72",
                 "hydra.launcher.timeout_min=165",
+                "logging.wandb.enabled=true",
+                "logging.wandb.mode=online",
             ],
             return_hydra_config=True,
         )
@@ -245,12 +319,19 @@ def test_residual_2h30_distributed_allocation_has_saving_buffer():
     assert cfg.hydra.launcher.tasks_per_node == 4
     assert cfg.hydra.launcher.cpus_per_task == 72
     assert cfg.hydra.launcher.timeout_min == 165
+    assert cfg.logging.wandb.enabled
+    assert cfg.logging.wandb.mode == "online"
 
 
 @pytest.mark.parametrize(
-    "name", ["afcrps_global_residual_small_2h", "afcrps_global_residual_small_2h30"]
+    "name",
+    [
+        "afcrps_global_residual_small_2h",
+        "afcrps_global_residual_small_2h30",
+        "afcrps_spatial_residual_small_2h30",
+    ],
 )
-def test_global_residual_setup_four_frame_loss_gradients_and_rollout(name):
+def test_residual_setup_four_frame_loss_gradients_and_rollout(name):
     cfg = _config(name)
     # Retain the real grid, patching, 1024D noise and member count on CPU.
     cfg.model.processor.hidden_dim = 16
