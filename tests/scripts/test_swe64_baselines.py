@@ -260,6 +260,7 @@ def test_swe64_cache_contract_uses_actual_compression(
         "afcrps_global_residual_small_2h",
         "afcrps_global_residual_small_2h30",
         "afcrps_spatial_residual_small_2h30",
+        "afcrps_global_residual_one_output_2h30",
     ],
 )
 def test_swe64_evaluation_commands_preserve_saved_model(name):
@@ -294,6 +295,7 @@ def test_swe64_evaluation_commands_preserve_saved_model(name):
                 ],
             )
         assert cfg.model == saved.model
+        assert cfg.datamodule.n_steps_output == saved.datamodule.n_steps_output
         assert cfg.eval.teacher_forcing_ratio == float(index)
         assert cfg.eval.free_running_only == (index == 0)
         assert list(cfg.eval.coverage_levels) == [0.9]

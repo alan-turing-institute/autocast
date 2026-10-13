@@ -1,0 +1,10 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/afcrps_global_residual_small_2h30
+  - _self_
+
+experiment_name: swe64s_afcrps_global_residual_one_output_2h30
+
+datamodule:
+  # Isolate the jointly predicted output window; preserve the input and stride.
+  n_steps_output: 1

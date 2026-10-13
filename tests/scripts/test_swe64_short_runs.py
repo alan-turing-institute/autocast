@@ -32,6 +32,7 @@ def _training_cap(name):
         "autoencoder_refine": "00:00:30:00",
         "afcrps_global_residual_small_2h30": "00:02:30:00",
         "afcrps_spatial_residual_small_2h30": "00:02:30:00",
+        "afcrps_global_residual_one_output_2h30": "00:02:30:00",
     }.get(name, "00:02:00:00")
 
 
@@ -101,6 +102,7 @@ def test_short_afcrps_pair_changes_capacity_only():
         "afcrps_global_residual_small_2h30",
         "afcrps_spatial_residual_small_2h30",
         "autoencoder_refine",
+        "afcrps_global_residual_one_output_2h30",
     ],
 )
 def test_short_distributed_launch_preserves_explicit_cap(name):
@@ -108,6 +110,36 @@ def test_short_distributed_launch_preserves_explicit_cap(name):
     assert cfg.trainer.devices == 4
     assert cfg.trainer.strategy == "ddp"
     assert cfg.trainer.max_time == _training_cap(name)
+
+
+def test_one_output_residual_changes_only_name_and_output_window():
+    baseline = _config("afcrps_global_residual_small_2h30")
+    control = _config("afcrps_global_residual_one_output_2h30")
+    expected = OmegaConf.to_container(baseline, resolve=False)
+    actual = OmegaConf.to_container(control, resolve=False)
+    assert isinstance(expected, dict)
+    assert isinstance(actual, dict)
+    expected["experiment_name"] = control.experiment_name
+    expected["datamodule"]["n_steps_output"] = 1
+    assert actual == expected
+    assert control.model.decoder.time_steps == 1
+    assert control.datamodule.n_steps_input == control.datamodule.stride == 1
+    assert control.model.processor.noise_mode == "global"
+    assert control.model.n_members == 8
+    assert control.model.loss_func.alpha == 0.95
+    assert not control.model.encoder.with_constants
+    assert not control.model.processor.include_global_cond
+    assert control.optimizer.learning_rate == 2e-4
+    assert control.optimizer.scheduler is None
+    assert OmegaConf.select(control, "resume_from_checkpoint") is None
+    with torch.device("meta"):
+        processor = instantiate(
+            control.model.processor,
+            in_channels=3,
+            out_channels=3,
+            spatial_resolution=[64, 64],
+        )
+    assert sum(p.numel() for p in processor.parameters()) == 10_657_264
 
 
 def test_spatial_small_profile_changes_noise_and_scheduler_only():
@@ -148,6 +180,7 @@ def test_spatial_small_profile_changes_noise_and_scheduler_only():
         "afcrps_global_residual_small_2h",
         "afcrps_global_residual_small_2h30",
         "afcrps_spatial_residual_small_2h30",
+        "afcrps_global_residual_one_output_2h30",
     ],
 )
 def test_small_constant_profiles_keep_lr_without_scheduler(name):
@@ -292,7 +325,11 @@ def test_spatial_residual_preset_draws_four_values_per_patch():
 
 @pytest.mark.parametrize(
     "name",
-    ["afcrps_global_residual_small_2h30", "afcrps_spatial_residual_small_2h30"],
+    [
+        "afcrps_global_residual_small_2h30",
+        "afcrps_spatial_residual_small_2h30",
+        "afcrps_global_residual_one_output_2h30",
+    ],
 )
 def test_residual_2h30_distributed_allocation_has_saving_buffer(name):
     with initialize_config_dir(
@@ -329,13 +366,17 @@ def test_residual_2h30_distributed_allocation_has_saving_buffer(name):
         "afcrps_global_residual_small_2h",
         "afcrps_global_residual_small_2h30",
         "afcrps_spatial_residual_small_2h30",
+        "afcrps_global_residual_one_output_2h30",
     ],
 )
-def test_residual_setup_four_frame_loss_gradients_and_rollout(name):
+def test_residual_setup_loss_gradients_and_rollout(name):
     cfg = _config(name)
-    # Retain the real grid, patching, 1024D noise and member count on CPU.
-    cfg.model.processor.hidden_dim = 16
-    cfg.model.processor.n_layers = 1
+    n_output = cfg.datamodule.n_steps_output
+    # Exercise the full one-output backbone; keep legacy four-output cases cheap.
+    # Every case retains the real grid, patching, 1024D noise and member count.
+    if n_output != 1:
+        cfg.model.processor.hidden_dim = 16
+        cfg.model.processor.n_layers = 1
     norm = ZScoreNormalization(
         stats={
             "mean": {"h": 1.0, "u": 0.2, "v": -0.3},
@@ -348,14 +389,14 @@ def test_residual_setup_four_frame_loss_gradients_and_rollout(name):
     )
     batch = Batch(
         input_fields=torch.randn(1, 1, 64, 64, 3),
-        output_fields=torch.randn(1, 4, 64, 64, 3),
+        output_fields=torch.randn(1, n_output, 64, 64, 3),
         constant_scalars=torch.tensor([[0.1]]),
         constant_fields=None,
     )
     stats = {
         "channel_count": 3,
         "n_steps_input": 1,
-        "n_steps_output": 4,
+        "n_steps_output": n_output,
         "input_shape": tuple(batch.input_fields.shape),
         "output_shape": tuple(batch.output_fields.shape),
         "example_batch": batch,
@@ -367,6 +408,8 @@ def test_residual_setup_four_frame_loss_gradients_and_rollout(name):
     assert model.residual_use_delta_stats
     assert model.norm is norm
     assert model.delta_norm is None
+    if n_output == 1:
+        assert sum(p.numel() for p in model.parameters()) == 10_657_264
     decoded_residuals: list[torch.Tensor] = []
     original_decode = model.encoder_decoder.decoder.decode
 
@@ -380,7 +423,7 @@ def test_residual_setup_four_frame_loss_gradients_and_rollout(name):
     ):
         loss, prediction = model.loss(batch)
     assert prediction is not None
-    assert prediction.shape == (1, 4, 64, 64, 3, 8)
+    assert prediction.shape == (1, n_output, 64, 64, 3, 8)
     decoded = decoded_residuals[0].detach()
     # Independent arithmetic verifies field order and cumulative lead semantics.
     physical_delta = decoded * torch.tensor([0.003, 0.04, 0.06])
@@ -398,19 +441,19 @@ def test_residual_setup_four_frame_loss_gradients_and_rollout(name):
         assert parameter.grad is not None, parameter_name
         assert torch.isfinite(parameter.grad).all(), parameter_name
 
-    batch.output_fields = torch.randn(1, 8, 64, 64, 3)
+    batch.output_fields = torch.randn(1, 2 * n_output, 64, 64, 3)
     model.eval()
     with torch.no_grad():
         for ratio in (0.0, 1.0):
             prediction, truth = model.rollout(
                 batch,
-                stride=4,
+                stride=n_output,
                 max_rollout_steps=2,
                 n_members=2,
                 teacher_forcing_ratio=ratio,
                 free_running_only=ratio == 0.0,
             )
-            assert prediction.shape == (1, 8, 64, 64, 3, 2)
+            assert prediction.shape == (1, 2 * n_output, 64, 64, 3, 2)
             assert torch.isfinite(prediction).all()
             torch.testing.assert_close(
                 truth, norm.denormalize_flattened(batch.output_fields, "variable")

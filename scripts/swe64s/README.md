@@ -399,6 +399,41 @@ guaranteed equal-update comparison. Keep best-validation and last checkpoints
 and inspect uncertainty against the existing redraws. No continuation is
 approved automatically.
 
+### One-output global residual control
+
+`afcrps_global_residual_one_output_2h30` inherits the global 2h30m
+residual preset and changes only its experiment name and
+`datamodule.n_steps_output=1`. It predicts one persistence correction
+instead of four joint corrections. The input length and stride remain one.
+The same dataset, normalization and delta statistics, width-256 four-block
+backbone, patch size four, global 1024D noise, eight members, afCRPS alpha
+0.95 and constant LR 2e-4 are retained; parameter conditioning stays off.
+
+The smaller output head gives 10,657,264 parameters versus 10,694,272 for
+four outputs, a 0.35 percent reduction. Use a fresh fit, not a resumed
+four-output checkpoint. This is an output-window control, not an exactly
+equal-parameter or equal-wall-time training-budget comparison. Compare
+curves by optimizer updates and training-window passes. One output creates
+64,000 training windows rather than 63,400; both counts include overlapping
+examples. Keep the 2h30m training cap and 165-minute allocation unchanged.
+
+```sh
+# Configuration preview only: no training, submission or W&B initialization.
+uv run python -m autocast.scripts.train.encoder_processor_decoder \
+  --cfg job --resolve \
+  local_experiment=swe64s/afcrps_global_residual_one_output_2h30 \
+  +distributed=ddp_4gpu_slurm \
+  trainer.max_time=00:02:30:00 \
+  hydra.launcher.timeout_min=165 \
+  logging.wandb.enabled=true logging.wandb.mode=online
+```
+
+For evaluation, compare its one-step scores with the first lead of the
+four-output controls, using the same targets, members and metric. Do not
+compare the one-output objective directly with the four-output aggregate.
+Saved configurations retain the correct one-output decoder and residual
+flags for teacher-forced and free-running evaluation.
+
 ## Common evaluation
 
 `evaluation.yaml` defines the common physical-field metric settings: 16 members,
