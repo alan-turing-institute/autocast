@@ -11,6 +11,7 @@ resume_from_checkpoint: ???
 resume_weights_only: false
 reset_resume_time_budget: true
 ae_diversity_data_path: ???
+ae_diversity_start_step: 29116
 
 datamodule:
   # AE-only 400 x 160 view; original validation/test/stats remain unchanged.
@@ -42,7 +43,7 @@ trainer:
       original_steps_per_epoch: 1004
       cosine_epochs: 512
       base_lr: 1e-5
-      expected_resume_step: 29116
+      expected_resume_step: ${ae_diversity_start_step}
       stop_step: 77308
     - _target_: autocast.callbacks.checkpoint.ProgressModelCheckpoint
       auto_insert_metric_name: false

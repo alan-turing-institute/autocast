@@ -226,9 +226,68 @@ The shorter time cap compresses afCRPS's cosine schedule; the AE keeps its
 diagnostic runs. FM needs its own pilot once a reviewed SWE AE and matching
 cache are available; an afCRPS/AE pilot does not validate latent FM.
 
-## AE trajectory-diversity continuation
+## Fresh AE trajectory-diversity control
 
-This is **one new continuation**, not two new AE fits. Keep the original
+The selected control is a **fresh fit**, not a continuation. It asks whether
+allocating a similar number of training examples across more independent
+trajectories reduces early overfitting. The previously prepared continuation
+was cancelled before starting; its configuration is retained below for reference.
+
+- Original: 200 trajectories x 321 frames = 64,200 training examples.
+- Fresh control: 400 trajectories x 160 frames = 64,000 examples, from the
+  original 200 trajectories plus 200 new trajectories at the same physics.
+- Keep original validation/test trajectories and normalization unchanged.
+- Match initialization seed 42, model, loss, PSGD, clipping, batch 16 per GPU,
+  four GPUs and EMA decay. Initialize weights, optimizer and EMA from scratch.
+- Match the original saved endpoint: **77,308 updates from zero**. Preserve
+  the original 512-epoch cosine LR using `floor(global_step / 1004)`, not the
+  new loader's epoch count. Validate every 1,004 updates and at the endpoint.
+
+The materialized, AE-only view on Isambard is
+`/projects/u6eo/autocast/datasets/shallow_water2d_stochastic_64_ae400x160_d2f66a0`.
+Its `valid/`, `test/` and `stats.yml` link to the unchanged baseline. The
+approximately uniform frame thinning spans the original t=40--120 window;
+it is not suitable as a constant-time-step forecasting dataset.
+
+The original four-GPU job `7159768` ran for **2h47m40s** before cancellation,
+with the selected last checkpoint at 77,308 updates. Expect roughly three
+hours for this matched fresh fit, not twice the original duration. Its
+four-hour fit cap and 4h15m allocation provide headroom; they do not set the
+LR schedule. Only a checkpoint at 77,308 updates completes the comparison.
+
+Read-only checks and submission preview (these launch nothing):
+
+```sh
+export PYTHONPATH="$PWD/scripts/swe64s:$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
+ae_view=/projects/u6eo/autocast/datasets/shallow_water2d_stochastic_64_ae400x160_d2f66a0
+
+uv run --frozen python scripts/swe64s/check_ae_diversity.py --fresh --configs-only
+uv run --frozen python scripts/swe64s/check_ae_diversity.py --fresh --data "$ae_view"
+
+uv run --frozen autocast ae --mode slurm --dry-run \
+  --workdir /path/to/new/ae-diversity-fresh-fit \
+  local_experiment=swe64s/autoencoder_diversity_400_fresh \
+  ae_diversity_data_path="$ae_view" \
+  +distributed=ddp_4gpu_slurm trainer.max_time=00:04:00:00 \
+  ++hydra.launcher.nodes=1 ++hydra.launcher.cpus_per_task=72 \
+  hydra.launcher.timeout_min=255 \
+  logging.wandb.enabled=true logging.wandb.entity=turing-core \
+  logging.wandb.project=autocast \
+  logging.wandb.name=swe64s-ae-diversity-400-fresh
+```
+
+Use a fresh output directory and W&B run; do not supply a checkpoint, even
+weights-only. The fresh preflight rejects the supported AE restore options.
+Compare absolute validation error and the onset of worsening against updates,
+then audit best/final checkpoints by h/u/v, simulation time and spectrum.
+A smaller train--validation gap alone is insufficient if validation error
+does not improve. This tests more trajectories with sparser temporal sampling
+at a comparable example budget, not trajectory count in isolation or different
+physics. One initialization seed is a control, not a replicated causal claim.
+
+### Earlier continuation (not selected)
+
+This earlier configuration is not the selected fresh-fit control. Keep the original
 200/20/20 dataset byte-for-byte unchanged. Generate 200 additional training
 trajectories with the same physics, then build a separate AE-only view:
 

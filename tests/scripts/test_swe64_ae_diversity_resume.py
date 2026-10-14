@@ -113,6 +113,70 @@ def trainer(tmp_path, callbacks, **kwargs):
     )
 
 
+def test_thinned_shape_probe_preserves_initialization_rng():
+    # setup_datamodule consumes one shuffled probe batch before constructing
+    # the model. Different dataset lengths must not change the global RNG
+    # state at model initialization; RandomSampler uses a private generator.
+    states, models = [], []
+    for examples in (64200, 64000):
+        torch.manual_seed(42)
+        loader = DataLoader(
+            TensorDataset(torch.zeros(examples, 1)),
+            batch_size=16,
+            shuffle=True,
+            num_workers=0,
+        )
+        next(iter(loader))
+        states.append(torch.get_rng_state())
+        models.append(TinyAE(scheduler=False).state_dict())
+    assert_equal(states[0], states[1])
+    assert_equal(models[0], models[1])
+
+
+def test_fresh_fit_starts_empty_matches_lr_and_validates_endpoint(tmp_path):
+    torch.manual_seed(42)
+    reference_initial = TinyAE(scheduler=True)
+    torch.manual_seed(42)
+    fresh = TinyAE(scheduler=False)
+    assert_equal(fresh.state_dict(), reference_initial.state_dict())
+    control = HistoricalAELearningRate(
+        original_steps_per_epoch=3,
+        cosine_epochs=8,
+        base_lr=0.01,
+        expected_resume_step=0,
+        stop_step=11,
+        expected_world_size=1,
+        expected_batch_size=1,
+    )
+    ema = EMACallback(decay=0.9)
+    fit = trainer(
+        tmp_path,
+        [control, ema],
+        max_epochs=8,
+        max_steps=11,
+        enable_checkpointing=False,
+        check_val_every_n_epoch=None,
+        val_check_interval=3,
+    )
+    loader = DataLoader(TensorDataset(torch.arange(8.0).reshape(4, 2)), batch_size=1)
+    validation = DataLoader(TensorDataset(torch.ones(1, 2)), batch_size=1)
+    fit.fit(fresh, loader, validation)
+    assert fit.global_step == 11
+    assert fresh.optimizer_before_resume is not None
+    assert fresh.ema_before_resume is not None
+    assert fresh.optimizer_before_resume["state"] == {}
+    assert int(fresh.ema_before_resume["ema_model_state"]["n_averaged"]) == 0
+    assert fresh.batch_indices == [0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2]
+    assert fresh.validation_steps == [3, 6, 9, 11]
+    assert ema.ema_model is not None
+    assert int(ema.ema_model.n_averaged) == 11
+    assert [step for step, _ in fresh.rates] == list(range(11))
+    for step, rate in fresh.rates:
+        assert rate == historical_lr(
+            step, original_steps_per_epoch=3, cosine_epochs=8, base_lr=0.01
+        )
+
+
 def test_full_resume_preserves_state_and_validates_partial_endpoint(tmp_path):
     torch.manual_seed(42)
     old_loader = DataLoader(

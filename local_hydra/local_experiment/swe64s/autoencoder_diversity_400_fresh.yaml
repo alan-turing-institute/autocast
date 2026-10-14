@@ -1,0 +1,19 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/autoencoder_diversity_400
+  - _self_
+
+experiment_name: swe64s_autoencoder_diversity_400_fresh
+
+# Compare dataset diversity from initialization, not recovery from overfitting.
+# Inherit only the configuration: no weights, optimizer or EMA are restored.
+resume_from_checkpoint: null
+resume_weights_only: false
+reset_resume_time_budget: false
+ae_diversity_start_step: 0
+
+trainer:
+  # All 77,308 updates now use the 400 x 160 view. The inherited callback
+  # preserves the original 512-epoch cosine LR by floor(global_step / 1004).
+  max_steps: 77308
+  max_time: "00:04:00:00"  # Safety cap only; request 4h15m from Slurm.
