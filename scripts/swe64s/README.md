@@ -226,6 +226,133 @@ The shorter time cap compresses afCRPS's cosine schedule; the AE keeps its
 diagnostic runs. FM needs its own pilot once a reviewed SWE AE and matching
 cache are available; an afCRPS/AE pilot does not validate latent FM.
 
+## AE trajectory-diversity continuation
+
+This is **one new continuation**, not two new AE fits. Keep the original
+200/20/20 dataset byte-for-byte unchanged. Generate 200 additional training
+trajectories with the same physics, then build a separate AE-only view:
+
+- Original comparison: 200 trajectories x 321 frames = 64,200 examples.
+- New view: original 200 plus additional 200 trajectories, each contributing
+  160 approximately evenly spaced frames = 64,000 examples.
+- Validation/test remain the original 20/20 trajectories, all 321 frames.
+  Use the original training normalization, not the additional dataset's stats.
+
+The frame selector rounds 160 positions spanning indices 0 through 320. This
+keeps both endpoints without ragged trajectories; gaps are two or three saved
+frames. **Use this view only for single-frame AE reconstruction, not forecasting.**
+It changes training-state allocation as well as trajectory diversity, and starts
+from an already fitted model; it is not a from-scratch dataset-size scaling test.
+
+### Additional simulations (prepared, not launched)
+
+AutoSim's `generate_data_swe_ae_diversity_64` preset starts from fetched main
+`47376c8cf5695e59f82a779998634020404197b5`. It specifies 200/0/0 trajectories,
+seed `20261014`, 321 frames over t=40--120, dt_save=0.25, and the original
+physical parameters (including nu=1e-4 and forcing k=3/bandwidth=0.7).
+The original solver and forcing source files match that main revision.
+Integration remains float64 and saved fields float32. The new seed stream
+does not overlap the original split/retry seed ranges.
+
+Proposed Spark CPU destination (not yet created):
+`/data/aiphys/scratch/swe-crps-issue-153/dataset-generation-64-ae-diversity-20261014/additional_200`.
+From the AutoSim checkout, inspect without generating:
+
+```sh
+uv run --frozen autosim --config-name=generate_data_swe_ae_diversity_64 \
+  dataset.output_dir=/data/aiphys/scratch/swe-crps-issue-153/dataset-generation-64-ae-diversity-20261014/additional_200 \
+  --cfg job --resolve
+```
+
+Generation must be approved separately. `overwrite=false` refuses existing
+data or metadata before simulation; Hydra logs are stored separately. Record
+the actual AutoSim commit, resolved config and split hashes with the output.
+Previous serial Spark timings suggest about 4 CPU-hours and 3.16 GB of new
+training fields; these are estimates, not a new timing run.
+Together, the additional data and AE view occupy about 6.3 GB; allow about
+9.5 GB of free space while the view's temporary mapped buffer exists.
+
+### Prepare the AE-only view and full-state checkpoint
+
+Run the following only after the additional data have been generated and
+placed on the training machine. All destinations must be fresh. The builder
+checks the original file hashes, complete simulator settings, finite fields,
+and duplicate retained start states across old/new training and held-out data.
+It records source trajectory IDs, selected times, checksums and a verified
+copy map. Validation, test and stats are symlinked to the original dataset.
+
+```sh
+export PYTHONPATH="$PWD/scripts/swe64s:$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
+ae_baseline=/projects/u6eo/autocast/datasets/shallow_water2d_stochastic_64_b43bd32
+ae_additional=/path/to/additional_200
+ae_view=/path/to/new/shallow_water2d_stochastic_64_ae400x160
+
+# Read-only source preflight; remove --check-only only to build the new view.
+uv run --frozen python scripts/swe64s/prepare_ae_diversity_data.py \
+  --baseline "$ae_baseline" --additional "$ae_additional" \
+  --output "$ae_view" --check-only
+
+ae_original=/projects/u6eo/autocast/outputs/swe64s/full-20261008/autoencoder
+ae_derived=/path/to/new/ae-diversity-resume.ckpt
+uv run --frozen python scripts/swe64s/ae_diversity.py prepare \
+  --source "$ae_original/autocast/fl7hrywf/checkpoints/best-val-0028-0.0002.ckpt" \
+  --source-config "$ae_original/resolved_autoencoder_config.yaml" \
+  --target "$ae_derived"
+```
+
+The trusted source checkpoint SHA256 is
+`df27e12bb9dc46f44fa5d1b594d3f90b534ac6d0a0d2487eb1b6bad800f0824b`.
+The preparation helper refuses another source or an existing target. It retains
+raw weights, PSGD state/preconditioners and EMA, resets run-local diagnostics,
+and normalizes completed-epoch bookkeeping for the new loader. The original
+checkpoint is never rewritten. Do not use `prepare_ae_refinement.py` here:
+that helper intentionally changes LR and would confound this control.
+Lightning may warn that the cumulative step is not divisible by the new
+loader length. The completed-epoch reset is deliberate; the CPU resume test
+checks batch-zero restart without losing optimizer updates or EMA history.
+
+### Matched budget and launch gate
+
+`autoencoder_diversity_400` resumes at global step **29,116** and stops at
+**77,308**: **48,192 additional updates**, matching the original final checkpoint.
+Model, batch 16 per GPU, four GPUs, PSGD, clipping and seed remain matched.
+The ordinary scheduler is disabled only because the study callback reproduces
+the original 512-epoch cosine staircase exactly by update count:
+`LR(g) = 1e-5 * (1 + cos(pi * floor(g / 1004) / 512)) / 2`.
+The new loader has 1,000 updates per epoch, versus the original 1,004, so
+reusing its epoch counter directly would subtly change the schedule.
+
+Full validation runs every 1,004 batches and at the final partial-epoch
+endpoint. Raw-weight validation, W&B, hourly snapshots, best-val and final
+checkpoints are enabled; EMA remains separately stored. A 4h30m fit cap inside
+a 4h45m allocation is only a safety limit. Previous rates imply about 1h45m to
+3h40m on four GPUs (roughly 7--14.5 GPU-hours); record actual updates if the cap
+is reached, and do not treat that as the complete comparison.
+
+From the repository root, retain `PYTHONPATH` above so Hydra can import the
+study-local callback. These checks and the preview submit nothing:
+
+```sh
+uv run --frozen python scripts/swe64s/check_ae_diversity.py --configs-only
+# Once the data view and derived checkpoint actually exist:
+uv run --frozen python scripts/swe64s/check_ae_diversity.py \
+  --data "$ae_view" --checkpoint "$ae_derived"
+
+uv run --frozen autocast ae --mode slurm --dry-run \
+  --workdir /path/to/new/ae-diversity-fit \
+  local_experiment=swe64s/autoencoder_diversity_400 \
+  ae_diversity_data_path="$ae_view" resume_from_checkpoint="$ae_derived" \
+  +distributed=ddp_4gpu_slurm trainer.max_time=00:04:30:00 \
+  ++hydra.launcher.nodes=1 ++hydra.launcher.cpus_per_task=72 \
+  hydra.launcher.timeout_min=285
+```
+
+Before approving launch, verify the view and checkpoint manifests on the target
+machine and inspect this preview. Afterwards compare raw best/final checkpoints
+with the existing 200-trajectory audit by h/u/v, simulation time and spectrum.
+Improvement would support limited independent training variation as a factor;
+no improvement would not, by itself, establish a generator defect.
+
 ## Bounded capacity and AE refinement comparison
 
 The separate `afcrps_large_2h` and `afcrps_small_2h` presets use a fresh

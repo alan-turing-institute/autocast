@@ -1,0 +1,76 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/autoencoder
+  - _self_
+
+experiment_name: swe64s_autoencoder_diversity_400
+
+# Derive a new full-state checkpoint with scripts/swe64s/ae_diversity.py.
+# Do not use the original checkpoint directly or restart weights-only.
+resume_from_checkpoint: ???
+resume_weights_only: false
+reset_resume_time_budget: true
+ae_diversity_data_path: ???
+
+datamodule:
+  # AE-only 400 x 160 view; original validation/test/stats remain unchanged.
+  data_path: ${ae_diversity_data_path}
+  normalization_path: ${.data_path}/stats.yml
+  batch_size: 16
+  autoencoder_mode: true
+
+optimizer:
+  # Preserve the original epoch-wise cosine LR by optimizer update rather
+  # than letting the changed loader length alter its schedule.
+  scheduler: null
+
+trainer:
+  accelerator: gpu
+  devices: 4
+  num_nodes: 1
+  strategy: ddp
+  accumulate_grad_batches: 1
+  max_epochs: 512
+  # Resume at 29,116; match the original endpoint with 48,192 new updates.
+  max_steps: 77308
+  max_time: "00:04:30:00"  # Safety cap only, not the LR horizon.
+  check_val_every_n_epoch: null
+  val_check_interval: 1004
+  limit_val_batches: 1.0
+  callbacks:
+    - _target_: ae_diversity.HistoricalAELearningRate
+      original_steps_per_epoch: 1004
+      cosine_epochs: 512
+      base_lr: 1e-5
+      expected_resume_step: 29116
+      stop_step: 77308
+    - _target_: autocast.callbacks.checkpoint.ProgressModelCheckpoint
+      auto_insert_metric_name: false
+      every_n_epochs: 0
+      train_time_interval:
+        _target_: datetime.timedelta
+        hours: 1
+      filename: snapshot-{epoch:04d}-{step:08d}
+      save_last: true
+      save_top_k: -1
+    - _target_: lightning.pytorch.callbacks.ModelCheckpoint
+      auto_insert_metric_name: false
+      filename: best-val-{epoch:04d}-{step:08d}-{val_loss:.6f}
+      mode: min
+      monitor: val_loss
+      save_last: false
+      save_top_k: 1
+    - _target_: autocast.callbacks.metrics.ValidationMetricPlotCallback
+      dirname: validation_metrics
+      filename: validation_metrics.png
+      log_to_logger: true
+      max_cols: 3
+      metric_prefixes: [val_]
+      plot_metric_objects: true
+      save_local: true
+    - _target_: autocast.callbacks.ema.EMACallback
+      decay: 0.999
+
+logging:
+  wandb:
+    enabled: true
