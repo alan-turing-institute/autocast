@@ -1,0 +1,84 @@
+# @package _global_
+defaults:
+  - /distributed: ddp_4gpu_slurm
+  - override /datamodule: miniwell
+  - override /optimizer: adamw_half
+  - _self_
+
+# Shared LOLA transformer/update schedule; method wrappers retain our benchmark
+# objectives and fixed one-context/four-forecast evaluation. See the RB audit.
+datamodule:
+  data_path: ${oc.env:AUTOCAST_DATASETS,./datasets}/rayleigh_benard/1e3z5x2c_rayleigh_benard_dcae_f32c64_large/cache/rayleigh_benard
+  n_steps_input: 1
+  n_steps_output: 4
+  stride: 1
+  num_workers: 8
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 2
+
+float32_matmul_precision: high
+logging:
+  wandb:
+    enabled: true
+output:
+  skip_test: true
+
+model:
+  processor:
+    # Pinned LOLA code: Poisson(1), modulo wrapping, 1-4 observed prefix frames.
+    context_mask:
+      _target_: autocast.processors.masking.random_context_mask
+      _partial_: true
+      lmbda: 1.0
+      rho: 1.0
+      atleast: 1
+
+optimizer:
+  learning_rate: 1e-4
+  warmup: 0
+  # Explicit horizon: short timing jobs must not compress the cosine schedule.
+  cosine_epochs: 4096
+
+trainer:
+  max_epochs: 4096
+  # Leave room for startup, checkpointing and shutdown in a 24-hour allocation.
+  max_time: "00:23:45:00"
+  accumulate_grad_batches: 1
+  limit_train_batches: 64
+  limit_val_batches: 16
+  check_val_every_n_epoch: 8
+  num_sanity_val_steps: 0
+  gradient_clip_val: 1.0
+  log_every_n_steps: 64
+  enable_progress_bar: false
+  # Epoch-boundary snapshots make later continuations unambiguous. Keep the
+  # primary objective and calibration checkpoints used for model selection.
+  callbacks:
+    - _target_: lightning.pytorch.callbacks.ModelCheckpoint
+      every_n_epochs: 128
+      save_top_k: -1
+      save_last: true
+      filename: "snapshot-{epoch:04d}-{step:08d}"
+      auto_insert_metric_name: false
+    - _target_: lightning.pytorch.callbacks.ModelCheckpoint
+      monitor: val_loss
+      mode: min
+      save_top_k: 1
+      save_last: false
+      filename: "best-val-{epoch:04d}-{val_loss:.4f}"
+      auto_insert_metric_name: false
+    - _target_: autocast.callbacks.checkpoint.ProgressModelCheckpoint
+      monitor: val_multiwinkler
+      monitor_optional: true
+      mode: min
+      save_top_k: 1
+      save_last: false
+      filename: "best-multiwinkler-{epoch:04d}-{val_multiwinkler:.4f}"
+      auto_insert_metric_name: false
+    - _target_: autocast.callbacks.ema.EMACallback
+      decay: 0.999
+    - _target_: autocast.callbacks.grad_norm.GradNormCallback
+      norm_type: 2.0
+    - _target_: autocast.callbacks.param_norm.ParamNormCallback
+      norm_type: 2.0

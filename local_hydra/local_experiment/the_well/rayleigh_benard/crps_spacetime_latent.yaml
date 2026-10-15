@@ -1,0 +1,26 @@
+# @package _global_
+defaults:
+  - /local_experiment/the_well/rayleigh_benard/_spacetime_latent
+  - override /processor@model.processor: spacetime_vit_masked_window
+  - _self_
+
+experiment_name: the_well_rayleigh_benard_crps_spacetime_latent
+
+# Four GPUs: 32 distinct windows x eight members = 256 predictions per update.
+datamodule:
+  batch_size: 8
+model:
+  n_members: 8
+  # The processor draws each mask before expanding its training ensemble.
+  loss_func: null
+  processor:
+    n_members: ${model.n_members}
+  val_metrics:
+    afcrps:
+      _target_: autocast.metrics.ensemble.AlphaFairCRPS
+    spread:
+      _target_: autocast.metrics.ensemble.EnsembleSpread
+    multicoverage:
+      _target_: autocast.metrics.MultiCoverage
+    multiwinkler:
+      _target_: autocast.metrics.ensemble.MultiWinkler

@@ -1,0 +1,16 @@
+# @package _global_
+defaults:
+  - /local_experiment/the_well/rayleigh_benard/_spacetime_latent
+  - override /processor@model.processor: flow_matching_masked_window_spacetime_vit
+  - _self_
+
+experiment_name: the_well_rayleigh_benard_fm_spacetime_latent
+
+# Four GPUs: 256 distinct windows and member-window predictions per update.
+datamodule:
+  batch_size: 64
+model:
+  processor:
+    flow_ode_steps: 50
+    loss_on_observed: false
+  val_metrics: []
