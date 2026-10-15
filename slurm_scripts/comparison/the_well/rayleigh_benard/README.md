@@ -50,11 +50,11 @@ windows. The script derives `DATAMODULE_MAX_ROLLOUT_STEPS` from that value and
 `EVAL_ROLLOUT_START` so the rollout dataloader exposes enough truth frames for
 the requested horizon.
 
-## Spacetime RB extension (FM and CRPS)
+## Spatiotemporal RB extension (FM and CRPS)
 
-These additive presets use the shared `spacetime_vit` backbone; the older
+These additive presets use the shared `spatiotemporal_vit` backbone; the older
 time-in-channels configs above are unchanged. They require fresh training.
-The [library guide](../../../../docs/spacetime_vit.md) covers the reusable
+The [library guide](../../../../docs/spatiotemporal_vit.md) covers the reusable
 backbone, processor presets and configurable noise/masking interfaces.
 The settings and reference comparisons below belong to this RB experiment.
 
@@ -151,7 +151,11 @@ bash slurm_scripts/comparison/the_well/rayleigh_benard/submit_spacetime_timing.s
 ```
 
 `fm_spacetime_latent` and `crps_spacetime_latent` are the experiment names under
-`local_experiment=the_well/rayleigh_benard/`. The timing script now runs 16
+`local_experiment=the_well/rayleigh_benard/`. Timing run and output identifiers
+retain their recorded spelling; the presets now use the canonical
+`spatiotemporal_vit` library names. Remove the temporary `spacetime_vit`
+import/config aliases after collecting the timing results and migrating any
+retained configs/checkpoints. The timing script now runs 16
 64-update epochs including two validation passes and an epoch-boundary checkpoint,
 without shortening the 4096-epoch cosine horizon. It uses unique timestamped
 output groups; `OUTPUT_BASE` can point to an existing HPC output root. No full

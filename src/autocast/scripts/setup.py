@@ -171,7 +171,11 @@ def _resolve_processor_temporal_steps(
 def _uses_masked_window(processor_config: DictConfig) -> bool:
     target = str(processor_config.get("_target_", ""))
     return target.endswith(
-        ("FlowMatchingMaskedWindowProcessor", "SpacetimeViTMaskedWindowProcessor")
+        (
+            "FlowMatchingMaskedWindowProcessor",
+            "SpatiotemporalViTMaskedWindowProcessor",
+            "SpacetimeViTMaskedWindowProcessor",  # Temporary Isambard alias.
+        )
     )
 
 

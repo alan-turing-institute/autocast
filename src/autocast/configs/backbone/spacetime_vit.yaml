@@ -1,19 +1,4 @@
-_target_: autocast.nn.spacetime_vit.SpacetimeViTBackbone
-in_channels: auto
-out_channels: auto
-cond_channels: auto
-n_steps_input: auto
-n_steps_output: auto
-global_cond_channels: auto
-include_global_cond: true
-mod_features: 256
-hid_channels: 1024
-hid_blocks: 16
-attention_heads: 8
-patch_size: [1, 1, 1]
-conditioning: frames
-dropout: 0.05
-ffn_factor: 4
-qk_norm: true
-checkpointing: false
-use_precomputed_modulation: false
+# Temporary Isambard timing alias; remove after configs/checkpoints migrate.
+defaults:
+  - spatiotemporal_vit
+  - _self_

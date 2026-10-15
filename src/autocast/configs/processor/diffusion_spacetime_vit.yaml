@@ -1,4 +1,4 @@
+# Temporary Isambard timing alias; remove after configs/checkpoints migrate.
 defaults:
-  - diffusion_vit
-  - override /backbone@backbone: spacetime_vit
+  - diffusion_spatiotemporal_vit
   - _self_

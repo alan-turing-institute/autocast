@@ -4,7 +4,7 @@ import pytest
 import torch
 from hydra import compose, initialize_config_dir
 
-from autocast.nn.spacetime_vit import SpacetimeViTBackbone
+from autocast.nn.spatiotemporal_vit import SpatiotemporalViTBackbone
 from autocast.processors.diffusion import DiffusionProcessor
 from autocast.processors.flow_matching import FlowMatchingProcessor
 from autocast.scripts.setup import _build_processor, setup_processor_model
@@ -22,9 +22,12 @@ def single_thread():
 @pytest.mark.parametrize(
     ("experiment", "preset"),
     [
-        ("fm_vit_large", "flow_matching_spacetime_vit"),
-        ("fm_vit_large_masked_window", "flow_matching_masked_window_spacetime_vit"),
-        ("diffusion_vit_large_lola", "diffusion_spacetime_vit"),
+        ("fm_vit_large", "flow_matching_spatiotemporal_vit"),
+        (
+            "fm_vit_large_masked_window",
+            "flow_matching_masked_window_spatiotemporal_vit",
+        ),
+        ("diffusion_vit_large_lola", "diffusion_spatiotemporal_vit"),
     ],
 )
 def test_rb_experiments_accept_opt_in_backbone(experiment, preset, REPO_ROOT):
@@ -36,7 +39,7 @@ def test_rb_experiments_accept_opt_in_backbone(experiment, preset, REPO_ROOT):
             overrides=[
                 f"local_experiment=the_well/rayleigh_benard/{experiment}",
                 f"processor@model.processor={preset}",
-                "backbone@model.processor.backbone=spacetime_vit",
+                "backbone@model.processor.backbone=spatiotemporal_vit",
             ],
         )
     # These experiments retain scalar patch_size=1 and, for diffusion,
@@ -63,7 +66,7 @@ def test_rb_experiments_accept_opt_in_backbone(experiment, preset, REPO_ROOT):
         if isinstance(processor, FlowMatchingProcessor)
         else processor.denoiser.backbone
     )
-    assert isinstance(backbone, SpacetimeViTBackbone)
+    assert isinstance(backbone, SpatiotemporalViTBackbone)
     assert backbone.patch_size == (1, 1, 1)
     assert backbone.conditioning == ("mask" if "masked" in preset else "frames")
 
@@ -155,7 +158,7 @@ def test_rb_masked_configs_train_and_forecast_through_existing_setup(
         if method == "crps"
         else model.processor.flow_matching_model
     )
-    assert isinstance(core, SpacetimeViTBackbone)
+    assert isinstance(core, SpatiotemporalViTBackbone)
     assert core.n_steps_input == core.n_steps_output == 5
     loss = model.loss(batch)
     assert torch.isfinite(loss)

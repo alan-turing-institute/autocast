@@ -1,14 +1,4 @@
+# Temporary Isambard timing alias; remove after configs/checkpoints migrate.
 defaults:
-  - spacetime_vit
+  - spatiotemporal_vit_masked_window
   - _self_
-
-_target_: autocast.processors.spacetime_vit.SpacetimeViTMaskedWindowProcessor
-n_steps_input: auto
-n_steps_output: auto
-n_members: 8
-context_mask: null
-loss_func:
-  _target_: autocast.losses.ensemble.AlphaFairCRPSLoss
-  reduction: none
-backbone:
-  conditioning: mask

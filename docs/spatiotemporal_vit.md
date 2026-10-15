@@ -7,7 +7,7 @@ concrete backbones choose the token layout and attention mechanism:
 | Backbone | Transformer attention |
 | --- | --- |
 | `SpatialViTBackbone` | Spatial patches, with frames bundled into channels |
-| `SpatiotemporalViTBackbone` | Joint spacetime tokens in every transformer block |
+| `SpatiotemporalViTBackbone` | Joint spatiotemporal tokens in every transformer block |
 
 For the spatial backbone, `temporal_method=attention` or `tcn` processes the
 field and context timelines separately before bundling. This happens once
@@ -21,22 +21,27 @@ Existing imports and Hydra targets remain valid through identity aliases:
 | Existing name | Canonical name |
 | --- | --- |
 | `TemporalViTBackbone` | `SpatialViTBackbone` |
-| `SpacetimeViTBackbone` | `SpatiotemporalViTBackbone` |
 
-Module paths, preset names and checkpoint layouts are unchanged. Renaming
+Existing spatial presets and checkpoint layouts remain compatible. Renaming
 does not require retraining; switching between the two architectures does.
 Printed class names use the canonical names, including when an object was
 created through a legacy alias.
 
-## Joint spacetime backbone
+The pre-merge `autocast.nn.spacetime_vit` and
+`autocast.processors.spacetime_vit` imports and `spacetime_vit` preset spellings
+are temporary aliases for the Isambard timing runs. Remove these aliases after
+collecting the timing results and migrating any retained configs/checkpoints.
+The established `TemporalViTBackbone` alias remains supported.
+
+## Joint spatiotemporal backbone
 
 `SpatiotemporalViTBackbone` matches the transformer architecture in
 [LOLA's pinned implementation](https://github.com/francois-rozet/lola/blob/21a4354b327e6e5ee06da5075ba3bd1dd88c61f1/lola/nn/vit.py):
 the default preset uses width 1024, 16 blocks, eight heads, SiLU FFNs with
 expansion four, dropout 0.05, query/key RMS normalization, absolute sinusoidal
 positions plus learned three-axis RoPE, and four AdaLN outputs including
-the initial-token skip. Azula supplies patching, attention and FFN components;
-there is no LOLA or xformers runtime dependency. Matching the transformer does not
+the initial-token skip. Azula supplies patching, attention and FFN components.
+Matching the transformer does not
 prescribe an objective, mask distribution, training schedule or sampler.
 
 Fields use `(B,T,H,W,C)` layout with matching context/forecast channel
@@ -61,22 +66,22 @@ Select a new processor preset using the existing configuration override:
 
 | Processor preset | Objective/conditioning |
 | --- | --- |
-| `flow_matching_spacetime_vit` | Existing FM objective, fixed clean context |
-| `flow_matching_masked_window_spacetime_vit` | Existing full-window FM objective with sampled context masks |
-| `diffusion_spacetime_vit` | Existing diffusion objective and sampler |
-| `spacetime_vit` | One-pass stochastic generator, suitable for the existing ensemble model and CRPS loss |
-| `spacetime_vit_masked_window` | One-pass masked-window ensembles with a configurable unreduced score (default alpha-fair CRPS) |
+| `flow_matching_spatiotemporal_vit` | Existing FM objective, fixed clean context |
+| `flow_matching_masked_window_spatiotemporal_vit` | Existing full-window FM objective with sampled context masks |
+| `diffusion_spatiotemporal_vit` | Existing diffusion objective and sampler |
+| `spatiotemporal_vit` | One-pass stochastic generator, suitable for the existing ensemble model and CRPS loss |
+| `spatiotemporal_vit_masked_window` | One-pass masked-window ensembles with a configurable unreduced score (default alpha-fair CRPS) |
 
-For example, add `processor@model.processor=flow_matching_spacetime_vit`
+For example, add `processor@model.processor=flow_matching_spatiotemporal_vit`
 to a processor training command. An experiment that explicitly overrides
-`backbone@model.processor.backbone` must also select `spacetime_vit` there.
+`backbone@model.processor.backbone` must also select `spatiotemporal_vit` there.
 The stochastic generator preset additionally needs
 `model.processor.backbone.use_precomputed_modulation=true` if an experiment
 replaces its backbone defaults.
 
 ## Stochastic ensembles
 
-`SpacetimeViTProcessor` fills future slots with zeros and samples one
+`SpatiotemporalViTProcessor` fills future slots with zeros and samples one
 independent global Gaussian noise vector per member. If
 `n_noise_input_channels` differs from `backbone.mod_features`, a learned
 linear projection maps between them; otherwise the projection is an
@@ -90,7 +95,7 @@ count through the ensemble model's `loss_func` and `n_members`.
 
 ## Masked training
 
-`SpacetimeViTMaskedWindowProcessor` owns its training member expansion:
+`SpatiotemporalViTMaskedWindowProcessor` owns its training member expansion:
 it samples one context mask per real example, reveals only those states,
 and shares that context across independently sampled members. Its configured
 score must return one value per target element (`reduction: none`). Scores

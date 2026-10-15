@@ -11,7 +11,9 @@ from autocast.processors.flow_matching_masked_window import (
     FlowMatchingMaskedWindowProcessor,
 )
 from autocast.processors.masking import masked_mean, random_context_mask
-from autocast.processors.spacetime_vit import SpacetimeViTMaskedWindowProcessor
+from autocast.processors.spatiotemporal_vit import (
+    SpatiotemporalViTMaskedWindowProcessor,
+)
 from autocast.types import EncodedBatch
 
 
@@ -75,7 +77,7 @@ def _ensemble_processor(**overrides):
         "context_mask": context_mask,
         "n_noise_input_channels": 4,
     }
-    processor = SpacetimeViTMaskedWindowProcessor(**(kwargs | overrides))
+    processor = SpatiotemporalViTMaskedWindowProcessor(**(kwargs | overrides))
     return processor, backbone, context_mask
 
 

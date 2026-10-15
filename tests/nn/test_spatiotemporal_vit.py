@@ -9,16 +9,16 @@ from torch import nn
 
 from autocast.losses.ensemble import AlphaFairCRPSLoss
 from autocast.models.processor_ensemble import ProcessorModelEnsemble
-from autocast.nn.spacetime_vit import SpatiotemporalViTBackbone
+from autocast.nn.spatiotemporal_vit import SpatiotemporalViTBackbone
 from autocast.nn.vit import SpatialViTBackbone, TemporalViTBackbone
 from autocast.processors.diffusion import DiffusionProcessor
 from autocast.processors.flow_matching import FlowMatchingProcessor
 from autocast.processors.flow_matching_masked_window import (
     FlowMatchingMaskedWindowProcessor,
 )
-from autocast.processors.spacetime_vit import (
-    SpacetimeViTMaskedWindowProcessor,
-    SpacetimeViTProcessor,
+from autocast.processors.spatiotemporal_vit import (
+    SpatiotemporalViTMaskedWindowProcessor,
+    SpatiotemporalViTProcessor,
 )
 from autocast.scripts.setup import _build_processor
 from autocast.types import EncodedBatch
@@ -83,7 +83,7 @@ def test_matches_pinned_lola_forward_and_gradient():
     assert sum(p.numel() for p in model.parameters()) == reference["parameters"]
 
 
-def test_rb_architecture_and_spacetime_token_count():
+def test_rb_architecture_and_spatiotemporal_token_count():
     reference = json.loads(
         (Path(__file__).parent / "fixtures/lola_spacetime.json").read_text()
     )
@@ -147,20 +147,29 @@ def test_checkpointing_preserves_dropout_outputs_and_gradients():
 @pytest.mark.parametrize(
     "preset",
     [
-        "flow_matching_spacetime_vit",
-        "flow_matching_masked_window_spacetime_vit",
-        "diffusion_spacetime_vit",
-        "spacetime_vit",
-        "spacetime_vit_masked_window",
+        "flow_matching_spatiotemporal_vit",
+        "flow_matching_masked_window_spatiotemporal_vit",
+        "diffusion_spatiotemporal_vit",
+        "spatiotemporal_vit",
+        "spatiotemporal_vit_masked_window",
     ],
 )
-def test_processor_config_and_objective(preset, REPO_ROOT):
+@pytest.mark.parametrize("legacy", [False, True])
+def test_processor_config_and_objective(preset, legacy, REPO_ROOT):
+    if legacy:
+        preset = preset.replace("spatiotemporal", "spacetime")
+    overrides = [f"processor@model.processor={preset}"]
+    if legacy:
+        overrides.append("backbone@model.processor.backbone=spacetime_vit")
     with initialize_config_dir(
         str(REPO_ROOT / "src/autocast/configs"), version_base=None
     ):
-        cfg = compose(
-            config_name="processor", overrides=[f"processor@model.processor={preset}"]
-        )
+        cfg = compose(config_name="processor", overrides=overrides)
+    if legacy:
+        # Saved timing configs also retain the previous processor targets.
+        cfg.model.processor._target_ = cfg.model.processor._target_.replace(
+            "spatiotemporal_vit", "spacetime_vit"
+        ).replace("SpatiotemporalViT", "SpacetimeViT")
     cfg.model.processor.backbone.hid_channels = 8
     cfg.model.processor.backbone.hid_blocks = 2
     cfg.model.processor.backbone.mod_features = 4
@@ -184,13 +193,13 @@ def test_processor_config_and_objective(preset, REPO_ROOT):
         global_cond=torch.randn(2, 2),
         encoded_info={},
     )
-    if isinstance(processor, SpacetimeViTProcessor):
+    if isinstance(processor, SpatiotemporalViTProcessor):
         model = ProcessorModelEnsemble(
             processor,
             n_members=8,
             loss_func=(
                 None
-                if isinstance(processor, SpacetimeViTMaskedWindowProcessor)
+                if isinstance(processor, SpatiotemporalViTMaskedWindowProcessor)
                 else AlphaFairCRPSLoss()
             ),
         )
@@ -218,7 +227,9 @@ def test_processor_config_and_objective(preset, REPO_ROOT):
 
 
 def test_crps_future_slots_and_noise_are_independent_of_targets():
-    processor = SpacetimeViTProcessor(_backbone(use_precomputed_modulation=True), 6)
+    processor = SpatiotemporalViTProcessor(
+        _backbone(use_precomputed_modulation=True), 6
+    )
     x, noise = torch.randn(2, 1, 4, 2, 2), torch.randn(2, 6)
     seen = []
     hook = processor.backbone.register_forward_pre_hook(

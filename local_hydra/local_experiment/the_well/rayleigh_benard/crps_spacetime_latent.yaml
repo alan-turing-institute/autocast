@@ -1,7 +1,7 @@
 # @package _global_
 defaults:
   - /local_experiment/the_well/rayleigh_benard/_spacetime_latent
-  - override /processor@model.processor: spacetime_vit_masked_window
+  - override /processor@model.processor: spatiotemporal_vit_masked_window
   - _self_
 
 experiment_name: the_well_rayleigh_benard_crps_spacetime_latent
