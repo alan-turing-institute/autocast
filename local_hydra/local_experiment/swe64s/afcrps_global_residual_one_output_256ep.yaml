@@ -1,0 +1,12 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/afcrps_global_residual_one_output_512ep
+  - _self_
+
+experiment_name: swe64s_afcrps_global_residual_one_output_256ep
+
+trainer:
+  # Keep the one-output task and all other settings fixed. The inherited
+  # cosine horizon follows max_epochs, so LR reaches zero at epoch 256.
+  # Four GPUs x batch 32 gives 500 updates/epoch, or 128,000 in total.
+  max_epochs: 256

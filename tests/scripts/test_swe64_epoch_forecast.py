@@ -19,14 +19,18 @@ from autocast.models.optimizer_mixin import OptimizerMixin
 
 ROOT = Path(__file__).resolve().parents[2]
 PRESET = "afcrps_global_residual_one_output_512ep"
+EPOCH_PRESETS = {
+    PRESET: 512,
+    "afcrps_global_residual_one_output_256ep": 256,
+}
 
 
-def _config(name=PRESET, *, distributed=False, epochs=512):
+def _config(name=PRESET, *, distributed=False, epochs=None):
     overrides = [
         f"local_experiment=swe64s/{name}",
         f"hydra.searchpath=[file://{ROOT / 'local_hydra'}]",
     ]
-    if name == PRESET:
+    if epochs is not None:
         overrides.append(f"trainer.max_epochs={epochs}")
     if distributed:
         overrides += [
@@ -48,9 +52,12 @@ def _config(name=PRESET, *, distributed=False, epochs=512):
 
 
 @pytest.mark.parametrize("distributed", [False, True])
-def test_epoch_control_preserves_data_model_and_optimizer_settings(distributed):
+@pytest.mark.parametrize(("name", "epochs"), EPOCH_PRESETS.items())
+def test_epoch_control_preserves_data_model_and_optimizer_settings(
+    distributed, name, epochs
+):
     reference = _config("afcrps_global_residual_one_output_2h30")
-    cfg = _config(distributed=distributed)
+    cfg = _config(name, distributed=distributed)
     for key in ("model", "datamodule"):
         assert OmegaConf.to_container(cfg[key], resolve=True) == OmegaConf.to_container(
             reference[key], resolve=True
@@ -61,12 +68,12 @@ def test_epoch_control_preserves_data_model_and_optimizer_settings(distributed):
         name=cfg.optimizer.name,
         scheduler="cosine",
         scheduler_interval="epoch",
-        cosine_epochs=512,
+        cosine_epochs=epochs,
     )
     assert OmegaConf.to_container(cfg.optimizer, resolve=True) == expected
     assert cfg.optimizer.learning_rate == 2e-4
     assert cfg.optimizer.min_lr_ratio == cfg.optimizer.warmup == 0
-    assert cfg.trainer.max_epochs == cfg.optimizer.cosine_epochs == 512
+    assert cfg.trainer.max_epochs == cfg.optimizer.cosine_epochs == epochs
     assert cfg.trainer.max_steps == -1
     assert cfg.trainer.max_time == "00:23:30:00"
     assert cfg.trainer.limit_train_batches == cfg.trainer.limit_val_batches == 1.0
@@ -98,8 +105,19 @@ def test_epoch_control_preserves_data_model_and_optimizer_settings(distributed):
         assert not cfg.logging.wandb.enabled
 
 
-def test_512_full_epochs_are_256000_updates_at_the_intended_global_batch():
-    cfg = _config(distributed=True)
+def test_shorter_preset_changes_only_experiment_name_and_epoch_horizon():
+    reference = _config()
+    shorter = _config("afcrps_global_residual_one_output_256ep")
+    expected = OmegaConf.to_container(reference, resolve=False)
+    assert isinstance(expected, dict)
+    expected["experiment_name"] = shorter.experiment_name
+    expected["trainer"]["max_epochs"] = 256
+    assert OmegaConf.to_container(shorter, resolve=False) == expected
+
+
+@pytest.mark.parametrize(("name", "epochs"), EPOCH_PRESETS.items())
+def test_full_epochs_match_the_intended_update_count(name, epochs):
+    cfg = _config(name, distributed=True)
     manifest = json.loads(
         (ROOT / "local_hydra/local_experiment/swe64s/dataset.json").read_text()
     )
@@ -114,7 +132,7 @@ def test_512_full_epochs_are_256000_updates_at_the_intended_global_batch():
     sampler = DistributedSampler(data, num_replicas=4, rank=0, shuffle=True)
     loader = DataLoader(data, batch_size=cfg.datamodule.batch_size, sampler=sampler)
     assert len(loader) == 500
-    assert len(loader) * cfg.trainer.max_epochs == 256000
+    assert len(loader) * cfg.trainer.max_epochs == {512: 256000, 256: 128000}[epochs]
 
 
 class _EpochFit(OptimizerMixin, LightningModule):
@@ -137,8 +155,9 @@ class _EpochFit(OptimizerMixin, LightningModule):
         self.log("val_loss", float(abs(self.current_epoch - 1)))
 
 
-def test_full_cosine_uses_epochs_and_reaches_zero_after_512_epochs():
-    cfg = _config()
+@pytest.mark.parametrize(("name", "epochs"), EPOCH_PRESETS.items())
+def test_full_cosine_uses_epochs_and_reaches_zero_at_the_endpoint(name, epochs):
+    cfg = _config(name)
     model = _EpochFit(cfg.optimizer)
     configured = model.configure_optimizers()
     assert isinstance(configured, dict)
@@ -151,25 +170,29 @@ def test_full_cosine_uses_epochs_and_reaches_zero_after_512_epochs():
     assert isinstance(scheduler, torch.optim.lr_scheduler.LambdaLR)
     assert isinstance(optimizer, torch.optim.Optimizer)
     rates = []
-    for epoch in range(512):
+    for epoch in range(epochs):
         rate = optimizer.param_groups[0]["lr"]
-        assert rate == pytest.approx(2e-4 * (1 + math.cos(math.pi * epoch / 512)) / 2)
+        assert rate == pytest.approx(
+            2e-4 * (1 + math.cos(math.pi * epoch / epochs)) / 2
+        )
         rates.append(rate)
         optimizer.step()
         scheduler.step()
     assert rates[0] == 2e-4
-    assert rates[256] == pytest.approx(1e-4)
+    assert rates[epochs // 2] == pytest.approx(1e-4)
     assert rates[-1] > 0
     assert optimizer.param_groups[0]["lr"] == 0
 
 
-def test_epoch_override_updates_the_cosine_horizon():
-    cfg = _config(epochs=64)
+@pytest.mark.parametrize("name", EPOCH_PRESETS)
+def test_epoch_override_updates_the_cosine_horizon(name):
+    cfg = _config(name, epochs=64)
     assert cfg.trainer.max_epochs == cfg.optimizer.cosine_epochs == 64
 
 
-def test_epoch_policy_keeps_best_last_and_periodic_full_checkpoints(tmp_path):
-    cfg = _config(epochs=4)
+@pytest.mark.parametrize("name", EPOCH_PRESETS)
+def test_epoch_policy_keeps_best_last_and_periodic_full_checkpoints(tmp_path, name):
+    cfg = _config(name, epochs=4)
     callbacks = [instantiate(spec) for spec in cfg.trainer.callbacks]
     checkpoints = [cb for cb in callbacks if isinstance(cb, ModelCheckpoint)]
     assert len(checkpoints) == 2

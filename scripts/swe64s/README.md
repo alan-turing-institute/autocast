@@ -228,7 +228,7 @@ cache are available; an afCRPS/AE pilot does not validate latent FM.
 
 ## Epoch-based one-output residual control
 
-`afcrps_global_residual_one_output_512ep.yaml` starts a fresh fit on the
+`afcrps_global_residual_one_output_256ep.yaml` starts a fresh fit on the
 **original 200/20/20 trajectories**, all 321 regular frames. It inherits the
 small one-output global-noise residual model: width 256, four blocks, eight
 heads, patch four, 1024D global noise, eight training members and alpha-fair
@@ -237,7 +237,7 @@ statistics; the score is applied to the reconstructed state. Simulator-parameter
 conditioning remains disabled. The model has 10,657,264 parameters. No AE,
 latent cache, new data or changes to the existing normalization are required.
 
-The binding training budget is **512 full forecasting-data epochs**, not a
+The binding training budget is **256 full forecasting-data epochs**, not a
 fixed number of updates or elapsed hours. AdamW retains LR `2e-4`, betas
 `[0.9,0.99]`, zero weight decay and no warmup, with epoch-wise cosine decay
 to **zero** over `${trainer.max_epochs}`. Changing the epoch count also changes
@@ -245,7 +245,7 @@ the cosine horizon. `max_steps=-1` leaves no independent step cap.
 
 One input and one output with stride one give 320 windows per trajectory,
 64,000 training windows in total. On four GPUs at batch 32/GPU this means
-500 updates per epoch, hence **256,000 updates** for the full schedule. Those
+500 updates per epoch, hence **128,000 updates** for the full schedule. Those
 updates are derived, not a second stopping limit. Different data/window/batch
 settings can change them. These are full-data epochs, unlike the AE's sampled
 approximately 20% epochs; no frame or batch thinning is applied here.
@@ -262,26 +262,35 @@ Incorrect anomaly structure and late validation deterioration are separate
 diagnostics; a complete cosine run does not guarantee either is corrected.
 
 The inherited 2h30m limit is replaced by the standard **23h30m safety cap**.
-At the earlier global one-output throughput, 512 epochs could take about
-4--5 hours on four GPUs; this is an extrapolation, not a timing run. A fit
-that hits the cap before epoch 512 is incomplete, even if it has a useful
+At the earlier global one-output throughput, 256 epochs could take about
+2--3 hours on four GPUs; this is an extrapolation, not a timing run. A fit
+that hits the cap before epoch 256 is incomplete, even if it has a useful
 best checkpoint. The safety cap does not accelerate or stretch the LR schedule.
+
+The earlier `afcrps_global_residual_one_output_512ep.yaml` remains available
+unchanged for reproducibility. The 256-epoch preset inherits it and changes
+only the epoch count and experiment name; the cosine horizon is interpolated,
+not copied as a literal. It cools earlier: at epoch 180, LR is about `4.04e-5`
+rather than `1.45e-4` under the 512-epoch schedule. This is not a guarantee
+against overfitting. Start the shorter fit fresh; do not resume a cancelled
+512-epoch checkpoint under the shorter schedule. Existing partial outputs
+should be retained separately, not overwritten or used as benchmark results.
 
 Read-only composition and submission preview (no fit or submission):
 
 ```bash
 uv run --frozen train_encoder_processor_decoder \
-  local_experiment=swe64s/afcrps_global_residual_one_output_512ep --cfg job
+  local_experiment=swe64s/afcrps_global_residual_one_output_256ep --cfg job
 
 uv run --frozen autocast epd --mode slurm --dry-run \
-  --workdir /path/to/new/afcrps-global-residual-one-output-512ep \
-  local_experiment=swe64s/afcrps_global_residual_one_output_512ep \
+  --workdir /path/to/new/afcrps-global-residual-one-output-256ep \
+  local_experiment=swe64s/afcrps_global_residual_one_output_256ep \
   +distributed=ddp_4gpu_slurm trainer.max_time=00:23:30:00 \
   ++hydra.launcher.nodes=1 ++hydra.launcher.cpus_per_task=72 \
   hydra.launcher.timeout_min=1440 \
   logging.wandb.enabled=true logging.wandb.entity=turing-core \
   logging.wandb.project=autocast \
-  logging.wandb.name=swe64s-afcrps-global-residual-one-output-512ep
+  logging.wandb.name=swe64s-afcrps-global-residual-one-output-256ep
 ```
 
 Use the approved scratch roots (`AUTOCAST_DATASETS` and `SWE64S_OUTPUTS`) and
