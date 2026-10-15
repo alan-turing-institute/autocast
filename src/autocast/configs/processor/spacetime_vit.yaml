@@ -1,0 +1,8 @@
+defaults:
+  - /backbone@backbone: spacetime_vit
+  - _self_
+
+_target_: autocast.processors.spacetime_vit.SpacetimeViTProcessor
+n_noise_input_channels: 1024
+backbone:
+  use_precomputed_modulation: true

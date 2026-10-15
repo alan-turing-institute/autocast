@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import torch
 from torch import nn
 
 from autocast.processors.flow_matching import FlowMatchingProcessor
+from autocast.processors.masking import masked_mean, random_context_mask
 from autocast.types import EncodedBatch, Tensor
 
 
@@ -31,6 +34,8 @@ class FlowMatchingMaskedWindowProcessor(FlowMatchingProcessor):
         lmbda: float = 1.0,
         rho: float = 1.0,
         atleast: int = 0,
+        context_mask: Callable[[Tensor], Tensor] | None = None,
+        loss_on_observed: bool = True,
     ) -> None:
         super().__init__(
             backbone=backbone,
@@ -42,6 +47,8 @@ class FlowMatchingMaskedWindowProcessor(FlowMatchingProcessor):
         self.lmbda = lmbda
         self.rho = rho
         self.atleast = atleast
+        self.context_mask = context_mask
+        self.loss_on_observed = loss_on_observed
 
     def map(self, x: Tensor, global_cond: Tensor | None) -> Tensor:
         """Generate the output window while clamping the observed input window."""
@@ -112,7 +119,10 @@ class FlowMatchingMaskedWindowProcessor(FlowMatchingProcessor):
             context_mask.to(dtype=full_window.dtype),
             global_cond=batch.global_cond,
         )
-        return torch.mean((v_pred - target_velocity) ** 2)
+        score = (v_pred - target_velocity) ** 2
+        if self.loss_on_observed:
+            return score.mean()
+        return masked_mean(score, ~context_mask)
 
     def _build_full_window(self, input_states: Tensor, target_states: Tensor) -> Tensor:
         if input_states.shape[0] != target_states.shape[0]:
@@ -194,39 +204,12 @@ class FlowMatchingMaskedWindowProcessor(FlowMatchingProcessor):
         return min(atleast, total_steps - 1)
 
     def _random_context_mask(self, x: Tensor) -> Tensor:
-        """Sample a random prefix/suffix temporal context mask.
-
-        The number of observed context states is drawn from a Poisson rate
-        and wrapped into ``[atleast, total_steps)``. With probability ``rho``,
-        the context is a prefix; otherwise it is a suffix.
-
-        Mirrors ``random_context_mask`` in
-        https://github.com/francois-rozet/lola/blob/main/lola/emulation.py.
-        """
-        batch_size, total_steps = x.shape[:2]
-        atleast = self._mask_atleast_for(total_steps)
-
-        rate = torch.full(
-            (batch_size, 1),
-            fill_value=self.lmbda,
-            device=x.device,
+        """Use an injected mask policy, or preserve the original LOLA sampler."""
+        if self.context_mask is not None:
+            return self.context_mask(x).expand_as(x)
+        return random_context_mask(
+            x, self.lmbda, self.rho, self._mask_atleast_for(x.shape[1])
         )
-        context = torch.poisson(rate).long()
-        context = context % (total_steps - atleast) + atleast
-
-        index = torch.arange(total_steps, device=x.device)
-        if self.rho <= 0.0:
-            mask = index >= total_steps - context
-        elif self.rho >= 1.0:
-            mask = index < context
-        else:
-            prefix = index < context
-            suffix = index >= total_steps - context
-            choose_prefix = torch.rand((batch_size, 1), device=x.device) < self.rho
-            mask = torch.where(choose_prefix, prefix, suffix)
-
-        mask = mask.reshape(batch_size, total_steps, *([1] * (x.ndim - 2)))
-        return mask.expand_as(x)
 
     def _forecast_context_mask(self, x: Tensor, full_steps: int) -> Tensor:
         mask = torch.zeros(

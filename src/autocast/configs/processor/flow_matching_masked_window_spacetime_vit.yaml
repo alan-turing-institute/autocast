@@ -1,0 +1,7 @@
+defaults:
+  - flow_matching_masked_window_vit
+  - override /backbone@backbone: spacetime_vit
+  - _self_
+
+backbone:
+  conditioning: mask

@@ -1,0 +1,4 @@
+defaults:
+  - flow_matching_vit
+  - override /backbone@backbone: spacetime_vit
+  - _self_

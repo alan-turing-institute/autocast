@@ -338,6 +338,12 @@ class TemporalBackboneBase(nn.Module, ABC):
                 weight_emb = rearrange(weight_emb, "b d -> b 1 d")
             t_emb = t_emb + weight_emb
 
+        return self._forward_fields(x_t, t_emb, cond)
+
+    def _forward_fields(
+        self, x_t: TensorBTSC, t_emb: Tensor, cond: TensorBTSC | None
+    ) -> TensorBTSC:
+        """Apply the backbone's field layout after resolving modulation."""
         # Apply temporal processing
         x_t_temporal, cond_temporal = self.apply_temporal_processing(x_t, cond)
 

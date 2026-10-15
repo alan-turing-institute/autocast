@@ -168,9 +168,11 @@ def _resolve_processor_temporal_steps(
     return n_steps_input, n_steps_output
 
 
-def _uses_masked_window_flow_matching(processor_config: DictConfig) -> bool:
+def _uses_masked_window(processor_config: DictConfig) -> bool:
     target = str(processor_config.get("_target_", ""))
-    return target.endswith("FlowMatchingMaskedWindowProcessor")
+    return target.endswith(
+        ("FlowMatchingMaskedWindowProcessor", "SpacetimeViTMaskedWindowProcessor")
+    )
 
 
 def _apply_processor_channel_defaults(
@@ -204,7 +206,7 @@ def _apply_processor_channel_defaults(
     if backbone_config is None:
         return
 
-    use_masked_window = _uses_masked_window_flow_matching(processor_config)
+    use_masked_window = _uses_masked_window(processor_config)
     backbone_n_steps = (
         n_steps_input + n_steps_output if use_masked_window else n_steps_output
     )

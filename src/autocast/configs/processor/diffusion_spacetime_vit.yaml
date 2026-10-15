@@ -1,0 +1,4 @@
+defaults:
+  - diffusion_vit
+  - override /backbone@backbone: spacetime_vit
+  - _self_
