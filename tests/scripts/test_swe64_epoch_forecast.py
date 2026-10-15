@@ -19,9 +19,11 @@ from autocast.models.optimizer_mixin import OptimizerMixin
 
 ROOT = Path(__file__).resolve().parents[2]
 PRESET = "afcrps_global_residual_one_output_512ep"
+SPATIAL_PRESET = "afcrps_spatial_residual_one_output_256ep"
 EPOCH_PRESETS = {
     PRESET: 512,
     "afcrps_global_residual_one_output_256ep": 256,
+    SPATIAL_PRESET: 256,
 }
 
 
@@ -40,6 +42,7 @@ def _config(name=PRESET, *, distributed=False, epochs=None):
             "++hydra.launcher.cpus_per_task=72",
             "hydra.launcher.timeout_min=1440",
             "logging.wandb.enabled=true",
+            "logging.wandb.mode=online",
         ]
     with initialize_config_dir(
         version_base=None, config_dir=str(ROOT / "src/autocast/configs")
@@ -57,6 +60,9 @@ def test_epoch_control_preserves_data_model_and_optimizer_settings(
     distributed, name, epochs
 ):
     reference = _config("afcrps_global_residual_one_output_2h30")
+    if name == SPATIAL_PRESET:
+        reference.model.processor.noise_mode = "spatial"
+        reference.model.processor.n_noise_input_channels = 4
     cfg = _config(name, distributed=distributed)
     for key in ("model", "datamodule"):
         assert OmegaConf.to_container(cfg[key], resolve=True) == OmegaConf.to_container(
@@ -83,8 +89,12 @@ def test_epoch_control_preserves_data_model_and_optimizer_settings(
     assert cfg.float32_matmul_precision == reference.float32_matmul_precision
     assert cfg.trainer.gradient_clip_val == reference.trainer.gradient_clip_val
     assert cfg.datamodule.batch_size == 32
-    assert cfg.model.processor.noise_mode == "global"
-    assert cfg.model.processor.n_noise_input_channels == 1024
+    assert cfg.model.processor.noise_mode == reference.model.processor.noise_mode
+    assert (
+        cfg.model.processor.n_noise_input_channels
+        == reference.model.processor.n_noise_input_channels
+    )
+    assert cfg.model.processor.n_noise_channels == 1024
     assert cfg.model.n_members == 8
     assert cfg.model.residual_prediction
     assert cfg.model.residual_use_delta_stats
@@ -101,6 +111,7 @@ def test_epoch_control_preserves_data_model_and_optimizer_settings(
         assert cfg.hydra.launcher.cpus_per_task == 72
         assert cfg.hydra.launcher.timeout_min == 1440
         assert cfg.logging.wandb.enabled
+        assert cfg.logging.wandb.mode == "online"
     else:
         assert not cfg.logging.wandb.enabled
 
@@ -113,6 +124,35 @@ def test_shorter_preset_changes_only_experiment_name_and_epoch_horizon():
     expected["experiment_name"] = shorter.experiment_name
     expected["trainer"]["max_epochs"] = 256
     assert OmegaConf.to_container(shorter, resolve=False) == expected
+
+
+def test_spatial_preset_changes_only_experiment_name_and_noise_layout():
+    reference = _config("afcrps_global_residual_one_output_256ep")
+    spatial = _config(SPATIAL_PRESET)
+    expected = OmegaConf.to_container(reference, resolve=False)
+    assert isinstance(expected, dict)
+    expected["experiment_name"] = spatial.experiment_name
+    expected["model"]["processor"].update(
+        noise_mode="spatial", n_noise_input_channels=4
+    )
+    assert OmegaConf.to_container(spatial, resolve=False) == expected
+    assert spatial.datamodule.n_steps_input == spatial.datamodule.n_steps_output == 1
+    assert spatial.datamodule.stride == 1
+    tokens = (64 // spatial.model.processor.patch_size) ** 2
+    assert tokens == 256
+    assert (
+        tokens * spatial.model.processor.n_noise_input_channels
+        == reference.model.processor.n_noise_input_channels
+        == 1024
+    )
+    with torch.device("meta"):
+        processor = instantiate(
+            spatial.model.processor,
+            in_channels=3,
+            out_channels=3,
+            spatial_resolution=[64, 64],
+        )
+    assert sum(p.numel() for p in processor.parameters()) == 10_662_384
 
 
 @pytest.mark.parametrize(("name", "epochs"), EPOCH_PRESETS.items())

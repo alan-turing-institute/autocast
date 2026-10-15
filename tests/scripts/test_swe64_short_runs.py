@@ -293,12 +293,20 @@ def test_spatial_residual_2h30_changes_noise_only():
     assert 256 * spatial.model.processor.n_noise_input_channels == 1024
 
 
-def test_spatial_residual_preset_draws_four_values_per_patch():
-    cfg = _config("afcrps_spatial_residual_small_2h30")
+@pytest.mark.parametrize(
+    "name",
+    [
+        "afcrps_spatial_residual_small_2h30",
+        "afcrps_spatial_residual_one_output_256ep",
+    ],
+)
+def test_spatial_residual_preset_draws_four_values_per_patch(name):
+    cfg = _config(name)
+    output_channels = 3 * cfg.datamodule.n_steps_output
     processor = instantiate(
         cfg.model.processor,
         in_channels=3,
-        out_channels=12,
+        out_channels=output_channels,
         spatial_resolution=[64, 64],
         hidden_dim=16,
         n_layers=1,
@@ -315,7 +323,7 @@ def test_spatial_residual_preset_draws_four_values_per_patch():
             processor.map(inputs)
     finally:
         handle.remove()
-    assert first.shape == (2, 12, 64, 64)
+    assert first.shape == (2, output_channels, 64, 64)
     assert len(noise_draws) == 2
     assert noise_draws[0].shape == (2, 256, 4)
     assert not torch.equal(noise_draws[0][0], noise_draws[0][1])
@@ -369,13 +377,14 @@ def test_residual_2h30_distributed_allocation_has_saving_buffer(name):
         "afcrps_global_residual_one_output_2h30",
         "afcrps_global_residual_one_output_512ep",
         "afcrps_global_residual_one_output_256ep",
+        "afcrps_spatial_residual_one_output_256ep",
     ],
 )
 def test_residual_setup_loss_gradients_and_rollout(name):
     cfg = _config(name)
     n_output = cfg.datamodule.n_steps_output
     # Exercise the full one-output backbone; keep legacy four-output cases cheap.
-    # Every case retains the real grid, patching, 1024D noise and member count.
+    # Every case retains the real grid, patching, total noise budget and members.
     if n_output != 1:
         cfg.model.processor.hidden_dim = 16
         cfg.model.processor.n_layers = 1
@@ -411,7 +420,13 @@ def test_residual_setup_loss_gradients_and_rollout(name):
     assert model.norm is norm
     assert model.delta_norm is None
     if n_output == 1:
-        assert sum(p.numel() for p in model.parameters()) == 10_657_264
+        projection_parameters = (
+            5120 if cfg.model.processor.noise_mode == "spatial" else 0
+        )
+        assert (
+            sum(p.numel() for p in model.parameters())
+            == 10_657_264 + projection_parameters
+        )
     decoded_residuals: list[torch.Tensor] = []
     original_decode = model.encoder_decoder.decoder.decode
 

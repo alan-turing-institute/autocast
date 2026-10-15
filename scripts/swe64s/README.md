@@ -276,11 +276,29 @@ against overfitting. Start the shorter fit fresh; do not resume a cancelled
 512-epoch checkpoint under the shorter schedule. Existing partial outputs
 should be retained separately, not overwritten or used as benchmark results.
 
+The matched `afcrps_spatial_residual_one_output_256ep.yaml` inherits this
+256-epoch preset and changes only its name, `noise_mode=spatial` and
+`n_noise_input_channels=4`. Patch four gives 256 tokens, each receiving four
+IID Gaussian values: 1,024 random scalars per member, matching the global
+latent's total size. The same draw is reused across blocks; every prediction
+call draws fresh noise. This is per patch token, not per grid cell.
+The inherited modulation width remains 1,024. Its shared 4-to-1024 input
+projection adds 5,120 parameters, giving 10,662,384 parameters in total.
+Data, one-step residual task, eight members, batch size, LR schedule,
+validation and checkpoint selection are unchanged. Start a fresh fit with
+a separate output directory and W&B run; do not resume the global fit.
+Per-token modulation can change throughput, so equal epochs/updates do not
+imply equal wall time. Do not truncate the spatial fit to the global run's
+elapsed time; record its actual cost separately.
+
 Read-only composition and submission preview (no fit or submission):
 
 ```bash
 uv run --frozen train_encoder_processor_decoder \
   local_experiment=swe64s/afcrps_global_residual_one_output_256ep --cfg job
+
+uv run --frozen train_encoder_processor_decoder \
+  local_experiment=swe64s/afcrps_spatial_residual_one_output_256ep --cfg job
 
 uv run --frozen autocast epd --mode slurm --dry-run \
   --workdir /path/to/new/afcrps-global-residual-one-output-256ep \
@@ -292,6 +310,10 @@ uv run --frozen autocast epd --mode slurm --dry-run \
   logging.wandb.project=autocast \
   logging.wandb.name=swe64s-afcrps-global-residual-one-output-256ep
 ```
+
+For the spatial submission preview, replace the preset with
+`swe64s/afcrps_spatial_residual_one_output_256ep` and use a distinct spatial
+work directory and W&B name. Keep the distributed/safety-cap overrides.
 
 Use the approved scratch roots (`AUTOCAST_DATASETS` and `SWE64S_OUTPUTS`) and
 a fresh output/W&B run. The explicit time override prevents the distributed
