@@ -1,0 +1,25 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/afcrps_global_residual_one_output_2h30
+  - override /trainer: swe64s_epochs
+  - _self_
+
+experiment_name: swe64s_afcrps_global_residual_one_output_512ep
+
+# Keep the existing 200/20/20 data, one-step delta-normalized residual task,
+# small backbone, 1024D global noise, eight members and alpha-fair CRPS.
+optimizer:
+  learning_rate: 2e-4
+  scheduler: cosine
+  scheduler_interval: epoch
+  cosine_epochs: ${trainer.max_epochs}
+  min_lr_ratio: 0.0
+  warmup: 0
+
+trainer:
+  # Repeat after inherited global settings so the old time cap cannot win.
+  # With four GPUs x batch 32, each full epoch has 500 updates; 512 epochs
+  # therefore gives 256,000 updates. Epochs, not this derived count, bind.
+  max_epochs: 512
+  max_steps: -1
+  max_time: "00:23:30:00"

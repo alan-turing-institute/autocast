@@ -226,6 +226,71 @@ The shorter time cap compresses afCRPS's cosine schedule; the AE keeps its
 diagnostic runs. FM needs its own pilot once a reviewed SWE AE and matching
 cache are available; an afCRPS/AE pilot does not validate latent FM.
 
+## Epoch-based one-output residual control
+
+`afcrps_global_residual_one_output_512ep.yaml` starts a fresh fit on the
+**original 200/20/20 trajectories**, all 321 regular frames. It inherits the
+small one-output global-noise residual model: width 256, four blocks, eight
+heads, patch four, 1024D global noise, eight training members and alpha-fair
+CRPS with alpha 0.95. Persistence corrections use the existing one-step delta
+statistics; the score is applied to the reconstructed state. Simulator-parameter
+conditioning remains disabled. The model has 10,657,264 parameters. No AE,
+latent cache, new data or changes to the existing normalization are required.
+
+The binding training budget is **512 full forecasting-data epochs**, not a
+fixed number of updates or elapsed hours. AdamW retains LR `2e-4`, betas
+`[0.9,0.99]`, zero weight decay and no warmup, with epoch-wise cosine decay
+to **zero** over `${trainer.max_epochs}`. Changing the epoch count also changes
+the cosine horizon. `max_steps=-1` leaves no independent step cap.
+
+One input and one output with stride one give 320 windows per trajectory,
+64,000 training windows in total. On four GPUs at batch 32/GPU this means
+500 updates per epoch, hence **256,000 updates** for the full schedule. Those
+updates are derived, not a second stopping limit. Different data/window/batch
+settings can change them. These are full-data epochs, unlike the AE's sampled
+approximately 20% epochs; no frame or batch thinning is applied here.
+
+The reusable `trainer=swe64s_epochs` policy validates the complete held-out
+split every epoch, selects the overall best `val_loss` without a progress
+window, saves snapshots every 64 epochs and maintains a full-state `last.ckpt`.
+Gradient/LR and metric plots and the existing separate EMA storage are retained;
+use raw weights for the main evaluation. Select the `best-val-*.ckpt` file
+explicitly: the stable `encoder_processor_decoder.ckpt` export contains final
+weights, not necessarily the best validation checkpoint. There is no
+early-stopping callback.
+Incorrect anomaly structure and late validation deterioration are separate
+diagnostics; a complete cosine run does not guarantee either is corrected.
+
+The inherited 2h30m limit is replaced by the standard **23h30m safety cap**.
+At the earlier global one-output throughput, 512 epochs could take about
+4--5 hours on four GPUs; this is an extrapolation, not a timing run. A fit
+that hits the cap before epoch 512 is incomplete, even if it has a useful
+best checkpoint. The safety cap does not accelerate or stretch the LR schedule.
+
+Read-only composition and submission preview (no fit or submission):
+
+```bash
+uv run --frozen train_encoder_processor_decoder \
+  local_experiment=swe64s/afcrps_global_residual_one_output_512ep --cfg job
+
+uv run --frozen autocast epd --mode slurm --dry-run \
+  --workdir /path/to/new/afcrps-global-residual-one-output-512ep \
+  local_experiment=swe64s/afcrps_global_residual_one_output_512ep \
+  +distributed=ddp_4gpu_slurm trainer.max_time=00:23:30:00 \
+  ++hydra.launcher.nodes=1 ++hydra.launcher.cpus_per_task=72 \
+  hydra.launcher.timeout_min=1440 \
+  logging.wandb.enabled=true logging.wandb.entity=turing-core \
+  logging.wandb.project=autocast \
+  logging.wandb.name=swe64s-afcrps-global-residual-one-output-512ep
+```
+
+Use the approved scratch roots (`AUTOCAST_DATASETS` and `SWE64S_OUTPUTS`) and
+a fresh output/W&B run. The explicit time override prevents the distributed
+preset's default from replacing the safety cap. Retain the saved configuration,
+code/lock/dataset identity, checkpoint hashes and actual epochs/updates/GPU-hours.
+Before an eventual launch, verify the original dataset and delta statistics
+on the target machine. The earlier time-bounded controls remain unchanged.
+
 ## Full 1000-trajectory AE pretraining
 
 `autoencoder_pretraining_1000.yaml` is a fresh AE fit using **all 321 frames of

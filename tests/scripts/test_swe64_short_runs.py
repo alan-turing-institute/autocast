@@ -367,6 +367,7 @@ def test_residual_2h30_distributed_allocation_has_saving_buffer(name):
         "afcrps_global_residual_small_2h30",
         "afcrps_spatial_residual_small_2h30",
         "afcrps_global_residual_one_output_2h30",
+        "afcrps_global_residual_one_output_512ep",
     ],
 )
 def test_residual_setup_loss_gradients_and_rollout(name):
