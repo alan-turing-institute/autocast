@@ -112,8 +112,8 @@ class _SpacetimeViT(nn.Module):
         return self.unpatch(self.out_proj(x))
 
 
-class SpacetimeViTBackbone(TemporalBackboneBase):
-    """LOLA's transformer architecture, independent of the prediction objective.
+class SpatiotemporalViTBackbone(TemporalBackboneBase):
+    """LOLA's joint spacetime transformer, independent of the objective.
 
     ``conditioning='frames'`` joins clean context frames to the forecast slots
     and returns only the forecast slice (ordinary FM, diffusion or CRPS).
@@ -245,3 +245,7 @@ class SpacetimeViTBackbone(TemporalBackboneBase):
         )
         y = rearrange(y, "b c t h w -> b t h w c")
         return y[:, self.n_steps_input :] if self.conditioning == "frames" else y
+
+
+# Preserve existing Hydra targets, imports and serialized class references.
+SpacetimeViTBackbone = SpatiotemporalViTBackbone

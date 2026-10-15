@@ -7,7 +7,7 @@ import torch
 from einops import rearrange, repeat
 from torch import Tensor, nn
 
-from autocast.nn.spacetime_vit import SpacetimeViTBackbone
+from autocast.nn.spacetime_vit import SpatiotemporalViTBackbone
 from autocast.processors.base import Processor
 from autocast.processors.masking import masked_mean, random_context_mask
 from autocast.types import EncodedBatch
@@ -23,7 +23,7 @@ class SpacetimeViTProcessor(Processor[EncodedBatch]):
     conditioning = "frames"
 
     def __init__(
-        self, backbone: SpacetimeViTBackbone, n_noise_input_channels: int = 1024
+        self, backbone: SpatiotemporalViTBackbone, n_noise_input_channels: int = 1024
     ) -> None:
         super().__init__()
         if (
@@ -87,7 +87,7 @@ class SpacetimeViTMaskedWindowProcessor(SpacetimeViTProcessor):
 
     def __init__(
         self,
-        backbone: SpacetimeViTBackbone,
+        backbone: SpatiotemporalViTBackbone,
         *,
         n_steps_input: int,
         n_steps_output: int,

@@ -1,13 +1,36 @@
-# Spacetime ViT
+# Spatial and spatiotemporal ViT backbones
 
-`SpacetimeViTBackbone` is an opt-in alternative to `TemporalViTBackbone`.
-It keeps time and space as axes of a single attention token grid.
-Existing presets and checkpoint layouts are unchanged; switching to this
-backbone requires fresh training.
+Both backbones share the unchanged `TemporalBackboneBase`. It supplies the
+sequence interface, modulation and optional temporal preprocessing. The
+concrete backbones choose the token layout and attention mechanism:
 
-## Backbone
+| Backbone | Transformer attention |
+| --- | --- |
+| `SpatialViTBackbone` | Spatial patches, with frames bundled into channels |
+| `SpatiotemporalViTBackbone` | Joint spacetime tokens in every transformer block |
 
-The transformer matches the architecture in
+For the spatial backbone, `temporal_method=attention` or `tcn` processes the
+field and context timelines separately before bundling. This happens once
+per network evaluation, before the spatial transformer blocks. The default
+is `none`. `AzulaViTProcessor` bundles observed frames before the backbone,
+so that wrapper's temporal preprocessing sees only one effective time step.
+The spatiotemporal backbone instead preserves the frame axis within attention.
+
+Existing imports and Hydra targets remain valid through identity aliases:
+
+| Existing name | Canonical name |
+| --- | --- |
+| `TemporalViTBackbone` | `SpatialViTBackbone` |
+| `SpacetimeViTBackbone` | `SpatiotemporalViTBackbone` |
+
+Module paths, preset names and checkpoint layouts are unchanged. Renaming
+does not require retraining; switching between the two architectures does.
+Printed class names use the canonical names, including when an object was
+created through a legacy alias.
+
+## Joint spacetime backbone
+
+`SpatiotemporalViTBackbone` matches the transformer architecture in
 [LOLA's pinned implementation](https://github.com/francois-rozet/lola/blob/21a4354b327e6e5ee06da5075ba3bd1dd88c61f1/lola/nn/vit.py):
 the default preset uses width 1024, 16 blocks, eight heads, SiLU FFNs with
 expansion four, dropout 0.05, query/key RMS normalization, absolute sinusoidal

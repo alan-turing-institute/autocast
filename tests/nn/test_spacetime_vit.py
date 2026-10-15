@@ -9,8 +9,8 @@ from torch import nn
 
 from autocast.losses.ensemble import AlphaFairCRPSLoss
 from autocast.models.processor_ensemble import ProcessorModelEnsemble
-from autocast.nn.spacetime_vit import SpacetimeViTBackbone
-from autocast.nn.vit import TemporalViTBackbone
+from autocast.nn.spacetime_vit import SpatiotemporalViTBackbone
+from autocast.nn.vit import SpatialViTBackbone, TemporalViTBackbone
 from autocast.processors.diffusion import DiffusionProcessor
 from autocast.processors.flow_matching import FlowMatchingProcessor
 from autocast.processors.flow_matching_masked_window import (
@@ -45,7 +45,7 @@ def _backbone(**overrides):
         "attention_heads": 2,
         "dropout": 0.0,
     }
-    return SpacetimeViTBackbone(**(kwargs | overrides))
+    return SpatiotemporalViTBackbone(**(kwargs | overrides))
 
 
 def test_matches_pinned_lola_forward_and_gradient():
@@ -88,7 +88,7 @@ def test_rb_architecture_and_spacetime_token_count():
         (Path(__file__).parent / "fixtures/lola_spacetime.json").read_text()
     )
     with torch.device("meta"):
-        rb = SpacetimeViTBackbone(64, 64, 64, 4, 1)
+        rb = SpatiotemporalViTBackbone(64, 64, 64, 4, 1)
     assert (
         sum(p.numel() for p in rb.vit.parameters()) == reference["rb_trunk_parameters"]
     )
@@ -285,7 +285,7 @@ def test_existing_temporal_vit_keeps_channel_packing():
     projection = model.vit.get_submodule("in_proj")
     assert isinstance(projection, nn.Linear)
     assert projection.in_features == 10
-    restored = TemporalViTBackbone(**kwargs)
+    restored = SpatialViTBackbone(**kwargs)
     restored.load_state_dict(model.state_dict(), strict=True)
     torch.testing.assert_close(restored(x, torch.ones(1), context), output)
 

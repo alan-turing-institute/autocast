@@ -6,7 +6,7 @@ import torch
 from einops import rearrange
 from torch import Tensor, nn
 
-from autocast.nn.vit import TemporalViTBackbone
+from autocast.nn.vit import SpatialViTBackbone
 from autocast.processors.base import Processor
 from autocast.types import EncodedBatch
 
@@ -19,9 +19,10 @@ class AdaLNNoiseMode(str, Enum):
 
 
 class AzulaViTProcessor(Processor[EncodedBatch]):
-    """Wrapper for the internal TemporalViTBackbone used in Diffusion Models.
+    """Stochastic processor around the spatial ViT backbone.
 
-    Provides building blocks for modern generative architectures (e.g. DiT).
+    Input frames are bundled into channels before the backbone, so its
+    optional temporal preprocessing sees a single effective time step.
 
     Shape convention:
     - Public processor boundary: channel-first, (B, C, H, W)
@@ -107,7 +108,7 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
         # 5D inputs and unfolds T_out from C on outputs; for 4D inputs the
         # encoder has already done the fold, so n_steps_input/output=1 and
         # this scaling is a no-op.
-        self.model = TemporalViTBackbone(
+        self.model = SpatialViTBackbone(
             in_channels=in_channels * n_steps_input,
             out_channels=out_channels * n_steps_output,
             cond_channels=0,
