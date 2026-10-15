@@ -228,20 +228,37 @@ cache are available; an afCRPS/AE pilot does not validate latent FM.
 
 ## Full 1000-trajectory AE pretraining
 
-`autoencoder_pretraining_1000.yaml` is a fresh AE fit on **all 321 frames of
-1,000 new trajectories** (321,000 states). Forecasting remains on the original
-200/20/20 dataset. There is no temporal thinning or checkpoint initialization.
+`autoencoder_pretraining_1000.yaml` is a fresh AE fit using **all 321 frames of
+1,000 new trajectories** as its sampling pool (321,000 states). Forecasting
+remains on the original 200/20/20 dataset. There is no temporal thinning or
+checkpoint initialization.
 The model, PSGD, batch 16/GPU on four GPUs, seed 42, clipping and separately
 stored EMA match the earlier fresh AE control. The selected checkpoint is best
 validation loss, using raw weights for the main evaluation.
 
-The fit stops at **77,308 optimizer updates**, with a four-hour trainer safety
-cap; allow 4h15m in a Slurm allocation. Validation is every 1,004 updates and at
-the endpoint. The existing historical LR callback retains the original
-512-epoch cosine indexed by `floor(global_step / 1004)`, base LR `1e-5`.
-The larger loader's roughly 5,016-update epochs must not become the LR clock.
-The budget presents about 4.95 million states, or 15.4 passes through the new
-pool. It does not request 512 passes through 321,000 states.
+Each sampled epoch is limited to **1,004 optimizer updates**, using the existing
+shuffled loader and Lightning's epoch-dependent distributed sampler. Four GPUs
+at batch 16 present 64,256 distinct states per sampled epoch: approximately 20%
+of the pool, close to the original 64,200-state AE epoch. Selection is a fresh
+random prefix each epoch, without replacement within that epoch; states can
+reappear in later epochs. This is not a fixed 20% subset, selection of only 200
+trajectories, or a change to the forecasting cadence. Seeds and rank count fix
+the sampling protocol. Validation/test loaders still traverse their full data.
+
+The fit allows **512 sampled epochs / 514,048 optimizer updates**, retaining the
+historical 512-epoch cosine indexed by `floor(global_step / 1004)`, base LR
+`1e-5` and zero warmup. Both the trainer and stopping callback use this endpoint.
+Validation is every 1,004 updates and at the endpoint. The full budget presents
+32,899,072 states: approximately 102.5 passes through the new pool, not 512
+passes through all 321,000 states. The final LR is zero; the selected checkpoint
+remains best validation loss rather than necessarily the final checkpoint.
+
+The trainer has a **23h30m safety cap**; allow 24 hours in a Slurm allocation,
+explicitly overriding the distributed preset's shorter time default. Based on
+the completed 77,308-update control, the full budget could take about 18--19
+hours on four GPUs (roughly 74 GPU-hours), subject to loading/I/O and contention.
+This is an extrapolation, not a timing job. If the safety cap binds, report the
+completed updates/epochs rather than claiming the full cosine was completed.
 
 The AutoSim preset `generate_data_swe_ae_pretraining_64` pins the long-window
 physics, including `nu=1e-4`, `T=120`, `dt_save=0.25`, spin-up through t=40,

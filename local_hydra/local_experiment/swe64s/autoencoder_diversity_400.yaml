@@ -44,7 +44,7 @@ trainer:
       cosine_epochs: 512
       base_lr: 1e-5
       expected_resume_step: ${ae_diversity_start_step}
-      stop_step: 77308
+      stop_step: ${trainer.max_steps}
     - _target_: autocast.callbacks.checkpoint.ProgressModelCheckpoint
       auto_insert_metric_name: false
       every_n_epochs: 0

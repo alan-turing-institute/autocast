@@ -6,7 +6,7 @@ import argparse
 import json
 from pathlib import Path
 
-from ae_diversity import SOURCE_SHA256, SOURCE_STEP, STOP_STEP, sha256
+from ae_diversity import SOURCE_SHA256, SOURCE_STEP, sha256
 from hydra import compose, initialize_config_dir
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
@@ -53,13 +53,16 @@ def check_config(
     preset = "autoencoder_diversity_400_fresh" if fresh else "autoencoder_diversity_400"
     if pool_size == 1000:
         preset = "autoencoder_pretraining_1000"
+    max_time = "00:04:00:00" if fresh else "00:04:30:00"
+    if pool_size == 1000:
+        max_time = "00:23:30:00"
     data = data or Path(f"/preflight/ae{pool_size}")
     overrides = [
         f"local_experiment=swe64s/{preset}",
         f"hydra.searchpath=[file://{REPO_ROOT / 'local_hydra'}]",
         f"ae_diversity_data_path={data}",
         "+distributed=ddp_4gpu_slurm",
-        f"trainer.max_time={'00:04:00:00' if fresh else '00:04:30:00'}",
+        f"trainer.max_time={max_time}",
     ]
     if not fresh:
         checkpoint = checkpoint or Path("/preflight/derived.ckpt")
@@ -117,12 +120,13 @@ def main() -> None:
         pool_size=args.pool_size,
     )
     start_step = 0 if args.fresh else SOURCE_STEP
+    stop_step = cfg.trainer.max_steps
     result = {
         "config": OmegaConf.to_container(cfg, resolve=True),
         "start_mode": "fresh" if args.fresh else "continuation",
         "resume_step": start_step,
-        "stop_step": STOP_STEP,
-        "additional_updates": STOP_STEP - start_step,
+        "stop_step": stop_step,
+        "additional_updates": stop_step - start_step,
         "pool_size": args.pool_size,
         "submitted": False,
     }

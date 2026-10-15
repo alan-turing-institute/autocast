@@ -1,14 +1,20 @@
-"""Full-cadence pool/config tests using tiny spatial tensors; no fits or jobs."""
+"""Pool/config and tiny CPU-loop tests; no production fits or jobs."""
 
 import copy
 import importlib
 import json
+import math
+import sys
+from itertools import islice
 from pathlib import Path
 
 import pytest
 import torch
 from hydra.utils import instantiate
+from lightning.pytorch import LightningModule, Trainer
+from lightning.pytorch.utilities.types import OptimizerLRScheduler
 from omegaconf import OmegaConf
+from torch.utils.data import DataLoader, DistributedSampler, TensorDataset
 
 from autocast.data.dataset import SpatioTemporalDataset
 
@@ -121,10 +127,17 @@ def test_pretraining_config_matches_fresh_ae_and_original_update_clock(pool):
     assert cfg.trainer.devices == 4
     assert cfg.trainer.num_nodes == 1
     assert cfg.trainer.strategy == "ddp"
-    for key in ("model", "optimizer", "trainer"):
+    for key in ("model", "optimizer"):
         assert OmegaConf.to_container(cfg[key], resolve=True) == OmegaConf.to_container(
             reference[key], resolve=True
         )
+    expected_trainer = OmegaConf.to_container(reference.trainer, resolve=True)
+    assert isinstance(expected_trainer, dict)
+    expected_trainer.update(
+        limit_train_batches=1004, max_steps=514048, max_time="00:23:30:00"
+    )
+    expected_trainer["callbacks"][0]["stop_step"] = 514048
+    assert OmegaConf.to_container(cfg.trainer, resolve=True) == expected_trainer
     expected_data = OmegaConf.to_container(reference.datamodule, resolve=True)
     assert isinstance(expected_data, dict)
     expected_data["data_path"] = "/preflight/ae1000"
@@ -132,8 +145,10 @@ def test_pretraining_config_matches_fresh_ae_and_original_update_clock(pool):
     assert OmegaConf.to_container(cfg.datamodule, resolve=True) == expected_data
     assert cfg.experiment_name == "swe64s_autoencoder_pretraining_1000"
     assert cfg.seed == 42
-    assert cfg.trainer.max_steps == 77308
-    assert cfg.trainer.max_time == "00:04:00:00"
+    assert cfg.trainer.limit_train_batches == 1004
+    assert cfg.trainer.max_epochs == 512
+    assert cfg.trainer.max_steps == 512 * 1004
+    assert cfg.trainer.max_time == "00:23:30:00"
     assert cfg.trainer.val_check_interval == 1004
     assert cfg.trainer.check_val_every_n_epoch is None
     assert cfg.datamodule.start_frame == 0
@@ -144,6 +159,7 @@ def test_pretraining_config_matches_fresh_ae_and_original_update_clock(pool):
     assert not cfg.reset_resume_time_budget
     callback = instantiate(cfg.trainer.callbacks[0])
     assert callback.expected_resume_step == 0
+    assert callback.stop_step == cfg.trainer.max_steps
     assert callback.schedule == {
         "original_steps_per_epoch": 1004,
         "cosine_epochs": 512,
@@ -153,6 +169,124 @@ def test_pretraining_config_matches_fresh_ae_and_original_update_clock(pool):
         preflight.check_config(pool_size=1000)
     with pytest.raises(ValueError, match="must not be supplied"):
         preflight.check_config(fresh=True, pool_size=1000, checkpoint=Path("old.ckpt"))
+
+
+def test_preflight_reports_the_full_sampled_epoch_budget(pool, monkeypatch, capsys):
+    preflight = importlib.import_module("check_ae_diversity")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["check_ae_diversity.py", "--fresh", "--pool-size", "1000", "--configs-only"],
+    )
+    preflight.main()
+    record = json.loads(capsys.readouterr().out)
+    assert record["resume_step"] == 0
+    assert record["stop_step"] == record["additional_updates"] == 514048
+    assert record["pool_size"] == pool.POOL_COUNT
+    assert record["config"]["trainer"]["limit_train_batches"] == 1004
+    assert record["config"]["trainer"]["max_time"] == "00:23:30:00"
+    assert not record["submitted"]
+
+
+def test_sampled_ddp_epochs_are_disjoint_reproducible_and_reshuffled(pool):
+    preflight = importlib.import_module("check_ae_diversity")
+    cfg = preflight.check_config(fresh=True, pool_size=pool.POOL_COUNT)
+    states = TensorDataset(torch.arange(pool.POOL_COUNT * 321))
+    per_rank = cfg.trainer.limit_train_batches * cfg.datamodule.batch_size
+    selections = []
+    for epoch in (0, 1, 0):
+        ranks = []
+        for rank in range(4):
+            sampler = DistributedSampler(
+                states, num_replicas=4, rank=rank, shuffle=True, seed=cfg.seed
+            )
+            sampler.set_epoch(epoch)
+            selected = list(islice(sampler, per_rank))
+            assert len(selected) == len(set(selected)) == per_rank
+            ranks.append(set(selected))
+        combined = set.union(*ranks)
+        assert sum(map(len, ranks)) == len(combined) == 64256
+        assert len(combined) / len(states) == pytest.approx(0.2, abs=0.0002)
+        assert {index // 321 for index in combined} == set(range(1000))
+        selections.append(combined)
+    assert selections[0] != selections[1]
+    assert selections[0] == selections[2]
+
+
+class _SampledAE(LightningModule):
+    def __init__(self):
+        super().__init__()
+        self.weight = torch.nn.Parameter(torch.zeros(()))
+        self.seen = {}
+        self.validation_steps = []
+        self.rates = []
+
+    def training_step(self, batch, batch_idx):  # noqa: ARG002
+        self.seen.setdefault(self.current_epoch, []).extend(batch[0].tolist())
+        return (self.weight - batch[0] / 200).square().mean()
+
+    def validation_step(self, batch, batch_idx):  # noqa: ARG002
+        self.validation_steps.append(self.global_step)
+        self.log("val_loss", self.weight.square())
+
+    def on_before_optimizer_step(self, optimizer):
+        self.rates.append(optimizer.param_groups[0]["lr"])
+
+    def configure_optimizers(self) -> OptimizerLRScheduler:
+        return torch.optim.SGD(self.parameters(), lr=1e-5)
+
+
+@pytest.mark.usefixtures("pool")
+def test_lightning_truncates_and_reshuffles_epochs_without_fixed_subset(tmp_path):
+    ae = importlib.import_module("ae_diversity")
+    dataset = TensorDataset(torch.arange(200, dtype=torch.float32))
+    sampler = DistributedSampler(dataset, num_replicas=4, rank=0, shuffle=True, seed=42)
+    train = DataLoader(dataset, batch_size=2, sampler=sampler)
+    # Simulate one DDP rank on CPU; the test above checks all four rank sets.
+    callback = ae.HistoricalAELearningRate(
+        original_steps_per_epoch=5,
+        cosine_epochs=3,
+        expected_resume_step=0,
+        stop_step=15,
+        expected_world_size=1,
+        expected_batch_size=2,
+    )
+    model = _SampledAE()
+    trainer = Trainer(
+        accelerator="cpu",
+        devices=1,
+        max_epochs=3,
+        max_steps=15,
+        limit_train_batches=5,
+        val_check_interval=5,
+        check_val_every_n_epoch=None,
+        limit_val_batches=1,
+        num_sanity_val_steps=0,
+        callbacks=[callback],
+        logger=False,
+        enable_checkpointing=False,
+        enable_progress_bar=False,
+        enable_model_summary=False,
+        use_distributed_sampler=False,
+        default_root_dir=tmp_path,
+    )
+    trainer.fit(model, train_dataloaders=train, val_dataloaders=DataLoader(dataset))
+    assert trainer.global_step == 15
+    assert model.validation_steps == [5, 10, 15]
+    assert len(model.seen) == 3
+    for epoch, seen in model.seen.items():
+        sampler.set_epoch(epoch)
+        assert seen == list(islice(sampler, 10))
+    assert model.seen[0] != model.seen[1] != model.seen[2]
+    assert model.rates == [
+        ae.historical_lr(step, original_steps_per_epoch=5, cosine_epochs=3)
+        for step in range(15)
+    ]
+    assert trainer.optimizers[0].param_groups[0]["lr"] == 0
+    assert ae.historical_lr(514048) == 0
+    assert ae.historical_lr(514047) > 0
+    assert ae.historical_lr(1004 * 256) == pytest.approx(5e-6)
+    assert math.isfinite(model.weight.item())
 
 
 def test_full_pool_reuses_training_data_without_thinning_or_copying(inputs, pool):

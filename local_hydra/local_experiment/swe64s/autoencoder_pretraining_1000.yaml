@@ -12,7 +12,10 @@ ae_diversity_data_path: ???
 
 trainer:
   # Inherit the fresh seed, model, PSGD, EMA and historical LR callback.
-  # Validation/LR follow the original 1004-update clock, not the new
-  # approximately 5016-update data-loader epochs. No temporal thinning.
-  max_steps: 77308
-  max_time: "00:04:00:00"
+  # Each epoch takes a fresh shuffled prefix of the full pool: 1004 updates
+  # x 4 GPUs x 16 states = 64,256 states, approximately 20% of 321,000.
+  # Keep every frame available; do not build a fixed temporal subset.
+  limit_train_batches: 1004
+  max_epochs: 512
+  max_steps: 514048  # 512 sampled epochs x 1004 updates.
+  max_time: "00:23:30:00"  # Safety cap only; request 24h from Slurm.
