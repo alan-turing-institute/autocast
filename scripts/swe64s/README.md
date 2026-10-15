@@ -226,6 +226,87 @@ The shorter time cap compresses afCRPS's cosine schedule; the AE keeps its
 diagnostic runs. FM needs its own pilot once a reviewed SWE AE and matching
 cache are available; an afCRPS/AE pilot does not validate latent FM.
 
+## Full 1000-trajectory AE pretraining
+
+`autoencoder_pretraining_1000.yaml` is a fresh AE fit on **all 321 frames of
+1,000 new trajectories** (321,000 states). Forecasting remains on the original
+200/20/20 dataset. There is no temporal thinning or checkpoint initialization.
+The model, PSGD, batch 16/GPU on four GPUs, seed 42, clipping and separately
+stored EMA match the earlier fresh AE control. The selected checkpoint is best
+validation loss, using raw weights for the main evaluation.
+
+The fit stops at **77,308 optimizer updates**, with a four-hour trainer safety
+cap; allow 4h15m in a Slurm allocation. Validation is every 1,004 updates and at
+the endpoint. The existing historical LR callback retains the original
+512-epoch cosine indexed by `floor(global_step / 1004)`, base LR `1e-5`.
+The larger loader's roughly 5,016-update epochs must not become the LR clock.
+The budget presents about 4.95 million states, or 15.4 passes through the new
+pool. It does not request 512 passes through 321,000 states.
+
+The AutoSim preset `generate_data_swe_ae_pretraining_64` pins the long-window
+physics, including `nu=1e-4`, `T=120`, `dt_save=0.25`, spin-up through t=40,
+balanced random-PV starts, fixed amp 0.1 and white-in-time vortical k=3 forcing.
+It uses seed 20280000, beyond the original and earlier additional-pool reserved
+seed ranges. It produces training data only; the existing validation/test
+trajectories and original `stats.yml` are reused, without recomputation.
+
+Generation is serial in the current AutoSim CLI. The read-only planner emits
+ten fixed **100-trajectory** shard commands. Each uses its own process, one
+Torch/BLAS thread and disjoint split/retry seed ranges. Four simultaneous
+workers are a reasonable starting point on a shared CPU host. Based on the
+earlier 200-trajectory generation, the total is roughly 20 CPU-hours; four
+workers could take about 5--6 hours plus I/O. This is an extrapolation, not a
+new timing run. The output fields alone occupy about 15.8 GB; sharded assembly
+also needs space for the merged file and a temporary mapped buffer.
+
+```bash
+# Prints JSON commands only: no directories, simulations or jobs are created.
+PYTHONPATH=scripts/swe64s uv run --frozen --no-sync python \
+  scripts/swe64s/prepare_ae_pretraining.py plan \
+  --autosim-source /path/to/reviewed/autosim \
+  --output /scratch/swe64-ae1000-shards --workers 4
+
+# After generation and checksum verification, check one complete pool.
+# For ten shards, repeat --source once per shard, in any order.
+PYTHONPATH=scripts/swe64s uv run --frozen --no-sync python \
+  scripts/swe64s/prepare_ae_pretraining.py prepare \
+  --baseline /path/to/shallow_water2d_stochastic_64_b43bd32 \
+  --source /path/to/generated-ae1000 --output /path/to/new-ae1000-view \
+  --check-only
+```
+
+The planner does not launch the commands or implement a worker pool. Run the
+reviewed commands with the agreed concurrency when generation is authorized.
+Shard count/seeds are fixed independently of worker count; a sharded pool is
+reproducible but differs from one serial 1,000-trajectory call. Record the plan
+and exact generator commit with the dataset.
+
+Removing `--check-only` assembles a new dataset directory. A single pool is
+referenced directly; ten shards are merged in seed order without thinning.
+Both modes link unchanged baseline validation/test data and normalization.
+Preparation rejects changed physics, counts, seeds, nonfinite values, duplicate
+retained starting states and existing/overlapping destinations. It hashes
+source/output files and writes `ae_pretraining_manifest.json`. Never point an
+AE fit at the raw generated training-only directory, whose held-out splits
+are empty and whose stats describe the new pool.
+
+```bash
+# Configuration-only gate works before generation and does not start W&B.
+PYTHONPATH=scripts/swe64s uv run --frozen --no-sync python \
+  scripts/swe64s/check_ae_diversity.py --fresh --pool-size 1000 --configs-only
+
+# Once assembled, verify the complete dataset and compose the intended fit.
+PYTHONPATH=scripts/swe64s uv run --frozen --no-sync python \
+  scripts/swe64s/check_ae_diversity.py --fresh --pool-size 1000 \
+  --data /path/to/new-ae1000-view
+```
+
+The fresh preset requires `ae_diversity_data_path=/path/to/new-ae1000-view`.
+Keep `scripts/swe64s` on `PYTHONPATH` for the existing LR callback. Preserve the
+old 200-trajectory best AE as an ablation; each selected AE needs its own latent
+cache and FM fit. The 400x160 control below remains unchanged. None of these
+preparation/configuration commands submit jobs or push code.
+
 ## Fresh AE trajectory-diversity control
 
 The selected control is a **fresh fit**, not a continuation. It asks whether

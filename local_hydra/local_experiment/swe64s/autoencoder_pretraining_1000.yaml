@@ -1,0 +1,18 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/autoencoder_diversity_400_fresh
+  - _self_
+
+experiment_name: swe64s_autoencoder_pretraining_1000
+
+# Supply the full 1000 x 321 pool assembled by prepare_ae_pretraining.py.
+# Reuse the original validation/test trajectories and normalization.
+# The inherited path is required; no dataset is selected implicitly.
+ae_diversity_data_path: ???
+
+trainer:
+  # Inherit the fresh seed, model, PSGD, EMA and historical LR callback.
+  # Validation/LR follow the original 1004-update clock, not the new
+  # approximately 5016-update data-loader epochs. No temporal thinning.
+  max_steps: 77308
+  max_time: "00:04:00:00"

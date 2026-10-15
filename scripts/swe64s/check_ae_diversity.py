@@ -11,6 +11,7 @@ from hydra import compose, initialize_config_dir
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 from prepare_ae_diversity_data import validate_data_view
+from prepare_ae_pretraining import validate_pretraining_data
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -36,16 +37,23 @@ def check_fresh_start(cfg: DictConfig) -> None:
 
 
 def check_config(
-    data: Path = Path("/preflight/ae400"),
+    data: Path | None = None,
     checkpoint: Path | None = None,
     *,
     fresh: bool = False,
+    pool_size: int = 400,
 ) -> DictConfig:
     """Compose the production configuration without loading models or real data."""
+    if pool_size not in (400, 1000) or (pool_size == 1000 and not fresh):
+        msg = "Select a 400-trajectory control or fresh 1000-trajectory pretraining"
+        raise ValueError(msg)
     if fresh and checkpoint is not None:
         msg = "A fresh fit must not be supplied a checkpoint"
         raise ValueError(msg)
     preset = "autoencoder_diversity_400_fresh" if fresh else "autoencoder_diversity_400"
+    if pool_size == 1000:
+        preset = "autoencoder_pretraining_1000"
+    data = data or Path(f"/preflight/ae{pool_size}")
     overrides = [
         f"local_experiment=swe64s/{preset}",
         f"hydra.searchpath=[file://{REPO_ROOT / 'local_hydra'}]",
@@ -90,17 +98,23 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--configs-only", action="store_true")
     parser.add_argument("--fresh", action="store_true")
+    parser.add_argument("--pool-size", type=int, choices=(400, 1000), default=400)
     parser.add_argument("--data", type=Path)
     parser.add_argument("--checkpoint", type=Path)
     args = parser.parse_args()
     if args.fresh and args.checkpoint is not None:
         parser.error("--fresh forbids --checkpoint")
+    if args.pool_size == 1000 and not args.fresh:
+        parser.error("--pool-size 1000 requires --fresh")
     if not args.configs_only and (
         args.data is None or (not args.fresh and args.checkpoint is None)
     ):
         parser.error("Supply --data and either --fresh or --checkpoint")
     cfg = check_config(
-        args.data or Path("/preflight/ae400"), args.checkpoint, fresh=args.fresh
+        args.data or Path(f"/preflight/ae{args.pool_size}"),
+        args.checkpoint,
+        fresh=args.fresh,
+        pool_size=args.pool_size,
     )
     start_step = 0 if args.fresh else SOURCE_STEP
     result = {
@@ -109,10 +123,14 @@ def main() -> None:
         "resume_step": start_step,
         "stop_step": STOP_STEP,
         "additional_updates": STOP_STEP - start_step,
+        "pool_size": args.pool_size,
         "submitted": False,
     }
     if not args.configs_only:
-        result["data"] = validate_data_view(args.data)
+        validate = (
+            validate_pretraining_data if args.pool_size == 1000 else validate_data_view
+        )
+        result["data"] = validate(args.data)
         if not args.fresh:
             result["checkpoint"] = check_checkpoint(args.checkpoint)
     print(json.dumps(result, indent=2))
