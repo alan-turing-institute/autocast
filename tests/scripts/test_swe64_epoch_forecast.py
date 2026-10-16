@@ -26,17 +26,24 @@ PRESET = "afcrps_global_residual_one_output_512ep"
 SPATIAL_PRESET = "afcrps_spatial_residual_one_output_256ep"
 BOUNDED_GLOBAL_PRESET = "afcrps_global_residual_one_output_512ep_8h"
 BOUNDED_SPATIAL_PRESET = "afcrps_spatial_residual_one_output_512ep_8h"
-SPATIAL_PRESETS = {SPATIAL_PRESET, BOUNDED_SPATIAL_PRESET}
+MATCHED_GLOBAL_PRESET = "afcrps_global256_residual_one_output_12block_512ep_8h"
+MATCHED_SPATIAL_PRESET = "afcrps_spatial1d_residual_one_output_12block_512ep_8h"
+MATCHED_PRESETS = {MATCHED_GLOBAL_PRESET, MATCHED_SPATIAL_PRESET}
+SPATIAL_PRESETS = {SPATIAL_PRESET, BOUNDED_SPATIAL_PRESET, MATCHED_SPATIAL_PRESET}
 EPOCH_PRESETS = {
     PRESET: 512,
     "afcrps_global_residual_one_output_256ep": 256,
     SPATIAL_PRESET: 256,
     BOUNDED_GLOBAL_PRESET: 512,
     BOUNDED_SPATIAL_PRESET: 512,
+    MATCHED_GLOBAL_PRESET: 512,
+    MATCHED_SPATIAL_PRESET: 512,
 }
 BOUNDED_LIMITS = {
     BOUNDED_GLOBAL_PRESET: ("00:07:45:00", 480),
     BOUNDED_SPATIAL_PRESET: ("00:07:45:00", 480),
+    MATCHED_GLOBAL_PRESET: ("00:07:45:00", 480),
+    MATCHED_SPATIAL_PRESET: ("00:07:45:00", 480),
 }
 
 
@@ -74,9 +81,19 @@ def test_epoch_control_preserves_data_model_and_optimizer_settings(
     distributed, name, epochs
 ):
     reference = _config("afcrps_global_residual_one_output_2h30")
+    if name in MATCHED_PRESETS:
+        reference.model.processor.update(
+            hidden_dim=224,
+            n_layers=12,
+            num_heads=8,
+            n_noise_channels=256,
+            n_noise_input_channels=256,
+        )
     if name in SPATIAL_PRESETS:
         reference.model.processor.noise_mode = "spatial"
-        reference.model.processor.n_noise_input_channels = 4
+        reference.model.processor.n_noise_input_channels = (
+            1 if name in MATCHED_PRESETS else 4
+        )
     cfg = _config(name, distributed=distributed)
     for key in ("model", "datamodule"):
         assert OmegaConf.to_container(cfg[key], resolve=True) == OmegaConf.to_container(
@@ -109,7 +126,10 @@ def test_epoch_control_preserves_data_model_and_optimizer_settings(
         cfg.model.processor.n_noise_input_channels
         == reference.model.processor.n_noise_input_channels
     )
-    assert cfg.model.processor.n_noise_channels == 1024
+    assert (
+        cfg.model.processor.n_noise_channels
+        == reference.model.processor.n_noise_channels
+    )
     assert cfg.model.n_members == 8
     assert cfg.model.residual_prediction
     assert cfg.model.residual_use_delta_stats
@@ -146,6 +166,7 @@ def test_shorter_preset_changes_only_experiment_name_and_epoch_horizon():
     [
         ("afcrps_global_residual_one_output_256ep", SPATIAL_PRESET),
         (BOUNDED_GLOBAL_PRESET, BOUNDED_SPATIAL_PRESET),
+        (MATCHED_GLOBAL_PRESET, MATCHED_SPATIAL_PRESET),
     ],
 )
 def test_spatial_preset_changes_only_experiment_name_and_noise_layout(
@@ -156,8 +177,9 @@ def test_spatial_preset_changes_only_experiment_name_and_noise_layout(
     expected = OmegaConf.to_container(reference, resolve=False)
     assert isinstance(expected, dict)
     expected["experiment_name"] = spatial.experiment_name
+    noise_values = 1 if spatial_name == MATCHED_SPATIAL_PRESET else 4
     expected["model"]["processor"].update(
-        noise_mode="spatial", n_noise_input_channels=4
+        noise_mode="spatial", n_noise_input_channels=noise_values
     )
     assert OmegaConf.to_container(spatial, resolve=False) == expected
     assert spatial.datamodule.n_steps_input == spatial.datamodule.n_steps_output == 1
@@ -167,7 +189,7 @@ def test_spatial_preset_changes_only_experiment_name_and_noise_layout(
     assert (
         tokens * spatial.model.processor.n_noise_input_channels
         == reference.model.processor.n_noise_input_channels
-        == 1024
+        == (256 if spatial_name == MATCHED_SPATIAL_PRESET else 1024)
     )
     with torch.device("meta"):
         processor = instantiate(
@@ -176,7 +198,56 @@ def test_spatial_preset_changes_only_experiment_name_and_noise_layout(
             out_channels=3,
             spatial_resolution=[64, 64],
         )
-    assert sum(p.numel() for p in processor.parameters()) == 10_662_384
+    expected_count = (
+        10_232_016 if spatial_name == MATCHED_SPATIAL_PRESET else 10_662_384
+    )
+    assert sum(p.numel() for p in processor.parameters()) == expected_count
+
+
+@pytest.mark.parametrize(
+    ("name", "reference_name", "noise_input", "expected_count"),
+    [
+        (MATCHED_GLOBAL_PRESET, BOUNDED_GLOBAL_PRESET, 256, 10_231_504),
+        (MATCHED_SPATIAL_PRESET, BOUNDED_SPATIAL_PRESET, 1, 10_232_016),
+    ],
+)
+def test_matched_noise_presets_change_only_capacity_and_noise_dimensions(
+    name, reference_name, noise_input, expected_count
+):
+    reference = _config(reference_name)
+    cfg = _config(name)
+    expected = OmegaConf.to_container(reference, resolve=False)
+    assert isinstance(expected, dict)
+    expected["experiment_name"] = cfg.experiment_name
+    expected["model"]["processor"].update(
+        hidden_dim=224,
+        n_layers=12,
+        num_heads=8,
+        n_noise_channels=256,
+        n_noise_input_channels=noise_input,
+    )
+    assert OmegaConf.to_container(cfg, resolve=False) == expected
+    assert cfg.model.processor.patch_size == cfg.model.processor.ffn_factor == 4
+    assert cfg.model.processor.qk_norm
+    assert cfg.model.processor.rpb
+    assert not cfg.model.processor.rope
+    assert cfg.model.processor.dropout == 0
+    with torch.device("meta"):
+        processor = instantiate(
+            cfg.model.processor,
+            in_channels=3,
+            out_channels=3,
+            spatial_resolution=[64, 64],
+        )
+    assert sum(p.numel() for p in processor.parameters()) == expected_count
+    if name == MATCHED_GLOBAL_PRESET:
+        assert processor.modulation_proj is None
+    else:
+        projection = processor.modulation_proj
+        assert isinstance(projection, torch.nn.Linear)
+        assert projection.in_features == 1
+        assert projection.out_features == 256
+        assert sum(p.numel() for p in projection.parameters()) == 512
 
 
 @pytest.mark.parametrize(

@@ -1,0 +1,22 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/afcrps_global_residual_one_output_512ep_8h
+  - _self_
+
+experiment_name: swe64s_afcrps_global256_residual_one_output_12block_512ep_8h
+
+model:
+  processor:
+    # Keep the main-comparison depth/heads with a roughly 10M-parameter core.
+    hidden_dim: 224
+    n_layers: 12
+    num_heads: 8
+    # A 256D global draw directly conditions every block, without compression.
+    n_noise_channels: 256
+    n_noise_input_channels: 256
+    noise_mode: global
+
+hydra:
+  launcher:
+    # Submission defaults must be present on the selected preset itself.
+    timeout_min: 480

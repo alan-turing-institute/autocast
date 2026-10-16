@@ -294,14 +294,15 @@ def test_spatial_residual_2h30_changes_noise_only():
 
 
 @pytest.mark.parametrize(
-    "name",
+    ("name", "noise_values"),
     [
-        "afcrps_spatial_residual_small_2h30",
-        "afcrps_spatial_residual_one_output_256ep",
-        "afcrps_spatial_residual_one_output_512ep_8h",
+        ("afcrps_spatial_residual_small_2h30", 4),
+        ("afcrps_spatial_residual_one_output_256ep", 4),
+        ("afcrps_spatial_residual_one_output_512ep_8h", 4),
+        ("afcrps_spatial1d_residual_one_output_12block_512ep_8h", 1),
     ],
 )
-def test_spatial_residual_preset_draws_four_values_per_patch(name):
+def test_spatial_residual_preset_draws_expected_values_per_patch(name, noise_values):
     cfg = _config(name)
     output_channels = 3 * cfg.datamodule.n_steps_output
     processor = instantiate(
@@ -326,10 +327,59 @@ def test_spatial_residual_preset_draws_four_values_per_patch(name):
         handle.remove()
     assert first.shape == (2, output_channels, 64, 64)
     assert len(noise_draws) == 2
-    assert noise_draws[0].shape == (2, 256, 4)
+    assert noise_draws[0].shape == (2, 256, noise_values)
     assert not torch.equal(noise_draws[0][0], noise_draws[0][1])
     assert not torch.equal(noise_draws[0][:, 0], noise_draws[0][:, 1])
     assert not torch.equal(noise_draws[0], noise_draws[1])
+
+
+@pytest.mark.parametrize(
+    ("name", "conditioning_shape"),
+    [
+        ("afcrps_global256_residual_one_output_12block_512ep_8h", (2, 256)),
+        ("afcrps_spatial1d_residual_one_output_12block_512ep_8h", (2, 256, 256)),
+    ],
+)
+def test_matched_noise_is_reused_in_all_twelve_blocks_and_redrawn_per_call(
+    name, conditioning_shape
+):
+    cfg = _config(name)
+    processor = instantiate(
+        cfg.model.processor,
+        in_channels=3,
+        out_channels=3,
+        spatial_resolution=[64, 64],
+    ).eval()
+    blocks = list(processor.model.get_submodule("vit.blocks").children())
+    assert len(blocks) == 12
+    conditioning = []
+    handles = [
+        block.get_submodule("ada_zero").register_forward_pre_hook(
+            lambda _module, args: conditioning.append(args[0].detach().clone())
+        )
+        for block in blocks
+    ]
+    inputs = torch.randn(2, 3, 64, 64)
+    try:
+        with torch.no_grad():
+            first = processor.map(inputs)
+            second = processor.map(inputs)
+    finally:
+        for handle in handles:
+            handle.remove()
+    assert first.shape == second.shape == inputs.shape
+    assert torch.isfinite(first).all()
+    assert torch.isfinite(second).all()
+    assert not torch.equal(first, second)
+    assert len(conditioning) == 24
+    assert conditioning[0].shape == conditioning_shape
+    assert not torch.equal(conditioning[0][0], conditioning[0][1])
+    assert not torch.equal(conditioning[0], conditioning[12])
+    for start in (0, 12):
+        for block_condition in conditioning[start : start + 12]:
+            torch.testing.assert_close(
+                block_condition, conditioning[start], rtol=0, atol=0
+            )
 
 
 @pytest.mark.parametrize(
@@ -381,6 +431,8 @@ def test_residual_2h30_distributed_allocation_has_saving_buffer(name):
         "afcrps_spatial_residual_one_output_256ep",
         "afcrps_global_residual_one_output_512ep_8h",
         "afcrps_spatial_residual_one_output_512ep_8h",
+        "afcrps_global256_residual_one_output_12block_512ep_8h",
+        "afcrps_spatial1d_residual_one_output_12block_512ep_8h",
     ],
 )
 def test_residual_setup_loss_gradients_and_rollout(name):
@@ -423,13 +475,13 @@ def test_residual_setup_loss_gradients_and_rollout(name):
     assert model.norm is norm
     assert model.delta_norm is None
     if n_output == 1:
-        projection_parameters = (
-            5120 if cfg.model.processor.noise_mode == "spatial" else 0
-        )
-        assert (
-            sum(p.numel() for p in model.parameters())
-            == 10_657_264 + projection_parameters
-        )
+        expected_count = {
+            (4, "global"): 10_657_264,
+            (4, "spatial"): 10_662_384,
+            (12, "global"): 10_231_504,
+            (12, "spatial"): 10_232_016,
+        }[cfg.model.processor.n_layers, cfg.model.processor.noise_mode]
+        assert sum(p.numel() for p in model.parameters()) == expected_count
     decoded_residuals: list[torch.Tensor] = []
     original_decode = model.encoder_decoder.decoder.decode
 

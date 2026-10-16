@@ -378,6 +378,62 @@ preset, whose default would otherwise replace the trainer safety cap. Verify
 the target checkout and original dataset/delta statistics before approving
 either launch.
 
+### Matched 256-dimensional noise on a twelve-block backbone
+
+The new `afcrps_global256_residual_one_output_12block_512ep_8h.yaml` and
+`afcrps_spatial1d_residual_one_output_12block_512ep_8h.yaml` presets retain the
+main comparison's **12 blocks, eight heads, patch four and MLP expansion four**,
+scaling hidden width to **224** and AdaLN conditioning width to **256**.
+QK normalization, relative positional bias and zero dropout remain unchanged.
+They contain **10,231,504 global / 10,232,016 spatial parameters**. The shared
+spatial input projection accounts for the 512-parameter difference.
+
+Both modes sample **256 independent Gaussian values per member and prediction
+call**. The global vector is used at every token without a compression layer.
+The spatial mode assigns one scalar to each of the 256 patch tokens and uses
+a shared `1 -> 256` projection. Every block reuses that call's conditioning,
+with separate learned modulation networks per block. This tests global versus
+local noise access at equal total latent dimension. One scalar per token is a
+local-conditioning choice, not a hard one-dimensional restriction on output
+patches after attention mixes tokens; its adequacy remains an empirical question.
+
+Data, one-input/one-output delta-normalized persistence residuals, eight members,
+afCRPS alpha 0.95, batch 32/GPU, AdamW, seed and checkpoint policy are unchanged.
+There is no simulator-parameter conditioning. The schedule is **512 full epochs /
+256,000 updates on four GPUs**, with epoch-wise cosine LR **2e-4 to zero** and
+no warmup. Both retain the **eight-hour allocation / 7h45m safety cap**. Runtime
+has not been established for this deeper backbone; equal parameter counts do
+not imply the four-block fit's runtime. A time-limited fit is incomplete.
+
+Start both fresh with new output directories and W&B runs. Do not resume the
+older four-block checkpoints: the architecture and noise dimensions differ.
+The older presets remain unchanged. Comparison between this pair isolates the
+noise access pattern, not the effects of every change from earlier experiments.
+
+Read-only composition and submission preview (no fit, W&B run or submission):
+
+```bash
+uv run --frozen train_encoder_processor_decoder \
+  local_experiment=swe64s/afcrps_global256_residual_one_output_12block_512ep_8h --cfg job
+
+uv run --frozen train_encoder_processor_decoder \
+  local_experiment=swe64s/afcrps_spatial1d_residual_one_output_12block_512ep_8h --cfg job
+
+uv run --frozen autocast epd --mode slurm --dry-run \
+  --workdir /path/to/new/afcrps-global256-residual-12block-512ep \
+  local_experiment=swe64s/afcrps_global256_residual_one_output_12block_512ep_8h \
+  +distributed=ddp_4gpu_slurm trainer.max_time=00:07:45:00 \
+  ++hydra.launcher.nodes=1 ++hydra.launcher.cpus_per_task=72 \
+  logging.wandb.enabled=true logging.wandb.mode=online \
+  logging.wandb.entity=turing-core logging.wandb.project=autocast \
+  logging.wandb.name=swe64s-afcrps-global256-residual-12block-512ep
+```
+
+For the spatial preview, select
+`swe64s/afcrps_spatial1d_residual_one_output_12block_512ep_8h` with a separate
+spatial work directory and W&B name. Keep the explicit distributed time override;
+the eight-hour launcher default is pinned in each selected preset.
+
 ## Full 1000-trajectory AE pretraining
 
 `autoencoder_pretraining_1000.yaml` is a fresh AE fit using **all 321 frames of

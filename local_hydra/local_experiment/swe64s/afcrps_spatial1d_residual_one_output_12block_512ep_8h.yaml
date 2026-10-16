@@ -1,0 +1,18 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/afcrps_global256_residual_one_output_12block_512ep_8h
+  - _self_
+
+experiment_name: swe64s_afcrps_spatial1d_residual_one_output_12block_512ep_8h
+
+model:
+  processor:
+    # 256 patch tokens x one scalar matches the global draw's 256 values.
+    # The shared 1-to-256 projection adds 512 parameters, not extra randomness.
+    noise_mode: spatial
+    n_noise_input_channels: 1
+
+hydra:
+  launcher:
+    # The submission helper does not inherit parent launcher mappings.
+    timeout_min: 480
