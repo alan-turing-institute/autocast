@@ -221,17 +221,31 @@ def test_masked_mean_accumulates_large_low_precision_windows_safely(dtype):
     )
 
 
-@pytest.mark.parametrize("rho", [0.0, 0.5, 1.0])
-def test_shared_sampler_matches_existing_fm_policy(rho):
-    x = torch.empty(64, 5, 2, 3, 2)
-    old = FlowMatchingMaskedWindowProcessor(
-        backbone=nn.Identity(), lmbda=1.0, rho=rho, atleast=1
+@pytest.mark.parametrize(
+    ("rho", "expected_rows"),
+    [
+        (0.0, ["00001", "00011", "01111", "00001", "00111"]),
+        (0.5, ["10000", "00011", "01111", "10000", "00111"]),
+        (1.0, ["10000", "11000", "11110", "10000", "11100"]),
+    ],
+)
+def test_shared_sampler_matches_expected_masks(monkeypatch, rho, expected_rows):
+    def poisson(rate):
+        torch.testing.assert_close(rate, torch.full((5, 1), 2.0))
+        # Five-frame windows with atleast=1 wrap these to 1, 2, 4, 1, 3.
+        return rate.new_tensor([[0], [1], [3], [4], [6]])
+
+    def uniform(shape, *, device):
+        assert shape == (5, 1)
+        # The draw equal to rho=0.5 selects a suffix, not a prefix.
+        return torch.tensor([[0.1], [0.5], [0.9], [0.2], [0.8]], device=device)
+
+    monkeypatch.setattr(torch, "poisson", poisson)
+    monkeypatch.setattr(torch, "rand", uniform)
+    x = torch.empty(5, 5, 2, 3, 2)
+    actual = random_context_mask(x, lmbda=2.0, rho=rho, atleast=1)
+    # Explicit observation masks, independent of the sampler's implementation.
+    expected = torch.tensor([[bit == "1" for bit in row] for row in expected_rows])
+    torch.testing.assert_close(
+        actual, repeat(expected, "b t -> b t h w c", h=2, w=3, c=2)
     )
-    torch.manual_seed(12)
-    actual = random_context_mask(x, lmbda=1.0, rho=rho, atleast=1)
-    torch.manual_seed(12)
-    torch.testing.assert_close(actual, old._random_context_mask(x))
-    context = actual[:, :, 0, 0, 0]
-    assert ((context.sum(dim=1) >= 1) & (context.sum(dim=1) <= 4)).all()
-    assert torch.equal(actual, repeat(context, "b t -> b t h w c", h=2, w=3, c=2))
-    assert context.sum(dim=1).unique().numel() > 1
