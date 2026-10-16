@@ -645,6 +645,9 @@ def setup_processor_model(
         "optimizer_config": optimizer_config,
         "noise_injector": noise_injector,
         "norm": norm,
+        "train_loss_log_every_n_steps": model_config.get(
+            "train_loss_log_every_n_steps", 1
+        ),
     }
     _maybe_add_metric_overrides(kwargs, model_config)
     if is_ensemble:

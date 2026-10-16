@@ -25,6 +25,8 @@ output:
   skip_test: true
 
 model:
+  # Compute/synchronize diagnostics only when this experiment emits them.
+  train_loss_log_every_n_steps: ${trainer.log_every_n_steps}
   processor:
     # Pinned LOLA code: Poisson(1), modulo wrapping, 1-4 observed prefix frames.
     context_mask:
@@ -80,5 +82,6 @@ trainer:
       decay: 0.999
     - _target_: autocast.callbacks.grad_norm.GradNormCallback
       norm_type: 2.0
+      every_n_steps: ${trainer.log_every_n_steps}
     - _target_: autocast.callbacks.param_norm.ParamNormCallback
       norm_type: 2.0

@@ -161,13 +161,24 @@ without shortening the 4096-epoch cosine horizon. It uses unique timestamped
 output groups; `OUTPUT_BASE` can point to an existing HPC output root. No full
 training jobs are submitted by this script. Use its measured epoch times to
 estimate the full schedule; previous 64-token timings are not applicable.
+These presets compute gradient diagnostics and synchronize training-loss logs
+every 64 optimizer updates, matching `trainer.log_every_n_steps`; the logged
+loss remains the global mean for that update. Other configs retain their
+existing every-step defaults, and validation logging is unchanged.
 The full presets checkpoint at completed epochs every 128 epochs, retain best
 validation/calibration checkpoints, and stop within the 24-hour Slurm limit;
 finishing a longer 4096-epoch schedule requires a subsequent resume.
+Resume a concrete completed-epoch `snapshot-*.ckpt` with full state, keeping
+`trainer.max_epochs=4096` and `optimizer.cosine_epochs=4096` as total horizons.
+Set `reset_resume_time_budget=true` to give the new allocation a fresh 23h45
+stop budget; this does not reset the epoch-based LR schedule. Do not use
+weights-only loading or assume the final wall-clock-stop checkpoint completed
+an epoch. The CPU resume regression checks the first resumed LR, optimizer,
+scheduler, EMA and diagnostic cadence against uninterrupted training.
 The new output group and W&B names include `masked`, keeping these probes
 separate from the fixed-context measurements below. Use `TIMING_EPOCHS=8`
-for one validation cycle if necessary. Profile both methods again after
-pulling the reviewed branch onto Isambard; full training is a separate step.
+for one validation cycle if necessary. The latest CRPS measurement is below;
+FM still needs retiming with the logging changes. Full training is a separate step.
 
 Measured on Isambard-AI, 2026-10-15 (code `796d6673`, fixed-context training,
 before enabling random context in these presets):
@@ -181,15 +192,54 @@ Both completed 512 updates, validation and checkpoint writes, using 8.3
 node-minutes together. The projection extrapolates the measured epoch cycles,
 not the one-off Slurm startup and W&B shutdown. Eight epochs give a rough
 estimate: initial warmup, best-checkpoint frequency and the timing-only
-epoch-eight snapshot affect overhead. Allow roughly 27 hours per method and
-plan a resume across the 24-hour allocation limit, keeping the cosine horizon
-at 4096. The full preset's 23h45 training limit leaves room for checkpointing
+epoch-eight snapshot affect overhead. These measurements initially suggested
+allowing roughly 27 hours per method, including a resume across the allocation
+limit. The full preset's 23h45 training limit leaves room for checkpointing
 and shutdown. These timings use our validation cadence above, not LOLA's
 every-epoch validation; previous packed-time runtimes remain separate.
-They are provisional estimates for the new masked configs, which keep the
-same 320-token backbone and batch budget but have not been timed on the HPC.
+These fixed-context measurements precede the masked configs above and should
+not be used as their current runtime projection.
 
 HPC source: `~/autocast-rb-spacetime` on branch `spacetime-vit-backbone`, using
 `~/autocast-03/.venv` with `PYTHONPATH` pointing at the new checkout's `src`.
 Outputs and `timing_summary.json` are under
 `~/autocast-03/outputs/timing/rb_spacetime_20261015T084800Z/`.
+
+For multi-node Isambard runs, add `hydra/launcher=slurm_isambard` alongside
+`distributed=ddp_4gpu_2node_slurm`. This opt-in launcher loads the site's
+`brics/nccl/2.26.6-1` module before `srun`, enabling the OFI plugin and Slingshot
+settings without changing the generic launcher or model configuration.
+The existing PyTorch environment retains its bundled NCCL library. When checking
+transport, set `NCCL_DEBUG=INFO` after loading the module and confirm the logs
+report `AWS Libfabric` with the `cxi` provider; an `hsn` socket interface alone
+does not confirm RDMA. See the [Isambard NCCL guide](https://docs.isambard.ac.uk/user-documentation/guides/nccl/).
+
+Transport check `7455810` (2026-10-15, two nodes/eight GPUs, 54 seconds) confirmed
+Socket in the old environment and `AWS Libfabric`/`cxi`/`GDRDMA` on all ranks with
+this launcher setup. Both passed collective correctness checks. Mean all-reduce
+times changed from 6.70 to 0.45 ms at 25 MiB, but from 60.97 to 94.22 ms at
+256 MiB; the larger-message slowdown remains unexplained. This confirms the
+transport fix, not a full-training speedup. Evidence is under
+`~/autocast-03/outputs/network/rb_nccl_transport_20261015T205720Z/`.
+
+Masked CRPS logging check (2026-10-16, [job 7462449](https://wandb.ai/turing-core/autocast/runs/mmi7dgd3)):
+one node/four GPUs completed 16 epochs and 1,024 updates in 6m26s. Mean epoch
+time, including validation/checkpoints, fell from 21.30 to 20.68 seconds;
+the 4,096-epoch projection fell from 24.23 to 23.53 hours. This leaves only
+13 minutes below the 23h45 training guard, so retain a checkpoint-resume
+contingency. FM has not been retimed with these logging changes. Source
+snapshots, validation results and timings are saved under
+`~/autocast-03/outputs/timing/rb_crps_spatiotemporal_4gpu_logging_20261016T045534Z/`.
+
+The masked FM probe before the logging fix ([job 7447965](https://wandb.ai/turing-core/autocast/runs/ujoxz7xv))
+averaged 21.14 seconds per epoch, projecting 24.05 hours on four GH200s.
+Thus FM/CRPS projections are about 96/94 GPU-hours, versus the
+[LOLA paper's](https://arxiv.org/html/2507.02608v4#A2) reported 48 hours on eight
+H100s (384 GPU-hours) per latent RB emulator. Both use cached latents; the
+paper's emulator timing excludes autoencoder training. This gap is unresolved,
+not an established hardware speedup. Our validation is eight times less
+frequent, and the [reference training loop](https://github.com/francois-rozet/lola/blob/21a4354b327e6e5ee06da5075ba3bd1dd88c61f1/experiments/train_diffusion.py)
+writes model weights and synchronizes every epoch. Objectives, real-example
+exposure for CRPS, and runtime environments also differ. Matching the trunk
+and update schedule does not make these end-to-end timing comparisons exact;
+our short probes are projections, not completed 4,096-epoch runs.

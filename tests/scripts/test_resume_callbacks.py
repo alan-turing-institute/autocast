@@ -7,13 +7,17 @@ from typing import cast
 
 import lightning as L
 import torch
-from lightning.pytorch.callbacks import Callback, ModelCheckpoint
-from lightning.pytorch.utilities.types import OptimizerLRScheduler
+from lightning.pytorch.callbacks import Callback, ModelCheckpoint, Timer
 from torch.utils.data import DataLoader, TensorDataset
 
 from autocast.callbacks.checkpoint import ProgressModelCheckpoint
 from autocast.callbacks.ema import EMACallback
-from autocast.scripts.training import TrainingTimerCallback
+from autocast.callbacks.grad_norm import GradNormCallback
+from autocast.models.optimizer_mixin import OptimizerMixin
+from autocast.scripts.training import (
+    TrainingTimerCallback,
+    _attach_reset_timer_callback,
+)
 
 
 def test_timer_resume_preserves_elapsed_time_and_epoch_history(monkeypatch):
@@ -69,24 +73,35 @@ def test_fractional_snapshot_matches_legacy_state_before_restore(tmp_path):
     assert restored.state_dict() == original.state_dict()
 
 
-class _DeterministicModel(L.LightningModule):
+class _DeterministicModel(OptimizerMixin, L.LightningModule):
     def __init__(self):
         super().__init__()
         self.weight = torch.nn.Parameter(torch.tensor(1.0))
+        self.optimizer_config = {
+            "optimizer": "adamw",
+            "learning_rate": 1e-4,
+            "betas": [0.9, 0.99],
+            "weight_decay": 0.0,
+            "scheduler": "cosine",
+            "scheduler_interval": "epoch",
+            "cosine_epochs": 4096,
+            "warmup": 0,
+        }
+        self.learning_rates = []
+        self.diagnostic_steps = []
 
     def training_step(self, batch, batch_idx):  # noqa: ARG002
+        self.learning_rates.append(self.trainer.optimizers[0].param_groups[0]["lr"])
         return ((self.weight * batch[0] - 0.25) ** 2).mean()
 
     def validation_step(self, batch, batch_idx):  # noqa: ARG002
         # The earliest checkpoint must remain best across the interruption.
         self.log("val_loss", float(self.current_epoch + 1), batch_size=1)
 
-    def configure_optimizers(self) -> OptimizerLRScheduler:
-        optimizer = torch.optim.AdamW([self.weight], lr=0.01)
-        scheduler = torch.optim.lr_scheduler.LambdaLR(
-            optimizer, lambda epoch: (1 + math.cos(math.pi * epoch / 4)) / 2
-        )
-        return {"optimizer": optimizer, "lr_scheduler": scheduler}
+    def log_dict(self, dictionary, *args, **kwargs):
+        if "grad_2.0_norm_total" in dictionary:
+            self.diagnostic_steps.append(self.global_step)
+        super().log_dict(dictionary, *args, **kwargs)
 
 
 class _StopAfterTwoEpochs(Callback):
@@ -95,7 +110,7 @@ class _StopAfterTwoEpochs(Callback):
             trainer.should_stop = True
 
 
-def _trainer(root: Path, *, interrupted: bool = False):
+def _trainer(root: Path, *, interrupted: bool = False, reset_timer: bool = False):
     timer = TrainingTimerCallback()
     snapshot = ProgressModelCheckpoint(
         dirpath=root,
@@ -111,13 +126,20 @@ def _trainer(root: Path, *, interrupted: bool = False):
         save_top_k=1,
     )
     ema = EMACallback(decay=0.9)
-    callbacks: list[Callback] = [timer, snapshot, best, ema]
+    callbacks: list[Callback] = [
+        timer,
+        snapshot,
+        best,
+        ema,
+        GradNormCallback(every_n_steps=3),
+    ]
     if interrupted:
         callbacks.append(_StopAfterTwoEpochs())
     trainer = L.Trainer(
         accelerator="cpu",
         devices=1,
         max_epochs=4,
+        max_time="00:01:00:00",
         logger=False,
         enable_progress_bar=False,
         enable_model_summary=False,
@@ -125,6 +147,7 @@ def _trainer(root: Path, *, interrupted: bool = False):
         callbacks=callbacks,
         default_root_dir=root,
     )
+    _attach_reset_timer_callback(trainer, enabled=reset_timer)
     return trainer, timer, snapshot, best, ema
 
 
@@ -137,16 +160,36 @@ def test_interrupted_fit_matches_uninterrupted_state(tmp_path):
     first, first_timer, _, first_best, _ = _trainer(
         tmp_path / "resumed", interrupted=True
     )
-    first.fit(_DeterministicModel(), loader, loader)
+    first_model = _DeterministicModel()
+    first.fit(first_model, loader, loader)
     saved_best = first_best.best_model_path
     saved_history = list(first_timer.state_dict()["epoch_times_s"])
     checkpoint = tmp_path / "resume.ckpt"
+    # Simulate a completed allocation while preserving its whole-epoch endpoint.
+    next(
+        cb for cb in getattr(first, "callbacks", []) if isinstance(cb, Timer)
+    )._offset = 3600.0
     first.save_checkpoint(checkpoint)
 
-    resumed, timer, snapshot, best, ema = _trainer(tmp_path / "resumed")
+    resumed, timer, snapshot, best, ema = _trainer(
+        tmp_path / "resumed", reset_timer=True
+    )
     resumed_model = _DeterministicModel()
     resumed.fit(resumed_model, loader, loader, ckpt_path=checkpoint)
     assert resumed.global_step == baseline.global_step == 20
+    expected_lrs = [
+        1e-4 * (1 + math.cos(math.pi * epoch / 4096)) / 2
+        for epoch in range(4)
+        for _ in range(5)
+    ]
+    assert first_model.learning_rates + resumed_model.learning_rates == expected_lrs
+    assert baseline_model.learning_rates == expected_lrs
+    assert resumed_model.learning_rates[0] == expected_lrs[10]
+    expected_steps = [2, 5, 8, 11, 14, 17]
+    assert (
+        first_model.diagnostic_steps + resumed_model.diagnostic_steps == expected_steps
+    )
+    assert baseline_model.diagnostic_steps == expected_steps
     assert torch.equal(resumed_model.weight, baseline_model.weight)
     assert resumed.optimizers[0].state_dict() == baseline.optimizers[0].state_dict()
     assert (

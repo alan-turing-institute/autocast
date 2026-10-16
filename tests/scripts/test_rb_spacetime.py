@@ -85,12 +85,20 @@ def test_rb_spacetime_training_protocol(method, batch_size, members, REPO_ROOT):
                 "trainer.max_epochs=16",  # Timing must retain the full LR horizon.
             ],
         )
+    assert cfg.optimizer.scheduler_interval == "epoch"
     assert cfg.optimizer.cosine_epochs == 4096
     assert cfg.optimizer.learning_rate == 1e-4
     assert cfg.trainer.devices == 4
     assert cfg.trainer.accumulate_grad_batches == 1
     assert cfg.trainer.limit_train_batches == 64
     assert cfg.trainer.gradient_clip_val == 1.0
+    assert cfg.model.train_loss_log_every_n_steps == cfg.trainer.log_every_n_steps == 64
+    grad_norm = next(
+        callback
+        for callback in cfg.trainer.callbacks
+        if callback._target_ == "autocast.callbacks.grad_norm.GradNormCallback"
+    )
+    assert grad_norm.every_n_steps == 64
     assert cfg.datamodule.batch_size == batch_size
     assert cfg.model.get("n_members", 1) == members
     assert batch_size * members * cfg.trainer.devices == 256
@@ -153,6 +161,7 @@ def test_rb_masked_configs_train_and_forecast_through_existing_setup(
         "example_batch": batch,
     }
     model = setup_processor_model(cfg, stats, dummy_datamodule)
+    assert model.train_loss_log_every_n_steps == 64
     core = (
         model.processor.backbone
         if method == "crps"
