@@ -146,16 +146,14 @@ Sources: [pinned CRPS config](https://github.com/cddcam/lola_crps/blob/7643376c2
 
 ```bash
 # Dry run, then actual timing only (four GPUs per job, 20-minute cap each).
-DRY_RUN_ONLY=true bash slurm_scripts/comparison/the_well/rayleigh_benard/submit_spacetime_timing.sh
-bash slurm_scripts/comparison/the_well/rayleigh_benard/submit_spacetime_timing.sh
+DRY_RUN_ONLY=true bash slurm_scripts/comparison/the_well/rayleigh_benard/submit_spatiotemporal_timing.sh
+bash slurm_scripts/comparison/the_well/rayleigh_benard/submit_spatiotemporal_timing.sh
 ```
 
-`fm_spacetime_latent` and `crps_spacetime_latent` are the experiment names under
-`local_experiment=the_well/rayleigh_benard/`. Timing run and output identifiers
-retain their recorded spelling; the presets now use the canonical
-`spatiotemporal_vit` library names. Remove the temporary `spacetime_vit`
-import/config aliases after collecting the timing results and migrating any
-retained configs/checkpoints. The timing script now runs 16
+`fm_spatiotemporal_latent` and `crps_spatiotemporal_latent` are the canonical
+experiment names under `local_experiment=the_well/rayleigh_benard/`. The old
+timing run and output identifiers retain their recorded spelling.
+The timing script now runs 16
 64-update epochs including two validation passes and an epoch-boundary checkpoint,
 without shortening the 4096-epoch cosine horizon. It uses unique timestamped
 output groups; `OUTPUT_BASE` can point to an existing HPC output root. No full
@@ -177,10 +175,22 @@ an epoch. The CPU resume regression checks the first resumed LR, optimizer,
 scheduler, EMA and diagnostic cadence against uninterrupted training.
 The new output group and W&B names include `masked`, keeping these probes
 separate from the fixed-context measurements below. Use `TIMING_EPOCHS=8`
-for one validation cycle if necessary. The latest CRPS measurement is below;
-FM still needs retiming with the logging changes. Full training is a separate step.
+for one validation cycle if necessary. Full training is a separate step.
 
-Measured on Isambard-AI, 2026-10-15 (code `796d6673`, fixed-context training,
+As of 2026-10-16, both masked methods have completed 640 epochs (40,960 updates)
+on four GH200s with the logging changes:
+
+| Method | Completed 640-epoch stage: Slurm elapsed | Running continuation to epoch 4096 |
+| --- | --- | --- |
+| FM | [7462668 / obqotmc5](https://wandb.ai/turing-core/autocast/runs/obqotmc5): 3h29m25s | [7466028 / mkgbx87n](https://wandb.ai/turing-core/autocast/runs/mkgbx87n) |
+| CRPS | [7462669 / kbzzabya](https://wandb.ai/turing-core/autocast/runs/kbzzabya): 3h33m10s | [7466031 / uw00ubwe](https://wandb.ai/turing-core/autocast/runs/uw00ubwe) |
+
+Each continuation restores the completed epoch-640 checkpoint with full state
+on four GH200s in a separate 24-hour allocation. The cosine horizon remains
+4096 epochs. Current throughput projects roughly **22-23 hours total per
+method**, including the first stage; this is not a completed full-run timing.
+
+Historical timings on Isambard-AI, 2026-10-15 (code `796d6673`, fixed-context training,
 before enabling random context in these presets):
 
 | Timing run | Parameters | Seconds / 64-update epoch (training only) | Mean including validation/checkpoints | Projected 4096 epochs |
@@ -222,18 +232,17 @@ times changed from 6.70 to 0.45 ms at 25 MiB, but from 60.97 to 94.22 ms at
 transport fix, not a full-training speedup. Evidence is under
 `~/autocast-03/outputs/network/rb_nccl_transport_20261015T205720Z/`.
 
-Masked CRPS logging check (2026-10-16, [job 7462449](https://wandb.ai/turing-core/autocast/runs/mmi7dgd3)):
+Historical masked CRPS logging check (2026-10-16, [job 7462449](https://wandb.ai/turing-core/autocast/runs/mmi7dgd3)):
 one node/four GPUs completed 16 epochs and 1,024 updates in 6m26s. Mean epoch
 time, including validation/checkpoints, fell from 21.30 to 20.68 seconds;
-the 4,096-epoch projection fell from 24.23 to 23.53 hours. This leaves only
-13 minutes below the 23h45 training guard, so retain a checkpoint-resume
-contingency. FM has not been retimed with these logging changes. Source
-snapshots, validation results and timings are saved under
+the 4,096-epoch projection fell from 24.23 to 23.53 hours. The longer stages
+above supersede this projection. Source snapshots, validation results and
+timings are saved under
 `~/autocast-03/outputs/timing/rb_crps_spatiotemporal_4gpu_logging_20261016T045534Z/`.
 
-The masked FM probe before the logging fix ([job 7447965](https://wandb.ai/turing-core/autocast/runs/ujoxz7xv))
+The historical masked FM probe before the logging fix ([job 7447965](https://wandb.ai/turing-core/autocast/runs/ujoxz7xv))
 averaged 21.14 seconds per epoch, projecting 24.05 hours on four GH200s.
-Thus FM/CRPS projections are about 96/94 GPU-hours, versus the
+Current 22-23-hour projections imply about 88-92 GPU-hours per method, versus the
 [LOLA paper's](https://arxiv.org/html/2507.02608v4#A2) reported 48 hours on eight
 H100s (384 GPU-hours) per latent RB emulator. Both use cached latents; the
 paper's emulator timing excludes autoencoder training. This gap is unresolved,
@@ -242,4 +251,4 @@ frequent, and the [reference training loop](https://github.com/francois-rozet/lo
 writes model weights and synchronizes every epoch. Objectives, real-example
 exposure for CRPS, and runtime environments also differ. Matching the trunk
 and update schedule does not make these end-to-end timing comparisons exact;
-our short probes are projections, not completed 4,096-epoch runs.
+our estimates remain projections, not completed 4,096-epoch runs.

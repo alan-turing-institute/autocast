@@ -1,4 +1,0 @@
-# Temporary Isambard timing alias; remove after configs/checkpoints migrate.
-defaults:
-  - diffusion_spatiotemporal_vit
-  - _self_

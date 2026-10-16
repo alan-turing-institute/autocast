@@ -163,6 +163,36 @@ def test_fm_forecast_loss_ignores_observed_frames_and_balances_examples(monkeypa
     assert processor.loss(_batch()) > 1000
 
 
+def test_legacy_pickled_fm_preserves_loss_and_gradients(tmp_path):
+    backbone = _WindowBackbone()
+    processor = FlowMatchingMaskedWindowProcessor(
+        backbone=backbone,
+        n_steps_input=1,
+        n_steps_output=4,
+        n_channels_out=1,
+        atleast=1,
+    )
+    torch.manual_seed(17)
+    expected = processor.loss(_batch())
+    expected.backward()
+    assert backbone.scale.grad is not None
+    expected_grad = backbone.scale.grad.clone()
+    processor.zero_grad(set_to_none=True)
+
+    # Older full-object checkpoints lack these newly introduced options.
+    del processor.context_mask
+    del processor.loss_on_observed
+    checkpoint = tmp_path / "legacy.pt"
+    torch.save(processor, checkpoint)
+    restored = torch.load(checkpoint, weights_only=False)
+
+    torch.manual_seed(17)
+    actual = restored.loss(_batch())
+    torch.testing.assert_close(actual, expected)
+    actual.backward()
+    torch.testing.assert_close(restored.flow_matching_model.scale.grad, expected_grad)
+
+
 @pytest.mark.parametrize("broadcast", [False, True])
 def test_masked_mean_balances_examples_and_masks_gradients(broadcast):
     score = torch.tensor([[2.0, 2.0, 999.0], [4.0, 999.0, 999.0]], requires_grad=True)

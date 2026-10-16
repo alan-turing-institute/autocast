@@ -27,12 +27,6 @@ does not require retraining; switching between the two architectures does.
 Printed class names use the canonical names, including when an object was
 created through a legacy alias.
 
-The pre-merge `autocast.nn.spacetime_vit` and
-`autocast.processors.spacetime_vit` imports and `spacetime_vit` preset spellings
-are temporary aliases for the Isambard timing runs. Remove these aliases after
-collecting the timing results and migrating any retained configs/checkpoints.
-The established `TemporalViTBackbone` alias remains supported.
-
 ## Joint spatiotemporal backbone
 
 `SpatiotemporalViTBackbone` matches the transformer architecture in
@@ -121,7 +115,7 @@ always uses this forecast-only reduction with its configured score.
 
 ## Verification and example experiment
 
-`tests/nn/fixtures/lola_spacetime.json` contains forward values and input
+`tests/nn/fixtures/lola_spatiotemporal.json` contains forward values and input
 gradients generated independently from the pinned upstream global-attention
 code. Its recipe fixes all weights, inputs and modulation; the test accounts
 for the transposed RoPE parameter storage in Azula. Tests also cover

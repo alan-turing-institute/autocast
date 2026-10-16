@@ -1,8 +1,7 @@
 """LOLA-compatible global spatiotemporal attention using Azula components.
 
-Architecture reference (MIT, Copyright 2025 François Rozet):
+Adapted from LOLA; see LICENSE.lola for its MIT copyright and permission notice:
 https://github.com/francois-rozet/lola/tree/21a4354b327e6e5ee06da5075ba3bd1dd88c61f1/lola/nn
-See LICENSE.lola for the upstream license.
 """
 
 from collections.abc import Sequence

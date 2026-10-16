@@ -120,7 +120,8 @@ class FlowMatchingMaskedWindowProcessor(FlowMatchingProcessor):
             global_cond=batch.global_cond,
         )
         score = (v_pred - target_velocity) ** 2
-        if self.loss_on_observed:
+        # Older full-object checkpoints retain the original full-window loss.
+        if getattr(self, "loss_on_observed", True):
             return score.mean()
         return masked_mean(score, ~context_mask)
 
@@ -205,8 +206,9 @@ class FlowMatchingMaskedWindowProcessor(FlowMatchingProcessor):
 
     def _random_context_mask(self, x: Tensor) -> Tensor:
         """Use an injected mask policy, or preserve the original LOLA sampler."""
-        if self.context_mask is not None:
-            return self.context_mask(x).expand_as(x)
+        context_mask = getattr(self, "context_mask", None)
+        if context_mask is not None:
+            return context_mask(x).expand_as(x)
         return random_context_mask(
             x, self.lmbda, self.rho, self._mask_atleast_for(x.shape[1])
         )

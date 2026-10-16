@@ -174,7 +174,6 @@ def _uses_masked_window(processor_config: DictConfig) -> bool:
         (
             "FlowMatchingMaskedWindowProcessor",
             "SpatiotemporalViTMaskedWindowProcessor",
-            "SpacetimeViTMaskedWindowProcessor",  # Temporary Isambard alias.
         )
     )
 

@@ -52,7 +52,7 @@ def test_matches_pinned_lola_forward_and_gradient():
     # Generated independently using the pinned upstream ViT/attention source,
     # not this implementation. Fixed nonzero gates exercise the input skip.
     reference = json.loads(
-        (Path(__file__).parent / "fixtures/lola_spacetime.json").read_text()
+        (Path(__file__).parent / "fixtures/lola_spatiotemporal.json").read_text()
     )
     model = _backbone(n_steps_input=3, n_steps_output=3, conditioning="mask").vit
     with torch.no_grad():
@@ -85,7 +85,7 @@ def test_matches_pinned_lola_forward_and_gradient():
 
 def test_rb_architecture_and_spatiotemporal_token_count():
     reference = json.loads(
-        (Path(__file__).parent / "fixtures/lola_spacetime.json").read_text()
+        (Path(__file__).parent / "fixtures/lola_spatiotemporal.json").read_text()
     )
     with torch.device("meta"):
         rb = SpatiotemporalViTBackbone(64, 64, 64, 4, 1)
@@ -154,22 +154,12 @@ def test_checkpointing_preserves_dropout_outputs_and_gradients():
         "spatiotemporal_vit_masked_window",
     ],
 )
-@pytest.mark.parametrize("legacy", [False, True])
-def test_processor_config_and_objective(preset, legacy, REPO_ROOT):
-    if legacy:
-        preset = preset.replace("spatiotemporal", "spacetime")
+def test_processor_config_and_objective(preset, REPO_ROOT):
     overrides = [f"processor@model.processor={preset}"]
-    if legacy:
-        overrides.append("backbone@model.processor.backbone=spacetime_vit")
     with initialize_config_dir(
         str(REPO_ROOT / "src/autocast/configs"), version_base=None
     ):
         cfg = compose(config_name="processor", overrides=overrides)
-    if legacy:
-        # Saved timing configs also retain the previous processor targets.
-        cfg.model.processor._target_ = cfg.model.processor._target_.replace(
-            "spatiotemporal_vit", "spacetime_vit"
-        ).replace("SpatiotemporalViT", "SpacetimeViT")
     cfg.model.processor.backbone.hid_channels = 8
     cfg.model.processor.backbone.hid_blocks = 2
     cfg.model.processor.backbone.mod_features = 4

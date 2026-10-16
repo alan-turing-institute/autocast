@@ -74,14 +74,14 @@ def test_rb_experiments_accept_opt_in_backbone(experiment, preset, REPO_ROOT):
 @pytest.mark.parametrize(
     ("method", "batch_size", "members"), [("fm", 64, 1), ("crps", 8, 8)]
 )
-def test_rb_spacetime_training_protocol(method, batch_size, members, REPO_ROOT):
+def test_rb_spatiotemporal_training_protocol(method, batch_size, members, REPO_ROOT):
     with initialize_config_dir(
         str(REPO_ROOT / "src/autocast/configs"), version_base=None
     ):
         cfg = compose(
             config_name="processor",
             overrides=[
-                f"local_experiment=the_well/rayleigh_benard/{method}_spacetime_latent",
+                f"local_experiment=the_well/rayleigh_benard/{method}_spatiotemporal_latent",
                 "trainer.max_epochs=16",  # Timing must retain the full LR horizon.
             ],
         )
@@ -136,7 +136,7 @@ def test_rb_masked_configs_train_and_forecast_through_existing_setup(
         cfg = compose(
             config_name="processor",
             overrides=[
-                f"local_experiment=the_well/rayleigh_benard/{method}_spacetime_latent"
+                f"local_experiment=the_well/rayleigh_benard/{method}_spatiotemporal_latent"
             ],
         )
     backbone = cfg.model.processor.backbone
