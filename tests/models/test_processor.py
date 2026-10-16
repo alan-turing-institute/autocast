@@ -1,5 +1,8 @@
 """Tests for ProcessorModel with EncodedBatch training."""
 
+from types import SimpleNamespace
+from unittest.mock import Mock
+
 import lightning as L
 import pytest
 import torch
@@ -7,6 +10,7 @@ from azula.noise import VPSchedule
 from conftest import CondCaptureProcessor, get_optimizer_config
 from torch.utils.data import DataLoader, Dataset
 
+from autocast.metrics import MSE
 from autocast.models.processor import ProcessorModel
 from autocast.nn.unet import TemporalUNetBackbone
 from autocast.nn.vit import TemporalViTBackbone
@@ -207,6 +211,121 @@ def test_processor_model_training_step():
     assert loss.ndim == 0, "Loss should be scalar"
     assert not loss.isnan(), "Loss should not be NaN"
     assert loss.item() > 0, "Loss should be positive"
+
+
+@pytest.mark.parametrize("interval", [0, -1, 1.5, True])
+def test_train_loss_log_interval_requires_positive_integer(interval):
+    with pytest.raises(ValueError, match="must be a positive integer"):
+        ProcessorModel(
+            processor=CondCaptureProcessor(), train_loss_log_every_n_steps=interval
+        )
+
+
+@pytest.mark.parametrize("interval", [None, 1, 3, "legacy"])
+def test_train_loss_logging_preserves_loss_metrics_and_diagnostics(
+    monkeypatch, interval
+):
+    kwargs = (
+        {}
+        if interval in (None, "legacy")
+        else {"train_loss_log_every_n_steps": interval}
+    )
+    model = ProcessorModel(
+        processor=CondCaptureProcessor(), train_metrics=[MSE()], **kwargs
+    )
+    if interval == "legacy":
+        # Full-model pickles created before this option have no instance field.
+        del model.train_loss_log_every_n_steps
+    batch = _make_encoded_batch()
+    loss = torch.tensor(2.5, requires_grad=True)
+    compute_loss = Mock(return_value=loss)
+    log = Mock()
+    diagnostics = Mock()
+    metrics = Mock()
+    monkeypatch.setattr(model.processor, "loss", compute_loss)
+    monkeypatch.setattr(model, "log", log)
+    monkeypatch.setattr(model, "_log_processor_diagnostics", diagnostics)
+    monkeypatch.setattr(model, "_update_and_log_metrics", metrics)
+    monkeypatch.setattr(
+        model, "_predict_for_metrics", Mock(return_value=batch.encoded_output_fields)
+    )
+    trainer = SimpleNamespace(global_step=0)
+    monkeypatch.setattr(model, "_trainer", trainer)
+
+    # Repeated global steps model accumulation; batch_idx resets model epochs.
+    steps = [0, 0, 1, 2, 2, 3, 5]
+    logged_steps = []
+    for index, step in enumerate(steps):
+        trainer.global_step = step
+        log.reset_mock()
+        assert model.training_step(batch, batch_idx=index % 4) is loss
+        if log.called:
+            logged_steps.append(step)
+            log.assert_called_once_with(
+                "train_loss", loss, prog_bar=True, sync_dist=True, batch_size=2
+            )
+    assert logged_steps == ([2, 2, 5] if interval == 3 else steps)
+    assert (
+        compute_loss.call_count
+        == diagnostics.call_count
+        == metrics.call_count
+        == len(steps)
+    )
+    loss.backward()
+    assert loss.grad == 1
+
+
+@pytest.mark.parametrize("phase", ["validation", "test"])
+def test_train_loss_interval_does_not_change_evaluation_logging(monkeypatch, phase):
+    model = ProcessorModel(
+        processor=CondCaptureProcessor(),
+        train_loss_log_every_n_steps=64,
+        val_metrics=[],
+        test_metrics=[],
+    )
+    log = Mock()
+    monkeypatch.setattr(model, "log", log)
+    loss = getattr(model, f"{phase}_step")(_make_encoded_batch(), batch_idx=0)
+    name = "val_loss" if phase == "validation" else "test_loss"
+    log.assert_called_once_with(name, loss, prog_bar=True, sync_dist=True, batch_size=2)
+
+
+def test_train_loss_log_cadence_survives_accumulation_and_resume(monkeypatch, tmp_path):
+    model = ProcessorModel(
+        processor=_build_diffusion_processor(),
+        optimizer_config=get_optimizer_config(),
+        train_loss_log_every_n_steps=3,
+    )
+    logged_steps = []
+    original_log = model.log
+
+    def record_log(name, *args, **kwargs):
+        if name == "train_loss":
+            logged_steps.append((model.current_epoch, model.global_step))
+        return original_log(name, *args, **kwargs)
+
+    monkeypatch.setattr(model, "log", record_log)
+    trainer_kwargs = {
+        "accelerator": "cpu",
+        "accumulate_grad_batches": 2,
+        "log_every_n_steps": 3,
+        "logger": False,
+        "enable_checkpointing": False,
+        "enable_progress_bar": False,
+        "enable_model_summary": False,
+    }
+    trainer = L.Trainer(max_epochs=2, **trainer_kwargs)
+    loader = _build_dataloader()
+    trainer.fit(model, loader)
+    assert trainer.global_step == 4
+    assert logged_steps == [(1, 2), (1, 2)]
+    checkpoint = tmp_path / "resume.ckpt"
+    trainer.save_checkpoint(checkpoint)
+
+    resumed = L.Trainer(max_epochs=3, **trainer_kwargs)
+    resumed.fit(model, loader, ckpt_path=checkpoint)
+    assert resumed.global_step == 6
+    assert logged_steps == [(1, 2), (1, 2), (2, 5), (2, 5)]
 
 
 def test_processor_model_validation_step():

@@ -1,0 +1,8 @@
+defaults:
+  - /backbone@backbone: spatiotemporal_vit
+  - _self_
+
+_target_: autocast.processors.spatiotemporal_vit.SpatiotemporalViTProcessor
+n_noise_input_channels: 1024
+backbone:
+  use_precomputed_modulation: true

@@ -79,6 +79,7 @@ chapters:
     - file: reference/types/batch
   - file: reference/nn/index
     sections:
+    - file: spatiotemporal_vit
     - file: reference/nn/residual
     - file: reference/nn/spatial_attention
   - file: reference/utils/index
