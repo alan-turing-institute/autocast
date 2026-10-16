@@ -401,9 +401,11 @@ Data, one-input/one-output delta-normalized persistence residuals, eight members
 afCRPS alpha 0.95, batch 32/GPU, AdamW, seed and checkpoint policy are unchanged.
 There is no simulator-parameter conditioning. The schedule is **512 full epochs /
 256,000 updates on four GPUs**, with epoch-wise cosine LR **2e-4 to zero** and
-no warmup. Both retain the **eight-hour allocation / 7h45m safety cap**. Runtime
-has not been established for this deeper backbone; equal parameter counts do
-not imply the four-block fit's runtime. A time-limited fit is incomplete.
+no warmup. Both presets retain the **eight-hour allocation / 7h45m safety cap**.
+Measured twelve-block throughput is described below; completing all 512 epochs
+may require a longer allocation and a matching trainer-cap override. Equal
+parameter counts do not imply the four-block fit's runtime. A time-limited fit
+is incomplete.
 
 Start both fresh with new output directories and W&B runs. Do not resume the
 older four-block checkpoints: the architecture and noise dimensions differ.
@@ -433,6 +435,72 @@ For the spatial preview, select
 `swe64s/afcrps_spatial1d_residual_one_output_12block_512ep_8h` with a separate
 spatial work directory and W&B name. Keep the explicit distributed time override;
 the eight-hour launcher default is pinned in each selected preset.
+
+### Fresh 256-epoch controls on the twelve-block backbone
+
+Use `afcrps_global256_residual_one_output_12block_256ep_8h.yaml` and
+`afcrps_spatial1d_residual_one_output_12block_256ep_8h.yaml` to test an earlier
+cosine decay on the same models. Each changes only the experiment name and
+epoch horizon relative to its corresponding 512-epoch preset. The data,
+normalization, one-output persistence-residual task, noise, architecture,
+optimizer, validation and checkpoint settings remain unchanged.
+
+Both use **256 full epochs / 128,000 updates on four GPUs**, with epoch-wise
+cosine LR **2e-4 to zero**, no warmup, batch 32/GPU and eight ensemble members.
+The 256D global vector and spatial one-scalar-per-token noise each supply
+256 independent random values per member. These are the **12-block, width-224,
+eight-head models with 256-wide conditioning**, not the earlier four-block
+256-epoch presets. Their **eight-hour allocation / 7h45m safety cap** is retained;
+the cap is a safety limit, not the intended training duration. Measured
+twelve-block throughput suggests about five hours for global and six hours for
+spatial, rather than the older four-block model's approximately 2h14m.
+
+Start fresh with distinct output directories and W&B runs. Do not resume the
+stopped 512-epoch fits or simply stop them at epoch 256: this control changes
+the LR trajectory from the first epoch. Keep their existing checkpoints and
+saved configurations intact. A time-limited fit is incomplete.
+
+The latest 512-epoch global and spatial fits both developed validation upturns
+while LR remained relatively high. This motivates testing an earlier decay;
+it does not establish depth as the cause. The twelve-block setup also changed
+hidden width, conditioning width and noise dimensions relative to the older
+four-block model. The shorter schedule is a control, not a demonstrated fix or
+an established common budget for future loss comparisons. Select best raw
+validation checkpoints and assess conditional uncertainty separately.
+
+Following Google's [tuning playbook](https://github.com/google-research/tuning_playbook#deciding-how-long-to-train-when-training-is-not-compute-bound),
+use best-validation checkpoint selection, calibrate the budget before the main
+comparison, then hold it fixed within that study. The interrupted 512-epoch
+fits did not test the low-LR tail, so they do not exclude a later improvement.
+The [training-curve guidance](https://developers.google.com/machine-learning/guides/deep-learning-tuning-playbook/scientific)
+also distinguishes optimization from regularization. Shortening decay is not
+a substitute for a regularization check if problematic overfitting persists.
+Weight decay and dropout remain zero here to isolate the schedule change.
+
+Compose and preview without training, W&B initialization or job submission:
+
+```bash
+uv run --frozen train_encoder_processor_decoder \
+  local_experiment=swe64s/afcrps_global256_residual_one_output_12block_256ep_8h --cfg job
+
+uv run --frozen train_encoder_processor_decoder \
+  local_experiment=swe64s/afcrps_spatial1d_residual_one_output_12block_256ep_8h --cfg job
+
+uv run --frozen autocast epd --mode slurm --dry-run \
+  --workdir /path/to/new/afcrps-global256-residual-12block-256ep \
+  local_experiment=swe64s/afcrps_global256_residual_one_output_12block_256ep_8h \
+  +distributed=ddp_4gpu_slurm trainer.max_time=00:07:45:00 \
+  ++hydra.launcher.nodes=1 ++hydra.launcher.cpus_per_task=72 \
+  logging.wandb.enabled=true logging.wandb.mode=online \
+  logging.wandb.entity=turing-core logging.wandb.project=autocast \
+  logging.wandb.name=swe64s-global256-residual-12block-256ep
+```
+
+For the spatial preview, select
+`swe64s/afcrps_spatial1d_residual_one_output_12block_256ep_8h` and a separate
+work directory/W&B name. Keep the explicit `trainer.max_time` override when
+adding `+distributed=ddp_4gpu_slurm`; its default otherwise replaces the cap.
+W&B remains disabled in the presets until explicitly enabled for a launch.
 
 ## Full 1000-trajectory AE pretraining
 

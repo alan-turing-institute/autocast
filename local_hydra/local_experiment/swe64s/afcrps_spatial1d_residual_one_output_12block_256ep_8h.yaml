@@ -1,0 +1,15 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/afcrps_spatial1d_residual_one_output_12block_512ep_8h
+  - _self_
+
+experiment_name: swe64s_afcrps_spatial1d_residual_one_output_12block_256ep_8h
+
+trainer:
+  # Match the fresh global control; retain one IID scalar per patch token.
+  max_epochs: 256
+
+hydra:
+  launcher:
+    # Keep the existing eight-hour allocation and 7h45m trainer cap.
+    timeout_min: 480

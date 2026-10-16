@@ -300,6 +300,7 @@ def test_spatial_residual_2h30_changes_noise_only():
         ("afcrps_spatial_residual_one_output_256ep", 4),
         ("afcrps_spatial_residual_one_output_512ep_8h", 4),
         ("afcrps_spatial1d_residual_one_output_12block_512ep_8h", 1),
+        ("afcrps_spatial1d_residual_one_output_12block_256ep_8h", 1),
     ],
 )
 def test_spatial_residual_preset_draws_expected_values_per_patch(name, noise_values):
@@ -338,6 +339,8 @@ def test_spatial_residual_preset_draws_expected_values_per_patch(name, noise_val
     [
         ("afcrps_global256_residual_one_output_12block_512ep_8h", (2, 256)),
         ("afcrps_spatial1d_residual_one_output_12block_512ep_8h", (2, 256, 256)),
+        ("afcrps_global256_residual_one_output_12block_256ep_8h", (2, 256)),
+        ("afcrps_spatial1d_residual_one_output_12block_256ep_8h", (2, 256, 256)),
     ],
 )
 def test_matched_noise_is_reused_in_all_twelve_blocks_and_redrawn_per_call(
@@ -433,6 +436,8 @@ def test_residual_2h30_distributed_allocation_has_saving_buffer(name):
         "afcrps_spatial_residual_one_output_512ep_8h",
         "afcrps_global256_residual_one_output_12block_512ep_8h",
         "afcrps_spatial1d_residual_one_output_12block_512ep_8h",
+        "afcrps_global256_residual_one_output_12block_256ep_8h",
+        "afcrps_spatial1d_residual_one_output_12block_256ep_8h",
     ],
 )
 def test_residual_setup_loss_gradients_and_rollout(name):

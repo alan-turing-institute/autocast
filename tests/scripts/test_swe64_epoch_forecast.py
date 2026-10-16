@@ -28,8 +28,19 @@ BOUNDED_GLOBAL_PRESET = "afcrps_global_residual_one_output_512ep_8h"
 BOUNDED_SPATIAL_PRESET = "afcrps_spatial_residual_one_output_512ep_8h"
 MATCHED_GLOBAL_PRESET = "afcrps_global256_residual_one_output_12block_512ep_8h"
 MATCHED_SPATIAL_PRESET = "afcrps_spatial1d_residual_one_output_12block_512ep_8h"
-MATCHED_PRESETS = {MATCHED_GLOBAL_PRESET, MATCHED_SPATIAL_PRESET}
-SPATIAL_PRESETS = {SPATIAL_PRESET, BOUNDED_SPATIAL_PRESET, MATCHED_SPATIAL_PRESET}
+MATCHED_SHORT_GLOBAL_PRESET = "afcrps_global256_residual_one_output_12block_256ep_8h"
+MATCHED_SHORT_SPATIAL_PRESET = "afcrps_spatial1d_residual_one_output_12block_256ep_8h"
+MATCHED_GLOBAL_PRESETS = {MATCHED_GLOBAL_PRESET, MATCHED_SHORT_GLOBAL_PRESET}
+MATCHED_PRESETS = MATCHED_GLOBAL_PRESETS | {
+    MATCHED_SPATIAL_PRESET,
+    MATCHED_SHORT_SPATIAL_PRESET,
+}
+SPATIAL_PRESETS = {
+    SPATIAL_PRESET,
+    BOUNDED_SPATIAL_PRESET,
+    MATCHED_SPATIAL_PRESET,
+    MATCHED_SHORT_SPATIAL_PRESET,
+}
 EPOCH_PRESETS = {
     PRESET: 512,
     "afcrps_global_residual_one_output_256ep": 256,
@@ -38,12 +49,16 @@ EPOCH_PRESETS = {
     BOUNDED_SPATIAL_PRESET: 512,
     MATCHED_GLOBAL_PRESET: 512,
     MATCHED_SPATIAL_PRESET: 512,
+    MATCHED_SHORT_GLOBAL_PRESET: 256,
+    MATCHED_SHORT_SPATIAL_PRESET: 256,
 }
 BOUNDED_LIMITS = {
     BOUNDED_GLOBAL_PRESET: ("00:07:45:00", 480),
     BOUNDED_SPATIAL_PRESET: ("00:07:45:00", 480),
     MATCHED_GLOBAL_PRESET: ("00:07:45:00", 480),
     MATCHED_SPATIAL_PRESET: ("00:07:45:00", 480),
+    MATCHED_SHORT_GLOBAL_PRESET: ("00:07:45:00", 480),
+    MATCHED_SHORT_SPATIAL_PRESET: ("00:07:45:00", 480),
 }
 
 
@@ -162,11 +177,31 @@ def test_shorter_preset_changes_only_experiment_name_and_epoch_horizon():
 
 
 @pytest.mark.parametrize(
+    ("name", "reference_name"),
+    [
+        (MATCHED_SHORT_GLOBAL_PRESET, MATCHED_GLOBAL_PRESET),
+        (MATCHED_SHORT_SPATIAL_PRESET, MATCHED_SPATIAL_PRESET),
+    ],
+)
+def test_matched_256_profiles_change_only_name_and_epoch_horizon(name, reference_name):
+    reference = _config(reference_name)
+    shorter = _config(name)
+    expected = OmegaConf.to_container(reference, resolve=False)
+    assert isinstance(expected, dict)
+    expected["experiment_name"] = shorter.experiment_name
+    expected["trainer"]["max_epochs"] = 256
+    assert OmegaConf.to_container(shorter, resolve=False) == expected
+    assert OmegaConf.select(shorter, "resume_from_checkpoint") is None
+    assert shorter.autoencoder_checkpoint is None
+
+
+@pytest.mark.parametrize(
     ("global_name", "spatial_name"),
     [
         ("afcrps_global_residual_one_output_256ep", SPATIAL_PRESET),
         (BOUNDED_GLOBAL_PRESET, BOUNDED_SPATIAL_PRESET),
         (MATCHED_GLOBAL_PRESET, MATCHED_SPATIAL_PRESET),
+        (MATCHED_SHORT_GLOBAL_PRESET, MATCHED_SHORT_SPATIAL_PRESET),
     ],
 )
 def test_spatial_preset_changes_only_experiment_name_and_noise_layout(
@@ -177,7 +212,7 @@ def test_spatial_preset_changes_only_experiment_name_and_noise_layout(
     expected = OmegaConf.to_container(reference, resolve=False)
     assert isinstance(expected, dict)
     expected["experiment_name"] = spatial.experiment_name
-    noise_values = 1 if spatial_name == MATCHED_SPATIAL_PRESET else 4
+    noise_values = 1 if spatial_name in MATCHED_PRESETS else 4
     expected["model"]["processor"].update(
         noise_mode="spatial", n_noise_input_channels=noise_values
     )
@@ -189,7 +224,7 @@ def test_spatial_preset_changes_only_experiment_name_and_noise_layout(
     assert (
         tokens * spatial.model.processor.n_noise_input_channels
         == reference.model.processor.n_noise_input_channels
-        == (256 if spatial_name == MATCHED_SPATIAL_PRESET else 1024)
+        == (256 if spatial_name in MATCHED_PRESETS else 1024)
     )
     with torch.device("meta"):
         processor = instantiate(
@@ -198,9 +233,7 @@ def test_spatial_preset_changes_only_experiment_name_and_noise_layout(
             out_channels=3,
             spatial_resolution=[64, 64],
         )
-    expected_count = (
-        10_232_016 if spatial_name == MATCHED_SPATIAL_PRESET else 10_662_384
-    )
+    expected_count = 10_232_016 if spatial_name in MATCHED_PRESETS else 10_662_384
     assert sum(p.numel() for p in processor.parameters()) == expected_count
 
 
@@ -272,7 +305,7 @@ def test_bounded_512_profiles_preserve_their_256_epoch_scientific_settings(
 
 
 @pytest.mark.parametrize("name", BOUNDED_LIMITS)
-def test_bounded_512_launcher_defaults_and_submission_budget(name, monkeypatch):
+def test_bounded_launcher_defaults_and_submission_budget(name, monkeypatch):
     monkeypatch.chdir(ROOT)
     cap, minutes = BOUNDED_LIMITS[name]
     with initialize_config_dir(

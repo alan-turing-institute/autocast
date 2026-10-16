@@ -1,0 +1,16 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/afcrps_global256_residual_one_output_12block_512ep_8h
+  - _self_
+
+experiment_name: swe64s_afcrps_global256_residual_one_output_12block_256ep_8h
+
+trainer:
+  # A fresh fit, not a truncated or resumed 512-epoch cosine schedule.
+  # The inherited cosine horizon follows max_epochs: 128,000 updates on 4 GPUs.
+  max_epochs: 256
+
+hydra:
+  launcher:
+    # The submission helper reads defaults from the selected preset itself.
+    timeout_min: 480
