@@ -41,7 +41,7 @@ class _SpatiotemporalBlock(nn.Module):
             nn.Linear(mod_features, mod_features),
             nn.SiLU(),
             gates,
-            Rearrange("b (n c) -> n b 1 c", n=4),
+            Rearrange("... (n c) -> n ... 1 c", n=4),
         )
         # Azula 0.7 uses the opposite projection bias convention and a
         # different RoPE initialization; retain its attention computation.

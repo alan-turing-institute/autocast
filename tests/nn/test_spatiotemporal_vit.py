@@ -144,6 +144,7 @@ def test_checkpointing_preserves_dropout_outputs_and_gradients():
         assert torch.isfinite(checked(x, torch.ones(1), context)).all()
 
 
+@pytest.mark.parametrize("global_cond_channels", [None, 2])
 @pytest.mark.parametrize(
     "preset",
     [
@@ -154,7 +155,7 @@ def test_checkpointing_preserves_dropout_outputs_and_gradients():
         "spatiotemporal_vit_masked_window",
     ],
 )
-def test_processor_config_and_objective(preset, REPO_ROOT):
+def test_processor_config_and_objective(preset, global_cond_channels, REPO_ROOT):
     overrides = [f"processor@model.processor={preset}"]
     with initialize_config_dir(
         str(REPO_ROOT / "src/autocast/configs"), version_base=None
@@ -175,12 +176,14 @@ def test_processor_config_and_objective(preset, REPO_ROOT):
             "n_steps_output": 4,
             "spatial_resolution": (4, 2),
         },
-        global_cond_channels=2,
+        global_cond_channels=global_cond_channels,
     )
     batch = EncodedBatch(
         encoded_inputs=torch.randn(2, 1, 4, 2, 2),
         encoded_output_fields=torch.randn(2, 4, 4, 2, 2),
-        global_cond=torch.randn(2, 2),
+        global_cond=(
+            torch.randn(2, global_cond_channels) if global_cond_channels else None
+        ),
         encoded_info={},
     )
     if isinstance(processor, SpatiotemporalViTProcessor):
