@@ -1,0 +1,16 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/afcrps_global_residual_one_output_512ep
+  - override /hydra/launcher: slurm
+  - _self_
+
+experiment_name: swe64s_afcrps_global_residual_one_output_512ep_8h
+
+trainer:
+  # The completed 256-epoch fit took 2h14m on four GPUs; expect about 4.5h.
+  # Both noise variants get eight hours, with 15 minutes for final saving.
+  max_time: "00:07:45:00"
+
+hydra:
+  launcher:
+    timeout_min: 480

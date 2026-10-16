@@ -1,0 +1,18 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/afcrps_global_residual_one_output_512ep_8h
+  - _self_
+
+experiment_name: swe64s_afcrps_spatial_residual_one_output_512ep_8h
+
+model:
+  processor:
+    # 256 tokens x 4 IID values: the same 1024 random scalars per member.
+    # Keep the inherited 1024-wide modulation and shared per-token projection.
+    noise_mode: spatial
+    n_noise_input_channels: 4
+
+hydra:
+  launcher:
+    # The submission helper reads this preset directly, not parent launchers.
+    timeout_min: 480

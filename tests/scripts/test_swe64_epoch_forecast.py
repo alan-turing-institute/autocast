@@ -16,14 +16,27 @@ from torch.utils.data import DataLoader, DistributedSampler, TensorDataset
 
 from autocast.callbacks.ema import EMACallback
 from autocast.models.optimizer_mixin import OptimizerMixin
+from autocast.scripts.workflow.slurm import (
+    _build_sbatch_command,
+    _resolve_launcher_submission_context,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 PRESET = "afcrps_global_residual_one_output_512ep"
 SPATIAL_PRESET = "afcrps_spatial_residual_one_output_256ep"
+BOUNDED_GLOBAL_PRESET = "afcrps_global_residual_one_output_512ep_8h"
+BOUNDED_SPATIAL_PRESET = "afcrps_spatial_residual_one_output_512ep_8h"
+SPATIAL_PRESETS = {SPATIAL_PRESET, BOUNDED_SPATIAL_PRESET}
 EPOCH_PRESETS = {
     PRESET: 512,
     "afcrps_global_residual_one_output_256ep": 256,
     SPATIAL_PRESET: 256,
+    BOUNDED_GLOBAL_PRESET: 512,
+    BOUNDED_SPATIAL_PRESET: 512,
+}
+BOUNDED_LIMITS = {
+    BOUNDED_GLOBAL_PRESET: ("00:07:45:00", 480),
+    BOUNDED_SPATIAL_PRESET: ("00:07:45:00", 480),
 }
 
 
@@ -35,12 +48,13 @@ def _config(name=PRESET, *, distributed=False, epochs=None):
     if epochs is not None:
         overrides.append(f"trainer.max_epochs={epochs}")
     if distributed:
+        time_cap, allocation_minutes = BOUNDED_LIMITS.get(name, ("00:23:30:00", 1440))
         overrides += [
             "+distributed=ddp_4gpu_slurm",
-            "trainer.max_time=00:23:30:00",
+            f"trainer.max_time={time_cap}",
             "++hydra.launcher.nodes=1",
             "++hydra.launcher.cpus_per_task=72",
-            "hydra.launcher.timeout_min=1440",
+            f"hydra.launcher.timeout_min={allocation_minutes}",
             "logging.wandb.enabled=true",
             "logging.wandb.mode=online",
         ]
@@ -60,7 +74,7 @@ def test_epoch_control_preserves_data_model_and_optimizer_settings(
     distributed, name, epochs
 ):
     reference = _config("afcrps_global_residual_one_output_2h30")
-    if name == SPATIAL_PRESET:
+    if name in SPATIAL_PRESETS:
         reference.model.processor.noise_mode = "spatial"
         reference.model.processor.n_noise_input_channels = 4
     cfg = _config(name, distributed=distributed)
@@ -81,7 +95,8 @@ def test_epoch_control_preserves_data_model_and_optimizer_settings(
     assert cfg.optimizer.min_lr_ratio == cfg.optimizer.warmup == 0
     assert cfg.trainer.max_epochs == cfg.optimizer.cosine_epochs == epochs
     assert cfg.trainer.max_steps == -1
-    assert cfg.trainer.max_time == "00:23:30:00"
+    time_cap, allocation_minutes = BOUNDED_LIMITS.get(name, ("00:23:30:00", 1440))
+    assert cfg.trainer.max_time == time_cap
     assert cfg.trainer.limit_train_batches == cfg.trainer.limit_val_batches == 1.0
     assert cfg.trainer.check_val_every_n_epoch == cfg.trainer.val_check_interval == 1
     assert cfg.trainer.accumulate_grad_batches == 1
@@ -109,7 +124,7 @@ def test_epoch_control_preserves_data_model_and_optimizer_settings(
         assert cfg.trainer.num_nodes == cfg.hydra.launcher.nodes == 1
         assert cfg.hydra.launcher.tasks_per_node == 4
         assert cfg.hydra.launcher.cpus_per_task == 72
-        assert cfg.hydra.launcher.timeout_min == 1440
+        assert cfg.hydra.launcher.timeout_min == allocation_minutes
         assert cfg.logging.wandb.enabled
         assert cfg.logging.wandb.mode == "online"
     else:
@@ -126,9 +141,18 @@ def test_shorter_preset_changes_only_experiment_name_and_epoch_horizon():
     assert OmegaConf.to_container(shorter, resolve=False) == expected
 
 
-def test_spatial_preset_changes_only_experiment_name_and_noise_layout():
-    reference = _config("afcrps_global_residual_one_output_256ep")
-    spatial = _config(SPATIAL_PRESET)
+@pytest.mark.parametrize(
+    ("global_name", "spatial_name"),
+    [
+        ("afcrps_global_residual_one_output_256ep", SPATIAL_PRESET),
+        (BOUNDED_GLOBAL_PRESET, BOUNDED_SPATIAL_PRESET),
+    ],
+)
+def test_spatial_preset_changes_only_experiment_name_and_noise_layout(
+    global_name, spatial_name
+):
+    reference = _config(global_name)
+    spatial = _config(spatial_name)
     expected = OmegaConf.to_container(reference, resolve=False)
     assert isinstance(expected, dict)
     expected["experiment_name"] = spatial.experiment_name
@@ -153,6 +177,72 @@ def test_spatial_preset_changes_only_experiment_name_and_noise_layout():
             spatial_resolution=[64, 64],
         )
     assert sum(p.numel() for p in processor.parameters()) == 10_662_384
+
+
+@pytest.mark.parametrize(
+    ("name", "reference_name"),
+    [
+        (BOUNDED_GLOBAL_PRESET, "afcrps_global_residual_one_output_256ep"),
+        (BOUNDED_SPATIAL_PRESET, SPATIAL_PRESET),
+    ],
+)
+def test_bounded_512_profiles_preserve_their_256_epoch_scientific_settings(
+    name, reference_name
+):
+    reference = _config(reference_name)
+    longer = _config(name)
+    expected = OmegaConf.to_container(reference, resolve=False)
+    assert isinstance(expected, dict)
+    expected["experiment_name"] = longer.experiment_name
+    expected["trainer"].update(max_epochs=512, max_time=BOUNDED_LIMITS[name][0])
+    assert OmegaConf.to_container(longer, resolve=False) == expected
+    assert OmegaConf.select(longer, "resume_from_checkpoint") is None
+    assert longer.autoencoder_checkpoint is None
+
+
+@pytest.mark.parametrize("name", BOUNDED_LIMITS)
+def test_bounded_512_launcher_defaults_and_submission_budget(name, monkeypatch):
+    monkeypatch.chdir(ROOT)
+    cap, minutes = BOUNDED_LIMITS[name]
+    with initialize_config_dir(
+        version_base=None, config_dir=str(ROOT / "src/autocast/configs")
+    ):
+        cfg = compose(
+            config_name="encoder_processor_decoder",
+            overrides=[
+                f"local_experiment=swe64s/{name}",
+                f"hydra.searchpath=[file://{ROOT / 'local_hydra'}]",
+            ],
+            return_hydra_config=True,
+        )
+    assert cfg.trainer.max_time == cap
+    assert cfg.hydra.launcher.timeout_min == minutes
+    assert minutes - int(cap.split(":")[1]) * 60 - int(cap.split(":")[2]) == 15
+    overrides = [
+        f"local_experiment=swe64s/{name}",
+        "+distributed=ddp_4gpu_slurm",
+        f"trainer.max_time={cap}",
+        "++hydra.launcher.nodes=1",
+        "++hydra.launcher.cpus_per_task=72",
+        "logging.wandb.enabled=true",
+        "logging.wandb.mode=online",
+    ]
+    launcher, module_overrides = _resolve_launcher_submission_context(overrides)
+    assert launcher["timeout_min"] == minutes
+    assert launcher["nodes"] == 1
+    assert launcher["gpus_per_node"] == launcher["tasks_per_node"] == 4
+    assert launcher["cpus_per_task"] == 72
+    assert f"trainer.max_time={cap}" in module_overrides
+    preview = _build_sbatch_command(
+        job_name=name,
+        log_dir=Path("/preflight"),
+        launcher_cfg=launcher,
+        batch_script_path=Path("/preflight/preview.sh"),
+    )
+    assert f"--time={minutes // 60:02d}:00:00" in preview
+    assert "--nodes=1" in preview
+    assert "--gpus-per-node=4" in preview
+    assert "--ntasks-per-node=4" in preview
 
 
 @pytest.mark.parametrize(("name", "epochs"), EPOCH_PRESETS.items())

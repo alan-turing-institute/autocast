@@ -71,7 +71,8 @@ Run commands from the AutoCast repository root with `uv`. Set
 `AUTOCAST_DATASETS` to the existing dataset parent and `SWE64S_OUTPUTS` to an
 approved scratch/output directory before training. With no output override,
 Hydra uses the ignored `outputs/swe64s` directory. W&B is disabled by default.
-The presets do not select a cluster launcher or submit jobs.
+The original baseline presets do not select a cluster launcher; the bounded
+epoch profiles below do. Selecting a preset never submits jobs by itself.
 
 The read-only helper composes all four job presets without loading the dataset
 or allocating model weights. Without `--configs-only`, it checks the raw split
@@ -321,6 +322,61 @@ preset's default from replacing the safety cap. Retain the saved configuration,
 code/lock/dataset identity, checkpoint hashes and actual epochs/updates/GPU-hours.
 Before an eventual launch, verify the original dataset and delta statistics
 on the target machine. The earlier time-bounded controls remain unchanged.
+
+### Fresh 512-epoch matched noise comparison
+
+The bounded `afcrps_global_residual_one_output_512ep_8h.yaml` and
+`afcrps_spatial_residual_one_output_512ep_8h.yaml` presets extend this comparison
+to **512 full epochs / 256,000 updates**. Both use an **eight-hour Slurm
+allocation** (`timeout_min=480`) and **7h45m trainer safety cap**, leaving
+15 minutes for final saving. Epochs remain the intended stopping condition;
+the safety cap does not change the epoch-wise cosine from `2e-4` to zero.
+Record a time-limited fit as incomplete rather than a full 512-epoch result.
+
+These are fresh fits, not continuations of the completed 256-epoch schedule
+or the earlier cancelled 512-epoch attempt. A fresh 512-epoch cosine follows
+a different LR path from the outset. Preserve the earlier output directories
+and W&B runs, and use new, distinct destinations for both fits. The original
+512- and 256-epoch presets remain unchanged so their saved configurations
+remain reproducible.
+
+The global fit retains all scientific settings of its 256-epoch counterpart.
+The spatial fit changes only the experiment name and noise layout relative
+to the new global preset: four IID values per patch token, with the same
+1,024 random scalars per member and inherited modulation width. Model, data,
+residual task, batch 32/GPU, eight members, optimizer, validation and checkpoint
+selection are otherwise matched. No AE, new dataset or normalization is needed.
+The measured global 256-epoch runtime was 2h14m on four GPUs, suggesting roughly
+4.5 hours for 512 epochs. Earlier spatial throughput suggests about six hours,
+but was measured on a different output window. These are estimates, not timing
+runs; allow both fits the same eight-hour allocation and record actual cost.
+
+Compose and preview without training, W&B initialization or job submission:
+
+```bash
+uv run --frozen train_encoder_processor_decoder \
+  local_experiment=swe64s/afcrps_global_residual_one_output_512ep_8h --cfg job
+
+uv run --frozen train_encoder_processor_decoder \
+  local_experiment=swe64s/afcrps_spatial_residual_one_output_512ep_8h --cfg job
+
+uv run --frozen autocast epd --mode slurm --dry-run \
+  --workdir /path/to/new/afcrps-global-residual-one-output-512ep \
+  local_experiment=swe64s/afcrps_global_residual_one_output_512ep_8h \
+  +distributed=ddp_4gpu_slurm trainer.max_time=00:07:45:00 \
+  ++hydra.launcher.nodes=1 ++hydra.launcher.cpus_per_task=72 \
+  logging.wandb.enabled=true logging.wandb.mode=online \
+  logging.wandb.entity=turing-core logging.wandb.project=autocast \
+  logging.wandb.name=swe64s-afcrps-global-residual-one-output-512ep
+```
+
+For the spatial preview, select
+`swe64s/afcrps_spatial_residual_one_output_512ep_8h` and use a separate spatial
+work directory and W&B name. Both presets set the eight-hour launcher default.
+Keep the explicit `trainer.max_time` override when adding the distributed
+preset, whose default would otherwise replace the trainer safety cap. Verify
+the target checkout and original dataset/delta statistics before approving
+either launch.
 
 ## Full 1000-trajectory AE pretraining
 

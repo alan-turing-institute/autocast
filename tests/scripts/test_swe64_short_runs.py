@@ -298,6 +298,7 @@ def test_spatial_residual_2h30_changes_noise_only():
     [
         "afcrps_spatial_residual_small_2h30",
         "afcrps_spatial_residual_one_output_256ep",
+        "afcrps_spatial_residual_one_output_512ep_8h",
     ],
 )
 def test_spatial_residual_preset_draws_four_values_per_patch(name):
@@ -378,6 +379,8 @@ def test_residual_2h30_distributed_allocation_has_saving_buffer(name):
         "afcrps_global_residual_one_output_512ep",
         "afcrps_global_residual_one_output_256ep",
         "afcrps_spatial_residual_one_output_256ep",
+        "afcrps_global_residual_one_output_512ep_8h",
+        "afcrps_spatial_residual_one_output_512ep_8h",
     ],
 )
 def test_residual_setup_loss_gradients_and_rollout(name):
