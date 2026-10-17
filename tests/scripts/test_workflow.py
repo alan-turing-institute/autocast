@@ -17,6 +17,7 @@ from autocast.scripts.workflow.commands import (
     benchmark_manifest_command,
     build_effective_eval_overrides,
     build_train_overrides,
+    clean_command,
     eval_command,
     infer_dataset_from_workdir,
     infer_eval_checkpoint,
@@ -1268,6 +1269,42 @@ def test_build_parser_benchmark_basic(parser: argparse.ArgumentParser):
     args = parser.parse_args(["benchmark", "--workdir", "/tmp/w"])
     assert args.command == "benchmark"
     assert args.workdir == "/tmp/w"
+
+
+def test_build_parser_clean_basic(parser: argparse.ArgumentParser):
+    args = parser.parse_args(["clean", "/tmp/run", "--dry-run"])
+    assert args.command == "clean"
+    assert args.path == Path("/tmp/run")
+    assert args.dry_run is True
+
+
+def test_clean_command_removes_only_checkpoints(tmp_path: Path):
+    nested = tmp_path / "checkpoints"
+    nested.mkdir()
+    first = tmp_path / "model.ckpt"
+    second = nested / "last.ckpt"
+    keep = nested / "metrics.csv"
+    first.write_bytes(b"123")
+    second.write_bytes(b"4567")
+    keep.write_text("keep")
+
+    assert clean_command(tmp_path) == (2, 7)
+    assert not first.exists()
+    assert not second.exists()
+    assert keep.exists()
+
+
+def test_clean_command_dry_run_keeps_checkpoints(tmp_path: Path):
+    checkpoint = tmp_path / "model.ckpt"
+    checkpoint.write_bytes(b"123")
+
+    assert clean_command(tmp_path, dry_run=True) == (1, 3)
+    assert checkpoint.exists()
+
+
+def test_clean_command_rejects_missing_path(tmp_path: Path):
+    with pytest.raises(FileNotFoundError, match="Path does not exist"):
+        clean_command(tmp_path / "missing")
 
 
 def test_build_parser_train_eval_with_eval_overrides(
