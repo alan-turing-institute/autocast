@@ -100,6 +100,29 @@ def test_teacher_excluded_from_checkpoint():
     assert set(proc.state_dict()) == keys_before
 
 
+@pytest.mark.parametrize("integrator", ["euler", "heun", "ab3"])
+def test_teacher_endpoint_preserves_sampling_integrator(integrator):
+    class TimeField(nn.Module):
+        def forward(self, z, t, cond=None, global_cond=None):  # noqa: ARG002
+            return t[:, None, None, None, None].square().expand_as(z)
+
+    teacher = FlowMatchingProcessor(
+        backbone=TimeField(),
+        integrator=integrator,
+        flow_ode_steps=4,
+        n_steps_output=1,
+        n_channels_out=1,
+    )
+    student = _student((4, 1), 1)
+    student.set_teacher(teacher)
+    x = torch.zeros(2, 1, 4, 1, 1)
+    torch.manual_seed(12)
+    expected = teacher.map(x, None)
+    torch.manual_seed(12)
+    actual = student._teacher_endpoint(torch.randn_like(x), x, None)
+    torch.testing.assert_close(actual, expected)
+
+
 def test_distillation_matches_teacher_and_keeps_spread():
     """Training drives the student toward the teacher's noise->sample map: the
     distillation MSE drops and the student's member spread stays non-trivial

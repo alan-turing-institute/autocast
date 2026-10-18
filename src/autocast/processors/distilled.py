@@ -8,6 +8,7 @@ import torch
 from torch import nn
 
 from autocast.processors.base import Processor
+from autocast.processors.flow_matching import FlowMatchingProcessor
 from autocast.types import EncodedBatch, Tensor
 
 
@@ -125,6 +126,10 @@ class DistilledProcessor(Processor):
     ) -> Tensor:
         """Integrate the teacher's flow ODE from a *given* noise z to its sample."""
         teacher = self._teacher[0]
+        if isinstance(teacher, FlowMatchingProcessor):
+            return teacher._integrate(
+                z, lambda z, t: teacher.flow_field(z, t, x, global_cond)
+            )
         steps = max(int(teacher.flow_ode_steps), 1)
         integrator = getattr(teacher, "integrator", "euler")
         dt = torch.tensor(1.0 / steps, device=z.device, dtype=z.dtype)

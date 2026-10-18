@@ -88,8 +88,25 @@ Our finite shuffled training loader and sequential validation loader differ
 from LOLA's infinite shuffled loaders. For comparison with our report, the
 evaluation launcher must explicitly select `eval.rollout_start=16` and the
 same rollout horizon and member count. These training presets do not set up
-the complete rollout evaluation; the generic start defaults to zero. Start16
-is a deliberate difference from LOLA's frame-zero protocol.
+the complete rollout evaluation; the generic start defaults to zero. LOLA's
+[evaluation script](https://github.com/francois-rozet/lola/blob/21a4354b327e6e5ee06da5075ba3bd1dd88c61f1/experiments/eval_all.sh)
+explicitly selects start16 for RB. Its default diffusion evaluation uses
+16-step, third-order Adams-Bashforth. FM can opt into the same order and
+evaluation count with `model.processor.integrator=ab3` and
+`model.processor.flow_ode_steps=16`, integrating its own velocity ODE on [0, 1].
+Existing FM presets retain Euler and their configured step counts.
+
+For the new FM/CRPS rollout comparison, pass the same absolute
+`eval.rollout_subset=/path/to/test64_seed0.yaml` from this folder to both
+evaluations. The manifest fixes 64 trajectories drawn uniformly **without
+replacement** from all 175 raw test trajectories using Python's
+`random.Random(0).sample`; it does not take the first 64. The evaluator checks
+the population, file ordering and per-file trajectory counts before applying
+the IDs to every test rollout pass, including power/ensemble metrics and
+videos. Each evaluation saves its manifest as `rollout_subset.yaml` beside
+the metrics. Video `batch_indices` refer to positions in this selected list.
+This differs from LOLA's public 64 draws with replacement followed by
+deduplication. Existing evaluations remain unfiltered unless explicitly enabled.
 
 Both methods draw one prefix mask per real example using the pinned code's
 Poisson rate 1, prefix probability 1 and minimum context 1. The modulo-wrapped

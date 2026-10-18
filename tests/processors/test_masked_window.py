@@ -178,10 +178,13 @@ def test_legacy_pickled_fm_preserves_loss_and_gradients(tmp_path):
     assert backbone.scale.grad is not None
     expected_grad = backbone.scale.grad.clone()
     processor.zero_grad(set_to_none=True)
+    torch.manual_seed(17)
+    expected_sample = processor.map(_batch().encoded_inputs, _batch().global_cond)
 
     # Older full-object checkpoints lack these newly introduced options.
     del processor.context_mask
     del processor.loss_on_observed
+    del processor.integrator
     checkpoint = tmp_path / "legacy.pt"
     torch.save(processor, checkpoint)
     restored = torch.load(checkpoint, weights_only=False)
@@ -191,6 +194,33 @@ def test_legacy_pickled_fm_preserves_loss_and_gradients(tmp_path):
     torch.testing.assert_close(actual, expected)
     actual.backward()
     torch.testing.assert_close(restored.flow_matching_model.scale.grad, expected_grad)
+    torch.manual_seed(17)
+    torch.testing.assert_close(
+        restored.map(_batch().encoded_inputs, _batch().global_cond), expected_sample
+    )
+
+
+@pytest.mark.parametrize("integrator", ["euler", "heun", "ab3"])
+def test_masked_fm_integrators_preserve_context_and_constant_velocity(integrator):
+    backbone = _WindowBackbone()
+    processor = FlowMatchingMaskedWindowProcessor(
+        backbone=backbone,
+        n_steps_input=1,
+        n_steps_output=4,
+        n_channels_out=1,
+        flow_ode_steps=4,
+        integrator=integrator,
+    )
+    batch = _batch()
+    torch.manual_seed(12)
+    initial = torch.randn(2, 5, 2, 2, 1)
+    torch.manual_seed(12)
+    actual = processor.map(batch.encoded_inputs, batch.global_cond)
+    assert batch.global_cond is not None
+    expected = initial[:, 1:] + batch.global_cond[:, 0, None, None, None, None]
+    torch.testing.assert_close(actual, expected)
+    assert len(backbone.seen) == (8 if integrator == "heun" else 4)
+    assert all(torch.equal(z[:, :1], batch.encoded_inputs) for z, _, _ in backbone.seen)
 
 
 @pytest.mark.parametrize("broadcast", [False, True])

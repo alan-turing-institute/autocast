@@ -261,7 +261,7 @@ def test_masked_window_context_mask_matches_lola(rho: float):
 
 
 # ---------------------------------------------------------------------------
-# Integrator option (euler default / heun)
+# Integrator options (Euler default / Heun / AB3)
 # ---------------------------------------------------------------------------
 
 
@@ -306,7 +306,7 @@ def test_flow_matching_euler_default_unchanged():
     assert torch.equal(out_default, out_euler)
 
 
-@pytest.mark.parametrize("integrator", ["euler", "heun"])
+@pytest.mark.parametrize("integrator", ["euler", "heun", "ab3"])
 def test_flow_matching_integrator_shapes(integrator):
     x = torch.randn(2, 1, 4, 4, 2)
     proc = FlowMatchingProcessor(
@@ -345,3 +345,54 @@ def test_flow_matching_heun_more_accurate_than_euler_on_decay_field():
     dt = 1.0 / steps
     assert torch.allclose(z_euler, z0 * (1.0 - dt) ** steps, atol=1e-6)
     assert torch.allclose(z_heun, z0 * (1.0 - dt + 0.5 * dt * dt) ** steps, atol=1e-6)
+
+
+@pytest.mark.parametrize("steps", [1, 2, 3, 16])
+def test_flow_matching_ab3_startup_accuracy_and_evaluation_count(steps):
+    class QuadraticTimeField(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.scale = torch.nn.Parameter(torch.ones(()))
+            self.times = []
+
+        def forward(self, z, t, cond=None, global_cond=None):  # noqa: ARG002
+            self.times.append(t.detach().clone())
+            return self.scale * t[:, None, None, None, None].square().expand_as(z)
+
+    field = QuadraticTimeField()
+    processor = FlowMatchingProcessor(
+        backbone=field,
+        integrator="ab3",
+        flow_ode_steps=steps,
+        n_steps_output=1,
+        n_channels_out=1,
+    )
+    x = torch.zeros(2, 1, 2, 2, 1, dtype=torch.float64)
+    torch.manual_seed(12)
+    initial = torch.randn_like(x)
+    torch.manual_seed(12)
+    actual = processor.map(x, None)
+    # Integrating t^2 is exact after the Euler/AB2 startup. Their combined
+    # error is 7*h^3/6; this checks the three-step history independently.
+    integral = 0.0 if steps == 1 else 1 / 3 - 7 / (6 * steps**3)
+    torch.testing.assert_close(actual, initial + integral)
+    assert len(field.times) == steps
+    torch.testing.assert_close(
+        torch.stack(field.times)[:, 0],
+        torch.arange(steps, dtype=x.dtype) / steps,
+    )
+    actual.sum().backward()
+    torch.testing.assert_close(field.scale.grad, torch.tensor(x.numel() * integral))
+    torch.manual_seed(12)
+    torch.testing.assert_close(processor.map(x, None), actual)
+
+
+def test_flow_matching_ab3_improves_on_euler_at_same_evaluation_count():
+    x = torch.zeros(2, 1, 2, 2, 1)
+    torch.manual_seed(12)
+    exact = torch.randn_like(x) * math.exp(-1)
+    torch.manual_seed(12)
+    euler = _decay_processor("euler", 16).map(x, None)
+    torch.manual_seed(12)
+    ab3 = _decay_processor("ab3", 16).map(x, None)
+    assert (ab3 - exact).abs().max() < (euler - exact).abs().max()

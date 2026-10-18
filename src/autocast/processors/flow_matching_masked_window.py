@@ -36,12 +36,14 @@ class FlowMatchingMaskedWindowProcessor(FlowMatchingProcessor):
         atleast: int = 0,
         context_mask: Callable[[Tensor], Tensor] | None = None,
         loss_on_observed: bool = True,
+        integrator: str = "euler",
     ) -> None:
         super().__init__(
             backbone=backbone,
             flow_ode_steps=flow_ode_steps,
             n_steps_output=n_steps_output,
             n_channels_out=n_channels_out,
+            integrator=integrator,
         )
         self.n_steps_input = n_steps_input
         self.lmbda = lmbda
@@ -73,10 +75,8 @@ class FlowMatchingMaskedWindowProcessor(FlowMatchingProcessor):
 
         z = torch.randn(full_shape, device=device, dtype=dtype)
         z = torch.where(context_mask, clean_context, z)
-        t = torch.zeros(batch_size, device=device, dtype=dtype)
-        dt = torch.tensor(1.0 / self.flow_ode_steps, device=device, dtype=dtype)
 
-        for _ in range(self.flow_ode_steps):
+        def field(z: Tensor, t: Tensor) -> Tensor:
             z = torch.where(context_mask, clean_context, z)
             v = self.flow_field(
                 z,
@@ -84,10 +84,9 @@ class FlowMatchingMaskedWindowProcessor(FlowMatchingProcessor):
                 context_mask.to(dtype=dtype),
                 global_cond=global_cond,
             )
-            v = torch.where(context_mask, torch.zeros_like(v), v)
-            z = z + dt * v
-            t = t + dt
+            return torch.where(context_mask, torch.zeros_like(v), v)
 
+        z = self._integrate(z, field)
         z = torch.where(context_mask, clean_context, z)
         return z[:, input_steps:, ...]
 

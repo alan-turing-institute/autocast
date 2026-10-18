@@ -18,7 +18,7 @@ import yaml
 from einops import rearrange
 from omegaconf import DictConfig, OmegaConf, open_dict
 from the_well.data.normalization import ZScoreNormalization
-from torch.utils.data import DataLoader, SequentialSampler
+from torch.utils.data import DataLoader, SequentialSampler, Subset
 from torchmetrics import Metric
 
 from autocast.benchmarking import benchmark_model, benchmark_rollout
@@ -766,7 +766,57 @@ def _resolve_rollout_timestep_limit(
     return int(max_rollout_steps) * int(rollout_stride)
 
 
+def _apply_rollout_subset(datamodule: Any, eval_cfg: DictConfig) -> dict | None:
+    """Apply a frozen test-trajectory selection to every rollout loader."""
+    path = eval_cfg.get("rollout_subset")
+    if path is None:
+        return None
+    if (eval_cfg.get("trajectory_statistics") or {}).get("enabled", False):
+        msg = "eval.rollout_subset cannot be combined with full trajectory statistics."
+        raise ValueError(msg)
+    if (
+        eval_cfg.get("dump_rollout_tensors", False)
+        and _normalize_dump_split(eval_cfg.get("dump_split")) != DumpSplit.TEST
+    ):
+        msg = "eval.rollout_subset selects test trajectories, not validation dumps."
+        raise ValueError(msg)
+
+    selection = yaml.safe_load(Path(hydra.utils.to_absolute_path(path)).read_text())
+    dataset = datamodule.rollout_test_dataset
+    population = len(dataset)
+    if population != selection["population_size"]:
+        msg = "Rollout subset population does not match the test dataset."
+        raise ValueError(msg)
+    if "files" in selection:
+        well = dataset.well_dataset
+        files = dict(
+            zip(
+                (Path(p).name for p in well.files_paths),
+                well.n_trajectories_per_file,
+                strict=True,
+            )
+        )
+        if list(files.items()) != list(selection["files"].items()):
+            msg = "Rollout subset file inventory/order does not match the test dataset."
+            raise ValueError(msg)
+    indices = selection["indices"]
+    if (
+        not indices
+        or any(type(i) is not int or not 0 <= i < population for i in indices)
+        or len(set(indices)) != len(indices)
+    ):
+        msg = "Rollout subset indices must be unique integers within the test dataset."
+        raise ValueError(msg)
+    datamodule.rollout_test_dataset = Subset(dataset, indices)
+    log.info(
+        "Selected %d of %d test trajectories from %s", len(indices), population, path
+    )
+    return selection
+
+
 def _resolve_rollout_channel_names(dataset: Any) -> list[str] | None:
+    while isinstance(dataset, Subset):
+        dataset = dataset.dataset
     if dataset is None:
         return None
 
@@ -3162,6 +3212,21 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
             "sample is consumed once in sequential dataset order."
         )
         raise ValueError(msg)
+
+    rollout_subset = _apply_rollout_subset(datamodule, eval_cfg)
+    if rollout_subset is not None and fabric.global_rank == 0:
+        subset_path = csv_path.parent / "rollout_subset.yaml"
+        subset_path.parent.mkdir(parents=True, exist_ok=True)
+        if (
+            subset_path.exists()
+            and yaml.safe_load(subset_path.read_text()) != rollout_subset
+        ):
+            msg = (
+                f"Existing rollout subset differs: {subset_path}. "
+                "Choose a new output directory."
+            )
+            raise ValueError(msg)
+        subset_path.write_text(yaml.safe_dump(rollout_subset, sort_keys=False))
 
     # Setup model and loader with Fabric
     log.info("Model configuration n_members: %s", n_members)

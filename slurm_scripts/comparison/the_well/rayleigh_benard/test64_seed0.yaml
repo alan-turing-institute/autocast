@@ -1,0 +1,50 @@
+# Shared FM/CRPS test trajectories, drawn uniformly without replacement.
+# random.Random(0).sample(range(175), 64); indices follow the file order below.
+seed: 0
+population_size: 175
+files:
+  rayleigh_benard_Rayleigh_1e10_Prandtl_1.hdf5: 5
+  rayleigh_benard_Rayleigh_1e10_Prandtl_10.hdf5: 5
+  rayleigh_benard_Rayleigh_1e10_Prandtl_1e-1.hdf5: 5
+  rayleigh_benard_Rayleigh_1e10_Prandtl_2.hdf5: 5
+  rayleigh_benard_Rayleigh_1e10_Prandtl_2e-1.hdf5: 5
+  rayleigh_benard_Rayleigh_1e10_Prandtl_5.hdf5: 5
+  rayleigh_benard_Rayleigh_1e10_Prandtl_5e-1.hdf5: 5
+  rayleigh_benard_Rayleigh_1e6_Prandtl_1.hdf5: 5
+  rayleigh_benard_Rayleigh_1e6_Prandtl_10.hdf5: 5
+  rayleigh_benard_Rayleigh_1e6_Prandtl_1e-1.hdf5: 5
+  rayleigh_benard_Rayleigh_1e6_Prandtl_2.hdf5: 5
+  rayleigh_benard_Rayleigh_1e6_Prandtl_2e-1.hdf5: 5
+  rayleigh_benard_Rayleigh_1e6_Prandtl_5.hdf5: 5
+  rayleigh_benard_Rayleigh_1e6_Prandtl_5e-1.hdf5: 5
+  rayleigh_benard_Rayleigh_1e7_Prandtl_1.hdf5: 5
+  rayleigh_benard_Rayleigh_1e7_Prandtl_10.hdf5: 5
+  rayleigh_benard_Rayleigh_1e7_Prandtl_1e-1.hdf5: 5
+  rayleigh_benard_Rayleigh_1e7_Prandtl_2.hdf5: 5
+  rayleigh_benard_Rayleigh_1e7_Prandtl_2e-1.hdf5: 5
+  rayleigh_benard_Rayleigh_1e7_Prandtl_5.hdf5: 5
+  rayleigh_benard_Rayleigh_1e7_Prandtl_5e-1.hdf5: 5
+  rayleigh_benard_Rayleigh_1e8_Prandtl_1.hdf5: 5
+  rayleigh_benard_Rayleigh_1e8_Prandtl_10.hdf5: 5
+  rayleigh_benard_Rayleigh_1e8_Prandtl_1e-1.hdf5: 5
+  rayleigh_benard_Rayleigh_1e8_Prandtl_2.hdf5: 5
+  rayleigh_benard_Rayleigh_1e8_Prandtl_2e-1.hdf5: 5
+  rayleigh_benard_Rayleigh_1e8_Prandtl_5.hdf5: 5
+  rayleigh_benard_Rayleigh_1e8_Prandtl_5e-1.hdf5: 5
+  rayleigh_benard_Rayleigh_1e9_Prandtl_1.hdf5: 5
+  rayleigh_benard_Rayleigh_1e9_Prandtl_10.hdf5: 5
+  rayleigh_benard_Rayleigh_1e9_Prandtl_1e-1.hdf5: 5
+  rayleigh_benard_Rayleigh_1e9_Prandtl_2.hdf5: 5
+  rayleigh_benard_Rayleigh_1e9_Prandtl_2e-1.hdf5: 5
+  rayleigh_benard_Rayleigh_1e9_Prandtl_5.hdf5: 5
+  rayleigh_benard_Rayleigh_1e9_Prandtl_5e-1.hdf5: 5
+indices: [
+  98, 107, 10, 66, 130, 124, 103, 77,
+  122, 91, 149, 55, 129, 35, 72, 161,
+  24, 64, 136, 154, 37, 79, 25, 18,
+  84, 120, 143, 152, 90, 111, 80, 52,
+  141, 166, 113, 133, 171, 15, 3, 23,
+  102, 0, 126, 85, 62, 83, 16, 48,
+  117, 160, 28, 30, 134, 151, 142, 69,
+  57, 11, 172, 40, 112, 65, 170, 13,
+]
