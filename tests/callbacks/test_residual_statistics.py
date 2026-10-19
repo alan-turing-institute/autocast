@@ -10,7 +10,14 @@ import torch
 from einops import rearrange, repeat
 from lightning.pytorch.plugins.precision import Precision
 from torch import nn
-from torch.utils.data import DataLoader, Dataset, RandomSampler, SubsetRandomSampler
+from torch.utils.data import (
+    BatchSampler,
+    DataLoader,
+    Dataset,
+    RandomSampler,
+    SequentialSampler,
+    SubsetRandomSampler,
+)
 
 from autocast.callbacks.residual_statistics import ResidualStatisticsCallback
 from autocast.decoders.identity import IdentityDecoder
@@ -336,18 +343,46 @@ def test_distributed_fitting_combines_disjoint_shards_including_empty_rank(n_sam
     assert visited == [list(range(0, n_samples, 2)), list(range(1, n_samples, 2))]
 
 
-@pytest.mark.parametrize("subset", [False, True])
-def test_distributed_fitting_rejects_nonstandard_sampling(subset, monkeypatch):
+@pytest.mark.parametrize(
+    "sampling",
+    [
+        "replacement",
+        "subset",
+        "subclass",
+        "batch_subset",
+        "batch_full",
+        "batch_drop_last",
+    ],
+)
+def test_distributed_fitting_rejects_nonstandard_sampling(sampling, monkeypatch):
     batches = _encoded_batches()
-    sampler = (
-        SubsetRandomSampler([0]) if subset else RandomSampler(batches, replacement=True)
-    )
+
+    class SubsetSequentialSampler(SequentialSampler):
+        def __iter__(self):
+            return iter([0])
+
+    if sampling.startswith("batch_"):
+        sampler = (
+            SubsetRandomSampler([0])
+            if sampling == "batch_subset"
+            else SequentialSampler(batches)
+        )
+        loader = DataLoader(
+            cast(Dataset, batches),
+            batch_sampler=BatchSampler(
+                sampler, batch_size=2, drop_last=sampling == "batch_drop_last"
+            ),
+            collate_fn=lambda items: items[0] if isinstance(items, list) else items,
+        )
+    else:
+        sampler = {
+            "replacement": RandomSampler(batches, replacement=True),
+            "subset": SubsetRandomSampler([0]),
+            "subclass": SubsetSequentialSampler(batches),
+        }[sampling]
+        loader = DataLoader(cast(Dataset, batches), batch_size=None, sampler=sampler)
     datamodule = _PrecisionDataModule(batches)
-    monkeypatch.setattr(
-        datamodule,
-        "train_dataloader",
-        lambda: DataLoader(cast(Dataset, batches), batch_size=None, sampler=sampler),
-    )
+    monkeypatch.setattr(datamodule, "train_dataloader", lambda: loader)
     trainer = _Trainer(datamodule)
     trainer.world_size = 2
     with pytest.raises(ValueError, match="standard samplers"):

@@ -165,7 +165,10 @@ class ResidualNormalizer(nn.Module):
 
     # Retain the Python API used by existing residual experiments.
     standardize = normalize
-    unstandardize = denormalize
+
+    def unstandardize(self, standardized_residual: Tensor) -> Tensor:
+        """Undo residual normalization using the legacy method and keyword name."""
+        return self.denormalize(standardized_residual)
 
 
 # Saved Hydra configs refer to this fully qualified class name.

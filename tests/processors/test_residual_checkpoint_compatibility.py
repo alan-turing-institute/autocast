@@ -95,9 +95,17 @@ def test_legacy_hydra_target_and_constructor_still_work():
     assert "standardizer" not in processor._modules
     processor.standardizer = None
     assert processor.residual_normalizer is None
+    assert processor.standardizer is None
     processor.standardizer = normalizer
     assert processor.residual_normalizer is normalizer
     assert "standardizer" not in processor._modules
+
+
+@pytest.mark.parametrize("kwargs", [{}, {"standardizer": None}])
+def test_legacy_attribute_is_none_when_normalization_starts_disabled(kwargs):
+    processor = _processor(**kwargs)
+    assert processor.residual_normalizer is None
+    assert processor.standardizer is None
 
 
 def test_checkpoint_rejects_conflicting_names_and_unrelated_keys():

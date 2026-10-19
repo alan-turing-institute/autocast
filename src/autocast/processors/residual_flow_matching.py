@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from torch import nn
 
 from autocast.nn.noise.source import FlowSource
@@ -68,11 +70,11 @@ class ResidualFlowMatchingProcessor(FlowMatchingProcessor):
         self.residual_normalizer = residual_normalizer
         self.register_load_state_dict_pre_hook(self._load_legacy_statistics)
 
-    def __getattr__(self, name: str):
-        """Resolve the legacy name through PyTorch's registered module lookup."""
-        return super().__getattr__(
-            "residual_normalizer" if name == "standardizer" else name
-        )
+    def __getattr__(self, name: str) -> Any:
+        """Resolve the legacy name whether normalization is configured or omitted."""
+        if name == "standardizer":
+            return self.residual_normalizer
+        return super().__getattr__(name)
 
     def __setattr__(self, name: str, value) -> None:
         """Map legacy writes to the single registered residual normalizer."""

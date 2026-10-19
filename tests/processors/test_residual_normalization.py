@@ -21,6 +21,10 @@ def test_residual_normalizer_has_explicit_names_and_legacy_aliases():
     assert ResidualStandardizer is residual_normalization.ResidualNormalizer
     assert torch.equal(normalizer.standardize(residual), normalized)
     assert torch.equal(normalizer.unstandardize(normalized), residual)
+    assert torch.equal(normalizer.denormalize(normalized_residual=normalized), residual)
+    assert torch.equal(
+        normalizer.unstandardize(standardized_residual=normalized), residual
+    )
 
 
 def test_channel_statistics_broadcast_and_round_trip():

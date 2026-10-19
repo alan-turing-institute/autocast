@@ -202,8 +202,9 @@ statistics. Custom Lightning loops must install this callback before EMA.
 
 Distributed fitting partitions a finite map-style training DataLoader across
 ranks without padding and combines count/mean/M2. It requires standard full-dataset
-samplers/batching and `drop_last=False`; iterable datasets, subset/replacement
-samplers or custom batching need fixed statistics instead. Represent a training
+samplers, implicit batching via `batch_size`, and `drop_last=False`; iterable
+datasets, subset/replacement samplers, sampler subclasses or an explicit
+`batch_sampler` need fixed statistics instead. Represent a training
 subset as a dataset rather than a sampler to use automatic distributed fitting.
 Fitting covers the full training split, independently of `limit_train_batches`.
 Mean, scale and the fitted flag are checkpoint buffers, so loading/resuming skips

@@ -188,9 +188,17 @@ class ResidualStatisticsCallback(Callback):
                         or not isinstance(loader.dataset, Sized)
                         or loader.drop_last
                         or type(loader.batch_sampler) not in (type(None), BatchSampler)
-                        or not isinstance(
-                            loader.sampler,
-                            (RandomSampler, SequentialSampler, DistributedSampler),
+                        # Explicit stock BatchSamplers would lose batching when
+                        # Lightning reconstructs a loader with batch_size=None.
+                        or (
+                            loader.batch_sampler is not None
+                            and loader.batch_size is None
+                        )
+                        or type(loader.sampler)
+                        not in (
+                            RandomSampler,
+                            SequentialSampler,
+                            DistributedSampler,
                         )
                         or (
                             isinstance(loader.sampler, RandomSampler)
@@ -202,7 +210,8 @@ class ResidualStatisticsCallback(Callback):
                     ):
                         msg = (
                             "Distributed residual fitting requires a finite map-style "
-                            "DataLoader with standard samplers and drop_last=False; "
+                            "DataLoader with standard samplers, implicit batching "
+                            "and drop_last=False; "
                             "provide fixed statistics."
                         )
                         raise ValueError(msg)
