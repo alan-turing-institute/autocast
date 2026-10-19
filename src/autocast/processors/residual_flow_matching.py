@@ -12,7 +12,13 @@ from autocast.types import EncodedBatch, Tensor
 
 
 class ResidualFlowMatchingProcessor(FlowMatchingProcessor):
-    """Transport noise to a standardized processor-coordinate residual."""
+    """Transport noise to a standardized processor-coordinate residual.
+
+    Targets are full output states minus a deterministic reference in the same
+    coordinates. With an encoder E, this is E(target) - reference(E(input)),
+    rather than E(target - ambient_reference). Sampling reconstructs complete
+    processor states before any decoder is applied.
+    """
 
     def __init__(
         self,

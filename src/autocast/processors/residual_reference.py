@@ -19,7 +19,8 @@ class ReferenceTrajectory(nn.Module, ABC):
 
     A reference must use the same ambient or latent coordinates as the processor
     target. References computed by an external ambient model must therefore be
-    encoded before use with a latent processor.
+    encoded before use with a latent processor. Use a deterministic function of
+    the conditioning inputs so training and sampling share the same baseline.
     """
 
     @abstractmethod
@@ -66,6 +67,8 @@ class ProcessorReference(ReferenceTrajectory):
     ``map`` output must already use the same ambient or latent coordinates,
     horizon, and channels as the outer residual processor target. In particular,
     it must not return dataset-denormalized states or standardized residuals.
+    Freezing weights and disabling dropout does not remove randomness from a
+    generative processor's ``map``; the wrapped map must be deterministic.
     """
 
     def __init__(self, processor: Processor, *, frozen: bool = True) -> None:

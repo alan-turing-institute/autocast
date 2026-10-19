@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, Self
 
 import lightning as L
 import torch
@@ -97,6 +97,17 @@ class EncoderProcessorDecoder(
 
         for key, value in kwargs.items():
             setattr(self, key, value)
+
+    def train(self, mode: bool = True) -> Self:
+        """Keep frozen residual-flow coordinates fixed during training."""
+        super().train(mode)
+        if isinstance(self.processor, ResidualFlowMatchingProcessor) and (
+            self.train_in_latent_space or self.freeze_encoder_decoder
+        ):
+            # Fitting uses an eval-mode codec. Dropout and running statistics
+            # must not change those coordinates in the subsequent loss pass.
+            self.encoder_decoder.eval()
+        return self
 
     def _apply_input_noise(self, batch: Batch) -> Batch:
         """Apply input noise if self.input_noise_injector is set."""
