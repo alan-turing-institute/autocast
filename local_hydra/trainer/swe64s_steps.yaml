@@ -1,0 +1,41 @@
+# Fixed-update SWE64 policy; validation follows optimizer progress, not epochs.
+defaults:
+  - swe64s_epochs
+  - _self_
+
+max_epochs: 1000000  # Nonbinding: the optimizer-update budget terminates the fit.
+max_steps: 128000
+check_val_every_n_epoch: null
+val_check_interval: 500
+
+callbacks:
+  - _target_: lightning.pytorch.callbacks.ModelCheckpoint
+    auto_insert_metric_name: false
+    every_n_train_steps: 8000
+    save_on_train_epoch_end: false
+    filename: snapshot-{epoch:04d}-{step:08d}
+    save_last: true
+    save_top_k: -1
+  - _target_: lightning.pytorch.callbacks.ModelCheckpoint
+    auto_insert_metric_name: false
+    every_n_epochs: 1  # Save after every validation pass, even across epochs.
+    every_n_train_steps: 0
+    save_on_train_epoch_end: false
+    filename: best-val-{epoch:04d}-{step:08d}-{val_loss:.6f}
+    mode: min
+    monitor: val_loss
+    save_last: false
+    save_top_k: 1
+  - _target_: autocast.callbacks.grad_norm.GradNormCallback
+    norm_type: 2.0
+    log_per_param: false
+  - _target_: autocast.callbacks.metrics.ValidationMetricPlotCallback
+    dirname: validation_metrics
+    filename: validation_metrics.png
+    log_to_logger: true
+    max_cols: 3
+    metric_prefixes: [val_, train_, grad_, lr]
+    plot_metric_objects: true
+    save_local: true
+  - _target_: autocast.callbacks.ema.EMACallback
+    decay: 0.999

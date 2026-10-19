@@ -1,0 +1,48 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/flow_matching
+  - override /processor@model.processor: residual_flow_matching_vit
+  - override /backbone@model.processor.backbone: vit
+  - override /trainer: swe64s_steps
+  - _self_
+
+experiment_name: swe64s_flow_matching_residual_12block_one_output_128k
+
+trainer:
+  # common.yaml sets max_steps=-1 after the trainer group's defaults.
+  max_steps: 128000
+
+datamodule:
+  # 256 independent noise/time draws match 32 x 8 CRPS backbone examples/GPU.
+  batch_size: 256
+  n_steps_input: 1
+  n_steps_output: 1
+  stride: 1
+
+model:
+  n_members: 1  # The processor-owned FM objective samples once per condition.
+  processor:
+    reference:
+      channel_indices: null
+    standardizer:
+      # Fit latent increments from cached training windows, never held-out data.
+      granularity: lead_channel
+    backbone:
+      # Match the current afCRPS transformer core; input/output heads differ.
+      hid_channels: 224
+      hid_blocks: 12
+      attention_heads: 8
+      patch_size: 1  # 16x16 latents -> the same 256 tokens as 64x64/patch-4.
+      mod_features: 256
+      dropout: 0.0
+      include_global_cond: false
+      include_time_embedding: true
+
+optimizer:
+  learning_rate: 1e-4  # Retain the FM baseline LR, not the afCRPS objective's LR.
+  scheduler: cosine
+  scheduler_interval: step
+  cosine_steps: ${trainer.max_steps}
+  cosine_epochs: null
+  min_lr_ratio: 0.0
+  warmup: 0

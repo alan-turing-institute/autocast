@@ -10,6 +10,10 @@ The baseline workflow uses the standard AutoCast model, data and metric APIs.
 Historical 32x32 runs and follow-on loss, noise and physics variants are separate
 comparisons; they are not dependencies of these initial fits.
 
+The original presets below retain their four-output/time-budget setup. The
+current small, one-output residual FM comparison is specified in
+[Matched-update residual flow matching](#matched-update-residual-flow-matching).
+
 ## Data and scope
 
 The [dataset manifest](../../local_hydra/local_experiment/swe64s/dataset.json)
@@ -66,6 +70,88 @@ evaluations per GPU, not the number of independent training inputs; record
 optimizer updates and sample counts when comparing training budgets.
 
 ## Local preparation and launch gate
+
+### Matched-update residual flow matching
+
+`flow_matching_residual_12block_one_output_128k.yaml` reuses the residual FM
+implementation from [PR #445](https://github.com/alan-turing-institute/autocast/pull/445)
+at `a1b3b5ad8453a4d430b1cd4839b057f50cdc048c`. It predicts the next latent's
+increment about the last input latent, then adds that reference before decoding.
+An IID Gaussian source is used; no additional AdaLN noise draw is introduced.
+The per-example flow time conditions AdaLN, while the current latent fields
+remain spatial input conditioning. Simulator-parameter conditioning stays off.
+
+The backbone matches the current afCRPS global-256/spatial-1D pair: width 224,
+12 blocks, 8 heads, FFN factor 4, modulation width 256, dropout zero, QK
+normalization and relative positional bias, without RoPE or temporal mixing.
+One input predicts one output at stride one. Patch 1 on the 16x16 latent grid
+gives the same 256 tokens as physical 64x64 fields with patch 4. Transformer
+block parameter names and shapes match exactly (10,109,376 parameters); FM's
+time embedding and different input/output heads give 10,346,920 trainable
+parameters overall, versus 10,231,504 for global afCRPS. The frozen AE is extra.
+
+The budget is **128,000 optimizer updates**, batch **256 per GPU**, four GPUs,
+and no accumulation. This matches the nominal 256-epoch afCRPS allocation's
+updates and 32 conditions x 8 members per-GPU backbone batch. FM instead uses
+256 conditions with one independent source/time draw each. It therefore sees
+more distinct conditions per update; this is not matched epochs or exact
+GPU-hours. At 64,000 training windows, FM has 63 updates per epoch, and its
+epoch ceiling is deliberately nonbinding. Earlier afCRPS fits stopped early;
+compare their actual achieved budgets, not an assumed completed 128,000 steps.
+The loader retains its final half batch (128/GPU once per 63 updates), so
+the match is to the nominal full-batch size, within about 0.8% in total examples.
+
+AdamW retains FM's LR **1e-4 to zero**, betas 0.9/0.99, no weight decay or
+warmup, with cosine indexed by optimizer update over the full 128,000 steps.
+The 23h30m timer is only a safety cap, not the LR horizon; an interrupted fit
+must resume the full checkpoint to complete the budget. Validation runs every
+500 updates, snapshots every 8,000, and best-val and last checkpoints are kept.
+EMA stays separately stored; main comparisons use raw weights. Training and
+validation use the vector-field objective without ODE ensemble sampling;
+50 Euler steps are retained for subsequent inference. FM loss and afCRPS are
+different quantities: compare common physical evaluation metrics separately.
+
+Residual mean/std are fitted once from **cached B training increments** only,
+pooled spatially per lead/channel, and saved in checkpoint buffers. They are
+not the three-channel physical delta statistics. The physical normalizer is
+still B's original `stats.yml`, already applied by the fixed AE when caching.
+Zero latent increment decodes to the current state's AE reconstruction, not
+exact physical persistence; nonlinear encoding makes this a matched-backbone
+model-family comparison rather than identical physical residual coordinates.
+
+The verified cache is `shallow_water2d_stochastic_64_latents_ef93555` (UUID
+`ef935550-fa55-4ddf-903b-c265e1b14c0b`): the original B/C/D 200/20/20 splits,
+321 frames per trajectory, float32 `(321,16,16,8)` latents. It was produced
+using the completed 1,000-trajectory AE's raw final checkpoint at step 514,048,
+SHA256 `e514ebf07d4350521da8fd25c8875eb2842eb668a8b059bb207989361935573c`.
+The cache's `cache_provenance.json` records source/checkpoint/statistics hashes.
+The cache path is required at runtime: the preset does not select another
+dataset or regenerate latents.
+
+Preparation checks (CPU synthetic data only; no W&B run or job submission):
+
+```bash
+uv run --frozen python -m pytest -q tests/scripts/test_swe64_residual_fm.py
+
+uv run --frozen python -m autocast.scripts.train.processor \
+  local_experiment=swe64s/flow_matching_residual_12block_one_output_128k \
+  datamodule.data_path=/path/to/shallow_water2d_stochastic_64_latents_ef93555 \
+  --cfg job --resolve
+
+# Preview only; launch and target-GPU preflight need separate approval.
+uv run --frozen autocast processor --mode slurm --dry-run \
+  --workdir /path/to/new/flow-matching-residual-128k \
+  local_experiment=swe64s/flow_matching_residual_12block_one_output_128k \
+  datamodule.data_path=/projects/u6eo/autocast/datasets/shallow_water2d_stochastic_64_latents_ef93555 \
+  +distributed=ddp_4gpu_slurm trainer.max_time=00:23:30:00 \
+  ++hydra.launcher.nodes=1 ++hydra.launcher.cpus_per_task=72 \
+  hydra.launcher.timeout_min=1440 \
+  logging.wandb.enabled=true logging.wandb.mode=online \
+  logging.wandb.entity=turing-core logging.wandb.project=autocast \
+  logging.wandb.name=swe64s-fm-residual-12block-one-output-128k
+```
+
+### Original baseline preparation
 
 Run commands from the AutoCast repository root with `uv`. Set
 `AUTOCAST_DATASETS` to the existing dataset parent and `SWE64S_OUTPUTS` to an
