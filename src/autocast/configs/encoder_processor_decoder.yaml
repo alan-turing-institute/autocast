@@ -9,6 +9,7 @@ defaults:
   - _self_
   - optional experiment: null
   - optional local_experiment: null
+  - optional loss@model.loss_func: null
 
 seed: 42
 experiment_name: epd
