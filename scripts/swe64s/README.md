@@ -10,9 +10,10 @@ The baseline workflow uses the standard AutoCast model, data and metric APIs.
 Historical 32x32 runs and follow-on loss, noise and physics variants are separate
 comparisons; they are not dependencies of these initial fits.
 
-The original presets below retain their four-output/time-budget setup. The
-current small, one-output residual FM comparison is specified in
-[Matched-update residual flow matching](#matched-update-residual-flow-matching).
+The current one-output comparisons are listed in
+[Current noise and Fourier-loss controls](#current-noise-and-fourier-loss-controls)
+and [Matched-update residual flow matching](#matched-update-residual-flow-matching).
+The original presets retain their four-output/time-budget setup.
 
 ## Data and scope
 
@@ -23,8 +24,8 @@ saved every 0.25 from t=40 through t=120. Physical parameters are fixed across
 trajectories; initial states and forcing realizations vary. Training
 normalization comes from the existing `stats.yml`, not recomputed test data.
 
-The new prediction task uses one input frame, four output frames and window
-stride one, matching the paper-style setup. These are direct full-field targets,
+The original paper-scale presets use one input frame, four output frames and
+window stride one, matching the paper-style setup. These are direct full-field targets,
 not unrolled two-step or physics-residual training. The larger dataset, model
 and output window mean this is not a resolution-only ablation of the earlier
 32x32 fits.
@@ -70,6 +71,59 @@ evaluations per GPU, not the number of independent training inputs; record
 optimizer updates and sample counts when comparing training budgets.
 
 ## Local preparation and launch gate
+
+### Current noise and Fourier-loss controls
+
+All current CRPS controls use the original 200/20/20 raw trajectories and
+training statistics, one input/output frame and stride one. They retain width
+224, 12 blocks, 8 heads, patch 4, modulation width 256, eight members and batch
+32 per GPU. Simulator-parameter conditioning is disabled. Predictions are
+delta-normalized persistence corrections; both loss terms score the full
+reconstructed states in dataset-normalized coordinates.
+
+| Noise | afCRPS control | CRPS-FFT |
+| --- | --- | --- |
+| Global 256D | [Existing global](../../local_hydra/local_experiment/swe64s/afcrps_global256_residual_one_output_12block_256ep_8h.yaml) | [Global](../../local_hydra/local_experiment/swe64s/crps_fft_global256_residual_one_output_12block_256ep_8h.yaml) |
+| IID spatial 1D/token | [Existing spatial](../../local_hydra/local_experiment/swe64s/afcrps_spatial1d_residual_one_output_12block_256ep_8h.yaml) | [Spatial](../../local_hydra/local_experiment/swe64s/crps_fft_spatial1d_residual_one_output_12block_256ep_8h.yaml) |
+| Structured spatial 1D/token | [Structured](../../local_hydra/local_experiment/swe64s/afcrps_structured_spatial1d_residual_one_output_12block_256ep_8h.yaml) | [Structured](../../local_hydra/local_experiment/swe64s/crps_fft_structured_spatial1d_residual_one_output_12block_256ep_8h.yaml) |
+
+CRPS-FFT composes the existing `ensemble_fourier_crps` preset: pointwise
+afCRPS plus complex Fourier-coefficient afCRPS, weights `[1.0, 0.1]`, both
+with alpha 0.95 and orthonormal spatial FFTs. Data, model and optimizer settings
+otherwise match the corresponding afCRPS control. Native `val_loss` includes
+both terms; use the retained common `val_afcrps` and physical evaluation
+metrics for cross-loss comparisons.
+
+The structured source uses modes `(3,0),(0,3),(2,2),(2,-2)` on the 16x16 token
+grid. Four sine/cosine pairs use eight Gaussian coefficients in the single
+noise channel, compared with 256 independent scalars in IID spatial noise.
+The 1-to-256 modulation projection is unchanged. Each member/call redraws
+independently; these presets introduce spatial correlation, with no temporal
+persistence or output filtering.
+
+Every CRPS preset keeps a fresh 256-epoch cosine schedule, LR `2e-4` to zero,
+and no step cap. At four GPUs this is 128,000 updates. The inherited allocation
+is eight hours with a 7h45m trainer safety cap, best-validation and last
+checkpoints, and no automatic early-stopping callback. If the cap binds,
+record the achieved budget and resume the full checkpoint before claiming
+completion. Existing global/IID afCRPS fits remain the comparison controls.
+
+The first intended pair is **ambient residual FM** and **IID spatial-1D
+CRPS-FFT**. Both use the original raw dataset and require no AE/cache. FM uses
+128,000 updates, batch 256/GPU and step-based cosine LR `1e-4` to zero; CRPS-FFT
+uses the epoch-based protocol above. Compose the latter without fitting:
+
+```bash
+uv run --frozen python -m autocast.scripts.train.encoder_processor_decoder \
+  local_experiment=swe64s/crps_fft_spatial1d_residual_one_output_12block_256ep_8h \
+  --cfg job --resolve
+```
+
+The focused local tests are `tests/scripts/test_swe64_fourier_configs.py` and
+`tests/scripts/test_swe64_residual_fm.py`. They exercise configuration, resolved
+mode/grid compatibility, residual reconstruction, score arithmetic, gradients
+and short synthetic rollouts. Target-machine data/W&B preflight and the
+one-output evaluation-wrapper update remain separate preparation steps.
 
 ### Matched-update residual flow matching
 

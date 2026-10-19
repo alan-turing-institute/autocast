@@ -1,0 +1,11 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/afcrps_global256_residual_one_output_12block_256ep_8h
+  - /loss/ensemble_fourier_crps@model.loss_func
+  - _self_
+
+experiment_name: swe64s_crps_fft_global256_residual_one_output_12block_256ep_8h
+
+hydra:
+  launcher:
+    timeout_min: 480

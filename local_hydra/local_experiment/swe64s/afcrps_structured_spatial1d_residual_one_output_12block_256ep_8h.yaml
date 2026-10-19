@@ -1,0 +1,18 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/afcrps_spatial1d_residual_one_output_12block_256ep_8h
+  - /source_distribution@model.processor.noise_source: spatial_fourier
+  - _self_
+
+experiment_name: swe64s_afcrps_structured_spatial1d_residual_one_output_12block_256ep_8h
+
+model:
+  processor:
+    noise_source:
+      # Four periodic modes on the 16x16 token grid, independently redrawn.
+      # One channel uses eight Gaussian coefficients, not 256 IID scalars.
+      wavevectors: [[3, 0], [0, 3], [2, 2], [2, -2]]
+
+hydra:
+  launcher:
+    timeout_min: 480
