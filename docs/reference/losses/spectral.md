@@ -108,6 +108,62 @@ corresponding real dtype; gradients retain each input's dtype.
 FFT support still depends on the execution device. Pairwise scoring has
 quadratic cost in ensemble size; it evaluates only unordered member pairs.
 
+## Radial bands
+
+`RadialFourierDecomposition` selects disjoint bands of complex Fourier
+coefficients, named `band_0`, `band_1`, and so on. Each component retains the
+full grid layout with zeros outside its band. It does **not** average phases
+or replace coefficients with a radial power spectrum. Band membership depends
+on grid shape and edges, not on prediction or target precision.
+
+Edges are radial frequencies in **cycles per grid cell**, not integer Fourier
+mode numbers or physical wavenumbers. The first band begins at zero; intervals
+include their lower edge and exclude their upper edge, except that the final
+upper edge is included. In two dimensions the corners reach approximately
+0.7071 cycles/cell, beyond the per-axis Nyquist of 0.5. Use a final edge of at
+least `sqrt(n_spatial_dims) / 2` to cover every mode. A shorter cutoff leaves
+higher frequencies unscored by this loss. Holding edges fixed across different
+resolutions preserves grid-relative, not physical, scales.
+
+For example, this two-dimensional objective emphasizes the highest band:
+
+```python
+from autocast.losses import (
+    AlphaFairCRPSLoss,
+    CoefficientCRPSLoss,
+    RadialFourierDecomposition,
+    TransformedLoss,
+    WeightedSumLoss,
+)
+
+radial_loss = TransformedLoss(
+    RadialFourierDecomposition(edges=[0.1, 0.25, 0.71]),
+    score=CoefficientCRPSLoss(alpha=0.95),
+    component_weights={"band_0": 1.0, "band_1": 1.0, "band_2": 2.0},
+    requires_ambient_predictions=True,
+)
+loss = WeightedSumLoss([AlphaFairCRPSLoss(alpha=0.95), radial_loss], [1.0, 0.1])
+```
+
+The existing `ensemble_fourier_crps` preset remains full-spectrum and unchanged.
+A radial term can also be combined with a full Fourier term through
+`WeightedSumLoss`. Memory grows with the number of full-sized band components.
+
+**Reduction matters:** with its default reduction, coefficient CRPS averages
+over the full grid, including zeroed positions. `TransformedLoss` then takes
+a weighted mean across components.
+Consequently, an equally weighted, complete partition into `J` bands with
+`band_mean=False` gives the full Fourier score divided by `J`, not a new
+cross-frequency constraint. Weights or cutoffs change the emphasis. Empty bands
+score zero but still count in the component-weight denominator unless excluded
+or given zero weight.
+
+The optional `band_mean=True` divides each band's coefficients by the square
+root of its mode count, so its summed squared magnitude becomes mean band power.
+For coefficient CRPS it instead scales the band score by `1 / sqrt(count)`;
+it does **not** compute mean CRPS over just the occupied modes or automatically
+equalize bands. It is disabled by default.
+
 ## Composition and extension contracts
 
 - `WeightedSumLoss` sums whole-loss outputs with non-negative weights.

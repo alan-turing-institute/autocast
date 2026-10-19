@@ -146,13 +146,24 @@ def test_fourier_preset_rejects_latent_training(
 
 
 @pytest.mark.parametrize("residual_prediction", [False, True])
+@pytest.mark.parametrize("radial", [False, True])
 def test_fourier_preset_trains_on_decoded_ensemble_states(
-    REPO_ROOT: Path, make_toy_batch, dummy_datamodule, residual_prediction: bool
+    REPO_ROOT: Path,
+    make_toy_batch,
+    dummy_datamodule,
+    residual_prediction: bool,
+    radial: bool,
 ):
     torch.manual_seed(19)
     batch = make_toy_batch(t_in=2, t_out=3, w=4, h=6, c=2)
     cfg = _small_model_config(REPO_ROOT, batch)
     cfg.model.residual_prediction = residual_prediction
+    if radial:
+        # Replace the decomposition mapping, keeping the same public scorer.
+        cfg.model.loss_func.losses[1].decomposition = {
+            "_target_": "autocast.losses.RadialFourierDecomposition",
+            "edges": [0.25, 0.75],
+        }
     model = setup_epd_model(cfg, _stats(batch), dummy_datamodule)
     assert isinstance(model, EncoderProcessorDecoderEnsemble)
 
@@ -171,11 +182,17 @@ def test_fourier_preset_trains_on_decoded_ensemble_states(
         expected_state = decoded + batch.input_fields[:, -1:]
     torch.testing.assert_close(predictions[..., 0], expected_state)
 
-    expected_loss = AlphaFairCRPSLoss(alpha=0.95)(
-        predictions, batch.output_fields
-    ) + 0.1 * CoefficientCRPSLoss(alpha=0.95)(
+    expected_fourier = CoefficientCRPSLoss(alpha=0.95)(
         torch.fft.fftn(predictions, dim=(2, 3), norm="ortho"),
         torch.fft.fftn(batch.output_fields, dim=(2, 3), norm="ortho"),
+    )
+    # Two complete bands with equal component weights average to half the
+    # full-spectrum coefficient score; unselected bins contribute zero.
+    if radial:
+        expected_fourier = expected_fourier / 2
+    expected_loss = (
+        AlphaFairCRPSLoss(alpha=0.95)(predictions, batch.output_fields)
+        + 0.1 * expected_fourier
     )
     torch.testing.assert_close(loss, expected_loss)
     loss.backward()
