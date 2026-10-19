@@ -1,3 +1,5 @@
+from typing import Literal, cast
+
 import torch
 from torch import nn
 
@@ -10,13 +12,19 @@ from autocast.types import (
     TensorInexactBTSCM,
 )
 
+Reduction = Literal["mean", "sum", "none"]
+
 
 class EnsembleLoss(nn.Module):
     """Base class for ensemble losses."""
 
+    reduction: Reduction
+
     def __init__(self, reduction: str = "mean") -> None:
         super().__init__()
-        self.reduction = reduction
+        if reduction not in ("mean", "sum", "none"):
+            raise ValueError(f"Unknown reduction {reduction!r}.")
+        self.reduction = cast(Reduction, reduction)
 
     def forward(self, preds: TensorBTSCM, targets: TensorBTSC) -> Tensor:
         """Compute the loss.
@@ -74,9 +82,9 @@ class FairCRPSLoss(EnsembleLoss):
 class AlphaFairCRPSLoss(EnsembleLoss):
     """Alpha-Fair Continuous Ranked Probability Score (afCRPS) Loss."""
 
-    def __init__(self, alpha: float = 0.95, reduction: str = "mean") -> None:
+    def __init__(self, alpha: int | float = 0.95, reduction: str = "mean") -> None:
         super().__init__(reduction=reduction)
-        self.alpha = alpha
+        self.alpha = float(alpha)
 
     def _compute_score(self, preds: TensorBTSCM, targets: TensorBTSC) -> Tensor:
         return _alpha_fair_crps_score(preds, targets, alpha=self.alpha)

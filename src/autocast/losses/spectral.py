@@ -16,6 +16,25 @@ FourierRepresentation = Literal["complex", "magnitude", "power"]
 FourierNorm = Literal["backward", "forward", "ortho"]
 
 
+def _radial_frequency(tensor: Tensor, spatial: tuple[int, ...]) -> Tensor:
+    # Geometry must not depend on prediction/target precision: rounding a
+    # cutoff differently would compare different modes. Construct masks
+    # in CPU float64, including for devices without float64 support.
+    # Transfer masks and optional counts; field FFTs stay on their device.
+    radius_squared = torch.zeros((), dtype=torch.float64, device="cpu")
+    for dim in spatial:
+        size = tensor.shape[dim]
+        indices = torch.arange(size, dtype=torch.float64, device="cpu")
+        # Divide integer bins directly: fftfreq's reciprocal multiplication
+        # can put nominal edges such as 3 / 10 just above the cutoff.
+        frequency = torch.where(indices < (size + 1) // 2, indices, indices - size)
+        frequency = frequency / size
+        shape = [1] * tensor.ndim
+        shape[dim] = size
+        radius_squared = radius_squared + frequency.reshape(shape).square()
+    return radius_squared.sqrt()
+
+
 class FourierDecomposition(FieldDecomposition):
     """Apply a full ND Fourier transform over channels-last spatial axes.
 
@@ -111,22 +130,7 @@ class RadialFourierDecomposition(FourierDecomposition):
         self.band_mean = bool(band_mean)
 
     def _radial_frequency(self, tensor: Tensor, spatial: tuple[int, ...]) -> Tensor:
-        # Geometry must not depend on prediction/target precision: rounding a
-        # cutoff differently would compare different modes. Construct masks
-        # in CPU float64, including for devices without float64 support.
-        # Transfer masks and optional counts; field FFTs stay on their device.
-        radius_squared = torch.zeros((), dtype=torch.float64, device="cpu")
-        for dim in spatial:
-            size = tensor.shape[dim]
-            indices = torch.arange(size, dtype=torch.float64, device="cpu")
-            # Divide integer bins directly: fftfreq's reciprocal multiplication
-            # can put nominal edges such as 3 / 10 just above the cutoff.
-            frequency = torch.where(indices < (size + 1) // 2, indices, indices - size)
-            frequency = frequency / size
-            shape = [1] * tensor.ndim
-            shape[dim] = size
-            radius_squared = radius_squared + frequency.reshape(shape).square()
-        return radius_squared.sqrt()
+        return _radial_frequency(tensor, spatial)
 
     def forward(self, tensor: FieldTensor, *, n_spatial_dims: int) -> FieldComponents:
         coefficients = super().forward(tensor, n_spatial_dims=n_spatial_dims)["fourier"]
