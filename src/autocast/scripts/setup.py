@@ -168,9 +168,14 @@ def _resolve_processor_temporal_steps(
     return n_steps_input, n_steps_output
 
 
-def _uses_masked_window_flow_matching(processor_config: DictConfig) -> bool:
+def _uses_masked_window(processor_config: DictConfig) -> bool:
     target = str(processor_config.get("_target_", ""))
-    return target.endswith("FlowMatchingMaskedWindowProcessor")
+    return target.endswith(
+        (
+            "FlowMatchingMaskedWindowProcessor",
+            "SpatiotemporalViTMaskedWindowProcessor",
+        )
+    )
 
 
 def _apply_processor_channel_defaults(
@@ -204,16 +209,18 @@ def _apply_processor_channel_defaults(
     if isinstance(reference_config, DictConfig):
         _set_if_auto(reference_config, "n_steps_output", n_steps_output)
 
-    standardizer_config = processor_config.get("standardizer")
-    if isinstance(standardizer_config, DictConfig):
-        _set_if_auto(standardizer_config, "n_steps_output", n_steps_output)
-        _set_if_auto(standardizer_config, "n_channels", n_channels_out)
+    residual_normalizer_config = processor_config.get("residual_normalizer")
+    if residual_normalizer_config is None:
+        residual_normalizer_config = processor_config.get("standardizer")
+    if isinstance(residual_normalizer_config, DictConfig):
+        _set_if_auto(residual_normalizer_config, "n_steps_output", n_steps_output)
+        _set_if_auto(residual_normalizer_config, "n_channels", n_channels_out)
 
     backbone_config = processor_config.get("backbone")
     if backbone_config is None:
         return
 
-    use_masked_window = _uses_masked_window_flow_matching(processor_config)
+    use_masked_window = _uses_masked_window(processor_config)
     backbone_n_steps = (
         n_steps_input + n_steps_output if use_masked_window else n_steps_output
     )
@@ -648,6 +655,9 @@ def setup_processor_model(
         "optimizer_config": optimizer_config,
         "noise_injector": noise_injector,
         "norm": norm,
+        "train_loss_log_every_n_steps": model_config.get(
+            "train_loss_log_every_n_steps", 1
+        ),
     }
     _maybe_add_metric_overrides(kwargs, model_config)
     if is_ensemble:

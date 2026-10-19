@@ -26,7 +26,13 @@ class ProcessorModel(
     L.LightningModule,
     MetricsMixin,
 ):
-    """Processor Base Class."""
+    """Processor Base Class.
+
+    ``train_loss_log_every_n_steps`` controls loss synchronization frequency;
+    set it to the trainer's logging interval to avoid unused reductions. Its
+    default of one preserves every-batch logging. The cadence follows optimizer
+    updates across epochs/resumes; accumulated microbatches share an update.
+    """
 
     processor: Processor
     optimizer_config: DictConfig | dict[str, Any] | None
@@ -42,9 +48,18 @@ class ProcessorModel(
         test_metrics: Sequence[Metric] | None = None,
         noise_injector: NoiseInjector | None = None,
         norm: ZScoreNormalization | None = None,
+        train_loss_log_every_n_steps: int = 1,
         **kwargs: Any,
     ) -> None:
         super().__init__()
+        if (
+            not isinstance(train_loss_log_every_n_steps, int)
+            or isinstance(train_loss_log_every_n_steps, bool)
+            or train_loss_log_every_n_steps < 1
+        ):
+            msg = "train_loss_log_every_n_steps must be a positive integer."
+            raise ValueError(msg)
+        self.train_loss_log_every_n_steps = train_loss_log_every_n_steps
         self.processor = processor  # Register nn.Module parameters
         self.stride = stride
         # Honor an explicit None so processors that own their loss in
@@ -104,13 +119,17 @@ class ProcessorModel(
         batch_idx: int,  # noqa: ARG002
     ) -> Tensor:
         loss = self.loss(batch)
-        self.log(
-            "train_loss",
-            loss,
-            prog_bar=True,
-            sync_dist=True,
-            batch_size=batch.encoded_inputs.shape[0],
-        )
+        # global_step counts completed updates; this loss belongs to the next.
+        # The fallback supports full-model checkpoints saved before this option.
+        interval = getattr(self, "train_loss_log_every_n_steps", 1)
+        if interval == 1 or (self.global_step + 1) % interval == 0:
+            self.log(
+                "train_loss",
+                loss,
+                prog_bar=True,
+                sync_dist=True,
+                batch_size=batch.encoded_inputs.shape[0],
+            )
         self._log_processor_diagnostics("train", batch.encoded_inputs.shape[0])
         if self.train_metrics is not None:
             y_pred = self._predict_for_metrics(batch)

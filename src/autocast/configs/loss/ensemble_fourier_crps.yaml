@@ -1,0 +1,20 @@
+# Grid-space afCRPS plus coefficient-wise complex afCRPS.
+# Requires decoded channels-last fields and at least two ensemble members.
+defaults:
+  - _reset_epd_loss
+  - _self_
+
+_target_: autocast.losses.WeightedSumLoss
+weights: [1.0, 0.1]
+losses:
+  - _target_: autocast.losses.AlphaFairCRPSLoss
+    alpha: 0.95
+  - _target_: autocast.losses.TransformedLoss
+    requires_ambient_predictions: true
+    decomposition:
+      _target_: autocast.losses.FourierDecomposition
+      representation: complex
+      norm: ortho
+    score:
+      _target_: autocast.losses.CoefficientCRPSLoss
+      alpha: 0.95

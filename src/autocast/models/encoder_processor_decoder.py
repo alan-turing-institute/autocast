@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, Self
 
 import lightning as L
 import torch
@@ -14,6 +14,7 @@ from autocast.models.encoder_decoder import EncoderDecoder
 from autocast.models.optimizer_mixin import OptimizerMixin
 from autocast.nn.noise.noise_injector import NoiseInjector
 from autocast.processors.base import Processor
+from autocast.processors.residual_flow_matching import ResidualFlowMatchingProcessor
 from autocast.processors.rollout import RolloutMixin
 from autocast.types import Batch, Tensor, TensorBTSC
 from autocast.types.types import TensorBTSCM
@@ -59,6 +60,12 @@ class EncoderProcessorDecoder(
         **kwargs: Any,
     ) -> None:
         super().__init__()
+        if residual_prediction and isinstance(processor, ResidualFlowMatchingProcessor):
+            msg = (
+                "ResidualFlowMatchingProcessor already reconstructs complete states "
+                "in processor coordinates; model.residual_prediction must be False."
+            )
+            raise ValueError(msg)
         if residual_prediction and train_in_latent_space:
             msg = (
                 "Residual prediction requires train_in_latent_space=False "
@@ -90,6 +97,17 @@ class EncoderProcessorDecoder(
 
         for key, value in kwargs.items():
             setattr(self, key, value)
+
+    def train(self, mode: bool = True) -> Self:
+        """Keep frozen residual-flow coordinates fixed during training."""
+        super().train(mode)
+        if isinstance(self.processor, ResidualFlowMatchingProcessor) and (
+            self.train_in_latent_space or self.freeze_encoder_decoder
+        ):
+            # Fitting uses an eval-mode codec. Dropout and running statistics
+            # must not change those coordinates in the subsequent loss pass.
+            self.encoder_decoder.eval()
+        return self
 
     def _apply_input_noise(self, batch: Batch) -> Batch:
         """Apply input noise if self.input_noise_injector is set."""

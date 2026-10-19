@@ -14,8 +14,8 @@ ResidualGranularity = Literal["channel", "lead_channel"]
 Statistic = float | Sequence[float] | Sequence[Sequence[float]] | Tensor
 
 
-class ResidualStandardizer(nn.Module):
-    """Standardize processor-coordinate residuals using fitted statistics.
+class ResidualNormalizer(nn.Module):
+    """Normalize processor-coordinate residuals using fitted mean and scale.
 
     Statistics can be shared over output time (``channel``) or vary by lead
     (``lead_channel``). Spatial dimensions are always pooled. Constructing the
@@ -113,13 +113,8 @@ class ResidualStandardizer(nn.Module):
             msg = "Residual scales must be non-negative."
             raise ValueError(msg)
 
-        self.mean.copy_(mean_tensor.to(device=self.mean.device, dtype=self.mean.dtype))
-        self.scale.copy_(
-            scale_tensor.clamp_min(self.epsilon).to(
-                device=self.scale.device,
-                dtype=self.scale.dtype,
-            )
-        )
+        self.mean.copy_(mean_tensor.to(self.mean))
+        self.scale.copy_(scale_tensor.clamp_min(self.epsilon).to(self.scale))
         self._fitted.fill_(True)
 
     def _validate_residual(self, residual: Tensor) -> None:
@@ -131,7 +126,7 @@ class ResidualStandardizer(nn.Module):
             or residual.shape[-1] != self.n_channels
         ):
             msg = (
-                "Residual shape does not match standardizer dimensions "
+                "Residual shape does not match normalizer dimensions "
                 f"(expected T={self.n_steps_output}, C={self.n_channels}; "
                 f"received T={residual.shape[1]}, C={residual.shape[-1]})."
             )
@@ -142,7 +137,7 @@ class ResidualStandardizer(nn.Module):
 
     def _statistics_like(self, residual: Tensor) -> tuple[Tensor, Tensor]:
         if not self.fitted:
-            msg = "ResidualStandardizer must be fitted before use."
+            msg = "ResidualNormalizer must be fitted before use."
             raise RuntimeError(msg)
         self._validate_residual(residual)
         if self.granularity == "channel":
@@ -154,20 +149,27 @@ class ResidualStandardizer(nn.Module):
                 *([1] * (residual.ndim - 3)),
                 self.n_channels,
             )
-        mean = self.mean.to(device=residual.device, dtype=residual.dtype).view(
-            broadcast_shape
-        )
-        scale = self.scale.to(device=residual.device, dtype=residual.dtype).view(
-            broadcast_shape
-        )
+        mean = self.mean.to(residual).view(broadcast_shape)
+        scale = self.scale.to(residual).view(broadcast_shape)
         return mean, scale
 
-    def standardize(self, residual: Tensor) -> Tensor:
-        """Map a processor-coordinate residual into standardized coordinates."""
+    def normalize(self, residual: Tensor) -> Tensor:
+        """Apply residual mean/scale within ambient or latent processor coordinates."""
         mean, scale = self._statistics_like(residual)
         return (residual - mean) / scale
 
+    def denormalize(self, normalized_residual: Tensor) -> Tensor:
+        """Undo residual mean/scale; this does not restore dataset physical units."""
+        mean, scale = self._statistics_like(normalized_residual)
+        return mean + scale * normalized_residual
+
+    # Retain the Python API used by existing residual experiments.
+    standardize = normalize
+
     def unstandardize(self, standardized_residual: Tensor) -> Tensor:
-        """Map a standardized residual back into processor coordinates."""
-        mean, scale = self._statistics_like(standardized_residual)
-        return mean + scale * standardized_residual
+        """Undo residual normalization using the legacy method and keyword name."""
+        return self.denormalize(standardized_residual)
+
+
+# Saved Hydra configs refer to this fully qualified class name.
+ResidualStandardizer = ResidualNormalizer

@@ -1,0 +1,3 @@
+# Shared source distribution; retain the existing flow_source configuration.
+defaults:
+  - /flow_source@_here_: iid_gaussian

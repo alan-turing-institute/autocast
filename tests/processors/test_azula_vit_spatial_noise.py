@@ -16,6 +16,7 @@ from autocast.models.encoder_processor_decoder_ensemble import (
     EncoderProcessorDecoderEnsemble,
 )
 from autocast.nn.base import TemporalBackboneBase
+from autocast.nn.noise import SpatialFourierSource
 from autocast.processors.azula_vit import AzulaViTProcessor
 from autocast.types import Batch
 
@@ -147,7 +148,8 @@ def test_default_global_and_disabled_noise_are_unchanged():
 
 
 @pytest.mark.parametrize("n_steps_output", [1, 4])
-def test_ensemble_crps_backward(n_steps_output):
+@pytest.mark.parametrize("structured", [False, True])
+def test_ensemble_crps_backward(n_steps_output, structured):
     fields = torch.randn(2, 1, 8, 8, 3)
     targets = torch.randn(2, n_steps_output, 8, 8, 3)
     batch = Batch(fields, targets, None, None)
@@ -157,7 +159,11 @@ def test_ensemble_crps_backward(n_steps_output):
     )
     model = EncoderProcessorDecoderEnsemble(
         encoder_decoder=encoder_decoder,
-        processor=make_processor(noise_mode="spatial", out_channels=3 * n_steps_output),
+        processor=make_processor(
+            noise_mode="spatial",
+            out_channels=3 * n_steps_output,
+            noise_source=SpatialFourierSource(((1, 0),)) if structured else None,
+        ),
         n_members=4,
         loss_func=CRPSLoss(),
         train_in_latent_space=False,

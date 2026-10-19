@@ -16,7 +16,7 @@ from autocast.callbacks.residual_statistics import ResidualStatisticsCallback
 from autocast.models.processor import ProcessorModel
 from autocast.nn.noise.source import IIDGaussianSource
 from autocast.processors.residual_flow_matching import ResidualFlowMatchingProcessor
-from autocast.processors.residual_normalization import ResidualStandardizer
+from autocast.processors.residual_normalization import ResidualNormalizer
 from autocast.processors.residual_reference import LastFrameReference
 from autocast.scripts.setup import setup_datamodule, setup_processor_model
 from autocast.scripts.training import _ensure_residual_statistics_callback, run_training
@@ -81,7 +81,8 @@ def test_matched_residual_fm_settings(distributed):
     assert cfg.model.processor.integrator == "euler"
     assert cfg.model.processor.source._target_.endswith("IIDGaussianSource")
     assert cfg.model.processor.reference._target_.endswith("LastFrameReference")
-    assert cfg.model.processor.standardizer.granularity == "lead_channel"
+    assert cfg.model.processor.residual_normalizer.granularity == "lead_channel"
+    assert "standardizer" not in cfg.model.processor
     assert not cfg.model.processor.backbone.include_global_cond
     assert cfg.model.processor.backbone.include_time_embedding
     assert OmegaConf.select(cfg, "resume_from_checkpoint") is None
@@ -153,11 +154,11 @@ def _setup_cached_model(cache_path, *, small=False):
     return cfg, datamodule, setup_processor_model(cfg, stats, datamodule)
 
 
-def _standardizer(model: ProcessorModel) -> ResidualStandardizer:
+def _residual_normalizer(model: ProcessorModel) -> ResidualNormalizer:
     assert isinstance(model.processor, ResidualFlowMatchingProcessor)
-    standardizer = model.processor.standardizer
-    assert standardizer is not None
-    return standardizer
+    residual_normalizer = model.processor.residual_normalizer
+    assert residual_normalizer is not None
+    return residual_normalizer
 
 
 def test_full_capacity_matches_crps_blocks_and_has_finite_gradients(synthetic_cache):
@@ -190,7 +191,7 @@ def test_full_capacity_matches_crps_blocks_and_has_finite_gradients(synthetic_ca
     residual = processor.target_residual(batch)
     values = rearrange(residual, "b t ... c -> t (b ...) c")
     scale, mean = torch.std_mean(values, dim=1, correction=0)
-    _standardizer(model).set_statistics(mean=mean, scale=scale)
+    _residual_normalizer(model).set_statistics(mean=mean, scale=scale)
     loss = model.loss(batch)
     loss.backward()
     assert torch.isfinite(loss)
@@ -249,8 +250,8 @@ def test_cached_fit_sanity_validation_and_full_checkpoint_resume(
     assert payload["global_step"] == 2
     assert payload["optimizer_states"]
     assert payload["lr_schedulers"]
-    standardizer = _standardizer(model)
-    assert standardizer.fitted
+    residual_normalizer = _residual_normalizer(model)
+    assert residual_normalizer.fitted
     train_fields = torch.load(
         synthetic_cache / "train/traj_000000.pt", weights_only=False
     )["encoded_fields"]
@@ -258,8 +259,8 @@ def test_cached_fit_sanity_validation_and_full_checkpoint_resume(
     scale, mean = torch.std_mean(
         rearrange(increments, "t ... c -> 1 (t ...) c"), dim=1, correction=0
     )
-    torch.testing.assert_close(standardizer.mean, mean)
-    torch.testing.assert_close(standardizer.scale, scale)
+    torch.testing.assert_close(residual_normalizer.mean, mean)
+    torch.testing.assert_close(residual_normalizer.scale, scale)
 
     resumed_cfg, _, restored = _setup_cached_model(synthetic_cache, small=True)
     resumed_cfg.trainer = cfg.trainer.copy()
@@ -277,5 +278,5 @@ def test_cached_fit_sanity_validation_and_full_checkpoint_resume(
     assert resumed["global_step"] == 3
     assert resumed["lr_schedulers"][0]["last_epoch"] == 3
     assert "ema_state_dict" in resumed
-    torch.testing.assert_close(_standardizer(restored).mean, mean)
-    torch.testing.assert_close(_standardizer(restored).scale, scale)
+    torch.testing.assert_close(_residual_normalizer(restored).mean, mean)
+    torch.testing.assert_close(_residual_normalizer(restored).scale, scale)

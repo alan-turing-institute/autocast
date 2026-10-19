@@ -3,12 +3,31 @@ import math
 import pytest
 import torch
 
+from autocast.nn import noise
+from autocast.nn.noise import source as source_module
 from autocast.nn.noise.source import (
     IIDGaussianSource,
     SeparableGaussianSource,
     TemporalOUSource,
     ZeroSource,
 )
+
+
+def test_source_distribution_keeps_flow_source_as_exact_alias():
+    assert source_module.SourceDistribution is source_module.FlowSource
+    assert noise.SourceDistribution is source_module.SourceDistribution
+    assert noise.FlowSource is source_module.SourceDistribution
+    assert isinstance(IIDGaussianSource(), noise.SourceDistribution)
+
+
+def _separable_source(**kwargs):
+    return SeparableGaussianSource(
+        **{
+            "temporal_correlation_time": 2.0,
+            "spatial_length_scale": 2.0,
+            **kwargs,
+        }
+    )
 
 
 @pytest.mark.parametrize("source", [ZeroSource(), IIDGaussianSource()])
@@ -47,10 +66,7 @@ def test_infinite_ou_correlation_time_shares_noise_across_frames():
 
 
 def test_separable_gp_has_temporal_and_spatial_correlation():
-    source = SeparableGaussianSource(
-        temporal_correlation_time=2.0,
-        spatial_length_scale=2.0,
-    )
+    source = _separable_source()
     samples = source.sample_like(torch.empty(512, 4, 16, 16, 1))
     variance = samples.square().mean()
     temporal = (samples[:, 1:] * samples[:, :-1]).mean() / variance
@@ -63,10 +79,7 @@ def test_separable_gp_has_temporal_and_spatial_correlation():
 
 def test_separable_gp_preserves_periodic_formulation():
     reference = torch.empty(2, 4, 8, 8, 2)
-    source = SeparableGaussianSource(
-        temporal_correlation_time=2.0,
-        spatial_length_scale=2.0,
-    )
+    source = _separable_source()
 
     torch.manual_seed(7)
     actual = source.sample_like(reference)
@@ -89,11 +102,7 @@ def test_separable_gp_preserves_periodic_formulation():
 
 @pytest.mark.parametrize("boundary", ["neumann", "dirichlet"])
 def test_bounded_separable_gp_has_unit_pooled_variance(boundary):
-    source = SeparableGaussianSource(
-        temporal_correlation_time=2.0,
-        spatial_length_scale=2.0,
-        spatial_boundaries=boundary,
-    )
+    source = _separable_source(spatial_boundaries=boundary)
 
     samples = source.sample_like(torch.empty(512, 2, 16, 16, 1))
 
@@ -101,11 +110,7 @@ def test_bounded_separable_gp_has_unit_pooled_variance(boundary):
 
 
 def test_dirichlet_separable_gp_has_zero_boundary():
-    source = SeparableGaussianSource(
-        temporal_correlation_time=2.0,
-        spatial_length_scale=2.0,
-        spatial_boundaries="dirichlet",
-    )
+    source = _separable_source(spatial_boundaries="dirichlet")
 
     samples = source.sample_like(torch.empty(8, 2, 12, 16, 1))
     boundary = torch.cat(
@@ -122,10 +127,8 @@ def test_dirichlet_separable_gp_has_zero_boundary():
 
 
 def test_dirichlet_separable_gp_is_finite_at_large_length_scale():
-    source = SeparableGaussianSource(
-        temporal_correlation_time=2.0,
-        spatial_length_scale=100.0,
-        spatial_boundaries="dirichlet",
+    source = _separable_source(
+        spatial_length_scale=100.0, spatial_boundaries="dirichlet"
     )
 
     samples = source.sample_like(torch.empty(8, 2, 16, 16, 1))
@@ -134,11 +137,7 @@ def test_dirichlet_separable_gp_is_finite_at_large_length_scale():
 
 
 def test_neumann_separable_gp_does_not_wrap_boundaries():
-    source = SeparableGaussianSource(
-        temporal_correlation_time=2.0,
-        spatial_length_scale=2.0,
-        spatial_boundaries="neumann",
-    )
+    source = _separable_source(spatial_boundaries="neumann")
 
     samples = source.sample_like(torch.empty(2048, 1, 16, 16, 1))[:, 0, :, :, 0]
     variance = samples.square().mean()
@@ -150,9 +149,7 @@ def test_neumann_separable_gp_does_not_wrap_boundaries():
 
 
 def test_separable_gp_supports_mixed_channel_boundaries():
-    source = SeparableGaussianSource(
-        temporal_correlation_time=2.0,
-        spatial_length_scale=2.0,
+    source = _separable_source(
         spatial_boundaries=("neumann", "dirichlet", "dirichlet"),
         channel_correlation=(
             (1.0, 0.0, 0.0),
@@ -184,10 +181,7 @@ def test_separable_gp_supports_mixed_channel_boundaries():
 
 
 def test_separable_gp_preserves_low_precision_dtype():
-    source = SeparableGaussianSource(
-        temporal_correlation_time=2.0,
-        spatial_length_scale=2.0,
-    )
+    source = _separable_source()
 
     samples = source.sample_like(torch.empty(2, 4, 8, 8, 1, dtype=torch.bfloat16))
 
@@ -195,11 +189,7 @@ def test_separable_gp_preserves_low_precision_dtype():
 
 
 def test_separable_gp_applies_channel_correlation():
-    source = SeparableGaussianSource(
-        temporal_correlation_time=2.0,
-        spatial_length_scale=2.0,
-        channel_correlation=((1.0, 0.75), (0.75, 1.0)),
-    )
+    source = _separable_source(channel_correlation=((1.0, 0.75), (0.75, 1.0)))
     samples = source.sample_like(torch.empty(512, 4, 8, 8, 2))
     observed = (samples[..., 0] * samples[..., 1]).mean() / (
         samples[..., 0].std(correction=0) * samples[..., 1].std(correction=0)
@@ -219,30 +209,18 @@ def test_separable_gp_applies_channel_correlation():
 )
 def test_separable_gp_validates_channel_correlation(correlation, message):
     with pytest.raises(ValueError, match=message):
-        SeparableGaussianSource(
-            temporal_correlation_time=2.0,
-            spatial_length_scale=2.0,
-            channel_correlation=correlation,
-        )
+        _separable_source(channel_correlation=correlation)
 
 
 def test_separable_gp_validates_reference_channel_count():
-    source = SeparableGaussianSource(
-        temporal_correlation_time=2.0,
-        spatial_length_scale=2.0,
-        channel_correlation=((1.0, 0.5), (0.5, 1.0)),
-    )
+    source = _separable_source(channel_correlation=((1.0, 0.5), (0.5, 1.0)))
 
     with pytest.raises(ValueError, match="expected 2, got 1"):
         source.sample_like(torch.empty(2, 4, 8, 8, 1))
 
 
 def test_separable_gp_validates_spatial_boundary_channel_count():
-    source = SeparableGaussianSource(
-        temporal_correlation_time=2.0,
-        spatial_length_scale=2.0,
-        spatial_boundaries=("neumann", "dirichlet"),
-    )
+    source = _separable_source(spatial_boundaries=("neumann", "dirichlet"))
 
     with pytest.raises(ValueError, match="expected 2, got 1"):
         source.sample_like(torch.empty(2, 4, 8, 8, 1))
@@ -250,9 +228,7 @@ def test_separable_gp_validates_spatial_boundary_channel_count():
 
 def test_separable_gp_rejects_cross_boundary_channel_correlation():
     with pytest.raises(ValueError, match="different spatial boundaries"):
-        SeparableGaussianSource(
-            temporal_correlation_time=2.0,
-            spatial_length_scale=2.0,
+        _separable_source(
             spatial_boundaries=("neumann", "dirichlet"),
             channel_correlation=((1.0, 0.5), (0.5, 1.0)),
         )
@@ -267,11 +243,8 @@ def test_separable_gp_accepts_accelerator_channel_correlation():
         pytest.skip("No accelerator is available.")
     correlation = torch.eye(2, device=device)
 
-    source = SeparableGaussianSource(
-        temporal_correlation_time=2.0,
-        spatial_length_scale=2.0,
-        spatial_boundaries=("neumann", "dirichlet"),
-        channel_correlation=correlation,
+    source = _separable_source(
+        spatial_boundaries=("neumann", "dirichlet"), channel_correlation=correlation
     )
 
     assert source.channel_factor is not None
@@ -280,11 +253,7 @@ def test_separable_gp_accepts_accelerator_channel_correlation():
 
 def test_separable_gp_validates_spatial_boundaries():
     with pytest.raises(ValueError, match="must be one of"):
-        SeparableGaussianSource(
-            temporal_correlation_time=2.0,
-            spatial_length_scale=2.0,
-            spatial_boundaries="open",  # type: ignore[arg-type] -- invalid on purpose
-        )
+        _separable_source(spatial_boundaries="open")
 
 
 @pytest.mark.parametrize(
@@ -292,9 +261,8 @@ def test_separable_gp_validates_spatial_boundaries():
     [
         (lambda: TemporalOUSource(correlation_time=0.0), "correlation_time"),
         (
-            lambda: SeparableGaussianSource(
-                temporal_correlation_time=1.0,
-                spatial_length_scale=0.0,
+            lambda: _separable_source(
+                temporal_correlation_time=1.0, spatial_length_scale=0.0
             ),
             "spatial_length_scale",
         ),

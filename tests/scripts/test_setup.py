@@ -135,13 +135,14 @@ def test_apply_processor_defaults_to_backbone():
     assert cfg["backbone"]["cond_channels"] == 8  # in_channels for backbone
 
 
-def test_apply_processor_defaults_to_residual_components():
+@pytest.mark.parametrize("normalizer_key", ["residual_normalizer", "standardizer"])
+def test_apply_processor_defaults_to_residual_components(normalizer_key):
     cfg = OmegaConf.create(
         {
             "n_steps_output": "auto",
             "n_channels_out": "auto",
             "reference": {"n_steps_output": "auto"},
-            "standardizer": {
+            normalizer_key: {
                 "n_steps_output": "auto",
                 "n_channels": "auto",
             },
@@ -158,8 +159,8 @@ def test_apply_processor_defaults_to_residual_components():
     )
 
     assert cfg.reference.n_steps_output == 8
-    assert cfg.standardizer.n_steps_output == 8
-    assert cfg.standardizer.n_channels == 3
+    assert cfg[normalizer_key].n_steps_output == 8
+    assert cfg[normalizer_key].n_channels == 3
 
 
 def test_apply_processor_handles_none_config():

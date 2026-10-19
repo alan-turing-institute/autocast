@@ -19,6 +19,7 @@ from torch.utils.data import DataLoader, Dataset, TensorDataset
 from torchmetrics import Metric, MetricCollection
 
 from autocast.callbacks.checkpoint import ProgressModelCheckpoint
+from autocast.callbacks.ema import EMACallback
 from autocast.callbacks.metrics import ValidationMetricPlotCallback
 from autocast.callbacks.residual_statistics import ResidualStatisticsCallback
 from autocast.data.datamodule import SpatioTemporalDataModule
@@ -82,31 +83,15 @@ def _stats_from_encoded_batch(batch: EncodedBatch) -> dict:
     }
 
 
-def _first_encoded_batch(batches: list[EncodedBatch]) -> EncodedBatch:
-    return batches[0]
-
-
-class _EncodedDataset(Dataset[EncodedBatch]):
-    def __init__(self, batch: EncodedBatch) -> None:
-        self.batch = batch
-
-    def __len__(self) -> int:
-        return 1
-
-    def __getitem__(self, index: int) -> EncodedBatch:
-        return self.batch
-
-
 class _EncodedDataModule(L.LightningDataModule):
     def __init__(self, batch: EncodedBatch) -> None:
         super().__init__()
-        self.train_dataset = _EncodedDataset(batch)
+        self.train_dataset = [batch]
 
     def train_dataloader(self):
         return DataLoader(
-            self.train_dataset,
-            batch_size=1,
-            collate_fn=_first_encoded_batch,
+            cast(Dataset, self.train_dataset),
+            batch_size=None,
             num_workers=0,
         )
 
@@ -296,9 +281,10 @@ def test_processor_config_training_step_smoke(config_dir: str, dummy_datamodule)
     assert loss.ndim == 0
 
 
-def test_residual_flow_config_fits_and_restores_statistics(
+def test_residual_flow_config_fits_and_restores_statistics(  # noqa: PLR0915
     config_dir: str,
     tmp_path: Path,
+    monkeypatch,
 ):
     model_cfg = _load_config(
         config_dir,
@@ -340,13 +326,14 @@ def test_residual_flow_config_fits_and_restores_statistics(
         _stats_from_encoded_batch(batch),
         setup_datamodule,
     )
-    callbacks: list = [Callback()]
+    ema = EMACallback()
+    callbacks: list = [ema, Callback()]
     callbacks = _ensure_residual_statistics_callback(callbacks, model)
 
     assert isinstance(model.processor, ResidualFlowMatchingProcessor)
     assert isinstance(model.processor.source, TemporalOUSource)
     assert isinstance(callbacks[0], ResidualStatisticsCallback)
-    assert len(callbacks) == 2
+    assert len(callbacks) == 3
 
     trainer = L.Trainer(
         accelerator="cpu",
@@ -362,32 +349,84 @@ def test_residual_flow_config_fits_and_restores_statistics(
     )
     trainer.fit(model, datamodule=datamodule)
 
-    standardizer = model.processor.standardizer
-    assert standardizer is not None
+    residual_normalizer = model.processor.residual_normalizer
+    assert residual_normalizer is not None
     expected_scale, expected_mean = torch.std_mean(
         residual.movedim(1, 0).reshape(3, -1, 1),
         dim=1,
         correction=0,
     )
-    assert standardizer.fitted
-    assert torch.allclose(standardizer.mean, expected_mean)
-    assert torch.allclose(standardizer.scale, expected_scale)
+    assert residual_normalizer.fitted
+    assert torch.allclose(residual_normalizer.mean, expected_mean)
+    assert torch.allclose(residual_normalizer.scale, expected_scale)
+    assert ema.ema_model is not None
+    ema_state = ema.ema_model.module.state_dict()
+    assert ema_state["processor.residual_normalizer._fitted"].item()
+    assert torch.equal(
+        ema_state["processor.residual_normalizer.mean"], residual_normalizer.mean
+    )
+    assert torch.equal(
+        ema_state["processor.residual_normalizer.scale"], residual_normalizer.scale
+    )
 
     checkpoint = tmp_path / "residual.ckpt"
     trainer.save_checkpoint(checkpoint)
-    restored = setup_processor_model(
-        model_cfg,
-        _stats_from_encoded_batch(batch),
-        setup_datamodule,
-    )
+    # Recreate the pre-rename artifact format, including EMA callback resume state.
     payload = torch.load(checkpoint, map_location="cpu", weights_only=False)
-    restored.load_state_dict(payload["state_dict"])
-    assert isinstance(restored.processor, ResidualFlowMatchingProcessor)
-    restored_standardizer = restored.processor.standardizer
-    assert restored_standardizer is not None
-    assert restored_standardizer.fitted
-    assert torch.equal(restored_standardizer.mean, standardizer.mean)
-    assert torch.equal(restored_standardizer.scale, standardizer.scale)
+
+    def legacy_names(state):
+        return {
+            key.replace("residual_normalizer.", "standardizer."): value
+            for key, value in state.items()
+        }
+
+    for key in ("state_dict", "ema_state_dict"):
+        payload[key] = legacy_names(payload[key])
+    for state in payload["callbacks"].values():
+        if state.get("ema_model_state") is not None:
+            state["ema_model_state"] = legacy_names(state["ema_model_state"])
+    torch.save(payload, checkpoint)
+    with open_dict(model_cfg.model.processor):
+        legacy_config = model_cfg.model.processor.pop("residual_normalizer")
+        legacy_config._target_ = (
+            "autocast.processors.residual_normalization.ResidualStandardizer"
+        )
+        model_cfg.model.processor.standardizer = legacy_config
+
+    # Real Lightning resume restores statistics before on_fit_start callbacks.
+    resumed = setup_processor_model(
+        model_cfg, _stats_from_encoded_batch(batch), setup_datamodule
+    )
+
+    def unexpected_statistics_fit(*args, **kwargs):
+        pytest.fail("Checkpoint resume must skip residual statistics fitting")
+
+    monkeypatch.setattr(
+        ResidualStatisticsCallback, "_fit_statistics", unexpected_statistics_fit
+    )
+    resumed_ema = EMACallback()
+    resumed_trainer = L.Trainer(
+        accelerator="cpu",
+        devices=1,
+        max_steps=2,
+        limit_val_batches=0,
+        num_sanity_val_steps=0,
+        callbacks=_ensure_residual_statistics_callback([resumed_ema], resumed),
+        logger=False,
+        enable_checkpointing=False,
+        enable_model_summary=False,
+        enable_progress_bar=False,
+    )
+    resumed_trainer.fit(resumed, datamodule=datamodule, ckpt_path=checkpoint)
+    assert resumed_trainer.global_step == 2
+    assert resumed_ema.ema_model is not None
+    resumed_state = resumed_ema.ema_model.module.state_dict()
+    assert torch.equal(
+        resumed_state["processor.residual_normalizer.mean"], residual_normalizer.mean
+    )
+    assert torch.equal(
+        resumed_state["processor.residual_normalizer.scale"], residual_normalizer.scale
+    )
 
 
 def test_masked_window_flow_matching_config_smoke(config_dir: str, dummy_datamodule):

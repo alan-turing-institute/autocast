@@ -1,15 +1,52 @@
+from autocast.losses.composite import WeightedSumLoss
+from autocast.losses.decomposition import (
+    ComponentBranch,
+    ComponentObjective,
+    ComponentTransform,
+    FieldComponents,
+    FieldDecomposition,
+    IdentityDecomposition,
+    ScoringBranch,
+    SequentialDecomposition,
+    TransformedLoss,
+)
 from autocast.losses.ensemble import (
     AlphaFairCRPSLoss,
+    CoefficientCRPSLoss,
     CRPSLoss,
     EnsembleMAELoss,
     FairCRPSLoss,
 )
 from autocast.losses.regularization import MCDropoutMSEL2Loss
+from autocast.losses.scale import (
+    FourierLowPass,
+    GaussianSmoothing,
+    ScaleDecomposition,
+    SmoothingOperator,
+)
+from autocast.losses.spectral import FourierDecomposition, RadialFourierDecomposition
 
 __all__ = [
     "AlphaFairCRPSLoss",
     "CRPSLoss",
+    "CoefficientCRPSLoss",
+    "ComponentBranch",
+    "ComponentObjective",
+    "ComponentTransform",
     "EnsembleMAELoss",
     "FairCRPSLoss",
+    "FieldComponents",
+    "FieldDecomposition",
+    "FourierDecomposition",
+    "FourierLowPass",
+    "GaussianSmoothing",
+    "IdentityDecomposition",
     "MCDropoutMSEL2Loss",
+    "RadialFourierDecomposition",
+    "ScaleDecomposition",
+    "ScoringBranch",
+    "SequentialDecomposition",
+    "SmoothingOperator",
+    "TransformedLoss",
+    "WeightedSumLoss",
 ]

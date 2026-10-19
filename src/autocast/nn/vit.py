@@ -1,4 +1,4 @@
-"""Temporal ViT backbone with flexible temporal processing methods."""
+"""Spatial ViT with optional temporal preprocessing before channel bundling."""
 
 from collections.abc import Sequence
 
@@ -9,13 +9,13 @@ from torch import nn
 from autocast.nn.base import TemporalBackboneBase
 
 
-class TemporalViTBackbone(TemporalBackboneBase):
-    """Azula ViT with flexible temporal encoding options.
+class SpatialViTBackbone(TemporalBackboneBase):
+    """Azula ViT with spatial tokens and optional temporal preprocessing.
 
-    Wraps the Azula Vision Transformer to handle temporal sequences in the
-    format (B, T, W, H, C) for diffusion models or temporal forecasting.
-    Supports multiple temporal processing methods that can be selected via
-    the `temporal_method` parameter.
+    Accepts (B, T, W, H, C) fields. ``temporal_method`` optionally processes
+    the field and context timelines separately before bundling frames into
+    channels. Transformer blocks then attend over spatial patches; temporal
+    attention is preprocessing, not interleaved with the transformer blocks.
     """
 
     def __init__(
@@ -52,7 +52,7 @@ class TemporalViTBackbone(TemporalBackboneBase):
         include_time_embedding: bool = True,
         spatial_modulation: bool = False,
     ):
-        """Initialize Temporal ViT Backbone.
+        """Initialize the spatial ViT backbone.
 
         Args:
             in_channels: Number of input channels per timestep
@@ -94,7 +94,7 @@ class TemporalViTBackbone(TemporalBackboneBase):
         """
         if window_size is not None:
             msg = (
-                "TemporalViTBackbone does not support non-null window_size with "
+                "SpatialViTBackbone does not support non-null window_size with "
                 "the installed Azula ViT. Use window_size=null for global attention."
             )
             raise ValueError(msg)
@@ -193,3 +193,7 @@ class TemporalViTBackbone(TemporalBackboneBase):
             rpb=kwargs.get("rpb", True),
             checkpointing=kwargs.get("checkpointing", False),
         )
+
+
+# Preserve existing Hydra targets, imports and serialized class references.
+TemporalViTBackbone = SpatialViTBackbone

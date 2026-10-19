@@ -24,7 +24,7 @@ model:
   processor:
     reference:
       channel_indices: null
-    standardizer:
+    residual_normalizer:
       # Fit latent increments from cached training windows, never held-out data.
       granularity: lead_channel
     backbone:

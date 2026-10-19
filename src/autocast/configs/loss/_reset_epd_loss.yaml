@@ -1,0 +1,5 @@
+# @package _global_
+# Hydra merges mappings recursively. Clear the previous loss before composing
+# an EPD loss preset so unrelated constructor arguments cannot survive.
+model:
+  loss_func: null

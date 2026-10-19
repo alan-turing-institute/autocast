@@ -73,10 +73,11 @@ optimizer updates and sample counts when comparing training budgets.
 
 ### Matched-update residual flow matching
 
-`flow_matching_residual_12block_one_output_128k.yaml` reuses the residual FM
-implementation from [PR #445](https://github.com/alan-turing-institute/autocast/pull/445)
-at `a1b3b5ad8453a4d430b1cd4839b057f50cdc048c`. It predicts the next latent's
-increment about the last input latent, then adds that reference before decoding.
+`flow_matching_residual_12block_one_output_128k.yaml` uses the merged residual FM
+implementation from [PR #445](https://github.com/alan-turing-institute/autocast/pull/445).
+Its training-only statistics use the canonical `residual_normalizer` interface.
+It predicts the next latent's increment about the last input latent, then adds
+that reference before decoding.
 An IID Gaussian source is used; no additional AdaLN noise draw is introduced.
 The per-example flow time conditions AdaLN, while the current latent fields
 remain spatial input conditioning. Simulator-parameter conditioning stays off.
