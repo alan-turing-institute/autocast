@@ -83,6 +83,21 @@ We can check this again by running Python from the AutoCast directory:
 
 If you instead want to load the best checkpoint according to validation metrics, you can do so by loading the `best-val-*.ckpt` file in the `checkpoints` subfolder.
 
+## Processor coordinate systems
+
+A processor operates entirely in the coordinate system of the tensors it
+receives. For a cached-latent workflow these are latent coordinates; with
+identity encoder and decoder modules they are ambient coordinates. A processor
+does not implicitly decode its output or reverse dataset normalization.
+
+Residual processors likewise form their target and reference in processor
+coordinates. Residual standardization is an additional affine transform inside
+that coordinate system and is distinct from dataset normalization. A reference
+provided by another processor must therefore accept the same inputs and return
+the same ambient or latent coordinates, output horizon, and channels. An
+external ambient model must be encoded before it can provide a reference to a
+latent processor.
+
 ## Processors in ambient space
 
 The processor models in AutoCast are designed to operate in the latent space, i.e., with encoded data.

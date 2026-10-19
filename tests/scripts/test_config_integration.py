@@ -299,6 +299,34 @@ def test_fno_architecture_ablation_config_matches_crps_baseline(
     assert cfg.model.val_metrics == baseline.model.val_metrics
 
 
+@pytest.mark.parametrize(
+    ("source", "target"),
+    [
+        ("iid_gaussian", "IIDGaussianSource"),
+        ("temporal_ou", "TemporalOUSource"),
+        ("separable_gaussian", "SeparableGaussianSource"),
+    ],
+)
+def test_residual_flow_source_configs_compose(
+    config_dir: str,
+    source: str,
+    target: str,
+):
+    cfg = _load_config(
+        config_dir,
+        "model/processor",
+        overrides=[
+            "processor@model.processor=residual_flow_matching_vit",
+            f"flow_source@model.processor.source={source}",
+        ],
+    )
+
+    assert cfg.model.processor._target_.endswith("ResidualFlowMatchingProcessor")
+    assert cfg.model.processor.source._target_.endswith(target)
+    if source == "separable_gaussian":
+        assert cfg.model.processor.source.spatial_boundaries == "periodic"
+
+
 # --- Tests using real configs ---
 
 

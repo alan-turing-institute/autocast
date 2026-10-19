@@ -1,0 +1,24 @@
+defaults:
+  - /backbone@backbone: vit_small
+  - /flow_source@source: iid_gaussian
+  - _self_
+
+_target_: autocast.processors.residual_flow_matching.ResidualFlowMatchingProcessor
+flow_ode_steps: 20
+n_steps_output: auto
+n_channels_out: auto
+integrator: euler
+
+# IID residual noise plus this reference corresponds to a noisy persistence
+# source in full-state coordinates. Replace with ProcessorReference for a
+# pretrained surrogate or, later, a physics model.
+reference:
+  _target_: autocast.processors.residual_reference.LastFrameReference
+  n_steps_output: auto
+  channel_indices: null
+
+standardizer:
+  _target_: autocast.processors.residual_normalization.ResidualStandardizer
+  n_steps_output: auto
+  n_channels: auto
+  granularity: lead_channel
