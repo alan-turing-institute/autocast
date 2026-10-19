@@ -14,6 +14,16 @@ from autocast.processors.flow_matching_masked_window import (
     FlowMatchingMaskedWindowProcessor,
 )
 from autocast.processors.one_step_cohort import OneStepCohortProcessor
+from autocast.processors.residual_flow_matching import ResidualFlowMatchingProcessor
+from autocast.processors.residual_normalization import (
+    ResidualNormalizer,
+    ResidualStandardizer,
+)
+from autocast.processors.residual_reference import (
+    LastFrameReference,
+    ProcessorReference,
+    ReferenceTrajectory,
+)
 from autocast.processors.sigma_vae import SigmaVAEProcessor
 from autocast.processors.swin_vit import SwinViTProcessor
 from autocast.processors.tarflow import TarFlowProcessor
@@ -51,10 +61,16 @@ __all__ = [
     "DriftingProcessor",
     "FlowMatchingMaskedWindowProcessor",
     "FlowMatchingProcessor",
+    "LastFrameReference",
     "MCDropoutAzulaViTProcessor",
     "NormalizingFlowProcessor",
     "OneStepCohortProcessor",
     "Processor",
+    "ProcessorReference",
+    "ReferenceTrajectory",
+    "ResidualFlowMatchingProcessor",
+    "ResidualNormalizer",
+    "ResidualStandardizer",
     "SigmaVAEProcessor",
     "SwinViTProcessor",
     "TarFlowProcessor",

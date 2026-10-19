@@ -237,7 +237,8 @@ def test_crps_future_slots_and_noise_are_independent_of_targets():
     assert torch.equal(seen[0][1], x)
 
 
-def test_masked_fm_clamps_context_throughout_sampling():
+@pytest.mark.parametrize("explicit_source", [False, True])
+def test_masked_fm_clamps_context_throughout_sampling(explicit_source):
     backbone = _backbone(n_steps_input=5, n_steps_output=5, conditioning="mask")
     processor = FlowMatchingMaskedWindowProcessor(
         backbone=backbone,
@@ -251,7 +252,11 @@ def test_masked_fm_clamps_context_throughout_sampling():
         lambda _, args: windows.append(args[0].detach().clone()),
     )
     context = torch.randn(1, 1, 4, 2, 2)
-    pred = processor.map(context, None)
+    if explicit_source:
+        source = torch.randn(1, 4, 4, 2, 2)
+        pred = processor.map_from_source(context, None, source_states=source)
+    else:
+        pred = processor.map(context, None)
     hook.remove()
     assert pred.shape == (1, 4, 4, 2, 2)
     assert len(windows) == 3

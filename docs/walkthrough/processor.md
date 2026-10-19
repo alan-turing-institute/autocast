@@ -106,3 +106,128 @@ uv run autocast epd \
 - We override both the encoder and decoder to be `identity`, i.e., no-ops.
 - For this demonstration we set `processor` to be the same U-Net flow matching model used above.
   The default processor for `epd` is in fact `flow_matching_vit`, which uses a ViT backbone instead and is much larger (around 50M parameters compared to `flow_matching`'s 3.5M).
+
+
+## Residual flow matching
+
+A residual processor uses one coordinate system for inputs, targets, references
+and reconstructed outputs: ambient with an identity codec, latent with a frozen
+codec or cached latents. Let `x` and `y` be dataset-normalized states, `E`/`D` the
+encoder/decoder, and `b` a deterministic reference in processor coordinates.
+
+| Workflow | Residual target `r` | Forecast before dataset denormalization |
+| --- | --- | --- |
+| Ambient, identity codec | `y - b(x)` | `b(x) + generated_residual` |
+| Latent, frozen codec | `E(y) - b(E(x))` | `D(b(E(x)) + generated_residual)` |
+
+`processor.residual_normalizer` optionally applies `(r - mean) / scale` before
+flow matching and reverses it before adding the reference. Its `normalize()` and
+`denormalize()` methods only change residual coordinates; dataset normalization
+uses the existing dataset/model `norm`, and physical units are restored after
+full-state reconstruction and decoding. `map` and `map_from_source` return full
+processor states, so cached-latent outputs still require the matching decoder.
+
+For nonlinear codecs, `E(y) - E(x)` differs from `E(y - x)`, and decoding a sum
+is not the sum of separately decoded terms. Latent persistence with a lossy codec
+returns `D(E(x_last))` at zero residual, which need not match the physical last
+frame. Caches, references and evaluation must use the same encoder checkpoint
+and dataset normalization. Online latent training loads the matching pretrained
+codec with `autoencoder_checkpoint=/path/to/autoencoder.ckpt`; the frozen residual
+codec stays in evaluation mode throughout training.
+
+To use residual flow matching in the ambient command above, replace/add:
+
+```bash
+processor@model.processor=residual_flow_matching_vit \
+model.train_in_latent_space=true \
+model.loss_func=null \
+model.residual_prediction=false
+```
+
+`train_in_latent_space=true` selects the processor's flow matching objective;
+with an identity encoder those coordinates remain ambient. `false` selects a
+loss on decoded forecasts and does not change residual coordinates. Keep
+`model.loss_func=null` for ensemble flow matching too. The separate decoded-state
+increment interface uses an ordinary processor with `model.residual_prediction=true`,
+`model.train_in_latent_space=false` and a decoded-state loss. Combining that option
+with residual flow matching would add a second reference and is rejected.
+
+For cached latents:
+
+```bash
+uv run autocast processor \
+    --workdir ../residual_latent_output \
+    datamodule=cached_latents \
+    ++datamodule.data_path=/path/to/parent_folder/ae_output/cached_latents \
+    processor@model.processor=residual_flow_matching_vit \
+    model.loss_func=null
+```
+
+The default reference repeats the latest frame in processor coordinates. Input
+and forecast channels must align; use `reference.channel_indices` when inputs
+include additional conditioning channels. `ProcessorReference` is a Python API
+for wrapping an **already loaded, deterministic** processor with matching input
+coordinates, output horizon and channels. It does not infer nested `auto` values
+or load pretrained weights. For a matching resolved config and processor-model
+checkpoint:
+
+```python
+import torch
+from hydra.utils import instantiate
+from omegaconf import OmegaConf
+from autocast.processors.residual_reference import ProcessorReference
+
+config = OmegaConf.load("/path/to/run/resolved_config.yaml")
+processor = instantiate(config.model.processor)
+state = torch.load("/path/to/run/processor.ckpt", map_location="cpu", weights_only=False)["state_dict"]
+processor.load_state_dict(
+    {key.removeprefix("processor."): value for key, value in state.items()
+     if key.startswith("processor.")},
+    strict=True,
+)
+reference = ProcessorReference(processor)
+```
+
+Freezing disables gradients and dropout; it does not make a generative `map`
+deterministic. An external ambient reference for a latent processor needs an
+explicit adapter handling input normalization and output encoding.
+
+With an unfitted residual normalizer, the training entry point inserts
+`ResidualStatisticsCallback` before EMA. It fits training-only population moments
+while preserving RNG state. Raw batches require a frozen encoder and
+`train_in_latent_space=true`; encoder/reference evaluation uses Trainer precision,
+and moments use FP32 reductions with CPU FP64 accumulation. Automatic fitting
+does not support configured input noise: remove the injector or supply fixed
+statistics. Custom Lightning loops must install this callback before EMA.
+
+Distributed fitting partitions a finite map-style training DataLoader across
+ranks without padding and combines count/mean/M2. It requires standard full-dataset
+samplers, implicit batching via `batch_size`, and `drop_last=False`; iterable
+datasets, subset/replacement samplers, sampler subclasses or an explicit
+`batch_sampler` need fixed statistics instead. Represent a training
+subset as a dataset rather than a sampler to use automatic distributed fitting.
+Sampler data-source lengths must match the loader's dataset length, and both the
+loader and any distributed sampler must use `drop_last=False`.
+Fitting covers the full training split, independently of `limit_train_batches`.
+Mean, scale and the fitted flag are checkpoint buffers, so loading/resuming skips
+refitting. Omit the transform with `model.processor.residual_normalizer=null`,
+or provide both fixed statistics using Hydra's append syntax:
+
+```bash
++model.processor.residual_normalizer.mean=0 \
++model.processor.residual_normalizer.scale=1
+```
+
+Existing saved configs using `ResidualStandardizer`/`standardizer` and checkpoint
+keys under `standardizer.*` remain loadable, including raw and EMA resume state.
+New configs and checkpoints use `ResidualNormalizer`/`residual_normalizer`.
+Providing both names is an error.
+
+Sources default to IID Gaussian. Configure prescribed correlations with
+`flow_source@model.processor.source=temporal_ou` or `separable_gaussian`; covariance
+parameters are not fitted. These sources currently accept 2-D spatial grids.
+Boundary settings apply to the processor grid, which may be latent, and do not
+enforce physical boundaries or conservation on forecasts. For `map_from_source`,
+provide full conditioning states as `x` and initial noise with the forecast shape,
+dtype and device in normalized residual coordinates; the result is reconstructed
+processor states.

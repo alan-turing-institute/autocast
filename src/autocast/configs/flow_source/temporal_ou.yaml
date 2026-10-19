@@ -1,0 +1,3 @@
+_target_: autocast.nn.noise.source.TemporalOUSource
+correlation_time: 4.0
+dt: 1.0
