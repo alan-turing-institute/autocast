@@ -18,6 +18,12 @@ from autocast.losses.ensemble import (
     FairCRPSLoss,
 )
 from autocast.losses.regularization import MCDropoutMSEL2Loss
+from autocast.losses.scale import (
+    FourierLowPass,
+    GaussianSmoothing,
+    ScaleDecomposition,
+    SmoothingOperator,
+)
 from autocast.losses.spectral import FourierDecomposition, RadialFourierDecomposition
 
 __all__ = [
@@ -32,11 +38,15 @@ __all__ = [
     "FieldComponents",
     "FieldDecomposition",
     "FourierDecomposition",
+    "FourierLowPass",
+    "GaussianSmoothing",
     "IdentityDecomposition",
     "MCDropoutMSEL2Loss",
     "RadialFourierDecomposition",
+    "ScaleDecomposition",
     "ScoringBranch",
     "SequentialDecomposition",
+    "SmoothingOperator",
     "TransformedLoss",
     "WeightedSumLoss",
 ]
