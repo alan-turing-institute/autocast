@@ -259,10 +259,10 @@ def test_invalid_alpha_is_rejected(alpha):
         CoefficientCRPSLoss(alpha)
 
 
-def test_invalid_reduction_is_local_to_new_class():
+@pytest.mark.parametrize("loss_cls", [CRPSLoss, CoefficientCRPSLoss])
+def test_invalid_reduction_is_rejected(loss_cls):
     with pytest.raises(ValueError, match="Unknown reduction"):
-        CoefficientCRPSLoss(reduction="median")
-    assert CRPSLoss(reduction="median").reduction == "median"
+        loss_cls(reduction="median")
 
 
 @pytest.mark.parametrize("target_shape", [(1, 1, 1, 1, 3), (1, 1, 1, 2), (1, 1, 1)])
