@@ -3,6 +3,7 @@ import abc
 import torch
 from torch import nn
 
+from autocast.nn.noise.source import FlowSource, _sample_checked
 from autocast.types import Tensor
 
 
@@ -36,15 +37,24 @@ class AdditiveNoiseInjector(NoiseInjector):
 
 
 class ConcatenatedNoiseInjector(NoiseInjector):
-    """Concatenates Gaussian noise as additional channels.
+    """Concatenate sampled noise as additional channels.
 
-    Appends `n_channels` of Gaussian noise to the last dimension (channels).
+    Defaults to IID Gaussian noise. An optional ``noise_source`` receives a
+    reference with the input layout and ``n_channels`` on the last axis.
+    Structured sources require an explicit grid, e.g. ``(B,T,Y,X,C)``.
+    Sources are sampled afresh on every call; no rollout noise state is kept.
     """
 
-    def __init__(self, n_channels: int = 1, std: float = 1.0):
+    def __init__(
+        self,
+        n_channels: int = 1,
+        std: float = 1.0,
+        noise_source: FlowSource | None = None,
+    ):
         super().__init__()
         self.n_channels = n_channels
         self.std = self._validate_std(std)
+        self.noise_source = noise_source
 
     def get_additional_channels(self) -> int:
         return self.n_channels
@@ -57,5 +67,9 @@ class ConcatenatedNoiseInjector(NoiseInjector):
         shape = list(x.shape)
         shape[-1] = self.n_channels
 
-        noise = torch.randn(shape, device=x.device, dtype=x.dtype) * self.std
+        if self.noise_source is None:
+            noise = torch.randn(shape, device=x.device, dtype=x.dtype)
+        else:
+            noise = _sample_checked(self.noise_source, x.new_empty(shape))
+        noise = noise * self.std
         return torch.cat([x, noise], dim=-1)

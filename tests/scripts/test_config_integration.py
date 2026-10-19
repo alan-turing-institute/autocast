@@ -161,6 +161,7 @@ def test_processor_configs_exist(processor_configs: list[str]):
         ("iid_gaussian", "IIDGaussianSource"),
         ("temporal_ou", "TemporalOUSource"),
         ("separable_gaussian", "SeparableGaussianSource"),
+        ("spatial_fourier", "SpatialFourierSource"),
     ],
 )
 def test_residual_flow_source_configs_compose(

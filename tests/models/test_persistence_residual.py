@@ -17,6 +17,7 @@ from autocast.models.encoder_processor_decoder_ensemble import (
     EncoderProcessorDecoderEnsemble,
 )
 from autocast.nn.noise.noise_injector import ConcatenatedNoiseInjector
+from autocast.nn.noise.spatial_fourier import SpatialFourierSource
 from autocast.processors.base import Processor
 from autocast.processors.fno import FNOProcessor
 from autocast.types import Batch
@@ -248,7 +249,7 @@ def test_small_residuals_survive_large_state_means_and_rollout():
     )
 
 
-@pytest.mark.parametrize("noise", ["add", "in_place", "concat"])
+@pytest.mark.parametrize("noise", ["add", "in_place", "concat", "structured_concat"])
 @pytest.mark.parametrize("n_members", [None, 2])
 def test_clean_baseline_and_inputs_survive_noise_and_rollout(noise, n_members):
     class AddNoise(nn.Module):
@@ -257,9 +258,14 @@ def test_clean_baseline_and_inputs_survive_noise_and_rollout(noise, n_members):
 
     batch = make_batch()
     clean = batch.input_fields.clone()
-    injector = (
-        ConcatenatedNoiseInjector(n_channels=3) if noise == "concat" else AddNoise()
-    )
+    is_concat = noise in ("concat", "structured_concat")
+    if is_concat:
+        source = (
+            SpatialFourierSource(((0, 1),)) if noise == "structured_concat" else None
+        )
+        injector = ConcatenatedNoiseInjector(n_channels=3, noise_source=source)
+    else:
+        injector = AddNoise()
     model = make_model(
         torch.zeros_like(batch.output_fields[0]),
         n_members=n_members,
@@ -270,12 +276,12 @@ def test_clean_baseline_and_inputs_survive_noise_and_rollout(noise, n_members):
     torch.testing.assert_close(model(batch), expected)
     assert isinstance(model.processor, DecodedOutputProcessor)
     assert isinstance(model.processor.last_input, torch.Tensor)
-    noisy = clean if noise == "concat" else clean + 50
+    noisy = clean if is_concat else clean + 50
     torch.testing.assert_close(
         model.processor.last_input[..., :2],
         noisy.repeat_interleave(n_members or 1, dim=0),
     )
-    assert model.processor.last_input.shape[-1] == (5 if noise == "concat" else 2)
+    assert model.processor.last_input.shape[-1] == (5 if is_concat else 2)
     predictions, _ = model.rollout(
         batch,
         stride=4,
