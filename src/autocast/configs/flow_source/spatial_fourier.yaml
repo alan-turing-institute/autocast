@@ -1,0 +1,2 @@
+_target_: autocast.nn.noise.SpatialFourierSource
+wavevectors: [[1, 0], [0, 1]]

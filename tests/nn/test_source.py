@@ -3,12 +3,21 @@ import math
 import pytest
 import torch
 
+from autocast.nn import noise
+from autocast.nn.noise import source as source_module
 from autocast.nn.noise.source import (
     IIDGaussianSource,
     SeparableGaussianSource,
     TemporalOUSource,
     ZeroSource,
 )
+
+
+def test_source_distribution_keeps_flow_source_as_exact_alias():
+    assert source_module.SourceDistribution is source_module.FlowSource
+    assert noise.SourceDistribution is source_module.SourceDistribution
+    assert noise.FlowSource is source_module.SourceDistribution
+    assert isinstance(IIDGaussianSource(), noise.SourceDistribution)
 
 
 def _separable_source(**kwargs):

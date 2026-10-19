@@ -6,7 +6,7 @@ from typing import Any
 
 from torch import nn
 
-from autocast.nn.noise.source import FlowSource
+from autocast.nn.noise.source import SourceDistribution
 from autocast.processors.flow_matching import FlowMatchingProcessor
 from autocast.processors.residual_normalization import ResidualNormalizer
 from autocast.processors.residual_reference import ReferenceTrajectory
@@ -33,7 +33,7 @@ class ResidualFlowMatchingProcessor(FlowMatchingProcessor):
         n_steps_output: int = 4,
         n_channels_out: int = 1,
         integrator: str = "euler",
-        source: FlowSource | None = None,
+        source: SourceDistribution | None = None,
         residual_normalizer: ResidualNormalizer | None = None,
         standardizer: ResidualNormalizer | None = None,
     ) -> None:

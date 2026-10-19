@@ -3,7 +3,7 @@ from __future__ import annotations
 import torch
 from torch import nn
 
-from autocast.nn.noise.source import FlowSource, IIDGaussianSource
+from autocast.nn.noise.source import IIDGaussianSource, SourceDistribution
 from autocast.processors.base import Processor
 from autocast.types import EncodedBatch, Tensor
 
@@ -21,7 +21,7 @@ class FlowMatchingProcessor(Processor):
         n_steps_output: int = 4,
         n_channels_out: int = 1,
         integrator: str = "euler",
-        source: FlowSource | None = None,
+        source: SourceDistribution | None = None,
     ) -> None:
         # Store core hyperparameters and optional prebuilt backbone.
         super().__init__()

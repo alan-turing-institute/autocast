@@ -223,6 +223,12 @@ keys under `standardizer.*` remain loadable, including raw and EMA resume state.
 New configs and checkpoints use `ResidualNormalizer`/`residual_normalizer`.
 Providing both names is an error.
 
+Sources implement the shared `SourceDistribution.sample_like` interface;
+`FlowSource` remains an exact compatibility alias. FM keeps its `source=` argument and
+existing `flow_source` defaults so old configs and overrides remain valid.
+New conditioning consumers can use the equivalent `source_distribution` config
+group. Only sampling is required; density evaluation is not part of the interface.
+
 Sources default to IID Gaussian. Configure prescribed correlations with
 `flow_source@model.processor.source=temporal_ou` or `separable_gaussian`; covariance
 parameters are not fitted. These sources currently accept 2-D spatial grids.

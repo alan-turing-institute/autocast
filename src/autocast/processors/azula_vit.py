@@ -6,13 +6,14 @@ import torch
 from einops import rearrange
 from torch import Tensor, nn
 
+from autocast.nn.noise.source import SourceDistribution, _sample_checked
 from autocast.nn.vit import SpatialViTBackbone
 from autocast.processors.base import Processor
 from autocast.types import EncodedBatch
 
 
 class AdaLNNoiseMode(str, Enum):
-    """Whether AdaLN noise is shared globally or independent per patch token."""
+    """Whether AdaLN noise is shared globally or supplied per patch token."""
 
     GLOBAL = "global"
     SPATIAL = "spatial"
@@ -27,6 +28,11 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
     Shape convention:
     - Public processor boundary: channel-first, (B, C, H, W)
     - Internal backbone input/output: channels-last with time, (B, T, H, W, C)
+
+    Optional ``noise_source`` replaces IID sampling in spatial mode only. It
+    receives a ``(B, 1, H_tokens, W_tokens, D)`` reference on the actual input
+    patch grid. Calls are independent; the singleton time slot is not a
+    rollout trajectory. Explicit ``forward`` noise always bypasses sampling.
     """
 
     def __init__(
@@ -53,6 +59,7 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
         rope: bool = False,
         rpb: bool = True,
         noise_mode: AdaLNNoiseMode | str = AdaLNNoiseMode.GLOBAL,
+        noise_source: SourceDistribution | None = None,
     ):
         super().__init__()
         self.n_spatial_dims = len(spatial_resolution)
@@ -61,6 +68,10 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
             raise ValueError(msg)
 
         self.noise_mode = AdaLNNoiseMode(noise_mode)
+        if noise_source is not None and self.noise_mode != AdaLNNoiseMode.SPATIAL:
+            msg = "noise_source requires noise_mode='spatial'."
+            raise ValueError(msg)
+        self.noise_source = noise_source
         self.patch_size = (
             (patch_size, patch_size)
             if isinstance(patch_size, int)
@@ -226,7 +237,17 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
     def map(self, x: Tensor, global_cond: Tensor | None = None) -> Tensor:
         # One draw per member/forecast step, reused across all transformer blocks.
         noise_shape = self._noise_shape(x)
-        if self.n_noise_channels:
+        if self.noise_source is not None:
+            height, width = x.shape[-2:] if x.ndim == 4 else x.shape[2:4]
+            ph, pw = self.patch_size
+            # The backbone folds time into channels and has one effective slot.
+            # This is a token grid, not a field grid or a rollout trajectory.
+            reference = x.new_empty(
+                x.shape[0], 1, height // ph, width // pw, noise_shape[-1]
+            )
+            sampled = _sample_checked(self.noise_source, reference)
+            noise = rearrange(sampled, "b 1 h w d -> b (h w) d")
+        elif self.n_noise_channels:
             noise = torch.randn(noise_shape, dtype=x.dtype, device=x.device)
         else:
             noise = torch.zeros(noise_shape, dtype=x.dtype, device=x.device)

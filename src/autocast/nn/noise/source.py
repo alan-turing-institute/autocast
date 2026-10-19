@@ -1,4 +1,4 @@
-"""Source distributions for flow matching."""
+"""Source distributions for generative states and stochastic conditioning."""
 
 from __future__ import annotations
 
@@ -18,22 +18,47 @@ from autocast.nn.noise.spatial import (
 from autocast.types import Tensor
 
 
-class FlowSource(nn.Module, ABC):
-    """Sample initial flow states matching a reference tensor."""
+class SourceDistribution(nn.Module, ABC):
+    """Draw samples matching a reference tensor, including initial flow states.
+
+    Consumers choose the reference layout. Structured sources may require an
+    explicit space/time grid; a flattened token axis is not such a grid.
+    Only sampling is required, not density evaluation. No distributional form
+    is imposed; deterministic point sources are valid.
+    """
 
     @abstractmethod
     def sample_like(self, reference: Tensor) -> Tensor:
-        """Draw source states with the reference shape, device, and dtype."""
+        """Draw samples with the reference shape, device, and dtype."""
 
 
-class ZeroSource(FlowSource):
+# Preserve existing imports, subclasses and serialized references to the old name.
+FlowSource = SourceDistribution
+
+
+def _sample_checked(source: SourceDistribution, reference: Tensor) -> Tensor:
+    """Enforce the source contract before using samples as conditioning."""
+    sample = source.sample_like(reference)
+    if sample.shape != reference.shape:
+        msg = (
+            f"Noise source returned shape {tuple(sample.shape)}; "
+            f"expected {tuple(reference.shape)}."
+        )
+        raise ValueError(msg)
+    if sample.device != reference.device or sample.dtype != reference.dtype:
+        msg = "Noise source must preserve the reference device and dtype."
+        raise ValueError(msg)
+    return sample
+
+
+class ZeroSource(SourceDistribution):
     """Deterministic point source at zero."""
 
     def sample_like(self, reference: Tensor) -> Tensor:
         return torch.zeros_like(reference)
 
 
-class IIDGaussianSource(FlowSource):
+class IIDGaussianSource(SourceDistribution):
     """Independent standard Gaussian source."""
 
     def sample_like(self, reference: Tensor) -> Tensor:
@@ -49,7 +74,7 @@ def _validate_spatiotemporal(reference: Tensor) -> None:
         raise TypeError(msg)
 
 
-class TemporalOUSource(FlowSource):
+class TemporalOUSource(SourceDistribution):
     """Stationary Gaussian source with an OU kernel over output time."""
 
     def __init__(self, *, correlation_time: float, dt: float = 1.0) -> None:
