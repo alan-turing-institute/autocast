@@ -7,6 +7,7 @@ from typing import cast
 import pytest
 import torch
 from einops import repeat
+from lightning.pytorch.plugins.precision import Precision
 from torch import nn
 
 from autocast.callbacks.residual_statistics import ResidualStatisticsCallback
@@ -202,6 +203,7 @@ def test_online_and_cached_statistics_match(coordinates, toy_batch):
     for model, batch in [(online_model, toy_batch), (cached_model, encoded)]:
         trainer = SimpleNamespace(
             is_global_zero=True,
+            precision_plugin=Precision(),
             strategy=SimpleNamespace(broadcast=broadcast),
             datamodule=SimpleNamespace(train_dataloader=lambda batch=batch: [batch]),
         )

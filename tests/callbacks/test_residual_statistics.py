@@ -1,17 +1,23 @@
 from __future__ import annotations
 
+import lightning as L
 import pytest
 import torch
+from einops import rearrange, repeat
+from lightning.pytorch.plugins.precision import Precision
 from torch import nn
+from torch.utils.data import DataLoader
 
 from autocast.callbacks.residual_statistics import ResidualStatisticsCallback
 from autocast.decoders.identity import IdentityDecoder
+from autocast.encoders.base import EncoderWithCond
 from autocast.encoders.identity import IdentityEncoder
 from autocast.models.encoder_decoder import EncoderDecoder
 from autocast.models.encoder_processor_decoder import EncoderProcessorDecoder
 from autocast.models.processor import ProcessorModel
 from autocast.nn.noise.noise_injector import AdditiveNoiseInjector
 from autocast.nn.noise.source import ZeroSource
+from autocast.processors.base import Processor
 from autocast.processors.residual_flow_matching import ResidualFlowMatchingProcessor
 from autocast.processors.residual_normalization import (
     ResidualGranularity,
@@ -19,9 +25,11 @@ from autocast.processors.residual_normalization import (
 )
 from autocast.processors.residual_reference import (
     LastFrameReference,
+    ProcessorReference,
     ReferenceTrajectory,
 )
 from autocast.types import Batch, EncodedBatch
+from autocast.utils import get_optimizer_config
 
 
 class _ZeroField(nn.Module):
@@ -58,6 +66,7 @@ class _Trainer:
         self.datamodule = datamodule
         self.strategy = _SingleProcessStrategy()
         self.is_global_zero = True
+        self.precision_plugin = Precision()
 
 
 class _TrainableReference(ReferenceTrajectory):
@@ -273,3 +282,121 @@ def test_requires_configured_standardizer():
 
     with pytest.raises(TypeError, match=r"processor\.standardizer"):
         _fit(ResidualStatisticsCallback(), trainer, ProcessorModel(processor=processor))
+
+
+class _PrecisionEncoder(EncoderWithCond):
+    latent_channels = 2
+    channel_axis = -1
+
+    def __init__(self):
+        super().__init__()
+        self.conv = nn.Conv2d(2, 2, 1)
+        self.output_dtypes = []
+        with torch.no_grad():
+            self.conv.weight.copy_(torch.eye(2)[:, :, None, None])
+            assert self.conv.bias is not None
+            self.conv.bias.fill_(0.25)
+
+    def encode(self, batch):
+        fields = batch.input_fields
+        encoded = self.conv(rearrange(fields, "b t h w c -> (b t) c h w"))
+        self.output_dtypes.append(encoded.dtype)
+        return rearrange(encoded, "(b t) c h w -> b t h w c", b=fields.shape[0])
+
+
+class _PrecisionReference(Processor[EncodedBatch]):
+    def __init__(self):
+        super().__init__()
+        self.encoder = _PrecisionEncoder()
+
+    def map(self, x, global_cond):  # noqa: ARG002
+        fields = self.encoder.encode(Batch(x, x, None, None))
+        return repeat(fields[:, -1:], "b 1 ... c -> b t ... c", t=3)
+
+    def loss(self, batch):
+        raise NotImplementedError
+
+
+class _TrainableField(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.offset = nn.Parameter(torch.tensor(0.125))
+
+    def forward(self, z, t, cond, global_cond=None):  # noqa: ARG002
+        return torch.zeros_like(z) + self.offset
+
+
+class _PrecisionDataModule(L.LightningDataModule):
+    def __init__(self, batches):
+        super().__init__()
+        self.batches = batches
+
+    def train_dataloader(self):
+        return DataLoader(self.batches, batch_size=None, num_workers=0)
+
+
+@pytest.mark.parametrize(
+    ("precision", "expected_dtype"),
+    [
+        ("32-true", torch.float32),
+        ("16-true", torch.float16),
+        ("bf16-true", torch.bfloat16),
+        ("bf16-mixed", torch.bfloat16),
+    ],
+)
+@pytest.mark.parametrize("processor_reference", [False, True])
+def test_fitting_uses_training_precision(
+    precision, expected_dtype, processor_reference
+):
+    batches = [
+        Batch(batch.encoded_inputs, batch.encoded_output_fields, None, None)
+        for batch in _encoded_batches()
+    ]
+    encoder = _PrecisionEncoder()
+    reference_processor = _PrecisionReference() if processor_reference else None
+    processor = _processor(
+        reference=ProcessorReference(reference_processor)
+        if reference_processor is not None
+        else None
+    )
+    processor.flow_matching_model = _TrainableField()
+    model = EncoderProcessorDecoder(
+        encoder_decoder=EncoderDecoder(encoder, IdentityDecoder(in_channels=2)),
+        processor=processor,
+        train_in_latent_space=True,
+        optimizer_config=get_optimizer_config(optimizer="sgd"),
+        train_metrics=None,
+    )
+    trainer = L.Trainer(
+        accelerator="cpu",
+        devices=1,
+        precision=precision,
+        max_steps=1,
+        limit_val_batches=0,
+        num_sanity_val_steps=0,
+        callbacks=[ResidualStatisticsCallback()],
+        logger=False,
+        enable_checkpointing=False,
+        enable_progress_bar=False,
+        enable_model_summary=False,
+    )
+    trainer.fit(model, datamodule=_PrecisionDataModule(batches))
+
+    residual = torch.cat([batch.output_fields for batch in batches])
+    if processor_reference:
+        residual = residual - 0.25
+    expected_scale, expected_mean = torch.std_mean(
+        rearrange(residual, "b t h w c -> t (b h w) c"), dim=1, correction=0
+    )
+    standardizer = processor.standardizer
+    assert standardizer is not None
+    assert standardizer.fitted
+    assert set(encoder.output_dtypes) == {expected_dtype}
+    if reference_processor is not None:
+        assert set(reference_processor.encoder.output_dtypes) == {expected_dtype}
+    torch.testing.assert_close(standardizer.mean, expected_mean.to(standardizer.mean))
+    torch.testing.assert_close(
+        standardizer.scale, expected_scale.to(standardizer.scale)
+    )
+    assert all(batch.input_fields.dtype == torch.float32 for batch in batches)
+    assert trainer.global_step == 1

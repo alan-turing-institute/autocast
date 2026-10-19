@@ -163,6 +163,62 @@ def test_fm_forecast_loss_ignores_observed_frames_and_balances_examples(monkeypa
     assert processor.loss(_batch()) > 1000
 
 
+def test_fm_explicit_source_clamps_context_and_preserves_seeded_sampling():
+    batch = _batch()
+    assert batch.global_cond is not None
+    backbone = _WindowBackbone()
+    processor = FlowMatchingMaskedWindowProcessor(
+        backbone=backbone,
+        n_steps_input=1,
+        n_steps_output=4,
+        n_channels_out=1,
+        flow_ode_steps=3,
+    )
+    # Legacy sampling draws the entire window before replacing observed frames.
+    torch.manual_seed(17)
+    full_noise = torch.randn(2, 5, 2, 2, 1)
+    expected_rng = torch.random.get_rng_state()
+    source = full_noise[:, 1:]
+    original_source = source.clone()
+    explicit = processor.map_from_source(
+        batch.encoded_inputs, batch.global_cond, source_states=source
+    )
+    assert torch.equal(torch.random.get_rng_state(), expected_rng)
+    assert torch.equal(source, original_source)
+    expected = source + rearrange(batch.global_cond[:, 0], "b -> b 1 1 1 1")
+    torch.testing.assert_close(explicit, expected)
+    assert len(backbone.seen) == 3
+    for fields, _, mask in backbone.seen:
+        torch.testing.assert_close(fields[:, :1], batch.encoded_inputs)
+        assert mask[:, :1].bool().all()
+        assert not mask[:, 1:].bool().any()
+
+    torch.manual_seed(17)
+    sampled = processor.map(batch.encoded_inputs, batch.global_cond)
+    torch.testing.assert_close(sampled, explicit)
+    assert torch.equal(torch.random.get_rng_state(), expected_rng)
+
+
+@pytest.mark.parametrize(
+    ("source", "match"),
+    [
+        (torch.zeros(2, 5, 2, 2, 1), "Source states must have shape"),
+        (torch.zeros(2, 4, 2, 2, 1, dtype=torch.float64), "reference device and dtype"),
+    ],
+)
+def test_fm_explicit_source_validates_forecast_noise(source, match):
+    batch = _batch()
+    backbone = _WindowBackbone()
+    processor = FlowMatchingMaskedWindowProcessor(
+        backbone=backbone, n_steps_input=1, n_steps_output=4, n_channels_out=1
+    )
+    with pytest.raises(ValueError, match=match):
+        processor.map_from_source(
+            batch.encoded_inputs, batch.global_cond, source_states=source
+        )
+    assert not backbone.seen
+
+
 def test_legacy_pickled_fm_preserves_loss_and_gradients(tmp_path):
     backbone = _WindowBackbone()
     processor = FlowMatchingMaskedWindowProcessor(

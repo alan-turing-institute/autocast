@@ -197,7 +197,9 @@ With an unfitted standardizer, the training entry point inserts
 `ResidualStatisticsCallback` before EMA initialization. It fits mean and
 population scale using only the training loader, with a fixed reference and
 frozen encoder, and preserves RNG state. Input noise must be disabled during
-this fit. Mean, scale and the fitted flag are checkpoint buffers; loading or
+this fit. Encoder and reference evaluation use the Trainer's configured precision;
+moment accumulation remains in FP32 with streaming moments stored in CPU FP64.
+Mean, scale and the fitted flag are checkpoint buffers; loading or
 resuming a checkpoint restores them and skips the fitting pass. For a custom
 Lightning loop, install this callback before EMA yourself. Set
 `model.processor.standardizer=null` to omit residual standardization, or provide

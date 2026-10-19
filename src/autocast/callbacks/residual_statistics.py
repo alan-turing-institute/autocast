@@ -148,10 +148,16 @@ class ResidualStatisticsCallback(Callback):
                 module.eval()
             with isolate_rng(), torch.inference_mode():
                 for batch in datamodule.train_dataloader():
-                    encoded_batch = self._encode_batch(
-                        batch, encoder, standardizer.mean.device
-                    )
-                    moments.update(processor.target_residual(encoded_batch))
+                    # Match training's input dtype and autocast/default-dtype
+                    # context for both the encoder and the reference processor.
+                    converted_batch = trainer.precision_plugin.convert_input(batch)
+                    with trainer.precision_plugin.forward_context():
+                        encoded_batch = self._encode_batch(
+                            converted_batch, encoder, standardizer.mean.device
+                        )
+                        residual = processor.target_residual(encoded_batch)
+                    # Accumulate moments in FP32/CPU FP64, outside autocast.
+                    moments.update(residual)
         finally:
             for module, mode in zip(modules, training_modes, strict=True):
                 module.train(mode)

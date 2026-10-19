@@ -67,12 +67,40 @@ class FlowMatchingMaskedWindowProcessor(FlowMatchingProcessor):
             self.n_channels_out,
         )
 
-        clean_context = torch.zeros(full_shape, device=device, dtype=dtype)
+        # Retain the legacy full-window draw and RNG consumption. Only the
+        # forecast slice supplies noise; observed frames are always clamped.
+        source_states = torch.randn(full_shape, device=device, dtype=dtype)
+        return self.map_from_source(
+            x, global_cond, source_states=source_states[:, input_steps:]
+        )
+
+    def map_from_source(
+        self,
+        x: Tensor,
+        global_cond: Tensor | None,
+        *,
+        source_states: Tensor,
+    ) -> Tensor:
+        """Integrate forecast-shaped noise with the observed input window clamped.
+
+        ``source_states`` has shape (B, T_out, *spatial, C_out). The complete
+        input+output window and observation mask are constructed here, so both
+        sampling entry points use the same masked vector field and clamping.
+        """
+        input_steps = self._resolve_input_steps(x)
+        full_steps = input_steps + self.n_steps_output
+        self._validate_full_window_backbone(full_steps)
+        self._validate_input_channels(x)
+        self._validate_source_states(source_states, x.new_empty(self._output_shape(x)))
+
+        z = self._build_full_window(x, source_states)
+        clean_context = torch.zeros_like(z)
         clean_context[:, :input_steps, ...] = x
         context_mask = self._forecast_context_mask(x, full_steps)
 
-        z = torch.randn(full_shape, device=device, dtype=dtype)
         z = torch.where(context_mask, clean_context, z)
+        batch_size = x.shape[0]
+        device, dtype = x.device, x.dtype
         t = torch.zeros(batch_size, device=device, dtype=dtype)
         dt = torch.tensor(1.0 / self.flow_ode_steps, device=device, dtype=dtype)
 
