@@ -14,7 +14,8 @@ eval:
   batch_size: 1
   max_test_batches: null
   max_rollout_batches: null
-  # Generic evaluator uses four-frame blocks: 25 calls = 100 saved-time leads.
+  # Four-output default; evaluate.py uses 100 calls for a one-output model.
+  # Both evaluate 100 saved-time leads, not 100 model calls unconditionally.
   max_rollout_steps: 25
   rollout_start: 0
   free_running_only: true

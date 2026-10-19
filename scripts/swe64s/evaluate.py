@@ -32,12 +32,18 @@ def build_commands(
     checkpoint: Path,
     output_root: Path,
     autoencoder_checkpoint: Path | None,
+    n_steps_output: int = 4,
 ) -> list[list[str]]:
     """Reuse the standard evaluator without replacing saved model/data settings."""
+    if n_steps_output not in (1, 4):
+        msg = "The SWE64 protocol supports one or four output frames"
+        raise ValueError(msg)
     settings = OmegaConf.to_container(OmegaConf.load(PRESET).eval, resolve=True)
     if not isinstance(settings, dict):
         msg = "Expected an evaluation settings mapping"
         raise TypeError(msg)
+    # max_rollout_steps counts model calls, not saved-time leads.
+    settings["max_rollout_steps"] = 100 // n_steps_output
     commands = []
     for mode, ratio in (("free_running", 0.0), ("teacher_forced", 1.0)):
         mode_settings = {
@@ -81,13 +87,17 @@ def _validate_execution(args: argparse.Namespace) -> None:
     if OmegaConf.select(cfg, "model.processor._target_") is None:
         msg = "Select an afCRPS or FM training run, not an autoencoder run"
         raise ValueError(msg)
-    if (cfg.datamodule.n_steps_input, cfg.datamodule.n_steps_output) != (1, 4):
-        msg = "This evaluation protocol requires one input and four output frames"
+    if cfg.datamodule.n_steps_input != 1 or cfg.datamodule.n_steps_output not in (1, 4):
+        msg = (
+            "This evaluation protocol requires one input and one or four output frames"
+        )
         raise ValueError(msg)
     if not args.checkpoint.is_file():
         raise FileNotFoundError(args.checkpoint)
     is_fm = str(cfg.model.processor._target_).endswith("FlowMatchingProcessor")
-    if is_fm and (
+    encoder_target = str(OmegaConf.select(cfg, "model.encoder._target_", default=""))
+    requires_autoencoder = is_fm and not encoder_target.endswith("IdentityEncoder")
+    if requires_autoencoder and (
         args.autoencoder_checkpoint is None or not args.autoencoder_checkpoint.is_file()
     ):
         msg = "Latent FM evaluation requires the matching SWE64 autoencoder checkpoint"
@@ -120,6 +130,7 @@ def main() -> None:
         checkpoint=args.checkpoint,
         output_root=args.output_root,
         autoencoder_checkpoint=args.autoencoder_checkpoint,
+        n_steps_output=_saved_output_steps(args.run_dir),
     )
     for command in commands:
         print(shlex.join(command), flush=True)
@@ -127,6 +138,15 @@ def main() -> None:
         _validate_execution(args)
         for command in commands:
             subprocess.run(command, cwd=REPO_ROOT, check=True)
+
+
+def _saved_output_steps(run_dir: Path) -> int:
+    """Keep previews possible without data, but honor an available saved task."""
+    for name in ("resolved_config.yaml", "resolved_autoencoder_config.yaml"):
+        path = run_dir / name
+        if path.is_file():
+            return int(OmegaConf.load(path).datamodule.n_steps_output)
+    return 4
 
 
 if __name__ == "__main__":

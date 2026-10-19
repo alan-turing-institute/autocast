@@ -122,8 +122,15 @@ uv run --frozen python -m autocast.scripts.train.encoder_processor_decoder \
 The focused local tests are `tests/scripts/test_swe64_fourier_configs.py` and
 `tests/scripts/test_swe64_residual_fm.py`. They exercise configuration, resolved
 mode/grid compatibility, residual reconstruction, score arithmetic, gradients
-and short synthetic rollouts. Target-machine data/W&B preflight and the
-one-output evaluation-wrapper update remain separate preparation steps.
+and short synthetic rollouts. Target-machine data/W&B preflight remains a
+separate preparation step.
+
+The shared evaluation wrapper accepts saved one-input/one-output and
+one-input/four-output tasks. It evaluates 100 saved-time leads in either case:
+100 calls for one-output models, or 25 calls for four-output models. Both
+teacher-forced and free-running evaluations use 16 members, the held-out test
+split, central 90% coverage, and per-channel/per-trajectory metrics. Saved model
+and normalization settings are retained. Outputs must use fresh directories.
 
 ### Matched-update residual flow matching
 
@@ -172,11 +179,12 @@ uv run --frozen python -m autocast.scripts.train.processor \
   --cfg job --resolve
 ```
 
-Before evaluation or launch, adapt the study evaluation wrapper for the
-one-output task and for ambient FM without an AE. Its original four-output,
-latent-only assumptions do not apply to this pair. Evaluate both against raw
+The study evaluation wrapper reads the saved output window to keep the
+100-lead horizon fixed. Ambient FM with identity codecs does not require an AE;
+latent FM still requires the matching AE checkpoint. Evaluate both against raw
 physical truth at matching leads, with the cached-latent source mapping and AE
-hash verified. Automatic stopping patience is a separate launch decision.
+hash verified when applicable. Automatic stopping patience is a separate
+launch decision.
 
 `flow_matching_residual_12block_one_output_128k.yaml` uses the merged residual FM
 implementation from [PR #445](https://github.com/alan-turing-institute/autocast/pull/445).
