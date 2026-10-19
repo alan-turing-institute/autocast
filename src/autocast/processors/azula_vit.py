@@ -6,7 +6,7 @@ import torch
 from einops import rearrange
 from torch import Tensor, nn
 
-from autocast.nn.noise.source import FlowSource, _sample_checked
+from autocast.nn.noise.source import SourceDistribution, _sample_checked
 from autocast.nn.vit import SpatialViTBackbone
 from autocast.processors.base import Processor
 from autocast.types import EncodedBatch
@@ -59,7 +59,7 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
         rope: bool = False,
         rpb: bool = True,
         noise_mode: AdaLNNoiseMode | str = AdaLNNoiseMode.GLOBAL,
-        noise_source: FlowSource | None = None,
+        noise_source: SourceDistribution | None = None,
     ):
         super().__init__()
         self.n_spatial_dims = len(spatial_resolution)

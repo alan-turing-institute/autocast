@@ -124,7 +124,8 @@ def test_default_iid_draw_is_exactly_unchanged(mode):
 
 
 @pytest.mark.parametrize("preset", ["vit_azula_small", "vit_azula_large"])
-def test_hydra_source_composes_for_spatial_adaln(preset):
+@pytest.mark.parametrize("group", ["flow_source", "source_distribution"])
+def test_hydra_source_composes_for_spatial_adaln(preset, group):
     config_dir = Path(__file__).resolve().parents[2] / "src/autocast/configs"
     with initialize_config_dir(version_base=None, config_dir=str(config_dir)):
         cfg = compose(
@@ -132,7 +133,7 @@ def test_hydra_source_composes_for_spatial_adaln(preset):
             overrides=[
                 f"processor@model.processor={preset}",
                 "model.processor.noise_mode=spatial",
-                "+flow_source@model.processor.noise_source=spatial_fourier",
+                f"+{group}@model.processor.noise_source=spatial_fourier",
                 "model.processor.n_noise_input_channels=4",
                 "model.processor.in_channels=3",
                 "model.processor.out_channels=3",
@@ -147,14 +148,15 @@ def test_hydra_source_composes_for_spatial_adaln(preset):
     assert processor.map(torch.randn(2, 3, 16, 24)).shape == (2, 3, 16, 24)
 
 
-def test_hydra_source_composes_for_concat():
+@pytest.mark.parametrize("group", ["flow_source", "source_distribution"])
+def test_hydra_source_composes_for_concat(group):
     config_dir = Path(__file__).resolve().parents[2] / "src/autocast/configs"
     with initialize_config_dir(version_base=None, config_dir=str(config_dir)):
         cfg = compose(
             config_name="encoder_processor_decoder",
             overrides=[
                 "input_noise_injector@model.input_noise_injector=concat",
-                "+flow_source@model.input_noise_injector.noise_source=spatial_fourier",
+                f"+{group}@model.input_noise_injector.noise_source=spatial_fourier",
             ],
         )
     injector = instantiate(cfg.model.input_noise_injector)

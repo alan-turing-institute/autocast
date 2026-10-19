@@ -56,7 +56,7 @@ remains the default.
 Structured noise sources
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-The optional ``noise_source`` uses the existing ``FlowSource.sample_like``
+The optional ``noise_source`` uses the shared ``SourceDistribution.sample_like``
 interface to replace sampling without changing the modulation layers.
 ``SpatialFourierSource`` samples smooth periodic Gaussian fields from integer
 Fourier wavevectors. For example:
@@ -79,7 +79,7 @@ There are ``2 * number_of_wavevectors * D`` random coefficients per member,
 so changing the mode set also changes the latent dimension.
 
 To compose the example using Hydra, add
-``+flow_source@model.processor.noise_source=spatial_fourier`` together with
+``+source_distribution@model.processor.noise_source=spatial_fourier`` together with
 ``model.processor.noise_mode=spatial`` to an Azula processor preset.
 Omitting the source retains the existing IID sampler and checkpoint layout.
 Passing explicit ``x_noise`` to ``forward`` bypasses the source entirely.
@@ -104,7 +104,16 @@ without modifying the physical input channels or the clean persistence
 baseline. This differs from AdaLN sampling on the patch-token grid, especially
 with a compressing encoder or patches larger than one cell. The existing
 ``input_noise_injector@model.input_noise_injector=concat`` preset accepts the source override
-``+flow_source@model.input_noise_injector.noise_source=spatial_fourier``.
+``+source_distribution@model.input_noise_injector.noise_source=spatial_fourier``.
+
+``SourceDistribution`` is exported from ``autocast.nn.noise`` and
+``autocast.nn.noise.source``. ``FlowSource`` remains an exact alias for existing
+imports and subclasses. The ``source_distribution`` config group reuses the
+existing ``flow_source`` presets; old group overrides and FM defaults remain
+supported.
+Concrete sampler paths, constructor arguments and checkpoint keys are unchanged.
+The interface requires sampling only, not density evaluation. The consumer
+decides whether samples are initial flow states or conditioning noise.
 
 Temporal semantics are explicit: ``SpatialFourierSource`` draws independent
 noise for every frame and every call. Existing OU/separable sources can

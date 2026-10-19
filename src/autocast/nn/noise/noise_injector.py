@@ -3,7 +3,7 @@ import abc
 import torch
 from torch import nn
 
-from autocast.nn.noise.source import FlowSource, _sample_checked
+from autocast.nn.noise.source import SourceDistribution, _sample_checked
 from autocast.types import Tensor
 
 
@@ -49,7 +49,7 @@ class ConcatenatedNoiseInjector(NoiseInjector):
         self,
         n_channels: int = 1,
         std: float = 1.0,
-        noise_source: FlowSource | None = None,
+        noise_source: SourceDistribution | None = None,
     ):
         super().__init__()
         self.n_channels = n_channels

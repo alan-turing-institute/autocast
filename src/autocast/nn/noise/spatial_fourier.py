@@ -8,7 +8,7 @@ import torch
 from einops import einsum, rearrange
 from torch import Tensor
 
-from autocast.nn.noise.source import FlowSource, _validate_spatiotemporal
+from autocast.nn.noise.source import SourceDistribution, _validate_spatiotemporal
 
 
 def _validate_wavevectors(
@@ -35,7 +35,7 @@ def _validate_wavevectors(
     return tuple(result)
 
 
-class SpatialFourierSource(FlowSource):
+class SpatialFourierSource(SourceDistribution):
     """Draw periodic Gaussian fields from prescribed integer wavevectors.
 
     ``sample_like`` accepts ``(B, T, Y, X, C)``. Frames, members and channels

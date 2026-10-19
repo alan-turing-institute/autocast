@@ -184,6 +184,28 @@ def test_residual_flow_source_configs_compose(
         assert cfg.model.processor.source.spatial_boundaries == "periodic"
 
 
+@pytest.mark.parametrize(
+    "source", ["iid_gaussian", "temporal_ou", "separable_gaussian", "spatial_fourier"]
+)
+def test_source_distribution_group_preserves_presets(config_dir: str, source: str):
+    configs = []
+    for group in ("flow_source", "source_distribution"):
+        cfg = _load_config(
+            config_dir,
+            "encoder_processor_decoder",
+            overrides=[
+                "input_noise_injector@model.input_noise_injector=concat",
+                f"+{group}@model.input_noise_injector.noise_source={source}",
+            ],
+        )
+        configs.append(cfg.model.input_noise_injector.noise_source)
+
+    assert OmegaConf.to_container(configs[0], resolve=True) == OmegaConf.to_container(
+        configs[1], resolve=True
+    )
+    assert type(instantiate(configs[0])) is type(instantiate(configs[1]))
+
+
 def test_mc_dropout_azula_vit_config_instantiates(config_dir: str):
     processor_cfg = OmegaConf.load(
         Path(config_dir) / "processor" / "vit_azula_mc_dropout_large.yaml"
