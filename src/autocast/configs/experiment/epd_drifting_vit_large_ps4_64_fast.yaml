@@ -1,0 +1,46 @@
+# @package _global_
+defaults:
+  - override /datamodule: advection_diffusion_multichannel_64_64
+  - override /encoder@model.encoder: dc_deep_256_v2
+  - override /decoder@model.decoder: dc_deep_256_v2
+  - override /processor@model.processor: drifting_vit
+  - _self_
+
+experiment_name: epd_drifting_vit_large_ps4_64_fast
+
+datamodule:
+  use_normalization: false
+  batch_size: 128
+
+logging:
+  wandb:
+    enabled: false
+
+# Paper-spec optimizer (Deng et al. 2026, §A.6): AdamW with b2=0.95, wd=0.01,
+# lr=4e-4, 10k-step warmup. Cosine schedule departs from the paper-faithful
+# constant schedule per design §2.12; flip to constant via a one-line override
+# when matching paper budgets.
+optimizer:
+  learning_rate: 0.0004
+  weight_decay: 0.01
+  betas: [0.9, 0.95]
+  warmup: 10000
+  scheduler: cosine
+
+model:
+  train_in_latent_space: true
+  freeze_encoder_decoder: true
+  processor:
+    backbone:
+      hid_channels: 1024
+      hid_blocks: 16
+      attention_heads: 16
+      patch_size: 4
+
+trainer:
+  # Migrated from optimizer.grad_clip (removed); clipping is now via the trainer.
+  gradient_clip_val: 2.0
+  max_epochs: 1
+  limit_train_batches: 1
+  limit_val_batches: 1
+  limit_test_batches: 1

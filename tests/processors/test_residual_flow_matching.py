@@ -1,9 +1,19 @@
+from typing import Any
+
 import pytest
 import torch
 from einops import repeat
 from torch import nn
 
+from autocast.decoders.identity import IdentityDecoder
+from autocast.encoders.identity import IdentityEncoder
+from autocast.models.encoder_decoder import EncoderDecoder
+from autocast.models.encoder_processor_decoder import EncoderProcessorDecoder
+from autocast.models.encoder_processor_decoder_ensemble import (
+    EncoderProcessorDecoderEnsemble,
+)
 from autocast.nn.noise.source import FlowSource, IIDGaussianSource, ZeroSource
+from autocast.nn.spatiotemporal_vit import SpatiotemporalViTBackbone
 from autocast.nn.vit import TemporalViTBackbone
 from autocast.processors.base import Processor
 from autocast.processors.residual_flow_matching import ResidualFlowMatchingProcessor
@@ -144,6 +154,32 @@ def test_map_denormalizes_generated_residual_before_adding_reference():
     assert torch.equal(prediction, expected_reference + 2.25)
 
 
+@pytest.mark.parametrize("integrator", ["euler", "heun"])
+def test_explicit_source_returns_the_same_residual_forecast_as_map(integrator):
+    batch = _batch()
+    processor = _processor(
+        backbone=_OneField(),
+        source=IIDGaussianSource(),
+        standardizer=ResidualStandardizer(
+            n_steps_output=4, n_channels=1, mean=0.25, scale=2.0
+        ),
+    )
+    processor.integrator = integrator
+    torch.manual_seed(7)
+    prediction = processor.map(batch.encoded_inputs, batch.global_cond)
+
+    torch.manual_seed(7)
+    source = torch.randn_like(batch.encoded_output_fields)
+    explicit = processor.map_from_source(
+        batch.encoded_inputs, batch.global_cond, source_states=source
+    )
+
+    reference = processor.reference_trajectory(batch.encoded_inputs, batch.global_cond)
+    expected = reference + 0.25 + 2.0 * (source + 1.0)
+    torch.testing.assert_close(explicit, expected)
+    torch.testing.assert_close(explicit, prediction)
+
+
 def test_processor_reference_is_not_residual_standardized():
     batch = _batch()
     standardizer = ResidualStandardizer(
@@ -197,11 +233,14 @@ def test_loss_targets_residual_instead_of_full_state():
 
 def test_loss_targets_standardized_residual():
     batch = _batch(residual_scale=0.0)
-    batch.encoded_output_fields = repeat(
-        batch.encoded_inputs[:, -1:],
-        "b 1 y x c -> b t y x c",
-        t=4,
-    ) + 5.0
+    batch.encoded_output_fields = (
+        repeat(
+            batch.encoded_inputs[:, -1:],
+            "b 1 y x c -> b t y x c",
+            t=4,
+        )
+        + 5.0
+    )
     standardizer = ResidualStandardizer(
         n_steps_output=4,
         n_channels=1,
@@ -254,9 +293,15 @@ def test_standardizer_dimensions_are_validated():
         _processor(standardizer=standardizer)
 
 
-def test_temporal_vit_residual_flow_shapes_and_gradients():
+@pytest.mark.parametrize(
+    "backbone_type", [TemporalViTBackbone, SpatiotemporalViTBackbone]
+)
+def test_vit_residual_flow_shapes_and_gradients(backbone_type):
     batch = _batch()
-    backbone = TemporalViTBackbone(
+    spatial_kwargs: dict[str, Any] = (
+        {"spatial": 2} if backbone_type is TemporalViTBackbone else {}
+    )
+    backbone = backbone_type(
         in_channels=1,
         out_channels=1,
         cond_channels=1,
@@ -269,8 +314,8 @@ def test_temporal_vit_residual_flow_shapes_and_gradients():
         hid_blocks=1,
         attention_heads=4,
         patch_size=4,
-        spatial=2,
         dropout=0.0,
+        **spatial_kwargs,
     )
     processor = _processor(backbone=backbone, source=IIDGaussianSource())
 
@@ -285,3 +330,20 @@ def test_temporal_vit_residual_flow_shapes_and_gradients():
         for parameter in backbone.parameters()
         if parameter.requires_grad
     )
+
+
+@pytest.mark.parametrize(
+    "model_type", [EncoderProcessorDecoder, EncoderProcessorDecoderEnsemble]
+)
+@pytest.mark.parametrize("train_in_latent_space", [False, True])
+def test_rejects_double_residual_reconstruction(model_type, train_in_latent_space):
+    with pytest.raises(ValueError, match=r"model\.residual_prediction must be False"):
+        model_type(
+            encoder_decoder=EncoderDecoder(
+                encoder=IdentityEncoder(in_channels=1),
+                decoder=IdentityDecoder(in_channels=1),
+            ),
+            processor=_processor(),
+            train_in_latent_space=train_in_latent_space,
+            residual_prediction=True,
+        )

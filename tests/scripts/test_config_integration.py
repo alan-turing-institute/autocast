@@ -4,8 +4,10 @@ from pathlib import Path
 
 import pytest
 from hydra import compose, initialize_config_dir
+from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 
+from autocast.processors import MCDropoutAzulaViTProcessor
 from autocast.scripts.setup import (
     _apply_processor_channel_defaults,
     _build_loss_func,
@@ -49,6 +51,52 @@ def test_top_level_config_has_trainer(config_dir: str, config_name: str):
     """Verify top-level configs have trainer section."""
     cfg = _load_config(config_dir, config_name)
     assert "trainer" in cfg
+
+
+def test_epd_residual_config_is_opt_in_and_accepts_overrides(config_dir: str):
+    default_cfg = _load_config(config_dir, "encoder_processor_decoder")
+    assert default_cfg.model.residual_prediction is False
+    assert default_cfg.model.residual_use_delta_stats is True
+    assert default_cfg.model.residual_delta_stats_path is None
+
+    cfg = _load_config(
+        config_dir,
+        "encoder_processor_decoder",
+        overrides=[
+            "model.residual_prediction=true",
+            "model.residual_use_delta_stats=false",
+            "model.train_in_latent_space=false",
+            "model.residual_delta_stats_path=/tmp/stats.yml",
+        ],
+    )
+    assert cfg.model.residual_prediction is True
+    assert cfg.model.residual_use_delta_stats is False
+    assert cfg.model.train_in_latent_space is False
+    assert cfg.model.residual_delta_stats_path == "/tmp/stats.yml"
+
+
+@pytest.mark.parametrize("datasets_root", [None, "/original/well"])
+@pytest.mark.parametrize("well_base_path", [None, "/scratch/well", "s3://bucket/well"])
+def test_well_stats_path_tracks_base_path_overrides(
+    config_dir: str, monkeypatch, datasets_root, well_base_path
+):
+    if datasets_root is None:
+        monkeypatch.delenv("AUTOCAST_DATASETS", raising=False)
+    else:
+        monkeypatch.setenv("AUTOCAST_DATASETS", datasets_root)
+    overrides = ["datamodule=the_well"]
+    if well_base_path is not None:
+        overrides.append(f"datamodule.well_base_path={well_base_path}")
+    cfg = _load_config(config_dir, "encoder_processor_decoder", overrides)
+    base_path = well_base_path or datasets_root or "./datasets"
+    expected = f"{base_path}/{cfg.datamodule.well_dataset_name}/stats.yaml"
+
+    assert cfg.datamodule.normalization_path == expected
+    assert cfg.datamodule.use_normalization is True
+    assert cfg.model.residual_prediction is False
+    assert cfg.model.residual_delta_stats_path is None
+    cfg.model.residual_delta_stats_path = "${datamodule.normalization_path}"
+    assert cfg.model.residual_delta_stats_path == expected
 
 
 def test_multinode_distributed_config_sets_trainer_nodes(config_dir: str):
@@ -133,6 +181,150 @@ def test_residual_flow_source_configs_compose(
     assert cfg.model.processor.source._target_.endswith(target)
     if source == "separable_gaussian":
         assert cfg.model.processor.source.spatial_boundaries == "periodic"
+
+
+def test_mc_dropout_azula_vit_config_instantiates(config_dir: str):
+    processor_cfg = OmegaConf.load(
+        Path(config_dir) / "processor" / "vit_azula_mc_dropout_large.yaml"
+    )
+    processor_cfg.in_channels = 4
+    processor_cfg.out_channels = 4
+    processor_cfg.spatial_resolution = [8, 8]
+    processor_cfg.hidden_dim = 64
+    processor_cfg.num_heads = 4
+    processor_cfg.n_layers = 2
+    processor_cfg.patch_size = 1
+
+    processor = instantiate(processor_cfg)
+
+    assert isinstance(processor, MCDropoutAzulaViTProcessor)
+    assert processor.dropout == 0.1
+    assert processor.n_noise_channels is None
+
+
+@pytest.mark.parametrize(
+    "local_experiment",
+    [
+        "ablations/mc_dropout/gray_scott/crps_vit_azula_mc_dropout_large",
+        ("ablations/mc_dropout/gpe_laser_wake_only/crps_vit_azula_mc_dropout_large"),
+        (
+            "ablations/mc_dropout/conditioned_navier_stokes/"
+            "crps_vit_azula_mc_dropout_large"
+        ),
+        ("ablations/mc_dropout/advection_diffusion/crps_vit_azula_mc_dropout_large"),
+    ],
+)
+def test_mc_dropout_ablation_config_matches_crps_baseline(
+    config_dir: str,
+    local_experiment: str,
+):
+    cfg = _load_config(
+        config_dir,
+        "encoder_processor_decoder",
+        overrides=[f"local_experiment={local_experiment}"],
+    )
+
+    assert cfg.model.processor._target_ == (
+        "autocast.processors.MCDropoutAzulaViTProcessor"
+    )
+    assert cfg.model.processor.hidden_dim == 704
+    assert cfg.model.processor.num_heads == 8
+    assert cfg.model.processor.n_layers == 12
+    assert cfg.model.processor.dropout == 0.1
+    assert cfg.model.processor.n_noise_channels is None
+    assert cfg.model.n_members == 8
+    assert cfg.datamodule.batch_size == 32
+    assert cfg.model.loss_func._target_ == "autocast.losses.ensemble.AlphaFairCRPSLoss"
+
+
+@pytest.mark.parametrize(
+    "local_experiment",
+    [
+        "ablations/mc_dropout/gray_scott/mse_vit_azula_mc_dropout_large",
+        "ablations/mc_dropout/gpe_laser_wake_only/mse_vit_azula_mc_dropout_large",
+        (
+            "ablations/mc_dropout/conditioned_navier_stokes/"
+            "mse_vit_azula_mc_dropout_large"
+        ),
+        "ablations/mc_dropout/advection_diffusion/mse_vit_azula_mc_dropout_large",
+    ],
+)
+def test_mc_dropout_mse_l2_config_is_parameter_matched(
+    config_dir: str,
+    local_experiment: str,
+):
+    cfg = _load_config(
+        config_dir,
+        "encoder_processor_decoder",
+        overrides=[f"local_experiment={local_experiment}"],
+    )
+
+    assert cfg.model.processor._target_ == (
+        "autocast.processors.MCDropoutAzulaViTProcessor"
+    )
+    assert cfg.model.processor.hidden_dim == 704
+    assert cfg.model.processor.num_heads == 8
+    assert cfg.model.processor.n_layers == 12
+    assert cfg.model.processor.dropout == 0.1
+    assert cfg.model.processor.n_noise_channels is None
+    assert cfg.model.processor.include_global_cond is False
+    assert cfg.model.encoder._target_ == (
+        "autocast.encoders.permute_concat.PermuteConcat"
+    )
+    assert cfg.model.encoder.with_constants is True
+    assert cfg.model.n_members == 1
+    assert cfg.datamodule.batch_size == 256
+    assert cfg.model.loss_func._target_ == ("autocast.losses.MCDropoutMSEL2Loss")
+    assert cfg.model.loss_func.l2_coefficient == pytest.approx(1e-5)
+    assert "parameter_regularizer" not in cfg.model
+    assert cfg.optimizer.weight_decay == 0.0
+
+
+@pytest.mark.parametrize(
+    "dataset",
+    [
+        "gray_scott",
+        "gpe_laser_wake_only",
+        "conditioned_navier_stokes",
+        "advection_diffusion",
+    ],
+)
+def test_fno_architecture_ablation_config_matches_crps_baseline(
+    config_dir: str,
+    dataset: str,
+):
+    cfg = _load_config(
+        config_dir,
+        "encoder_processor_decoder",
+        overrides=[
+            (f"local_experiment=ablations/arch_unet_fno_vit/{dataset}/crps_fno_80m")
+        ],
+    )
+    baseline = _load_config(
+        config_dir,
+        "encoder_processor_decoder",
+        overrides=[f"local_experiment=epd/{dataset}/crps_vit_azula_large"],
+    )
+
+    assert cfg.model.processor._target_ == "autocast.processors.fno.FNOProcessor"
+    assert list(cfg.model.processor.n_modes) == [16, 16]
+    assert cfg.model.processor.hidden_channels == 264
+    assert cfg.model.processor.n_layers == 4
+    assert cfg.model.input_noise_injector._target_ == (
+        "autocast.nn.noise.noise_injector.ConcatenatedNoiseInjector"
+    )
+    assert cfg.model.input_noise_injector.n_channels == 1
+    assert cfg.model.input_noise_injector.std == 1.0
+
+    assert cfg.model.n_members == baseline.model.n_members == 8
+    assert cfg.datamodule.batch_size == baseline.datamodule.batch_size == 32
+    assert cfg.datamodule.data_path == baseline.datamodule.data_path
+    assert cfg.datamodule.use_normalization is baseline.datamodule.use_normalization
+    assert cfg.optimizer.learning_rate == baseline.optimizer.learning_rate == 2e-4
+    assert cfg.optimizer.warmup == baseline.optimizer.warmup == 0
+    assert cfg.model.loss_func == baseline.model.loss_func
+    assert cfg.model.train_metrics == baseline.model.train_metrics
+    assert cfg.model.val_metrics == baseline.model.val_metrics
 
 
 # --- Tests using real configs ---

@@ -98,6 +98,50 @@ the same ambient or latent coordinates, output horizon, and channels. An
 external ambient model must be encoded before it can provide a reference to a
 latent processor.
 
+## Residual flow matching
+
+For example, train against a persistence reference in ambient coordinates:
+
+```bash
+uv run autocast epd \
+    --workdir ../residual_output \
+    ++datamodule.data_path=/path/to/parent_folder/ad_data \
+    encoder@model.encoder=identity \
+    decoder@model.decoder=identity \
+    processor@model.processor=residual_flow_matching_vit \
+    model.train_in_latent_space=true \
+    model.residual_prediction=false
+```
+
+Here `train_in_latent_space=true` selects the processor's flow matching loss
+after the frozen encoder; the identity encoder keeps these coordinates ambient.
+For cached latents, use `autocast processor` with `datamodule=cached_latents`,
+the cache path, and `processor@model.processor=residual_flow_matching_vit`.
+The reference then repeats the latest latent frame, and reconstructed outputs
+remain latent until passed through the matching decoder.
+
+The training target is `(target - reference - mean) / scale`. Both `map` and
+`map_from_source` return `reference + mean + scale * generated_residual`.
+Keep `model.residual_prediction=false`: that separate option reconstructs
+increments after decoding and would add a second reference.
+
+The supplied configuration starts with IID Gaussian noise. To prescribe a
+correlated source, add `flow_source@model.processor.source=temporal_ou` or
+`flow_source@model.processor.source=separable_gaussian`. These covariance
+parameters are configured explicitly; they are not fitted from data.
+`ProcessorReference` can instead wrap a pretrained processor, frozen by default;
+its output must match the residual processor's coordinates, horizon and channels.
+
+With an unfitted standardizer, the training entry point inserts
+`ResidualStatisticsCallback` before EMA initialization. It fits mean and
+population scale using only the training loader, with a fixed reference and
+frozen encoder, and preserves RNG state. Input noise must be disabled during
+this fit. Mean, scale and the fitted flag are checkpoint buffers; loading or
+resuming a checkpoint restores them and skips the fitting pass. For a custom
+Lightning loop, install this callback before EMA yourself. Set
+`model.processor.standardizer=null` to omit residual standardization, or provide
+both `mean` and `scale` to use fixed statistics.
+
 ## Processors in ambient space
 
 The processor models in AutoCast are designed to operate in the latent space, i.e., with encoded data.

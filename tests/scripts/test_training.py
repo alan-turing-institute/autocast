@@ -15,10 +15,11 @@ from hydra.utils import instantiate
 from lightning.pytorch.callbacks import Callback, ModelCheckpoint, Timer
 from matplotlib import pyplot as plt
 from omegaconf import DictConfig, OmegaConf, open_dict
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, TensorDataset
 from torchmetrics import Metric, MetricCollection
 
 from autocast.callbacks.checkpoint import ProgressModelCheckpoint
+from autocast.callbacks.ema import EMACallback
 from autocast.callbacks.metrics import ValidationMetricPlotCallback
 from autocast.callbacks.residual_statistics import ResidualStatisticsCallback
 from autocast.data.datamodule import SpatioTemporalDataModule
@@ -37,6 +38,7 @@ from autocast.scripts.training import (
     _attach_reset_timer_callback,
     _ensure_residual_statistics_callback,
     _validate_resume_settings,
+    run_training,
 )
 from autocast.types import Batch, EncodedBatch
 
@@ -295,9 +297,10 @@ def test_processor_config_training_step_smoke(config_dir: str, dummy_datamodule)
     assert loss.ndim == 0
 
 
-def test_residual_flow_config_fits_and_restores_statistics(
+def test_residual_flow_config_fits_and_restores_statistics(  # noqa: PLR0915
     config_dir: str,
     tmp_path: Path,
+    monkeypatch,
 ):
     model_cfg = _load_config(
         config_dir,
@@ -339,13 +342,14 @@ def test_residual_flow_config_fits_and_restores_statistics(
         _stats_from_encoded_batch(batch),
         setup_datamodule,
     )
-    callbacks: list = [Callback()]
+    ema = EMACallback()
+    callbacks: list = [ema, Callback()]
     callbacks = _ensure_residual_statistics_callback(callbacks, model)
 
     assert isinstance(model.processor, ResidualFlowMatchingProcessor)
     assert isinstance(model.processor.source, TemporalOUSource)
     assert isinstance(callbacks[0], ResidualStatisticsCallback)
-    assert len(callbacks) == 2
+    assert len(callbacks) == 3
 
     trainer = L.Trainer(
         accelerator="cpu",
@@ -371,6 +375,11 @@ def test_residual_flow_config_fits_and_restores_statistics(
     assert standardizer.fitted
     assert torch.allclose(standardizer.mean, expected_mean)
     assert torch.allclose(standardizer.scale, expected_scale)
+    assert ema.ema_model is not None
+    ema_state = ema.ema_model.module.state_dict()
+    assert ema_state["processor.standardizer._fitted"].item()
+    assert torch.equal(ema_state["processor.standardizer.mean"], standardizer.mean)
+    assert torch.equal(ema_state["processor.standardizer.scale"], standardizer.scale)
 
     checkpoint = tmp_path / "residual.ckpt"
     trainer.save_checkpoint(checkpoint)
@@ -387,6 +396,39 @@ def test_residual_flow_config_fits_and_restores_statistics(
     assert restored_standardizer.fitted
     assert torch.equal(restored_standardizer.mean, standardizer.mean)
     assert torch.equal(restored_standardizer.scale, standardizer.scale)
+
+    # Real Lightning resume restores statistics before on_fit_start callbacks.
+    resumed = setup_processor_model(
+        model_cfg, _stats_from_encoded_batch(batch), setup_datamodule
+    )
+
+    def unexpected_statistics_fit(*args, **kwargs):
+        pytest.fail("Checkpoint resume must skip residual statistics fitting")
+
+    monkeypatch.setattr(
+        ResidualStatisticsCallback, "_fit_statistics", unexpected_statistics_fit
+    )
+    resumed_ema = EMACallback()
+    resumed_trainer = L.Trainer(
+        accelerator="cpu",
+        devices=1,
+        max_steps=2,
+        limit_val_batches=0,
+        num_sanity_val_steps=0,
+        callbacks=_ensure_residual_statistics_callback([resumed_ema], resumed),
+        logger=False,
+        enable_checkpointing=False,
+        enable_model_summary=False,
+        enable_progress_bar=False,
+    )
+    resumed_trainer.fit(resumed, datamodule=datamodule, ckpt_path=checkpoint)
+    assert resumed_trainer.global_step == 2
+    assert resumed_ema.ema_model is not None
+    resumed_state = resumed_ema.ema_model.module.state_dict()
+    assert torch.equal(resumed_state["processor.standardizer.mean"], standardizer.mean)
+    assert torch.equal(
+        resumed_state["processor.standardizer.scale"], standardizer.scale
+    )
 
 
 def test_masked_window_flow_matching_config_smoke(config_dir: str, dummy_datamodule):
@@ -1013,6 +1055,40 @@ def test_epd_config_forward_smoke(config_dir: str, toy_batch: Batch, dummy_datam
     assert output.shape == toy_batch.output_fields.shape
 
 
+def test_epd_rejects_ambient_only_loss_for_latent_training(
+    config_dir: str,
+    toy_batch: Batch,
+    dummy_datamodule,
+):
+    model_cfg = _load_config(
+        config_dir,
+        "model/encoder_processor_decoder",
+        overrides=[
+            "encoder@model.encoder=dc",
+            "decoder@model.decoder=dc",
+            "processor@model.processor=flow_matching",
+        ],
+    )
+    cfg = _wrap_model_config(model_cfg)
+    with open_dict(cfg):
+        cfg.optimizer = get_optimizer_config()
+        cfg.datamodule = {
+            "stride": 1,
+            "n_steps_input": toy_batch.input_fields.shape[1],
+            "n_steps_output": toy_batch.output_fields.shape[1],
+        }
+        cfg.model.processor.backbone.include_global_cond = False
+        cfg.model.processor.backbone.global_cond_channels = 0
+        cfg.model.loss_func = {
+            "_target_": "autocast.losses.MCDropoutMSEL2Loss",
+            "l2_coefficient": 1e-5,
+        }
+
+    stats = _stats_from_batch(toy_batch)
+    with pytest.raises(ValueError, match="requires ambient predictions"):
+        setup_epd_model(cfg, stats, dummy_datamodule)
+
+
 def test_epd_metric_overrides_are_forwarded(
     config_dir: str, toy_batch: Batch, dummy_datamodule
 ):
@@ -1066,3 +1142,78 @@ def test_infer_latent_spatial_resolution_channels_first_time_concat():
         encoded, cast(EncoderWithCond, DummyEncoder())
     )
     assert spatial == (16, 16)
+
+
+def test_final_checkpoint_survives_standalone_validation(tmp_path: Path):
+    """Post-fit validation must not replace the endpoint with an older alias."""
+    final_path = tmp_path / "final.ckpt"
+
+    class Toy(L.LightningModule):
+        def __init__(self):
+            super().__init__()
+            self.weight = torch.nn.Parameter(torch.tensor(0.5))
+
+        def training_step(self, batch, batch_idx):
+            del batch, batch_idx
+            return self.weight.square()
+
+        def validation_step(self, batch, batch_idx):
+            del batch, batch_idx
+            # Keep the best checkpoint at epoch zero, before the endpoint.
+            self.log("val_loss", self.weight * 0 + self.current_epoch + 1, batch_size=1)
+
+        def on_train_epoch_start(self):
+            if self.current_epoch > 0:
+                assert final_path.is_symlink()
+
+        def configure_optimizers(self):
+            return torch.optim.AdamW(self.parameters(), lr=0.01)
+
+    class Data(L.LightningDataModule):
+        def train_dataloader(self):
+            return DataLoader(TensorDataset(torch.arange(4.0)), batch_size=1)
+
+        def val_dataloader(self):
+            return DataLoader(TensorDataset(torch.arange(2.0)), batch_size=1)
+
+    cfg = OmegaConf.create(
+        {
+            "logging": {"wandb": {"enabled": False}},
+            "output": {"save_config": False},
+            "trainer": {
+                "_target_": "lightning.pytorch.Trainer",
+                "accelerator": "cpu",
+                "devices": 1,
+                "logger": False,
+                "max_epochs": 3,
+                "max_steps": -1,
+                "enable_model_summary": False,
+                "enable_progress_bar": False,
+                "num_sanity_val_steps": 0,
+                "callbacks": [
+                    {
+                        "_target_": "lightning.pytorch.callbacks.ModelCheckpoint",
+                        "dirpath": str(tmp_path / "checkpoints"),
+                        "monitor": "val_loss",
+                        "mode": "min",
+                        "save_top_k": 1,
+                        "save_last": False,
+                        "save_on_train_epoch_end": False,
+                    }
+                ],
+            },
+        }
+    )
+    model, data = Toy(), Data()
+    run_training(
+        cfg, model, data, tmp_path, skip_test=True, output_checkpoint_path=final_path
+    )
+    assert model.trainer.global_step == 12
+    assert not final_path.is_symlink()
+    assert torch.load(final_path, weights_only=False)["global_step"] == 12
+    saved_endpoint = final_path.read_bytes()
+
+    model.trainer.validate(model, datamodule=data, ckpt_path=None, verbose=False)
+
+    assert not final_path.is_symlink()
+    assert final_path.read_bytes() == saved_endpoint

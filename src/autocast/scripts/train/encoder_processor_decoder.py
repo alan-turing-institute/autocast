@@ -12,6 +12,7 @@ from autocast.scripts.execution import resolve_hydra_work_dir
 from autocast.scripts.setup import setup_datamodule, setup_epd_model
 from autocast.scripts.training import run_training
 from autocast.scripts.utils import get_default_config_path
+from autocast.utils.device import pin_local_cuda_device
 
 log = logging.getLogger(__name__)
 
@@ -62,6 +63,7 @@ def run_epd_training(
 def main(cfg: DictConfig) -> None:
     """CLI entrypoint for training the encoder-processor-decoder."""
     logging.basicConfig(level=logging.INFO)
+    pin_local_cuda_device()
     run_epd_training(cfg, work_dir=resolve_hydra_work_dir(None))
 
 

@@ -39,6 +39,9 @@ class TemporalBackboneBase(nn.Module, ABC):
         tcn_kernel_size: int = 3,
         tcn_num_layers: int = 2,
         use_precomputed_modulation: bool = False,
+        include_time_embedding: bool = True,
+        include_loss_weight: bool = False,
+        spatial_modulation: bool = False,
     ):
         """Initialize Temporal Backbone Base.
 
@@ -59,7 +62,22 @@ class TemporalBackboneBase(nn.Module, ABC):
             temporal_attention_hidden_dim: Hidden dimension for attention methods
             tcn_kernel_size: Kernel size for TCN
             tcn_num_layers: Number of TCN layers
-            use_precomputed_modulation: Whether to use precomputed modulation tensors.
+            use_precomputed_modulation: If True, callers pass precomputed
+                modulation vectors of shape ``(B, mod_features)`` directly as
+                ``t`` and no SineEncoding-based embedding is registered.
+            include_time_embedding: If False, skip the time-embedding
+                registration entirely. Used by one-step processors (e.g.
+                drifting) that have no integration time ``t`` to embed. When
+                False, callers may pass ``t=None`` to ``forward``.
+            include_loss_weight: If True, register an embedding for a scalar
+                loss-mixing weight ``w`` (the convex form ``w=1/(1+lambda)``)
+                that is added to the modulation vector, so a single model can
+                be conditioned on lambda and swept at inference. Default
+                False leaves all existing backbones byte-identical (no new
+                parameters), which is DDP-safe. Forwarded by the U-Net and
+                multi-layer-perceptron backbones; the vision-transformer
+                backbone does not expose it yet.
+            spatial_modulation: Whether precomputed modulation is per token (B, N, D).
         """
         super().__init__()
 
@@ -71,6 +89,12 @@ class TemporalBackboneBase(nn.Module, ABC):
         self.n_steps_input = n_steps_input
         self.mod_features = mod_features
         self.use_precomputed_modulation = use_precomputed_modulation
+        self.include_time_embedding = include_time_embedding
+        self.include_loss_weight = include_loss_weight
+        self.spatial_modulation = spatial_modulation
+        if spatial_modulation and not use_precomputed_modulation:
+            msg = "Spatial modulation requires use_precomputed_modulation=True."
+            raise ValueError(msg)
 
         # Validate global conditioning configuration
         if include_global_cond and (
@@ -83,16 +107,17 @@ class TemporalBackboneBase(nn.Module, ABC):
 
         # Time embedding for scalar diffusion timesteps. Some models pass
         # precomputed modulation vectors directly and should not register
-        # unused embedding parameters under strict DDP.
+        # unused embedding parameters under strict DDP. One-step processors
+        # (drifting) opt out entirely via ``include_time_embedding=False``.
         self.time_embedding = (
-            None
-            if self.use_precomputed_modulation
-            else nn.Sequential(
+            nn.Sequential(
                 SineEncoding(mod_features),
                 nn.Linear(mod_features, mod_features),
                 nn.SiLU(),
                 nn.Linear(mod_features, mod_features),
             )
+            if include_time_embedding and not use_precomputed_modulation
+            else None
         )
 
         self.global_cond_embedding = (
@@ -104,6 +129,20 @@ class TemporalBackboneBase(nn.Module, ABC):
             if global_cond_channels is not None
             and global_cond_channels > 0
             and include_global_cond
+            else None
+        )
+
+        # Scalar loss-mixing-weight embedding. Mirrors the global-cond
+        # embedding but takes the single bounded weight w=1/(1+lambda) in [0,1].
+        # Registered only when include_loss_weight is True, so default backbones
+        # gain no parameters and stay byte-identical / DDP-safe.
+        self.lambda_embedding = (
+            nn.Sequential(
+                nn.Linear(1, mod_features),
+                nn.SiLU(),
+                nn.Linear(mod_features, mod_features),
+            )
+            if include_loss_weight
             else None
         )
 
@@ -204,12 +243,44 @@ class TemporalBackboneBase(nn.Module, ABC):
         their backbone (e.g., self.unet or self.vit).
         """
 
+    def _embed_modulation(self, x_t: TensorBTSC, t: Tensor | None) -> Tensor:
+        """Resolve scalar time, global vectors or per-token modulation."""
+        if self.spatial_modulation:
+            if t is None or t.ndim != 3 or t.shape[-1] != self.mod_features:
+                msg = "Expected spatial modulation with shape (B, N, mod_features)."
+                raise ValueError(msg)
+            return t
+        if t is None:
+            if self.include_time_embedding:
+                msg = (
+                    "Backbone was built with include_time_embedding=True "
+                    "but received t=None."
+                )
+                raise ValueError(msg)
+            # Other enabled conditioning embeddings supply the modulation.
+            return x_t.new_zeros((x_t.shape[0], self.mod_features))
+        if t.ndim == 2 and t.shape[-1] == self.mod_features:
+            return t
+        if self.time_embedding is None:
+            reason = (
+                "was built with include_time_embedding=False"
+                if not self.include_time_embedding
+                else "uses precomputed modulation vectors"
+            )
+            msg = (
+                f"Backbone {reason}, so it cannot embed scalar timesteps; "
+                f"received t with shape {tuple(t.shape)}."
+            )
+            raise ValueError(msg)
+        return self.time_embedding(t)
+
     def forward(
         self,
         x_t: TensorBTSC,
-        t: Tensor,
+        t: Tensor | None,
         cond: TensorBTSC,
         global_cond: Tensor | None = None,
+        loss_weight: Tensor | None = None,
     ) -> TensorBTSC:
         """Forward pass of the temporal backbone.
 
@@ -218,31 +289,61 @@ class TemporalBackboneBase(nn.Module, ABC):
             t: Diffusion modulation input. Either:
                 - scalar timesteps with shape (B,), which are embedded via SineEncoding
                 - precomputed modulation vectors with shape (B, D), where D=mod_features
+                - ``None``, when the backbone was built with
+                  ``include_time_embedding=False`` (one-step processors)
+                - per-token vectors (B, N, D) when spatial_modulation=True
             cond: Conditioning input (B, T_cond, W, H, C)
             global_cond: Optional global conditioning/modulation vector (B, D)
+            loss_weight: Optional scalar loss-mixing weight ``w`` per sample,
+                shape ``(B,)`` or ``(B, 1)``. Only consumed when the backbone was
+                built with ``include_loss_weight=True``; embedded and added to the
+                modulation vector so the network can condition on lambda.
 
         Returns:
             Denoised output (B, T, W, H, C)
         """
-        # Accept either scalar timesteps (B,) or precomputed modulation vectors (B, D).
-        if t.ndim == 2 and t.shape[-1] == self.mod_features:
-            t_emb = t
-        else:
-            if self.time_embedding is None:
-                msg = (
-                    "Expected precomputed modulation vectors with shape "
-                    "(B, mod_features), but received scalar timesteps."
-                )
-                raise ValueError(msg)
-            t_emb = self.time_embedding(t)
+        t_emb = self._embed_modulation(x_t, t)
 
         # Combine with global conditioning embedding if provided
         if self.global_cond_embedding is not None:
             if global_cond is None:
                 msg = "Model init with global_cond_channels but no global_cond provided"
                 raise ValueError(msg)
-            t_emb = t_emb + self.global_cond_embedding(global_cond)
+            cond_emb = self.global_cond_embedding(global_cond)
+            if self.spatial_modulation:
+                cond_emb = rearrange(cond_emb, "b d -> b 1 d")
+            t_emb = t_emb + cond_emb
 
+        # Combine with the loss-mixing-weight embedding if conditioning on lambda.
+        if self.lambda_embedding is None:
+            if loss_weight is not None:
+                msg = (
+                    "loss_weight was passed to forward() but the backbone was "
+                    "built with include_loss_weight=False, so it would be "
+                    "silently ignored and the model would train unconditioned."
+                )
+                raise ValueError(msg)
+        else:
+            if loss_weight is None:
+                msg = (
+                    "Backbone was built with include_loss_weight=True but no "
+                    "loss_weight was provided to forward()."
+                )
+                raise ValueError(msg)
+            # ``reshape(-1, 1)`` also accepts a 0-d scalar weight; the device is
+            # pinned because a caller may build the weight on the CPU.
+            w = loss_weight.reshape(-1, 1).to(device=t_emb.device, dtype=t_emb.dtype)
+            weight_emb = self.lambda_embedding(w)
+            if self.spatial_modulation:
+                weight_emb = rearrange(weight_emb, "b d -> b 1 d")
+            t_emb = t_emb + weight_emb
+
+        return self._forward_fields(x_t, t_emb, cond)
+
+    def _forward_fields(
+        self, x_t: TensorBTSC, t_emb: Tensor, cond: TensorBTSC | None
+    ) -> TensorBTSC:
+        """Apply the backbone's field layout after resolving modulation."""
         # Apply temporal processing
         x_t_temporal, cond_temporal = self.apply_temporal_processing(x_t, cond)
 

@@ -283,7 +283,7 @@ def test_separable_gp_validates_spatial_boundaries():
         SeparableGaussianSource(
             temporal_correlation_time=2.0,
             spatial_length_scale=2.0,
-            spatial_boundaries="open",
+            spatial_boundaries="open",  # type: ignore[arg-type]
         )
 
 

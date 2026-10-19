@@ -223,7 +223,9 @@ class OptimizerMixin(nn.Module):
         """Fraction in [0, 1] of the wall-clock budget elapsed.
 
         Reads Lightning's ``Timer`` callback, whose elapsed offset is restored
-        from checkpoints (and cleared by ``reset_resume_time_budget``). The
+        from checkpoints (and cleared by ``reset_resume_time_budget``).
+        Rank zero's progress is broadcast so all model replicas use the same
+        LR even when their local clocks or callback timings differ. The
         schedule therefore tracks the same clock that enforces ``max_time``: a
         single-job run anneals over the job; a full-state-resumed run anneals
         over the cumulative training time. Returns 0.0 (schedule start) if no
@@ -239,7 +241,12 @@ class OptimizerMixin(nn.Module):
         budget = elapsed + remaining
         if budget <= 0.0:
             return 0.0
-        return min(max(elapsed / budget, 0.0), 1.0)
+        progress = min(max(elapsed / budget, 0.0), 1.0)
+        trainer = getattr(self, "trainer", None)
+        strategy = getattr(trainer, "strategy", None)
+        if strategy is not None:
+            progress = strategy.broadcast(progress, src=0)
+        return float(progress)
 
     def _create_time_cosine(
         self,

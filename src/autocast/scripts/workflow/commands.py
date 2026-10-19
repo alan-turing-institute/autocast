@@ -924,7 +924,12 @@ def _extract_epoch_times_from_checkpoint(ckpt_path: Path) -> list[float] | None:
     try:
         import torch  # noqa: PLC0415 - deferred to avoid import at CLI startup
 
-        ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+        ckpt = torch.load(
+            ckpt_path,
+            map_location="cpu",
+            weights_only=False,
+            mmap=True,
+        )
         callbacks = ckpt.get("callbacks", {})
         for key, state in callbacks.items():
             if "TrainingTimerCallback" in key and "epoch_times_s" in state:

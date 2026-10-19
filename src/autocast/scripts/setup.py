@@ -6,11 +6,14 @@ from pathlib import Path
 from typing import Any
 
 import torch
+import yaml
 from hydra.utils import get_class, instantiate
 from omegaconf import DictConfig
+from the_well.data.normalization import RMSNormalization, ZScoreNormalization
 from torch import nn
 
 from autocast.data.datamodule import SpatioTemporalDataModule, TheWellDataModule
+from autocast.data.dataset import SpatioTemporalDataset, TheWell
 from autocast.decoders.base import Decoder
 from autocast.encoders.base import Encoder, EncoderWithCond
 from autocast.models.autoencoder import AE, AELoss
@@ -165,9 +168,14 @@ def _resolve_processor_temporal_steps(
     return n_steps_input, n_steps_output
 
 
-def _uses_masked_window_flow_matching(processor_config: DictConfig) -> bool:
+def _uses_masked_window(processor_config: DictConfig) -> bool:
     target = str(processor_config.get("_target_", ""))
-    return target.endswith("FlowMatchingMaskedWindowProcessor")
+    return target.endswith(
+        (
+            "FlowMatchingMaskedWindowProcessor",
+            "SpatiotemporalViTMaskedWindowProcessor",
+        )
+    )
 
 
 def _apply_processor_channel_defaults(
@@ -210,7 +218,7 @@ def _apply_processor_channel_defaults(
     if backbone_config is None:
         return
 
-    use_masked_window = _uses_masked_window_flow_matching(processor_config)
+    use_masked_window = _uses_masked_window(processor_config)
     backbone_n_steps = (
         n_steps_input + n_steps_output if use_masked_window else n_steps_output
     )
@@ -531,12 +539,32 @@ def _build_processor(
     return instantiate(processor_config, **filtered_kwargs)
 
 
-def _build_loss_func(model_config: DictConfig) -> nn.Module:
-    """Build loss function from config, defaulting to MSELoss."""
+def _build_loss_func(
+    model_config: DictConfig,
+    processor: nn.Module | None = None,
+) -> nn.Module | None:
+    """Build a loss and satisfy explicit processor-binding requirements.
+
+    Returns ``None`` when the config does not name a loss, rather than
+    falling back to ``MSELoss``. Processors that own their objective in
+    ``processor.loss()`` (flow matching, drifting) are configured with
+    ``loss_func: null``; a default here masks that intent and sends them
+    down the cross-cutting loss path instead of their own.
+    """
     loss_func_config = model_config.get("loss_func")
     if loss_func_config is None:
-        return nn.MSELoss()
-    return instantiate(loss_func_config)
+        return None
+
+    target = loss_func_config.get("_target_")
+    loss_kwargs: dict[str, Any] = {}
+    loss_cls = get_class(target) if target is not None else None
+    if getattr(loss_cls, "requires_processor", False):
+        if processor is None:
+            msg = f"{target} requires a processor-bound EPD setup."
+            raise ValueError(msg)
+        loss_kwargs["processor"] = processor
+
+    return instantiate(loss_func_config, **loss_kwargs)
 
 
 def _resolve_metric_overrides(metric_cfg: Any) -> Any:
@@ -587,6 +615,13 @@ def setup_processor_model(
 ) -> ProcessorModel:
     """Set up just the processor model for training on latents."""
     model_config = config.get("model", {})
+    if model_config.get("residual_prediction", False):
+        msg = (
+            "model.residual_prediction requires a full EncoderProcessorDecoder "
+            "with decoded state predictions; processor-only latent training and "
+            "evaluation do not have a physical persistence baseline."
+        )
+        raise ValueError(msg)
     noise_injector, extra_input_channels = _resolve_input_noise_injector(model_config)
 
     example_batch = stats["example_batch"]
@@ -618,12 +653,40 @@ def setup_processor_model(
         "optimizer_config": optimizer_config,
         "noise_injector": noise_injector,
         "norm": norm,
+        "train_loss_log_every_n_steps": model_config.get(
+            "train_loss_log_every_n_steps", 1
+        ),
     }
     _maybe_add_metric_overrides(kwargs, model_config)
     if is_ensemble:
         kwargs["n_members"] = model_config.get("n_members")
 
     return cls(**kwargs)
+
+
+def _load_residual_delta_normalizer(
+    stats_path: str | Path, dataset: SpatioTemporalDataset
+) -> ZScoreNormalization | RMSNormalization:
+    """Load delta statistics using the dataset's format and field order."""
+    well = dataset.well_dataset if isinstance(dataset, TheWell) else None
+    # Keep local-file overrides working, and reuse The Well's configured
+    # filesystem for remote statistics instead of opening a second connection.
+    with (
+        well.fs.open(str(stats_path), mode="r")
+        if well is not None and not Path(stats_path).is_file()
+        else Path(stats_path).open()
+    ) as stats_file:
+        delta_stats = yaml.safe_load(stats_file)
+    if "stats" not in delta_stats and well is not None:
+        normalization_type = well.normalization_type or ZScoreNormalization
+        return normalization_type(
+            delta_stats, well.core_field_names, well.core_constant_field_names
+        )
+    field_names = delta_stats["core_field_names"]
+    channel_idxs = getattr(dataset, "channel_idxs", None)
+    if channel_idxs is not None:
+        field_names = [field_names[i] for i in channel_idxs]
+    return ZScoreNormalization(delta_stats["stats"], field_names, [])
 
 
 def setup_epd_model(
@@ -711,13 +774,33 @@ def setup_epd_model(
         "spatial_resolution": latent_spatial_resolution,
     }
     processor = _build_processor(model_config, proc_kwargs, global_cond_channels)
-    loss_func = _build_loss_func(model_config)
+    loss_func = _build_loss_func(model_config, processor)
+    if model_config.get("train_in_latent_space", False) and getattr(
+        loss_func,
+        "requires_ambient_predictions",
+        False,
+    ):
+        msg = (
+            f"{type(loss_func).__name__} requires ambient predictions; "
+            "set model.train_in_latent_space=false."
+        )
+        raise ValueError(msg)
 
     is_ensemble = model_config.get("n_members", 1) > 1
     cls = EncoderProcessorDecoderEnsemble if is_ensemble else EncoderProcessorDecoder
 
     optimizer_config = _get_optimizer_config(config)
     norm = getattr(datamodule.train_dataset, "norm", None)
+    delta_norm = None
+    delta_stats_path = model_config.get("residual_delta_stats_path")
+    if (
+        delta_stats_path
+        and model_config.get("residual_prediction", False)
+        and model_config.get("residual_use_delta_stats", True)
+    ):
+        delta_norm = _load_residual_delta_normalizer(
+            delta_stats_path, datamodule.train_dataset
+        )
     kwargs = {
         "encoder_decoder": EncoderDecoder(
             encoder,
@@ -732,6 +815,9 @@ def setup_epd_model(
         "loss_func": loss_func,
         "input_noise_injector": noise_injector,
         "norm": norm,
+        "residual_prediction": model_config.get("residual_prediction", False),
+        "residual_use_delta_stats": model_config.get("residual_use_delta_stats", True),
+        "delta_norm": delta_norm,
     }
     _maybe_add_metric_overrides(kwargs, model_config)
     if is_ensemble:

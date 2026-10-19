@@ -171,6 +171,33 @@ def test_fits_streaming_training_statistics(granularity: ResidualGranularity):
     assert torch.equal(torch.random.get_rng_state(), rng_state)
 
 
+@pytest.mark.skipif(
+    not torch.backends.mps.is_available(),
+    reason="MPS is not available.",
+)
+def test_fits_streaming_training_statistics_on_mps():
+    batches = _encoded_batches()
+    processor = _processor().to("mps")
+    model = ProcessorModel(processor=processor)
+
+    _fit(
+        ResidualStatisticsCallback(),
+        _Trainer(_DataModule(batches)),
+        model,
+    )
+
+    residual = torch.cat(
+        [batch.encoded_output_fields for batch in batches],
+        dim=0,
+    )
+    values = residual.movedim(1, 0).reshape(3, -1, 2)
+    expected_scale, expected_mean = torch.std_mean(values, dim=1, correction=0)
+    assert processor.standardizer is not None
+    assert processor.standardizer.mean.device.type == "mps"
+    assert torch.allclose(processor.standardizer.mean.cpu(), expected_mean)
+    assert torch.allclose(processor.standardizer.scale.cpu(), expected_scale)
+
+
 def test_skips_training_loader_when_statistics_are_restored():
     datamodule = _DataModule(_encoded_batches())
     trainer = _Trainer(datamodule)
@@ -244,5 +271,5 @@ def test_requires_configured_standardizer():
     processor = _processor(with_standardizer=False)
     trainer = _Trainer(_DataModule(_encoded_batches()))
 
-    with pytest.raises(TypeError, match="processor.standardizer"):
+    with pytest.raises(TypeError, match=r"processor\.standardizer"):
         _fit(ResidualStatisticsCallback(), trainer, ProcessorModel(processor=processor))

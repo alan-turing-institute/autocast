@@ -63,10 +63,22 @@ class ResidualFlowMatchingProcessor(FlowMatchingProcessor):
             raise ValueError(msg)
         return reference
 
-    def map(self, x: Tensor, global_cond: Tensor | None) -> Tensor:
-        """Generate a residual trajectory and add it to the reference."""
+    def map_from_source(
+        self,
+        x: Tensor,
+        global_cond: Tensor | None,
+        *,
+        source_states: Tensor,
+    ) -> Tensor:
+        """Generate a residual from supplied noise and add it to the reference.
+
+        The inherited ``map`` samples noise and dispatches here, so sampled and
+        explicit-source forecasts use the same output coordinates.
+        """
         reference = self.reference_trajectory(x, global_cond)
-        generated_residual = super().map(x, global_cond)
+        generated_residual = super().map_from_source(
+            x, global_cond, source_states=source_states
+        )
         if self.standardizer is not None:
             generated_residual = self.standardizer.unstandardize(generated_residual)
         return reference + generated_residual

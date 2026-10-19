@@ -1,0 +1,23 @@
+# Run specification only; this manifest does not submit jobs.
+status: prepared_not_launched
+remote_checkout: /home/u6eo/ltcx7228.u6eo/autocast-02
+run_group: diffusion_cns_epoch_matched
+budget_basis: match_completed_cns_flow_matching_epochs
+reference_flow_matching_run: outputs/2026-04-20/diff_cns64_flow_matching_vit_09490da_636fcc3
+reference_diffusion_run: outputs/2026-05-01/planned_03/diff_cns64_diffusion_vit_0c75022_80967c4
+training_seed: 42
+runs:
+  - run_id: latent_diffusion_cns_epoch_matched
+    kind: processor
+    dataset: conditioned_navier_stokes
+    epoch_budget: 3223
+    expected_optimizer_steps: 199826
+    resume_from: null
+    overrides:
+      - local_experiment=ablations/fm_vs_diffusion/conditioned_navier_stokes/diffusion_vit_large_epoch_matched
+      # Explicit selectors preserve run naming through the inherited preset.
+      - processor@model.processor=diffusion_vit
+      - datamodule=cached_latents
+      - datamodule.data_path=/lus/lfs1aip2/projects/u6eo/autocast/outputs/2026-04-17/ae_cns64_3a7999b_b9c29f8/cached_latents
+      - logging.wandb.name=latent_diffusion_cns_epoch_matched
+      - hydra.launcher.timeout_min=1439

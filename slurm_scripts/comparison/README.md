@@ -113,7 +113,7 @@ reference anchored to the 2026-04-20 diff basis.
 
 | run | local experiment / basis | fairness note |
 |---|---|---|
-| U-Net m=8 CRPS CNS | `ablations/arch_unet_fno_vit/.../crps_unet_azula_80m` | Azula U-Net channel ladder `[47,94,188,376]` gives ~80.9M params |
+| U-Net m=8 CRPS CNS | `ablations/arch_unet_fno_vit/.../crps_unet_azula_80m` | Azula U-Net channel ladder `[62,124,248,496]` gives ~81.3M params |
 | Diffusion CNS | `ablations/fm_vs_diffusion/.../diffusion_vit_large` | same 704/12/8 ViT backbone, identity conditioning, batch 256, 50 sampler steps as FM |
 | CNS m=8 fair CRPS | `ablations/crps_variants/.../crps_vit_fair` | same ViT/backbone/batch as CRPS, only FairCRPS loss changes |
 | CNS m=8 CRPS | `ablations/crps_variants/.../crps_vit_plain` | same ViT/backbone/batch as CRPS, only plain CRPS loss changes |

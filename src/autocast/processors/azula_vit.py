@@ -1,18 +1,28 @@
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
+from enum import Enum
 
 import torch
 from einops import rearrange
 from torch import Tensor, nn
 
-from autocast.nn.vit import TemporalViTBackbone
+from autocast.nn.vit import SpatialViTBackbone
 from autocast.processors.base import Processor
 from autocast.types import EncodedBatch
 
 
-class AzulaViTProcessor(Processor[EncodedBatch]):
-    """Wrapper for the internal TemporalViTBackbone used in Diffusion Models.
+class AdaLNNoiseMode(str, Enum):
+    """Whether AdaLN noise is shared globally or independent per patch token."""
 
-    Provides building blocks for modern generative architectures (e.g. DiT).
+    GLOBAL = "global"
+    SPATIAL = "spatial"
+
+
+class AzulaViTProcessor(Processor[EncodedBatch]):
+    """Stochastic processor around the spatial ViT backbone.
+
+    Input frames are bundled into channels before the backbone, so its
+    optional temporal preprocessing sees a single effective time step.
 
     Shape convention:
     - Public processor boundary: channel-first, (B, C, H, W)
@@ -42,6 +52,7 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
         qk_norm: bool = True,
         rope: bool = False,
         rpb: bool = True,
+        noise_mode: AdaLNNoiseMode | str = AdaLNNoiseMode.GLOBAL,
     ):
         super().__init__()
         self.n_spatial_dims = len(spatial_resolution)
@@ -49,12 +60,30 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
             msg = "Diffusion wrapper expects 2D spatial resolution inputs (H, W)"
             raise ValueError(msg)
 
+        self.noise_mode = AdaLNNoiseMode(noise_mode)
+        self.patch_size = (
+            (patch_size, patch_size)
+            if isinstance(patch_size, int)
+            else tuple(patch_size)
+        )
+        if self.noise_mode == AdaLNNoiseMode.SPATIAL:
+            if n_noise_channels is None or n_noise_channels <= 0:
+                msg = "Spatial AdaLN requires positive n_noise_channels."
+                raise ValueError(msg)
+            if n_noise_input_channels is not None and n_noise_input_channels <= 0:
+                msg = "Spatial AdaLN requires positive n_noise_input_channels."
+                raise ValueError(msg)
+            if len(self.patch_size) != 2 or any(p <= 0 for p in self.patch_size):
+                msg = "Spatial AdaLN requires two positive patch_size dimensions."
+                raise ValueError(msg)
+
         self.n_noise_channels = n_noise_channels
         self.n_noise_input_channels = n_noise_input_channels or n_noise_channels
         self.global_cond_channels = global_cond_channels
         self.include_global_cond = include_global_cond
         self.n_steps_input = n_steps_input
         self.n_steps_output = n_steps_output
+        self.dropout = dropout
 
         if self.n_noise_channels is None and n_noise_input_channels is not None:
             msg = (
@@ -79,7 +108,7 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
         # 5D inputs and unfolds T_out from C on outputs; for 4D inputs the
         # encoder has already done the fold, so n_steps_input/output=1 and
         # this scaling is a no-op.
-        self.model = TemporalViTBackbone(
+        self.model = SpatialViTBackbone(
             in_channels=in_channels * n_steps_input,
             out_channels=out_channels * n_steps_output,
             cond_channels=0,
@@ -103,7 +132,26 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
             rpb=rpb,
             checkpointing=checkpointing,
             use_precomputed_modulation=True,
+            spatial_modulation=self.noise_mode == AdaLNNoiseMode.SPATIAL,
         )
+
+    def _noise_shape(self, x: Tensor) -> tuple[int, ...]:
+        """Return the noise shape on the processor's actual input patch grid."""
+        channels = self.n_noise_input_channels or self.model.mod_features
+        if self.noise_mode == AdaLNNoiseMode.GLOBAL:
+            return (x.shape[0], channels)
+        if x.ndim not in (4, 5):
+            msg = "Spatial AdaLN expects 4D or 5D input fields."
+            raise ValueError(msg)
+        height, width = x.shape[-2:] if x.ndim == 4 else x.shape[2:4]
+        ph, pw = self.patch_size
+        if height % ph or width % pw:
+            msg = (
+                f"Input grid {(height, width)} must be divisible by patch_size "
+                f"{self.patch_size}."
+            )
+            raise ValueError(msg)
+        return (x.shape[0], (height // ph) * (width // pw), channels)
 
     def forward(
         self,
@@ -122,7 +170,10 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
         Args:
             x: Input tensor with shape (B, C, H, W) or
                 (B, T=n_steps_input, H, W, C).
-            x_noise: Optional noise/modulation tensor.
+            x_noise: Noise of shape (B, D) in global mode, or (B, N, D) in
+                spatial mode. D is n_noise_input_channels (defaulting to
+                n_noise_channels); N is the number of input patch tokens,
+                ordered with width varying fastest. Use map() to draw noise.
             global_cond: Optional global conditioning tensor with shape
                 (B, C_global). Used only when include_global_cond=True.
 
@@ -130,30 +181,13 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
             Output tensor with the same rank as ``x``: (B, C, H, W) if ``x`` was
             4D, (B, T=n_steps_output, H, W, C) otherwise.
         """
-        if x_noise is not None and self.modulation_proj is not None:
+        expected_shape = self._noise_shape(x)
+        if x_noise is None or tuple(x_noise.shape) != expected_shape:
+            received = None if x_noise is None else tuple(x_noise.shape)
+            msg = f"Expected x_noise with shape {expected_shape}, got {received}."
+            raise ValueError(msg)
+        if self.modulation_proj is not None:
             x_noise = self.modulation_proj(x_noise)
-
-        if (
-            self.n_noise_channels
-            and x_noise is not None
-            and x_noise.shape[-1] != self.n_noise_channels
-        ):
-            msg = (
-                f"Expected x_noise with last dim {self.n_noise_channels}, "
-                f"got {x_noise.shape[-1]}."
-            )
-            raise ValueError(msg)
-
-        if (
-            not self.n_noise_channels
-            and x_noise is not None
-            and x_noise.shape[-1] != self.model.mod_features
-        ):
-            msg = (
-                f"Expected x_noise with last dim {self.model.mod_features}, "
-                f"got {x_noise.shape[-1]}."
-            )
-            raise ValueError(msg)
 
         model_global_cond = None
         if self.include_global_cond:
@@ -190,20 +224,107 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
         ).contiguous()
 
     def map(self, x: Tensor, global_cond: Tensor | None = None) -> Tensor:
-        noise_channels = self.n_noise_input_channels or self.n_noise_channels
-        if noise_channels is None:
-            noise_channels = self.model.mod_features
-
+        # One draw per member/forecast step, reused across all transformer blocks.
+        noise_shape = self._noise_shape(x)
         if self.n_noise_channels:
-            noise = torch.randn(
-                x.shape[0], noise_channels, dtype=x.dtype, device=x.device
-            )
+            noise = torch.randn(noise_shape, dtype=x.dtype, device=x.device)
         else:
-            noise = torch.zeros(
-                x.shape[0], noise_channels, dtype=x.dtype, device=x.device
-            )
+            noise = torch.zeros(noise_shape, dtype=x.dtype, device=x.device)
         return self(x, noise, global_cond=global_cond)
 
     def loss(self, batch: EncodedBatch) -> Tensor:
         pred = self.map(batch.encoded_inputs, batch.global_cond)
         return self.loss_func(pred, batch.encoded_output_fields)
+
+
+class MCDropoutAzulaViTProcessor(AzulaViTProcessor):
+    """Azula ViT using Monte Carlo dropout as its stochasticity source.
+
+    Unlike :class:`AzulaViTProcessor`, this processor does not sample a random
+    modulation vector. It passes a deterministic zero vector through the
+    modulation path, preserving optional physical ``global_cond`` conditioning,
+    and keeps the ViT's dropout active during inference.
+
+    Dropout masks are sampled independently on every forward pass, including
+    successive autoregressive rollout steps.
+    """
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        spatial_resolution: Sequence[int],
+        hidden_dim: int = 768,
+        num_heads: int = 12,
+        n_layers: int = 6,
+        patch_size: int = 4,
+        temporal_method: str = "attention",
+        loss_func: nn.Module | None = None,
+        n_noise_channels: int | None = None,
+        n_noise_input_channels: int | None = None,
+        global_cond_channels: int | None = None,
+        include_global_cond: bool = False,
+        dropout: float = 0.1,
+        checkpointing: bool = False,
+        n_steps_input: int = 1,
+        n_steps_output: int = 1,
+    ):
+        if n_noise_channels is not None or n_noise_input_channels is not None:
+            msg = (
+                "MCDropoutAzulaViTProcessor uses dropout instead of stochastic "
+                "modulation; n_noise_channels and n_noise_input_channels must be None."
+            )
+            raise ValueError(msg)
+        if not 0.0 <= dropout < 1.0:
+            msg = f"dropout must be in [0, 1), got {dropout}."
+            raise ValueError(msg)
+
+        super().__init__(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            spatial_resolution=spatial_resolution,
+            hidden_dim=hidden_dim,
+            num_heads=num_heads,
+            n_layers=n_layers,
+            patch_size=patch_size,
+            temporal_method=temporal_method,
+            loss_func=loss_func,
+            n_noise_channels=None,
+            n_noise_input_channels=None,
+            global_cond_channels=global_cond_channels,
+            include_global_cond=include_global_cond,
+            dropout=dropout,
+            checkpointing=checkpointing,
+            n_steps_input=n_steps_input,
+            n_steps_output=n_steps_output,
+        )
+
+    @contextmanager
+    def _inference_dropout(self) -> Iterator[None]:
+        """Temporarily enable only the Azula ViT dropout mechanisms."""
+        stochastic_modules = [
+            module for module in self.model.modules() if isinstance(module, nn.Dropout)
+        ]
+        training_states = [module.training for module in stochastic_modules]
+        try:
+            for module in stochastic_modules:
+                module.train()
+            yield
+        finally:
+            for module, training in zip(
+                stochastic_modules, training_states, strict=True
+            ):
+                module.train(training)
+
+    def forward(
+        self,
+        x: Tensor,
+        x_noise: Tensor | None = None,
+        global_cond: Tensor | None = None,
+    ) -> Tensor:
+        """Run with dropout active in both training and inference modes."""
+        if self.training:
+            return super().forward(x, x_noise=x_noise, global_cond=global_cond)
+
+        with self._inference_dropout():
+            return super().forward(x, x_noise=x_noise, global_cond=global_cond)

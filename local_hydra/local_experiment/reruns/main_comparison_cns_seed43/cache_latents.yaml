@@ -1,0 +1,12 @@
+# @package _global_
+defaults:
+  - /local_experiment/cache_latents/conditioned_navier_stokes/cache_latents
+  - _self_
+
+# Must remain architecture- and data-identical to the seed-43 AE config.
+experiment_name: rerun_main_comparison_cns_seed43_cache_latents
+
+datamodule:
+  data_path: /projects/u6eo/autocast/datasets/conditioned_navier_stokes_2d_seed43_20260801
+  normalization_path: ${.data_path}/stats.yml
+  use_normalization: true

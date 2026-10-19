@@ -1,0 +1,21 @@
+defaults:
+  - /backbone@backbone: unet
+  - _self_
+
+_target_: autocast.processors.drifting.DriftingProcessor
+n_steps_output: auto
+n_channels_out: auto
+n_samples: 8
+tau_list: [0.02, 0.05, 0.2]
+diag_mask_value: 100.0
+
+# Energy-score regularisation. lambda_es=0 => pure drift.
+lambda_es: 0.0
+energy_score_a_f: 0.95
+# Scale-invariant SCRPS form for the ES term (default true): a fixed lambda
+# transfers across datasets. Set false for the difference-form energy score.
+energy_score_scaled: true
+
+# Drifting is one-step: the backbone must not register a time embedding.
+backbone:
+  include_time_embedding: false

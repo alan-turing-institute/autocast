@@ -26,7 +26,13 @@ class ProcessorModel(
     L.LightningModule,
     MetricsMixin,
 ):
-    """Processor Base Class."""
+    """Processor Base Class.
+
+    ``train_loss_log_every_n_steps`` controls loss synchronization frequency;
+    set it to the trainer's logging interval to avoid unused reductions. Its
+    default of one preserves every-batch logging. The cadence follows optimizer
+    updates across epochs/resumes; accumulated microbatches share an update.
+    """
 
     processor: Processor
     optimizer_config: DictConfig | dict[str, Any] | None
@@ -42,12 +48,25 @@ class ProcessorModel(
         test_metrics: Sequence[Metric] | None = None,
         noise_injector: NoiseInjector | None = None,
         norm: ZScoreNormalization | None = None,
+        train_loss_log_every_n_steps: int = 1,
         **kwargs: Any,
     ) -> None:
         super().__init__()
+        if (
+            not isinstance(train_loss_log_every_n_steps, int)
+            or isinstance(train_loss_log_every_n_steps, bool)
+            or train_loss_log_every_n_steps < 1
+        ):
+            msg = "train_loss_log_every_n_steps must be a positive integer."
+            raise ValueError(msg)
+        self.train_loss_log_every_n_steps = train_loss_log_every_n_steps
         self.processor = processor  # Register nn.Module parameters
         self.stride = stride
-        self.loss_func = loss_func or nn.MSELoss()
+        # Honor an explicit None so processors that own their loss in
+        # processor.loss() (FM, drifting, MSE-cohort) reach the
+        # ensemble-loss `is None` fallback. Masking with MSELoss() here
+        # defeats the loss_func=null intent set in setup._build_loss_func.
+        self.loss_func = loss_func
         self.optimizer_config = optimizer_config
         self.train_metrics = self._build_metrics(train_metrics, "train_")
         self.val_metrics = self._build_metrics(val_metrics, "val_")
@@ -77,19 +96,41 @@ class ProcessorModel(
         loss = self.processor.loss(batch)
         return loss
 
+    def _log_processor_diagnostics(self, prefix: str, batch_size: int) -> None:
+        """Forward processor-internal diagnostics to the logger.
+
+        Mirrors ``EncoderProcessorDecoder._log_processor_diagnostics`` so
+        processor-only training (cached-latent path) gets the same
+        cohort_spread / force_rms_* visibility as full-stack EPD training.
+        """
+        diagnostics = getattr(self.processor, "_latest_diagnostics", None)
+        if diagnostics:
+            # sync_dist=False: per-rank batch-mean diagnostics are fine
+            # estimates and avoid a separate all-reduce per key.
+            self.log_dict(
+                {f"{prefix}/{name}": value for name, value in diagnostics.items()},
+                sync_dist=False,
+                batch_size=batch_size,
+            )
+
     def training_step(
         self,
         batch: EncodedBatch,
         batch_idx: int,  # noqa: ARG002
     ) -> Tensor:
         loss = self.loss(batch)
-        self.log(
-            "train_loss",
-            loss,
-            prog_bar=True,
-            sync_dist=True,
-            batch_size=batch.encoded_inputs.shape[0],
-        )
+        # global_step counts completed updates; this loss belongs to the next.
+        # The fallback supports full-model checkpoints saved before this option.
+        interval = getattr(self, "train_loss_log_every_n_steps", 1)
+        if interval == 1 or (self.global_step + 1) % interval == 0:
+            self.log(
+                "train_loss",
+                loss,
+                prog_bar=True,
+                sync_dist=True,
+                batch_size=batch.encoded_inputs.shape[0],
+            )
+        self._log_processor_diagnostics("train", batch.encoded_inputs.shape[0])
         if self.train_metrics is not None:
             y_pred = self._predict_for_metrics(batch)
             y_true = batch.encoded_output_fields
@@ -111,6 +152,7 @@ class ProcessorModel(
             sync_dist=True,
             batch_size=batch.encoded_inputs.shape[0],
         )
+        self._log_processor_diagnostics("val", batch.encoded_inputs.shape[0])
         if self.val_metrics is not None:
             y_pred = self._predict_for_metrics(batch)
             y_true = batch.encoded_output_fields
@@ -130,6 +172,7 @@ class ProcessorModel(
             sync_dist=True,
             batch_size=batch.encoded_inputs.shape[0],
         )
+        self._log_processor_diagnostics("test", batch.encoded_inputs.shape[0])
         if self.test_metrics is not None:
             y_pred = self._predict_for_metrics(batch)
             y_true = batch.encoded_output_fields

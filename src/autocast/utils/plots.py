@@ -36,6 +36,10 @@ _SNAPSHOT_PAPER_RC: dict[str, object] = {
 NormLike: TypeAlias = Normalize | TwoSlopeNorm | LogNorm | SymLogNorm | None
 
 
+def _ignore_batch_result(_preds: Tensor, _trues: Tensor) -> None:
+    """Ignore streamed metric batch results."""
+
+
 def _panel_size_for_width(
     target_width_in: float,
     ncols: int,
@@ -686,6 +690,7 @@ def compute_metrics_from_dataloader(
     return_tensors: bool = False,
     return_per_batch: bool = False,
     device: str | torch.device | None = None,
+    batch_result_callback: Callable[[Tensor, Tensor], None] | None = None,
 ) -> tuple[
     dict[None | tuple[int, int], dict[str, Metric]],
     tuple[TensorBTSCM, TensorBTSC] | None,
@@ -706,6 +711,9 @@ def compute_metrics_from_dataloader(
         return_tensors: If True, also return concatenated (pred, true) tensors.
         return_per_batch: If True, also return per-batch metric dictionaries.
         device: Device to move metrics to before updating.
+        batch_result_callback: Called once per successful inference batch with
+            unsliced predictions and targets, allowing streaming derived outputs
+            without retaining predictions or launching another inference pass.
 
     Returns:
         The populated metrics, optionally the tensors, and optionally per-batch metrics.
@@ -720,6 +728,7 @@ def compute_metrics_from_dataloader(
     all_preds = [] if return_tensors else None
     all_trues = [] if return_tensors else None
     per_batch_rows = [] if return_per_batch else None
+    result_callback = batch_result_callback or _ignore_batch_result
 
     def _get_val(m):
         """Extract scalar values safely."""
@@ -748,6 +757,8 @@ def compute_metrics_from_dataloader(
             )
             if not (isinstance(preds, Tensor) and isinstance(trues, Tensor)):
                 continue
+
+            result_callback(preds, trues)
 
             # Do not move to CPU for metric computation so DDP can sync
             # preds, trues = preds.cpu(), trues.cpu()

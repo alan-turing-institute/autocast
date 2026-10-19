@@ -1,20 +1,21 @@
-"""Temporal ViT backbone with flexible temporal processing methods."""
+"""Spatial ViT with optional temporal preprocessing before channel bundling."""
 
 from collections.abc import Sequence
 
 from azula.nn.vit import ViT
+from einops.layers.torch import Rearrange
 from torch import nn
 
 from autocast.nn.base import TemporalBackboneBase
 
 
-class TemporalViTBackbone(TemporalBackboneBase):
-    """Azula ViT with flexible temporal encoding options.
+class SpatialViTBackbone(TemporalBackboneBase):
+    """Azula ViT with spatial tokens and optional temporal preprocessing.
 
-    Wraps the Azula Vision Transformer to handle temporal sequences in the
-    format (B, T, W, H, C) for diffusion models or temporal forecasting.
-    Supports multiple temporal processing methods that can be selected via
-    the `temporal_method` parameter.
+    Accepts (B, T, W, H, C) fields. ``temporal_method`` optionally processes
+    the field and context timelines separately before bundling frames into
+    channels. Transformer blocks then attend over spatial patches; temporal
+    attention is preprocessing, not interleaved with the transformer blocks.
     """
 
     def __init__(
@@ -48,8 +49,10 @@ class TemporalViTBackbone(TemporalBackboneBase):
         rope: bool = False,
         rpb: bool = True,
         window_size: int | Sequence[int] | None = None,
+        include_time_embedding: bool = True,
+        spatial_modulation: bool = False,
     ):
-        """Initialize Temporal ViT Backbone.
+        """Initialize the spatial ViT backbone.
 
         Args:
             in_channels: Number of input channels per timestep
@@ -82,11 +85,16 @@ class TemporalViTBackbone(TemporalBackboneBase):
             window_size: Local attention window size. Only None is supported by
                 the installed Azula ViT used here.
             checkpointing: Whether to use gradient checkpointing in ViT
-            use_precomputed_modulation: Whether to use precomputed modulation tensors.
+            use_precomputed_modulation: Forwarded to the base; when True the
+                caller supplies precomputed modulation vectors as ``t``.
+            include_time_embedding: Forwarded to the base; when False the
+                time-embedding module is not registered and ``t=None`` is
+                accepted at forward time (one-step processors).
+            spatial_modulation: Whether AdaLN receives one vector per patch token.
         """
         if window_size is not None:
             msg = (
-                "TemporalViTBackbone does not support non-null window_size with "
+                "SpatialViTBackbone does not support non-null window_size with "
                 "the installed Azula ViT. Use window_size=null for global attention."
             )
             raise ValueError(msg)
@@ -107,6 +115,8 @@ class TemporalViTBackbone(TemporalBackboneBase):
             tcn_kernel_size=tcn_kernel_size,
             tcn_num_layers=tcn_num_layers,
             use_precomputed_modulation=use_precomputed_modulation,
+            include_time_embedding=include_time_embedding,
+            spatial_modulation=spatial_modulation,
         )
 
         self.patch_size = patch_size
@@ -126,6 +136,18 @@ class TemporalViTBackbone(TemporalBackboneBase):
             rpb=rpb,
             checkpointing=checkpointing,
         )
+        if spatial_modulation:
+            for block in self.vit.get_submodule("blocks").children():
+                # Azula 0.7 inserts a singleton token axis for global AdaLN.
+                # Replace only that parameter-free reshape: local vectors keep
+                # their token axis, with identical weights and checkpoint keys.
+                ada_zero = block.get_submodule("ada_zero")
+                if not isinstance(ada_zero, nn.Sequential) or not isinstance(
+                    ada_zero[-1], Rearrange
+                ):
+                    msg = "Installed Azula has an unsupported AdaLN module layout."
+                    raise RuntimeError(msg)
+                ada_zero[-1] = Rearrange("b tokens (n c) -> n b tokens c", n=3)
 
     @property
     def backbone(self) -> nn.Module:
@@ -171,3 +193,7 @@ class TemporalViTBackbone(TemporalBackboneBase):
             rpb=kwargs.get("rpb", True),
             checkpointing=kwargs.get("checkpointing", False),
         )
+
+
+# Preserve existing Hydra targets, imports and serialized class references.
+TemporalViTBackbone = SpatialViTBackbone

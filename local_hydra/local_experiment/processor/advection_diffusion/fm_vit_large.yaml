@@ -5,6 +5,7 @@ defaults:
   - override /processor@model.processor: flow_matching_vit
   - override /backbone@model.processor.backbone: vit
   - override /optimizer: adamw_half
+  - override /trainer: fm_main_comparison
   - _self_
 
 experiment_name: processor_fm_vit_large_advection_diffusion

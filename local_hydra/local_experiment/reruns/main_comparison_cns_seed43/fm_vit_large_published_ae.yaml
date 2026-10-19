@@ -1,0 +1,7 @@
+# @package _global_
+defaults:
+  - /local_experiment/processor/conditioned_navier_stokes/fm_vit_large
+  - _self_
+
+# Exact CNS latent-FM main comparison, using the new-data/published-AE cache.
+experiment_name: rerun_main_comparison_cns_seed43_fm_vit_large_published_ae

@@ -4,7 +4,7 @@ from typing import Any
 import lightning as L
 import torch
 from omegaconf import DictConfig
-from the_well.data.normalization import ZScoreNormalization
+from the_well.data.normalization import RMSNormalization, ZScoreNormalization
 from torch import nn
 from torchmetrics import Metric, MetricCollection
 
@@ -14,6 +14,7 @@ from autocast.models.encoder_decoder import EncoderDecoder
 from autocast.models.optimizer_mixin import OptimizerMixin
 from autocast.nn.noise.noise_injector import NoiseInjector
 from autocast.processors.base import Processor
+from autocast.processors.residual_flow_matching import ResidualFlowMatchingProcessor
 from autocast.processors.rollout import RolloutMixin
 from autocast.types import Batch, Tensor, TensorBTSC
 from autocast.types.types import TensorBTSCM
@@ -22,7 +23,13 @@ from autocast.types.types import TensorBTSCM
 class EncoderProcessorDecoder(
     DenormMixin, OptimizerMixin, RolloutMixin[Batch], L.LightningModule, MetricsMixin
 ):
-    """Encoder-Processor-Decoder Model."""
+    """Encoder-Processor-Decoder Model.
+
+    Optionally decode cumulative residuals from the last clean input frame.
+    ``residual_use_delta_stats`` selects dataset delta scaling; otherwise
+    residuals use the input state's units. Outputs remain complete states.
+    ``delta_norm`` optionally supplies increment statistics independently.
+    """
 
     encoder_decoder: EncoderDecoder
     processor: Processor
@@ -47,9 +54,24 @@ class EncoderProcessorDecoder(
         test_metrics: Sequence[Metric] | None = None,
         input_noise_injector: NoiseInjector | None = None,
         norm: ZScoreNormalization | None = None,
+        residual_prediction: bool = False,
+        residual_use_delta_stats: bool = True,
+        delta_norm: ZScoreNormalization | RMSNormalization | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__()
+        if residual_prediction and isinstance(processor, ResidualFlowMatchingProcessor):
+            msg = (
+                "ResidualFlowMatchingProcessor already reconstructs complete states "
+                "in processor coordinates; model.residual_prediction must be False."
+            )
+            raise ValueError(msg)
+        if residual_prediction and train_in_latent_space:
+            msg = (
+                "Residual prediction requires train_in_latent_space=False "
+                "and a loss on decoded states."
+            )
+            raise ValueError(msg)
         self.encoder_decoder = encoder_decoder
         self.processor = processor
         self.optimizer_config = optimizer_config
@@ -61,6 +83,9 @@ class EncoderProcessorDecoder(
         self.freeze_encoder_decoder = freeze_encoder_decoder
         self.input_noise_injector = input_noise_injector
         self.norm = norm
+        self.residual_prediction = residual_prediction
+        self.residual_use_delta_stats = residual_use_delta_stats
+        self.delta_norm = delta_norm
 
         if self.train_in_latent_space or self.freeze_encoder_decoder:
             self.encoder_decoder.freeze()
@@ -76,7 +101,10 @@ class EncoderProcessorDecoder(
     def _apply_input_noise(self, batch: Batch) -> Batch:
         """Apply input noise if self.input_noise_injector is set."""
         if self.input_noise_injector is not None:
-            noisy_input = self.input_noise_injector(batch.input_fields)
+            inputs = batch.input_fields
+            if self.residual_prediction:
+                inputs = inputs.clone()  # Protect rollout inputs from in-place noise.
+            noisy_input = self.input_noise_injector(inputs)
             batch = Batch(
                 input_fields=noisy_input,
                 output_fields=batch.output_fields,
@@ -95,11 +123,56 @@ class EncoderProcessorDecoder(
             state_dict.pop("_metadata", None)
 
     def forward(self, batch: Batch) -> TensorBTSC | TensorBTSCM:
+        latest_input = None
+        if self.residual_prediction:
+            # Preserve the clean baseline through the encoder/processor pipeline.
+            latest_input = batch.input_fields[:, -1:, ...].clone()
         batch = self._apply_input_noise(batch)
         encoded, global_cond = self.encoder_decoder.encoder.encode_with_cond(batch)
         mapped = self.processor.map(encoded, global_cond)
         decoded = self.encoder_decoder.decoder.decode(mapped)
+        if latest_input is not None:
+            decoded = self._add_residual_to_latest_input(decoded, latest_input)
         return decoded
+
+    def _add_residual_to_latest_input(
+        self, residual: TensorBTSC, latest_input: TensorBTSC
+    ) -> TensorBTSC:
+        """Reconstruct all leads from one baseline; members are folded into batch."""
+        if (
+            residual.ndim != latest_input.ndim
+            or residual.shape[0] != latest_input.shape[0]
+            or residual.shape[2:] != latest_input.shape[2:]
+            or residual.shape[1] == 0
+            or latest_input.shape[1] != 1
+        ):
+            msg = (
+                "Residual prediction requires matching batch, grid and channels "
+                f"and nonempty frames: {residual.shape} vs {latest_input.shape}."
+            )
+            raise ValueError(msg)
+
+        delta_norm = self.delta_norm if self.delta_norm is not None else self.norm
+        if delta_norm is None or not self.residual_use_delta_stats:
+            return latest_input + residual
+
+        physical_delta = delta_norm.delta_denormalize_flattened(residual, "variable")
+        if self.norm is None:
+            return latest_input + physical_delta
+        if isinstance(self.norm, ZScoreNormalization):
+            # Avoid losing small increments when the physical state mean is large.
+            state_scale = self.norm.flattened_stds["variable"].to(physical_delta.device)
+            return latest_input + physical_delta / state_scale
+
+        current_state = self.norm.denormalize_flattened(latest_input, "variable")
+        return self.norm.normalize_flattened(current_state + physical_delta, "variable")
+
+    def _denormalize_prediction(self, prediction: Tensor) -> Tensor:
+        """Denormalize a full forward prediction, including any member axis."""
+        return self.denormalize_tensor(prediction)
+
+    def predict_step(self, batch: Batch, batch_idx: int) -> Tensor:  # noqa: ARG002
+        return self._denormalize_prediction(self(batch))
 
     def loss(self, batch: Batch) -> tuple[Tensor, Tensor | None]:
         if self.train_in_latent_space:
@@ -126,6 +199,7 @@ class EncoderProcessorDecoder(
             sync_dist=True,
             batch_size=batch.input_fields.shape[0],
         )
+        self._log_processor_diagnostics("train", batch.input_fields.shape[0])
         if self.train_metrics is not None:
             if y_pred is None:
                 y_pred = self(batch)
@@ -144,16 +218,39 @@ class EncoderProcessorDecoder(
             sync_dist=True,
             batch_size=batch.input_fields.shape[0],
         )
+        self._log_processor_diagnostics("val", batch.input_fields.shape[0])
         if self.val_metrics is not None:
             if y_pred is None:
                 y_pred = self(batch)
             y_true = batch.output_fields
-            y_pred = self.denormalize_tensor(y_pred)
+            y_pred = self._denormalize_prediction(y_pred)
             y_true = self.denormalize_tensor(y_true)
             self._update_and_log_metrics(
                 self, self.val_metrics, y_pred, y_true, batch.input_fields.shape[0]
             )
         return loss
+
+    def _log_processor_diagnostics(self, prefix: str, batch_size: int) -> None:
+        """Forward processor-internal diagnostics to the logger.
+
+        Processors may stash detached scalar tensors on
+        ``self.processor._latest_diagnostics`` (e.g. ``DriftingProcessor``
+        records within-cohort spread and per-scale force-RMS values to
+        catch the n_+ = 1 contrastive-collapse failure mode). The
+        Lightning module reads them here and writes them via
+        ``log_dict`` with a ``train/`` or ``val/`` prefix. Processors
+        that don't set the attribute are silently skipped.
+        """
+        diagnostics = getattr(self.processor, "_latest_diagnostics", None)
+        if diagnostics:
+            # sync_dist=False: each scalar is a per-rank batch-mean (cohort
+            # spread, force-RMS) — the per-rank value is a fine estimate
+            # and avoids a separate DDP all-reduce per diagnostic key.
+            self.log_dict(
+                {f"{prefix}/{name}": value for name, value in diagnostics.items()},
+                sync_dist=False,
+                batch_size=batch_size,
+            )
 
     def test_step(self, batch: Batch, batch_idx: int) -> Tensor:  # noqa: ARG002
         loss, y_pred = self.loss(batch)
@@ -164,11 +261,12 @@ class EncoderProcessorDecoder(
             sync_dist=True,
             batch_size=batch.input_fields.shape[0],
         )
+        self._log_processor_diagnostics("test", batch.input_fields.shape[0])
         if self.test_metrics is not None:
             if y_pred is None:
                 y_pred = self(batch)
             y_true = batch.output_fields
-            y_pred = self.denormalize_tensor(y_pred)
+            y_pred = self._denormalize_prediction(y_pred)
             y_true = self.denormalize_tensor(y_true)
             self._update_and_log_metrics(
                 self, self.test_metrics, y_pred, y_true, batch.input_fields.shape[0]

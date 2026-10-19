@@ -61,6 +61,10 @@ def build_datamodule(
                 "Simulator config provided; ignoring datamodule.data_path and "
                 "using generated data instead."
             )
+            # SpatioTemporalDataset reads data_path before checking the
+            # in-memory data dict, so leaving data_path set would clobber
+            # the simulator-generated splits with a FileNotFoundError
+            # against the never-downloaded prod dataset path.
             dm_container["data_path"] = None
         simulator = instantiate(simulator_cfg)
 

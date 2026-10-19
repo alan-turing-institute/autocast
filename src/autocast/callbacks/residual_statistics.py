@@ -48,8 +48,9 @@ class _RunningMoments:
         batch_variance, batch_mean = torch.var_mean(
             values.detach().float(), dim=-2, correction=0
         )
-        batch_mean = batch_mean.to(device="cpu", dtype=torch.float64)
-        batch_m2 = batch_variance.to(device="cpu", dtype=torch.float64) * batch_count
+        # MPS cannot represent float64; transfer before widening the dtype.
+        batch_mean = batch_mean.cpu().double()
+        batch_m2 = batch_variance.cpu().double() * batch_count
 
         total_count = self.count + batch_count
         delta = batch_mean - self.mean
@@ -189,6 +190,7 @@ class ResidualStatisticsCallback(Callback):
             msg = "Training loader yielded Batch without a frozen latent encoder."
             raise TypeError(msg)
         encode_batch = cast(
-            Callable[[Batch], EncodedBatch], encoder.encode_batch  # type: ignore[attr-defined]
+            Callable[[Batch], EncodedBatch],
+            encoder.encode_batch,  # type: ignore[attr-defined]
         )
         return encode_batch(batch.to(device))

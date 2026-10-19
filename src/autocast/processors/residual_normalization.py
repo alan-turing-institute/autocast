@@ -103,9 +103,10 @@ class ResidualStandardizer(nn.Module):
         """Assign statistics, flooring zero scales for stable normalization."""
         mean_tensor = self._coerce_statistic(mean, name="mean")
         scale_tensor = self._coerce_statistic(scale, name="scale")
-        if not torch.isfinite(mean_tensor).all() or not torch.isfinite(
-            scale_tensor
-        ).all():
+        if (
+            not torch.isfinite(mean_tensor).all()
+            or not torch.isfinite(scale_tensor).all()
+        ):
             msg = "Residual statistics must contain only finite values."
             raise ValueError(msg)
         if torch.any(scale_tensor < 0.0):

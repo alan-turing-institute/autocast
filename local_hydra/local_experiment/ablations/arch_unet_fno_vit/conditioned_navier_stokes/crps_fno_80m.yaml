@@ -1,0 +1,74 @@
+# @package _global_
+defaults:
+  - /distributed: ddp_4gpu_slurm
+  - override /datamodule: conditioned_navier_stokes
+  - override /encoder@model.encoder: permute_concat
+  - override /decoder@model.decoder: channels_last
+  - override /processor@model.processor: fno
+  - override /input_noise_injector@model.input_noise_injector: concat
+  - override /optimizer: adamw_half
+  - _self_
+
+experiment_name: ablation_arch_crps_fno_80m_conditioned_navier_stokes
+
+datamodule:
+  use_normalization: true
+  batch_size: 32
+
+float32_matmul_precision: high
+
+logging:
+  wandb:
+    enabled: true
+
+output:
+  skip_test: true
+
+optimizer:
+  learning_rate: 2e-4
+  warmup: 0
+
+model:
+  train_in_latent_space: false
+  n_members: 8
+  encoder:
+    with_constants: true
+  input_noise_injector:
+    # One white-noise field is sampled independently for every ensemble member.
+    # Unlike the ViT's global CLN vector, this preserves the FNO's native
+    # channel-first, full-resolution processing path.
+    n_channels: 1
+    std: 1.0
+  processor:
+    # patch_size=4 gives the 64x64 ViT baseline a 16x16 token lattice.
+    # Retaining 16 modes per axis gives the FNO a comparable global spatial
+    # bandwidth while its pointwise path continues to operate at 64x64.
+    #
+    # FNO spectral weights are complex. Counting each complex coefficient as
+    # two real scalar degrees of freedom, hidden_channels=264 gives ~81.1M
+    # real scalar parameters, versus ~80.8M for the CRPS ViT baseline.
+    n_modes: [16, 16]
+    hidden_channels: 264
+    n_layers: 4
+  loss_func:
+    _target_: autocast.losses.ensemble.AlphaFairCRPSLoss
+  train_metrics:
+    afcrps:
+      _target_: autocast.metrics.ensemble.AlphaFairCRPS
+    afcrps_mae_term:
+      _target_: autocast.metrics.ensemble.AlphaFairCRPSMAETerm
+    afcrps_spread_term:
+      _target_: autocast.metrics.ensemble.AlphaFairCRPSSpreadTerm
+  val_metrics:
+    afcrps:
+      _target_: autocast.metrics.ensemble.AlphaFairCRPS
+    afcrps_mae_term:
+      _target_: autocast.metrics.ensemble.AlphaFairCRPSMAETerm
+    afcrps_spread_term:
+      _target_: autocast.metrics.ensemble.AlphaFairCRPSSpreadTerm
+    spread:
+      _target_: autocast.metrics.ensemble.EnsembleSpread
+    multicoverage:
+      _target_: autocast.metrics.MultiCoverage
+    multiwinkler:
+      _target_: autocast.metrics.ensemble.MultiWinkler

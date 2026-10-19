@@ -12,6 +12,7 @@ from autocast.scripts.eval.encoder_processor_decoder import run_evaluation
 from autocast.scripts.execution import resolve_hydra_work_dir
 from autocast.scripts.train.encoder_processor_decoder import run_epd_training
 from autocast.scripts.utils import get_default_config_path
+from autocast.utils.device import pin_local_cuda_device
 
 log = logging.getLogger(__name__)
 
@@ -82,6 +83,7 @@ def _apply_eval_overrides(cfg: DictConfig) -> DictConfig:
 def main(cfg: DictConfig) -> None:
     """Hydra entrypoint for single-job train→eval flow."""
     logging.basicConfig(level=logging.INFO)
+    pin_local_cuda_device()
 
     work_dir = resolve_hydra_work_dir(None)
     resume_checkpoint = cfg.get("resume_from_checkpoint")
