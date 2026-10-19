@@ -73,6 +73,7 @@ chapters:
   - file: reference/losses/index
     sections:
     - file: reference/losses/ensemble
+    - file: reference/losses/spectral
   - file: reference/types/index
     sections:
     - file: reference/types/types
