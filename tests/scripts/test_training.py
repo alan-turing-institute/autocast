@@ -83,31 +83,15 @@ def _stats_from_encoded_batch(batch: EncodedBatch) -> dict:
     }
 
 
-def _first_encoded_batch(batches: list[EncodedBatch]) -> EncodedBatch:
-    return batches[0]
-
-
-class _EncodedDataset(Dataset[EncodedBatch]):
-    def __init__(self, batch: EncodedBatch) -> None:
-        self.batch = batch
-
-    def __len__(self) -> int:
-        return 1
-
-    def __getitem__(self, index: int) -> EncodedBatch:
-        return self.batch
-
-
 class _EncodedDataModule(L.LightningDataModule):
     def __init__(self, batch: EncodedBatch) -> None:
         super().__init__()
-        self.train_dataset = _EncodedDataset(batch)
+        self.train_dataset = [batch]
 
     def train_dataloader(self):
         return DataLoader(
-            self.train_dataset,
-            batch_size=1,
-            collate_fn=_first_encoded_batch,
+            cast(Dataset, self.train_dataset),
+            batch_size=None,
             num_workers=0,
         )
 
@@ -365,37 +349,49 @@ def test_residual_flow_config_fits_and_restores_statistics(  # noqa: PLR0915
     )
     trainer.fit(model, datamodule=datamodule)
 
-    standardizer = model.processor.standardizer
-    assert standardizer is not None
+    residual_normalizer = model.processor.residual_normalizer
+    assert residual_normalizer is not None
     expected_scale, expected_mean = torch.std_mean(
         residual.movedim(1, 0).reshape(3, -1, 1),
         dim=1,
         correction=0,
     )
-    assert standardizer.fitted
-    assert torch.allclose(standardizer.mean, expected_mean)
-    assert torch.allclose(standardizer.scale, expected_scale)
+    assert residual_normalizer.fitted
+    assert torch.allclose(residual_normalizer.mean, expected_mean)
+    assert torch.allclose(residual_normalizer.scale, expected_scale)
     assert ema.ema_model is not None
     ema_state = ema.ema_model.module.state_dict()
-    assert ema_state["processor.standardizer._fitted"].item()
-    assert torch.equal(ema_state["processor.standardizer.mean"], standardizer.mean)
-    assert torch.equal(ema_state["processor.standardizer.scale"], standardizer.scale)
+    assert ema_state["processor.residual_normalizer._fitted"].item()
+    assert torch.equal(
+        ema_state["processor.residual_normalizer.mean"], residual_normalizer.mean
+    )
+    assert torch.equal(
+        ema_state["processor.residual_normalizer.scale"], residual_normalizer.scale
+    )
 
     checkpoint = tmp_path / "residual.ckpt"
     trainer.save_checkpoint(checkpoint)
-    restored = setup_processor_model(
-        model_cfg,
-        _stats_from_encoded_batch(batch),
-        setup_datamodule,
-    )
+    # Recreate the pre-rename artifact format, including EMA callback resume state.
     payload = torch.load(checkpoint, map_location="cpu", weights_only=False)
-    restored.load_state_dict(payload["state_dict"])
-    assert isinstance(restored.processor, ResidualFlowMatchingProcessor)
-    restored_standardizer = restored.processor.standardizer
-    assert restored_standardizer is not None
-    assert restored_standardizer.fitted
-    assert torch.equal(restored_standardizer.mean, standardizer.mean)
-    assert torch.equal(restored_standardizer.scale, standardizer.scale)
+
+    def legacy_names(state):
+        return {
+            key.replace("residual_normalizer.", "standardizer."): value
+            for key, value in state.items()
+        }
+
+    for key in ("state_dict", "ema_state_dict"):
+        payload[key] = legacy_names(payload[key])
+    for state in payload["callbacks"].values():
+        if state.get("ema_model_state") is not None:
+            state["ema_model_state"] = legacy_names(state["ema_model_state"])
+    torch.save(payload, checkpoint)
+    with open_dict(model_cfg.model.processor):
+        legacy_config = model_cfg.model.processor.pop("residual_normalizer")
+        legacy_config._target_ = (
+            "autocast.processors.residual_normalization.ResidualStandardizer"
+        )
+        model_cfg.model.processor.standardizer = legacy_config
 
     # Real Lightning resume restores statistics before on_fit_start callbacks.
     resumed = setup_processor_model(
@@ -425,9 +421,11 @@ def test_residual_flow_config_fits_and_restores_statistics(  # noqa: PLR0915
     assert resumed_trainer.global_step == 2
     assert resumed_ema.ema_model is not None
     resumed_state = resumed_ema.ema_model.module.state_dict()
-    assert torch.equal(resumed_state["processor.standardizer.mean"], standardizer.mean)
     assert torch.equal(
-        resumed_state["processor.standardizer.scale"], standardizer.scale
+        resumed_state["processor.residual_normalizer.mean"], residual_normalizer.mean
+    )
+    assert torch.equal(
+        resumed_state["processor.residual_normalizer.scale"], residual_normalizer.scale
     )
 
 

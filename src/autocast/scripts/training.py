@@ -21,7 +21,7 @@ from autocast.data.datamodule import SpatioTemporalDataModule, TheWellDataModule
 from autocast.logging import create_wandb_logger
 from autocast.logging.wandb import maybe_watch_model
 from autocast.models.autoencoder import AE
-from autocast.processors.residual_normalization import ResidualStandardizer
+from autocast.processors.residual_normalization import ResidualNormalizer
 from autocast.scripts.config import save_resolved_config
 from autocast.scripts.data import batch_to_device
 from autocast.scripts.setup import setup_autoencoder_model, setup_datamodule
@@ -415,11 +415,14 @@ def _ensure_residual_statistics_callback(
     callbacks: object,
     model: L.LightningModule,
 ) -> list:
-    """Prepend the statistics pass required by an unfitted standardizer."""
+    """Prepend the statistics pass required by an unfitted residual_normalizer."""
     callback_list = callbacks if isinstance(callbacks, list) else []
     processor = getattr(model, "processor", None)
-    standardizer = getattr(processor, "standardizer", None)
-    if not isinstance(standardizer, ResidualStandardizer) or standardizer.fitted:
+    residual_normalizer = getattr(processor, "residual_normalizer", None)
+    if (
+        not isinstance(residual_normalizer, ResidualNormalizer)
+        or residual_normalizer.fitted
+    ):
         return callback_list
     for index, callback in enumerate(callback_list):
         configured = isinstance(callback, ResidualStatisticsCallback) or (

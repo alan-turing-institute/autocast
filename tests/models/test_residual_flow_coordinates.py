@@ -23,7 +23,7 @@ from autocast.models.encoder_processor_decoder_ensemble import (
 from autocast.models.processor import ProcessorModel
 from autocast.nn.noise.source import ZeroSource
 from autocast.processors.residual_flow_matching import ResidualFlowMatchingProcessor
-from autocast.processors.residual_normalization import ResidualStandardizer
+from autocast.processors.residual_normalization import ResidualNormalizer
 from autocast.processors.residual_reference import LastFrameReference
 
 
@@ -76,7 +76,7 @@ def _model(
         backbone=_ConstantField(),
         reference=LastFrameReference(n_steps_output=2),
         source=ZeroSource(),
-        standardizer=ResidualStandardizer(
+        residual_normalizer=ResidualNormalizer(
             n_steps_output=2, n_channels=1, mean=0.25, scale=2.0
         ),
         n_steps_output=2,
@@ -149,7 +149,7 @@ def test_online_and_cached_training_use_the_same_flow_objective(
 def test_zero_latent_residual_returns_codec_reconstruction(toy_batch):
     model = _model("latent")
     processor = cast(ResidualFlowMatchingProcessor, model.processor)
-    processor.standardizer = None
+    processor.residual_normalizer = None
     with torch.no_grad():
         cast(_ConstantField, processor.flow_matching_model).velocity.zero_()
     encoded = model.encoder_decoder.encoder.encode_batch(toy_batch)
@@ -189,12 +189,14 @@ def test_online_and_cached_statistics_match(coordinates, toy_batch):
     online_model = _model(coordinates)
     online_model.train()
     processor = cast(ResidualFlowMatchingProcessor, online_model.processor)
-    processor.standardizer = ResidualStandardizer(n_steps_output=2, n_channels=1)
+    processor.residual_normalizer = ResidualNormalizer(n_steps_output=2, n_channels=1)
     encoded = online_model.encoder_decoder.encoder.encode_batch(toy_batch)
     cached_processor = cast(
         ResidualFlowMatchingProcessor, _model(coordinates).processor
     )
-    cached_processor.standardizer = ResidualStandardizer(n_steps_output=2, n_channels=1)
+    cached_processor.residual_normalizer = ResidualNormalizer(
+        n_steps_output=2, n_channels=1
+    )
     cached_model = ProcessorModel(processor=cached_processor)
 
     def broadcast(value, src):  # noqa: ARG001
@@ -203,17 +205,19 @@ def test_online_and_cached_statistics_match(coordinates, toy_batch):
     for model, batch in [(online_model, toy_batch), (cached_model, encoded)]:
         trainer = SimpleNamespace(
             is_global_zero=True,
+            world_size=1,
+            global_rank=0,
             precision_plugin=Precision(),
             strategy=SimpleNamespace(broadcast=broadcast),
             datamodule=SimpleNamespace(train_dataloader=lambda batch=batch: [batch]),
         )
         ResidualStatisticsCallback().on_fit_start(trainer, model)  # type: ignore[arg-type]
 
-    assert processor.standardizer.fitted
-    assert cached_processor.standardizer.fitted
+    assert processor.residual_normalizer.fitted
+    assert cached_processor.residual_normalizer.fitted
     torch.testing.assert_close(
-        processor.standardizer.mean, cached_processor.standardizer.mean
+        processor.residual_normalizer.mean, cached_processor.residual_normalizer.mean
     )
     torch.testing.assert_close(
-        processor.standardizer.scale, cached_processor.standardizer.scale
+        processor.residual_normalizer.scale, cached_processor.residual_normalizer.scale
     )

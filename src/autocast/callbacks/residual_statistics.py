@@ -3,23 +3,32 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sized
 from typing import Protocol, cast
 
 import lightning as L
 import torch
 from lightning.pytorch.callbacks import Callback
+from lightning.pytorch.utilities.data import _update_dataloader
 from lightning.pytorch.utilities.seed import isolate_rng
 from torch import nn
+from torch.utils.data import (
+    BatchSampler,
+    DataLoader,
+    DistributedSampler,
+    IterableDataset,
+    RandomSampler,
+    SequentialSampler,
+)
 
-from autocast.processors.residual_normalization import ResidualStandardizer
+from autocast.processors.residual_normalization import ResidualNormalizer
 from autocast.types import Batch, EncodedBatch, Tensor
 
 log = logging.getLogger(__name__)
 
 
 class _ResidualProcessor(Protocol):
-    standardizer: ResidualStandardizer | None
+    residual_normalizer: ResidualNormalizer | None
     reference: nn.Module
 
     def target_residual(self, batch: EncodedBatch) -> Tensor: ...
@@ -28,10 +37,12 @@ class _ResidualProcessor(Protocol):
 class _RunningMoments:
     """Streaming population moments over batches and spatial dimensions."""
 
-    def __init__(self, standardizer: ResidualStandardizer) -> None:
-        self.granularity = standardizer.granularity
+    def __init__(self, residual_normalizer: ResidualNormalizer) -> None:
+        self.granularity = residual_normalizer.granularity
         self.count = 0
-        self.mean = torch.zeros(standardizer.statistic_shape, dtype=torch.float64)
+        self.mean = torch.zeros(
+            residual_normalizer.statistic_shape, dtype=torch.float64
+        )
         self.m2 = torch.zeros_like(self.mean)
 
     def update(self, residual: Tensor) -> None:
@@ -52,13 +63,30 @@ class _RunningMoments:
         batch_mean = batch_mean.cpu().double()
         batch_m2 = batch_variance.cpu().double() * batch_count
 
-        total_count = self.count + batch_count
-        delta = batch_mean - self.mean
-        self.mean.add_(delta * (batch_count / total_count))
-        self.m2.add_(
-            batch_m2 + delta.square() * (self.count * batch_count / total_count)
-        )
+        self.merge(batch_count, batch_mean, batch_m2)
+
+    def merge(self, count: int, mean: Tensor, m2: Tensor) -> None:
+        if count == 0:
+            return
+        total_count = self.count + count
+        delta = mean - self.mean
+        self.mean.add_(delta * (count / total_count))
+        self.m2.add_(m2 + delta.square() * (self.count * count / total_count))
         self.count = total_count
+
+    def synchronize(self, trainer: L.Trainer, device: torch.device) -> None:
+        summary = torch.cat(
+            (self.mean.flatten(), self.m2.flatten(), self.mean.new_tensor([self.count]))
+        )
+        summaries = trainer.strategy.all_gather(summary.to(device)).cpu()
+        self.count = 0
+        self.mean.zero_()
+        self.m2.zero_()
+        for summary in summaries:
+            mean, m2 = summary[:-1].chunk(2)
+            self.merge(
+                int(summary[-1].item()), mean.view_as(self.mean), m2.view_as(self.m2)
+            )
 
     def compute(self) -> tuple[Tensor, Tensor]:
         if self.count == 0:
@@ -72,8 +100,8 @@ class ResidualStatisticsCallback(Callback):
 
     The callback uses a processor's public ``target_residual`` method, so it is
     not tied to flow matching. It accepts ``EncodedBatch`` directly or ``Batch``
-    through a frozen latent encoder. Rank zero fits streaming moments, broadcasts
-    them to other ranks, and stores them in the standardizer checkpoint buffers.
+    through a frozen latent encoder. Distributed ranks fit disjoint, unpadded
+    dataset shards and combine moments before updating checkpoint buffers.
     """
 
     def on_fit_start(
@@ -82,33 +110,36 @@ class ResidualStatisticsCallback(Callback):
         pl_module: L.LightningModule,
     ) -> None:
         """Fit statistics unless they were restored from a checkpoint."""
-        processor, standardizer = self._configuration(pl_module)
-        needs_fit = not standardizer.fitted if trainer.is_global_zero else False
+        processor, residual_normalizer, encoder = self._configuration(
+            trainer, pl_module
+        )
+        needs_fit = not residual_normalizer.fitted if trainer.is_global_zero else False
         if not trainer.strategy.broadcast(needs_fit, src=0):
             return
 
+        moments = self._fit_statistics(trainer, processor, residual_normalizer, encoder)
+        if trainer.world_size > 1:
+            moments.synchronize(trainer, residual_normalizer.mean.device)
+        mean, scale = moments.compute()
+        residual_normalizer.set_statistics(mean=mean, scale=scale)
         if trainer.is_global_zero:
-            mean, scale, count = self._fit_statistics(
-                trainer, pl_module, processor, standardizer
+            log.info(
+                "Fitted residual statistics from %d values per statistic.",
+                moments.count,
             )
-            standardizer.set_statistics(mean=mean, scale=scale)
-            log.info("Fitted residual statistics from %d values per statistic.", count)
 
-        mean = trainer.strategy.broadcast(standardizer.mean.detach().clone(), src=0)
-        scale = trainer.strategy.broadcast(standardizer.scale.detach().clone(), src=0)
-        standardizer.set_statistics(mean=mean, scale=scale)
-
-    @staticmethod
     def _configuration(
+        self,
+        trainer: L.Trainer,
         pl_module: L.LightningModule,
-    ) -> tuple[_ResidualProcessor, ResidualStandardizer]:
+    ) -> tuple[_ResidualProcessor, ResidualNormalizer, nn.Module | None]:
         processor = getattr(pl_module, "processor", None)
         if not callable(getattr(processor, "target_residual", None)):
             msg = "model.processor must expose target_residual(batch)."
             raise TypeError(msg)
-        standardizer = getattr(processor, "standardizer", None)
-        if not isinstance(standardizer, ResidualStandardizer):
-            msg = "model.processor.standardizer must be a ResidualStandardizer."
+        residual_normalizer = getattr(processor, "residual_normalizer", None)
+        if not isinstance(residual_normalizer, ResidualNormalizer):
+            msg = "model.processor.residual_normalizer must be a ResidualNormalizer."
             raise TypeError(msg)
         reference = getattr(processor, "reference", None)
         if not isinstance(reference, nn.Module):
@@ -117,43 +148,79 @@ class ResidualStatisticsCallback(Callback):
         if any(parameter.requires_grad for parameter in reference.parameters()):
             msg = "Residual statistics require a fixed, non-trainable reference."
             raise ValueError(msg)
-        return cast(_ResidualProcessor, processor), standardizer
+        encoder = None
+        if not residual_normalizer.fitted:
+            for attribute in ("noise_injector", "input_noise_injector"):
+                if getattr(pl_module, attribute, None) is not None:
+                    msg = (
+                        "Residual statistics do not yet support model input noise; "
+                        f"{attribute} must be None."
+                    )
+                    raise ValueError(msg)
+            if getattr(trainer, "datamodule", None) is None:
+                msg = "ResidualStatisticsCallback requires a trainer datamodule."
+                raise ValueError(msg)
+            encoder = self._frozen_encoder(pl_module)
+        return cast(_ResidualProcessor, processor), residual_normalizer, encoder
 
     def _fit_statistics(
         self,
         trainer: L.Trainer,
-        pl_module: L.LightningModule,
         processor: _ResidualProcessor,
-        standardizer: ResidualStandardizer,
-    ) -> tuple[Tensor, Tensor, int]:
-        for attribute in ("noise_injector", "input_noise_injector"):
-            if getattr(pl_module, attribute, None) is not None:
-                msg = (
-                    "Residual statistics do not yet support model input noise; "
-                    f"{attribute} must be None."
-                )
-                raise ValueError(msg)
-
-        datamodule = getattr(trainer, "datamodule", None)
-        if datamodule is None:
-            msg = "ResidualStatisticsCallback requires a trainer datamodule."
-            raise ValueError(msg)
-        encoder = self._frozen_encoder(pl_module)
+        residual_normalizer: ResidualNormalizer,
+        encoder: nn.Module | None,
+    ) -> _RunningMoments:
         modules = [processor.reference, *([encoder] if encoder is not None else [])]
         training_modes = [module.training for module in modules]
-        moments = _RunningMoments(standardizer)
+        moments = _RunningMoments(residual_normalizer)
 
         try:
             for module in modules:
                 module.eval()
             with isolate_rng(), torch.inference_mode():
-                for batch in datamodule.train_dataloader():
+                datamodule = getattr(trainer, "datamodule", None)
+                assert datamodule is not None
+                loader = datamodule.train_dataloader()
+                if trainer.world_size > 1:
+                    if (
+                        not isinstance(loader, DataLoader)
+                        or isinstance(loader.dataset, IterableDataset)
+                        or not isinstance(loader.dataset, Sized)
+                        or loader.drop_last
+                        or type(loader.batch_sampler) not in (type(None), BatchSampler)
+                        or not isinstance(
+                            loader.sampler,
+                            (RandomSampler, SequentialSampler, DistributedSampler),
+                        )
+                        or (
+                            isinstance(loader.sampler, RandomSampler)
+                            and (
+                                loader.sampler.replacement
+                                or len(loader.sampler) != len(loader.dataset)
+                            )
+                        )
+                    ):
+                        msg = (
+                            "Distributed residual fitting requires a finite map-style "
+                            "DataLoader with standard samplers and drop_last=False; "
+                            "provide fixed statistics."
+                        )
+                        raise ValueError(msg)
+                    # Lightning preserves batching/collation/worker options. A range
+                    # partitions indices without DistributedSampler's padded duplicates.
+                    loader = _update_dataloader(
+                        loader,
+                        range(
+                            trainer.global_rank, len(loader.dataset), trainer.world_size
+                        ),
+                    )
+                for batch in loader:
                     # Match training's input dtype and autocast/default-dtype
                     # context for both the encoder and the reference processor.
                     converted_batch = trainer.precision_plugin.convert_input(batch)
                     with trainer.precision_plugin.forward_context():
                         encoded_batch = self._encode_batch(
-                            converted_batch, encoder, standardizer.mean.device
+                            converted_batch, encoder, residual_normalizer.mean.device
                         )
                         residual = processor.target_residual(encoded_batch)
                     # Accumulate moments in FP32/CPU FP64, outside autocast.
@@ -162,8 +229,7 @@ class ResidualStatisticsCallback(Callback):
             for module, mode in zip(modules, training_modes, strict=True):
                 module.train(mode)
 
-        mean, scale = moments.compute()
-        return mean, scale, moments.count
+        return moments
 
     @staticmethod
     def _frozen_encoder(pl_module: L.LightningModule) -> nn.Module | None:

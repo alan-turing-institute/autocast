@@ -63,6 +63,10 @@ class LastFrameReference(ReferenceTrajectory):
 class ProcessorReference(ReferenceTrajectory):
     """Use another processor as a processor-coordinate reference generator.
 
+    This Python API wraps an already instantiated processor whose dimensions
+    are resolved and pretrained weights are loaded by the caller. It does not
+    load checkpoints or resolve nested Hydra ``auto`` fields.
+
     The wrapped processor receives ``x`` and ``global_cond`` unchanged. Its
     ``map`` output must already use the same ambient or latent coordinates,
     horizon, and channels as the outer residual processor target. In particular,

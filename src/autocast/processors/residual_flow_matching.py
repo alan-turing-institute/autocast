@@ -6,7 +6,7 @@ from torch import nn
 
 from autocast.nn.noise.source import FlowSource
 from autocast.processors.flow_matching import FlowMatchingProcessor
-from autocast.processors.residual_normalization import ResidualStandardizer
+from autocast.processors.residual_normalization import ResidualNormalizer
 from autocast.processors.residual_reference import ReferenceTrajectory
 from autocast.types import EncodedBatch, Tensor
 
@@ -20,6 +20,8 @@ class ResidualFlowMatchingProcessor(FlowMatchingProcessor):
     processor states before any decoder is applied.
     """
 
+    standardizer: ResidualNormalizer | None  # Legacy attribute alias.
+
     def __init__(
         self,
         *,
@@ -30,7 +32,8 @@ class ResidualFlowMatchingProcessor(FlowMatchingProcessor):
         n_channels_out: int = 1,
         integrator: str = "euler",
         source: FlowSource | None = None,
-        standardizer: ResidualStandardizer | None = None,
+        residual_normalizer: ResidualNormalizer | None = None,
+        standardizer: ResidualNormalizer | None = None,
     ) -> None:
         super().__init__(
             backbone=backbone,
@@ -41,17 +44,58 @@ class ResidualFlowMatchingProcessor(FlowMatchingProcessor):
             source=source,
         )
         self.reference = reference
-        if standardizer is not None and (
-            standardizer.n_steps_output != n_steps_output
-            or standardizer.n_channels != n_channels_out
+        if standardizer is not None:
+            if residual_normalizer is not None:
+                msg = "Cannot provide both standardizer and residual_normalizer."
+                raise ValueError(msg)
+            residual_normalizer = standardizer
+        if residual_normalizer is not None and not isinstance(
+            residual_normalizer, ResidualNormalizer
+        ):
+            msg = "residual_normalizer must be a ResidualNormalizer."
+            raise TypeError(msg)
+        if residual_normalizer is not None and (
+            residual_normalizer.n_steps_output != n_steps_output
+            or residual_normalizer.n_channels != n_channels_out
         ):
             msg = (
-                "Residual standardizer dimensions must match the processor "
+                "Residual normalizer dimensions must match the processor "
                 f"(expected T={n_steps_output}, C={n_channels_out}; received "
-                f"T={standardizer.n_steps_output}, C={standardizer.n_channels})."
+                f"T={residual_normalizer.n_steps_output}, "
+                f"C={residual_normalizer.n_channels})."
             )
             raise ValueError(msg)
-        self.standardizer = standardizer
+        self.residual_normalizer = residual_normalizer
+        self.register_load_state_dict_pre_hook(self._load_legacy_statistics)
+
+    def __getattr__(self, name: str):
+        """Resolve the legacy name through PyTorch's registered module lookup."""
+        return super().__getattr__(
+            "residual_normalizer" if name == "standardizer" else name
+        )
+
+    def __setattr__(self, name: str, value) -> None:
+        """Map legacy writes to the single registered residual normalizer."""
+        super().__setattr__(
+            "residual_normalizer" if name == "standardizer" else name, value
+        )
+
+    @staticmethod
+    def _load_legacy_statistics(_module, state_dict, prefix, *args) -> None:
+        # Prefix-aware loading also covers nested models and EMA callback state.
+        for key in list(state_dict):
+            if key.startswith(prefix + "standardizer."):
+                canonical = (
+                    prefix
+                    + "residual_normalizer."
+                    + key.removeprefix(prefix + "standardizer.")
+                )
+                if canonical in state_dict:
+                    msg = (
+                        "Checkpoint contains both standardizer and residual_normalizer."
+                    )
+                    raise RuntimeError(msg)
+                state_dict[canonical] = state_dict.pop(key)
 
     def reference_trajectory(
         self,
@@ -85,8 +129,10 @@ class ResidualFlowMatchingProcessor(FlowMatchingProcessor):
         generated_residual = super().map_from_source(
             x, global_cond, source_states=source_states
         )
-        if self.standardizer is not None:
-            generated_residual = self.standardizer.unstandardize(generated_residual)
+        if self.residual_normalizer is not None:
+            generated_residual = self.residual_normalizer.denormalize(
+                generated_residual
+            )
         return reference + generated_residual
 
     def target_residual(self, batch: EncodedBatch) -> Tensor:
@@ -108,8 +154,8 @@ class ResidualFlowMatchingProcessor(FlowMatchingProcessor):
     def loss(self, batch: EncodedBatch) -> Tensor:
         """Match the source distribution to target-minus-reference residuals."""
         target_residual = self.target_residual(batch)
-        if self.standardizer is not None:
-            target_residual = self.standardizer.standardize(target_residual)
+        if self.residual_normalizer is not None:
+            target_residual = self.residual_normalizer.normalize(target_residual)
         return self._flow_matching_loss(
             target_states=target_residual,
             conditioning=batch.encoded_inputs,

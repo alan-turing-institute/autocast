@@ -1,6 +1,8 @@
 import pytest
 import torch
 from einops import repeat
+from hydra.utils import instantiate
+from omegaconf import OmegaConf
 from torch import nn
 
 from autocast.processors.base import Processor
@@ -76,3 +78,51 @@ def test_trainable_processor_reference_preserves_gradients():
 
     assert processor.scale.grad is not None
     assert x.grad is not None
+
+
+def test_pretrained_reference_loads_resolved_config_and_processor_weights(tmp_path):
+    processor = _RecordingProcessor()
+    with torch.no_grad():
+        processor.scale.fill_(7.0)
+    config_path = tmp_path / "resolved_config.yaml"
+    OmegaConf.save(
+        OmegaConf.create(
+            {
+                "model": {
+                    "processor": {
+                        "_target_": f"{__name__}._RecordingProcessor",
+                        "n_steps_output": 3,
+                    }
+                }
+            }
+        ),
+        config_path,
+    )
+    checkpoint_path = tmp_path / "processor.ckpt"
+    torch.save(
+        {
+            "state_dict": {
+                f"processor.{key}": value
+                for key, value in processor.state_dict().items()
+            }
+        },
+        checkpoint_path,
+    )
+
+    loaded = instantiate(OmegaConf.load(config_path).model.processor)
+    state = torch.load(checkpoint_path, map_location="cpu", weights_only=False)[
+        "state_dict"
+    ]
+    loaded.load_state_dict(
+        {
+            key.removeprefix("processor."): value
+            for key, value in state.items()
+            if key.startswith("processor.")
+        },
+        strict=True,
+    )
+    reference = ProcessorReference(loaded)
+    torch.testing.assert_close(
+        reference(torch.ones(1, 1, 2, 2, 1)), torch.full((1, 3, 2, 2, 1), 7.0)
+    )
+    assert not loaded.scale.requires_grad
