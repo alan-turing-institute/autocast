@@ -206,6 +206,8 @@ samplers, implicit batching via `batch_size`, and `drop_last=False`; iterable
 datasets, subset/replacement samplers, sampler subclasses or an explicit
 `batch_sampler` need fixed statistics instead. Represent a training
 subset as a dataset rather than a sampler to use automatic distributed fitting.
+Sampler data-source lengths must match the loader's dataset length, and both the
+loader and any distributed sampler must use `drop_last=False`.
 Fitting covers the full training split, independently of `limit_train_batches`.
 Mean, scale and the fitted flag are checkpoint buffers, so loading/resuming skips
 refitting. Omit the transform with `model.processor.residual_normalizer=null`,

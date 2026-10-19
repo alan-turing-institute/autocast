@@ -14,6 +14,7 @@ from torch.utils.data import (
     BatchSampler,
     DataLoader,
     Dataset,
+    DistributedSampler,
     RandomSampler,
     SequentialSampler,
     SubsetRandomSampler,
@@ -352,10 +353,15 @@ def test_distributed_fitting_combines_disjoint_shards_including_empty_rank(n_sam
         "batch_subset",
         "batch_full",
         "batch_drop_last",
+        "short_sequential",
+        "short_random",
+        "short_distributed",
+        "distributed_drop_last",
     ],
 )
 def test_distributed_fitting_rejects_nonstandard_sampling(sampling, monkeypatch):
     batches = _encoded_batches()
+    batches.append(batches[0])  # An odd population exposes distributed drop_last.
 
     class SubsetSequentialSampler(SequentialSampler):
         def __iter__(self):
@@ -379,6 +385,14 @@ def test_distributed_fitting_rejects_nonstandard_sampling(sampling, monkeypatch)
             "replacement": RandomSampler(batches, replacement=True),
             "subset": SubsetRandomSampler([0]),
             "subclass": SubsetSequentialSampler(batches),
+            "short_sequential": SequentialSampler(batches[:1]),
+            "short_random": RandomSampler(batches[:1], num_samples=len(batches)),
+            "short_distributed": DistributedSampler(
+                cast(Dataset, batches[:1]), num_replicas=2, rank=0
+            ),
+            "distributed_drop_last": DistributedSampler(
+                cast(Dataset, batches), num_replicas=2, rank=0, drop_last=True
+            ),
         }[sampling]
         loader = DataLoader(cast(Dataset, batches), batch_size=None, sampler=sampler)
     datamodule = _PrecisionDataModule(batches)

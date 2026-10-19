@@ -201,6 +201,20 @@ class ResidualStatisticsCallback(Callback):
                             DistributedSampler,
                         )
                         or (
+                            isinstance(
+                                loader.sampler, (RandomSampler, SequentialSampler)
+                            )
+                            and len(loader.sampler.data_source) != len(loader.dataset)
+                        )
+                        or (
+                            isinstance(loader.sampler, DistributedSampler)
+                            and (
+                                len(cast(Sized, loader.sampler.dataset))
+                                != len(loader.dataset)
+                                or loader.sampler.drop_last
+                            )
+                        )
+                        or (
                             isinstance(loader.sampler, RandomSampler)
                             and (
                                 loader.sampler.replacement
@@ -210,8 +224,8 @@ class ResidualStatisticsCallback(Callback):
                     ):
                         msg = (
                             "Distributed residual fitting requires a finite map-style "
-                            "DataLoader with standard samplers, implicit batching "
-                            "and drop_last=False; "
+                            "DataLoader with standard samplers covering the full "
+                            "dataset, implicit batching and drop_last=False; "
                             "provide fixed statistics."
                         )
                         raise ValueError(msg)
