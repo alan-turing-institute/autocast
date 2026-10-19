@@ -73,6 +73,57 @@ optimizer updates and sample counts when comparing training budgets.
 
 ### Matched-update residual flow matching
 
+The current pair uses **128,000 optimizer updates** and **step-based cosine
+decay from 1e-4 to zero** for both ambient and cached-latent FM. Each uses batch
+256 per GPU, one input/output frame and stride one. The afCRPS controls retain
+their 256-epoch schedule, which also gives 128,000 updates on four GPUs.
+Neither FM preset has an additional epoch limit that binds before this budget.
+Validation and best-checkpoint selection occur every 500 updates, with full
+snapshots every 8,000. The trainer does not install automatic early stopping.
+
+- `flow_matching_residual_12block_one_output_128k` trains the processor on the
+  existing latent cache, using the `processor` training entry point.
+- `flow_matching_residual_ambient_12block_one_output_128k` uses identity codecs
+  and the original normalized raw fields, using the `epd` training entry point.
+  Patch 4 on 64x64 fields and patch 1 on 16x16 latents both give 256 tokens.
+  The shared transformer blocks, optimizer and checkpoint policy are matched.
+
+Ambient FM's `model.train_in_latent_space=true` selects the processor-owned
+flow objective; the identity encoder means those processor coordinates are
+still normalized physical fields. Its reference is the last clean field and
+its target is `y - x`. Residual statistics are fitted from training increments
+in those normalized coordinates. Both presets keep outer
+`model.residual_prediction=false`, since the processor adds the reference.
+Only latent FM requires the fixed AE and cache; its target is `E(y) - E(x)`.
+Both transport an IID Gaussian field through the learned flow, with flow time
+conditioning AdaLN and no additional AdaLN noise draw.
+
+The training loaders retain partial batches. At 64,000 windows, afCRPS has 500
+full updates per epoch, while FM has 62 full updates and one half batch per
+epoch (128 examples per GPU in the last batch). Thus 2,032 FM epochs would give
+128,016 updates; the step limit avoids that rounding. At the exact update
+budget FM reaches 2,031 full epochs plus 47 updates, with a partly completed
+final epoch. No windows are dropped to force equal batch sizes.
+
+Compose either preset locally without fitting or accessing real data:
+
+```bash
+uv run --frozen python -m autocast.scripts.train.encoder_processor_decoder \
+  local_experiment=swe64s/flow_matching_residual_ambient_12block_one_output_128k \
+  --cfg job --resolve
+
+uv run --frozen python -m autocast.scripts.train.processor \
+  local_experiment=swe64s/flow_matching_residual_12block_one_output_128k \
+  datamodule.data_path=/path/to/shallow_water2d_stochastic_64_latents_ef93555 \
+  --cfg job --resolve
+```
+
+Before evaluation or launch, adapt the study evaluation wrapper for the
+one-output task and for ambient FM without an AE. Its original four-output,
+latent-only assumptions do not apply to this pair. Evaluate both against raw
+physical truth at matching leads, with the cached-latent source mapping and AE
+hash verified. Automatic stopping patience is a separate launch decision.
+
 `flow_matching_residual_12block_one_output_128k.yaml` uses the merged residual FM
 implementation from [PR #445](https://github.com/alan-turing-institute/autocast/pull/445).
 Its training-only statistics use the canonical `residual_normalizer` interface.

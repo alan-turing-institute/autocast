@@ -21,6 +21,7 @@ datamodule:
 
 model:
   n_members: 1  # The processor-owned FM objective samples once per condition.
+  residual_prediction: false  # The processor reconstructs its reference already.
   processor:
     reference:
       channel_indices: null

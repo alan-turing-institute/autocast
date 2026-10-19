@@ -1,6 +1,7 @@
 """Matched-update residual FM settings and synthetic cached-latent checks."""
 
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -14,15 +15,21 @@ from torch.utils.data import DistributedSampler, TensorDataset
 
 from autocast.callbacks.residual_statistics import ResidualStatisticsCallback
 from autocast.models.processor import ProcessorModel
-from autocast.nn.noise.source import IIDGaussianSource
+from autocast.nn.noise.source import IIDGaussianSource, ZeroSource
 from autocast.processors.residual_flow_matching import ResidualFlowMatchingProcessor
 from autocast.processors.residual_normalization import ResidualNormalizer
 from autocast.processors.residual_reference import LastFrameReference
-from autocast.scripts.setup import setup_datamodule, setup_processor_model
+from autocast.scripts.setup import (
+    setup_datamodule,
+    setup_epd_model,
+    setup_processor_model,
+)
 from autocast.scripts.training import _ensure_residual_statistics_callback, run_training
+from autocast.types import Batch
 
 ROOT = Path(__file__).resolve().parents[2]
 PRESET = "flow_matching_residual_12block_one_output_128k"
+AMBIENT_PRESET = "flow_matching_residual_ambient_12block_one_output_128k"
 CRPS_PRESET = "afcrps_global256_residual_one_output_12block_256ep_8h"
 
 
@@ -125,6 +132,105 @@ def test_backbone_batch_matches_crps_and_update_budget_is_not_epoch_limited():
     assert fm_steps_per_epoch == 63
     assert fm.trainer.max_steps == crps_steps_per_epoch * crps.trainer.max_epochs
     assert fm.trainer.max_epochs * fm_steps_per_epoch > fm.trainer.max_steps
+
+
+@pytest.mark.parametrize("distributed", [False, True])
+def test_ambient_residual_fm_matches_latent_budget_and_backbone(distributed):
+    cfg = _config(AMBIENT_PRESET, distributed=distributed)
+    latent = _config(distributed=distributed)
+    assert OmegaConf.to_container(
+        cfg.optimizer, resolve=True
+    ) == OmegaConf.to_container(latent.optimizer, resolve=True)
+    assert OmegaConf.to_container(cfg.trainer, resolve=True) == OmegaConf.to_container(
+        latent.trainer, resolve=True
+    )
+    expected_processor = OmegaConf.to_container(latent.model.processor, resolve=True)
+    assert isinstance(expected_processor, dict)
+    expected_processor["backbone"]["patch_size"] = 4
+    assert (
+        OmegaConf.to_container(cfg.model.processor, resolve=True) == expected_processor
+    )
+    assert cfg.trainer.max_steps == cfg.optimizer.cosine_steps == 128000
+    assert cfg.optimizer.scheduler_interval == "step"
+    assert cfg.datamodule.batch_size == 256
+    assert cfg.datamodule.n_steps_input == cfg.datamodule.n_steps_output == 1
+    assert cfg.datamodule.stride == 1
+    assert cfg.datamodule.start_frame == 0
+    assert "shallow_water2d_stochastic_64_b43bd32" in cfg.datamodule.data_path
+    assert cfg.datamodule.normalization_path == f"{cfg.datamodule.data_path}/stats.yml"
+    assert cfg.datamodule.use_normalization
+    assert cfg.autoencoder_checkpoint is None
+    assert cfg.model.encoder._target_.endswith("IdentityEncoder")
+    assert cfg.model.decoder._target_.endswith("IdentityDecoder")
+    assert cfg.model.train_in_latent_space
+    assert not cfg.model.residual_prediction
+    assert cfg.model.freeze_encoder_decoder
+    assert cfg.model.n_members == 1
+    assert cfg.model.loss_func is None
+    assert cfg.model.train_metrics == cfg.model.val_metrics == []
+    assert (64 // cfg.model.processor.backbone.patch_size) ** 2 == 16**2
+    if distributed:
+        assert cfg.trainer.devices == 4
+        assert cfg.logging.wandb.enabled
+        assert cfg.logging.wandb.mode == "online"
+
+
+def test_ambient_residual_fm_gradients_and_zero_correction_persistence():
+    cfg = _config(AMBIENT_PRESET)
+    batch = Batch(
+        input_fields=torch.randn(2, 1, 64, 64, 3),
+        output_fields=torch.randn(2, 1, 64, 64, 3),
+        constant_scalars=torch.full((2, 1), 0.1),
+        constant_fields=None,
+    )
+    stats = {
+        "channel_count": 3,
+        "n_steps_input": 1,
+        "n_steps_output": 1,
+        "example_batch": batch,
+    }
+    datamodule = SimpleNamespace(train_dataset=SimpleNamespace(norm=None))
+    model = setup_epd_model(cfg, stats, cast(Any, datamodule))
+    processor = cast(ResidualFlowMatchingProcessor, model.processor)
+    encoded = model.encoder_decoder.encoder.encode_batch(batch)
+    residual = processor.target_residual(encoded)
+    torch.testing.assert_close(residual, batch.output_fields - batch.input_fields)
+    assert not model.residual_prediction
+    assert not any(p.requires_grad for p in model.encoder_decoder.parameters())
+    normalizer = processor.residual_normalizer
+    assert normalizer is not None
+    values = rearrange(residual, "b t ... c -> t (b ...) c")
+    scale, mean = torch.std_mean(values, dim=1, correction=0)
+    normalizer.set_statistics(mean=mean, scale=scale)
+    loss, prediction = model.loss(batch)
+    assert prediction is None
+    assert torch.isfinite(loss)
+    loss.backward()
+    assert all(
+        p.grad is not None and torch.isfinite(p.grad).all()
+        for p in processor.parameters()
+        if p.requires_grad
+    )
+    blocks = processor.flow_matching_model.get_submodule("vit.blocks")
+    assert sum(p.numel() for p in blocks.parameters()) == 10109376
+    scheduler_config = cast(dict[str, Any], model.configure_optimizers())[
+        "lr_scheduler"
+    ]
+    assert scheduler_config["interval"] == "step"
+    multiplier = scheduler_config["scheduler"].lr_lambdas[0]
+    assert multiplier(0) == 1
+    assert multiplier(64000) == pytest.approx(0.5)
+    assert multiplier(128000) == 0
+
+    # Zero residual in identity-codec coordinates is exact persistence.
+    processor.source = ZeroSource()
+    processor.flow_ode_steps = 1
+    with torch.no_grad():
+        for parameter in processor.parameters():
+            parameter.zero_()
+        normalizer.set_statistics(mean=torch.zeros(1, 3), scale=torch.ones(1, 3))
+        forecast = model(batch)
+    torch.testing.assert_close(forecast, batch.input_fields)
 
 
 @pytest.fixture

@@ -1,0 +1,27 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/flow_matching_residual_12block_one_output_128k
+  - override /datamodule: shallow_water2d
+  - override /encoder@model.encoder: identity
+  - override /decoder@model.decoder: identity
+  - _self_
+
+experiment_name: swe64s_flow_matching_residual_ambient_12block_one_output_128k
+
+autoencoder_checkpoint: null
+
+datamodule:
+  data_path: "${oc.env:AUTOCAST_DATASETS,./datasets}/shallow_water2d_stochastic_64_b43bd32"
+  normalization_path: ${.data_path}/stats.yml
+  use_normalization: true
+  start_frame: 0
+
+model:
+  # Identity codecs keep processor coordinates equal to normalized h/u/v.
+  # This selects the processor-owned flow objective, despite the setting name.
+  train_in_latent_space: true
+  freeze_encoder_decoder: true
+  residual_prediction: false
+  processor:
+    backbone:
+      patch_size: 4  # 64x64 fields -> the same 256 tokens as 16x16/patch-1.
