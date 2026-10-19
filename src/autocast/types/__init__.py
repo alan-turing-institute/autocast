@@ -9,6 +9,7 @@ from .batch import (
 )
 from .types import (
     ArrayLike,
+    FieldTensor,
     Input,
     RolloutOutput,
     Tensor,
@@ -22,6 +23,8 @@ from .types import (
     TensorBTSC,
     TensorBTSCM,
     TensorC,
+    TensorInexactBTSC,
+    TensorInexactBTSCM,
     TensorS,
     TensorSC,
     TensorTSC,
@@ -33,6 +36,7 @@ __all__ = [
     "BatchT",
     "EncodedBatch",
     "EncodedSample",
+    "FieldTensor",
     "Input",
     "RolloutOutput",
     "Sample",
@@ -47,6 +51,8 @@ __all__ = [
     "TensorBTSC",
     "TensorBTSCM",
     "TensorC",
+    "TensorInexactBTSC",
+    "TensorInexactBTSCM",
     "TensorS",
     "TensorSC",
     "TensorTSC",
