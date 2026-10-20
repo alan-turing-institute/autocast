@@ -223,7 +223,7 @@ this study; no new submission is implied. All preset names below live in
 | Latent residual FM, using the 1,000-trajectory AE | `flow_matching_residual_12block_one_output_128k` | Prepared; `--run latent_residual_fm`; verify the pinned cache/AE identity on target |
 | Multiscale AdaLN, afCRPS / CRPS-FFT | Two spatial-4D presets above | Prepared; explicit `--run multiscale_adaln_afcrps` / `multiscale_adaln_crps_fft` |
 | Multiscale concat, afCRPS / CRPS-FFT | Two concat-4D presets above | Prepared; explicit `--run multiscale_concat_afcrps` / `multiscale_concat_crps_fft` |
-| IID spatial-1D CRPS-FFT + online anomaly-power auxiliary | `crps_fft_anomaly_spatial1d_residual_one_output_12block_256ep_8h` | Config tested; **blocked on training-only weight calibration**, not ready to launch |
+| IID spatial-1D CRPS-FFT + online anomaly-power auxiliary | `crps_fft_anomaly_spatial1d_residual_one_output_12block_256ep_8h` | Training-only calibration complete; fixed auxiliary weight `0.12492216134130599` |
 | afCRPS alone + online anomaly-power auxiliary | No dedicated preset yet | Discussed extension; prepare/calibrate separately if selected |
 | IID spatial-4D noise control | No matched 12-block preset yet | Optional control for correlation at fixed noise width; not silently added to the queue |
 | Older four-mode spatial-1D afCRPS / CRPS-FFT | Existing `*_structured_spatial1d_*` presets | Retained narrowband controls; not the multiscale replacement or an automatic launch choice |
@@ -303,11 +303,15 @@ training split and normalization, scores training windows only, and records
 their indices, band powers/discrepancies and gradient ratios. It never opens
 validation/test trajectories, restores optimizer state, trains, contacts W&B
 or submits a job. Existing records cannot be overwritten. The output's printed
-`model.loss_func.weights.2=...` override supplies the required third weight.
+`model.loss_func.weights.2=...` override supplies a calibrated third weight.
 Save and review that record before a launch using the usual four-GPU/W&B
-settings. The checked-in preset intentionally leaves this weight mandatory
-(`???`); **no numerical weight has been calibrated or approved by local tests**.
-The other prepared follow-up commands are unchanged.
+settings. The preset now pins `0.12492216134130599`, measured with the selected
+spatial CRPS-FFT checkpoint at update 36,000, eight disjoint training batches
+of 32 windows and seed 153164. The weighted auxiliary/base output-gradient
+RMS ratios were 0.0433883 to 0.1 on those batches. No validation examples or
+simulator redraws selected the weight, and the fresh fit does not restore the
+calibration checkpoint. Tests check this recorded default, not whether the
+weight generalizes during training. The other prepared commands are unchanged.
 
 ### Matched-update residual flow matching
 

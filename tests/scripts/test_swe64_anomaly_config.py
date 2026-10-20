@@ -85,8 +85,15 @@ def test_auxiliary_has_physical_scale_bands_and_complete_diagonal_coverage():
     assert weights[4, 22] > 0
 
 
-def test_uncalibrated_weight_cannot_be_instantiated():
+def test_default_weight_is_fixed_to_the_training_only_calibration():
     cfg = _config()
+    assert cfg.model.loss_func.weights == [1.0, 0.1, 0.12492216134130599]
+    assert instantiate(cfg.model.loss_func).weights[2] == 0.12492216134130599
+
+
+def test_explicit_uncalibrated_weight_cannot_be_instantiated():
+    cfg = _config()
+    cfg.model.loss_func.weights[2] = "???"
     assert OmegaConf.is_missing(cfg.model.loss_func.weights, 2)
     with pytest.raises(MissingMandatoryValue):
         instantiate(cfg.model.loss_func)

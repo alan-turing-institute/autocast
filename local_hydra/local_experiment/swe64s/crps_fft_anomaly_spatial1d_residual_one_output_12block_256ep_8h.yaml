@@ -7,9 +7,10 @@ experiment_name: swe64s_crps_fft_anomaly_spatial1d_residual_one_output_12block_2
 
 model:
   loss_func:
-    # Retain both baseline terms exactly. The third weight must be calibrated
-    # on training examples before launch, not guessed from objective values.
-    weights: [1.0, 0.1, "???"]
+    # Retain both baseline terms. Training-only calibration: eight batches of
+    # 32 windows, eight members, seed 153164; <=10% output-gradient RMS ratio.
+    # Fixed for this benchmark; not a guarantee during subsequent training.
+    weights: [1.0, 0.1, 0.12492216134130599]
     losses:
       - _target_: autocast.losses.AlphaFairCRPSLoss
         alpha: 0.95
