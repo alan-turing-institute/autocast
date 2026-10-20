@@ -1,3 +1,4 @@
+from autocast.losses.anomaly import SpectralSpreadErrorLoss
 from autocast.losses.composite import WeightedSumLoss
 from autocast.losses.decomposition import (
     ComponentBranch,
@@ -47,6 +48,7 @@ __all__ = [
     "ScoringBranch",
     "SequentialDecomposition",
     "SmoothingOperator",
+    "SpectralSpreadErrorLoss",
     "TransformedLoss",
     "WeightedSumLoss",
 ]

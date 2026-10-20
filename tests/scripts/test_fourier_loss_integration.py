@@ -16,6 +16,7 @@ from autocast.losses import (
     AlphaFairCRPSLoss,
     CoefficientCRPSLoss,
     MCDropoutMSEL2Loss,
+    SpectralSpreadErrorLoss,
     WeightedSumLoss,
 )
 from autocast.models.encoder_processor_decoder_ensemble import (
@@ -147,12 +148,14 @@ def test_fourier_preset_rejects_latent_training(
 
 @pytest.mark.parametrize("residual_prediction", [False, True])
 @pytest.mark.parametrize("radial", [False, True])
+@pytest.mark.parametrize("spectral_calibration", [False, True])
 def test_fourier_preset_trains_on_decoded_ensemble_states(
     REPO_ROOT: Path,
     make_toy_batch,
     dummy_datamodule,
     residual_prediction: bool,
     radial: bool,
+    spectral_calibration: bool,
 ):
     torch.manual_seed(19)
     batch = make_toy_batch(t_in=2, t_out=3, w=4, h=6, c=2)
@@ -164,6 +167,15 @@ def test_fourier_preset_trains_on_decoded_ensemble_states(
             "_target_": "autocast.losses.RadialFourierDecomposition",
             "edges": [0.25, 0.75],
         }
+    if spectral_calibration:
+        cfg.model.loss_func.losses.append(
+            {
+                "_target_": "autocast.losses.SpectralSpreadErrorLoss",
+                "edges": [0.2, 0.4, 0.75],
+                "power_scale": 2.0,
+            }
+        )
+        cfg.model.loss_func.weights.append(0.01)
     model = setup_epd_model(cfg, _stats(batch), dummy_datamodule)
     assert isinstance(model, EncoderProcessorDecoderEnsemble)
 
@@ -194,6 +206,10 @@ def test_fourier_preset_trains_on_decoded_ensemble_states(
         AlphaFairCRPSLoss(alpha=0.95)(predictions, batch.output_fields)
         + 0.1 * expected_fourier
     )
+    if spectral_calibration:
+        expected_loss += 0.01 * SpectralSpreadErrorLoss(
+            [0.2, 0.4, 0.75], power_scale=2.0
+        )(predictions, batch.output_fields)
     torch.testing.assert_close(loss, expected_loss)
     loss.backward()
     gradients = [parameter.grad for parameter in model.processor.parameters()]
@@ -205,6 +221,29 @@ def test_fourier_preset_trains_on_decoded_ensemble_states(
     assert any(
         gradient is not None and gradient.abs().sum() > 0 for gradient in gradients
     )
+
+
+def test_spectral_calibration_alone_propagates_decoded_field_guard(
+    REPO_ROOT: Path, make_toy_batch, dummy_datamodule
+):
+    batch = make_toy_batch(t_in=1, t_out=1, w=4, h=6, c=2)
+    cfg = _small_model_config(REPO_ROOT, batch)
+    cfg.model.loss_func = {
+        "_target_": "autocast.losses.WeightedSumLoss",
+        "weights": [1.0, 0.01],
+        "losses": [
+            {"_target_": "autocast.losses.AlphaFairCRPSLoss", "alpha": 0.95},
+            {
+                "_target_": "autocast.losses.SpectralSpreadErrorLoss",
+                "edges": [0.2, 0.4, 0.75],
+            },
+        ],
+    }
+    loss = instantiate(cfg.model.loss_func)
+    assert loss.requires_ambient_predictions
+    cfg.model.train_in_latent_space = True
+    with pytest.raises(ValueError, match=r"set model\.train_in_latent_space=false"):
+        setup_epd_model(cfg, _stats(batch), dummy_datamodule)
 
 
 def test_existing_processor_bound_loss_remains_available(REPO_ROOT: Path):
@@ -232,7 +271,11 @@ def test_fourier_preset_runtime_typing_in_fresh_process(REPO_ROOT: Path):
         from hydra import compose, initialize_config_dir
         from hydra.utils import instantiate
 
-        from autocast.losses import CoefficientCRPSLoss
+        from autocast.losses import (
+            CoefficientCRPSLoss,
+            SpectralSpreadErrorLoss,
+            WeightedSumLoss,
+        )
 
         config_dir = str(Path(sys.argv[1]) / "src/autocast/configs")
         with initialize_config_dir(version_base=None, config_dir=config_dir):
@@ -241,6 +284,9 @@ def test_fourier_preset_runtime_typing_in_fresh_process(REPO_ROOT: Path):
                 overrides=["loss@model.loss_func=ensemble_fourier_crps"],
             )
         loss = instantiate(cfg.model.loss_func)
+        loss = WeightedSumLoss(
+            [loss, SpectralSpreadErrorLoss([0.2, 0.4, 0.75])], [1.0, 0.01]
+        )
         prediction = torch.randn(2, 3, 4, 6, 2, 3, requires_grad=True)
         target = torch.randn(2, 3, 4, 6, 2)
         loss(prediction, target).backward()

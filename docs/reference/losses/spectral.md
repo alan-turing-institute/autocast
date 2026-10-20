@@ -164,6 +164,88 @@ For coefficient CRPS it instead scales the band score by `1 / sqrt(count)`;
 it does **not** compute mean CRPS over just the occupied modes or automatically
 equalize bands. It is disabled by default.
 
+## Online anomaly-power regularization
+
+`SpectralSpreadErrorLoss` is an optional **spread/error calibration regularizer**
+that can train jointly with CRPS or CRPS-FFT. It needs only the current predicted
+ensemble and one observed future per input: no frozen teacher, cached conditional
+mean or simulator redraws. It does not change any existing preset or default.
+
+For members $\hat y_m$, compute their mean $\hat\mu$, differentiable predicted
+anomalies $a_m=\hat y_m-\hat\mu$ and observed residual
+$e=y-\operatorname{stopgrad}(\hat\mu)$. Using orthonormal spatial FFTs, form
+
+$$
+S(k)=\frac{1}{M-1}\sum_m|\mathcal F(a_m)(k)|^2,
+\qquad E(k)=|\mathcal F(e)(k)|^2.
+$$
+
+Power is computed **before** member averaging, not from the zero-valued mean
+anomaly field. For each lead and channel separately, average these powers over
+the batch and over modes within each radial band. Denote those averages by
+$\overline S_{tjc}$ and $\overline E_{tjc}$. The scalar auxiliary is
+
+$$
+L_{\mathrm{spread}}=
+\operatorname{mean}_{t,j,c}\left\{
+\left[\frac{(1+1/M)\overline S_{tjc}-\overline E_{tjc}}{p_0}\right]^2
+\right\},
+$$
+
+where $p_0$ is the fixed `power_scale`. At a correctly specified model with
+independent members and an independent observed future,
+$\mathbb E[E]=(1+1/M)\mathbb E[S]$: the observed residual contains the ensemble
+mean's sampling error. The factor corrects this expected moment relation, not
+all finite-ensemble or finite-batch optimization effects.
+
+The spatial FFT assumes a regular periodic grid, as in the SWE benchmark.
+
+Radial edges use the same cycles-per-grid-cell convention as
+`RadialFourierDecomposition`. Unlike that coefficient selector, this loss
+computes **mean power over occupied modes** within each band. Empty bands are
+omitted, DC is a separate bin by default, and modes beyond the final edge are
+unscored. For a square `N x N` grid, edges `(j + 0.5) / N` reproduce
+nearest-integer-radius shells; include a final edge covering the diagonal
+Nyquist modes if all frequencies should contribute. Only spatial axes are
+transformed; channels and forecast leads are never pooled together before
+forming discrepancies. Batch means are process-local under DDP, so local batch
+size and band choices are part of the objective, not just implementation details.
+
+For example, to add this term to an existing scalar CRPS-FFT objective:
+
+```python
+from autocast.losses import SpectralSpreadErrorLoss, WeightedSumLoss
+
+# crps_fft is an existing WeightedSumLoss, as constructed above.
+# Use the reviewed auxiliary_weight for the experiment; it is not set here.
+auxiliary = SpectralSpreadErrorLoss(
+    edges=[0.05, 0.125, 0.25, 0.5, 0.71],
+    include_dc=True,
+    power_scale=1.0,
+)
+joint_loss = WeightedSumLoss([crps_fft, auxiliary], [1.0, auxiliary_weight])
+```
+
+The same constructor is accessible through Hydra using
+`_target_: autocast.losses.SpectralSpreadErrorLoss` inside a `WeightedSumLoss`.
+It marks decoded fields as required and supports reconstructed persistence-
+residual predictions. EPD rejects latent-space training with this ambient-field
+objective. A flattened latent representation must not be interpreted as a
+physical spatial grid. Inputs use the caller's normalization, with no automatic
+denormalization; `power_scale` has input-squared units. No per-mode inverse-power
+weights or running statistics are fitted. Half/bfloat16 inputs are promoted to
+float32 before mean subtraction and the FFT; float64 inputs retain precision.
+
+**Interpretation and limits:** this is a heuristic regularizer, not a proper
+scoring rule or a direct observation of conditional anomaly power. Mean error
+contributes to observed residual power and can encourage excess spread. Stop-
+gradient prevents directly moving that target via the mean, but does not remove
+the error. Batch-average agreement can hide opposing errors between states;
+radial power also discards phase and directional information. An ensemble with
+identical members has zero variance gradient at exact collapse. Retain the main
+forecast score, and assess calibration, balance and rollout behaviour separately.
+No improved training or forecast performance is assumed by this implementation.
+
 ## Composition and extension contracts
 
 - `WeightedSumLoss` sums whole-loss outputs with non-negative weights.
@@ -195,5 +277,8 @@ errors. The supplied EPD preset returns a scalar and avoids that ambiguity.
    :members:
 
 .. automodule:: autocast.losses.spectral
+   :members:
+
+.. automodule:: autocast.losses.anomaly
    :members:
 ```

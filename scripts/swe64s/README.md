@@ -94,6 +94,17 @@ otherwise match the corresponding afCRPS control. Native `val_loss` includes
 both terms; use the retained common `val_afcrps` and physical evaluation
 metrics for cross-loss comparisons.
 
+An online auxiliary is available as
+[`SpectralSpreadErrorLoss`](../../src/autocast/losses/anomaly.py), composed
+through the existing `WeightedSumLoss` API. It compares batch-mean radial
+anomaly power with observed residual power using the current ensemble mean,
+stop-gradient on the observation reference and a finite-member moment
+correction. It requires neither simulator redraws nor a frozen mean cache.
+The [loss documentation](../../docs/reference/losses/spectral.md#online-anomaly-power-regularization)
+defines its normalization, process-local pooling and limitations. This addition
+does not enable it in any experiment: auxiliary weight, band edges and any
+fixed power scale remain to be reviewed before preparing a run.
+
 The structured source uses modes `(3,0),(0,3),(2,2),(2,-2)` on the 16x16 token
 grid. Four sine/cosine pairs use eight Gaussian coefficients in the single
 noise channel, compared with 256 independent scalars in IID spatial noise.

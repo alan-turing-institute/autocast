@@ -13,7 +13,12 @@ from hydra.utils import instantiate
 from omegaconf import OmegaConf
 from the_well.data.normalization import ZScoreNormalization
 
-from autocast.losses import AlphaFairCRPSLoss, CoefficientCRPSLoss, WeightedSumLoss
+from autocast.losses import (
+    AlphaFairCRPSLoss,
+    CoefficientCRPSLoss,
+    SpectralSpreadErrorLoss,
+    WeightedSumLoss,
+)
 from autocast.models.encoder_processor_decoder_ensemble import (
     EncoderProcessorDecoderEnsemble,
 )
@@ -187,12 +192,23 @@ def test_launch_preview_preserves_the_explicit_allocation(name, monkeypatch):
 
 
 @pytest.mark.parametrize("name", FFT_PRESETS)
-def test_fourier_score_uses_reconstructed_states_with_finite_gradients(name):
+@pytest.mark.parametrize("spectral_calibration", [False, True])
+def test_fourier_score_uses_reconstructed_states_with_finite_gradients(
+    name, spectral_calibration
+):
     cfg = _config(name)
     # Keep real grid, patching, channel/noise layout and eight ensemble members.
     cfg.model.processor.hidden_dim = 16
     cfg.model.processor.n_layers = 1
     cfg.model.processor.num_heads = 2
+    if spectral_calibration:
+        cfg.model.loss_func.losses.append(
+            {
+                "_target_": "autocast.losses.SpectralSpreadErrorLoss",
+                "edges": [0.05, 0.125, 0.25, 0.5, 0.71],
+            }
+        )
+        cfg.model.loss_func.weights.append(0.01)
     norm = ZScoreNormalization(
         stats={
             "mean": {"h": 1.0, "u": 0.2, "v": -0.3},
@@ -245,7 +261,22 @@ def test_fourier_score_uses_reconstructed_states_with_finite_gradients(name):
         torch.fft.fftn(batch.output_fields, dim=(2, 3), norm="ortho"),
     )
     expected_loss = AlphaFairCRPSLoss(alpha=0.95)(prediction, batch.output_fields)
-    torch.testing.assert_close(loss, expected_loss + 0.1 * coefficient_score)
+    expected_loss += 0.1 * coefficient_score
+    if spectral_calibration:
+        auxiliary = SpectralSpreadErrorLoss([0.05, 0.125, 0.25, 0.5, 0.71])
+        auxiliary_loss = auxiliary(prediction, batch.output_fields)
+        expected_loss += 0.01 * auxiliary_loss
+        auxiliary_gradients = torch.autograd.grad(
+            auxiliary_loss,
+            tuple(p for p in model.processor.parameters() if p.requires_grad),
+            retain_graph=True,
+            allow_unused=True,
+        )
+        assert any(
+            grad is not None and torch.isfinite(grad).all() and grad.abs().sum() > 0
+            for grad in auxiliary_gradients
+        )
+    torch.testing.assert_close(loss, expected_loss)
     assert torch.isfinite(loss)
     loss.backward()
     assert all(
