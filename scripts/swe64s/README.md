@@ -265,6 +265,51 @@ uv run --frozen autocast processor --mode slurm --dry-run \
   logging.wandb.name=swe64s-fm-residual-12block-one-output-128k
 ```
 
+### Global Fourier and latent residual follow-ups
+
+The next pair reuses the presets above, without changing model defaults:
+
+| Run | Data | Training budget | LR |
+| --- | --- | --- | --- |
+| Global-256 CRPS-FFT | Original raw 200/20/20 | 256 epochs; 128,000 updates on four GPUs | Epoch cosine, 2e-4 to zero |
+| Latent residual FM | Cached original 200/20/20, encoded by the 1,000-trajectory AE | 128,000 updates | Step cosine, 1e-4 to zero |
+
+Both use one input/output frame and stride one. CRPS retains batch 32/GPU and
+eight members; FM uses batch 256/GPU and one source/time draw. These match the
+nominal update budget and backbone batch, not condition exposure or GPU time.
+The 1,000 trajectories train the frozen AE only: they do not enlarge the FM
+forecasting split. No AE retraining or recaching is required.
+
+[`followup_runs.json`](../../local_hydra/local_experiment/swe64s/followup_runs.json)
+pins the run choices and the cache/AE identity. The preparation helper prints
+the standard CLI commands, with four GPUs, explicit Slurm allocations, fresh
+output paths and W&B enabled. It does not create outputs, contact W&B, submit
+jobs, or verify remote data. The allocation ceilings remain eight hours for
+CRPS and 24 hours for FM; they are not the learning-rate horizons.
+Recreate the plan from the updated checkout on the target machine: its source
+commit and Hydra search path refer to the checkout running the helper.
+
+```bash
+uv run --frozen python scripts/swe64s/prepare_followups.py \
+  --datasets-root /projects/u6eo/autocast/datasets \
+  --output-root /projects/u6eo/autocast/outputs/swe64s/global-fft-latent-fm-20261020 \
+  --account brics.u6eo
+
+uv run --frozen python -m pytest -q \
+  tests/scripts/test_swe64_followup_runs.py \
+  tests/scripts/test_swe64_fourier_configs.py \
+  tests/scripts/test_swe64_residual_fm.py
+```
+
+Before launch, check the committed source, raw B statistics, cache provenance
+and frozen AE hash on the target machine. Keep the saved training-only latent
+residual statistics on resume. Evaluate final raw weights unless validation
+shows clear sustained overfitting, in which case select best validation; retain
+both checkpoints and report the actual achieved budget. This is a selection
+rule, not an automatic early-stopping callback. Use the same conditional-redraw,
+teacher-forced and free-running protocol as the current models, decoding
+latent FM with the exact AE recorded in the cache.
+
 ### Original baseline preparation
 
 Run commands from the AutoCast repository root with `uv`. Set

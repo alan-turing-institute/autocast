@@ -1,0 +1,43 @@
+{
+  "latent_cache": {
+    "directory": "shallow_water2d_stochastic_64_latents_ef93555",
+    "uuid": "ef935550-fa55-4ddf-903b-c265e1b14c0b",
+    "autoencoder_training_trajectories": 1000,
+    "autoencoder_checkpoint_sha256": "e514ebf07d4350521da8fd25c8875eb2842eb668a8b059bb207989361935573c",
+    "normalization_sha256": "c04afa893ba3dffdadb1916161a1caeab833884ce4a27126825b32108e246feb",
+    "sample_shape": [321, 16, 16, 8]
+  },
+  "checkpoint_selection": "Use final raw weights unless validation shows clear sustained overfitting; then use best native validation loss.",
+  "runs": [
+    {
+      "name": "global_crps_fft",
+      "command": "epd",
+      "config_name": "encoder_processor_decoder",
+      "preset": "crps_fft_global256_residual_one_output_12block_256ep_8h",
+      "dataset": "raw",
+      "batch_per_gpu": 32,
+      "training_members": 8,
+      "expected_updates": 128000,
+      "epochs": 256,
+      "learning_rate": 0.0002,
+      "scheduler_interval": "epoch",
+      "trainer_max_time": "00:07:45:00",
+      "allocation_minutes": 480
+    },
+    {
+      "name": "latent_residual_fm",
+      "command": "processor",
+      "config_name": "processor",
+      "preset": "flow_matching_residual_12block_one_output_128k",
+      "dataset": "latent_cache",
+      "batch_per_gpu": 256,
+      "training_members": 1,
+      "expected_updates": 128000,
+      "epochs": null,
+      "learning_rate": 0.0001,
+      "scheduler_interval": "step",
+      "trainer_max_time": "00:23:30:00",
+      "allocation_minutes": 1440
+    }
+  ]
+}
