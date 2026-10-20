@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from typing import Literal, cast
 
 import torch
@@ -139,10 +140,44 @@ def gaussian_spatial_filter(
             length_scale=length_scale,
             boundary=boundary,
         )
-    spectrum = torch.fft.fft2(working, dim=(2, 3), norm="ortho")
-    filtered = torch.fft.ifft2(
-        spectrum * amplitude[None, None, :, :, None],
-        dim=(2, 3),
-        norm="ortho",
-    ).real
+    filtered = _filter_spatial_spectrum(working, amplitude[..., None])
     return filtered[:, :, :height, :width]
+
+
+def _filter_spatial_spectrum(field: Tensor, amplitude: Tensor) -> Tensor:
+    """Filter explicit spatial axes with a real, channel-wise amplitude map."""
+    spectrum = torch.fft.fft2(field, dim=(2, 3), norm="ortho")
+    return torch.fft.ifft2(
+        spectrum * amplitude[None, None], dim=(2, 3), norm="ortho"
+    ).real
+
+
+def multiscale_gaussian_spatial_filter(
+    field: Tensor,
+    *,
+    half_power_wavenumbers: Sequence[float],
+    domain_lengths: tuple[float, float],
+) -> Tensor:
+    """Filter periodic channels at fixed physical rather than pixel scales.
+
+    Channel c has power proportional to ``2**(-(radius / cutoff[c])**2)``.
+    Frequencies count cycles per domain-length unit; the default unit square
+    therefore counts cycles across the domain. Each discrete spectrum is
+    normalized to unit expected pointwise variance, retaining its DC mode.
+    Callers validate the parameters, grid and channel count before filtering.
+    """
+    frequency_y, frequency_x = (
+        torch.fft.fftfreq(size, d=length / size, device=field.device, dtype=field.dtype)
+        for size, length in zip(field.shape[2:4], domain_lengths, strict=True)
+    )
+    radius = torch.hypot(frequency_y[:, None], frequency_x[None, :])
+    cutoffs = field.new_tensor(half_power_wavenumbers)
+    log_power = -math.log(2.0) * (radius[..., None] / cutoffs).square()
+    # Tiny positive cutoffs may round to zero in the working dtype. The
+    # limiting spectrum is DC-only, never 0/0 at its known zero frequency.
+    log_power[0, 0] = 0.0
+    log_mean_power = torch.logsumexp(log_power, dim=(0, 1)) - math.log(
+        field.shape[2] * field.shape[3]
+    )
+    amplitude = torch.exp(0.5 * (log_power - log_mean_power))
+    return _filter_spatial_spectrum(field, amplitude)

@@ -121,3 +121,70 @@ correlate an explicit time axis, but Azula's conditioning source sees only
 one effective time slot. With concatenation they correlate input-frame slots,
 not successive forecasts. No source state is carried across rollout calls;
 temporally persistent autoregressive noise requires a separate rollout API.
+
+Multiscale Gaussian spatial noise
+-----------------------------------
+
+``MultiscaleGaussianSource`` filters independent Gaussian grid innovations
+with a separate radial low-pass envelope per channel. Its reference layout
+is ``(B,T,Y,X,C)`` and ``C`` must match ``half_power_wavenumbers``. The
+relative power at radial frequency ``k`` is
+``2**(-(k / half_power_wavenumbers[c])**2)``; the FFT amplitude multiplier
+is the square root of this power. These are overlapping smooth envelopes,
+not disjoint bands, radial-shell averages or single-wavevector rings.
+
+.. code-block:: yaml
+
+   noise_mode: spatial
+   n_noise_input_channels: 4
+   n_noise_channels: 256
+   noise_source:
+     _target_: autocast.nn.noise.MultiscaleGaussianSource
+     half_power_wavenumbers: [1.0, 2.0, 4.0, 6.0]
+     domain_lengths: [1.0, 1.0]
+
+The source samples on the actual patch-token grid. The existing shared
+4-to-256 projection maps each token's four filtered values to block
+conditioning; it adds no independent randomness. On a 16x16 token grid
+the source draws 1,024 Gaussian values per frame/member, rather than the
+256 values in one-channel IID noise. Smoothing changes effective dimension.
+
+``domain_lengths`` gives height and width lengths. Frequencies are cycles
+per length unit: the unit-square default counts cycles across each domain.
+The frequency grid accounts for rectangular domains and spacings, so
+changing resolution does not silently change physical filter scales.
+Cutoffs at or above either axial grid Nyquist raise an error instead of
+being clamped. Scales are resolution-independent only on grids that resolve
+them. This source assumes periodic boundaries.
+
+Each finite-grid spectrum is normalized analytically to unit expected
+pointwise variance. Individual draws retain fluctuating amplitudes and
+spatial means; the random zero-frequency coefficient is not removed.
+Members, frames and channels are independent, and every call draws afresh.
+No observed field statistics, simulator redraws or trainable parameters are
+required. As with other stateless sources, it does not carry temporal
+correlations between autoregressive forecast calls.
+
+For input concatenation, configure the same source through the existing
+injector and disable stochastic AdaLN if concat is the only intended noise:
+
+.. code-block:: yaml
+
+   input_noise_injector:
+     _target_: autocast.nn.noise.noise_injector.ConcatenatedNoiseInjector
+     n_channels: 4
+     std: 1.0
+     noise_source:
+       _target_: autocast.nn.noise.MultiscaleGaussianSource
+       half_power_wavenumbers: [2.0, 4.0, 8.0, 16.0]
+       domain_lengths: [1.0, 1.0]
+
+Concatenation uses the input field grid before encoding, not the AdaLN
+token grid. On a 64x64 grid four channels draw 16,384 Gaussian values.
+These two examples deliberately differ in grid and filter scales and are
+not a dimension-matched injection-location ablation. The clean persistence
+reference and target fields remain unchanged.
+
+The optional Hydra preset is ``source_distribution/multiscale_gaussian``;
+existing sources, IID defaults and checkpoint keys are unchanged. A saved
+configuration is required to restore the source's non-trainable settings.

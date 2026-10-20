@@ -1,0 +1,4 @@
+_target_: autocast.nn.noise.MultiscaleGaussianSource
+# Frequencies are cycles across a unit square, not fractions of grid Nyquist.
+half_power_wavenumbers: [1.0, 2.0, 4.0, 6.0]
+domain_lengths: [1.0, 1.0]
