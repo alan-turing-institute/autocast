@@ -313,6 +313,27 @@ simulator redraws selected the weight, and the fresh fit does not restore the
 calibration checkpoint. Tests check this recorded default, not whether the
 weight generalizes during training. The other prepared commands are unchanged.
 
+### Warm-start anomaly stability check
+
+`crps_fft_anomaly_spatial1d_finetune_5k` tests the unchanged auxiliary on the
+healthy spatial CRPS-FFT checkpoint used for calibration, not a checkpoint
+from the unstable auxiliary fit. It loads raw model weights only, with a
+fresh AdamW optimizer, EMA, timer and step counter. It retains the same model,
+normalization, data, IID spatial noise and weights
+`[1.0, 0.1, 0.12492216134130599]`; no reliability gate or spectral rescaling is
+introduced in this control.
+
+The short budget is 5,000 **new** updates at constant LR `2e-5`, with validation
+and snapshots every 500 updates, a 25-minute trainer safety cap and a 30-minute
+Slurm allocation. W&B stays offline. The source checkpoint must be supplied
+explicitly as `resume_from_checkpoint`; `resume_weights_only=true` is pinned by
+the preset. Always use a new `--workdir` subfolder, preserve the previous fits,
+and record the source checkpoint hash and fresh-optimizer semantics in the
+launch manifest. This is a warm-start stability diagnostic, not a matched
+from-scratch benchmark or evidence that the original auxiliary is stable.
+When adding `+distributed=ddp_4gpu_slurm`, explicitly retain
+`trainer.max_time=00:00:25:00`: the general DDP group supplies a longer default.
+
 ### Matched-update residual flow matching
 
 The current pair uses **128,000 optimizer updates** and **step-based cosine

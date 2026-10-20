@@ -1,0 +1,68 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/crps_fft_anomaly_spatial1d_residual_one_output_12block_256ep_8h
+  - override /trainer: swe64s_steps
+  - _self_
+
+experiment_name: swe64s_crps_fft_anomaly_spatial1d_finetune_5k
+
+# Supply the healthy spatial CRPS-FFT checkpoint, not the failed auxiliary fit.
+# Restore raw model weights only: optimizer, EMA, counters and timers are fresh.
+resume_from_checkpoint: ???
+resume_weights_only: true
+reset_resume_time_budget: false
+
+optimizer:
+  learning_rate: 2e-5
+  scheduler: null
+  warmup: 0
+  cosine_epochs: null
+  cosine_steps: null
+
+trainer:
+  max_epochs: 1000000
+  max_steps: 5000
+  max_time: "00:00:25:00"
+  callbacks:
+    - _target_: lightning.pytorch.callbacks.ModelCheckpoint
+      auto_insert_metric_name: false
+      every_n_train_steps: 500
+      save_on_train_epoch_end: false
+      filename: snapshot-{epoch:04d}-{step:08d}
+      save_last: true
+      save_top_k: -1
+    - _target_: lightning.pytorch.callbacks.ModelCheckpoint
+      auto_insert_metric_name: false
+      every_n_epochs: 1
+      every_n_train_steps: 0
+      save_on_train_epoch_end: false
+      filename: best-val-{epoch:04d}-{step:08d}-{val_loss:.6f}
+      mode: min
+      monitor: val_loss
+      save_last: false
+      save_top_k: 1
+    - _target_: autocast.callbacks.grad_norm.GradNormCallback
+      norm_type: 2.0
+      log_per_param: false
+    - _target_: autocast.callbacks.metrics.ValidationMetricPlotCallback
+      dirname: validation_metrics
+      filename: validation_metrics.png
+      log_to_logger: true
+      max_cols: 3
+      metric_prefixes: [val_, train_, grad_, lr]
+      plot_metric_objects: true
+      save_local: true
+    - _target_: autocast.callbacks.ema.EMACallback
+      decay: 0.999
+
+logging:
+  wandb:
+    enabled: true
+    mode: offline
+    id: null
+    resume: null
+    log_model: false
+
+hydra:
+  launcher:
+    timeout_min: 30
