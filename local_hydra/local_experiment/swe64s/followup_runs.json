@@ -39,5 +39,67 @@
       "trainer_max_time": "00:23:30:00",
       "allocation_minutes": 1440
     }
+  ],
+  "optional_runs": [
+    {
+      "name": "multiscale_adaln_afcrps",
+      "command": "epd",
+      "config_name": "encoder_processor_decoder",
+      "preset": "afcrps_multiscale_spatial4d_residual_one_output_12block_256ep_8h",
+      "dataset": "raw",
+      "batch_per_gpu": 32,
+      "training_members": 8,
+      "expected_updates": 128000,
+      "epochs": 256,
+      "learning_rate": 0.0002,
+      "scheduler_interval": "epoch",
+      "trainer_max_time": "00:07:45:00",
+      "allocation_minutes": 480
+    },
+    {
+      "name": "multiscale_concat_afcrps",
+      "command": "epd",
+      "config_name": "encoder_processor_decoder",
+      "preset": "afcrps_multiscale_concat4d_residual_one_output_12block_256ep_8h",
+      "dataset": "raw",
+      "batch_per_gpu": 32,
+      "training_members": 8,
+      "expected_updates": 128000,
+      "epochs": 256,
+      "learning_rate": 0.0002,
+      "scheduler_interval": "epoch",
+      "trainer_max_time": "00:07:45:00",
+      "allocation_minutes": 480
+    },
+    {
+      "name": "multiscale_adaln_crps_fft",
+      "command": "epd",
+      "config_name": "encoder_processor_decoder",
+      "preset": "crps_fft_multiscale_spatial4d_residual_one_output_12block_256ep_8h",
+      "dataset": "raw",
+      "batch_per_gpu": 32,
+      "training_members": 8,
+      "expected_updates": 128000,
+      "epochs": 256,
+      "learning_rate": 0.0002,
+      "scheduler_interval": "epoch",
+      "trainer_max_time": "00:07:45:00",
+      "allocation_minutes": 480
+    },
+    {
+      "name": "multiscale_concat_crps_fft",
+      "command": "epd",
+      "config_name": "encoder_processor_decoder",
+      "preset": "crps_fft_multiscale_concat4d_residual_one_output_12block_256ep_8h",
+      "dataset": "raw",
+      "batch_per_gpu": 32,
+      "training_members": 8,
+      "expected_updates": 128000,
+      "epochs": 256,
+      "learning_rate": 0.0002,
+      "scheduler_interval": "epoch",
+      "trainer_max_time": "00:07:45:00",
+      "allocation_minutes": 480
+    }
   ]
 }

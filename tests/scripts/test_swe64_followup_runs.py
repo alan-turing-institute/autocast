@@ -134,3 +134,65 @@ def test_existing_output_cannot_be_reused(tmp_path):
         HELPER["build_plan"](
             datasets_root=tmp_path / "data", output_root=tmp_path / "outputs"
         )
+
+
+@pytest.mark.parametrize("mode", ["adaln", "concat"])
+@pytest.mark.parametrize("loss", ["afcrps", "crps_fft"])
+def test_multiscale_run_is_opt_in_and_uses_standard_preview(tmp_path, mode, loss):
+    name = f"multiscale_{mode}_{loss}"
+    plan = HELPER["build_plan"](
+        datasets_root=tmp_path / "data",
+        output_root=tmp_path / "outputs",
+        run_names=[name],
+    )
+    assert len(plan["jobs"]) == 1
+    job = plan["jobs"][0]
+    assert job["name"] == name
+    assert "--dry-run" in job["preview_command"]
+    assert not plan["jobs_submitted"]
+    assert not plan["training_executed"]
+    assert not (tmp_path / "outputs").exists()
+    cfg = _compose(job)
+    assert cfg.trainer.max_epochs == cfg.optimizer.cosine_epochs == 256
+    assert cfg.trainer.max_time == "00:07:45:00"
+    assert cfg.hydra.launcher.timeout_min == 480
+    assert cfg.logging.wandb.enabled
+    assert cfg.logging.wandb.mode == "online"
+    assert cfg.datamodule.batch_size == 32
+    assert cfg.model.n_members == 8
+    if mode == "adaln":
+        assert cfg.model.processor.noise_source.half_power_wavenumbers == [1, 2, 4, 6]
+    else:
+        assert cfg.model.input_noise_injector.noise_source.half_power_wavenumbers == [
+            2,
+            4,
+            8,
+            16,
+        ]
+    if loss == "crps_fft":
+        assert cfg.model.loss_func.weights == [1.0, 0.1]
+    else:
+        assert cfg.model.loss_func.alpha == 0.95
+
+
+def test_selected_pair_preserves_explicit_order(tmp_path):
+    names = ["multiscale_concat_afcrps", "multiscale_adaln_afcrps"]
+    plan = HELPER["build_plan"](
+        datasets_root=tmp_path / "data",
+        output_root=tmp_path / "outputs",
+        run_names=names,
+    )
+    assert [job["name"] for job in plan["jobs"]] == names
+
+
+@pytest.mark.parametrize(
+    "names", [[], ["unknown"], ["global_crps_fft", "global_crps_fft"]]
+)
+def test_invalid_run_selection_fails_without_outputs(tmp_path, names):
+    with pytest.raises(ValueError, match=r"Unknown|duplicate"):
+        HELPER["build_plan"](
+            datasets_root=tmp_path / "data",
+            output_root=tmp_path / "outputs",
+            run_names=names,
+        )
+    assert not (tmp_path / "outputs").exists()

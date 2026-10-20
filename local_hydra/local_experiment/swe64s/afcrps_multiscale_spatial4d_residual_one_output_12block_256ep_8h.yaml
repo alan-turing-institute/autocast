@@ -1,0 +1,19 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/afcrps_spatial1d_residual_one_output_12block_256ep_8h
+  - /source_distribution@model.processor.noise_source: multiscale_gaussian
+  - _self_
+
+experiment_name: swe64s_afcrps_multiscale_spatial4d_residual_one_output_12block_256ep_8h
+
+model:
+  processor:
+    # Four independent fields on 16x16 tokens: 1,024 Gaussian grid inputs.
+    # The learned conditioning width remains 256; no temporal state is kept.
+    n_noise_input_channels: 4
+    noise_source:
+      half_power_wavenumbers: [1.0, 2.0, 4.0, 6.0]
+
+hydra:
+  launcher:
+    timeout_min: 480

@@ -1,0 +1,26 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/afcrps_global256_residual_one_output_12block_256ep_8h
+  - /source_distribution@model.input_noise_injector.noise_source: multiscale_gaussian
+  - override /input_noise_injector@model.input_noise_injector: concat
+  - _self_
+
+experiment_name: swe64s_afcrps_multiscale_concat4d_residual_one_output_12block_256ep_8h
+
+model:
+  input_noise_injector:
+    # Native 64x64 input grid, not the 16x16 AdaLN grid: 16,384 grid inputs.
+    n_channels: 4
+    std: 1.0
+    noise_source:
+      half_power_wavenumbers: [2.0, 4.0, 8.0, 16.0]
+  processor:
+    # Concat supplies the only stochastic input; retain deterministic blocks.
+    noise_mode: global
+    n_noise_channels: null
+    n_noise_input_channels: null
+    noise_source: null
+
+hydra:
+  launcher:
+    timeout_min: 480

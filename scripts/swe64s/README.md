@@ -13,6 +13,8 @@ comparisons; they are not dependencies of these initial fits.
 The current one-output comparisons are listed in
 [Current noise and Fourier-loss controls](#current-noise-and-fourier-loss-controls)
 and [Matched-update residual flow matching](#matched-update-residual-flow-matching).
+The [experiment readiness inventory](#experiment-readiness-inventory) separates
+existing fits, prepared follow-ups and decisions still needed before launch.
 The original presets retain their four-output/time-budget setup.
 
 ## Data and scope
@@ -105,12 +107,14 @@ defines its normalization, process-local pooling and limitations. The baseline
 presets do not enable it. The separate control below fixes its bands but still
 requires a reviewed calibration record to supply its scalar weight.
 
-The structured source uses modes `(3,0),(0,3),(2,2),(2,-2)` on the 16x16 token
+The older structured source uses modes `(3,0),(0,3),(2,2),(2,-2)` on the 16x16 token
 grid. Four sine/cosine pairs use eight Gaussian coefficients in the single
 noise channel, compared with 256 independent scalars in IID spatial noise.
 The 1-to-256 modulation projection is unchanged. Each member/call redraws
 independently; these presets introduce spatial correlation, with no temporal
 persistence or output filtering.
+Those narrowband one-channel presets remain unchanged for provenance; they
+are not the new four-channel multiscale controls below.
 
 Every CRPS preset keeps a fresh 256-epoch cosine schedule, LR `2e-4` to zero,
 and no step cap. At four GPUs this is 128,000 updates. The inherited allocation
@@ -142,6 +146,99 @@ one-input/four-output tasks. It evaluates 100 saved-time leads in either case:
 teacher-forced and free-running evaluations use 16 members, the held-out test
 split, central 90% coverage, and per-channel/per-trajectory metrics. Saved model
 and normalization settings are retained. Outputs must use fresh directories.
+
+### Four-channel multiscale noise controls
+
+These opt-in presets use four independent coloured Gaussian fields with
+smooth radial filters. They do not estimate the filters from simulator
+redraws or field statistics. The source is FCN3-inspired spatial noise,
+not a reproduction of FCN3's full architecture or temporally evolving
+eight-field process. Every forecast call independently redraws the noise.
+
+| Design | afCRPS preset | CRPS-FFT preset | Noise grid | Half-power k |
+| --- | --- | --- | --- | --- |
+| Spatial AdaLN | `afcrps_multiscale_spatial4d_residual_one_output_12block_256ep_8h` | `crps_fft_multiscale_spatial4d_residual_one_output_12block_256ep_8h` | 16x16 tokens | `[1, 2, 4, 6]` |
+| Input concat | `afcrps_multiscale_concat4d_residual_one_output_12block_256ep_8h` | `crps_fft_multiscale_concat4d_residual_one_output_12block_256ep_8h` | 64x64 cells | `[2, 4, 8, 16]` |
+
+For channel c the relative power envelope is
+`P_c(k) = 2**(-(k / k_half[c])**2)`. FFT coefficients are multiplied by its
+square root. `k` is a continuous radial magnitude, not a rounded shell
+index. With `domain_lengths=[1,1]`, it counts cycles across the domain;
+the source also supports explicit rectangular physical domain lengths.
+Scales must be below both axial Nyquist frequencies of the consumer's grid.
+The envelopes overlap rather than divide the spectrum into hard bands.
+Expected pointwise variance is one in every channel, retaining DC and
+Gaussian draw-to-draw amplitude fluctuations; draws are not standardized.
+
+AdaLN uses the existing shared 4-to-256 conditioning projection and reuses
+one draw across all blocks. Concat appends four input channels before the
+encoder, keeping its physical inputs, targets and persistence baseline
+clean. Its stochastic AdaLN path is disabled; blocks retain their default
+256-wide deterministic modulation. Four-channel AdaLN draws 1,024 grid
+values/member while native-grid concat draws 16,384. The designs intentionally
+change injection, grid and scale range and are not a pure placement ablation
+or a noise-dimension-matched comparison with global-256/spatial-1D.
+
+Both retain the original 200/20/20 data and training statistics, one input
+and output frame, stride one, delta-normalized persistence residuals,
+width 224, 12 blocks, eight heads and patch four. Simulator-parameter
+conditioning stays off. Training uses eight members, batch 32/GPU on four
+GPUs, 256 epochs and cosine LR `2e-4` to zero, with the existing eight-hour
+allocation and 7h45m trainer cap. The FFT versions change only the loss to
+the existing `[1.0, 0.1]` physical/coefficient afCRPS composite.
+
+The initial proposed pair uses **afCRPS alone** to assess each complete
+noise design before adding the spectral objective. Prepare selected
+commands without submitting, opening W&B or creating output directories:
+
+```bash
+uv run --frozen --no-sync python scripts/swe64s/prepare_followups.py \
+  --datasets-root /projects/u6eo/autocast/datasets \
+  --output-root /projects/u6eo/autocast/outputs/swe64s/NEW_STUDY \
+  --run multiscale_adaln_afcrps --run multiscale_concat_afcrps
+```
+
+The helper prints standard CLI dry-run commands. Select
+`multiscale_adaln_crps_fft` or `multiscale_concat_crps_fft` explicitly for the
+spectral variants. Omitting `--run` preserves its original global-FFT/latent-FM
+pair; adding these presets does not enlarge a default training queue.
+All runs require separate target-machine data/code/W&B preflight and launch
+approval. Common scores, anomaly power, divergence/vorticity balance and
+teacher-forced/free-running evaluation remain required after fitting.
+
+### Experiment readiness inventory
+
+This is a local config/planning inventory, not a live scheduler status.
+Existing-fit entries refer to the completed evaluation work discussed in
+this study; no new submission is implied. All preset names below live in
+`local_hydra/local_experiment/swe64s` with a `.yaml` suffix.
+
+| Experiment | Preset | Preparation state |
+| --- | --- | --- |
+| Global-256 afCRPS reference | `afcrps_global256_residual_one_output_12block_256ep_8h` | Existing fit/evaluation; retain selected checkpoint |
+| IID spatial-1D afCRPS reference | `afcrps_spatial1d_residual_one_output_12block_256ep_8h` | Existing fit/evaluation; retain selected checkpoint |
+| IID spatial-1D CRPS-FFT | `crps_fft_spatial1d_residual_one_output_12block_256ep_8h` | Existing fit/evaluation; retain selected checkpoint |
+| Ambient residual FM | `flow_matching_residual_ambient_12block_one_output_128k` | Existing completed fit/evaluation; use final raw checkpoint under the agreed selection rule |
+| Global-256 CRPS-FFT | `crps_fft_global256_residual_one_output_12block_256ep_8h` | Prepared; `--run global_crps_fft` |
+| Latent residual FM, using the 1,000-trajectory AE | `flow_matching_residual_12block_one_output_128k` | Prepared; `--run latent_residual_fm`; verify the pinned cache/AE identity on target |
+| Multiscale AdaLN, afCRPS / CRPS-FFT | Two spatial-4D presets above | Prepared; explicit `--run multiscale_adaln_afcrps` / `multiscale_adaln_crps_fft` |
+| Multiscale concat, afCRPS / CRPS-FFT | Two concat-4D presets above | Prepared; explicit `--run multiscale_concat_afcrps` / `multiscale_concat_crps_fft` |
+| IID spatial-1D CRPS-FFT + online anomaly-power auxiliary | `crps_fft_anomaly_spatial1d_residual_one_output_12block_256ep_8h` | Config tested; **blocked on training-only weight calibration**, not ready to launch |
+| afCRPS alone + online anomaly-power auxiliary | No dedicated preset yet | Discussed extension; prepare/calibrate separately if selected |
+| IID spatial-4D noise control | No matched 12-block preset yet | Optional control for correlation at fixed noise width; not silently added to the queue |
+| Older four-mode spatial-1D afCRPS / CRPS-FFT | Existing `*_structured_spatial1d_*` presets | Retained narrowband controls; not the multiscale replacement or an automatic launch choice |
+
+CRPS variants retain the 256-epoch schedule (128,000 nominal updates on four
+GPUs). Both FM presets use 128,000 updates, batch 256/GPU and step-cosine LR
+`1e-4` to zero; this does not match runtime or independent condition exposure.
+Shared evaluation remains redraw structure plus teacher-forced/free-running
+VRMSE, central 90% coverage and SSR by channel/lead. Compare common afCRPS
+scores across objectives, not raw afCRPS-versus-composite training losses.
+
+The next launch review should select a bounded subset from the prepared
+items rather than launch this whole inventory. Data-informed noise scales,
+temporally persistent noise and a new anomaly-only supervision protocol are
+not required by the initial multiscale pair.
 
 ### Prepared spatial CRPS-FFT + online-power control
 

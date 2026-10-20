@@ -1,4 +1,4 @@
-"""Print the matched SWE64 follow-up commands; never submit or train."""
+"""Print selected matched SWE64 follow-up commands; never submit or train."""
 
 from __future__ import annotations
 
@@ -14,10 +14,25 @@ PRESETS = REPO_ROOT / "local_hydra/local_experiment/swe64s"
 
 
 def build_plan(
-    *, datasets_root: Path, output_root: Path, account: str | None = None
+    *,
+    datasets_root: Path,
+    output_root: Path,
+    account: str | None = None,
+    run_names: list[str] | None = None,
 ) -> dict[str, Any]:
     """Reuse standard CLI entry points with explicit data and allocation settings."""
     settings = json.loads((PRESETS / "followup_runs.json").read_text())
+    specs = settings["runs"]
+    if run_names is not None:
+        available = {spec["name"]: spec for spec in specs + settings["optional_runs"]}
+        if not run_names or len(set(run_names)) != len(run_names):
+            msg = "Select at least one run without duplicate names."
+            raise ValueError(msg)
+        unknown = set(run_names) - available.keys()
+        if unknown:
+            msg = f"Unknown follow-up runs: {sorted(unknown)}."
+            raise ValueError(msg)
+        specs = [available[name] for name in run_names]
     raw = json.loads((PRESETS / "dataset.json").read_text())
     datasets_root = datasets_root.expanduser().resolve()
     output_root = output_root.expanduser().resolve()
@@ -32,7 +47,7 @@ def build_plan(
         ["git", "status", "--porcelain"], cwd=REPO_ROOT, text=True
     ).strip()
     jobs = []
-    for spec in settings["runs"]:
+    for spec in specs:
         destination = output_root / spec["name"] / "fit"
         run_name = f"swe64s-{spec['name']}-{output_root.name}"
         if destination.exists():
@@ -126,6 +141,15 @@ def main() -> None:
     parser.add_argument("--datasets-root", required=True, type=Path)
     parser.add_argument("--output-root", required=True, type=Path)
     parser.add_argument("--account")
+    parser.add_argument(
+        "--run",
+        dest="run_names",
+        action="append",
+        help=(
+            "Select a run by name; repeat to preview a pair. "
+            "Default: original FFT/FM pair."
+        ),
+    )
     args = parser.parse_args()
     plan = build_plan(**vars(args))
     print(json.dumps(plan, indent=2))
