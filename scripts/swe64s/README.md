@@ -101,9 +101,9 @@ anomaly power with observed residual power using the current ensemble mean,
 stop-gradient on the observation reference and a finite-member moment
 correction. It requires neither simulator redraws nor a frozen mean cache.
 The [loss documentation](../../docs/reference/losses/spectral.md#online-anomaly-power-regularization)
-defines its normalization, process-local pooling and limitations. This addition
-does not enable it in any experiment: auxiliary weight, band edges and any
-fixed power scale remain to be reviewed before preparing a run.
+defines its normalization, process-local pooling and limitations. The baseline
+presets do not enable it. The separate control below fixes its bands but still
+requires a reviewed calibration record to supply its scalar weight.
 
 The structured source uses modes `(3,0),(0,3),(2,2),(2,-2)` on the 16x16 token
 grid. Four sine/cosine pairs use eight Gaussian coefficients in the single
@@ -142,6 +142,75 @@ one-input/four-output tasks. It evaluates 100 saved-time leads in either case:
 teacher-forced and free-running evaluations use 16 members, the held-out test
 split, central 90% coverage, and per-channel/per-trajectory metrics. Saved model
 and normalization settings are retained. Outputs must use fresh directories.
+
+### Prepared spatial CRPS-FFT + online-power control
+
+The opt-in preset
+`crps_fft_anomaly_spatial1d_residual_one_output_12block_256ep_8h` inherits the
+IID spatial CRPS-FFT baseline. Its first two terms remain pointwise afCRPS plus
+`0.1 x` Fourier-coefficient afCRPS. The new term uses the current eight-member
+ensemble mean, stop-gradient on the observed-residual reference, and the
+`1 + 1/8` sampling correction. It is a **fresh fit**, not a checkpoint
+continuation. All data, model, normalization, optimizer and allocation settings
+remain matched: 200/20/20 trajectories, one input/output frame, batch 32/GPU,
+width 224, 12 blocks, patch 4, one IID noise scalar/token, no simulator-parameter
+conditioning, and 256-epoch cosine LR `2e-4` to zero (128,000 nominal updates
+on four GPUs). Best/last checkpoints and the common `val_afcrps` remain available.
+The combined native validation objective is not directly comparable to the
+baseline's native loss.
+
+Use a few broad bands, specified before fitting, rather than tuning separate
+weights around every visible peak:
+
+| Bin | Integer Fourier radius at 64x64 | Motivation |
+| --- | --- | --- |
+| DC | 0 | Detect spatially uniform uncertainty separately. |
+| Forcing scale | `0 < k < 6` | Contains the k=3 forcing ring and its nearby response. |
+| Intermediate | `6 <= k < 14` | Separates resolved finer-scale spread. |
+| Fine | `14 <= k < 22` | Contains the first k=16 patch-lattice harmonic. |
+| Finest | `22 <= k <= sqrt(2)*32` | Includes diagonal harmonics and all Nyquist corners. |
+
+The edges are divided by 64 in the config. The boundary at 22 is **not** an
+exact simulator radial cutoff: its dealiasing mask acts per axis. Within-band
+mode means are formed in dataset-normalized coordinates, separately for h/u/v
+and each lead. Keep `power_scale=1` and avoid inverse truth-power weights, which
+would amplify almost-zero simulator modes. Absolute-power discrepancies may
+be dominated by energetic coarse bands; the calibration record exposes each
+band's contribution. This is not a claim that relative fine-scale excess is
+equally penalized.
+
+Choose the scalar auxiliary weight from **training-only output gradients**, not
+from the ratio of objective values or from held-out redraws. The helper
+[`calibrate_anomaly_weight.py`](calibrate_anomaly_weight.py) uses the already
+selected learned spatial CRPS-FFT control (not a nearly collapsed random
+initialization), eight disjoint random batches of 32 training windows, eight
+members, and fixed seed 153164. For batch i compute gradient RMS values
+`b_i = RMS(dL_base/dpred)` and `a_i = RMS(dL_aux/dpred)`, then freeze
+`lambda = min_i(0.1 * b_i / a_i)`. Here `L_base` includes BOTH baseline terms.
+Thus the auxiliary/base output-gradient ratio is at most 10% on each calibration
+batch; it is neither a 10% loss weight nor a guarantee during later training.
+There is no dynamic reweighting, new teacher cache, or optimization in this step.
+
+Preparation command for later, on the machine holding the trusted checkpoint:
+
+```bash
+uv run --frozen --no-sync python scripts/swe64s/calibrate_anomaly_weight.py \
+  --source-config /path/to/spatial-fft/resolved_config.yaml \
+  --checkpoint /path/to/spatial-fft/selected.ckpt \
+  --data-path /path/to/shallow_water2d_stochastic_64_b43bd32 \
+  --device cuda --output /path/to/new/anomaly-weight.json
+```
+
+The helper validates the source model/task, hashes the checkpoint, config,
+training split and normalization, scores training windows only, and records
+their indices, band powers/discrepancies and gradient ratios. It never opens
+validation/test trajectories, restores optimizer state, trains, contacts W&B
+or submits a job. Existing records cannot be overwritten. The output's printed
+`model.loss_func.weights.2=...` override supplies the required third weight.
+Save and review that record before a launch using the usual four-GPU/W&B
+settings. The checked-in preset intentionally leaves this weight mandatory
+(`???`); **no numerical weight has been calibrated or approved by local tests**.
+The other prepared follow-up commands are unchanged.
 
 ### Matched-update residual flow matching
 
