@@ -334,6 +334,15 @@ from-scratch benchmark or evidence that the original auxiliary is stable.
 When adding `+distributed=ddp_4gpu_slurm`, explicitly retain
 `trainer.max_time=00:00:25:00`: the general DDP group supplies a longer default.
 
+The separate `crps_fft_anomaly_spatial1d_finetune_15k` control restarts from
+the **same original 36,000-update checkpoint**, not the 5k fine-tune. It changes
+only the constant LR to `5e-5` and budget to 15,000 new updates, with a 55-minute
+trainer cap inside a 60-minute Slurm allocation. All three loss terms and their
+weights, fresh-optimizer semantics and 500-update validation/snapshot cadence
+are unchanged. Explicitly use `trainer.max_time=00:00:55:00` with the DDP group
+and a distinct output subfolder. Increasing LR and training length together
+does not isolate their individual effects or the auxiliary's causal benefit.
+
 ### Matched-update residual flow matching
 
 The current pair uses **128,000 optimizer updates** and **step-based cosine

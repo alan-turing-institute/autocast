@@ -1,0 +1,19 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/crps_fft_anomaly_spatial1d_finetune_5k
+  - _self_
+
+experiment_name: swe64s_crps_fft_anomaly_spatial1d_finetune_15k
+
+# Restart from the same healthy 36k raw checkpoint, not the earlier fine-tune.
+# Keep the model, task, loss weights and weights-only restoration unchanged.
+optimizer:
+  learning_rate: 5e-5
+
+trainer:
+  max_steps: 15000
+  max_time: "00:00:55:00"
+
+hydra:
+  launcher:
+    timeout_min: 60

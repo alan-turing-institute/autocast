@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import lightning as L
+import pytest
 import torch
 from hydra import compose, initialize_config_dir
 from omegaconf import OmegaConf
@@ -14,6 +15,7 @@ from autocast.scripts.training import run_training
 
 ROOT = Path(__file__).resolve().parents[2]
 PRESET = "crps_fft_anomaly_spatial1d_finetune_5k"
+LONGER_PRESET = "crps_fft_anomaly_spatial1d_finetune_15k"
 PARENT = "crps_fft_anomaly_spatial1d_residual_one_output_12block_256ep_8h"
 
 
@@ -32,8 +34,9 @@ def _compose(name=PRESET, overrides=()):
         )
 
 
-def test_finetune_preserves_model_task_and_calibrated_auxiliary():
-    baseline, cfg = _compose(PARENT), _compose()
+@pytest.mark.parametrize("preset", [PRESET, LONGER_PRESET])
+def test_finetune_preserves_model_task_and_calibrated_auxiliary(preset):
+    baseline, cfg = _compose(PARENT), _compose(preset)
     assert cfg.model == baseline.model
     assert cfg.datamodule == baseline.datamodule
     assert cfg.model.loss_func.weights == [1.0, 0.1, 0.12492216134130599]
@@ -49,12 +52,13 @@ def test_finetune_preserves_model_task_and_calibrated_auxiliary():
         assert cfg.optimizer[key] == baseline.optimizer[key]
 
 
-def test_checkpoint_is_required_and_optimizer_schedule_is_fresh_constant():
-    cfg = _compose()
+@pytest.mark.parametrize(("preset", "lr"), [(PRESET, 2e-5), (LONGER_PRESET, 5e-5)])
+def test_checkpoint_is_required_and_optimizer_schedule_is_fresh_constant(preset, lr):
+    cfg = _compose(preset)
     assert OmegaConf.is_missing(cfg, "resume_from_checkpoint")
     assert cfg.resume_weights_only
     assert not cfg.reset_resume_time_budget
-    assert cfg.optimizer.learning_rate == 2e-5
+    assert cfg.optimizer.learning_rate == lr
     assert cfg.optimizer.scheduler is None
     assert cfg.optimizer.cosine_epochs is cfg.optimizer.cosine_steps is None
     assert cfg.optimizer.warmup == 0
@@ -65,15 +69,24 @@ def test_checkpoint_is_required_and_optimizer_schedule_is_fresh_constant():
     assert cfg.output.skip_test
 
 
-def test_short_ddp_budget_has_frequent_validation_and_checkpoints():
+@pytest.mark.parametrize(
+    ("preset", "updates", "minutes", "cap"),
+    [
+        (PRESET, 5000, 30, "00:00:25:00"),
+        (LONGER_PRESET, 15000, 60, "00:00:55:00"),
+    ],
+)
+def test_ddp_budget_has_frequent_validation_and_checkpoints(
+    preset, updates, minutes, cap
+):
     cfg = _compose(
-        overrides=["+distributed=ddp_4gpu_slurm", "trainer.max_time=00:00:25:00"]
+        preset, overrides=["+distributed=ddp_4gpu_slurm", f"trainer.max_time={cap}"]
     )
     assert cfg.trainer.devices == cfg.hydra.launcher.gpus_per_node == 4
-    assert cfg.trainer.max_steps == 5000
-    assert cfg.trainer.max_epochs > 5000
-    assert cfg.trainer.max_time == "00:00:25:00"
-    assert cfg.hydra.launcher.timeout_min == 30
+    assert cfg.trainer.max_steps == updates
+    assert cfg.trainer.max_epochs > updates
+    assert cfg.trainer.max_time == cap
+    assert cfg.hydra.launcher.timeout_min == minutes
     assert cfg.trainer.check_val_every_n_epoch is None
     assert cfg.trainer.val_check_interval == 500
     snapshot, best = cfg.trainer.callbacks[:2]
@@ -119,8 +132,11 @@ class _ProbeData(L.LightningDataModule):
         )
 
 
-def test_weights_only_entrypoint_does_not_restore_training_state(tmp_path):
-    cfg = _compose(overrides=[f"resume_from_checkpoint={tmp_path / 'source.ckpt'}"])
+@pytest.mark.parametrize(("preset", "lr"), [(PRESET, 2e-5), (LONGER_PRESET, 5e-5)])
+def test_weights_only_entrypoint_does_not_restore_training_state(tmp_path, preset, lr):
+    cfg = _compose(
+        preset, overrides=[f"resume_from_checkpoint={tmp_path / 'source.ckpt'}"]
+    )
     # Hydra runtime fields belong to the launcher, not the training payload.
     del cfg.hydra
     source = _WarmStartProbe(cfg.optimizer)
@@ -163,7 +179,7 @@ def test_weights_only_entrypoint_does_not_restore_training_state(tmp_path):
     run_training(cfg, target, _ProbeData(), work_dir, skip_test=True)
     assert target.start_checked
     assert target.global_step == 2
-    assert target.seen_lrs == [2e-5, 2e-5]
+    assert target.seen_lrs == [lr, lr]
     assert all(
         int(state["step"]) == 2 for state in target.trainer.optimizers[0].state.values()
     )
