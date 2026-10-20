@@ -105,6 +105,9 @@ def test_global_fft_preserves_the_existing_epoch_control(plan):
 
 def test_latent_fm_uses_the_fixed_cache_and_step_budget(plan):
     cfg = _compose(plan["jobs"][1])
+    assert plan["jobs"][1]["allocation_minutes"] == 480
+    assert cfg.hydra.launcher.timeout_min == 480
+    assert cfg.trainer.max_time == "00:07:45:00"
     assert cfg.datamodule.data_path == plan["latent_cache"]["path"]
     assert cfg.datamodule._target_.endswith("EncodedDataModule")
     assert cfg.trainer.max_steps == cfg.optimizer.cosine_steps == 128000

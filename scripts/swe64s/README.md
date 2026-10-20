@@ -398,8 +398,10 @@ the match is to the nominal full-batch size, within about 0.8% in total examples
 
 AdamW retains FM's LR **1e-4 to zero**, betas 0.9/0.99, no weight decay or
 warmup, with cosine indexed by optimizer update over the full 128,000 steps.
-The 23h30m timer is only a safety cap, not the LR horizon; an interrupted fit
-must resume the full checkpoint to complete the budget. Validation runs every
+The follow-up launcher applies a 7h45m safety cap inside an eight-hour Slurm
+allocation; the generic preset's inherited 23h30m cap is overridden explicitly.
+Neither timer sets the LR horizon. An interrupted fit must resume the full
+checkpoint to complete the budget. Validation runs every
 500 updates, snapshots every 8,000, and best-val and last checkpoints are kept.
 EMA stays separately stored; main comparisons use raw weights. Training and
 validation use the vector-field objective without ODE ensemble sampling;
@@ -438,9 +440,9 @@ uv run --frozen autocast processor --mode slurm --dry-run \
   --workdir /path/to/new/flow-matching-residual-128k \
   local_experiment=swe64s/flow_matching_residual_12block_one_output_128k \
   datamodule.data_path=/projects/u6eo/autocast/datasets/shallow_water2d_stochastic_64_latents_ef93555 \
-  +distributed=ddp_4gpu_slurm trainer.max_time=00:23:30:00 \
+  +distributed=ddp_4gpu_slurm trainer.max_time=00:07:45:00 \
   ++hydra.launcher.nodes=1 ++hydra.launcher.cpus_per_task=72 \
-  hydra.launcher.timeout_min=1440 \
+  hydra.launcher.timeout_min=480 \
   logging.wandb.enabled=true logging.wandb.mode=online \
   logging.wandb.entity=turing-core logging.wandb.project=autocast \
   logging.wandb.name=swe64s-fm-residual-12block-one-output-128k
@@ -465,8 +467,11 @@ forecasting split. No AE retraining or recaching is required.
 pins the run choices and the cache/AE identity. The preparation helper prints
 the standard CLI commands, with four GPUs, explicit Slurm allocations, fresh
 output paths and W&B enabled. It does not create outputs, contact W&B, submit
-jobs, or verify remote data. The allocation ceilings remain eight hours for
-CRPS and 24 hours for FM; they are not the learning-rate horizons.
+jobs, or verify remote data. Both allocation ceilings are eight hours, with
+7h45m trainer safety caps. The matched ambient FM completed 128,000 updates
+in 5h46m; the prior spatial CRPS-FFT rate projects to about 5h50m for 128,000
+updates. Eight hours provides a buffer, not a measured latent-FM runtime or
+a new learning-rate horizon. Epoch/update targets remain unchanged.
 Recreate the plan from the updated checkout on the target machine: its source
 commit and Hydra search path refer to the checkout running the helper.
 
