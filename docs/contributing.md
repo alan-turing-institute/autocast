@@ -20,14 +20,19 @@ The documentation can be built locally with the following steps:
 
 ```bash
 # Install the necessary dependencies
-uv sync --extra docs
-# Build the docs
-uv run jupyter-book build docs
+uv sync --extra dev --extra docs
+# Execute the small CPU tutorials, then build the docs
+uv run python docs/build.py
 # Serve locally
 uv run python -m http.server -d docs/_build/html
 ```
 
 Then open `http://localhost:8000` in your browser to view the docs.
+
+The build generates fresh AutoSim data and checkpoints for each notebook in its
+own temporary directory, checking that no earlier notebook needs to be run.
+Source notebooks are not modified. See [Runnable tutorials](tutorials/index.md)
+for example preparation and execution limits.
 
 ## Tests and linting
 
