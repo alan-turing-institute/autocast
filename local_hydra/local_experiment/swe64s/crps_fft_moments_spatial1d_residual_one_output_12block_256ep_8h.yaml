@@ -1,0 +1,32 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/crps_fft_spatial1d_residual_one_output_12block_256ep_8h
+  - _self_
+
+experiment_name: swe64s_crps_fft_moments_spatial1d_residual_one_output_12block_256ep_8h
+
+model:
+  loss_func:
+    # Retain both baseline terms; start a fresh matched fit. The train-only
+    # M=8 check (job 7638213) informed the fixed 5e-4 trial weight: power
+    # output-gradient RMS was 19-23% of the base on fresh-model batches
+    # and 7-10% at the healthy checkpoint. This is not a stability bound.
+    weights: [1.0, 0.1, 0.0005]
+    losses:
+      - _target_: autocast.losses.AlphaFairCRPSLoss
+        alpha: 0.95
+      - _target_: autocast.losses.TransformedLoss
+        requires_ambient_predictions: true
+        decomposition:
+          _target_: autocast.losses.FourierDecomposition
+          representation: complex
+          norm: ortho
+        score:
+          _target_: autocast.losses.CoefficientCRPSLoss
+          alpha: 0.95
+      - _target_: autocast.losses.moments.SpectralMomentLoss
+        norm: ortho
+
+hydra:
+  launcher:
+    timeout_min: 480
