@@ -23,7 +23,7 @@ uv sync
 ```
 
 This will allow you to run `uv run autocast` from within the repository.
-The main documentation contains [a tutorial on how to use autocast](https://alan-turing-institute.github.io/autocast/tutorial/index.html) to train and evaluate models on a dataset of your choice.
+The main documentation contains [a CLI walkthrough](https://alan-turing-institute.github.io/autocast/walkthrough/index.html) to train and evaluate models on a dataset of your choice.
 
 If you want to contribute to the autocast codebase, please see [the contributing section of the docs](https://alan-turing-institute.github.io/autocast/contributing.html).
 
