@@ -1,0 +1,1344 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Composing grid-space and spectral losses &#8212; AutoCast: Spatiotemporal Forecasting</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../../_static/styles/theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+<link href="../../_static/styles/pydata-sphinx-theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
+    <link rel="stylesheet" type="text/css" href="../../_static/styles/sphinx-book-theme.css?v=3c74b3bc" />
+    <link rel="stylesheet" type="text/css" href="../../_static/togglebutton.css?v=9c3e77be" />
+    <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../_static/mystnb.11b39860a7a0cbfd473a3ad8a317855267ff0bd372690045ca344a6b62be495e.css" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sphinx-thebe.css?v=4fa983c6" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sphinx-design.min.css?v=95c83b7e" />
+  
+  <!-- So that users can add custom icons -->
+  <script src="../../_static/scripts/fontawesome.js?digest=8878045cc6db502f8baf"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../../_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf" />
+<link rel="preload" as="script" href="../../_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf" />
+
+    <script src="../../_static/documentation_options.js?v=9eb32ce0"></script>
+    <script src="../../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../../_static/copybutton.js?v=7f8ff830"></script>
+    <script src="../../_static/scripts/sphinx-book-theme.js?v=fab101a9"></script>
+    <script>let toggleHintShow = 'Click to show';</script>
+    <script>let toggleHintHide = 'Click to hide';</script>
+    <script>let toggleOpenOnPrint = 'true';</script>
+    <script src="../../_static/togglebutton.js?v=b8b12719"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script src="../../_static/design-tabs.js?v=f930bc37"></script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script async="async" src="../../_static/sphinx-thebe.js?v=c100c467"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script>window.MathJax = {"options": {"processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+    <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'reference/losses/spectral';</script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="Scale losses" href="scale.html" />
+    <link rel="prev" title="autocast.losses.ensemble" href="ensemble.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="" />
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search this book..."
+         aria-label="Search this book..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../../_static/AC.png" class="logo__image only-light" alt="AutoCast: Spatiotemporal Forecasting - Home"/>
+    <img src="../../_static/AC.png" class="logo__image only-dark pst-js-only" alt="AutoCast: Spatiotemporal Forecasting - Home"/>
+  
+  
+</a></div>
+        <div class="sidebar-primary-item">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button></div>
+        <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item navbar-nav active">
+        
+        <ul class="nav bd-sidenav bd-sidenav__home-link">
+            <li class="toctree-l1">
+                <a class="reference internal" href="../../index.html">
+                    Welcome to AutoCast
+                </a>
+            </li>
+        </ul>
+        <ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../walkthrough/index.html">Walkthrough</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../walkthrough/simulate-data.html">Simulating data</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../walkthrough/autoencoder.html">Training an autoencoder</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../walkthrough/processor.html">Training a processor</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../walkthrough/epd.html">Full encoder-processor-decoder</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../walkthrough/ensembles.html">Training model ensembles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../walkthrough/eval.html">Evaluating a trained model</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../howto/index.html">How-tos</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../howto/output-paths.html">Output paths</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../howto/slurm.html">Running AutoCast on SLURM</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../howto/wandb.html">Weights &amp; Biases logging</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../howto/resume.html">Resuming from a checkpoint</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../howto/configs.html">Configurations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../howto/other-commands.html">Direct usage of lower-level Hydra scripts</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="../../contributing.html">Contributing</a></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="../index.html">API Reference</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2 has-children"><a class="reference internal" href="../models/index.html">Models</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../models/encoder_decoder.html">autocast.models.encoder_decoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../models/encoder_processor_decoder.html">autocast.models.encoder_processor_decoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../models/autoencoder.html">autocast.models.autoencoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../models/variational_autoencoder.html">autocast.models.variational_autoencoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../models/processor.html">autocast.models.processor</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../processors/index.html">Processors</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../processors/base.html">autocast.processors.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../processors/unet.html">autocast.processors.unet</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../processors/swin_vit.html">autocast.processors.swin_vit</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../processors/vit.html">autocast.processors.vit</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../processors/flow_matching.html">autocast.processors.flow_matching</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../processors/diffusion.html">autocast.processors.diffusion</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../processors/noise.html">autocast.processors.noise</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../encoders/index.html">Encoders</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../encoders/base.html">autocast.encoders.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../encoders/dc.html">autocast.encoders.dc</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../encoders/unet.html">autocast.encoders.unet</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../encoders/identity.html">autocast.encoders.identity</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../decoders/index.html">Decoders</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../decoders/base.html">autocast.decoders.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../decoders/dc.html">autocast.decoders.dc</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../decoders/identity.html">autocast.decoders.identity</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../data/index.html">Data</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../data/datamodule.html">autocast.data.datamodule</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../data/dataset.html">autocast.data.dataset</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../data/encoded_dataset.html">autocast.data.encoded_dataset</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../data/metadata.html">autocast.data.metadata</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../metrics/index.html">Metrics</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../metrics/base.html">autocast.metrics.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../metrics/deterministic.html">autocast.metrics.deterministic</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../metrics/ensemble.html">autocast.metrics.ensemble</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../metrics/coverage.html">autocast.metrics.coverage</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 current active has-children"><a class="reference internal" href="index.html">Losses</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="ensemble.html">autocast.losses.ensemble</a></li>
+<li class="toctree-l3 current active"><a class="current reference internal" href="#">Composing grid-space and spectral losses</a></li>
+<li class="toctree-l3"><a class="reference internal" href="scale.html">Scale losses</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../types/index.html">Types</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../types/types.html">autocast.types.types</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../types/batch.html">autocast.types.batch</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../nn/index.html">Neural Network Utilities</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../spatiotemporal_vit.html">Spatial and spatiotemporal ViT backbones</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../nn/residual.html">autocast.nn.residual</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../nn/spatial_attention.html">autocast.nn.spatial_attention</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../utils/index.html">Utilities</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../utils/optimizer.html">autocast.utils.optimizer</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../utils/plots.html">autocast.utils.plots</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../benchmarking/index.html">Benchmarking</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../benchmarking/inference.html">autocast.benchmarking.inference</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../logging/index.html">Logging</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../logging/wandb.html">autocast.logging.wandb</a></li>
+</ul>
+</details></li>
+</ul>
+</details></li>
+</ul>
+
+    </div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+      <div class="sidebar-primary-item">
+<div id="ethical-ad-placement"
+      class="flat"
+      data-ea-publisher="readthedocs"
+      data-ea-type="readthedocs-sidebar"
+      data-ea-manual="true">
+</div></div>
+  </div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+
+<div class="sbt-scroll-pixel-helper"></div>
+
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item"><button class="sidebar-toggle primary-toggle btn btn-sm" title="Toggle primary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <span class="fa-solid fa-bars"></span>
+</button></div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+
+<div class="article-header-buttons">
+
+
+
+
+
+<div class="dropdown dropdown-source-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Source repositories">
+    <i class="fab fa-github"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="https://github.com/alan-turing-institute/autocast" target="_blank"
+   class="btn btn-sm btn-source-repository-button dropdown-item"
+   title="Source repository"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fab fa-github"></i>
+  </span>
+<span class="btn__text-container">Repository</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/alan-turing-institute/autocast/issues/new?title=Issue%20on%20page%20%2Freference/losses/spectral.html&body=Your%20issue%20content%20here." target="_blank"
+   class="btn btn-sm btn-source-issues-button dropdown-item"
+   title="Open an issue"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-lightbulb"></i>
+  </span>
+<span class="btn__text-container">Open issue</span>
+</a>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+
+
+<div class="dropdown dropdown-download-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Download this page">
+    <i class="fas fa-download"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="../../_sources/reference/losses/spectral.md" target="_blank"
+   class="btn btn-sm btn-download-source-button dropdown-item"
+   title="Download source file"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file"></i>
+  </span>
+<span class="btn__text-container">.md</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li>
+<button onclick="window.print()"
+  class="btn btn-sm btn-download-pdf-button dropdown-item"
+  title="Print to PDF"
+  data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file-pdf"></i>
+  </span>
+<span class="btn__text-container">.pdf</span>
+</button>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+<button onclick="toggleFullScreen()"
+  class="btn btn-sm btn-fullscreen-button pst-navbar-icon"
+  title="Fullscreen mode"
+  data-bs-placement="bottom" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+
+
+<button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button pst-js-only" aria-label="Color mode" data-bs-title="Color mode"  data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <i class="theme-switch fa-solid fa-sun                fa-lg" data-mode="light" title="Light"></i>
+  <i class="theme-switch fa-solid fa-moon               fa-lg" data-mode="dark"  title="Dark"></i>
+  <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"  title="System Settings"></i>
+</button>
+
+
+<button class="btn btn-sm pst-navbar-icon search-button search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+</button>
+<button class="sidebar-toggle secondary-toggle btn btn-sm pst-navbar-icon" title="Toggle secondary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <span class="fa-solid fa-list"></span>
+</button>
+</div></div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="jb-print-docs-body" class="onlyprint">
+    <h1>Composing grid-space and spectral losses</h1>
+    <!-- Table of contents -->
+    <div id="print-main-content">
+        <div id="jb-print-toc">
+            
+            <div>
+                <h2> Contents </h2>
+            </div>
+            <nav aria-label="Page">
+                <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#using-the-preset">Using the preset</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#exact-scoring-convention">Exact scoring convention</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#radial-bands">Radial bands</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#composition-and-extension-contracts">Composition and extension contracts</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.composite.WeightedSumLoss"><code class="docutils literal notranslate"><span class="pre">WeightedSumLoss</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.composite.WeightedSumLoss.requires_ambient_predictions"><code class="docutils literal notranslate"><span class="pre">WeightedSumLoss.requires_ambient_predictions</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.composite.WeightedSumLoss.forward"><code class="docutils literal notranslate"><span class="pre">WeightedSumLoss.forward()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.decomposition.FieldDecomposition"><code class="docutils literal notranslate"><span class="pre">FieldDecomposition</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.decomposition.FieldDecomposition.forward"><code class="docutils literal notranslate"><span class="pre">FieldDecomposition.forward()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.decomposition.ComponentTransform"><code class="docutils literal notranslate"><span class="pre">ComponentTransform</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.decomposition.ComponentTransform.forward"><code class="docutils literal notranslate"><span class="pre">ComponentTransform.forward()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.decomposition.IdentityDecomposition"><code class="docutils literal notranslate"><span class="pre">IdentityDecomposition</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.decomposition.IdentityDecomposition.forward"><code class="docutils literal notranslate"><span class="pre">IdentityDecomposition.forward()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.decomposition.SequentialDecomposition"><code class="docutils literal notranslate"><span class="pre">SequentialDecomposition</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.decomposition.SequentialDecomposition.forward"><code class="docutils literal notranslate"><span class="pre">SequentialDecomposition.forward()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.decomposition.ScoringBranch"><code class="docutils literal notranslate"><span class="pre">ScoringBranch</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.decomposition.ScoringBranch.forward"><code class="docutils literal notranslate"><span class="pre">ScoringBranch.forward()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.decomposition.ComponentBranch"><code class="docutils literal notranslate"><span class="pre">ComponentBranch</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.decomposition.ComponentBranch.forward"><code class="docutils literal notranslate"><span class="pre">ComponentBranch.forward()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.decomposition.ComponentObjective"><code class="docutils literal notranslate"><span class="pre">ComponentObjective</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.decomposition.ComponentObjective.forward"><code class="docutils literal notranslate"><span class="pre">ComponentObjective.forward()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.decomposition.TransformedLoss"><code class="docutils literal notranslate"><span class="pre">TransformedLoss</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.decomposition.TransformedLoss.forward"><code class="docutils literal notranslate"><span class="pre">TransformedLoss.forward()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.spectral.FourierDecomposition"><code class="docutils literal notranslate"><span class="pre">FourierDecomposition</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.spectral.FourierDecomposition.forward"><code class="docutils literal notranslate"><span class="pre">FourierDecomposition.forward()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.spectral.RadialFourierDecomposition"><code class="docutils literal notranslate"><span class="pre">RadialFourierDecomposition</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.spectral.RadialFourierDecomposition.forward"><code class="docutils literal notranslate"><span class="pre">RadialFourierDecomposition.forward()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+            </nav>
+        </div>
+    </div>
+</div>
+
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section class="tex2jax_ignore mathjax_ignore" id="composing-grid-space-and-spectral-losses">
+<h1>Composing grid-space and spectral losses<a class="headerlink" href="#composing-grid-space-and-spectral-losses" title="Link to this heading">#</a></h1>
+<p><code class="docutils literal notranslate"><span class="pre">ensemble_fourier_crps</span></code> adds coefficient-wise complex CRPS to grid-space
+CRPS. It scores complex coefficients, not their power or magnitude alone, so
+coefficient phase differences contribute to the loss.</p>
+<section id="using-the-preset">
+<h2>Using the preset<a class="headerlink" href="#using-the-preset" title="Link to this heading">#</a></h2>
+<p>Select the loss in an ensemble EPD configuration. For example, to adapt the
+existing ensemble ViT experiment to your data:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>autocast<span class="w"> </span>epd<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span><span class="nv">experiment</span><span class="o">=</span>epd_crps_vit_large_ps4_64<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>datamodule.data_path<span class="o">=</span>/path/to/data<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>loss@model.loss_func<span class="o">=</span>ensemble_fourier_crps<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>model.train_in_latent_space<span class="o">=</span><span class="nb">false</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>model.n_members<span class="o">=</span><span class="m">8</span>
+</pre></div>
+</div>
+<p>Keep the data, encoder, decoder and processor settings appropriate to your
+dataset. The loss preset overrides an experiment’s loss selection but does not
+otherwise change its architecture or training settings. Without this selection,
+existing loss defaults are unchanged.</p>
+<p>This EPD preset clears the previous <code class="docutils literal notranslate"><span class="pre">model.loss_func</span></code> mapping before composing
+its replacement, so old constructor arguments are not inherited. Keep the
+<code class="docutils literal notranslate"><span class="pre">&#64;model.loss_func</span></code> package shown above; explicit command-line overrides of the
+new loss’s weights and scores are applied afterwards as usual.</p>
+<p>The preset requires decoded fields and at least two members. EPD setup rejects
+it when <code class="docutils literal notranslate"><span class="pre">model.train_in_latent_space=true</span></code>; the latent training path does not
+provide the required channels-last field layout. This is distinct from using a
+Fourier transform on an explicitly arranged latent grid in custom code.
+Decoded residual prediction (<code class="docutils literal notranslate"><span class="pre">model.residual_prediction=true</span></code>) is supported:
+the loss scores reconstructed states, not raw predicted increments.</p>
+<p>The equivalent Python objective is:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">autocast.losses</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">AlphaFairCRPSLoss</span><span class="p">,</span>
+    <span class="n">CoefficientCRPSLoss</span><span class="p">,</span>
+    <span class="n">FourierDecomposition</span><span class="p">,</span>
+    <span class="n">TransformedLoss</span><span class="p">,</span>
+    <span class="n">WeightedSumLoss</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">loss</span> <span class="o">=</span> <span class="n">WeightedSumLoss</span><span class="p">(</span>
+    <span class="n">losses</span><span class="o">=</span><span class="p">[</span>
+        <span class="n">AlphaFairCRPSLoss</span><span class="p">(</span><span class="n">alpha</span><span class="o">=</span><span class="mf">0.95</span><span class="p">),</span>
+        <span class="n">TransformedLoss</span><span class="p">(</span>
+            <span class="n">FourierDecomposition</span><span class="p">(</span><span class="n">representation</span><span class="o">=</span><span class="s2">&quot;complex&quot;</span><span class="p">,</span> <span class="n">norm</span><span class="o">=</span><span class="s2">&quot;ortho&quot;</span><span class="p">),</span>
+            <span class="n">score</span><span class="o">=</span><span class="n">CoefficientCRPSLoss</span><span class="p">(</span><span class="n">alpha</span><span class="o">=</span><span class="mf">0.95</span><span class="p">),</span>
+            <span class="n">requires_ambient_predictions</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="p">),</span>
+    <span class="p">],</span>
+    <span class="n">weights</span><span class="o">=</span><span class="p">[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">],</span>
+<span class="p">)</span>
+<span class="c1"># predictions: (B, T, S1, ..., Sd, C, M)</span>
+<span class="c1"># targets:     (B, T, S1, ..., Sd, C)</span>
+<span class="c1"># objective = loss(predictions, targets)</span>
+</pre></div>
+</div>
+</section>
+<section id="exact-scoring-convention">
+<h2>Exact scoring convention<a class="headerlink" href="#exact-scoring-convention" title="Link to this heading">#</a></h2>
+<p>For one real or complex coefficient, with members <span class="math notranslate nohighlight">\(z_1,\ldots,z_M\)</span> and target
+<span class="math notranslate nohighlight">\(y\)</span>, <code class="docutils literal notranslate"><span class="pre">CoefficientCRPSLoss</span></code> computes</p>
+<div class="math notranslate nohighlight">
+\[
+S_\alpha = \frac{1}{M}\sum_i |z_i-y|
+ - \left(\frac{1-\alpha}{M^2}+\frac{\alpha}{M(M-1)}\right)
+   \sum_{i&lt;j}|z_i-z_j|.
+\]</div>
+<p>Here <span class="math notranslate nohighlight">\(|\cdot|\)</span> is complex modulus (Euclidean distance in the real-imaginary
+plane). This is the coefficient-wise complex scoring convention used for
+spectral CRPS in <a class="reference external" href="https://arxiv.org/html/2511.23043v2#S2.SS2">BriS, Section 2.2</a>.
+It is not independent scoring of the real and imaginary parts. <code class="docutils literal notranslate"><span class="pre">alpha=0</span></code>
+(the class default) gives the plug-in score, <code class="docutils literal notranslate"><span class="pre">alpha=1</span></code> gives the fair score,
+and intermediate values interpolate. A single member is supported only at
+<code class="docutils literal notranslate"><span class="pre">alpha=0</span></code>, returning absolute coefficient error. The preset uses <code class="docutils literal notranslate"><span class="pre">alpha=0.95</span></code>
+for both terms, corresponding to a fairness adjustment of <span class="math notranslate nohighlight">\(0.05/M\)</span>.</p>
+<p><code class="docutils literal notranslate"><span class="pre">FourierDecomposition</span></code> transforms spatial axes only, using the full FFT with
+orthonormal normalization in this preset, and returns a <code class="docutils literal notranslate"><span class="pre">&quot;fourier&quot;</span></code> component.
+It leaves batch, time, channel and member axes untouched. Each frequency and
+channel is scored independently before reduction. <code class="docutils literal notranslate"><span class="pre">reduction=&quot;none&quot;</span></code> retains
+the target shape; <code class="docutils literal notranslate"><span class="pre">&quot;mean&quot;</span></code> (default) and <code class="docutils literal notranslate"><span class="pre">&quot;sum&quot;</span></code> reduce all its axes. The preset
+therefore computes <strong>mean grid-space score + 0.1 x mean Fourier score</strong>, without
+dividing by 1.1. Full-FFT frequency multiplicities matter; replacing it with an
+unweighted real FFT mean changes this objective.</p>
+<p>The loss uses the units of its inputs, including any data normalization. It
+does not denormalize them. “Grid-space” is not a promise of physical SI units.
+Orthonormal FFT does not equalize CRPS magnitudes or gradients, and the weight
+0.1 is not a guaranteed 10% gradient contribution. Independent coefficient
+scores do not determine all cross-frequency dependencies or guarantee physical
+balance.</p>
+<p>The score uses direct modulus, without smoothing, and PyTorch’s zero
+subgradient at exact coincidence. The Fourier boundary promotes float16 and
+bfloat16 fields to float32 on the same device; double precision is preserved.
+Direct coefficient scoring also uses the common input dtype with at least
+float32 precision (complex64 for complex inputs), before computing distances,
+to avoid low-precision subtraction or pairwise-sum overflow. The score has the
+corresponding real dtype; gradients retain each input’s dtype.
+FFT support still depends on the execution device. Pairwise scoring has
+quadratic cost in ensemble size; it evaluates only unordered member pairs.</p>
+</section>
+<section id="radial-bands">
+<h2>Radial bands<a class="headerlink" href="#radial-bands" title="Link to this heading">#</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">RadialFourierDecomposition</span></code> selects disjoint bands of complex Fourier
+coefficients, named <code class="docutils literal notranslate"><span class="pre">band_0</span></code>, <code class="docutils literal notranslate"><span class="pre">band_1</span></code>, and so on. Each component retains the
+full grid layout with zeros outside its band. It does <strong>not</strong> average phases
+or replace coefficients with a radial power spectrum. Band membership depends
+on grid shape and edges, not on prediction or target precision.</p>
+<p>Edges are radial frequencies in <strong>cycles per grid cell</strong>, not integer Fourier
+mode numbers or physical wavenumbers. The first band begins at zero; intervals
+include their lower edge and exclude their upper edge, except that the final
+upper edge is included. In two dimensions the corners reach approximately
+0.7071 cycles/cell, beyond the per-axis Nyquist of 0.5. Use a final edge of at
+least <code class="docutils literal notranslate"><span class="pre">sqrt(n_spatial_dims)</span> <span class="pre">/</span> <span class="pre">2</span></code> to cover every mode. A shorter cutoff leaves
+higher frequencies unscored by this loss. Holding edges fixed across different
+resolutions preserves grid-relative, not physical, scales.</p>
+<p>For example, this two-dimensional objective emphasizes the highest band:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">autocast.losses</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">AlphaFairCRPSLoss</span><span class="p">,</span>
+    <span class="n">CoefficientCRPSLoss</span><span class="p">,</span>
+    <span class="n">RadialFourierDecomposition</span><span class="p">,</span>
+    <span class="n">TransformedLoss</span><span class="p">,</span>
+    <span class="n">WeightedSumLoss</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">radial_loss</span> <span class="o">=</span> <span class="n">TransformedLoss</span><span class="p">(</span>
+    <span class="n">RadialFourierDecomposition</span><span class="p">(</span><span class="n">edges</span><span class="o">=</span><span class="p">[</span><span class="mf">0.1</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">,</span> <span class="mf">0.71</span><span class="p">]),</span>
+    <span class="n">score</span><span class="o">=</span><span class="n">CoefficientCRPSLoss</span><span class="p">(</span><span class="n">alpha</span><span class="o">=</span><span class="mf">0.95</span><span class="p">),</span>
+    <span class="n">component_weights</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;band_0&quot;</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">,</span> <span class="s2">&quot;band_1&quot;</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">,</span> <span class="s2">&quot;band_2&quot;</span><span class="p">:</span> <span class="mf">2.0</span><span class="p">},</span>
+    <span class="n">requires_ambient_predictions</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">loss</span> <span class="o">=</span> <span class="n">WeightedSumLoss</span><span class="p">([</span><span class="n">AlphaFairCRPSLoss</span><span class="p">(</span><span class="n">alpha</span><span class="o">=</span><span class="mf">0.95</span><span class="p">),</span> <span class="n">radial_loss</span><span class="p">],</span> <span class="p">[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">])</span>
+</pre></div>
+</div>
+<p>The existing <code class="docutils literal notranslate"><span class="pre">ensemble_fourier_crps</span></code> preset remains full-spectrum and unchanged.
+A radial term can also be combined with a full Fourier term through
+<code class="docutils literal notranslate"><span class="pre">WeightedSumLoss</span></code>. Memory grows with the number of full-sized band components.</p>
+<p><strong>Reduction matters:</strong> with its default reduction, coefficient CRPS averages
+over the full grid, including zeroed positions. <code class="docutils literal notranslate"><span class="pre">TransformedLoss</span></code> then takes
+a weighted mean across components.
+Consequently, an equally weighted, complete partition into <code class="docutils literal notranslate"><span class="pre">J</span></code> bands with
+<code class="docutils literal notranslate"><span class="pre">band_mean=False</span></code> gives the full Fourier score divided by <code class="docutils literal notranslate"><span class="pre">J</span></code>, not a new
+cross-frequency constraint. Weights or cutoffs change the emphasis. Empty bands
+score zero but still count in the component-weight denominator unless excluded
+or given zero weight.</p>
+<p>The optional <code class="docutils literal notranslate"><span class="pre">band_mean=True</span></code> divides each band’s coefficients by the square
+root of its mode count, so its summed squared magnitude becomes mean band power.
+For coefficient CRPS it instead scales the band score by <code class="docutils literal notranslate"><span class="pre">1</span> <span class="pre">/</span> <span class="pre">sqrt(count)</span></code>;
+it does <strong>not</strong> compute mean CRPS over just the occupied modes or automatically
+equalize bands. It is disabled by default.</p>
+</section>
+<section id="composition-and-extension-contracts">
+<h2>Composition and extension contracts<a class="headerlink" href="#composition-and-extension-contracts" title="Link to this heading">#</a></h2>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">WeightedSumLoss</span></code> sums whole-loss outputs with non-negative weights.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">FieldDecomposition</span></code> maps a field to named components.
+<code class="docutils literal notranslate"><span class="pre">IdentityDecomposition</span></code> returns <code class="docutils literal notranslate"><span class="pre">&quot;field&quot;</span></code>; <code class="docutils literal notranslate"><span class="pre">SequentialDecomposition</span></code>
+composes stages with slash-separated component names.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ComponentBranch</span></code> selects components, applies shared <code class="docutils literal notranslate"><span class="pre">ComponentTransform</span></code>s
+independently to prediction and target, then forms their weighted <strong>mean</strong>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ComponentObjective</span></code> takes a weighted <strong>sum</strong> of <code class="docutils literal notranslate"><span class="pre">ScoringBranch</span></code> outputs.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">TransformedLoss</span></code> combines a decomposition with either a <code class="docutils literal notranslate"><span class="pre">score=</span></code> convenience
+argument or an explicit <code class="docutils literal notranslate"><span class="pre">objective=</span></code>, not both. An explicit objective controls
+its own component aggregation.</p></li>
+</ul>
+<p>All aggregated score outputs must have the same shape; scalar/array broadcasting
+is rejected. Transforms and branches receive <code class="docutils literal notranslate"><span class="pre">n_spatial_dims</span></code> and must preserve
+the declared field layout. The <code class="docutils literal notranslate"><span class="pre">requires_ambient_predictions</span></code> flag is optional
+on <code class="docutils literal notranslate"><span class="pre">TransformedLoss</span></code>; <code class="docutils literal notranslate"><span class="pre">WeightedSumLoss</span></code> propagates it from any configured term,
+including nested and zero-weight terms, which are still evaluated.</p>
+<p>An unreduced Fourier score is indexed by frequency, not physical position.
+Do not apply a physical-cell mask to those bins as though they were spatial
+errors. The supplied EPD preset returns a scalar and avoids that ambiguity.</p>
+<dl class="py class" id="module-autocast.losses.composite">
+<dt class="sig sig-object py" id="autocast.losses.composite.WeightedSumLoss">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">WeightedSumLoss</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">losses</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">weights</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/losses/composite.html#WeightedSumLoss"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.losses.composite.WeightedSumLoss" title="Link to this definition">#</a></dt>
+<dd><p>Combine losses using fixed non-negative weights.</p>
+<p>All losses must agree on shape; that shape is preserved.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>losses</strong> (<a class="reference external" href="https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence" title="(in Python v3.15)"><em>Sequence</em></a><em>[</em><a class="reference external" href="https://docs.pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module" title="(in PyTorch v2.14)"><em>Module</em></a><em>]</em>)</p></li>
+<li><p><strong>weights</strong> (<a class="reference external" href="https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence" title="(in Python v3.15)"><em>Sequence</em></a><em>[</em><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em> | </em><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>] </em><em>| </em><em>None</em>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py property">
+<dt class="sig sig-object py" id="autocast.losses.composite.WeightedSumLoss.requires_ambient_predictions">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">requires_ambient_predictions</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#bool" title="(in Python v3.15)"><span class="pre">bool</span></a></em><a class="headerlink" href="#autocast.losses.composite.WeightedSumLoss.requires_ambient_predictions" title="Link to this definition">#</a></dt>
+<dd><p>Whether any configured term requires decoded EPD predictions.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="autocast.losses.composite.WeightedSumLoss.forward">
+<span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">preds</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">targets</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/losses/composite.html#WeightedSumLoss.forward"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.losses.composite.WeightedSumLoss.forward" title="Link to this definition">#</a></dt>
+<dd><p>Return the weighted sum of all configured losses.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>preds</strong> (<em>Inexact</em><em>[</em><em>Tensor</em><em>, </em><em>'batch time spatial *spatial channel'</em><em>] </em><em>| </em><em>Inexact</em><em>[</em><em>Tensor</em><em>, </em><em>'batch time spatial *spatial channel ensemble'</em><em>]</em>)</p></li>
+<li><p><strong>targets</strong> (<em>Inexact</em><em>[</em><em>Tensor</em><em>, </em><em>'batch time spatial *spatial channel'</em><em>]</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.14)"><em>Tensor</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class" id="module-autocast.losses.decomposition">
+<dt class="sig sig-object py" id="autocast.losses.decomposition.FieldDecomposition">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">FieldDecomposition</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/losses/decomposition.html#FieldDecomposition"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.losses.decomposition.FieldDecomposition" title="Link to this definition">#</a></dt>
+<dd><p>Decompose or transform a field into named components.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>args</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.15)"><em>Any</em></a>)</p></li>
+<li><p><strong>kwargs</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.15)"><em>Any</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="autocast.losses.decomposition.FieldDecomposition.forward">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">tensor</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_spatial_dims</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/losses/decomposition.html#FieldDecomposition.forward"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.losses.decomposition.FieldDecomposition.forward" title="Link to this definition">#</a></dt>
+<dd><p>Define the computation performed at every call.</p>
+<p>Should be overridden by all subclasses.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Although the recipe for forward pass needs to be defined within
+this function, one should call the <code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code> instance afterwards
+instead of this since the former takes care of running the
+registered hooks while the latter silently ignores them.</p>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>tensor</strong> (<em>Inexact</em><em>[</em><em>Tensor</em><em>, </em><em>'batch time spatial *spatial channel'</em><em>] </em><em>| </em><em>Inexact</em><em>[</em><em>Tensor</em><em>, </em><em>'batch time spatial *spatial channel ensemble'</em><em>]</em>)</p></li>
+<li><p><strong>n_spatial_dims</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.15)">dict</a>[<a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)">str</a>, <a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.14)"><em>Tensor</em></a>]</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="autocast.losses.decomposition.ComponentTransform">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">ComponentTransform</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/losses/decomposition.html#ComponentTransform"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.losses.decomposition.ComponentTransform" title="Link to this definition">#</a></dt>
+<dd><p>Map a component to another component of the same layout.</p>
+<p>Applied to prediction and target alike before scoring. <code class="docutils literal notranslate"><span class="pre">n_spatial_dims</span></code>
+is supplied so a transform can reduce over spatial axes; a transform that
+acts elementwise ignores it.</p>
+<p>A transform that removes spatial axes must leave one of extent one, since
+the layout carries at least one spatial axis throughout.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>args</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.15)"><em>Any</em></a>)</p></li>
+<li><p><strong>kwargs</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.15)"><em>Any</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="autocast.losses.decomposition.ComponentTransform.forward">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">tensor</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_spatial_dims</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/losses/decomposition.html#ComponentTransform.forward"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.losses.decomposition.ComponentTransform.forward" title="Link to this definition">#</a></dt>
+<dd><p>Define the computation performed at every call.</p>
+<p>Should be overridden by all subclasses.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Although the recipe for forward pass needs to be defined within
+this function, one should call the <code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code> instance afterwards
+instead of this since the former takes care of running the
+registered hooks while the latter silently ignores them.</p>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>tensor</strong> (<em>Inexact</em><em>[</em><em>Tensor</em><em>, </em><em>'batch time spatial *spatial channel'</em><em>] </em><em>| </em><em>Inexact</em><em>[</em><em>Tensor</em><em>, </em><em>'batch time spatial *spatial channel ensemble'</em><em>]</em>)</p></li>
+<li><p><strong>n_spatial_dims</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.14)"><em>Tensor</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="autocast.losses.decomposition.IdentityDecomposition">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">IdentityDecomposition</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/losses/decomposition.html#IdentityDecomposition"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.losses.decomposition.IdentityDecomposition" title="Link to this definition">#</a></dt>
+<dd><p>Return the input field as a single named component.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>args</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.15)"><em>Any</em></a>)</p></li>
+<li><p><strong>kwargs</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.15)"><em>Any</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="autocast.losses.decomposition.IdentityDecomposition.forward">
+<span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">tensor</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_spatial_dims</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/losses/decomposition.html#IdentityDecomposition.forward"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.losses.decomposition.IdentityDecomposition.forward" title="Link to this definition">#</a></dt>
+<dd><p>Define the computation performed at every call.</p>
+<p>Should be overridden by all subclasses.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Although the recipe for forward pass needs to be defined within
+this function, one should call the <code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code> instance afterwards
+instead of this since the former takes care of running the
+registered hooks while the latter silently ignores them.</p>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>tensor</strong> (<em>Inexact</em><em>[</em><em>Tensor</em><em>, </em><em>'batch time spatial *spatial channel'</em><em>] </em><em>| </em><em>Inexact</em><em>[</em><em>Tensor</em><em>, </em><em>'batch time spatial *spatial channel ensemble'</em><em>]</em>)</p></li>
+<li><p><strong>n_spatial_dims</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.15)">dict</a>[<a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)">str</a>, <a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.14)"><em>Tensor</em></a>]</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="autocast.losses.decomposition.SequentialDecomposition">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">SequentialDecomposition</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">decompositions</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/losses/decomposition.html#SequentialDecomposition"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.losses.decomposition.SequentialDecomposition" title="Link to this definition">#</a></dt>
+<dd><p>Apply each decomposition to every component from the previous stage.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>decompositions</strong> (<a class="reference external" href="https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence" title="(in Python v3.15)"><em>Sequence</em></a><em>[</em><a class="reference internal" href="#autocast.losses.decomposition.FieldDecomposition" title="autocast.losses.decomposition.FieldDecomposition"><em>FieldDecomposition</em></a><em>]</em>)</p>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="autocast.losses.decomposition.SequentialDecomposition.forward">
+<span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">tensor</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_spatial_dims</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/losses/decomposition.html#SequentialDecomposition.forward"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.losses.decomposition.SequentialDecomposition.forward" title="Link to this definition">#</a></dt>
+<dd><p>Define the computation performed at every call.</p>
+<p>Should be overridden by all subclasses.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Although the recipe for forward pass needs to be defined within
+this function, one should call the <code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code> instance afterwards
+instead of this since the former takes care of running the
+registered hooks while the latter silently ignores them.</p>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>tensor</strong> (<em>Inexact</em><em>[</em><em>Tensor</em><em>, </em><em>'batch time spatial *spatial channel'</em><em>] </em><em>| </em><em>Inexact</em><em>[</em><em>Tensor</em><em>, </em><em>'batch time spatial *spatial channel ensemble'</em><em>]</em>)</p></li>
+<li><p><strong>n_spatial_dims</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.15)">dict</a>[<a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)">str</a>, <a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.14)"><em>Tensor</em></a>]</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="autocast.losses.decomposition.ScoringBranch">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">ScoringBranch</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/losses/decomposition.html#ScoringBranch"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.losses.decomposition.ScoringBranch" title="Link to this definition">#</a></dt>
+<dd><p>Turn selected components into one score.</p>
+<p>A branch chooses which components it reads and how they reach a score.
+An objective combines branches without regard to how each works, so any
+routing that ends in a score can be combined with any other.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>args</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.15)"><em>Any</em></a>)</p></li>
+<li><p><strong>kwargs</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.15)"><em>Any</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="autocast.losses.decomposition.ScoringBranch.forward">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">preds</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">targets</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_spatial_dims</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/losses/decomposition.html#ScoringBranch.forward"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.losses.decomposition.ScoringBranch.forward" title="Link to this definition">#</a></dt>
+<dd><p>Define the computation performed at every call.</p>
+<p>Should be overridden by all subclasses.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Although the recipe for forward pass needs to be defined within
+this function, one should call the <code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code> instance afterwards
+instead of this since the former takes care of running the
+registered hooks while the latter silently ignores them.</p>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>preds</strong> (<a class="reference external" href="https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping" title="(in Python v3.15)"><em>Mapping</em></a><em>[</em><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><em>str</em></a><em>, </em><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.14)"><em>Tensor</em></a><em>]</em>)</p></li>
+<li><p><strong>targets</strong> (<a class="reference external" href="https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping" title="(in Python v3.15)"><em>Mapping</em></a><em>[</em><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><em>str</em></a><em>, </em><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.14)"><em>Tensor</em></a><em>]</em>)</p></li>
+<li><p><strong>n_spatial_dims</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.14)"><em>Tensor</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="autocast.losses.decomposition.ComponentBranch">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">ComponentBranch</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">score</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transforms</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">()</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">components</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">component_weights</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/losses/decomposition.html#ComponentBranch"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.losses.decomposition.ComponentBranch" title="Link to this definition">#</a></dt>
+<dd><p>Transform and score selected component pairs.</p>
+<p>The score need not be scalar: unreduced component scores retain their shape.
+Every selected component must produce the same shape.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>score</strong> (<a class="reference external" href="https://docs.pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module" title="(in PyTorch v2.14)"><em>Module</em></a>)</p></li>
+<li><p><strong>transforms</strong> (<a class="reference external" href="https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence" title="(in Python v3.15)"><em>Sequence</em></a><em>[</em><a class="reference internal" href="#autocast.losses.decomposition.ComponentTransform" title="autocast.losses.decomposition.ComponentTransform"><em>ComponentTransform</em></a><em>]</em>)</p></li>
+<li><p><strong>components</strong> (<a class="reference external" href="https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence" title="(in Python v3.15)"><em>Sequence</em></a><em>[</em><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><em>str</em></a><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>component_weights</strong> (<a class="reference external" href="https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping" title="(in Python v3.15)"><em>Mapping</em></a><em>[</em><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><em>str</em></a><em>, </em><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em> | </em><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>] </em><em>| </em><em>None</em>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="autocast.losses.decomposition.ComponentBranch.forward">
+<span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">preds</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">targets</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_spatial_dims</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/losses/decomposition.html#ComponentBranch.forward"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.losses.decomposition.ComponentBranch.forward" title="Link to this definition">#</a></dt>
+<dd><p>Define the computation performed at every call.</p>
+<p>Should be overridden by all subclasses.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Although the recipe for forward pass needs to be defined within
+this function, one should call the <code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code> instance afterwards
+instead of this since the former takes care of running the
+registered hooks while the latter silently ignores them.</p>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>preds</strong> (<a class="reference external" href="https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping" title="(in Python v3.15)"><em>Mapping</em></a><em>[</em><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><em>str</em></a><em>, </em><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.14)"><em>Tensor</em></a><em>]</em>)</p></li>
+<li><p><strong>targets</strong> (<a class="reference external" href="https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping" title="(in Python v3.15)"><em>Mapping</em></a><em>[</em><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><em>str</em></a><em>, </em><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.14)"><em>Tensor</em></a><em>]</em>)</p></li>
+<li><p><strong>n_spatial_dims</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.14)"><em>Tensor</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="autocast.losses.decomposition.ComponentObjective">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">ComponentObjective</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">branches</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">weights</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/losses/decomposition.html#ComponentObjective"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.losses.decomposition.ComponentObjective" title="Link to this definition">#</a></dt>
+<dd><p>Return a weighted sum of component-scoring branches.</p>
+<p>All branches must agree on shape; that shape is preserved.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>branches</strong> (<a class="reference external" href="https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence" title="(in Python v3.15)"><em>Sequence</em></a><em>[</em><a class="reference internal" href="#autocast.losses.decomposition.ScoringBranch" title="autocast.losses.decomposition.ScoringBranch"><em>ScoringBranch</em></a><em>]</em>)</p></li>
+<li><p><strong>weights</strong> (<a class="reference external" href="https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence" title="(in Python v3.15)"><em>Sequence</em></a><em>[</em><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em> | </em><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>] </em><em>| </em><em>None</em>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="autocast.losses.decomposition.ComponentObjective.forward">
+<span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">preds</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">targets</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_spatial_dims</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/losses/decomposition.html#ComponentObjective.forward"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.losses.decomposition.ComponentObjective.forward" title="Link to this definition">#</a></dt>
+<dd><p>Define the computation performed at every call.</p>
+<p>Should be overridden by all subclasses.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Although the recipe for forward pass needs to be defined within
+this function, one should call the <code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code> instance afterwards
+instead of this since the former takes care of running the
+registered hooks while the latter silently ignores them.</p>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>preds</strong> (<a class="reference external" href="https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping" title="(in Python v3.15)"><em>Mapping</em></a><em>[</em><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><em>str</em></a><em>, </em><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.14)"><em>Tensor</em></a><em>]</em>)</p></li>
+<li><p><strong>targets</strong> (<a class="reference external" href="https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping" title="(in Python v3.15)"><em>Mapping</em></a><em>[</em><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><em>str</em></a><em>, </em><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.14)"><em>Tensor</em></a><em>]</em>)</p></li>
+<li><p><strong>n_spatial_dims</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.14)"><em>Tensor</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="autocast.losses.decomposition.TransformedLoss">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">TransformedLoss</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">decomposition</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">score</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">component_weights</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">objective</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">requires_ambient_predictions</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/losses/decomposition.html#TransformedLoss"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.losses.decomposition.TransformedLoss" title="Link to this definition">#</a></dt>
+<dd><p>Decompose prediction and target fields, then score their components.</p>
+<p>Passing <code class="docutils literal notranslate"><span class="pre">score</span></code> computes a weighted mean over components. An explicit
+<code class="docutils literal notranslate"><span class="pre">objective</span></code> controls its own scoring and aggregation instead.</p>
+<p>The result takes whatever shape the component objective returns, so callers
+that apply their own weighting and reduction can request an unreduced score.</p>
+<p><code class="docutils literal notranslate"><span class="pre">requires_ambient_predictions</span></code> marks an objective that EPD training must
+evaluate on decoded fields. It does not infer or validate a tensor’s layout;
+unmarked compositions still require <code class="docutils literal notranslate"><span class="pre">(B,</span> <span class="pre">T,</span> <span class="pre">*S,</span> <span class="pre">C[,</span> <span class="pre">M])</span></code> fields.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>decomposition</strong> (<a class="reference internal" href="#autocast.losses.decomposition.FieldDecomposition" title="autocast.losses.decomposition.FieldDecomposition"><em>FieldDecomposition</em></a>)</p></li>
+<li><p><strong>score</strong> (<a class="reference external" href="https://docs.pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module" title="(in PyTorch v2.14)"><em>Module</em></a><em> | </em><em>None</em>)</p></li>
+<li><p><strong>component_weights</strong> (<a class="reference external" href="https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping" title="(in Python v3.15)"><em>Mapping</em></a><em>[</em><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><em>str</em></a><em>, </em><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em> | </em><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>objective</strong> (<a class="reference external" href="https://docs.pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module" title="(in PyTorch v2.14)"><em>Module</em></a><em> | </em><em>None</em>)</p></li>
+<li><p><strong>requires_ambient_predictions</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#bool" title="(in Python v3.15)"><em>bool</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="autocast.losses.decomposition.TransformedLoss.forward">
+<span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">preds</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">targets</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/losses/decomposition.html#TransformedLoss.forward"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.losses.decomposition.TransformedLoss.forward" title="Link to this definition">#</a></dt>
+<dd><p>Define the computation performed at every call.</p>
+<p>Should be overridden by all subclasses.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Although the recipe for forward pass needs to be defined within
+this function, one should call the <code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code> instance afterwards
+instead of this since the former takes care of running the
+registered hooks while the latter silently ignores them.</p>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>preds</strong> (<em>Inexact</em><em>[</em><em>Tensor</em><em>, </em><em>'batch time spatial *spatial channel'</em><em>] </em><em>| </em><em>Inexact</em><em>[</em><em>Tensor</em><em>, </em><em>'batch time spatial *spatial channel ensemble'</em><em>]</em>)</p></li>
+<li><p><strong>targets</strong> (<em>Inexact</em><em>[</em><em>Tensor</em><em>, </em><em>'batch time spatial *spatial channel'</em><em>]</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.14)"><em>Tensor</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class" id="module-autocast.losses.spectral">
+<dt class="sig sig-object py" id="autocast.losses.spectral.FourierDecomposition">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">FourierDecomposition</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">representation</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'complex'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">norm</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'ortho'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/losses/spectral.html#FourierDecomposition"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.losses.spectral.FourierDecomposition" title="Link to this definition">#</a></dt>
+<dd><p>Apply a full ND Fourier transform over channels-last spatial axes.</p>
+<p>Inputs follow <code class="docutils literal notranslate"><span class="pre">(B,</span> <span class="pre">T,</span> <span class="pre">S1,</span> <span class="pre">...,</span> <span class="pre">Sd,</span> <span class="pre">C)</span></code> with an optional final ensemble
+axis. The transform preserves that layout and transforms spatial axes
+only. It does not transform time, channels or ensemble members.</p>
+<p>Half and bfloat16 inputs are promoted to float32 on the same device before
+the FFT. Single and double precision are preserved, including complex
+inputs. The cast and transform remain differentiable.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>representation</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.15)"><em>Literal</em></a><em>[</em><em>'complex'</em><em>, </em><em>'magnitude'</em><em>, </em><em>'power'</em><em>]</em>) – Return complex coefficients, their magnitudes or their
+squared magnitudes, under the component name <code class="docutils literal notranslate"><span class="pre">fourier</span></code>.</p></li>
+<li><p><strong>norm</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.15)"><em>Literal</em></a><em>[</em><em>'backward'</em><em>, </em><em>'forward'</em><em>, </em><em>'ortho'</em><em>]</em>) – FFT normalization. <code class="docutils literal notranslate"><span class="pre">ortho</span></code> scales coefficients by the reciprocal
+square root of the number of spatial cells; <code class="docutils literal notranslate"><span class="pre">forward</span></code> uses the
+reciprocal cell count and <code class="docutils literal notranslate"><span class="pre">backward</span></code> applies no scaling.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="autocast.losses.spectral.FourierDecomposition.forward">
+<span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">tensor</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_spatial_dims</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/losses/spectral.html#FourierDecomposition.forward"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.losses.spectral.FourierDecomposition.forward" title="Link to this definition">#</a></dt>
+<dd><p>Define the computation performed at every call.</p>
+<p>Should be overridden by all subclasses.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Although the recipe for forward pass needs to be defined within
+this function, one should call the <code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code> instance afterwards
+instead of this since the former takes care of running the
+registered hooks while the latter silently ignores them.</p>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>tensor</strong> (<em>Inexact</em><em>[</em><em>Tensor</em><em>, </em><em>'batch time spatial *spatial channel'</em><em>] </em><em>| </em><em>Inexact</em><em>[</em><em>Tensor</em><em>, </em><em>'batch time spatial *spatial channel ensemble'</em><em>]</em>)</p></li>
+<li><p><strong>n_spatial_dims</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.15)">dict</a>[<a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)">str</a>, <a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.14)"><em>Tensor</em></a>]</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="autocast.losses.spectral.RadialFourierDecomposition">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">RadialFourierDecomposition</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">edges</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">norm</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'ortho'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">band_mean</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/losses/spectral.html#RadialFourierDecomposition"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.losses.spectral.RadialFourierDecomposition" title="Link to this definition">#</a></dt>
+<dd><p>Split complex Fourier coefficients into disjoint radial bands.</p>
+<p>Each <code class="docutils literal notranslate"><span class="pre">band_&lt;index&gt;</span></code> retains the full field layout, with coefficients
+outside that band set to zero. This selects coefficients, not a radial
+average of their power. Frequencies beyond the final edge are omitted.
+Spatial axes, FFT normalization and precision follow FourierDecomposition.</p>
+<p><code class="docutils literal notranslate"><span class="pre">band_mean=True</span></code> divides coefficients by the square root of the number
+of modes in their band. Summing their squared magnitudes then yields mean
+band power. This does not give a within-band mean for coefficient CRPS:
+its reduction still includes zeroed positions across the full grid.
+Band weights and the scoring objective determine the final aggregation.
+Empty bands return zero tensors. Memory grows with the number of bands.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>edges</strong> (<a class="reference external" href="https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence" title="(in Python v3.15)"><em>Sequence</em></a><em>[</em><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em> | </em><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>]</em>) – Finite, positive, strictly increasing upper edges in cycles per
+grid cell. The first band starts at zero. Lower edges are included;
+upper edges are excluded except for the final edge, which is
+included. A final edge of at least <code class="docutils literal notranslate"><span class="pre">sqrt(n_spatial_dims)</span> <span class="pre">/</span> <span class="pre">2</span></code>
+covers the entire grid, including diagonal Nyquist modes. These
+are grid-relative frequencies, not physical wavenumbers.</p></li>
+<li><p><strong>norm</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.15)"><em>Literal</em></a><em>[</em><em>'backward'</em><em>, </em><em>'forward'</em><em>, </em><em>'ortho'</em><em>]</em>) – FFT normalization, as in FourierDecomposition.</p></li>
+<li><p><strong>band_mean</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#bool" title="(in Python v3.15)"><em>bool</em></a>) – Divide each nonempty band’s coefficients by sqrt(mode count).</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="autocast.losses.spectral.RadialFourierDecomposition.forward">
+<span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">tensor</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_spatial_dims</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/losses/spectral.html#RadialFourierDecomposition.forward"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.losses.spectral.RadialFourierDecomposition.forward" title="Link to this definition">#</a></dt>
+<dd><p>Define the computation performed at every call.</p>
+<p>Should be overridden by all subclasses.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Although the recipe for forward pass needs to be defined within
+this function, one should call the <code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code> instance afterwards
+instead of this since the former takes care of running the
+registered hooks while the latter silently ignores them.</p>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>tensor</strong> (<em>Inexact</em><em>[</em><em>Tensor</em><em>, </em><em>'batch time spatial *spatial channel'</em><em>] </em><em>| </em><em>Inexact</em><em>[</em><em>Tensor</em><em>, </em><em>'batch time spatial *spatial channel ensemble'</em><em>]</em>)</p></li>
+<li><p><strong>n_spatial_dims</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.15)">dict</a>[<a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)">str</a>, <a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.14)"><em>Tensor</em></a>]</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+</section>
+
+    <script type="text/x-thebe-config">
+    {
+        requestKernel: true,
+        binderOptions: {
+            repo: "binder-examples/jupyter-stacks-datascience",
+            ref: "master",
+        },
+        codeMirrorConfig: {
+            theme: "abcdef",
+            mode: "python"
+        },
+        kernelOptions: {
+            name: "python3",
+            path: "./reference/losses"
+        },
+        predefinedOutput: true
+    }
+    </script>
+    <script>kernelName = 'python3'</script>
+
+                </article>
+              
+
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="ensemble.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">autocast.losses.ensemble</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="scale.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Scale losses</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item"><div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> Contents
+  </div>
+  <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#using-the-preset">Using the preset</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#exact-scoring-convention">Exact scoring convention</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#radial-bands">Radial bands</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#composition-and-extension-contracts">Composition and extension contracts</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.composite.WeightedSumLoss"><code class="docutils literal notranslate"><span class="pre">WeightedSumLoss</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.composite.WeightedSumLoss.requires_ambient_predictions"><code class="docutils literal notranslate"><span class="pre">WeightedSumLoss.requires_ambient_predictions</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.composite.WeightedSumLoss.forward"><code class="docutils literal notranslate"><span class="pre">WeightedSumLoss.forward()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.decomposition.FieldDecomposition"><code class="docutils literal notranslate"><span class="pre">FieldDecomposition</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.decomposition.FieldDecomposition.forward"><code class="docutils literal notranslate"><span class="pre">FieldDecomposition.forward()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.decomposition.ComponentTransform"><code class="docutils literal notranslate"><span class="pre">ComponentTransform</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.decomposition.ComponentTransform.forward"><code class="docutils literal notranslate"><span class="pre">ComponentTransform.forward()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.decomposition.IdentityDecomposition"><code class="docutils literal notranslate"><span class="pre">IdentityDecomposition</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.decomposition.IdentityDecomposition.forward"><code class="docutils literal notranslate"><span class="pre">IdentityDecomposition.forward()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.decomposition.SequentialDecomposition"><code class="docutils literal notranslate"><span class="pre">SequentialDecomposition</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.decomposition.SequentialDecomposition.forward"><code class="docutils literal notranslate"><span class="pre">SequentialDecomposition.forward()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.decomposition.ScoringBranch"><code class="docutils literal notranslate"><span class="pre">ScoringBranch</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.decomposition.ScoringBranch.forward"><code class="docutils literal notranslate"><span class="pre">ScoringBranch.forward()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.decomposition.ComponentBranch"><code class="docutils literal notranslate"><span class="pre">ComponentBranch</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.decomposition.ComponentBranch.forward"><code class="docutils literal notranslate"><span class="pre">ComponentBranch.forward()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.decomposition.ComponentObjective"><code class="docutils literal notranslate"><span class="pre">ComponentObjective</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.decomposition.ComponentObjective.forward"><code class="docutils literal notranslate"><span class="pre">ComponentObjective.forward()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.decomposition.TransformedLoss"><code class="docutils literal notranslate"><span class="pre">TransformedLoss</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.decomposition.TransformedLoss.forward"><code class="docutils literal notranslate"><span class="pre">TransformedLoss.forward()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.spectral.FourierDecomposition"><code class="docutils literal notranslate"><span class="pre">FourierDecomposition</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.spectral.FourierDecomposition.forward"><code class="docutils literal notranslate"><span class="pre">FourierDecomposition.forward()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.spectral.RadialFourierDecomposition"><code class="docutils literal notranslate"><span class="pre">RadialFourierDecomposition</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.losses.spectral.RadialFourierDecomposition.forward"><code class="docutils literal notranslate"><span class="pre">RadialFourierDecomposition.forward()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+<div class="bd-footer-content__inner container">
+  
+  <div class="footer-item">
+    
+<p class="component-author">
+By AI for Physical Systems Team at The Alan Turing Institute
+</p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+  <div class="footer-item">
+    
+<div class="extra_footer">
+  Copyright &copy; 2026
+
+</div>
+  </div>
+  
+</div>
+          </footer>
+        
+
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="../../_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf"></script>
+<script defer src="../../_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf"></script>
+
+  <footer class="bd-footer">
+  </footer>
+  </body>
+</html>
