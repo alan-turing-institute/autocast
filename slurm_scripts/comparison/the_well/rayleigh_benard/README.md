@@ -269,3 +269,29 @@ writes model weights and synchronizes every epoch. Objectives, real-example
 exposure for CRPS, and runtime environments also differ. Matching the trunk
 and update schedule does not make these end-to-end timing comparisons exact;
 our estimates remain projections, not completed 4,096-epoch runs.
+
+### Paired next-window diagnostic
+
+`paired_test_windows.py` is an RB-only runner using the existing model setup,
+physical-output prediction API and metrics. It leaves library defaults unchanged.
+It selects eight random contexts from each trajectory in `test64_seed0.yaml`
+(512 windows), saves file/trajectory/frame identities, and verifies them against
+each raw test loader. The task is one true input frame to four future frames,
+without autoregressive feedback; contexts span the test trajectories rather than
+starting only at frame 16.
+
+```bash
+uv run --no-sync python slurm_scripts/comparison/the_well/rayleigh_benard/paired_test_windows.py prepare \
+  --trajectories slurm_scripts/comparison/the_well/rayleigh_benard/test64_seed0.yaml \
+  --manifest /new/output/window_selection.yaml
+uv run --no-sync python slurm_scripts/comparison/the_well/rayleigh_benard/paired_test_windows.py run \
+  --config /previous/evaluation/resolved_eval_config.yaml \
+  --manifest /new/output/window_selection.yaml --output /new/output/model --members 16
+```
+
+Use a new output directory per model. Score both predictions and targets in
+physical units; ambient training normalization is inverted by the existing
+prediction API. Historical ambient test-loader CSVs used standardized fields
+and are not directly comparable. Latent models encode the selected raw inputs
+with their frozen autoencoder. The runner saves per-window/lead/channel scores,
+including separate spread/skill components, without another inference pass.
