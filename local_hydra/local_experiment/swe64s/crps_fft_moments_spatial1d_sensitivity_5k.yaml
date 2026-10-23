@@ -1,0 +1,71 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/crps_fft_moments_spatial1d_residual_one_output_12block_256ep_8h
+  - _self_
+
+experiment_name: swe64s_crps_fft_moments_spatial1d_sensitivity_5k
+
+# Full-state branches of the same healthy 36,000-update baseline checkpoint.
+# A prepared copy clears old output/metric histories, but retains raw weights,
+# optimizer moments, EMA, scheduler and loop counters. Never use weights-only.
+resume_from_checkpoint: ???
+resume_weights_only: false
+reset_resume_time_budget: true
+
+optimizer:
+  # Preserve the original epoch schedule; the step cap is only an early stop.
+  cosine_epochs: 256
+
+trainer:
+  max_epochs: 256
+  max_steps: 41000
+  max_time: "00:00:25:00"
+  num_sanity_val_steps: 0
+  check_val_every_n_epoch: 1
+  val_check_interval: 1.0
+  callbacks:
+    - _target_: lightning.pytorch.callbacks.ModelCheckpoint
+      auto_insert_metric_name: false
+      every_n_epochs: 1
+      save_on_train_epoch_end: false
+      filename: snapshot-{epoch:04d}-{step:08d}
+      save_last: true
+      save_top_k: -1
+    - _target_: lightning.pytorch.callbacks.ModelCheckpoint
+      auto_insert_metric_name: false
+      every_n_epochs: 1
+      save_on_train_epoch_end: false
+      filename: best-val-{epoch:04d}-{step:08d}-{val_loss:.6f}
+      mode: min
+      monitor: val_loss
+      save_last: false
+      save_top_k: 1
+    - _target_: autocast.callbacks.grad_norm.GradNormCallback
+      norm_type: 2.0
+      log_per_param: false
+    - _target_: autocast.callbacks.metrics.ValidationMetricPlotCallback
+      dirname: validation_metrics
+      filename: validation_metrics.png
+      log_to_logger: true
+      max_cols: 3
+      metric_prefixes: [val_, train_, grad_, lr]
+      plot_metric_objects: true
+      save_local: true
+    - _target_: autocast.callbacks.ema.EMACallback
+      decay: 0.999
+
+logging:
+  wandb:
+    enabled: true
+    mode: offline
+    id: null
+    resume: null
+    log_model: false
+
+output:
+  skip_test: true
+  checkpoint_path: null
+
+hydra:
+  launcher:
+    timeout_min: 30
