@@ -46,7 +46,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv sync --extra dev
+          uv sync --extra dev --extra zarr
 
       - name: Run prek
         run: |

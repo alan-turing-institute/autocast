@@ -29,6 +29,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+zarr = [
+    "zarr>=3.1,<4",
+]
 dev = [
     "ipykernel>=7.1.0",
     "pytest>=9.0.1",
