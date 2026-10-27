@@ -250,6 +250,55 @@ def test_rollout_window_stride_only_changes_sample_starts(tmp_path, values):
 
 
 @pytest.mark.parametrize(
+    ("total_steps", "n_steps_input", "start_frame", "n_steps_output", "expected"),
+    [(4, 1, 0, 1, 3), (6, 2, 1, 2, 3), (20, 2, 1, 1, 12)],
+)
+def test_rollout_horizon_uses_available_frames(
+    tmp_path, values, total_steps, n_steps_input, start_frame, n_steps_output, expected
+):
+    _write_store(tmp_path / "test" / "data.zarr", values[:, :total_steps])
+    dm = ZarrDataModule(
+        tmp_path,
+        n_steps_input=n_steps_input,
+        n_steps_output=n_steps_output,
+        start_frame=start_frame,
+        use_normalization=False,
+        pin_memory=False,
+    )
+    loader = dm.rollout_test_dataloader(batch_size=1)
+    assert isinstance(loader.dataset, ZarrDataset)
+    assert loader.dataset._array is None
+    batch = next(iter(loader))
+    target_start = start_frame + n_steps_input
+    torch.testing.assert_close(
+        batch.output_fields[0],
+        torch.from_numpy(values[0, target_start : target_start + expected]),
+    )
+
+
+def test_rollout_horizon_must_fit_one_prediction_block(tmp_path):
+    with pytest.raises(
+        ValueError, match="rollout_steps must be at least n_steps_output"
+    ):
+        ZarrDataModule(tmp_path, n_steps_output=16, rollout_steps=12)
+
+
+def test_autoencoder_does_not_require_a_rollout_horizon(tmp_path, values):
+    _write_store(tmp_path / "test" / "data.zarr", values[:, :1])
+    dm = ZarrDataModule(
+        tmp_path,
+        n_steps_output=16,
+        autoencoder_mode=True,
+        use_normalization=False,
+        pin_memory=False,
+    )
+    batch = next(iter(dm.test_dataloader()))
+    assert batch.output_fields.shape[1] == 1
+    with pytest.raises(ValueError, match="unavailable in autoencoder mode"):
+        dm.rollout_test_dataloader()
+
+
+@pytest.mark.parametrize(
     "options",
     [
         {"stride": 0},

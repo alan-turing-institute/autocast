@@ -621,7 +621,9 @@ def _seed_trajectory_sampling(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
-def _validate_trajectory_loader(dataloader: DataLoader, *, label: str) -> Any:
+def _validate_trajectory_loader(
+    dataloader: DataLoader, *, label: str, include_per_timestep: bool = False
+) -> Any:
     """Require the complete sequential loader semantics used by index metadata."""
     if not isinstance(dataloader.sampler, SequentialSampler):
         msg = f"{label} trajectory statistics require a sequential dataloader."
@@ -630,7 +632,7 @@ def _validate_trajectory_loader(dataloader: DataLoader, *, label: str) -> Any:
         msg = f"{label} trajectory statistics require drop_last=False."
         raise ValueError(msg)
 
-    dataset = dataloader.dataset
+    dataset: Any = dataloader.dataset
     missing = [
         name
         for name in ("sample_trajectory_indices", "sample_window_indices")
@@ -642,6 +644,16 @@ def _validate_trajectory_loader(dataloader: DataLoader, *, label: str) -> Any:
             f"trajectory metadata: {missing}."
         )
         raise TypeError(msg)
+    if include_per_timestep:
+        trajectory_indices = dataset.sample_trajectory_indices
+        if len(set(trajectory_indices)) != len(trajectory_indices):
+            msg = (
+                "Per-timestep trajectory metrics require one sample per trajectory; "
+                "the rollout loader contains multiple windows per trajectory. Set "
+                "eval.trajectory_statistics.include_per_timestep=false to aggregate "
+                "window metrics by trajectory."
+            )
+            raise ValueError(msg)
     return dataset
 
 
@@ -2983,6 +2995,14 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
         stats.get("example_batch"), EncodedBatch
     ):
         datamodule, cfg, stats = setup_datamodule(cfg)
+
+    if trajectory_statistics_enabled:
+        # Check rollout metadata before the potentially expensive single-step pass.
+        _validate_trajectory_loader(
+            datamodule.rollout_test_dataloader(batch_size=eval_batch_size),
+            label="Rollout",
+            include_per_timestep=trajectory_include_per_timestep,
+        )
 
     # Override model n_members from eval config if specified
     if "n_members" in eval_cfg:

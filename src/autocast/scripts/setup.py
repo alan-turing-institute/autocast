@@ -451,6 +451,17 @@ def setup_autoencoder_components(
     return encoder, decoder
 
 
+def _get_dataset_normalizer(
+    datamodule: SpatioTemporalDataModule | TheWellDataModule,
+) -> Any:
+    """Reuse the available split's statistics, including eval-only datasets."""
+    for name in ("train_dataset", "val_dataset", "test_dataset"):
+        dataset = getattr(datamodule, name, None)
+        if dataset is not None:
+            return getattr(dataset, "norm", None)
+    return None
+
+
 def setup_autoencoder_model(
     config: DictConfig,
     stats: dict,
@@ -462,7 +473,7 @@ def setup_autoencoder_model(
     loss_config = model_config.get("loss")
     loss = instantiate(loss_config) if loss_config is not None else None
     optimizer_config = _get_optimizer_config(config)
-    norm = getattr(datamodule.train_dataset, "norm", None)
+    norm = _get_dataset_normalizer(datamodule)
     model = AE(
         encoder=encoder,
         decoder=decoder,
@@ -647,7 +658,7 @@ def setup_processor_model(
 
     data_config = config.get("datamodule", {})
     optimizer_config = _get_optimizer_config(config)
-    norm = getattr(datamodule.train_dataset, "norm", None)
+    norm = _get_dataset_normalizer(datamodule)
     kwargs = {
         "processor": processor,
         "stride": data_config.get("stride", stats["n_steps_output"]),
@@ -792,7 +803,7 @@ def setup_epd_model(
     cls = EncoderProcessorDecoderEnsemble if is_ensemble else EncoderProcessorDecoder
 
     optimizer_config = _get_optimizer_config(config)
-    norm = getattr(datamodule.train_dataset, "norm", None)
+    norm = _get_dataset_normalizer(datamodule)
     delta_norm = None
     delta_stats_path = model_config.get("residual_delta_stats_path")
     if (

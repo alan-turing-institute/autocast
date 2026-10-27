@@ -7,6 +7,7 @@ from einops import repeat
 from omegaconf import OmegaConf
 
 from autocast.data.datamodule import SpatioTemporalDataModule
+from autocast.data.zarr_dataset import ZarrDataModule
 from autocast.decoders.identity import IdentityDecoder
 from autocast.encoders.identity import IdentityEncoder
 from autocast.models.encoder_decoder import EncoderDecoder
@@ -163,3 +164,84 @@ def test_evaluation_keeps_trajectory_and_diagnostic_outputs_separate(
             )
     else:
         assert not (output_dir / "rollout_metrics_per_trajectory.csv").exists()
+
+
+@pytest.mark.parametrize("include_per_timestep", [True, False])
+def test_windowed_trajectory_statistics_validate_before_inference(
+    tmp_path, monkeypatch, include_per_timestep
+):
+    zarr = pytest.importorskip("zarr")
+    group = zarr.open_group(str(tmp_path / "test" / "data.zarr"), mode="w")
+    values = repeat(torch.arange(7.0), "t -> b t h w c", b=2, h=2, w=2, c=1)
+    group.create_array("data", data=values.numpy(), chunks=(1, 1, 2, 2, 1))
+    group.attrs.update(
+        schema="autosim.spatiotemporal",
+        schema_version=1,
+        field_names=["field_0"],
+        complete=True,
+    )
+    datamodule = ZarrDataModule(
+        tmp_path, rollout_steps=3, use_normalization=False, pin_memory=False
+    )
+    model = EncoderProcessorDecoderEnsemble(
+        encoder_decoder=EncoderDecoder(
+            encoder=IdentityEncoder(1), decoder=IdentityDecoder(1)
+        ),
+        processor=_IncrementProcessor(),
+        n_members=3,
+    )
+    checkpoint = tmp_path / "model.ckpt"
+    torch.save({"state_dict": model.state_dict()}, checkpoint)
+    cfg = OmegaConf.create(
+        {
+            "model": {"encoder": {}, "decoder": {}, "n_members": 3},
+            "datamodule": {},
+            "eval": {
+                "checkpoint": str(checkpoint),
+                "mode": "ambient",
+                "accelerator": "cpu",
+                "batch_size": 2,
+                "metrics": ["mse"],
+                "max_rollout_steps": 3,
+                "metric_windows_rollout": [[0, 3]],
+                "trajectory_statistics": {
+                    "enabled": True,
+                    "include_per_timestep": include_per_timestep,
+                },
+            },
+        }
+    )
+    eval_module = "autocast.scripts.eval.encoder_processor_decoder"
+    monkeypatch.setattr(
+        f"{eval_module}.setup_datamodule",
+        lambda config: (
+            datamodule,
+            config,
+            {
+                "example_batch": next(iter(datamodule.test_dataloader())),
+                "n_steps_output": 1,
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        f"{eval_module}.setup_epd_model", lambda *_args, **_kwargs: model
+    )
+    if include_per_timestep:
+
+        def unexpected_inference(*_args, **_kwargs):
+            pytest.fail("Trajectory metadata must be checked before inference.")
+
+        monkeypatch.setattr(model, "forward", unexpected_inference)
+        with pytest.raises(ValueError, match="include_per_timestep=false"):
+            run_evaluation(cfg, work_dir=tmp_path)
+        assert not list((tmp_path / "trajectory_statistics").glob("*.csv"))
+    else:
+        run_evaluation(cfg, work_dir=tmp_path)
+        output_dir = tmp_path / "trajectory_statistics"
+        rows = pd.read_csv(output_dir / "rollout_metrics_per_trajectory.csv")
+        assert rows["trajectory_idx"].tolist() == [0, 1]
+        assert rows["n_windows"].tolist() == [4, 4]
+        assert rows["mse"].tolist() == pytest.approx([0, 0])
+        assert not (
+            output_dir / "rollout_metrics_per_timestep_per_trajectory.csv"
+        ).exists()

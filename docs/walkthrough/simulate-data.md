@@ -131,8 +131,14 @@ Storage shards do not reset trajectories, and windows can cross shard boundaries
 Distributed training partitions these window indices with its normal sampler.
 
 `datamodule.rollout_steps` bounds the target horizon of evaluation windows.
+Shorter trajectories use the available frames after the context and `start_frame`;
+the horizon must still contain at least one `n_steps_output` prediction block.
 `datamodule.rollout_window_stride` optionally changes the spacing between their
 start frames, defaulting to the training window stride.
+For trajectory statistics over multiple rollout windows per trajectory, set
+`eval.trajectory_statistics.include_per_timestep=false`. Per-timestep trajectory
+statistics currently require one sample per trajectory; evaluation checks this
+before computing metrics.
 The full-trajectory latent-cache workflow is not supported by this reader: long
 trajectories require a streaming encoder, rather than loading an entire sequence
 onto the device. Existing `.pt` and HDF5 configurations retain their own loaders.

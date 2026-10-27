@@ -247,6 +247,10 @@ class ZarrDataModule(LightningDataModule):
         _positive_integer("batch_size", batch_size)
         _positive_integer("num_workers", num_workers, allow_zero=True)
         _positive_integer("rollout_steps", rollout_steps)
+        _positive_integer("n_steps_output", n_steps_output, allow_zero=autoencoder_mode)
+        if not autoencoder_mode and rollout_steps < n_steps_output:
+            msg = "rollout_steps must be at least n_steps_output."
+            raise ValueError(msg)
         if rollout_window_stride is not None:
             _positive_integer("rollout_window_stride", rollout_window_stride)
         if prefetch_factor is not None:
@@ -283,11 +287,19 @@ class ZarrDataModule(LightningDataModule):
 
     def _dataset(self, split: str, *, rollout: bool = False) -> ZarrDataset:
         options = dict(self._dataset_options)
+        path = self.data_path / split / "data.zarr"
+        dataset = ZarrDataset(path, **options)
         if rollout:
+            # The ordinary window validates that at least one prediction block
+            # fits; shorter trajectories can still use the available horizon.
             options.update(
-                n_steps_output=self.rollout_steps, stride=self.rollout_window_stride
+                n_steps_output=min(
+                    self.rollout_steps, dataset.n_timesteps - dataset.n_steps_input
+                ),
+                stride=self.rollout_window_stride,
             )
-        return ZarrDataset(self.data_path / split / "data.zarr", **options)
+            return ZarrDataset(path, **options)
+        return dataset
 
     def setup(self, stage: str | None = None) -> None:
         """Read split metadata once; no data arrays are materialized here."""
