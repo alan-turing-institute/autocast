@@ -22,6 +22,7 @@ from torch.utils.data import DataLoader, SequentialSampler
 from torchmetrics import Metric
 
 from autocast.benchmarking import benchmark_model, benchmark_rollout
+from autocast.data.zarr_dataset import ZarrDataModule
 from autocast.external.lola.wrapped_decoder import WrappedDecoder
 from autocast.metrics import (
     MAE,
@@ -621,7 +622,9 @@ def _seed_trajectory_sampling(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
-def _validate_trajectory_loader(dataloader: DataLoader, *, label: str) -> Any:
+def _validate_trajectory_loader(
+    dataloader: DataLoader, *, label: str, include_per_timestep: bool = False
+) -> Any:
     """Require the complete sequential loader semantics used by index metadata."""
     if not isinstance(dataloader.sampler, SequentialSampler):
         msg = f"{label} trajectory statistics require a sequential dataloader."
@@ -630,7 +633,7 @@ def _validate_trajectory_loader(dataloader: DataLoader, *, label: str) -> Any:
         msg = f"{label} trajectory statistics require drop_last=False."
         raise ValueError(msg)
 
-    dataset = dataloader.dataset
+    dataset: Any = dataloader.dataset
     missing = [
         name
         for name in ("sample_trajectory_indices", "sample_window_indices")
@@ -642,6 +645,16 @@ def _validate_trajectory_loader(dataloader: DataLoader, *, label: str) -> Any:
             f"trajectory metadata: {missing}."
         )
         raise TypeError(msg)
+    if include_per_timestep:
+        trajectory_indices = dataset.sample_trajectory_indices
+        if len(set(trajectory_indices)) != len(trajectory_indices):
+            msg = (
+                "Per-timestep trajectory metrics require one sample per trajectory; "
+                "the rollout loader contains multiple windows per trajectory. Set "
+                "eval.trajectory_statistics.include_per_timestep=false to aggregate "
+                "window metrics by trajectory."
+            )
+            raise ValueError(msg)
     return dataset
 
 
@@ -2983,6 +2996,24 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
         stats.get("example_batch"), EncodedBatch
     ):
         datamodule, cfg, stats = setup_datamodule(cfg)
+
+    if (
+        isinstance(datamodule, ZarrDataModule)
+        and int(eval_cfg.get("rollout_start", 0) or 0) > 0
+    ):
+        msg = (
+            "eval.rollout_start must be 0 for bounded Zarr rollout windows. "
+            "Use datamodule.start_frame to offset window sampling instead."
+        )
+        raise ValueError(msg)
+
+    if trajectory_statistics_enabled:
+        # Check rollout metadata before the potentially expensive single-step pass.
+        _validate_trajectory_loader(
+            datamodule.rollout_test_dataloader(batch_size=eval_batch_size),
+            label="Rollout",
+            include_per_timestep=trajectory_include_per_timestep,
+        )
 
     # Override model n_members from eval config if specified
     if "n_members" in eval_cfg:

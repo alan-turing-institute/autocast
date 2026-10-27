@@ -1,0 +1,11 @@
+_target_: autocast.data.zarr_dataset.ZarrDataModule
+data_path: ???
+n_steps_input: 1
+n_steps_output: 1
+stride: 1
+batch_size: 16
+num_workers: 0
+use_normalization: true
+normalization_path: null
+rollout_steps: 12
+rollout_window_stride: null
