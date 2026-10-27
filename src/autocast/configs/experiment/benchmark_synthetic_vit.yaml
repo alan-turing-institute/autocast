@@ -1,0 +1,52 @@
+# @package _global_
+defaults:
+  - override /datamodule: zarr
+  - override /encoder@model.encoder: identity
+  - override /decoder@model.decoder: identity
+  - override /processor@model.processor: vit_azula_large
+  - _self_
+
+experiment_name: benchmark_synthetic_vit
+seed: 42
+float32_matmul_precision: high
+
+datamodule:
+  n_steps_input: 2
+  n_steps_output: 1
+  batch_size: 2
+  num_workers: 2
+  use_normalization: true
+  pin_memory: false
+  persistent_workers: false
+  prefetch_factor: 1
+
+model:
+  train_in_latent_space: false
+  freeze_encoder_decoder: false
+  n_members: 8
+  processor:
+    hidden_dim: 1024
+    n_layers: 14
+    num_heads: 8
+    patch_size: [11, 8]
+    n_steps_input: 2
+    n_steps_output: 1
+  loss_func:
+    _target_: autocast.losses.ensemble.AlphaFairCRPSLoss
+    alpha: 0.95
+  train_metrics: []
+  val_metrics: []
+  test_metrics: []
+
+optimizer:
+  learning_rate: 0.0002
+  scheduler: null
+
+trainer:
+  callbacks: []
+  enable_checkpointing: false
+output:
+  skip_test: true
+logging:
+  wandb:
+    enabled: false

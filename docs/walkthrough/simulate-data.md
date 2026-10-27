@@ -174,3 +174,30 @@ prefetch depths; more workers are not necessarily faster. Worker-prefetch memory
 scales roughly with `workers × prefetch_factor × batch_size × window_bytes`,
 in addition to codec buffers and filesystem caches. The datamodule uses spawned
 workers and process-local array handles.
+
+### Short GPU training benchmark
+
+The single-GPU benchmark uses the normal model setup and lazy Zarr loader,
+including forward, loss, backward and AdamW updates. Its example preset uses a
+209M-parameter ViT on 121×240×69 fields, two input frames, one target frame,
+batch size 2 and eight ensemble members in FP32/TF32. The 11×8 patches give
+330 tokens; matching parameter count alone does not match another model's cost.
+
+```bash
+uv run --extra zarr python -m autocast.scripts.benchmark_training \
+  datasets/synthetic-fields outputs/timing-preflight --validate
+uv run --extra zarr python -m autocast.scripts.benchmark_training \
+  datasets/synthetic-fields outputs/timing-smoke --smoke --cuda-memory-limit-gib 24
+uv run --extra zarr python -m autocast.scripts.benchmark_training \
+  datasets/synthetic-fields outputs/timing
+```
+
+Submit GPU commands through your site's scheduler. `--smoke` runs five updates;
+otherwise, 20 warmup updates precede 100 timed updates. `--members 2` changes
+ensemble size; `--experiment` selects another compatible Zarr/AdamW ensemble
+configuration. Output directories must be new. The JSON and resolved YAML record
+configuration, source commit, throughput, CUDA compute timings and allocator
+peaks. The optional memory limit caps PyTorch's allocator only, not driver or CPU
+memory. Timings exclude setup, checks, validation and checkpointing; cache state
+is uncontrolled. Synthetic data measures workload cost, not convergence or skill.
+This command does not measure distributed scaling.
