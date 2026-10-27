@@ -451,14 +451,14 @@ def setup_autoencoder_components(
     return encoder, decoder
 
 
-def _get_dataset_normalizer(
+def _get_available_dataset(
     datamodule: SpatioTemporalDataModule | TheWellDataModule,
 ) -> Any:
-    """Reuse the available split's statistics, including eval-only datasets."""
+    """Reuse the available split's metadata, including eval-only datasets."""
     for name in ("train_dataset", "val_dataset", "test_dataset"):
         dataset = getattr(datamodule, name, None)
         if dataset is not None:
-            return getattr(dataset, "norm", None)
+            return dataset
     return None
 
 
@@ -473,7 +473,7 @@ def setup_autoencoder_model(
     loss_config = model_config.get("loss")
     loss = instantiate(loss_config) if loss_config is not None else None
     optimizer_config = _get_optimizer_config(config)
-    norm = _get_dataset_normalizer(datamodule)
+    norm = getattr(_get_available_dataset(datamodule), "norm", None)
     model = AE(
         encoder=encoder,
         decoder=decoder,
@@ -658,7 +658,7 @@ def setup_processor_model(
 
     data_config = config.get("datamodule", {})
     optimizer_config = _get_optimizer_config(config)
-    norm = _get_dataset_normalizer(datamodule)
+    norm = getattr(_get_available_dataset(datamodule), "norm", None)
     kwargs = {
         "processor": processor,
         "stride": data_config.get("stride", stats["n_steps_output"]),
@@ -803,7 +803,8 @@ def setup_epd_model(
     cls = EncoderProcessorDecoderEnsemble if is_ensemble else EncoderProcessorDecoder
 
     optimizer_config = _get_optimizer_config(config)
-    norm = _get_dataset_normalizer(datamodule)
+    dataset = _get_available_dataset(datamodule)
+    norm = getattr(dataset, "norm", None)
     delta_norm = None
     delta_stats_path = model_config.get("residual_delta_stats_path")
     if (
@@ -811,9 +812,7 @@ def setup_epd_model(
         and model_config.get("residual_prediction", False)
         and model_config.get("residual_use_delta_stats", True)
     ):
-        delta_norm = _load_residual_delta_normalizer(
-            delta_stats_path, datamodule.train_dataset
-        )
+        delta_norm = _load_residual_delta_normalizer(delta_stats_path, dataset)
     kwargs = {
         "encoder_decoder": EncoderDecoder(
             encoder,

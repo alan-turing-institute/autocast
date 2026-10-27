@@ -245,3 +245,50 @@ def test_windowed_trajectory_statistics_validate_before_inference(
         assert not (
             output_dir / "rollout_metrics_per_timestep_per_trajectory.csv"
         ).exists()
+
+
+@pytest.mark.parametrize("mode", ["ambient", "encode_once"])
+@pytest.mark.parametrize("rollout_start", [3, 16])
+def test_zarr_rejects_absolute_rollout_start_before_model_setup(
+    tmp_path, monkeypatch, mode, rollout_start
+):
+    zarr = pytest.importorskip("zarr")
+    group = zarr.open_group(str(tmp_path / "test" / "data.zarr"), mode="w")
+    values = repeat(torch.arange(32.0), "t -> b t h w c", b=1, h=2, w=2, c=1)
+    group.create_array("data", data=values.numpy(), chunks=(1, 1, 2, 2, 1))
+    group.attrs.update(
+        schema="autosim.spatiotemporal",
+        schema_version=1,
+        field_names=["field_0"],
+        complete=True,
+    )
+    datamodule = ZarrDataModule(tmp_path, use_normalization=False, pin_memory=False)
+    checkpoint = tmp_path / "model.ckpt"
+    torch.save({"state_dict": {}}, checkpoint)
+    cfg = OmegaConf.create(
+        {
+            "model": {"encoder": {}, "decoder": {}},
+            "eval": {
+                "checkpoint": str(checkpoint),
+                "mode": mode,
+                "rollout_start": rollout_start,
+                "compute_rollout_metrics": True,
+            },
+        }
+    )
+    eval_module = "autocast.scripts.eval.encoder_processor_decoder"
+    monkeypatch.setattr(
+        f"{eval_module}.setup_datamodule",
+        lambda config: (
+            datamodule,
+            config,
+            {"example_batch": next(iter(datamodule.test_dataloader()))},
+        ),
+    )
+
+    def unexpected_model_setup(*_args, **_kwargs):
+        pytest.fail("Invalid rollout offsets must be rejected before model setup.")
+
+    monkeypatch.setattr(f"{eval_module}.setup_epd_model", unexpected_model_setup)
+    with pytest.raises(ValueError, match=r"datamodule\.start_frame"):
+        run_evaluation(cfg, work_dir=tmp_path)

@@ -22,6 +22,7 @@ from torch.utils.data import DataLoader, SequentialSampler
 from torchmetrics import Metric
 
 from autocast.benchmarking import benchmark_model, benchmark_rollout
+from autocast.data.zarr_dataset import ZarrDataModule
 from autocast.external.lola.wrapped_decoder import WrappedDecoder
 from autocast.metrics import (
     MAE,
@@ -2995,6 +2996,16 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
         stats.get("example_batch"), EncodedBatch
     ):
         datamodule, cfg, stats = setup_datamodule(cfg)
+
+    if (
+        isinstance(datamodule, ZarrDataModule)
+        and int(eval_cfg.get("rollout_start", 0) or 0) > 0
+    ):
+        msg = (
+            "eval.rollout_start must be 0 for bounded Zarr rollout windows. "
+            "Use datamodule.start_frame to offset window sampling instead."
+        )
+        raise ValueError(msg)
 
     if trajectory_statistics_enabled:
         # Check rollout metadata before the potentially expensive single-step pass.

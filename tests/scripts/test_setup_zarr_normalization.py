@@ -85,3 +85,52 @@ def test_model_denormalizes_available_zarr_split(
     torch.testing.assert_close(
         model.denormalize_tensor(targets), torch.full_like(targets, 12.0)
     )
+
+
+@pytest.mark.parametrize("splits", [("test",), ("train", "valid", "test")])
+@pytest.mark.parametrize("channel_idxs", [[1, 0], [1]])
+@pytest.mark.parametrize("use_normalization", [True, False])
+def test_residual_stats_follow_available_zarr_channels(
+    tmp_path, epd_config, splits, channel_idxs, use_normalization
+):
+    fields = ["field_0", "field_1"]
+    for split in splits:
+        group = zarr.open_group(str(tmp_path / split / "data.zarr"), mode="w")
+        group.create_array("data", data=np.ones((1, 4, 2, 2, 2), dtype=np.float32))
+        group.attrs.update(
+            schema="autosim.spatiotemporal",
+            schema_version=1,
+            complete=True,
+            field_names=fields,
+        )
+    stats_path = tmp_path / "stats.yml"
+    OmegaConf.save(
+        OmegaConf.create(
+            {
+                "core_field_names": fields,
+                "constant_field_names": [],
+                "stats": {
+                    "mean": dict.fromkeys(fields, 0.0),
+                    "std": dict.fromkeys(fields, 1.0),
+                    "mean_delta": dict.fromkeys(fields, 0.0),
+                    "std_delta": dict(zip(fields, [1.0, 10.0], strict=True)),
+                },
+            }
+        ),
+        stats_path,
+    )
+    epd_config.datamodule = {
+        "_target_": "autocast.data.zarr_dataset.ZarrDataModule",
+        "data_path": str(tmp_path),
+        "channel_idxs": channel_idxs,
+        "pin_memory": False,
+        "use_normalization": use_normalization,
+    }
+    epd_config.model.update(
+        residual_prediction=True, residual_delta_stats_path=str(stats_path)
+    )
+    datamodule, config, stats = setup_datamodule(epd_config)
+    model = setup_epd_model(config, stats, datamodule)
+    batch = stats["example_batch"]
+    expected = torch.tensor([2.0, 11.0])[channel_idxs]
+    torch.testing.assert_close(model(batch), expected.expand_as(batch.output_fields))

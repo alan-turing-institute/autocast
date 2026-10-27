@@ -135,6 +135,9 @@ Shorter trajectories use the available frames after the context and `start_frame
 the horizon must still contain at least one `n_steps_output` prediction block.
 `datamodule.rollout_window_stride` optionally changes the spacing between their
 start frames, defaulting to the training window stride.
+Keep `eval.rollout_start=0` for Zarr: it assumes full trajectories. To start window
+sampling later, set `datamodule.start_frame` (use `+datamodule.start_frame=N` on the
+command line); this offsets the first context frame without shortening each window.
 For trajectory statistics over multiple rollout windows per trajectory, set
 `eval.trajectory_statistics.include_per_timestep=false`. Per-timestep trajectory
 statistics currently require one sample per trajectory; evaluation checks this
