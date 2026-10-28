@@ -1,0 +1,58 @@
+# @package _global_
+defaults:
+  - override /datamodule: zarr
+  - override /encoder@model.encoder: permute_concat
+  - override /decoder@model.decoder: channels_last
+  - override /processor@model.processor: swin_large
+  - _self_
+
+experiment_name: benchmark_synthetic_swin
+seed: 42
+float32_matmul_precision: high
+
+datamodule:
+  n_steps_input: 2
+  n_steps_output: 1
+  batch_size: 2
+  num_workers: 2
+  pin_memory: false
+  persistent_workers: true
+  prefetch_factor: 1
+
+model:
+  train_in_latent_space: false
+  freeze_encoder_decoder: false
+  n_members: 2
+  decoder:
+    output_channels: auto
+  processor:
+    # 199,205,445 parameters for 69 channels and two input frames.
+    # Preserve the input grid before hierarchical merging: 29,040 tokens
+    # for 121x240 fields, then 7,320 and 1,860 tokens. Stride one also
+    # preserves the odd latitude dimension without an external resize.
+    patch_size: 1
+    hidden_dim: 384
+    encoder_depths: [4, 4, 2]
+    encoder_num_heads: [6, 12, 24]
+    decoder_depths: [2, 2, 2]
+    decoder_num_heads: [24, 12, 6]
+    drop_path: 0.0
+  loss_func:
+    _target_: autocast.losses.ensemble.AlphaFairCRPSLoss
+    alpha: 0.95
+  train_metrics: []
+  val_metrics: []
+  test_metrics: []
+
+optimizer:
+  learning_rate: 0.0002
+  scheduler: null
+
+trainer:
+  callbacks: []
+  enable_checkpointing: false
+output:
+  skip_test: true
+logging:
+  wandb:
+    enabled: false

@@ -174,3 +174,45 @@ prefetch depths; more workers are not necessarily faster. Worker-prefetch memory
 scales roughly with `workers × prefetch_factor × batch_size × window_bytes`,
 in addition to codec buffers and filesystem caches. The datamodule uses spawned
 workers and process-local array handles.
+
+### Native-grid training preset
+
+`experiment=benchmark_synthetic_swin` uses the existing noise-conditioned
+Swin encoder-decoder with a stride-one input projection. It processes every
+input location before hierarchical merging, retaining fine-grid skip connections.
+For 121×240 fields with 69 channels and two input frames, it has
+**199,205,445 trainable parameters**:
+
+| Stage | Grid | Spatial tokens | Hidden channels | Encoder / decoder blocks |
+| --- | --- | ---: | ---: | ---: |
+| 1 | 121×240 | 29,040 | 384 | 4 / 2 |
+| 2 | 61×120 | 7,320 | 768 | 4 / 2 |
+| 3 | 31×60 | 1,860 | 1,536 | 2 / 2 |
+
+Shifted attention uses 7×7 windows. Existing merging and splitting handle
+odd dimensions and restore the exact output grid. The preset uses two context
+frames, one target frame, two training members, alpha-fair CRPS (alpha 0.95),
+AdamW, and FP32/TF32. Batch size two is per GPU; keep the member count and
+local batch fixed when comparing GPU counts.
+
+Inspect the normal training API command without launching a job:
+
+```bash
+uv run autocast time-epochs --dry-run --kind epd --num-epochs 3 \
+  experiment=benchmark_synthetic_swin \
+  datamodule.data_path=/path/to/synthetic-fields \
+  ++trainer.limit_train_batches=50 ++trainer.limit_val_batches=0 \
+  ++trainer.num_sanity_val_steps=0 output.save_config=true
+```
+
+Before timing, check a few optimizer updates on one GPU, first with
+`datamodule.batch_size=1`, then with the target batch size. Record actual CUDA
+allocation peaks; retained activations are much larger than in a coarsely
+patched model with the same parameter count. An eight-member training case
+is a separate workload and requires its own memory check. Save the resolved
+configuration, code revision and software versions alongside timing results.
+
+This is a native-grid AutoCast workload, not a computational reproduction of
+[Mosaic](https://arxiv.org/html/2604.16429v3): Mosaic uses HEALPix block-sparse
+attention, 82 dynamic channels and mixed precision. Synthetic data measure
+training cost; real atmospheric data are needed to establish forecast quality.
