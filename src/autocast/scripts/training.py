@@ -1,5 +1,6 @@
 """Training functions and utils for AutoCast experiments."""
 
+import json
 import logging
 import os
 import shutil
@@ -411,6 +412,26 @@ def _gpu_util_callbacks(config: DictConfig) -> list[Callback]:
     return []
 
 
+def _save_timing_result(trainer: L.Trainer, work_dir: Path) -> Path:
+    path = work_dir / "timing.json"
+    if trainer.is_global_zero:
+        timer = next(
+            callback
+            for callback in getattr(trainer, "callbacks", [])
+            if isinstance(callback, TrainingTimerCallback)
+        )
+        result = {
+            **timer.state_dict(),
+            "global_step": trainer.global_step,
+            "world_size": trainer.world_size,
+        }
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(result, indent=2) + "\n")
+        log.info("Saved timing result to %s", path.resolve())
+    trainer.strategy.barrier("timing-result-finalize")
+    return path
+
+
 def _ensure_residual_statistics_callback(
     callbacks: object,
     model: L.LightningModule,
@@ -561,6 +582,10 @@ def run_training(
         log.info("Starting training from scratch (no resume checkpoint).")
         trainer.fit(model=model, datamodule=datamodule)
 
+    if output_cfg.get("timing_only", False):
+        _save_timing_result(trainer, work_dir)
+        return
+
     # Save stable checkpoint target (prefer callback checkpoint) immediately
     # after fit so a checkpoint exists even if optional test later fails.
     #
@@ -649,7 +674,7 @@ def train_autoencoder(
     work_dir: Path,
     run_name: str | None = None,
 ) -> Path:
-    """Train the autoencoder defined in `cfg` and return the checkpoint path."""
+    """Train the autoencoder and return its checkpoint or timing-result path."""
     log.info("Starting autoencoder experiment: %s", config.get("experiment_name"))
     apply_float32_matmul_precision(config)
     L.seed_everything(config.get("seed", 42), workers=True)
@@ -734,6 +759,9 @@ def train_autoencoder(
     else:
         log.info("Starting training from scratch (no resume checkpoint).")
         trainer.fit(model=model, datamodule=datamodule)
+
+    if output_cfg.get("timing_only", False):
+        return _save_timing_result(trainer, work_dir)
 
     checkpoint_path = _resolve_checkpoint_path(
         work_dir,

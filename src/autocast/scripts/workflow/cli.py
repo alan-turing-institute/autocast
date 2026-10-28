@@ -198,10 +198,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Safety margin fraction subtracted from budget (default: 0.02 = 2%%).",
     )
     time_parser.add_argument(
+        "--from-timing",
         "--from-checkpoint",
-        metavar="CKPT",
+        dest="from_checkpoint",
+        metavar="RESULT",
         help=(
-            "Path to an existing timing checkpoint. Skips training and "
+            "Path to timing JSON or a legacy timing checkpoint. Skips training and "
             "computes the recommendation directly."
         ),
     )

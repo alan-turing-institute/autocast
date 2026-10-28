@@ -911,6 +911,29 @@ def cache_latents_command(
 # ---------------------------------------------------------------------------
 
 
+def _extract_epoch_times(path: Path) -> list[float] | None:
+    if path.suffix != ".json":
+        return _extract_epoch_times_from_checkpoint(path)
+    try:
+        result = json.loads(path.read_text())
+        times = result.get("epoch_times_s")
+        if (
+            isinstance(times, list)
+            and times
+            and all(
+                isinstance(value, (float, int))
+                and not isinstance(value, bool)
+                and math.isfinite(value)
+                and value > 0
+                for value in times
+            )
+        ):
+            return times
+    except (OSError, ValueError, AttributeError):
+        pass
+    return None
+
+
 def _extract_epoch_times_from_checkpoint(ckpt_path: Path) -> list[float] | None:
     """Read per-epoch durations saved by ``TrainingTimerCallback``.
 
@@ -1083,7 +1106,9 @@ def _run_time_epochs_training(
             "logging.wandb.enabled=false",
             "output.skip_test=true",
             "output.save_config=false",
-            "output.checkpoint_path=timing.ckpt",
+            "++output.timing_only=true",
+            "++trainer.enable_checkpointing=false",
+            "++trainer.callbacks=[]",
         ]
 
         final_work_dir, _resolved_run_id, command_overrides = build_train_overrides(
@@ -1100,7 +1125,7 @@ def _run_time_epochs_training(
             overrides=[*timing_overrides, *overrides],
         )
 
-        ckpt_path = final_work_dir / "timing.ckpt"
+        timing_path = final_work_dir / "timing.json"
 
         if dry_run:
             cmd = run_module_command(TRAIN_MODULES[kind], command_overrides)
@@ -1119,7 +1144,7 @@ def _run_time_epochs_training(
             )
             retrieve_cmd = (
                 f"uv run autocast time-epochs "
-                f"--from-checkpoint {ckpt_path} "
+                f"--from-timing {timing_path} "
                 f"-b {budget_hours} -m {margin}"
             )
             final_work_dir.mkdir(parents=True, exist_ok=True)
@@ -1143,7 +1168,7 @@ def _run_time_epochs_training(
             mode="local",
             runtime_typechecking=runtime_typechecking,
         )
-        return _extract_epoch_times_from_checkpoint(ckpt_path), False
+        return _extract_epoch_times(timing_path), False
     finally:
         if tmpdir_ctx is not None:
             tmpdir_ctx.__exit__(None, None, None)
@@ -1169,7 +1194,7 @@ def time_epochs_command(
     """Run a short training to time per-epoch duration and recommend ``max_epochs``.
 
     Executes *num_epochs* epochs of training (ae, epd, or processor) with
-    W&B logging and testing disabled, saves a checkpoint so that per-epoch
+    W&B logging and testing disabled, saves a small JSON result so that per-epoch
     wall-clock times can be extracted from ``TrainingTimerCallback``, and
     prints the recommended ``trainer.max_epochs`` for a cosine half-period
     schedule (``optimizer=adamw_half``) that completes within *budget_hours*.
@@ -1181,7 +1206,7 @@ def time_epochs_command(
     full (un-margined) budget.
 
     With ``--mode slurm`` the timing run is submitted via sbatch and the
-    command exits immediately, printing a ``--from-checkpoint`` command to
+    command exits immediately, printing a ``--from-timing`` command to
     retrieve results once the job completes.
 
     Args:
@@ -1196,7 +1221,7 @@ def time_epochs_command(
         run_group: Top-level output folder grouping label.
         run_id: Preferred run folder identifier.
         work_dir: If provided, used directly as the output path.
-        from_checkpoint: Path to an existing checkpoint; skips training.
+        from_checkpoint: Path to timing JSON or a legacy checkpoint; skips training.
         runtime_typechecking: Enable runtime type checking during the run.
         dry_run: Print the command without executing it.
     """
@@ -1212,12 +1237,11 @@ def time_epochs_command(
 
     if from_checkpoint is not None:
         ckpt = Path(from_checkpoint)
-        epoch_times = _extract_epoch_times_from_checkpoint(ckpt)
+        epoch_times = _extract_epoch_times(ckpt)
         if not epoch_times:
             print(
                 f"ERROR: Could not extract per-epoch times from {ckpt}. "
-                "Check that the checkpoint was produced by a timing run with "
-                "TrainingTimerCallback."
+                "Use timing.json or a legacy timing checkpoint."
             )
             return None
         return _print_timing_results(epoch_times, budget_hours, margin)
@@ -1242,7 +1266,7 @@ def time_epochs_command(
 
     if not epoch_times:
         print(
-            "\nWARNING: Could not extract per-epoch times from checkpoint. "
+            "\nWARNING: Could not extract per-epoch times from timing.json. "
             "No timing data available."
         )
         return None
