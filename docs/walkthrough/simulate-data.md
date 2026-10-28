@@ -177,7 +177,7 @@ workers and process-local array handles.
 
 ### Short GPU training benchmark
 
-The single-GPU benchmark uses the normal model setup and lazy Zarr loader,
+The benchmark uses the normal model setup and lazy Zarr loader,
 including forward, loss, backward and AdamW updates. Its example preset uses a
 209M-parameter ViT on 121×240×69 fields, two input frames, one target frame,
 batch size 2 and eight ensemble members in FP32/TF32. The 11×8 patches give
@@ -200,4 +200,29 @@ configuration, source commit, throughput, CUDA compute timings and allocator
 peaks. The optional memory limit caps PyTorch's allocator only, not driver or CPU
 memory. Timings exclude setup, checks, validation and checkpointing; cache state
 is uncontrolled. Synthetic data measures workload cost, not convergence or skill.
-This command does not measure distributed scaling.
+
+For DDP, launch one process per GPU with `srun` or `torchrun`. Each rank uses
+different input windows and independent noise; gradients are synchronized through
+the loss forward pass. The summary counts global training windows using the
+slowest rank's elapsed time, with per-rank timings saved separately. Batch size
+stays at two per GPU, so these are fixed-local-batch scaling measurements:
+global batch sizes are 2, 8 and 16 for 1, 4 and 8 GPUs. Ensemble size does not
+multiply the number of training windows.
+
+The supplied Slurm launcher limits every job to 15 minutes. For example:
+
+```bash
+export BENCHMARK_DATASET=/path/to/synthetic-fields
+export BENCHMARK_OUTPUT_ROOT=/path/to/timing-results
+# On Isambard-AI, enable its OFI transport before starting worker processes:
+export BENCHMARK_NCCL_MODULE=brics/nccl/2.26.6-1
+sbatch slurm_scripts/benchmark_training.sbatch
+sbatch --nodes=1 --ntasks=4 --ntasks-per-node=4 --gpus-per-node=4 \
+  --mem=160G slurm_scripts/benchmark_training.sbatch
+sbatch --nodes=2 --ntasks=8 --ntasks-per-node=4 --gpus-per-node=4 \
+  --mem=160G slurm_scripts/benchmark_training.sbatch
+```
+
+Append `--smoke` for five updates. Scaling efficiency is global throughput
+divided by GPU count and the one-GPU throughput. Verify the multi-node logs
+show the intended transport before interpreting scaling results.
