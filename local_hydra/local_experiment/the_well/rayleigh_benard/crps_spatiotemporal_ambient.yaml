@@ -1,0 +1,102 @@
+# @package _global_
+defaults:
+  - /distributed: ddp_4gpu_slurm
+  - override /datamodule: rayleigh_benard
+  - override /encoder@model.encoder: identity
+  - override /decoder@model.decoder: identity
+  - override /processor@model.processor: spatiotemporal_vit_masked_window
+  - override /optimizer: adamw_half
+  - _self_
+
+experiment_name: the_well_rayleigh_benard_crps_spatiotemporal_ambient
+
+# Four GPUs: 32 real windows x eight members = 256 predictions per update.
+datamodule:
+  batch_size: 8
+
+float32_matmul_precision: high
+logging:
+  wandb:
+    enabled: true
+output:
+  skip_test: true
+
+model:
+  # Delegate the masked loss to the processor. The identity codec keeps its
+  # inputs/targets in normalized ambient fields, with no latent compression.
+  train_in_latent_space: true
+  n_members: 8
+  loss_func: null
+  processor:
+    n_members: ${model.n_members}
+    context_mask:
+      _target_: autocast.processors.masking.random_context_mask
+      _partial_: true
+      lmbda: 1.0
+      rho: 1.0
+      atleast: 1
+    backbone:
+      hid_channels: 2048
+      hid_blocks: 16
+      attention_heads: 16
+      patch_size: [1, 16, 16]
+      checkpointing: true
+  val_metrics:
+    afcrps:
+      _target_: autocast.metrics.ensemble.AlphaFairCRPS
+    spread:
+      _target_: autocast.metrics.ensemble.EnsembleSpread
+    multicoverage:
+      _target_: autocast.metrics.MultiCoverage
+    multiwinkler:
+      _target_: autocast.metrics.ensemble.MultiWinkler
+
+optimizer:
+  # Reference horizon, independent of short probes. Choose any shorter horizon
+  # from measured throughput before training, then retain it across resumes.
+  cosine_epochs: 4096
+
+trainer:
+  max_epochs: 4096
+  max_time: "00:23:45:00"
+  accumulate_grad_batches: 1
+  limit_train_batches: 64
+  limit_val_batches: 16
+  check_val_every_n_epoch: 8
+  num_sanity_val_steps: 0
+  gradient_clip_val: 1.0
+  log_every_n_steps: 64
+  enable_progress_bar: false
+  callbacks:
+    - _target_: lightning.pytorch.callbacks.ModelCheckpoint
+      every_n_epochs: 128
+      save_top_k: -1
+      save_last: true
+      filename: "snapshot-{epoch:04d}-{step:08d}"
+      auto_insert_metric_name: false
+    - _target_: lightning.pytorch.callbacks.ModelCheckpoint
+      monitor: val_loss
+      mode: min
+      save_top_k: 1
+      save_last: false
+      filename: "best-val-{epoch:04d}-{val_loss:.4f}"
+      auto_insert_metric_name: false
+    - _target_: autocast.callbacks.checkpoint.ProgressModelCheckpoint
+      monitor: val_multiwinkler
+      monitor_optional: true
+      mode: min
+      save_top_k: 1
+      save_last: false
+      filename: "best-multiwinkler-{epoch:04d}-{val_multiwinkler:.4f}"
+      auto_insert_metric_name: false
+    - _target_: autocast.callbacks.ema.EMACallback
+      decay: 0.999
+    - _target_: autocast.callbacks.grad_norm.GradNormCallback
+      norm_type: 2.0
+      every_n_steps: ${trainer.log_every_n_steps}
+    - _target_: autocast.callbacks.param_norm.ParamNormCallback
+      norm_type: 2.0
+
+eval:
+  rollout_start: 16
+  n_members: 16
