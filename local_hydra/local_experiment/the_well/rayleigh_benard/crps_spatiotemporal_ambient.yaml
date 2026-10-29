@@ -49,7 +49,7 @@ model:
     multicoverage:
       _target_: autocast.metrics.MultiCoverage
     multiwinkler:
-      _target_: autocast.metrics.ensemble.MultiWinkler
+      _target_: autocast.metrics.MultiWinkler
 
 optimizer:
   # Reference horizon, independent of short probes. Choose any shorter horizon

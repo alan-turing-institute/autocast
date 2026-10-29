@@ -3,6 +3,7 @@
 import pytest
 import torch
 from hydra import compose, initialize_config_dir
+from hydra.utils import get_class
 
 from autocast.nn.spatiotemporal_vit import SpatiotemporalViTBackbone
 from autocast.processors.diffusion import DiffusionProcessor
@@ -214,7 +215,14 @@ def test_rb_ambient_spatiotemporal_protocol(REPO_ROOT):
         )
     assert cfg.optimizer == latent.optimizer
     assert cfg.trainer == latent.trainer
-    assert cfg.model.val_metrics == latent.model.val_metrics
+    # Public re-exports and implementation paths can name the same metric.
+    assert {
+        name: get_class(metric._target_)
+        for name, metric in cfg.model.val_metrics.items()
+    } == {
+        name: get_class(metric._target_)
+        for name, metric in latent.model.val_metrics.items()
+    }
     for key in ("_target_", "context_mask", "loss_func", "n_noise_input_channels"):
         assert cfg.model.processor[key] == latent.model.processor[key]
     assert cfg.datamodule._target_ == "autocast.data.datamodule.TheWellDataModule"
