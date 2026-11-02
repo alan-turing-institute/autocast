@@ -704,6 +704,7 @@ class SwinViTProcessor(Processor[EncodedBatch]):
 
         self.n_noise_channels = n_noise_channels
         self.loss_func = loss_func or nn.MSELoss()
+        self.patch_size = 16 if patch_size is None else patch_size
         self.embed = PatchEmbedding(
             in_channels, hidden_dim, groups, self.n_spatial_dims, patch_size
         )
@@ -782,6 +783,13 @@ class SwinViTProcessor(Processor[EncodedBatch]):
         return all_res, padded_outs
 
     def forward(self, x: Tensor, x_noise: Tensor | None = None) -> Tensor:
+        # Preserve edge cells that a strided patch convolution would discard.
+        input_padding = tuple((-size) % self.patch_size for size in x.shape[1:-1])
+        if any(input_padding):
+            if len(input_padding) == 2:
+                x = _pad_2d(x, input_padding)
+            elif len(input_padding) == 3:
+                x = _pad_3d(x, input_padding)
         x = rearrange(
             self.embed(rearrange(x, self.embed_reshapes[0])), self.embed_reshapes[1]
         )
@@ -824,9 +832,15 @@ class SwinViTProcessor(Processor[EncodedBatch]):
                 d=spatial_shape[2],
             )
 
-        return rearrange(
+        x = rearrange(
             self.debed(rearrange(x, self.embed_reshapes[0])), self.embed_reshapes[1]
         )
+        if any(input_padding):
+            if len(input_padding) == 2:
+                x = _crop_2d(x, input_padding)
+            elif len(input_padding) == 3:
+                x = _crop_3d(x, input_padding)
+        return x
 
     def map(self, x: Tensor, global_cond: Tensor | None = None) -> Tensor:  # noqa: ARG002
         """Map encoded inputs through Swin while preserving channel-first I/O."""
