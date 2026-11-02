@@ -1,0 +1,17 @@
+# @package _global_
+defaults:
+  - benchmark_synthetic_timing
+  - override /processor@model.processor: swin_large
+  - _self_
+
+experiment_name: benchmark_synthetic_121x240_swin
+model:
+  processor:
+    # 199,205,445 parameters; 29,040 -> 7,320 -> 1,860 tokens.
+    patch_size: 1
+    hidden_dim: 384
+    encoder_depths: [4, 4, 2]
+    encoder_num_heads: [6, 12, 24]
+    decoder_depths: [2, 2, 2]
+    decoder_num_heads: [24, 12, 6]
+    drop_path: 0.0

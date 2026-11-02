@@ -1,0 +1,63 @@
+# @package _global_
+defaults:
+  - override /datamodule: zarr
+  - override /encoder@model.encoder: permute_concat
+  - override /decoder@model.decoder: channels_last
+  - _self_
+
+seed: 42
+float32_matmul_precision: high
+log_gpu_util: true
+
+datamodule:
+  n_steps_input: 2
+  n_steps_output: 1
+  # Start with batch one; keep the chosen batch fixed within each scaling curve.
+  batch_size: 1
+  num_workers: 2
+  pin_memory: false
+  persistent_workers: true
+  prefetch_factor: 1
+
+model:
+  train_in_latent_space: false
+  freeze_encoder_decoder: false
+  n_members: 2
+  decoder:
+    output_channels: auto
+  loss_func:
+    _target_: autocast.losses.ensemble.AlphaFairCRPSLoss
+    alpha: 0.95
+  train_metrics: []
+  val_metrics: []
+  test_metrics: []
+
+optimizer:
+  learning_rate: 0.0002
+  scheduler: null
+
+trainer:
+  accelerator: gpu
+  devices: 1
+  num_nodes: 1
+  strategy: auto
+  precision: 32-true
+  max_epochs: 30
+  max_steps: 150
+  max_time: "00:00:12:00"
+  # Repeat a small dataset. Discard 10 epochs (50 updates), measure the next 20.
+  limit_train_batches: 5
+  limit_val_batches: 0
+  num_sanity_val_steps: 0
+  enable_progress_bar: false
+  enable_model_summary: false
+  enable_checkpointing: false
+  callbacks: []
+
+output:
+  timing_only: true
+  save_config: true
+  skip_test: true
+logging:
+  wandb:
+    enabled: false

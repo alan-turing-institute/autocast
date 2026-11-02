@@ -3,6 +3,7 @@ from contextlib import contextmanager
 from enum import Enum
 
 import torch
+import torch.nn.functional as F
 from einops import rearrange
 from torch import Tensor, nn
 
@@ -177,6 +178,8 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
         (cached latents that keep an explicit T dim). In latent mode, T_in is
         folded into C before the backbone and T_out is unfolded afterward, so
         the backbone itself always runs with a single effective time token.
+        Global-noise inputs are zero-padded to complete partial patches and
+        cropped back to their original grid. Spatial noise requires full patches.
 
         Args:
             x: Input tensor with shape (B, C, H, W) or
@@ -226,7 +229,16 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
             )
             raise ValueError(msg)
 
+        height, width = x_in.shape[2:4]
+        ph, pw = self.patch_size
+        pad_height, pad_width = -height % ph, -width % pw
+        if pad_height or pad_width:
+            # Complete edge patches without discarding input pixels.
+            x_in = F.pad(x_in, (0, 0, 0, pad_width, 0, pad_height))
+
         y = self.model(x_in, t=x_noise, cond=None, global_cond=model_global_cond)
+        if pad_height or pad_width:
+            y = y[:, :, :height, :width, :]
 
         if is_channel_first:
             return rearrange(y, "b 1 h w c -> b c h w").contiguous()

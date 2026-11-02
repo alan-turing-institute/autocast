@@ -1,0 +1,20 @@
+# @package _global_
+defaults:
+  - benchmark_synthetic_timing
+  - override /processor@model.processor: vit_azula_large
+  - _self_
+
+experiment_name: benchmark_synthetic_121x240_vit
+model:
+  processor:
+    # 193,741,040 parameters; 31x60 = 1,860 padded patch tokens.
+    hidden_dim: 1024
+    n_layers: 14
+    num_heads: 8
+    patch_size: 4
+    temporal_method: none
+    n_noise_channels: 256
+    checkpointing: false
+    qk_norm: true
+    rope: false
+    rpb: true

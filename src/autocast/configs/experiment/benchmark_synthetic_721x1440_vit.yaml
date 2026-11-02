@@ -1,0 +1,11 @@
+# @package _global_
+defaults:
+  - benchmark_synthetic_121x240_vit
+  - _self_
+
+experiment_name: benchmark_synthetic_721x1440_vit
+model:
+  processor:
+    # 244,629,920 parameters; 46x90 = 4,140 padded patch tokens.
+    # Larger patches bound global attention cost; this is a cost proxy.
+    patch_size: 16

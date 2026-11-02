@@ -1,0 +1,10 @@
+# @package _global_
+defaults:
+  - benchmark_synthetic_121x240_swin
+  - _self_
+
+experiment_name: benchmark_synthetic_721x1440_swin
+model:
+  processor:
+    # 200,397,765 parameters; 65,160 -> 16,380 -> 4,140 tokens.
+    patch_size: 4

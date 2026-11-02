@@ -216,3 +216,113 @@ This is a native-grid AutoCast workload, not a computational reproduction of
 [Mosaic](https://arxiv.org/html/2604.16429v3): Mosaic uses HEALPix block-sparse
 attention, 82 dynamic channels and mixed precision. Synthetic data measure
 training cost; real atmospheric data are needed to establish forecast quality.
+
+### Comparing synthetic training workloads
+
+Four presets share the same training settings: two context frames, one target,
+two ensemble members, alpha-fair CRPS (alpha 0.95), AdamW without a scheduler,
+FP32 with TF32 allowed, and two persistent loader workers. Batch size defaults
+to one per GPU. Grid names describe the intended dataset; select a matching
+dataset explicitly. Parameter counts below assume 69 channels.
+
+| `experiment=benchmark_synthetic_...` | Grid | Patch | Parameters | Finest spatial tokens |
+| --- | --- | --- | ---: | ---: |
+| `121x240_vit` | 121×240 | 4×4 | 193,741,040 | 1,860 |
+| `121x240_swin` | 121×240 | 1×1 | 199,205,445 | 29,040 |
+| `721x1440_vit` | 721×1440 | 16×16 | 244,629,920 | 4,140 |
+| `721x1440_swin` | 721×1440 | 4×4 | 200,397,765 | 65,160 |
+
+ViT uses global attention, width 1,024, 14 blocks and eight heads. Swin uses the
+three-stage model above. Both pad incomplete patches and crop predictions back
+to the input grid. Larger ViT patches bound attention cost at the larger grid;
+these are distinct compute workloads, not matched-quality model comparisons.
+
+An existing compatible dataset can be reused. Otherwise, generate a small shared
+sample for both backbones from an AutoSim checkout:
+
+```bash
+uv run --extra zarr autosim --config-name=generate_data_synthetic_zarr \
+  simulator.height=721 simulator.width=1440 simulator.n_channels=69 \
+  dataset.n_train=1 dataset.n_valid=1 dataset.n_test=1 \
+  dataset.steps_per_split.train=82 dataset.steps_per_split.valid=4 \
+  dataset.steps_per_split.test=4 dataset.chunk_steps=1 dataset.shard_steps=1 \
+  dataset.output_dir=/path/to/synthetic-721x1440x69
+```
+
+This is 25.79 GB of raw FP32 data across all splits. Its 80 training windows
+support five complete batches per rank at eight GPUs and local batch two.
+Use `height=121 width=240` for the smaller grid. Generate on a compute host
+before timing; repeated access can warm filesystem caches, so this measures
+training throughput with repeated data rather than full-archive storage speed.
+
+From the AutoCast checkout, first run three optimizer updates on one GPU:
+
+```bash
+export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+experiment=benchmark_synthetic_721x1440_vit
+dataset=/path/to/synthetic-721x1440x69
+results=/path/to/benchmark-results
+
+uv run --extra zarr autocast epd --mode slurm --workdir "$results/fit-b1" \
+  experiment="$experiment" datamodule.data_path="$dataset" \
+  +distributed=single_gpu_slurm hydra.launcher.nodes=1 \
+  hydra.launcher.cpus_per_task=8 hydra.launcher.timeout_min=5 \
+  hydra.launcher.additional_parameters.mem=40G \
+  trainer.max_epochs=1 trainer.max_steps=3 trainer.limit_train_batches=3 \
+  trainer.max_time=00:00:03:00 trainer.log_every_n_steps=1 \
+  datamodule.batch_size=1
+```
+
+Require three completed updates and finite losses in `metrics.csv`. Try batch
+two separately with a fresh work directory after batch one passes; an OOM at
+batch two does not invalidate batch one. Keep the selected local batch fixed
+for that workload's scaling curve. Record CUDA allocated/reserved peaks with
+the fit check if needed; `timing.json` does not contain memory measurements.
+
+Then time 150 updates, with a 15-minute Slurm limit:
+
+```bash
+uv run --extra zarr autocast time-epochs --mode slurm -n 30 \
+  --workdir "$results/timing-1gpu-b1" \
+  experiment="$experiment" datamodule.data_path="$dataset" \
+  +distributed=single_gpu_slurm hydra.launcher.nodes=1 \
+  hydra.launcher.cpus_per_task=8 hydra.launcher.timeout_min=15 \
+  hydra.launcher.additional_parameters.mem=40G \
+  datamodule.batch_size=1 ++trainer.max_time=00:00:12:00 \
+  output.save_config=true
+```
+
+Use these substitutions for the other GPU counts and a fresh work directory
+for each run. The existing presets set both Lightning and Slurm resources:
+
+| GPUs | `+distributed=` | `hydra.launcher.nodes=` | `hydra.launcher.additional_parameters.mem=` |
+| ---: | --- | ---: | --- |
+| 1 | `single_gpu_slurm` | 1 | `40G` |
+| 4 | `ddp_4gpu_slurm` | 1 | `160G` |
+| 8 | `ddp_4gpu_2node_slurm` | 2 | `160G` |
+
+Add site-specific module/NCCL setup through `hydra.launcher.setup`. Add
+`--dry-run` to preview the training command without submission. On an allocated
+single-GPU compute host, omit `--mode slurm`, the distributed preset and the
+`hydra.launcher.*` overrides. Keep `--workdir` so local timing outputs persist.
+The explicit `-n 30`, `++trainer.max_time` and `output.save_config=true` override
+the timing command's defaults; they are required even though the preset defines
+these settings.
+
+Each short epoch contains five updates. Require `global_step=150`, 30 entries
+in `timing.json`'s `epoch_times_s`, the expected `world_size`, finite losses and
+no checkpoints. Discard the first ten epochs (50 warmup updates); for the
+remaining 100 updates, compute:
+
+```text
+seconds_per_update = sum(epoch_times_s[10:30]) / 100
+windows_per_second = world_size * batch_per_gpu / seconds_per_update
+```
+
+Compare the totals for epochs 10–19 and 20–29; investigate differences above
+10% before treating the result as stable. Timings include normal epoch-reset
+overhead. The CLI's printed average includes warmup, and its epoch-budget
+recommendation refers to these five-update epochs, not full dataset passes.
+Retain the resolved config, code revision, dataset identity, software versions
+and per-rank GPU-utilization logs with the JSON. Synthetic timing establishes
+compute cost, not convergence or predictive quality.
