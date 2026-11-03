@@ -29,6 +29,12 @@ class EncoderProcessorDecoder(
     ``residual_use_delta_stats`` selects dataset delta scaling; otherwise
     residuals use the input state's units. Outputs remain complete states.
     ``delta_norm`` optionally supplies increment statistics independently.
+
+    ``prediction_steps=1`` permits a longer target window without changing the
+    one-transition head. ``train_rollout_steps`` and ``validation_rollout_steps``
+    count predicted-feedback calls; their losses are averaged across leads.
+    Feedback retains gradients unless ``detach_rollout_feedback`` is true.
+    Test batches use the validation horizon and optional validation objective.
     """
 
     encoder_decoder: EncoderDecoder
@@ -57,6 +63,11 @@ class EncoderProcessorDecoder(
         residual_prediction: bool = False,
         residual_use_delta_stats: bool = True,
         delta_norm: ZScoreNormalization | RMSNormalization | None = None,
+        prediction_steps: int | None = None,
+        train_rollout_steps: int = 1,
+        validation_rollout_steps: int = 1,
+        detach_rollout_feedback: bool = False,
+        validation_loss_func: nn.Module | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__()
@@ -86,6 +97,32 @@ class EncoderProcessorDecoder(
         self.residual_prediction = residual_prediction
         self.residual_use_delta_stats = residual_use_delta_stats
         self.delta_norm = delta_norm
+        for name, value in (
+            ("train_rollout_steps", train_rollout_steps),
+            ("validation_rollout_steps", validation_rollout_steps),
+            ("prediction_steps", prediction_steps),
+        ):
+            if value is None and name == "prediction_steps":
+                continue
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                msg = f"{name} must be a positive integer."
+                raise ValueError(msg)
+        if max(train_rollout_steps, validation_rollout_steps) > 1 and (
+            prediction_steps != 1 or train_in_latent_space
+        ):
+            msg = (
+                "Training/validation rollouts require prediction_steps=1 "
+                "and train_in_latent_space=False."
+            )
+            raise ValueError(msg)
+        if validation_loss_func is not None and train_in_latent_space:
+            msg = "validation_loss_func requires train_in_latent_space=False."
+            raise ValueError(msg)
+        self.prediction_steps = prediction_steps
+        self.train_rollout_steps = train_rollout_steps
+        self.validation_rollout_steps = validation_rollout_steps
+        self.detach_rollout_feedback = detach_rollout_feedback
+        self.validation_loss_func = validation_loss_func
 
         if self.train_in_latent_space or self.freeze_encoder_decoder:
             self.encoder_decoder.freeze()
@@ -185,24 +222,83 @@ class EncoderProcessorDecoder(
     def predict_step(self, batch: Batch, batch_idx: int) -> Tensor:  # noqa: ARG002
         return self._denormalize_prediction(self(batch))
 
-    def loss(self, batch: Batch) -> tuple[Tensor, Tensor | None]:
+    def _prepare_loss_rollout(self, batch: Batch) -> Batch:
+        """Prepare member paths once, before any autoregressive calls."""
+        return batch
+
+    def _forward_loss_rollout(self, batch: Batch) -> Tensor:
+        """Predict one transition without changing the number of paths."""
+        return self(batch)
+
+    def _restore_loss_rollout(self, prediction: Tensor, batch_size: int) -> Tensor:  # noqa: ARG002
+        """Restore the loss layout after a transition (identity without members)."""
+        return prediction
+
+    def _rollout_loss(
+        self, batch: Batch, steps: int, loss_func: nn.Module
+    ) -> tuple[Tensor, Tensor]:
+        """Score predicted-feedback transitions in normalized state coordinates.
+
+        Unlike inference ``rollout``, this performs exactly one call per lead,
+        does not denormalize feedback and retains the graph unless requested.
+        """
+        n_output = self.prediction_steps
+        if n_output is None:
+            msg = "An explicit prediction_steps is required for rollout losses."
+            raise ValueError(msg)
+        if batch.output_fields.shape[1] < steps * n_output:
+            msg = "Target window is shorter than the requested rollout horizon."
+            raise ValueError(msg)
+        current = self._prepare_loss_rollout(batch)
+        predictions, losses = [], []
+        for lead in range(steps):
+            flat_prediction = self._forward_loss_rollout(current)
+            if flat_prediction.shape[1] != n_output:
+                msg = "Model output frames do not match prediction_steps."
+                raise ValueError(msg)
+            prediction = self._restore_loss_rollout(
+                flat_prediction, batch.input_fields.shape[0]
+            )
+            target = batch.output_fields[:, lead * n_output : (lead + 1) * n_output]
+            predictions.append(prediction)
+            losses.append(loss_func(prediction, target))
+            if lead + 1 < steps:
+                feedback = (
+                    flat_prediction.detach()
+                    if self.detach_rollout_feedback
+                    else flat_prediction
+                )
+                current = self._advance_batch(current, feedback, n_output)
+        return torch.stack(losses).mean(), torch.cat(predictions, dim=1)
+
+    def loss(
+        self,
+        batch: Batch,
+        *,
+        rollout_steps: int | None = None,
+        loss_func: nn.Module | None = None,
+    ) -> tuple[Tensor, Tensor | None]:
+        active_loss = self.loss_func if loss_func is None else loss_func
+        steps = self.train_rollout_steps if rollout_steps is None else rollout_steps
         if self.train_in_latent_space:
             batch = self._apply_input_noise(batch)
             encoded_batch = self.encoder_decoder.encoder.encode_batch(batch)
             loss = self.processor.loss(encoded_batch)
             y_pred = None
         else:
-            if self.loss_func is None:
+            if active_loss is None:
                 msg = "loss_func must be provided when training full EPD model."
                 raise ValueError(msg)
+            if self.prediction_steps is not None:
+                return self._rollout_loss(batch, steps, active_loss)
             # Otherwise, train full EPD model
             y_pred = self(batch)
             y_true = batch.output_fields
-            loss = self.loss_func(y_pred, y_true)
+            loss = active_loss(y_pred, y_true)
         return loss, y_pred
 
     def training_step(self, batch: Batch, batch_idx: int) -> Tensor:  # noqa: ARG002
-        loss, y_pred = self.loss(batch)
+        loss, y_pred = self.loss(batch, rollout_steps=self.train_rollout_steps)
         self.log(
             "train_loss",
             loss,
@@ -211,17 +307,32 @@ class EncoderProcessorDecoder(
             batch_size=batch.input_fields.shape[0],
         )
         self._log_processor_diagnostics("train", batch.input_fields.shape[0])
+        if self.validation_loss_func is not None and y_pred is not None:
+            with torch.no_grad():
+                base_loss = self.validation_loss_func(
+                    y_pred, batch.output_fields[:, : y_pred.shape[1]]
+                )
+            self.log(
+                "train_base_loss",
+                base_loss,
+                sync_dist=True,
+                batch_size=batch.input_fields.shape[0],
+            )
         if self.train_metrics is not None:
             if y_pred is None:
                 y_pred = self(batch)
-            y_true = batch.output_fields
+            y_true = batch.output_fields[:, : y_pred.shape[1]]
             self._update_and_log_metrics(
                 self, self.train_metrics, y_pred, y_true, batch.input_fields.shape[0]
             )
         return loss
 
     def validation_step(self, batch: Batch, batch_idx: int) -> Tensor:  # noqa: ARG002
-        loss, y_pred = self.loss(batch)
+        loss, y_pred = self.loss(
+            batch,
+            rollout_steps=self.validation_rollout_steps,
+            loss_func=self.validation_loss_func,
+        )
         self.log(
             "val_loss",
             loss,
@@ -230,10 +341,21 @@ class EncoderProcessorDecoder(
             batch_size=batch.input_fields.shape[0],
         )
         self._log_processor_diagnostics("val", batch.input_fields.shape[0])
+        if (
+            self.validation_loss_func is not None
+            and self.loss_func is not None
+            and y_pred is not None
+        ):
+            self.log(
+                "val_objective",
+                self.loss_func(y_pred, batch.output_fields[:, : y_pred.shape[1]]),
+                sync_dist=True,
+                batch_size=batch.input_fields.shape[0],
+            )
         if self.val_metrics is not None:
             if y_pred is None:
                 y_pred = self(batch)
-            y_true = batch.output_fields
+            y_true = batch.output_fields[:, : y_pred.shape[1]]
             y_pred = self._denormalize_prediction(y_pred)
             y_true = self.denormalize_tensor(y_true)
             self._update_and_log_metrics(
@@ -264,7 +386,13 @@ class EncoderProcessorDecoder(
             )
 
     def test_step(self, batch: Batch, batch_idx: int) -> Tensor:  # noqa: ARG002
-        loss, y_pred = self.loss(batch)
+        # Test batches use the same predicted-feedback horizon and selection
+        # objective as validation; inference rollout remains separately configured.
+        loss, y_pred = self.loss(
+            batch,
+            rollout_steps=self.validation_rollout_steps,
+            loss_func=self.validation_loss_func,
+        )
         self.log(
             "test_loss",
             loss,
@@ -276,7 +404,7 @@ class EncoderProcessorDecoder(
         if self.test_metrics is not None:
             if y_pred is None:
                 y_pred = self(batch)
-            y_true = batch.output_fields
+            y_true = batch.output_fields[:, : y_pred.shape[1]]
             y_pred = self._denormalize_prediction(y_pred)
             y_true = self.denormalize_tensor(y_true)
             self._update_and_log_metrics(

@@ -1,7 +1,8 @@
-"""Check the one-step controls before adding matched rollout-training support."""
+"""Check matched one- and two-step continuation presets and optimizer state."""
 
 import math
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 
 import lightning as L
@@ -13,7 +14,9 @@ from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
 from autocast.models.optimizer_mixin import OptimizerMixin
+from autocast.scripts.setup import setup_epd_model
 from autocast.scripts.training import run_training
+from autocast.types import Batch
 
 ROOT = Path(__file__).resolve().parents[2]
 PRESETS = {
@@ -21,6 +24,12 @@ PRESETS = {
         "crps_fft_global256_residual_one_output_12block_256ep_8h"
     ),
     "crps_fft_spatial1d_finetune_32k": (
+        "crps_fft_spatial1d_residual_one_output_12block_256ep_8h"
+    ),
+    "crps_fft_global256_rollout2_finetune_32k": (
+        "crps_fft_global256_residual_one_output_12block_256ep_8h"
+    ),
+    "crps_fft_spatial1d_rollout2_finetune_32k": (
         "crps_fft_spatial1d_residual_one_output_12block_256ep_8h"
     ),
 }
@@ -44,12 +53,20 @@ def _compose(name, overrides=()):
 @pytest.mark.parametrize("name", PRESETS)
 def test_control_preserves_checkpoint_architecture_task_and_loss(name):
     cfg, source = _compose(name), _compose(PRESETS[name])
-    assert cfg.model == source.model
-    assert cfg.datamodule == source.datamodule
+    assert cfg.model.processor == source.model.processor
+    assert cfg.model.encoder == source.model.encoder
+    assert cfg.model.loss_func == source.model.loss_func
+    assert cfg.model.prediction_steps == 1
+    assert cfg.model.train_rollout_steps == (2 if "rollout2" in name else 1)
+    assert cfg.model.validation_rollout_steps == 2
+    assert not cfg.model.detach_rollout_feedback
+    assert cfg.datamodule.data_path == source.datamodule.data_path
     assert cfg.model.loss_func.weights == [1.0, 0.1]
     assert cfg.model.n_members == 8
     assert cfg.datamodule.batch_size == 32
-    assert cfg.datamodule.n_steps_input == cfg.datamodule.n_steps_output == 1
+    assert cfg.datamodule.n_steps_input == 1
+    assert cfg.datamodule.n_steps_output == 2
+    assert cfg.datamodule.stride == 1
     assert cfg.model.residual_prediction
     assert cfg.model.residual_use_delta_stats
     assert not cfg.model.processor.include_global_cond
@@ -89,6 +106,43 @@ def test_control_requires_weights_and_has_new_step_budget(name):
     assert not cfg.logging.wandb.log_model
     assert cfg.logging.wandb.id is cfg.logging.wandb.resume is None
     assert cfg.output.skip_test
+
+
+@pytest.mark.parametrize("name", PRESETS)
+def test_rollout_setup_keeps_one_output_checkpoint_and_backward(name):
+    batch = Batch(torch.randn(1, 1, 8, 8, 3), torch.randn(1, 2, 8, 8, 3), None, None)
+    stats = {
+        "channel_count": 3,
+        "n_steps_input": 1,
+        "n_steps_output": 2,
+        "input_shape": tuple(batch.input_fields.shape),
+        "output_shape": tuple(batch.output_fields.shape),
+        "example_batch": batch,
+    }
+    datamodule = cast(Any, SimpleNamespace(train_dataset=SimpleNamespace(norm=None)))
+    models = []
+    for preset, output_steps in ((PRESETS[name], 1), (name, 2)):
+        cfg = _compose(preset)
+        cfg.model.processor.hidden_dim = 16
+        cfg.model.processor.n_layers = 1
+        cfg.model.processor.num_heads = 4
+        cfg.model.processor.spatial_resolution = [8, 8]
+        local_stats = dict(stats, n_steps_output=output_steps)
+        models.append(setup_epd_model(cfg, local_stats, datamodule))
+    source, target = models
+    target.load_state_dict(source.state_dict(), strict=True)
+    assert target.encoder_decoder.decoder.time_steps == 1
+    assert target.encoder_decoder.decoder.latent_channels == 3
+    loss, pred = target.loss(batch)
+    assert pred.shape == (1, target.train_rollout_steps, 8, 8, 3, 8)
+    assert torch.isfinite(loss)
+    loss.backward()
+    assert all(
+        torch.isfinite(p.grad).all() for p in target.parameters() if p.grad is not None
+    )
+    target.log = lambda *args, **kwargs: None
+    with torch.no_grad():
+        assert torch.isfinite(target.validation_step(batch, 0))
 
 
 class _ControlProbe(OptimizerMixin, L.LightningModule):

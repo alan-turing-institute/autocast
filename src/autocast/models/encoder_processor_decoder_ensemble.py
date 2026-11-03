@@ -1,6 +1,7 @@
 from typing import Any
 
 from einops import rearrange
+from torch import nn
 
 from autocast.models.encoder_processor_decoder import EncoderProcessorDecoder
 from autocast.types import Batch, RolloutOutput, Tensor, TensorBTSCM
@@ -38,6 +39,17 @@ class EncoderProcessorDecoderEnsemble(EncoderProcessorDecoder):
         """Prediction for rollout (retains flattened batch dim)."""
         return super().forward(batch)
 
+    def _prepare_loss_rollout(self, batch: Batch) -> Batch:
+        return batch.repeat(self.n_members)
+
+    def _forward_loss_rollout(self, batch: Batch) -> Tensor:
+        return super().forward(batch)
+
+    def _restore_loss_rollout(self, prediction: Tensor, batch_size: int) -> Tensor:
+        return rearrange(
+            prediction, "(b m) t ... c -> b t ... c m", b=batch_size, m=self.n_members
+        )
+
     def _denormalize_prediction(self, prediction: Tensor) -> Tensor:
         """Use the known forward member axis even when members equal channels."""
         b = prediction.shape[0]
@@ -67,7 +79,13 @@ class EncoderProcessorDecoderEnsemble(EncoderProcessorDecoder):
             denorm = super().denormalize_tensor(flat_members, delta=delta)
             return rearrange(denorm, "(b m) ... c -> b ... c m", b=b, m=self.n_members)
 
-    def loss(self, batch: Batch) -> tuple[Tensor, Tensor | None]:
+    def loss(
+        self,
+        batch: Batch,
+        *,
+        rollout_steps: int | None = None,
+        loss_func: nn.Module | None = None,
+    ) -> tuple[Tensor, Tensor | None]:
         """Compute ensemble-aware loss.
 
         If training in latent space (train_in_latent_space=True), we manually handle
@@ -87,7 +105,7 @@ class EncoderProcessorDecoderEnsemble(EncoderProcessorDecoder):
             or self.n_members <= 1
             or self.loss_func is None
         ):
-            return super().loss(batch)
+            return super().loss(batch, rollout_steps=rollout_steps, loss_func=loss_func)
 
         # TODO: consider removing this logic here as this might be better not
         # implemented with the ProcessorModel being a better place for this.

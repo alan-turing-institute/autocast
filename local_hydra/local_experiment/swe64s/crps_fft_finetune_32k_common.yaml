@@ -9,6 +9,18 @@ resume_from_checkpoint: ???
 resume_weights_only: true
 reset_resume_time_budget: false
 
+# All four controls see the same eligible input windows. The original head
+# remains one-output; validation always uses two predicted-feedback calls.
+datamodule:
+  n_steps_output: 2
+  stride: 1
+
+model:
+  prediction_steps: 1
+  train_rollout_steps: 1
+  validation_rollout_steps: 2
+  detach_rollout_feedback: false
+
 optimizer:
   learning_rate: 2e-5
   scheduler: cosine

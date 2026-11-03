@@ -6,8 +6,7 @@ defaults:
 
 experiment_name: swe64s_crps_fft_spatial1d_finetune_32k
 
-# One-step scaffold. Matched two-future windows and shared two-lead validation
-# require the training-rollout API before the four-arm comparison is launched.
+# S1: one-step control with the shared two-lead validation objective.
 hydra:
   launcher:
     timeout_min: 480

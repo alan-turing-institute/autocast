@@ -355,6 +355,16 @@ def setup_autoencoder_components(
     encoder_config = model_config.get("encoder")
     decoder_config = model_config.get("decoder")
 
+    # A rollout target may contain several futures while the decoder still
+    # predicts one transition per call (e.g. a checkpoint's original head).
+    prediction_steps = model_config.get("prediction_steps")
+    if (
+        prediction_steps is not None
+        and decoder_config
+        and "time_steps" in decoder_config
+    ):
+        decoder_config["time_steps"] = prediction_steps
+
     log.info(
         "Model config before resolving auto channels:\nEncoder: %s\nDecoder: %s",
         encoder_config,
@@ -752,7 +762,7 @@ def setup_epd_model(
     )
 
     steps_in = stats["n_steps_input"]
-    steps_out = stats["n_steps_output"]
+    steps_out = model_config.get("prediction_steps") or stats["n_steps_output"]
     with torch.no_grad():
         encoded_example, _ = encoder.encode_with_cond(example_batch)
     latent_spatial_resolution = _infer_latent_spatial_resolution(
@@ -820,6 +830,15 @@ def setup_epd_model(
         "residual_prediction": model_config.get("residual_prediction", False),
         "residual_use_delta_stats": model_config.get("residual_use_delta_stats", True),
         "delta_norm": delta_norm,
+        "prediction_steps": model_config.get("prediction_steps"),
+        "train_rollout_steps": model_config.get("train_rollout_steps", 1),
+        "validation_rollout_steps": model_config.get("validation_rollout_steps", 1),
+        "detach_rollout_feedback": model_config.get("detach_rollout_feedback", False),
+        "validation_loss_func": (
+            instantiate(model_config.validation_loss_func)
+            if model_config.get("validation_loss_func") is not None
+            else None
+        ),
     }
     _maybe_add_metric_overrides(kwargs, model_config)
     if is_ensemble:

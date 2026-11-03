@@ -1,0 +1,10 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/crps_fft_spatial1d_finetune_32k
+  - _self_
+
+experiment_name: swe64s_crps_fft_spatial1d_rollout2_finetune_32k
+
+# S2: full gradients through the reconstructed first transition.
+model:
+  train_rollout_steps: 2

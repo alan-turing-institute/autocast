@@ -18,5 +18,13 @@ residual_use_delta_stats: true
 # Optional AutoSim stats.yml or native The Well stats.yaml for delta-only scaling.
 # Null preserves existing behavior (raw increments when state normalization is off).
 residual_delta_stats_path: null
+# Per-call output frames may differ from the target window for rollout training.
+# Null preserves the original datamodule output-frame count.
+prediction_steps: null
+train_rollout_steps: 1
+validation_rollout_steps: 1
+detach_rollout_feedback: false
+# Optional validation-only objective; null uses the training loss.
+validation_loss_func: null
 loss_func:
   _target_: torch.nn.MSELoss
