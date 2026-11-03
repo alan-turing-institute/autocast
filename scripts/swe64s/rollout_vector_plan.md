@@ -1,16 +1,27 @@
 # SWE64 rollout and vector-score batch
 
-The first batch contains six independent fits. Structured noise and detached
-feedback experiments follow later.
+The initial batch contains six independent fits. Structured noise and
+detached feedback experiments follow later.
+
+V1/V2 use bounded two-hour pilots. Supply the auxiliary coefficient as a
+numeric override and verify loss instantiation before submission.
+The calibration selected 0.05967158043676514 (10% initial output-gradient RMS
+for V1 and about 6.8% for V2). The user approved five times that shared weight,
+0.2983579021838257, giving about 50% for V1 and 34% for V2. These are initial
+output-gradient measurements, not bounds on subsequent optimization.
+Both pilots start fresh with the original 256-epoch cosine protocol, but have
+two-hour allocations and 1h45 trainer caps; checkpointed continuations remain
+possible. The V pair costs at most four node-hours; R1--R4 total at most 16.
+W&B remains offline. The stopping guard does not depend on connectivity.
 
 | ID | Noise | Training | Initialization | Readiness |
 | --- | --- | --- | --- | --- |
-| R1 / G1 | Global 256D | One-step CRPS-FFT control | Global best, 59k | Locally tested |
-| R2 / G2 | Global 256D | Two-step full gradient, average both lead losses | Same as G1 | Locally tested |
-| R3 / S1 | IID spatial 1D/token | One-step CRPS-FFT control | Spatial best, 36k | Locally tested |
-| R4 / S2 | IID spatial 1D/token | Two-step full gradient, average both lead losses | Same as S1 | Locally tested |
-| V1 | IID spatial 1D/token | CRPS-FFT + local joint wind score | Fresh | Locally tested; coefficient check pending |
-| V2 | IID spatial 1D/token | CRPS-FFT + solenoidal/divergent velocity scores | Same fresh seed as V1 | Locally tested; coefficient check pending |
+| R1 / G1 | Global 256D | One-step CRPS-FFT control | Global best, 59k | prepared |
+| R2 / G2 | Global 256D | Two-step full gradient, average both lead losses | Same as G1 | prepared |
+| R3 / S1 | IID spatial 1D/token | One-step CRPS-FFT control | Spatial best, 36k | prepared |
+| R4 / S2 | IID spatial 1D/token | Two-step full gradient, average both lead losses | Same as S1 | prepared |
+| V1 | IID spatial 1D/token | CRPS-FFT + local joint wind score | Fresh | Two-hour pilot prepared |
+| V2 | IID spatial 1D/token | CRPS-FFT + solenoidal/divergent velocity scores | Same fresh seed as V1 | Two-hour pilot prepared |
 
 ## Fixed protocol
 
@@ -37,15 +48,20 @@ They require an explicit `resume_from_checkpoint`. The two-step presets are
 `crps_fft_spatial1d_rollout2_finetune_32k`. All four use the same eligible
 two-future windows and two-lead predicted-feedback validation. One-step arms
 score only the first lead during training; two-step arms average both leads.
-The four-GPU distributed preset overrides the trainer cap to 12 hours; future
-launch commands must explicitly set `trainer.max_time=00:07:45:00` to preserve
-the prepared safety margin within the eight-hour allocation.
+The distributed preset overrides trainer time, so every launch explicitly
+sets its cap: R1/R3 have 3-hour allocations and 2h45 trainer caps; R2/R4 have
+5-hour allocations and 4h45 trainer caps. The V1/V2 templates retain 8-hour
+defaults, but the approved pilot overrides are two-hour allocations and 1h45
+trainer caps. The current training ceiling is 20 node-hours, plus the brief
+initial failed starts and preflight (at most 10 minutes on one GPU). These caps
+leave scientific horizons and LR schedules unchanged. Resume from full state
+after review if necessary.
 
 V1/V2 train from scratch for at most 256 epochs, cosine LR 2e-4 to zero.
 Both retain the same base CRPS-FFT and use an ordinary local bivariate
 ensemble score with alpha 0.95. V2 averages the rotational/divergent scores.
 Use the same fixed auxiliary coefficient, selected by a bounded training-only
-gradient check. Its value is not yet set. Restore physical u/v scaling before
+gradient check; the pilot multiplier is recorded above. Restore physical u/v scaling before
 projection and then divide by one common training-derived wind scale.
 Do not independently standardize components. The solenoidal component retains
 DC and joint derivative-null Nyquist modes under the real pseudospectral
@@ -60,19 +76,22 @@ enabled in offline mode. All six retain one-output prediction heads.
 
 ## Overnight stopping
 
-V1/V2 use `SustainedValidationRise` on base `val_loss`: after 10k updates,
+All six use `SustainedValidationRise` on base `val_loss`: after 10k updates,
 stop gracefully if ten consecutive validations exceed the best by more than
 1%. Validation is once per epoch (500 updates here). Returning inside the band
-resets the count; a plateau alone does not trigger. Nonfinite validation scores
+resets the count; a plateau alone does not trigger. R1--R4 validate every 500
+updates on both predicted-feedback leads. Nonfinite validation scores
 stop immediately. This does not add a per-training-batch numerical guard.
-Thresholds are configurable in `trainer/swe64s_vector.yaml`.
+Thresholds are configurable in `trainer/swe64s_vector.yaml`; the launch records
+add the same callback to R1--R4 without changing their step-based trainers.
 
 Preserve full best/latest checkpoints every validation, 16-epoch snapshots,
 and terminal `model.ckpt`, including optimizer, scheduler, EMA and callback
 state. This is a compute-saving stop for review, not proof that later lower-LR
 recovery is impossible. A full resume retains the stopping streak: deliberately
 adjust or disable the callback after review if continuing. Do not describe a
-nonfinite terminal checkpoint as healthy. R1--R4 retain their fixed 32k budget.
+nonfinite terminal checkpoint as healthy. R1--R4 retain the 32k planned ceiling,
+but their common stopping guard can terminate earlier; report achieved updates.
 
 ## Starting checkpoints
 
@@ -101,7 +120,7 @@ and give both arms in each pair the same raw weights.
    endpoints, vector distances, pure modes, projection identities, DC/Nyquist,
    scaling and gradients. Callback tests include a graceful Lightning stop with
    best/latest checkpoints and preserved AdamW/scheduler/EMA state.
-4. **Vector coefficient: target-machine check pending.** On a bounded compute
+4. **Vector coefficient: checked.** To reproduce on a bounded compute
    allocation, run `uv run --no-sync python scripts/swe64s/calibrate_vector_weight.py
    --data-path <raw-dataset> --output <new-json> --device cuda`. It uses four
    fresh-model training batches, verifies dataset/scaling, and chooses a shared
@@ -109,14 +128,17 @@ and give both arms in each pair the same raw weights.
    of the base on those draws. It performs no training and opens no held-out
    splits. Apply its printed `vector_weight=...` to both V1/V2; this is not a
    guarantee of later stability or parameter-gradient balance.
-5. **Batch readiness: target-machine checks pending.** Verify source/data and
+5. **Batch readiness: checked.** GPU preflight verified
+   source/data and checkpoint hashes, strict loading and finite full-batch
+   two-step forward/backward passes. Peak memory was 29.2/39.6 GB (global/spatial).
+   Resolved configs confirm all six stopping guards, intended time caps, offline
+   W&B, and numeric V weights. For a new launch, verify source/data and
    starting checkpoint hashes, and measure full-batch/member two-step GPU memory
    and throughput with a tiny bounded check. Use separate new output folders
    and manifests; preview standard `autocast epd --mode slurm --dry-run` commands
    with offline W&B, explicit trainer cap and source provenance. Set resource
    caps from measured throughput: eight-hour ceilings are not runtime estimates.
-   Review the commands before approving launch. No remote changes, push or jobs
-   are performed by this local preparation.
+   Review the commands before approving launch. Record exact commands and resolved configurations with the outputs.
 
 ## Selection and evaluation
 
