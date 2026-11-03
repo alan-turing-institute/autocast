@@ -17,6 +17,11 @@ The [experiment readiness inventory](#experiment-readiness-inventory) separates
 existing fits, prepared follow-ups and decisions still needed before launch.
 The original presets retain their four-output/time-budget setup.
 
+The next [six-fit rollout and vector-score batch](rollout_vector_plan.md)
+records the agreed fine-tuning protocol, starting checkpoints and remaining
+API/config work. Its one-step presets are scaffolds for the matched study;
+the batch is not yet launch-ready.
+
 ## Data and scope
 
 The [dataset manifest](../../local_hydra/local_experiment/swe64s/dataset.json)

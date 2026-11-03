@@ -1,0 +1,39 @@
+# @package _global_
+defaults:
+  - override /trainer: swe64s_steps
+  - _self_
+
+# Select the matching healthy global/spatial checkpoint explicitly. Load raw
+# weights only; optimizer, scheduler, EMA and training counters start fresh.
+resume_from_checkpoint: ???
+resume_weights_only: true
+reset_resume_time_budget: false
+
+optimizer:
+  learning_rate: 2e-5
+  scheduler: cosine
+  scheduler_interval: step
+  cosine_epochs: null
+  cosine_steps: ${trainer.max_steps}
+  # Existing warmup multiplies the 32k cosine by min(1, (step+1)/101).
+  # It starts at LR/101, is near the peak at step 100, and reaches zero at 32k.
+  warmup: 100
+  min_lr_ratio: 0.0
+
+trainer:
+  max_epochs: 1000000
+  max_steps: 32000
+  # Conservative inherited safety ceiling; throughput is not yet measured.
+  max_time: "00:07:45:00"
+
+logging:
+  wandb:
+    enabled: true
+    mode: offline
+    id: null
+    resume: null
+    log_model: false
+
+hydra:
+  launcher:
+    timeout_min: 480

@@ -1,0 +1,13 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/crps_fft_spatial1d_residual_one_output_12block_256ep_8h
+  - /local_experiment/swe64s/crps_fft_finetune_32k_common
+  - _self_
+
+experiment_name: swe64s_crps_fft_spatial1d_finetune_32k
+
+# One-step scaffold. Matched two-future windows and shared two-lead validation
+# require the training-rollout API before the four-arm comparison is launched.
+hydra:
+  launcher:
+    timeout_min: 480
