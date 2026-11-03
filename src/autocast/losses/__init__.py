@@ -26,6 +26,7 @@ from autocast.losses.scale import (
     SmoothingOperator,
 )
 from autocast.losses.spectral import FourierDecomposition, RadialFourierDecomposition
+from autocast.losses.vector import HelmholtzDecomposition, VelocityScoreLoss
 
 __all__ = [
     "AlphaFairCRPSLoss",
@@ -41,6 +42,7 @@ __all__ = [
     "FourierDecomposition",
     "FourierLowPass",
     "GaussianSmoothing",
+    "HelmholtzDecomposition",
     "IdentityDecomposition",
     "MCDropoutMSEL2Loss",
     "RadialFourierDecomposition",
@@ -50,5 +52,6 @@ __all__ = [
     "SmoothingOperator",
     "SpectralSpreadErrorLoss",
     "TransformedLoss",
+    "VelocityScoreLoss",
     "WeightedSumLoss",
 ]
