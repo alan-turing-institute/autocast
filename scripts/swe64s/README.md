@@ -19,8 +19,10 @@ The original presets retain their four-output/time-budget setup.
 
 The next [six-fit rollout and vector-score batch](rollout_vector_plan.md)
 records the agreed fine-tuning protocol, starting checkpoints and remaining
-API/config work. Its one-step presets are scaffolds for the matched study;
-the batch is not yet launch-ready.
+target-machine checks. All six presets now have tested code paths. The vector
+pair requires a shared training-only coefficient check; the rollout controls
+require checkpoint verification and a bounded GPU memory/throughput check.
+V1/V2 include resumable sustained-validation-rise stopping.
 
 ## Data and scope
 

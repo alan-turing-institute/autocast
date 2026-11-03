@@ -1,0 +1,62 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/crps_fft_spatial1d_residual_one_output_12block_256ep_8h
+  - override /trainer: swe64s_vector
+  - _self_
+
+experiment_name: swe64s_crps_fft_joint_velocity_spatial1d_256ep
+
+# A single shared coefficient is required from calibrate_vector_weight.py.
+# No loss-weight choice is inferred from validation or simulator redraws.
+vector_weight: ???
+
+model:
+  loss_func:
+    weights: [1.0, 0.1, "${vector_weight}"]
+    losses:
+      - _target_: autocast.losses.AlphaFairCRPSLoss
+        alpha: 0.95
+      - _target_: autocast.losses.TransformedLoss
+        requires_ambient_predictions: true
+        decomposition:
+          _target_: autocast.losses.FourierDecomposition
+          representation: complex
+          norm: ortho
+        score:
+          _target_: autocast.losses.CoefficientCRPSLoss
+          alpha: 0.95
+      - _target_: autocast.losses.VelocityScoreLoss
+        mode: joint
+        channels: [1, 2]
+        # Frozen train statistics for dataset b43bd32; preflight verifies them.
+        channel_stds: [0.1211, 0.1214]
+        velocity_scale: null
+        domain_lengths: [6.283185307179586, 6.283185307179586]
+        alpha: 0.95
+  validation_loss_func:
+    _target_: autocast.losses.WeightedSumLoss
+    weights: [1.0, 0.1]
+    losses:
+      - _target_: autocast.losses.AlphaFairCRPSLoss
+        alpha: 0.95
+      - _target_: autocast.losses.TransformedLoss
+        requires_ambient_predictions: true
+        decomposition:
+          _target_: autocast.losses.FourierDecomposition
+          representation: complex
+          norm: ortho
+        score:
+          _target_: autocast.losses.CoefficientCRPSLoss
+          alpha: 0.95
+
+logging:
+  wandb:
+    enabled: true
+    mode: offline
+    id: null
+    resume: null
+    log_model: false
+
+hydra:
+  launcher:
+    timeout_min: 480
