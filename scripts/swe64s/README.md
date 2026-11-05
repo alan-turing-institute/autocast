@@ -213,6 +213,22 @@ All runs require separate target-machine data/code/W&B preflight and launch
 approval. Common scores, anomaly power, divergence/vorticity balance and
 teacher-forced/free-running evaluation remain required after fitting.
 
+### Matched spatial noise ablations
+
+Pair the existing `afcrps_multiscale_spatial4d_residual_one_output_12block_256ep_8h`
+with `crps_fft_iid_spatial4d_residual_one_output_12block_256ep_8h`. Compare each
+with the existing multiscale AdaLN CRPS-FFT fit. The afCRPS arm changes the
+objective. The IID CRPS-FFT arm replaces the filtered Gaussian source with
+four independent draws per token and retains the shared 4-to-256 projection.
+
+For both fresh fits use `trainer=swe64s_noise_ablations`, with the same
+256-epoch cosine schedule and eight-hour allocation. This trainer saves the
+best and latest full checkpoints at validation and stops after ten consecutive
+validations more than 1% above the run's best, starting at 10,000 updates.
+Record achieved updates and evaluate with the same held-out states and rollout
+protocol as the existing fits. Enable online logging at submission with
+`logging.wandb.enabled=true logging.wandb.mode=online`.
+
 ### Experiment readiness inventory
 
 This is a local config/planning inventory, not a live scheduler status.
