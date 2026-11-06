@@ -229,6 +229,22 @@ Record achieved updates and evaluate with the same held-out states and rollout
 protocol as the existing fits. Enable online logging at submission with
 `logging.wandb.enabled=true logging.wandb.mode=online`.
 
+### Fourier feature modulation control
+
+`afcrps_fourier_modulation_global256_residual_one_output_12block_256ep_8h`
+inherits the global-256, twelve-block afCRPS residual preset and enables
+`model.processor.modulation_mode=fourier`. The same global draw conditions
+four overlapping spectral bands in each block, shared across feature channels.
+The token-grid filter modifies normalized activations before the existing
+AdaLN scale/shift, attention and feed-forward operations. It introduces 37,008
+parameters and starts at the identity; all token frequencies remain available.
+
+The dataset, persistence residual, eight training members, batch size, 256-epoch
+cosine schedule, loss and validation protocol are inherited unchanged. This is
+a fresh-fit preset; it does not silently load a previous checkpoint. At patch
+size four, Fourier modulation acts on 16x16 tokens rather than 64x64 decoded
+fields. The preset is prepared locally and has not been launched.
+
 ### Experiment readiness inventory
 
 This is a local config/planning inventory, not a live scheduler status.

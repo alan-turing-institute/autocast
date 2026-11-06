@@ -7,7 +7,7 @@ from einops import rearrange
 from torch import Tensor, nn
 
 from autocast.nn.noise.source import SourceDistribution, _sample_checked
-from autocast.nn.vit import SpatialViTBackbone
+from autocast.nn.vit import SpatialViTBackbone, ViTModulationMode
 from autocast.processors.base import Processor
 from autocast.types import EncodedBatch
 
@@ -60,6 +60,8 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
         rpb: bool = True,
         noise_mode: AdaLNNoiseMode | str = AdaLNNoiseMode.GLOBAL,
         noise_source: SourceDistribution | None = None,
+        modulation_mode: ViTModulationMode | str = ViTModulationMode.ADALN,
+        fourier_num_bands: int = 4,
     ):
         super().__init__()
         self.n_spatial_dims = len(spatial_resolution)
@@ -68,6 +70,17 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
             raise ValueError(msg)
 
         self.noise_mode = AdaLNNoiseMode(noise_mode)
+        modulation_mode = ViTModulationMode(modulation_mode)
+        if modulation_mode == ViTModulationMode.FOURIER and (
+            self.noise_mode != AdaLNNoiseMode.GLOBAL
+            or n_noise_channels is None
+            or n_noise_channels <= 0
+        ):
+            msg = (
+                "Fourier modulation requires global noise and "
+                "positive n_noise_channels."
+            )
+            raise ValueError(msg)
         if noise_source is not None and self.noise_mode != AdaLNNoiseMode.SPATIAL:
             msg = "noise_source requires noise_mode='spatial'."
             raise ValueError(msg)
@@ -144,6 +157,8 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
             checkpointing=checkpointing,
             use_precomputed_modulation=True,
             spatial_modulation=self.noise_mode == AdaLNNoiseMode.SPATIAL,
+            modulation_mode=modulation_mode,
+            fourier_num_bands=fourier_num_bands,
         )
 
     def _noise_shape(self, x: Tensor) -> tuple[int, ...]:

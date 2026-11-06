@@ -1,12 +1,21 @@
 """Spatial ViT with optional temporal preprocessing before channel bundling."""
 
 from collections.abc import Sequence
+from enum import Enum
 
 from azula.nn.vit import ViT
 from einops.layers.torch import Rearrange
 from torch import nn
 
 from autocast.nn.base import TemporalBackboneBase
+from autocast.nn.fourier_vit import FourierViT
+
+
+class ViTModulationMode(str, Enum):
+    """How global conditioning modulates normalized spatial features."""
+
+    ADALN = "adaln"
+    FOURIER = "fourier"
 
 
 class SpatialViTBackbone(TemporalBackboneBase):
@@ -51,6 +60,8 @@ class SpatialViTBackbone(TemporalBackboneBase):
         window_size: int | Sequence[int] | None = None,
         include_time_embedding: bool = True,
         spatial_modulation: bool = False,
+        modulation_mode: ViTModulationMode | str = ViTModulationMode.ADALN,
+        fourier_num_bands: int = 4,
     ):
         """Initialize the spatial ViT backbone.
 
@@ -91,12 +102,20 @@ class SpatialViTBackbone(TemporalBackboneBase):
                 time-embedding module is not registered and ``t=None`` is
                 accepted at forward time (one-step processors).
             spatial_modulation: Whether AdaLN receives one vector per patch token.
+            modulation_mode: Existing AdaLN, or AdaLN with an additional Fourier
+                amplitude/phase filter after normalization. Fourier mode requires
+                global conditioning and a two-dimensional spatial token grid.
+            fourier_num_bands: Number of overlapping radial bands in Fourier mode.
         """
         if window_size is not None:
             msg = (
                 "SpatialViTBackbone does not support non-null window_size with "
                 "the installed Azula ViT. Use window_size=null for global attention."
             )
+            raise ValueError(msg)
+        modulation_mode = ViTModulationMode(modulation_mode)
+        if modulation_mode == ViTModulationMode.FOURIER and spatial_modulation:
+            msg = "Fourier modulation currently requires global conditioning."
             raise ValueError(msg)
 
         # Initialize base class with common parameters
@@ -122,7 +141,7 @@ class SpatialViTBackbone(TemporalBackboneBase):
         self.patch_size = patch_size
 
         # Build ViT backbone
-        self.vit = self._build_backbone(
+        vit = self._build_backbone(
             hid_channels=hid_channels,
             hid_blocks=hid_blocks,
             attention_heads=attention_heads,
@@ -135,6 +154,11 @@ class SpatialViTBackbone(TemporalBackboneBase):
             rope=rope,
             rpb=rpb,
             checkpointing=checkpointing,
+        )
+        self.vit = (
+            FourierViT(vit, self.mod_features, fourier_num_bands)
+            if modulation_mode == ViTModulationMode.FOURIER
+            else vit
         )
         if spatial_modulation:
             for block in self.vit.get_submodule("blocks").children():
@@ -154,7 +178,7 @@ class SpatialViTBackbone(TemporalBackboneBase):
         """Return the ViT backbone."""
         return self.vit
 
-    def _build_backbone(self, **kwargs) -> nn.Module:
+    def _build_backbone(self, **kwargs) -> ViT:
         """Build the ViT backbone.
 
         Args:

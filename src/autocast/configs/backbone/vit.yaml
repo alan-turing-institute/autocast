@@ -16,3 +16,5 @@ spatial: 2
 patch_size: 1
 dropout: 0.05
 ffn_factor: 4
+modulation_mode: adaln
+fourier_num_bands: 4

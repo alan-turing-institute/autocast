@@ -53,6 +53,56 @@ dimensions. Optional global conditioning is broadcast to all tokens.
 Spatial mode is opt-in and requires positive noise dimensions. Global noise
 remains the default.
 
+Fourier feature modulation
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The same processor supports an additional conditioning operation:
+
+.. code-block:: yaml
+
+   noise_mode: global
+   modulation_mode: fourier
+   fourier_num_bands: 4
+   n_noise_input_channels: 256
+   n_noise_channels: 256
+
+``modulation_mode: adaln`` is the default and preserves existing parameters,
+checkpoint keys and sampling. Fourier mode uses the same global vector in
+each block, with a separate learned projection per block. No additional
+noise is drawn. It requires global noise; combining it with per-token
+conditioning is not currently supported.
+
+Within each block, LayerNorm is unchanged. Normalized tokens are reshaped
+to their actual two-dimensional patch grid, Fourier transformed, multiplied
+by a noise-dependent amplitude and phase filter, and inverse transformed.
+The existing AdaLN scale/shift, attention, feed-forward network and residual
+gate then operate as before. For a 64x64 input with patch size four, the
+transform acts on 16x16 latent tokens, not on the decoded physical field.
+
+The first implementation shares its filter across feature channels. Four
+overlapping radial bands span the normalized frequency radius from DC to the
+grid corners, with no hard cutoff. Amplitude gains are bounded between
+``exp(-0.5)`` and ``exp(0.5)``. Two directional phase coefficients per band
+produce odd phase ramps; self-conjugate Nyquist directions have zero phase.
+The filter therefore preserves real-valued fields, including on rectangular
+and odd-sized token grids. It does not impose a physical-output spectrum or
+guarantee spatial coherence after subsequent nonlinear processing.
+
+Each block adds ``3 * fourier_num_bands * (mod_features + 1)`` parameters.
+The projection is zero-initialized, giving an identity filter while retaining
+gradients. No activation-checkpointing state is stored between forwards.
+Float16/bfloat16 Fourier arithmetic is promoted to float32 and outputs retain
+their original dtype; float64 remains float64.
+
+Old checkpoints still load strictly into the default mode. Enabling Fourier
+mode introduces ``blocks.<index>.fourier.projection.*`` keys. An intentional
+warm start from AdaLN can use ``load_state_dict(..., strict=False)`` and should
+verify that only these new keys are missing and no keys are unexpected. With
+the new projections left at zero, predictions agree up to FFT roundoff.
+Fourier checkpoints require the same Fourier configuration for strict loading.
+``SpatialViTBackbone`` (including its ``TemporalViTBackbone`` alias) exposes
+the same ``modulation_mode`` and ``fourier_num_bands`` options.
+
 Structured noise sources
 ~~~~~~~~~~~~~~~~~~~~~~~~
 

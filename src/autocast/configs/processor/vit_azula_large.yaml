@@ -12,4 +12,6 @@ n_noise_channels: 256
 n_noise_input_channels: null
 noise_mode: global
 noise_source: null
+modulation_mode: adaln
+fourier_num_bands: 4
 include_global_cond: false

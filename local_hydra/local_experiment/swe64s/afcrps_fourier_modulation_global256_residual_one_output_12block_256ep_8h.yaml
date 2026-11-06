@@ -1,0 +1,17 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/afcrps_global256_residual_one_output_12block_256ep_8h
+  - _self_
+
+experiment_name: swe64s_afcrps_fourier_modulation_global256_residual_one_output_12block_256ep_8h
+
+model:
+  processor:
+    # Same global draw, with an additional learned filter on normalized tokens.
+    # All frequencies remain available; four overlapping bands share parameters.
+    modulation_mode: fourier
+    fourier_num_bands: 4
+
+hydra:
+  launcher:
+    timeout_min: 480
