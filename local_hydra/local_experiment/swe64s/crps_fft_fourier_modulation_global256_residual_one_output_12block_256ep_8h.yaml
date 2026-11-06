@@ -1,0 +1,12 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/afcrps_fourier_modulation_global256_residual_one_output_12block_256ep_8h
+  - /loss/ensemble_fourier_crps@model.loss_func
+  - _self_
+
+experiment_name: swe64s_crps_fft_fourier_modulation_global256_residual_one_output_12block_256ep_8h
+
+hydra:
+  launcher:
+    # Submission defaults must be present on the selected preset itself.
+    timeout_min: 480

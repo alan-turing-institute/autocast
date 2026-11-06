@@ -188,6 +188,42 @@ def test_selected_pair_preserves_explicit_order(tmp_path):
     assert [job["name"] for job in plan["jobs"]] == names
 
 
+def test_fourier_modulation_pair_has_online_logging_and_stop_guard(tmp_path):
+    names = ["fourier_modulation_afcrps", "fourier_modulation_crps_fft"]
+    plan = HELPER["build_plan"](
+        datasets_root=tmp_path / "data",
+        output_root=tmp_path / "outputs",
+        account="example.account",
+        run_names=names,
+    )
+    assert [job["name"] for job in plan["jobs"]] == names
+    assert len({job["output"] for job in plan["jobs"]}) == 2
+    configs = []
+    for index, job in enumerate(plan["jobs"]):
+        test_standard_cli_and_ddp_preview(plan, index)
+        cfg = _compose(job)
+        configs.append(cfg)
+        assert cfg.model.processor.modulation_mode == "fourier"
+        assert cfg.model.processor.noise_mode == "global"
+        assert cfg.trainer.max_epochs == cfg.optimizer.cosine_epochs == 256
+        assert cfg.trainer.max_time == "00:07:45:00"
+        assert cfg.hydra.launcher.timeout_min == 480
+        guards = [
+            c
+            for c in cfg.trainer.callbacks
+            if c._target_.endswith("SustainedValidationRise")
+        ]
+        assert len(guards) == 1
+        assert guards[0].patience == 10
+        assert guards[0].min_steps == 10000
+        assert cfg.datamodule.data_path == plan["raw_dataset"]["path"]
+    assert configs[0].logging.wandb.name != configs[1].logging.wandb.name
+    assert configs[0].logging.wandb.group == configs[1].logging.wandb.group
+    assert not (tmp_path / "outputs").exists()
+    assert not plan["training_executed"]
+    assert not plan["jobs_submitted"]
+
+
 @pytest.mark.parametrize(
     "names", [[], ["unknown"], ["global_crps_fft", "global_crps_fft"]]
 )

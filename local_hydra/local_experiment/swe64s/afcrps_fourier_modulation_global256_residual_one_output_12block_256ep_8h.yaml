@@ -1,6 +1,7 @@
 # @package _global_
 defaults:
   - /local_experiment/swe64s/afcrps_global256_residual_one_output_12block_256ep_8h
+  - override /trainer: swe64s_noise_ablations
   - _self_
 
 experiment_name: swe64s_afcrps_fourier_modulation_global256_residual_one_output_12block_256ep_8h
@@ -11,6 +12,14 @@ model:
     # All frequencies remain available; four overlapping bands share parameters.
     modulation_mode: fourier
     fourier_num_bands: 4
+
+logging:
+  wandb:
+    enabled: true
+    mode: online
+    id: null
+    resume: null
+    log_model: false
 
 hydra:
   launcher:

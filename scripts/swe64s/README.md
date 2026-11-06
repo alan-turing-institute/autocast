@@ -229,21 +229,53 @@ Record achieved updates and evaluate with the same held-out states and rollout
 protocol as the existing fits. Enable online logging at submission with
 `logging.wandb.enabled=true logging.wandb.mode=online`.
 
-### Fourier feature modulation control
+### Fourier feature modulation controls
 
-`afcrps_fourier_modulation_global256_residual_one_output_12block_256ep_8h`
-inherits the global-256, twelve-block afCRPS residual preset and enables
+The two fresh-fit presets inherit the global-256 residual setup:
+
+| Objective | Preset |
+| --- | --- |
+| Field afCRPS | `afcrps_fourier_modulation_global256_residual_one_output_12block_256ep_8h` |
+| Field + Fourier coefficient afCRPS, weights `[1.0, 0.1]` | `crps_fft_fourier_modulation_global256_residual_one_output_12block_256ep_8h` |
+
+Both use width 224, twelve blocks, eight heads and patch size four, and enable
 `model.processor.modulation_mode=fourier`. The same global draw conditions
 four overlapping spectral bands in each block, shared across feature channels.
 The token-grid filter modifies normalized activations before the existing
 AdaLN scale/shift, attention and feed-forward operations. It introduces 37,008
 parameters and starts at the identity; all token frequencies remain available.
 
-The dataset, persistence residual, eight training members, batch size, 256-epoch
-cosine schedule, loss and validation protocol are inherited unchanged. This is
-a fresh-fit preset; it does not silently load a previous checkpoint. At patch
-size four, Fourier modulation acts on 16x16 tokens rather than 64x64 decoded
-fields. The preset is prepared locally and has not been launched.
+Both keep the original 200/20/20 dataset, one-input/one-output persistence
+residual with delta statistics, eight training members and batch 32 per GPU.
+The 256-epoch cosine schedule decays from `2e-4` to zero: 128,000 nominal updates
+on four GPUs. Neither uses simulator-parameter conditioning or loads a previous
+checkpoint. Fourier modulation acts on 16x16 tokens rather than 64x64 decoded
+fields. The existing AdaLN path remains active, so this tests an added spectral
+feature filter. Compare each arm with the corresponding global AdaLN baseline.
+
+Both presets explicitly enable online W&B and the `swe64s_noise_ablations`
+trainer. It saves best/latest full checkpoints at each validation and stops
+after ten consecutive validations more than 1% above the run's best, starting
+at 10,000 updates. Record achieved updates and compare `val_afcrps` and the
+matched redraw/rollout diagnostics across objectives; their composite `val_loss`
+values are not directly comparable. The allocation is capped at eight hours,
+with a trainer cap of 7h45m; this is a safety limit, not a runtime estimate.
+For fresh baseline reruns also select `trainer=swe64s_noise_ablations`; historical
+fits used their recorded stopping decisions and achieved budgets.
+
+Prepare commands with separate output folders and W&B names, without submitting:
+
+```bash
+uv run --frozen --no-sync python scripts/swe64s/prepare_followups.py \
+  --datasets-root /projects/u6eo/autocast/datasets \
+  --output-root /projects/u6eo/autocast/outputs/swe64s/NEW_FOURIER_MODULATION_STUDY \
+  --run fourier_modulation_afcrps --run fourier_modulation_crps_fft
+```
+
+These are opt-in entries; the helper's default pair is unchanged. Its commands
+explicitly restore the 7h45m trainer cap after the four-GPU distributed overlay.
+The presets are prepared locally; target-machine CUDA/data/W&B preflight and
+launch approval remain outstanding.
 
 ### Experiment readiness inventory
 
