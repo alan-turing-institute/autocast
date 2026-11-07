@@ -7,8 +7,8 @@ _target_: autocast.processors.residual_flow_matching.ResidualFlowMatchingProcess
 integrator: euler
 
 # IID residual noise plus this reference corresponds to a noisy persistence
-# source in full-state coordinates. Pretrained ProcessorReference usage is
-# a Python API; see the processor walkthrough for explicit weight loading.
+# source in full-state coordinates. For a pretrained ProcessorReference, see
+# residual_flow_matching_pretrained_vit and the processor walkthrough.
 reference:
   _target_: autocast.processors.residual_reference.LastFrameReference
   n_steps_output: auto
