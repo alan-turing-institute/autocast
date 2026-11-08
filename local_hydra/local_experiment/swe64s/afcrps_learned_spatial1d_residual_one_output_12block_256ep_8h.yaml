@@ -1,0 +1,26 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/afcrps_spatial1d_residual_one_output_12block_256ep_8h
+  - override /trainer: swe64s_noise_ablations
+  - _self_
+
+experiment_name: swe64s_afcrps_learned_spatial1d_residual_one_output_12block_256ep_8h
+
+model:
+  processor:
+    # The same 256 innovations as IID spatial-1D, filtered before spatial AdaLN.
+    modulation_mode: spectral_noise
+    noise_radial_knots: 16
+    noise_source: null
+
+logging:
+  wandb:
+    enabled: true
+    mode: online
+    id: null
+    resume: null
+    log_model: false
+
+hydra:
+  launcher:
+    timeout_min: 480

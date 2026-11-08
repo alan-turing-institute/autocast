@@ -277,6 +277,48 @@ explicitly restore the 7h45m trainer cap after the four-GPU distributed overlay.
 The presets are prepared locally; target-machine CUDA/data/W&B preflight and
 launch approval remain outstanding.
 
+### Learned spatial-noise controls
+
+These presets filter Gaussian innovations into spatial AdaLN conditioning.
+They are distinct from the activation-filter experiment above.
+
+| Objective | Preset |
+| --- | --- |
+| Field afCRPS | `afcrps_learned_spatial1d_residual_one_output_12block_256ep_8h` |
+| Field + Fourier coefficient afCRPS, weights `[1.0, 0.1]` | `crps_fft_learned_spatial1d_residual_one_output_12block_256ep_8h` |
+
+Both inherit the spatial-1D model: 256 independent Gaussian values per member
+on 16x16 tokens, projected to 256 conditioning features, width 224, twelve
+blocks, eight heads, patch four, and no simulator-parameter conditioning.
+`modulation_mode=spectral_noise` learns a radial response and DC gain per
+block, with sixteen interpolation nodes and relative phases in blocks 2--12.
+The first phase is fixed. All blocks reuse the original draw. Each filter has
+unit expected pointwise variance and starts at identity. No activation filter
+or direct global-noise bypass is used. The added parameter count is 556.
+
+The IID endpoint matches the spatial-1D control up to FFT roundoff. A DC-only
+filter instead gives one spatially constant scalar; it does not reproduce
+the separate 256D global-vector baseline. Learned phases affect cross-block
+alignment, not the marginal power of Gaussian conditioning at a single block.
+These are noise-source properties, not guarantees about forecast spectra.
+
+The dataset, persistence residual, delta statistics, eight members, batch 32
+per GPU, 256 epochs and cosine `2e-4` to zero are unchanged. Both explicitly
+enable online W&B and the same sustained-validation-rise callback and full
+best/latest checkpoint saving as the feature-filter controls. The allocation
+is eight hours with a 7h45m trainer cap. Default submission selections are
+unchanged; prepare this pair explicitly, without submitting:
+
+```bash
+uv run --frozen --no-sync python scripts/swe64s/prepare_followups.py \
+  --datasets-root /projects/u6eo/autocast/datasets \
+  --output-root /projects/u6eo/autocast/outputs/swe64s/NEW_LEARNED_SPATIAL_STUDY \
+  --run learned_spatial_afcrps --run learned_spatial_crps_fft
+```
+
+Local tests do not replace target-machine CUDA/data/W&B preflight. These
+presets have not been deployed or launched.
+
 ### Experiment readiness inventory
 
 This is a local config/planning inventory, not a live scheduler status.
