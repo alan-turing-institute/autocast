@@ -6,6 +6,7 @@ import torch
 from einops import rearrange
 from torch import Tensor, nn
 
+from autocast.nn.noise.learned_fourier import LearnedFourierNoise2d
 from autocast.nn.noise.source import SourceDistribution, _sample_checked
 from autocast.nn.vit import SpatialViTBackbone, ViTModulationMode
 from autocast.processors.base import Processor
@@ -33,6 +34,12 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
     receives a ``(B, 1, H_tokens, W_tokens, D)`` reference on the actual input
     patch grid. Calls are independent; the singleton time slot is not a
     rollout trajectory. Explicit ``forward`` noise always bypasses sampling.
+
+    ``modulation_mode='spectral_noise'`` learns spatial noise filters instead
+    of filtering activations. It requires spatial noise. Raw innovations are
+    filtered separately for each block, before the shared channel projection
+    and optional global conditioning. ``noise_radial_knots`` controls the
+    radial response resolution; no fixed smoothing length is prescribed.
     """
 
     def __init__(
@@ -62,6 +69,7 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
         noise_source: SourceDistribution | None = None,
         modulation_mode: ViTModulationMode | str = ViTModulationMode.ADALN,
         fourier_num_bands: int = 4,
+        noise_radial_knots: int = 16,
     ):
         super().__init__()
         self.n_spatial_dims = len(spatial_resolution)
@@ -85,6 +93,11 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
             msg = "noise_source requires noise_mode='spatial'."
             raise ValueError(msg)
         self.noise_source = noise_source
+        if modulation_mode == ViTModulationMode.SPECTRAL_NOISE and (
+            self.noise_mode != AdaLNNoiseMode.SPATIAL
+        ):
+            msg = "Spectral noise requires noise_mode='spatial'."
+            raise ValueError(msg)
         self.patch_size = (
             (patch_size, patch_size)
             if isinstance(patch_size, int)
@@ -127,6 +140,11 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
             )
 
         self.loss_func = loss_func or nn.MSELoss()
+        self.noise_filter = (
+            LearnedFourierNoise2d(n_layers, radial_knots=noise_radial_knots)
+            if modulation_mode == ViTModulationMode.SPECTRAL_NOISE
+            else None
+        )
         # Absorb input/output T into channel count so the backbone always runs
         # with a single effective time token. Forward() folds T_in into C on
         # 5D inputs and unfolds T_out from C on outputs; for 4D inputs the
@@ -200,6 +218,8 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
                 spatial mode. D is n_noise_input_channels (defaulting to
                 n_noise_channels); N is the number of input patch tokens,
                 ordered with width varying fastest. Use map() to draw noise.
+                In spectral_noise mode these are the unfiltered innovations;
+                the deterministic learned filters still run in forward().
             global_cond: Optional global conditioning tensor with shape
                 (B, C_global). Used only when include_global_cond=True.
 
@@ -212,6 +232,14 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
             received = None if x_noise is None else tuple(x_noise.shape)
             msg = f"Expected x_noise with shape {expected_shape}, got {received}."
             raise ValueError(msg)
+        noise_filter = getattr(self, "noise_filter", None)
+        if noise_filter is not None:
+            height, width = x.shape[-2:] if x.ndim == 4 else x.shape[2:4]
+            ph, pw = self.patch_size
+            raw_noise = rearrange(
+                x_noise, "b (h w) d -> b h w d", h=height // ph, w=width // pw
+            )
+            x_noise = rearrange(noise_filter(raw_noise), "b l h w d -> b l (h w) d")
         if self.modulation_proj is not None:
             x_noise = self.modulation_proj(x_noise)
 

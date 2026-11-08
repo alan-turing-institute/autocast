@@ -8,14 +8,16 @@ from einops.layers.torch import Rearrange
 from torch import nn
 
 from autocast.nn.base import TemporalBackboneBase
+from autocast.nn.blockwise_vit import BlockwiseViT
 from autocast.nn.fourier_vit import FourierViT
 
 
 class ViTModulationMode(str, Enum):
-    """How global conditioning modulates normalized spatial features."""
+    """How conditioning reaches the spatial transformer blocks."""
 
     ADALN = "adaln"
     FOURIER = "fourier"
+    SPECTRAL_NOISE = "spectral_noise"
 
 
 class SpatialViTBackbone(TemporalBackboneBase):
@@ -105,6 +107,8 @@ class SpatialViTBackbone(TemporalBackboneBase):
             modulation_mode: Existing AdaLN, or AdaLN with an additional Fourier
                 amplitude/phase filter after normalization. Fourier mode requires
                 global conditioning and a two-dimensional spatial token grid.
+                spectral_noise instead accepts block-specific spatial AdaLN
+                vectors, without filtering activations.
             fourier_num_bands: Number of overlapping radial bands in Fourier mode.
         """
         if window_size is not None:
@@ -116,6 +120,12 @@ class SpatialViTBackbone(TemporalBackboneBase):
         modulation_mode = ViTModulationMode(modulation_mode)
         if modulation_mode == ViTModulationMode.FOURIER and spatial_modulation:
             msg = "Fourier modulation currently requires global conditioning."
+            raise ValueError(msg)
+        if (
+            modulation_mode == ViTModulationMode.SPECTRAL_NOISE
+            and not spatial_modulation
+        ):
+            msg = "Spectral noise requires spatial_modulation=True."
             raise ValueError(msg)
 
         # Initialize base class with common parameters
@@ -136,6 +146,7 @@ class SpatialViTBackbone(TemporalBackboneBase):
             use_precomputed_modulation=use_precomputed_modulation,
             include_time_embedding=include_time_embedding,
             spatial_modulation=spatial_modulation,
+            blockwise_modulation=modulation_mode == ViTModulationMode.SPECTRAL_NOISE,
         )
 
         self.patch_size = patch_size
@@ -160,6 +171,8 @@ class SpatialViTBackbone(TemporalBackboneBase):
             if modulation_mode == ViTModulationMode.FOURIER
             else vit
         )
+        if modulation_mode == ViTModulationMode.SPECTRAL_NOISE:
+            self.vit = BlockwiseViT(vit)
         if spatial_modulation:
             for block in self.vit.get_submodule("blocks").children():
                 # Azula 0.7 inserts a singleton token axis for global AdaLN.

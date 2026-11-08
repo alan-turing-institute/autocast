@@ -42,6 +42,7 @@ class TemporalBackboneBase(nn.Module, ABC):
         include_time_embedding: bool = True,
         include_loss_weight: bool = False,
         spatial_modulation: bool = False,
+        blockwise_modulation: bool = False,
     ):
         """Initialize Temporal Backbone Base.
 
@@ -78,6 +79,8 @@ class TemporalBackboneBase(nn.Module, ABC):
                 multi-layer-perceptron backbones; the vision-transformer
                 backbone does not expose it yet.
             spatial_modulation: Whether precomputed modulation is per token (B, N, D).
+            blockwise_modulation: Whether spatial vectors also carry a block axis,
+                with shape (B, L, N, D). Requires spatial_modulation=True.
         """
         super().__init__()
 
@@ -92,6 +95,10 @@ class TemporalBackboneBase(nn.Module, ABC):
         self.include_time_embedding = include_time_embedding
         self.include_loss_weight = include_loss_weight
         self.spatial_modulation = spatial_modulation
+        self.blockwise_modulation = blockwise_modulation
+        if blockwise_modulation and not spatial_modulation:
+            msg = "Blockwise modulation requires spatial_modulation=True."
+            raise ValueError(msg)
         if spatial_modulation and not use_precomputed_modulation:
             msg = "Spatial modulation requires use_precomputed_modulation=True."
             raise ValueError(msg)
@@ -246,7 +253,14 @@ class TemporalBackboneBase(nn.Module, ABC):
     def _embed_modulation(self, x_t: TensorBTSC, t: Tensor | None) -> Tensor:
         """Resolve scalar time, global vectors or per-token modulation."""
         if self.spatial_modulation:
-            if t is None or t.ndim != 3 or t.shape[-1] != self.mod_features:
+            dimensions = 4 if getattr(self, "blockwise_modulation", False) else 3
+            if t is None or t.ndim != dimensions or t.shape[-1] != self.mod_features:
+                if dimensions == 4:
+                    msg = (
+                        "Expected blockwise modulation with shape "
+                        "(B, L, N, mod_features)."
+                    )
+                    raise ValueError(msg)
                 msg = "Expected spatial modulation with shape (B, N, mod_features)."
                 raise ValueError(msg)
             return t
@@ -292,6 +306,8 @@ class TemporalBackboneBase(nn.Module, ABC):
                 - ``None``, when the backbone was built with
                   ``include_time_embedding=False`` (one-step processors)
                 - per-token vectors (B, N, D) when spatial_modulation=True
+                - per-block spatial vectors (B, L, N, D) when
+                  blockwise_modulation=True
             cond: Conditioning input (B, T_cond, W, H, C)
             global_cond: Optional global conditioning/modulation vector (B, D)
             loss_weight: Optional scalar loss-mixing weight ``w`` per sample,
@@ -312,6 +328,8 @@ class TemporalBackboneBase(nn.Module, ABC):
             cond_emb = self.global_cond_embedding(global_cond)
             if self.spatial_modulation:
                 cond_emb = rearrange(cond_emb, "b d -> b 1 d")
+                if getattr(self, "blockwise_modulation", False):
+                    cond_emb = rearrange(cond_emb, "b n d -> b 1 n d")
             t_emb = t_emb + cond_emb
 
         # Combine with the loss-mixing-weight embedding if conditioning on lambda.
@@ -336,6 +354,8 @@ class TemporalBackboneBase(nn.Module, ABC):
             weight_emb = self.lambda_embedding(w)
             if self.spatial_modulation:
                 weight_emb = rearrange(weight_emb, "b d -> b 1 d")
+                if getattr(self, "blockwise_modulation", False):
+                    weight_emb = rearrange(weight_emb, "b n d -> b 1 n d")
             t_emb = t_emb + weight_emb
 
         return self._forward_fields(x_t, t_emb, cond)

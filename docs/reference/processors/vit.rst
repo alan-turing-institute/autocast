@@ -103,6 +103,75 @@ Fourier checkpoints require the same Fourier configuration for strict loading.
 ``SpatialViTBackbone`` (including its ``TemporalViTBackbone`` alias) exposes
 the same ``modulation_mode`` and ``fourier_num_bands`` options.
 
+Learned spectral noise for spatial AdaLN
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``modulation_mode: spectral_noise`` is a distinct alternative to the feature
+filter above. It Fourier filters Gaussian innovations, then supplies the
+resulting spatial fields to the existing token-wise AdaLN layers:
+
+.. code-block:: yaml
+
+   noise_mode: spatial
+   modulation_mode: spectral_noise
+   n_noise_input_channels: 1
+   n_noise_channels: 256
+   noise_radial_knots: 16
+   noise_source: null
+
+At 64x64 with patch size four this draws 256 independent Gaussian values per
+member: one scalar at each of 16x16 tokens. A single draw is reused across
+all blocks. Each block has a learned radial amplitude response, an independent
+DC gain, and (after the first block) a relative directional phase response.
+No additional random variables are sampled. Noise is filtered before the
+shared 1-to-256 projection, so projection biases and optional global
+conditioning embeddings are not filtered. There is no direct global-noise
+bypass and no Fourier operation on the model activations in this mode.
+
+For each block ``l`` the conditioning noise is
+
+.. math::
+
+   \eta_l(x) = \mathcal{F}^{-1}
+       [A_l(k) e^{i\phi_l(k)} \mathcal{F}[\xi](k)](x).
+
+All amplitudes start at one and all phases at zero. Thus initial predictions
+agree with the existing IID spatial AdaLN model up to FFT roundoff when
+backbone weights and innovations are matched. The non-DC amplitude response
+is interpolated between learned nodes over the full normalized radial range,
+rather than selecting prescribed low-pass lengthscales or four bands.
+Amplitudes can reach zero, allowing frequencies to be removed. Keeping only
+DC gives one constant Gaussian scalar per noise channel; this is a rank-one
+spatial endpoint, not the existing 256D global-vector model. Flat unit
+amplitude and zero phase give IID noise on any supplied token grid.
+
+Each filter is normalized by the square root of its expected variance over
+the full signed Fourier grid. With IID standard Gaussian innovations its
+pointwise variance is one, including at the DC-only endpoint. Individual
+draws are not centered, rescaled or forced to have a prescribed sample power.
+The degenerate all-zero filter remains zero under a numerical normalization
+floor. ``forward(x, x_noise)`` still applies the learned filter: explicit noise
+controls the innovations, not the final conditioning field. An optional
+``noise_source`` also supplies innovations; the unit-variance guarantee assumes
+IID standard Gaussian input and does not apply to arbitrary custom sources.
+
+A phase-only filter of a single stationary Gaussian field does not change
+its probability law. The first block therefore anchors phase at zero; phases
+in later blocks change their alignment with the shared draw and their
+cross-block covariance. They do not change a block's marginal power spectrum.
+Phase is odd in wavevector, with zero directional phase at even-grid Nyquist,
+so all fields are real. The same response can be evaluated on rectangular,
+odd and different-resolution grids. Changing the grid changes the number of
+innovations: a larger grid does not retain a fixed 256D latent budget.
+
+This option adds only ``noise_filter.*`` state entries to the spatial AdaLN
+checkpoint layout. Old global, spatial and feature-filter defaults are
+unchanged. An intentional warm start from spatial AdaLN may use
+``strict=False`` after verifying that only ``noise_filter.*`` entries are
+missing. Restoring a learned-noise checkpoint requires its original block
+count, radial-node count and modulation configuration. The transformer width,
+AdaLN parameter shapes, positional embedding and attention remain unchanged.
+
 Structured noise sources
 ~~~~~~~~~~~~~~~~~~~~~~~~
 

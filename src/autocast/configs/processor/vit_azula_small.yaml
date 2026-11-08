@@ -14,4 +14,5 @@ noise_mode: global
 noise_source: null
 modulation_mode: adaln
 fourier_num_bands: 4
+noise_radial_knots: 16
 include_global_cond: false
