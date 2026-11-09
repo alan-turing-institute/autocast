@@ -284,8 +284,8 @@ They are distinct from the activation-filter experiment above.
 
 | Objective | Preset |
 | --- | --- |
-| Field afCRPS | `afcrps_learned_spatial1d_residual_one_output_12block_256ep_8h` |
-| Field + Fourier coefficient afCRPS, weights `[1.0, 0.1]` | `crps_fft_learned_spatial1d_residual_one_output_12block_256ep_8h` |
+| Field afCRPS | `afcrps_learned_spatial1d_residual_one_output_12block_256ep_4h` |
+| Field + Fourier coefficient afCRPS, weights `[1.0, 0.1]` | `crps_fft_learned_spatial1d_residual_one_output_12block_256ep_4h` |
 
 Both inherit the spatial-1D model: 256 independent Gaussian values per member
 on 16x16 tokens, projected to 256 conditioning features, width 224, twelve
@@ -306,7 +306,10 @@ The dataset, persistence residual, delta statistics, eight members, batch 32
 per GPU, 256 epochs and cosine `2e-4` to zero are unchanged. Both explicitly
 enable online W&B and the same sustained-validation-rise callback and full
 best/latest checkpoint saving as the feature-filter controls. The allocation
-is eight hours with a 7h45m trainer cap. Default submission selections are
+is four hours with a 3h45m trainer cap. These are initial allocations, not a
+shortened cosine schedule: full checkpoints permit continuation toward the
+same 256-epoch horizon after reviewing curves and conditional spectra. The
+overfitting callback may stop earlier. Default submission selections are
 unchanged; prepare this pair explicitly, without submitting:
 
 ```bash

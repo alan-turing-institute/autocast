@@ -103,6 +103,36 @@ def test_global_fft_preserves_the_existing_epoch_control(plan):
     assert cfg.autoencoder_checkpoint is None
 
 
+@pytest.mark.parametrize("index", [0, 1])
+def test_learned_noise_four_hour_caps_survive_ddp_composition(tmp_path, index):
+    selected = HELPER["build_plan"](
+        datasets_root=tmp_path / "data",
+        output_root=tmp_path / "outputs",
+        run_names=["learned_spatial_afcrps", "learned_spatial_crps_fft"],
+    )
+    job = selected["jobs"][index]
+    cfg = _compose(job)
+    assert cfg.hydra.launcher.timeout_min == job["allocation_minutes"] == 240
+    assert cfg.trainer.max_time == job["trainer_max_time"] == "00:03:45:00"
+    assert cfg.trainer.max_epochs == cfg.optimizer.cosine_epochs == 256
+    assert cfg.optimizer.learning_rate == 2e-4
+    assert cfg.optimizer.min_lr_ratio == 0
+    assert cfg.trainer.devices == cfg.hydra.launcher.gpus_per_node == 4
+    assert cfg.model.processor.modulation_mode == "spectral_noise"
+    assert cfg.logging.wandb.enabled
+    assert cfg.logging.wandb.mode == "online"
+    guard = [
+        c
+        for c in cfg.trainer.callbacks
+        if c._target_.endswith("SustainedValidationRise")
+    ]
+    assert len(guard) == 1
+    assert guard[0].patience == 10
+    assert guard[0].relative_tolerance == 0.01
+    assert guard[0].min_steps == 10000
+    assert not selected["jobs_submitted"]
+
+
 def test_latent_fm_uses_the_fixed_cache_and_step_budget(plan):
     cfg = _compose(plan["jobs"][1])
     assert plan["jobs"][1]["allocation_minutes"] == 480

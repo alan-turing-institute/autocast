@@ -45,7 +45,7 @@
       "name": "learned_spatial_afcrps",
       "command": "epd",
       "config_name": "encoder_processor_decoder",
-      "preset": "afcrps_learned_spatial1d_residual_one_output_12block_256ep_8h",
+      "preset": "afcrps_learned_spatial1d_residual_one_output_12block_256ep_4h",
       "dataset": "raw",
       "batch_per_gpu": 32,
       "training_members": 8,
@@ -53,14 +53,14 @@
       "epochs": 256,
       "learning_rate": 0.0002,
       "scheduler_interval": "epoch",
-      "trainer_max_time": "00:07:45:00",
-      "allocation_minutes": 480
+      "trainer_max_time": "00:03:45:00",
+      "allocation_minutes": 240
     },
     {
       "name": "learned_spatial_crps_fft",
       "command": "epd",
       "config_name": "encoder_processor_decoder",
-      "preset": "crps_fft_learned_spatial1d_residual_one_output_12block_256ep_8h",
+      "preset": "crps_fft_learned_spatial1d_residual_one_output_12block_256ep_4h",
       "dataset": "raw",
       "batch_per_gpu": 32,
       "training_members": 8,
@@ -68,8 +68,8 @@
       "epochs": 256,
       "learning_rate": 0.0002,
       "scheduler_interval": "epoch",
-      "trainer_max_time": "00:07:45:00",
-      "allocation_minutes": 480
+      "trainer_max_time": "00:03:45:00",
+      "allocation_minutes": 240
     },
     {
       "name": "fourier_modulation_afcrps",

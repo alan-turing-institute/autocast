@@ -12,7 +12,8 @@ from omegaconf import OmegaConf
 from autocast.losses import AlphaFairCRPSLoss, WeightedSumLoss
 
 ROOT = Path(__file__).resolve().parents[2]
-SUFFIX = "spatial1d_residual_one_output_12block_256ep_8h"
+BASE_SUFFIX = "spatial1d_residual_one_output_12block_256ep_8h"
+SUFFIX = "spatial1d_residual_one_output_12block_256ep_4h"
 
 
 def config(name, *, baseline=False):
@@ -30,8 +31,10 @@ def config(name, *, baseline=False):
 
 @pytest.mark.parametrize("objective", ["afcrps", "crps_fft"])
 def test_training_protocol_matches_spatial_baseline(objective):
-    baseline = config(f"{objective}_{SUFFIX}", baseline=True)
+    baseline = config(f"{objective}_{BASE_SUFFIX}", baseline=True)
     learned = config(f"{objective}_learned_{SUFFIX}")
+    # Only the safety cap changes; preserve optimizer horizon and callbacks.
+    baseline.trainer.max_time = "00:03:45:00"
     expected = OmegaConf.to_container(baseline.model, resolve=True)
     assert isinstance(expected, dict)
     expected["processor"]["modulation_mode"] = "spectral_noise"
@@ -56,7 +59,7 @@ def test_training_protocol_matches_spatial_baseline(objective):
     assert learned.model.residual_use_delta_stats
     assert learned.model.n_members == 8
     assert learned.datamodule.batch_size == 32
-    assert learned.trainer.max_time == "00:07:45:00"
+    assert learned.trainer.max_time == "00:03:45:00"
     callbacks = learned.trainer.callbacks
     guard = [c for c in callbacks if c._target_.endswith("SustainedValidationRise")]
     assert len(guard) == 1
@@ -110,7 +113,7 @@ def test_production_capacity_and_identity_initialization():
     torch.manual_seed(42)
     learned = instantiate(cfg.model.processor, **kwargs)
     torch.manual_seed(42)
-    baseline = instantiate(config(f"afcrps_{SUFFIX}").model.processor, **kwargs)
+    baseline = instantiate(config(f"afcrps_{BASE_SUFFIX}").model.processor, **kwargs)
     assert (
         sum(p.numel() for p in learned.parameters())
         - sum(p.numel() for p in baseline.parameters())

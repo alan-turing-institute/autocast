@@ -4,7 +4,7 @@ defaults:
   - override /trainer: swe64s_noise_ablations
   - _self_
 
-experiment_name: swe64s_afcrps_learned_spatial1d_residual_one_output_12block_256ep_8h
+experiment_name: swe64s_afcrps_learned_spatial1d_residual_one_output_12block_256ep_4h
 
 model:
   processor:
@@ -12,6 +12,10 @@ model:
     modulation_mode: spectral_noise
     noise_radial_knots: 16
     noise_source: null
+
+trainer:
+  # Keep the 256-epoch cosine horizon; this is an initial resumable allocation.
+  max_time: "00:03:45:00"
 
 logging:
   wandb:
@@ -23,4 +27,4 @@ logging:
 
 hydra:
   launcher:
-    timeout_min: 480
+    timeout_min: 240
