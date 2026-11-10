@@ -1,0 +1,36 @@
+# @package _global_
+defaults:
+  - /local_experiment/processor/gpe_laser_wake_only/diffusion_vit_large
+  - override /backbone@model.processor.backbone: unet_large
+  - override /trainer: original_diffusion_ablation
+  - _self_
+
+experiment_name: ablation_latent_unet_diffusion_gpe
+seed: 42
+
+datamodule:
+  # Reuse the original frozen AE cache, independent of dataset-size controls.
+  data_path: ${oc.env:AUTOCAST_UNET_GPE_CACHE}
+
+optimizer:
+  cosine_epochs: ${trainer.max_epochs}
+
+trainer:
+  # Supply an evidenced budget for this new backbone before production use.
+  max_epochs: ${oc.decode:${oc.env:AUTOCAST_UNET_DIFFUSION_GPE_EPOCHS}}
+  max_time: "00:23:59:00"
+
+model:
+  processor:
+    backbone:
+      # About 80.9M parameters for the reference 8-channel latent layout.
+      # Matches the ambient CRPS U-Net's ~81.3M within 1%.
+      hid_channels: [85, 170, 340, 680]
+      hid_blocks: [3, 3, 3, 3]
+      mod_features: 256
+      ffn_factor: 1
+      periodic: false
+      dropout: 0.0
+      checkpointing: false
+      identity_init: false
+      attention_heads: {}
