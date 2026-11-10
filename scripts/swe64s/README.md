@@ -339,6 +339,54 @@ Prepare its command explicitly with
 `prepare_followups.py --run learned_spatial_helmholtz_crps_fft` and new data/
 output-root arguments as above; the default run selection stays unchanged.
 
+### Forecasting trajectory-diversity control
+
+`crps_fft_spatial1d_1000traj_256ep` starts a fresh IID spatial-1D CRPS-FFT
+forecast model on the existing raw 1,000-trajectory pool. The backbone,
+one-input/one-output persistence residual, delta statistics, eight members,
+batch 32/GPU and field/Fourier weights `[1.0, 0.1]` match the original
+200-trajectory spatial control. No autoencoder is used.
+
+Supply the existing `shallow_water2d_stochastic_64_ae1000x321_04517cc` view:
+its train split links to the 1,000 new trajectories in `..._771b940`, while
+validation, test and `stats.yml` link to the original `..._b43bd32` dataset.
+The historical AE name describes the view's original use; its contents are
+full-cadence raw h/u/v fields. `forecast_diversity_data_path` is required and
+has no implicit default; the preview helper supplies the recorded view path.
+`followup_runs.json` records the expected view and training/held-out hashes;
+the preparation helper prints these expectations but does not verify files.
+
+All 321 frames remain available. One-step forecasting has 320 adjacent
+windows per trajectory, giving a pool of 320,000 windows. With four GPUs,
+an integer `trainer.limit_train_batches=500` consumes 64,000 distinct windows
+per sampled epoch: 20% of the pool and the same count as a full original
+200-trajectory epoch. The existing shuffled DDP sampler selects a new prefix
+each epoch, without replacement within that epoch. This is window sampling,
+not temporal thinning: every target remains one saved frame (dt=0.25) ahead.
+Validation/test use their full unchanged splits.
+
+The horizon remains 256 sampled epochs / 128,000 nominal updates, with
+epoch cosine LR `2e-4` to zero, an eight-hour allocation and a 7h45 trainer
+safety cap. Online W&B, full best/latest checkpoints and the existing
+sustained-validation-rise guard are enabled. Report achieved updates and
+any stopping-rule difference from the historical, manually stopped fit.
+The generated pool is separate from the original 200 trajectories; it is
+not a nested dataset-size comparison. Do not interpret the larger training
+pool as a matched-data comparison against existing FM forecasting fits.
+
+Preview the opt-in run without submitting:
+
+```bash
+uv run --frozen --no-sync python scripts/swe64s/prepare_followups.py \
+  --datasets-root /projects/u6eo/autocast/datasets \
+  --output-root /projects/u6eo/autocast/outputs/swe64s/NEW_DIVERSITY_STUDY \
+  --run spatial_crps_fft_1000traj
+```
+
+Before launch, verify the pool manifest, train/held-out hashes and original
+state/delta statistics, then run the usual target-GPU finite-gradient and
+online-W&B preflight. Use a new output directory and committed source.
+
 ### Experiment readiness inventory
 
 This is a local config/planning inventory, not a live scheduler status.

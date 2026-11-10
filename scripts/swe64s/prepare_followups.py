@@ -39,6 +39,9 @@ def build_plan(
     paths = {
         "raw": datasets_root / raw["directory"],
         "latent_cache": datasets_root / settings["latent_cache"]["directory"],
+        "forecast_diversity_pool": (
+            datasets_root / settings["forecast_diversity_pool"]["directory"]
+        ),
     }
     source = subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, text=True
@@ -53,6 +56,11 @@ def build_plan(
         if destination.exists():
             msg = f"Refusing to reuse training output: {destination}"
             raise FileExistsError(msg)
+        data_key = (
+            "forecast_diversity_data_path"
+            if spec["dataset"] == "forecast_diversity_pool"
+            else "datamodule.data_path"
+        )
         overrides = [
             f"local_experiment=swe64s/{spec['preset']}",
             f"hydra.searchpath=[file://{REPO_ROOT / 'local_hydra'}]",
@@ -62,7 +70,7 @@ def build_plan(
             "++hydra.launcher.cpus_per_task=72",
             "++hydra.launcher.partition=workq",
             f"hydra.launcher.timeout_min={spec['allocation_minutes']}",
-            f"datamodule.data_path={json.dumps(str(paths[spec['dataset']]))}",
+            f"{data_key}={json.dumps(str(paths[spec['dataset']]))}",
             "logging.wandb.enabled=true",
             "logging.wandb.mode=online",
             "logging.wandb.entity=turing-core",
@@ -71,13 +79,22 @@ def build_plan(
             f"logging.wandb.name={json.dumps(run_name)}",
             "logging.wandb.resume=null",
             f"++provenance.source_commit={source}",
-            f"++provenance.raw_dataset_uuid={raw['uuid']}",
             "umask=0007",
         ]
         if account is not None:
             overrides.append(
                 f"++hydra.launcher.additional_parameters.account={json.dumps(account)}"
             )
+        if spec["dataset"] == "forecast_diversity_pool":
+            pool = settings["forecast_diversity_pool"]
+            overrides += [
+                f"++provenance.dataset_id={pool['directory']}",
+                f"++provenance.reference_dataset_uuid={raw['uuid']}",
+                f"++provenance.training_pool_sha256={pool['sha256']['train/data.pt']}",
+                f"++provenance.normalization_sha256={pool['sha256']['stats.yml']}",
+            ]
+        else:
+            overrides.append(f"++provenance.raw_dataset_uuid={raw['uuid']}")
         if spec["dataset"] == "latent_cache":
             cache = settings["latent_cache"]
             overrides += [
@@ -85,7 +102,7 @@ def build_plan(
                 f"++provenance.autoencoder_checkpoint_sha256={cache['autoencoder_checkpoint_sha256']}",
                 f"++provenance.normalization_sha256={cache['normalization_sha256']}",
             ]
-        else:
+        elif spec["dataset"] == "raw":
             overrides.append(f"++provenance.dataset_uuid={raw['uuid']}")
         command = [
             "uv",
@@ -122,6 +139,10 @@ def build_plan(
         "latent_cache": {
             **settings["latent_cache"],
             "path": str(paths["latent_cache"]),
+        },
+        "forecast_diversity_pool": {
+            **settings["forecast_diversity_pool"],
+            "path": str(paths["forecast_diversity_pool"]),
         },
         "checkpoint_selection": settings["checkpoint_selection"],
         "budget_note": (

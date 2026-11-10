@@ -1,0 +1,38 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/crps_fft_spatial1d_residual_one_output_12block_256ep_8h
+  - override /trainer: swe64s_noise_ablations
+  - _self_
+
+experiment_name: swe64s_crps_fft_spatial1d_1000traj_256ep
+
+# Start fresh on the full-cadence raw pool; no AE or prior forecast weights.
+resume_from_checkpoint: null
+resume_weights_only: false
+reset_resume_time_budget: false
+forecast_diversity_data_path: ???
+
+datamodule:
+  # Explicitly select the verified 1000/20/20 view at launch. Its held-out
+  # splits and stats.yml link to the original 200-trajectory benchmark.
+  data_path: ${forecast_diversity_data_path}
+  autoencoder_mode: false
+  full_trajectory_mode: false
+
+trainer:
+  # 1000 x 320 adjacent windows; 4 GPUs x batch 32 x 500 = 64000 per epoch.
+  # Shuffle the full pool again each epoch, retaining the original dt=0.25.
+  # 256 sampled epochs still give 128000 updates and the same epoch cosine.
+  limit_train_batches: 500
+
+logging:
+  wandb:
+    enabled: true
+    mode: online
+    id: null
+    resume: null
+    log_model: false
+
+hydra:
+  launcher:
+    timeout_min: 480

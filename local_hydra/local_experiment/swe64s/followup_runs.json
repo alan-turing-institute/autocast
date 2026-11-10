@@ -12,6 +12,19 @@
       8
     ]
   },
+  "forecast_diversity_pool": {
+    "directory": "shallow_water2d_stochastic_64_ae1000x321_04517cc",
+    "training_source_directory": "shallow_water2d_stochastic_64_771b940",
+    "shape": [1000, 321, 64, 64, 3],
+    "splits": {"train": 1000, "valid": 20, "test": 20},
+    "sha256": {
+      "train/data.pt": "6d7b65fd64b6e992a52c3d8b4c8296d16a6ffeff5a3aa977e95eccbe8920b600",
+      "valid/data.pt": "c1eba3d0546c0df122d613d356fb88cf8aa90ca1e13235eccdb230c8c75ea5f6",
+      "test/data.pt": "a4e0debfccf069875f3a04a8cd07ce222ddaa27290645e0e6b5ce2006b3de1aa",
+      "stats.yml": "c04afa893ba3dffdadb1916161a1caeab833884ce4a27126825b32108e246feb",
+      "resolved_config.yaml": "f328fc2c0edc0ebbbd626c4afba3afee43cdc80d8d412075e662b090c909ee56"
+    }
+  },
   "checkpoint_selection": "Use final raw weights unless validation shows clear sustained overfitting; then use best native validation loss.",
   "runs": [
     {
@@ -46,6 +59,23 @@
     }
   ],
   "optional_runs": [
+    {
+      "name": "spatial_crps_fft_1000traj",
+      "command": "epd",
+      "config_name": "encoder_processor_decoder",
+      "preset": "crps_fft_spatial1d_1000traj_256ep",
+      "dataset": "forecast_diversity_pool",
+      "batch_per_gpu": 32,
+      "training_members": 8,
+      "expected_updates": 128000,
+      "epochs": 256,
+      "sampled_batches_per_epoch": 500,
+      "sampling_fraction": 0.2,
+      "learning_rate": 0.0002,
+      "scheduler_interval": "epoch",
+      "trainer_max_time": "00:07:45:00",
+      "allocation_minutes": 480
+    },
     {
       "name": "learned_spatial_afcrps",
       "command": "epd",
