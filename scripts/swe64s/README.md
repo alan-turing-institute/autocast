@@ -319,8 +319,25 @@ uv run --frozen --no-sync python scripts/swe64s/prepare_followups.py \
   --run learned_spatial_afcrps --run learned_spatial_crps_fft
 ```
 
-Local tests do not replace target-machine CUDA/data/W&B preflight. These
-presets have not been deployed or launched.
+Local tests do not replace target-machine CUDA/data/W&B preflight for each
+new launch. Keep its provenance and submission records with the output folder.
+
+### Learned spatial noise with Helmholtz scoring
+
+The opt-in `learned_spatial_helmholtz_crps_fft` run uses
+`crps_fft_helmholtz_learned_spatial1d_256ep_4h`. It combines the learned
+spatial-1D processor above with the existing V2 Helmholtz velocity score.
+The coefficient remains `0.2983579021838257`: training weights are
+`[1.0, 0.1, 0.2983579021838257]`, with the original normalization and alpha.
+Validation, checkpoint selection and sustained-rise stopping use only the
+base `[1.0, 0.1]` CRPS-FFT score. The run starts fresh with seed 42 and the
+same data, optimizer and 256-epoch horizon. Online W&B, four-hour allocation,
+3h45 trainer cap and full best/latest checkpoints match the learned-noise
+pair. No generic model or loss API changes are required.
+
+Prepare its command explicitly with
+`prepare_followups.py --run learned_spatial_helmholtz_crps_fft` and new data/
+output-root arguments as above; the default run selection stays unchanged.
 
 ### Experiment readiness inventory
 

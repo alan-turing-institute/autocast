@@ -5,7 +5,12 @@
     "autoencoder_training_trajectories": 1000,
     "autoencoder_checkpoint_sha256": "e514ebf07d4350521da8fd25c8875eb2842eb668a8b059bb207989361935573c",
     "normalization_sha256": "c04afa893ba3dffdadb1916161a1caeab833884ce4a27126825b32108e246feb",
-    "sample_shape": [321, 16, 16, 8]
+    "sample_shape": [
+      321,
+      16,
+      16,
+      8
+    ]
   },
   "checkpoint_selection": "Use final raw weights unless validation shows clear sustained overfitting; then use best native validation loss.",
   "runs": [
@@ -61,6 +66,21 @@
       "command": "epd",
       "config_name": "encoder_processor_decoder",
       "preset": "crps_fft_learned_spatial1d_residual_one_output_12block_256ep_4h",
+      "dataset": "raw",
+      "batch_per_gpu": 32,
+      "training_members": 8,
+      "expected_updates": 128000,
+      "epochs": 256,
+      "learning_rate": 0.0002,
+      "scheduler_interval": "epoch",
+      "trainer_max_time": "00:03:45:00",
+      "allocation_minutes": 240
+    },
+    {
+      "name": "learned_spatial_helmholtz_crps_fft",
+      "command": "epd",
+      "config_name": "encoder_processor_decoder",
+      "preset": "crps_fft_helmholtz_learned_spatial1d_256ep_4h",
       "dataset": "raw",
       "batch_per_gpu": 32,
       "training_members": 8,

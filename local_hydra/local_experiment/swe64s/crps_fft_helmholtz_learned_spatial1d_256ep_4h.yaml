@@ -1,0 +1,31 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/crps_fft_helmholtz_velocity_spatial1d_256ep
+  - _self_
+
+experiment_name: swe64s_crps_fft_helmholtz_learned_spatial1d_256ep_4h
+
+# Reuse the original V2 coefficient, without a new weight search.
+vector_weight: 0.2983579021838257
+
+model:
+  processor:
+    modulation_mode: spectral_noise
+    noise_radial_knots: 16
+    noise_source: null
+
+trainer:
+  # The scientific horizon remains 256 epochs; checkpoints allow continuation.
+  max_time: "00:03:45:00"
+
+logging:
+  wandb:
+    enabled: true
+    mode: online
+    id: null
+    resume: null
+    log_model: false
+
+hydra:
+  launcher:
+    timeout_min: 240
