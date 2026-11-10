@@ -1,0 +1,38 @@
+# @package _global_
+defaults:
+  - /local_experiment/processor/gray_scott/fm_vit_large
+  - _self_
+
+experiment_name: ablation_training_data_gs5x_fm_vit_large_24h
+seed: 42
+
+datamodule:
+  data_path: ${oc.env:AUTOCAST_GS_5X_CACHE}
+  validation_stride: 5
+
+optimizer:
+  cosine_epochs: ${trainer.max_epochs}
+
+trainer:
+  limit_train_batches: 0.2
+  limit_val_batches: 1.0
+  # Reference GS FM sampling-epoch budget; no timing recalibration.
+  max_epochs: 2830
+  max_time: "01:00:00:00"
+  callbacks:
+    - _target_: lightning.pytorch.callbacks.ModelCheckpoint
+      save_top_k: -1
+      every_n_epochs: 707
+      save_on_train_epoch_end: true
+      save_last: true
+      filename: quarter-{epoch:04d}
+      auto_insert_metric_name: false
+    - _target_: lightning.pytorch.callbacks.ModelCheckpoint
+      monitor: val_loss
+      mode: min
+      save_top_k: 1
+      save_last: false
+      filename: best-val-{epoch:04d}-{val_loss:.4f}
+      auto_insert_metric_name: false
+    - _target_: autocast.callbacks.ema.EMACallback
+      decay: 0.999

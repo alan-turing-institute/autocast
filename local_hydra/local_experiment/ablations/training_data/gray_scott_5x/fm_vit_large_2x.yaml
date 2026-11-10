@@ -1,0 +1,29 @@
+# @package _global_
+defaults:
+  - /local_experiment/ablations/training_data/gray_scott_5x/fm_vit_large
+  - _self_
+
+# Train from scratch with twice the sampling epochs and cosine horizon.
+# Both FM runs use the same frozen AE and full latent cache.
+experiment_name: ablation_training_data_gs5x_fm_vit_large_48h
+
+trainer:
+  max_epochs: 5660
+  max_time: "02:00:00:00"
+  callbacks:
+    - _target_: lightning.pytorch.callbacks.ModelCheckpoint
+      save_top_k: -1
+      every_n_epochs: 1415
+      save_on_train_epoch_end: true
+      save_last: true
+      filename: quarter-{epoch:04d}
+      auto_insert_metric_name: false
+    - _target_: lightning.pytorch.callbacks.ModelCheckpoint
+      monitor: val_loss
+      mode: min
+      save_top_k: 1
+      save_last: false
+      filename: best-val-{epoch:04d}-{val_loss:.4f}
+      auto_insert_metric_name: false
+    - _target_: autocast.callbacks.ema.EMACallback
+      decay: 0.999

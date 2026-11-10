@@ -1,12 +1,15 @@
 """Tests for the cache_latents script."""
 
+from types import SimpleNamespace
+
 import torch
+from omegaconf import OmegaConf
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
 from autocast.data.encoded_dataset import CachedLatentDataset
 from autocast.encoders.base import EncoderWithCond
-from autocast.scripts.cache_latents import _encode_and_save_split
+from autocast.scripts.cache_latents import _encode_and_save_split, cache_latents
 from autocast.types.batch import Batch
 from autocast.types.types import TensorBNC
 
@@ -93,6 +96,51 @@ def _make_cond_dataloader(cond_dim=3, t_in=1, t_out=9):
 
 
 # --- Tests ---
+
+
+def test_cache_metadata_pins_checkpoint_and_data_paths(tmp_path, monkeypatch):
+    checkpoint = str(tmp_path / "original/autoencoder.ckpt")
+    data_path = str(tmp_path / "original/data")
+    monkeypatch.setenv("AUTOCAST_GS_10X_AE_CHECKPOINT", checkpoint)
+    monkeypatch.setenv("AUTOCAST_GS_10X_DATA", data_path)
+    cfg = OmegaConf.create(
+        {
+            "autoencoder_checkpoint": "${oc.env:AUTOCAST_GS_10X_AE_CHECKPOINT}",
+            "datamodule": {
+                "data_path": "${oc.env:AUTOCAST_GS_10X_DATA}",
+                "normalization_path": "${.data_path}/stats.yml",
+            },
+        }
+    )
+    loader = _make_full_traj_dataloader(n_trajectories=1)
+    datamodule = SimpleNamespace(
+        setup=lambda **_kwargs: None,
+        train_dataloader=lambda: loader,
+        val_dataloader=lambda: loader,
+        test_dataloader=lambda: loader,
+    )
+    monkeypatch.setattr(
+        "autocast.scripts.cache_latents.setup_datamodule",
+        lambda input_cfg: (datamodule, input_cfg, {}),
+    )
+    monkeypatch.setattr(
+        "autocast.scripts.cache_latents.setup_autoencoder_components",
+        lambda _cfg, _stats: (_MockEncoder(), nn.Identity()),
+    )
+
+    output_dir = cache_latents(cfg, tmp_path / "cached", device="cpu")
+    metadata_path = output_dir / "autoencoder_config.yaml"
+    monkeypatch.setenv("AUTOCAST_GS_10X_AE_CHECKPOINT", "/different/autoencoder.ckpt")
+    monkeypatch.setenv("AUTOCAST_GS_10X_DATA", "/different/data")
+    saved = OmegaConf.load(metadata_path)
+    assert saved.autoencoder_checkpoint == checkpoint
+    assert saved.datamodule.data_path == data_path
+    assert saved.datamodule.normalization_path == f"{data_path}/stats.yml"
+
+    monkeypatch.delenv("AUTOCAST_GS_10X_AE_CHECKPOINT")
+    monkeypatch.delenv("AUTOCAST_GS_10X_DATA")
+    OmegaConf.resolve(saved)
+    assert "${oc.env:" not in metadata_path.read_text()
 
 
 def test_encode_and_save_creates_traj_files(tmp_path):

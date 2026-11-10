@@ -1,0 +1,10 @@
+# Paths to the saved metadata and selected weights of the original comparison.
+# This manifest is optional and is read only by campaign preparation.
+fm:
+  config: /path/to/original_fm/resolved_config.yaml
+  checkpoint: /path/to/original_fm/processor.ckpt
+  autoencoder_config: /path/to/original_ae/resolved_autoencoder_config.yaml
+  autoencoder_checkpoint: /path/to/original_ae/autoencoder.ckpt
+crps:
+  config: /path/to/original_crps/resolved_config.yaml
+  checkpoint: /path/to/original_crps/selected_validation_checkpoint.ckpt

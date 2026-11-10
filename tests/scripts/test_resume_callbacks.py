@@ -11,6 +11,7 @@ from lightning.pytorch.callbacks import Callback, ModelCheckpoint
 from lightning.pytorch.utilities.types import OptimizerLRScheduler
 from torch.utils.data import DataLoader, TensorDataset
 
+from autocast.callbacks.allocation import AllocationDeadline, VerifyResumeState
 from autocast.callbacks.checkpoint import ProgressModelCheckpoint
 from autocast.callbacks.ema import EMACallback
 from autocast.scripts.training import TrainingTimerCallback
@@ -118,6 +119,7 @@ def _trainer(root: Path, *, interrupted: bool = False):
         accelerator="cpu",
         devices=1,
         max_epochs=4,
+        max_time="02:00:00:00",
         logger=False,
         enable_progress_bar=False,
         enable_model_summary=False,
@@ -166,3 +168,46 @@ def test_interrupted_fit_matches_uninterrupted_state(tmp_path):
     assert baseline_ema.ema_model is not None
     for key, value in baseline_ema.ema_model.state_dict().items():
         assert torch.equal(ema.ema_model.state_dict()[key], value)
+
+
+def test_allocation_boundary_resume_keeps_full_horizon(tmp_path, monkeypatch):
+    clock = [1000.0]
+    monkeypatch.setattr("autocast.callbacks.allocation.time.time", lambda: clock[0])
+    monkeypatch.setenv("AUTOCAST_ALLOCATION_END_TIME", "1102")
+
+    class AdvanceClock(Callback):
+        def on_train_epoch_end(self, trainer, pl_module):  # noqa: ARG002
+            clock[0] += 1
+
+    loader = DataLoader(TensorDataset(torch.arange(1.0, 6.0)), batch_size=1)
+    baseline, _, _, _, _ = _trainer(tmp_path / "baseline")
+    baseline_model = _DeterministicModel()
+    baseline.fit(baseline_model, loader, loader)
+    first, _, _, _, _ = _trainer(tmp_path / "segmented")
+    getattr(first, "callbacks", []).extend(
+        [AdvanceClock(), AllocationDeadline(reserve_seconds=100)]
+    )
+    first.fit(_DeterministicModel(), loader, loader)
+    assert first.global_step == 10
+    assert first.max_epochs == 4
+    checkpoint = tmp_path / "allocation.ckpt"
+    first.save_checkpoint(checkpoint)
+    saved = torch.load(checkpoint, weights_only=False)
+    assert saved["loops"]["fit_loop"]["epoch_progress"]["total"]["completed"] == 2
+    assert saved["callbacks"]["Timer"]["time_elapsed"]["train"] > 0
+
+    # Queue delay must not exhaust the new allocation's deadline.
+    clock[0] += 10000
+    monkeypatch.setenv("AUTOCAST_ALLOCATION_END_TIME", str(clock[0] + 1000))
+    resumed, _, _, _, _ = _trainer(tmp_path / "segmented")
+    getattr(resumed, "callbacks", []).extend(
+        [AllocationDeadline(reserve_seconds=100), VerifyResumeState(str(checkpoint))]
+    )
+    model = _DeterministicModel()
+    resumed.fit(model, loader, loader, ckpt_path=checkpoint)
+    assert resumed.global_step == baseline.global_step == 20
+    assert torch.equal(model.weight, baseline_model.weight)
+    assert (
+        resumed.lr_scheduler_configs[0].scheduler.state_dict()
+        == baseline.lr_scheduler_configs[0].scheduler.state_dict()
+    )

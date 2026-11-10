@@ -1,0 +1,17 @@
+# @package _global_
+defaults:
+  - /local_experiment/cache_latents/gray_scott/cache_latents
+  - override /datamodule: gray_scott_5x
+  - _self_
+
+experiment_name: ablation_training_data_gs5x_cache_latents
+autoencoder_checkpoint: ${oc.env:AUTOCAST_GS_5X_AE_CHECKPOINT}
+
+# Encode complete validation trajectories before FM thins their windows.
+datamodule:
+  validation_stride: 1
+
+# Cache every trajectory. The 20% limit is applied only by the training Trainer.
+cache_latents:
+  output_dir: ${oc.env:AUTOCAST_GS_5X_CACHE}
+  device: auto

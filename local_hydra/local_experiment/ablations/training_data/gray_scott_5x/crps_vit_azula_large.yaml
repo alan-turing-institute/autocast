@@ -1,0 +1,18 @@
+# @package _global_
+defaults:
+  - /local_experiment/epd/gray_scott/crps_vit_azula_large
+  - override /datamodule: gray_scott_5x
+  - _self_
+
+experiment_name: ablation_training_data_gs5x_crps_vit_azula_large_24h
+seed: 42
+
+optimizer:
+  cosine_epochs: ${trainer.max_epochs}
+
+trainer:
+  limit_train_batches: 0.2
+  limit_val_batches: 1.0
+  # Reference GS CRPS sampling-epoch budget; no timing recalibration.
+  max_epochs: 399
+  max_time: "01:00:00:00"

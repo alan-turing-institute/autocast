@@ -1,0 +1,11 @@
+# @package _global_
+defaults:
+  - /local_experiment/ablations/training_data/gray_scott_5x/crps_vit_azula_large
+  - _self_
+
+# Independent longer-budget control, not a resumed 24-hour run.
+experiment_name: ablation_training_data_gs5x_crps_vit_azula_large_48h
+
+trainer:
+  max_epochs: 798
+  max_time: "02:00:00:00"

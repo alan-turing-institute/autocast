@@ -207,7 +207,9 @@ def cache_latents(
     # Save the full autoencoder config so the decoder can be reconstructed at
     # eval time (e.g. for data-space evaluation of a processor-only checkpoint).
     ae_config_path = output_dir / "autoencoder_config.yaml"
-    OmegaConf.save(cfg, ae_config_path)
+    # Freeze checkpoint and normalization paths so evaluation cannot reinterpret
+    # the cache's identity under different environment variables.
+    OmegaConf.save(cfg, ae_config_path, resolve=True)
     log.info("Autoencoder config saved to %s", ae_config_path)
 
     log.info("Caching complete. Output directory: %s", output_dir)

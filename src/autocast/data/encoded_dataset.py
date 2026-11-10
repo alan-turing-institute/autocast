@@ -223,6 +223,7 @@ class EncodedDataModule(LightningDataModule):
         num_workers: int = 0,
         dataset_cls: type[EncodedDataset] | None = None,
         in_memory: bool = True,
+        validation_stride: int | None = None,
         **dataset_kwargs,
     ):
         """Initialize the EncodedDataModule.
@@ -237,6 +238,8 @@ class EncodedDataModule(LightningDataModule):
             num_workers: Number of workers for dataloaders. Default 0 for
                 h5py compatibility.
             dataset_cls: Dataset class to use. Defaults to MiniWellInputOutput.
+            validation_stride: Window-start stride for cached-latent validation.
+                Defaults to stride. Other dataset classes do not support it.
             **dataset_kwargs: Additional kwargs passed to dataset constructor.
         """
         super().__init__()
@@ -244,9 +247,18 @@ class EncodedDataModule(LightningDataModule):
         self.n_steps_input = n_steps_input
         self.n_steps_output = n_steps_output
         self.stride = stride
+        self.validation_stride = (
+            validation_stride if validation_stride is not None else stride
+        )
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.dataset_cls = dataset_cls or MiniWellInputOutput
+        if (
+            validation_stride is not None
+            and self.dataset_cls is not CachedLatentDataset
+        ):
+            msg = "validation_stride is supported only for CachedLatentDataset."
+            raise ValueError(msg)
         self.in_memory = in_memory
         self.dataset_kwargs = dataset_kwargs
 
@@ -319,7 +331,7 @@ class EncodedDataModule(LightningDataModule):
                     cache_dir=valid_dir,
                     n_steps_input=self.n_steps_input,
                     n_steps_output=self.n_steps_output,
-                    stride=self.stride,
+                    stride=self.validation_stride,
                     in_memory=self.in_memory,
                 )
 

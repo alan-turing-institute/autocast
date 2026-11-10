@@ -179,3 +179,36 @@ def test_encoded_datamodule_missing_split_is_none(tmp_path):
 
     assert dm.train_dataset is not None
     assert dm.val_dataset is None
+
+
+@pytest.mark.parametrize("validation_stride", [None, 5, 10])
+def test_cached_validation_stride_keeps_all_trajectories(tmp_path, validation_stride):
+    for split, n_trajectories in (("train", 2), ("valid", 6), ("test", 2)):
+        _create_fake_trajectories(
+            tmp_path, split, n_trajectories=n_trajectories, n_timesteps=21
+        )
+    dm = EncodedDataModule(
+        data_path=str(tmp_path),
+        dataset_cls=CachedLatentDataset,
+        n_steps_input=1,
+        n_steps_output=4,
+        validation_stride=validation_stride,
+    )
+    dm.setup()
+    assert isinstance(dm.train_dataset, CachedLatentDataset)
+    assert isinstance(dm.val_dataset, CachedLatentDataset)
+    assert isinstance(dm.test_dataset, CachedLatentDataset)
+    assert len(dm.train_dataset) == len(dm.test_dataset) == 2 * 17
+    assert {file_idx for file_idx, _ in dm.val_dataset._index} == set(range(6))
+    expected_per_trajectory = (21 - 5) // (validation_stride or 1) + 1
+    assert len(dm.val_dataset) == 6 * expected_per_trajectory
+    start = validation_stride or 1
+    source = torch.load(tmp_path / "valid/traj_000000.pt")
+    assert torch.equal(
+        dm.val_dataset[1].encoded_inputs, source["encoded_fields"][start : start + 1]
+    )
+
+
+def test_validation_stride_rejects_non_cached_dataset():
+    with pytest.raises(ValueError, match="only for CachedLatentDataset"):
+        EncodedDataModule(validation_stride=10)

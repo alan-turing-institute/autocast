@@ -1,0 +1,10 @@
+defaults:
+  - gray_scott
+  - _self_
+
+# Keep the full generated 1200/120/120 pools intact. Validation samples evenly
+# spaced windows across all 120 trajectories; final testing uses the original 24.
+data_path: ${oc.env:AUTOCAST_GS_5X_DATA}
+normalization_path: ${.data_path}/stats.yml
+validation_stride: 5
+test_data_path: ${oc.env:AUTOCAST_GS_REFERENCE_DATA}/test/data.pt

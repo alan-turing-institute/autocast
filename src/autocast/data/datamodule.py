@@ -159,7 +159,11 @@ class TheWellDataModule(LightningDataModule):
 
 
 class SpatioTemporalDataModule(LightningDataModule):
-    """A class for spatio-temporal data modules."""
+    """A class for spatio-temporal data modules.
+
+    ``validation_stride`` thins validation window starts independently of train
+    and test. ``test_data_path`` selects a test file outside the training root.
+    """
 
     def __init__(
         self,
@@ -182,6 +186,8 @@ class SpatioTemporalDataModule(LightningDataModule):
         normalization_stats: dict | DictConfig | None = None,
         num_workers: int | None = None,
         start_frame: int = 0,
+        validation_stride: int | None = None,
+        test_data_path: str | None = None,
     ):
         super().__init__()
         self.verbose = verbose
@@ -197,6 +203,8 @@ class SpatioTemporalDataModule(LightningDataModule):
         train_path = base_path / "train" / fname if base_path else None
         valid_path = base_path / "valid" / fname if base_path else None
         test_path = base_path / "test" / fname if base_path else None
+        if test_data_path is not None:
+            test_path = Path(test_data_path)
 
         # Create training dataset first (without normalization)
         self.train_dataset = dataset_cls(
@@ -236,7 +244,9 @@ class SpatioTemporalDataModule(LightningDataModule):
             data=data["valid"] if data is not None else None,
             n_steps_input=n_steps_input,
             n_steps_output=n_steps_output,
-            stride=stride,
+            # Thin windows within every validation trajectory, preserving the
+            # same validation cases at each checkpoint-selection step.
+            stride=validation_stride if validation_stride is not None else stride,
             start_frame=start_frame,
             channel_idxs=channel_idxs,
             autoencoder_mode=self.autoencoder_mode,
