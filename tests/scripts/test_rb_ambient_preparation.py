@@ -9,6 +9,9 @@ import pytest
 from hydra.utils import instantiate
 from omegaconf import OmegaConf
 
+from autocast.scripts.eval.encoder_processor_decoder import (
+    _resolve_rollout_batch_limit,
+)
 from slurm_scripts.comparison.the_well.rayleigh_benard import (
     prepare_ambient_crps as prep,
 )
@@ -59,6 +62,7 @@ def test_training_preserves_reference_exposure_and_probe_horizon(
     assert "#SBATCH --nodes=1" in body
     assert "#SBATCH --gpus=4" in body
     assert "#SBATCH --ntasks-per-node=4" in body
+    assert "#SBATCH --no-requeue" in body
     assert "${SLURM_JOB_ID:?" in body
     # Validate the checksum line itself, including paths containing spaces.
     checksum_line = next(
@@ -69,6 +73,26 @@ def test_training_preserves_reference_exposure_and_probe_horizon(
     )
     job = state["jobs"][phase]
     assert printed == f"{job['config_sha256']}  {job['config']}\n"
+
+
+@pytest.mark.parametrize("existing", ["absent", "directory", "dangling_link"])
+def test_initial_job_rejects_partial_run_outputs(tmp_path, existing):
+    output = tmp_path / "new preparation"
+    prep.prepare_training(output, tmp_path / "data", "smoke")
+    run_dir = output / "run"
+    if existing == "directory":
+        run_dir.mkdir()
+    elif existing == "dangling_link":
+        run_dir.symlink_to(tmp_path / "missing", target_is_directory=True)
+    # Exercise only the rendered guard, never the training command.
+    body = (output / "smoke.sh").read_text()
+    guard = "if [[" + body.split("if [[", 1)[1].split("exec srun", 1)[0]
+    result = subprocess.run(
+        ["bash", "-c", guard], check=False, capture_output=True, text=True
+    )
+    assert result.returncode == (0 if existing == "absent" else 1)
+    if existing != "absent":
+        assert "Run directory exists" in result.stderr
 
 
 @pytest.mark.parametrize(
@@ -90,6 +114,9 @@ def test_evaluation_reuses_both_saved_cohorts_and_fitted_model(tmp_path):
     )
     source = Path(training["jobs"]["train"]["config"])
     original = OmegaConf.load(source)
+    # A training/debug override must not truncate the controlled evaluation.
+    original.eval.max_test_batches = 1
+    OmegaConf.save(original, source)
     output = tmp_path / "evaluation"
     checkpoint = tmp_path / "selected.ckpt"
     state = prep.prepare_evaluation(output, source, checkpoint, 8192)
@@ -114,8 +141,10 @@ def test_evaluation_reuses_both_saved_cohorts_and_fitted_model(tmp_path):
         assert cfg.datamodule.max_rollout_steps == 200
         assert not cfg.eval.compute_test_metrics
         assert not cfg.eval.compute_rollout_autoencoded_target_metrics
+        assert _resolve_rollout_batch_limit(cfg.eval) is None
         script = output / f"{name}.sh"
         subprocess.run(["bash", "-n", str(script)], check=True)
+        assert "#SBATCH --no-requeue" in script.read_text()
         args = shlex.split(script.read_text().split("exec srun ", 1)[1])
         if name == "rollout":
             code = args[args.index("-c") + 1]
@@ -124,3 +153,12 @@ def test_evaluation_reuses_both_saved_cohorts_and_fitted_model(tmp_path):
             assert "global_step" in code
         else:
             assert args[args.index("--expected-step") + 1] == "8192"
+        (output / name).mkdir()
+        guard = (
+            "if [[" + script.read_text().split("if [[", 1)[1].split("exec srun", 1)[0]
+        )
+        result = subprocess.run(
+            ["bash", "-c", guard], check=False, capture_output=True, text=True
+        )
+        assert result.returncode == 1
+        assert "Run directory exists" in result.stderr

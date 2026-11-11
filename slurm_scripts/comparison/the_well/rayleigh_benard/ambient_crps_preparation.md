@@ -66,9 +66,10 @@ fit that headroom. A longer logical schedule needs separately reviewed manual
 continuations: restore full model/optimizer/scheduler/EMA state from this run's
 completed-epoch checkpoint, retain its total epoch/cosine horizons and W&B ID,
 and use `reset_resume_time_budget=true` for a fresh allocation Timer. Cumulative
-training-time diagnostics remain available separately. Automatic requeue is
-disabled. The initial scripts reject an existing output checkpoint; they are
-not continuation scripts.
+training-time diagnostics remain available separately. Both Slurm and Lightning
+automatic requeue are disabled. Initial training scripts reject existing run
+directories, including partial attempts without a checkpoint. Use a fresh output
+directory for another probe; production continuations require full-state resume.
 
 ## Matched evaluation preparation
 
@@ -93,12 +94,14 @@ and sampling seed 42; neither evaluates autoencoded targets. The selected step
 is checked at execution. New output paths preserve existing results.
 
 The generic full-test single-step pass is disabled in the rollout job; the
-paired job supplies the controlled next-window comparison. The raw The Well
-loader does not expose the generic trajectory-statistics metadata, so these
-jobs use the established RB cohort/paired tools instead of that option.
+paired job supplies the controlled next-window comparison. Both inherited test
+and rollout batch limits are cleared so all 64 trajectories are evaluated.
+The raw The Well loader does not expose generic trajectory-statistics metadata,
+so these jobs use the established RB cohort/paired tools instead of that option.
 Judge spatial spectra and matched videos alongside VRMSE, spread/skill and
 coverage, retaining the distinction between mean and median statistics.
 
 Regenerate all prepared artifacts from the final checkout on the execution
-machine. Scripts verify the code commit and resolved config checksum and
-require a Slurm allocation. Inspect the generated scripts before submission.
+machine. Scripts verify the code commit and resolved config checksum, require
+a Slurm allocation and reject existing run/evaluation directories. Inspect the
+generated scripts before submission.

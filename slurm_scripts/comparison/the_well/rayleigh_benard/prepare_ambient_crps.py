@@ -45,7 +45,7 @@ def _start(output: Path) -> str:
     return commit
 
 
-def _write_job(output, name, cfg, command, *, commit, gpus, minutes, checkpoint=None):
+def _write_job(output, name, cfg, command, *, commit, gpus, minutes, run_dir):
     path = output / "configs" / f"{name}.yaml"
     OmegaConf.save(cfg, path, resolve=True)
     checksum = _digest(path)
@@ -57,6 +57,7 @@ def _write_job(output, name, cfg, command, *, commit, gpus, minutes, checkpoint=
         f"#SBATCH --ntasks-per-node={gpus}",
         f"#SBATCH --cpus-per-task={16 if gpus == 4 else 8}",
         f"#SBATCH --time={minutes // 60:02d}:{minutes % 60:02d}:00",
+        "#SBATCH --no-requeue",
         "#SBATCH --mem=0" if gpus == 4 else "#SBATCH --mem=115G",
         f"#SBATCH --output={shlex.quote(str(output / (name + '-%j.out')))}",
         "set -euo pipefail",
@@ -67,14 +68,12 @@ def _write_job(output, name, cfg, command, *, commit, gpus, minutes, checkpoint=
         'test -z "$(git status --porcelain)"',
         "printf '%s  %s\\n' " + shlex.join([checksum, str(path)]) + " | sha256sum -c -",
     ]
-    if checkpoint is not None:
-        lines += [
-            f"if [[ -e {shlex.quote(str(checkpoint))} ]]; then",
-            "  echo 'Checkpoint exists; prepare a full-state continuation.' >&2",
-            "  exit 1",
-            "fi",
-        ]
+    run_dir = shlex.quote(str(run_dir))
     lines += [
+        f"if [[ -e {run_dir} || -L {run_dir} ]]; then",
+        "  echo 'Run directory exists; use fresh output or full-state resume.' >&2",
+        "  exit 1",
+        "fi",
         "exec srun " + shlex.join(["uv", "run", "--frozen", "--no-sync", *command]),
         "",
     ]
@@ -177,7 +176,7 @@ def prepare_training(
         commit=commit,
         gpus=4,
         minutes={"smoke": 30, "timing": 240, "train": 1440}[phase],
-        checkpoint=checkpoint,
+        run_dir=workdir,
     )
     state = {
         "source_commit": commit,
@@ -241,7 +240,8 @@ def prepare_evaluation(
         cfg.eval.compute_rollout_metrics = True
         cfg.eval.compute_rollout_coverage = True
         cfg.eval.compute_rollout_autoencoded_target_metrics = False
-        cfg.eval.max_rollout_batches = None
+        # A null rollout limit inherits max_test_batches in the shared runner.
+        cfg.eval.max_test_batches = cfg.eval.max_rollout_batches = None
         cfg.eval.metric_windows_rollout = [None, [0, 20], [20, 60], [60, 183], [0, 84]]
         cfg.eval.csv_path = None
         cfg.eval.video_dir = None
@@ -272,6 +272,7 @@ def prepare_evaluation(
         commit=commit,
         gpus=1,
         minutes=1439,
+        run_dir=output / "rollout",
     )
     paired = _write_job(
         output,
@@ -296,6 +297,7 @@ def prepare_evaluation(
         commit=commit,
         gpus=1,
         minutes=240,
+        run_dir=output / "paired",
     )
     state = {
         "source_commit": commit,
