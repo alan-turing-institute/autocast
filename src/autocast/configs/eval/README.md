@@ -71,6 +71,12 @@ All eval configs support these parameters:
 - `video_dir`: Custom directory for rollout videos (default: work_dir/videos)
 - `batch_indices`: List of rollout sample indices to visualize (resolved across
   batched rollout dataloader samples)
+- `rollout_subset`: Optional path to a YAML manifest containing `population_size`
+  and unique `indices` for the stored `rollout_test_dataset`. An optional `files`
+  mapping verifies The Well's ordered filenames and trajectory counts. Applies
+  to test rollout metrics, dumps and videos; single-window tests are unchanged.
+  The manifest is copied beside the metrics. Defaults to `null` (all trajectories);
+  incompatible with complete-dataset `trajectory_statistics` and validation dumps.
 - `video_format`: Video format (mp4 or gif)
 - `video_sample_index`: Sample index within batch to visualize
 - `fps`: Frames per second for videos

@@ -61,6 +61,10 @@ video_dir: null
 # Rollout sample indices to visualize
 batch_indices: []
 
+# Optional YAML manifest of fixed test-trajectory indices and dataset inventory.
+# Applies to all test rollout passes, including metrics and visualizations.
+rollout_subset: null
+
 # Video generation settings
 video_format: mp4  # gif or mp4
 video_sample_index: 0
