@@ -15,14 +15,20 @@ codec keeps its inputs and targets in ambient space.
 The ambient processor has 225,969,408 parameters versus 222,888,512 for latent
 FM and 223,019,328 for latent CRPS. Ambient patch projections account for the
 small difference. These counts exclude the frozen latent autoencoder; report
-that component separately. The original width-2048 ambient preset remains a
-separate capacity extension and is not selected by this preparation.
+that component separately. Use `--size lola` to prepare the original width-2048,
+16-block/16-head ambient preset (859,499,776 parameters) as a separate capacity
+extension; it matches LOLA's ambient backbone geometry while retaining our
+masked CRPS objective and noise adapter. The default is `--size matched`.
 
 Production retains **4096 epochs × 64 updates = 262,144 optimizer updates**
 and the full 4096-epoch cosine horizon across all allocations. This matches
 the latent update schedule, not elapsed time or GPU-hours. CRPS uses 32 real
 windows × eight members per update; latent FM uses 256 real windows × one
 member, so their real-example exposure differs.
+
+On eight nodes, the matched run projects 253–264 node-hours and the LOLA-size
+run roughly 601 training-only node-hours, assuming the matched pilot's 4.94×
+speedup (full-size multi-node scaling is unmeasured).
 
 ## Prepare locally
 
@@ -34,6 +40,9 @@ can refer to their eventual location on the execution machine:
 ```bash
 uv run --frozen --no-sync python -m slurm_scripts.comparison.the_well.rayleigh_benard.prepare_ambient_crps training \
   --phase train --datasets-root /path/to/datasets --output /path/to/new_training
+
+uv run --frozen --no-sync python -m slurm_scripts.comparison.the_well.rayleigh_benard.prepare_ambient_crps training \
+  --phase train --size lola --datasets-root /path/to/datasets --output /path/to/new_lola_training
 ```
 
 Optional deployment checks can be prepared separately:

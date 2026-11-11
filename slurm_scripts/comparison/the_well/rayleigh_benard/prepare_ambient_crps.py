@@ -1,4 +1,4 @@
-"""Prepare matched ambient RB jobs locally; never submit or execute them."""
+"""Prepare ambient RB jobs locally; never submit or execute them."""
 
 from __future__ import annotations
 
@@ -18,7 +18,10 @@ from slurm_scripts.comparison.the_well.rayleigh_benard.paired_test_windows impor
 )
 
 ROOT = Path(__file__).resolve().parents[4]
-EXPERIMENT = "the_well/rayleigh_benard/crps_spatiotemporal_ambient_matched"
+EXPERIMENTS = {
+    "matched": "the_well/rayleigh_benard/crps_spatiotemporal_ambient_matched",
+    "lola": "the_well/rayleigh_benard/crps_spatiotemporal_ambient",
+}
 COHORT = Path(__file__).with_name("test64_seed0.yaml")
 REFERENCE_EPOCHS = 4096
 
@@ -100,9 +103,19 @@ def _write_job(output, name, cfg, command, *, commit, gpus, minutes, run_dir, no
 
 
 def prepare_training(  # noqa: PLR0915
-    output: Path, datasets: Path, phase: str, microbatch=None, epochs=None, *, nodes=8
+    output: Path,
+    datasets: Path,
+    phase: str,
+    microbatch=None,
+    epochs=None,
+    *,
+    nodes=8,
+    size="matched",
 ):
     """Preserve 32 real windows and 256 member predictions per optimizer update."""
+    if size not in EXPERIMENTS:
+        msg = "Use matched or lola for the model size."
+        raise ValueError(msg)
     if nodes not in (1, 2, 4, 8) or not datasets.is_absolute():
         msg = "Use an absolute dataset root and 1, 2, 4 or 8 four-GPU nodes."
         raise ValueError(msg)
@@ -130,7 +143,7 @@ def prepare_training(  # noqa: PLR0915
         cfg = compose(
             config_name="encoder_processor_decoder",
             overrides=[
-                f"local_experiment={EXPERIMENT}",
+                f"local_experiment={EXPERIMENTS[size]}",
                 f"hydra.searchpath=[file://{ROOT}/local_hydra]",
             ],
         )
@@ -181,7 +194,7 @@ def prepare_training(  # noqa: PLR0915
         cfg.logging.wandb.enabled = phase == "train"
         cfg.logging.wandb.id = uuid.uuid4().hex[:8]
         cfg.logging.wandb.resume = "allow"
-        cfg.logging.wandb.name = f"rb_ambient_matched_crps_{phase}"
+        cfg.logging.wandb.name = f"rb_ambient_{size}_crps_{phase}"
     command = [
         "python",
         "-m",
@@ -208,6 +221,7 @@ def prepare_training(  # noqa: PLR0915
     state = {
         "source_commit": commit,
         "datasets_root": str(datasets),
+        "size": size,
         "nodes": nodes,
         "microbatch": microbatch,
         "phase": phase,
@@ -350,6 +364,7 @@ def main():
     train.add_argument("--output", type=Path, required=True)
     train.add_argument("--datasets-root", type=Path, required=True)
     train.add_argument("--nodes", type=int, choices=[1, 2, 4, 8], default=8)
+    train.add_argument("--size", choices=list(EXPERIMENTS), default="matched")
     train.add_argument("--microbatch", type=int)
     train.add_argument("--epochs", type=int)
     evaluate = sub.add_parser("evaluation")
@@ -366,6 +381,7 @@ def main():
             args.microbatch,
             args.epochs,
             nodes=args.nodes,
+            size=args.size,
         )
     else:
         state = prepare_evaluation(

@@ -130,9 +130,24 @@ def test_invalid_budget_or_microbatch_does_not_create_outputs(
     assert not output.exists()
 
 
-def test_matched_preset_has_the_measured_226m_processor(tmp_path):
-    state = prep.prepare_training(tmp_path / "smoke", tmp_path / "data", "smoke")
-    cfg = OmegaConf.load(state["jobs"]["smoke"]["config"])
+@pytest.mark.parametrize(
+    ("size", "expected_parameters", "width", "heads"),
+    [("matched", 225_969_408, 1024, 8), ("lola", 859_499_776, 2048, 16)],
+)
+def test_prepared_sizes_have_the_measured_processors(
+    tmp_path, size, expected_parameters, width, heads
+):
+    state = prep.prepare_training(
+        tmp_path / "train", tmp_path / "data", "train", size=size
+    )
+    cfg = OmegaConf.load(state["jobs"]["train"]["config"])
+    assert state["size"] == size
+    assert cfg.model.processor.backbone.hid_channels == width
+    assert cfg.model.processor.backbone.attention_heads == heads
+    assert cfg.trainer.max_epochs == cfg.optimizer.cosine_epochs == 4096
+    assert cfg.trainer.num_nodes == 8
+    assert cfg.trainer.devices == 4
+    assert cfg.datamodule.batch_size == cfg.trainer.accumulate_grad_batches == 1
     with torch.device("meta"):
         processor = _build_processor(
             cfg.model,
@@ -148,8 +163,16 @@ def test_matched_preset_has_the_measured_226m_processor(tmp_path):
         )
     assert all(p.is_meta for p in processor.parameters())
     parameters = sum(p.numel() for p in processor.parameters())
-    assert parameters == 225_969_408
-    assert abs(parameters / 223_019_328 - 1) < 0.02
+    assert parameters == expected_parameters
+    if size == "matched":
+        assert abs(parameters / 223_019_328 - 1) < 0.02
+
+
+def test_unknown_size_fails_before_creating_outputs(tmp_path):
+    output = tmp_path / "unknown"
+    with pytest.raises(ValueError, match="model size"):
+        prep.prepare_training(output, tmp_path / "data", "train", size="unknown")
+    assert not output.exists()
 
 
 def test_evaluation_reuses_both_saved_cohorts_and_fitted_model(tmp_path):
