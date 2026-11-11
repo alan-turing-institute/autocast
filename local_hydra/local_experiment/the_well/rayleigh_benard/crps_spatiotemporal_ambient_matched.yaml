@@ -1,0 +1,14 @@
+# @package _global_
+defaults:
+  - /local_experiment/the_well/rayleigh_benard/crps_spatiotemporal_ambient
+  - _self_
+
+experiment_name: the_well_rayleigh_benard_crps_spatiotemporal_ambient_matched
+
+# Match the latent transformer trunk; ambient patch projections add about 3M.
+# Keep the native grid, five-frame window, masked objective and full schedule.
+model:
+  processor:
+    backbone:
+      hid_channels: 1024
+      attention_heads: 8

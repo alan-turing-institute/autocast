@@ -6,12 +6,14 @@ import subprocess
 from pathlib import Path
 
 import pytest
+import torch
 from hydra.utils import instantiate
 from omegaconf import OmegaConf
 
 from autocast.scripts.eval.encoder_processor_decoder import (
     _resolve_rollout_batch_limit,
 )
+from autocast.scripts.setup import _build_processor
 from slurm_scripts.comparison.the_well.rayleigh_benard import (
     prepare_ambient_crps as prep,
 )
@@ -25,31 +27,40 @@ def committed_source(monkeypatch):
     monkeypatch.setattr(prep, "_source_commit", lambda: "review-source")
 
 
-@pytest.mark.parametrize("microbatch", [1, 2, 4, 8])
+@pytest.mark.parametrize(
+    ("nodes", "microbatch"), [(1, None), (1, 1), (2, None), (4, None), (8, None)]
+)
 @pytest.mark.parametrize("phase", ["smoke", "timing", "train"])
 def test_training_preserves_reference_exposure_and_probe_horizon(
-    tmp_path, phase, microbatch
+    tmp_path, phase, nodes, microbatch
 ):
     output = tmp_path / "new preparation"
-    epochs = 128 if phase == "train" else None
-    state = prep.prepare_training(output, tmp_path / "data", phase, microbatch, epochs)
+    state = prep.prepare_training(
+        output, tmp_path / "data", phase, microbatch, nodes=nodes
+    )
     cfg = OmegaConf.load(state["jobs"][phase]["config"])
     accumulation = cfg.trainer.accumulate_grad_batches
-    assert microbatch * accumulation * 4 == 32
+    microbatch = cfg.datamodule.batch_size
+    assert cfg.trainer.num_nodes == nodes
+    assert microbatch * accumulation * 4 * nodes == 32
     assert cfg.model.n_members == cfg.model.processor.n_members == 8
     assert cfg.datamodule._target_.endswith("TheWellDataModule")
     assert cfg.model.encoder._target_.endswith("IdentityEncoder")
     assert cfg.autoencoder_checkpoint is None
-    assert cfg.model.processor.backbone.hid_channels == 2048
+    assert cfg.model.processor.backbone.hid_channels == 1024
+    assert cfg.model.processor.backbone.hid_blocks == 16
+    assert cfg.model.processor.backbone.attention_heads == 8
     assert cfg.model.processor.backbone.checkpointing
     assert list(cfg.model.processor.backbone.patch_size) == [1, 16, 16]
     assert cfg.model.processor.context_mask.lmbda == 1
-    assert cfg.optimizer.cosine_epochs == (128 if phase == "train" else 4096)
-    assert cfg.trainer.max_epochs == {"smoke": 1, "timing": 16, "train": 128}[phase]
+    assert cfg.optimizer.cosine_epochs == 4096
+    assert cfg.trainer.max_epochs == {"smoke": 1, "timing": 16, "train": 4096}[phase]
     updates = cfg.trainer.limit_train_batches // accumulation
     assert updates == (1 if phase == "smoke" else 64)
     if phase != "smoke":
-        assert cfg.trainer.limit_val_batches * microbatch * 4 == 512
+        assert cfg.trainer.limit_val_batches * microbatch * 4 * nodes == 512
+    if nodes == 8:
+        assert microbatch == accumulation == 1
     assert cfg.logging.wandb.enabled is (phase == "train")
     callbacks = instantiate(cfg.trainer.callbacks)
     assert len({c.state_key for c in callbacks}) == len(callbacks)
@@ -59,11 +70,13 @@ def test_training_preserves_reference_exposure_and_probe_horizon(
     script = output / f"{phase}.sh"
     subprocess.run(["bash", "-n", str(script)], check=True)
     body = script.read_text()
-    assert "#SBATCH --nodes=1" in body
-    assert "#SBATCH --gpus=4" in body
+    assert f"#SBATCH --nodes={nodes}" in body
+    assert "#SBATCH --gpus-per-node=4" in body
     assert "#SBATCH --ntasks-per-node=4" in body
     assert "#SBATCH --no-requeue" in body
     assert "${SLURM_JOB_ID:?" in body
+    assert ("module load brics/nccl/2.26.6-1" in body) == (nodes > 1)
+    assert "srun --kill-on-bad-exit=1" in body
     # Validate the checksum line itself, including paths containing spaces.
     checksum_line = next(
         line for line in body.splitlines() if line.startswith("printf")
@@ -72,6 +85,7 @@ def test_training_preserves_reference_exposure_and_probe_horizon(
         ["bash", "-c", checksum_line.split(" | ")[0]], text=True
     )
     job = state["jobs"][phase]
+    assert job["gpus"] == 4 * nodes
     assert printed == f"{job['config_sha256']}  {job['config']}\n"
 
 
@@ -96,22 +110,50 @@ def test_initial_job_rejects_partial_run_outputs(tmp_path, existing):
 
 
 @pytest.mark.parametrize(
-    ("phase", "batch", "epochs"),
-    [("train", 1, None), ("timing", 1, 9), ("smoke", 3, None)],
+    ("phase", "batch", "epochs", "nodes"),
+    [
+        ("train", None, 128, 8),
+        ("timing", None, 9, 8),
+        ("smoke", 3, None, 8),
+        ("smoke", 2, None, 8),
+        ("smoke", None, None, 16),
+    ],
 )
 def test_invalid_budget_or_microbatch_does_not_create_outputs(
-    tmp_path, phase, batch, epochs
+    tmp_path, phase, batch, epochs, nodes
 ):
     output = tmp_path / "new"
-    with pytest.raises(ValueError, match=r"Production|Use"):
-        prep.prepare_training(output, tmp_path / "data", phase, batch, epochs)
+    with pytest.raises(ValueError, match=r"Matched|Use"):
+        prep.prepare_training(
+            output, tmp_path / "data", phase, batch, epochs, nodes=nodes
+        )
     assert not output.exists()
 
 
+def test_matched_preset_has_the_measured_226m_processor(tmp_path):
+    state = prep.prepare_training(tmp_path / "smoke", tmp_path / "data", "smoke")
+    cfg = OmegaConf.load(state["jobs"]["smoke"]["config"])
+    with torch.device("meta"):
+        processor = _build_processor(
+            cfg.model,
+            {
+                "in_channels": 4,
+                "out_channels": 4,
+                "n_channels_out": 4,
+                "n_steps_input": 1,
+                "n_steps_output": 4,
+                "spatial_resolution": (512, 128),
+            },
+            global_cond_channels=6,
+        )
+    assert all(p.is_meta for p in processor.parameters())
+    parameters = sum(p.numel() for p in processor.parameters())
+    assert parameters == 225_969_408
+    assert abs(parameters / 223_019_328 - 1) < 0.02
+
+
 def test_evaluation_reuses_both_saved_cohorts_and_fitted_model(tmp_path):
-    training = prep.prepare_training(
-        tmp_path / "training", tmp_path / "data", "train", epochs=128
-    )
+    training = prep.prepare_training(tmp_path / "training", tmp_path / "data", "train")
     source = Path(training["jobs"]["train"]["config"])
     original = OmegaConf.load(source)
     # A training/debug override must not truncate the controlled evaluation.
@@ -136,6 +178,7 @@ def test_evaluation_reuses_both_saved_cohorts_and_fitted_model(tmp_path):
             cfg.datamodule.normalization_path == original.datamodule.normalization_path
         )
         assert cfg.eval.checkpoint == str(checkpoint)
+        assert cfg.eval.devices == cfg.eval.num_nodes == 1
         assert cfg.eval.rollout_start == cfg.eval.n_members == 16
         assert cfg.eval.max_rollout_steps == 46
         assert cfg.datamodule.max_rollout_steps == 200

@@ -296,10 +296,11 @@ and are not directly comparable. Latent models encode the selected raw inputs
 with their frozen autoencoder. The runner saves per-window/lead/channel scores,
 including separate spread/skill components, without another inference pass.
 
-### Large ambient CRPS preparation
+### Matched ambient CRPS preparation
 
 See [the ambient preparation guide](ambient_crps_preparation.md) for resolved
 memory-smoke, timing, training and matched evaluation configurations. These
-reuse the existing full-width masked ambient preset and completed latent
-baselines. The preparation commands write configurations and scripts without
-submitting jobs; the production horizon is chosen from measured throughput.
+use `crps_spatiotemporal_ambient_matched` to match the completed latent models'
+1024/16/8 transformer trunk and full 4096 × 64-update schedule. The default
+eight-node layout preserves 32 real windows × eight members per update.
+Preparation commands write configurations and scripts without submitting jobs.

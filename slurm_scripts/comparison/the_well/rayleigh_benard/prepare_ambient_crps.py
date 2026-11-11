@@ -1,4 +1,4 @@
-"""Prepare large ambient RB jobs locally; never submit or execute them."""
+"""Prepare matched ambient RB jobs locally; never submit or execute them."""
 
 from __future__ import annotations
 
@@ -18,8 +18,9 @@ from slurm_scripts.comparison.the_well.rayleigh_benard.paired_test_windows impor
 )
 
 ROOT = Path(__file__).resolve().parents[4]
-EXPERIMENT = "the_well/rayleigh_benard/crps_spatiotemporal_ambient"
+EXPERIMENT = "the_well/rayleigh_benard/crps_spatiotemporal_ambient_matched"
 COHORT = Path(__file__).with_name("test64_seed0.yaml")
+REFERENCE_EPOCHS = 4096
 
 
 def _digest(path: Path) -> str:
@@ -45,15 +46,15 @@ def _start(output: Path) -> str:
     return commit
 
 
-def _write_job(output, name, cfg, command, *, commit, gpus, minutes, run_dir):
+def _write_job(output, name, cfg, command, *, commit, gpus, minutes, run_dir, nodes=1):
     path = output / "configs" / f"{name}.yaml"
     OmegaConf.save(cfg, path, resolve=True)
     checksum = _digest(path)
     lines = [
         "#!/bin/bash",
         f"#SBATCH --job-name=rb-ambient-{name}",
-        "#SBATCH --nodes=1",
-        f"#SBATCH --gpus={gpus}",
+        f"#SBATCH --nodes={nodes}",
+        f"#SBATCH --gpus-per-node={gpus}",
         f"#SBATCH --ntasks-per-node={gpus}",
         f"#SBATCH --cpus-per-task={16 if gpus == 4 else 8}",
         f"#SBATCH --time={minutes // 60:02d}:{minutes % 60:02d}:00",
@@ -64,40 +65,62 @@ def _write_job(output, name, cfg, command, *, commit, gpus, minutes, run_dir):
         "umask 0002",
         ': "${SLURM_JOB_ID:?Run inside a Slurm allocation}"',
         f"cd {shlex.quote(str(ROOT))}",
+        'export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"',
+        'export OMP_NUM_THREADS="$SLURM_CPUS_PER_TASK"',
+        "export RUNTIME_TYPECHECKING=false",
         f'test "$(git rev-parse HEAD)" = {shlex.quote(commit)}',
         'test -z "$(git status --porcelain)"',
         "printf '%s  %s\\n' " + shlex.join([checksum, str(path)]) + " | sha256sum -c -",
     ]
+    if nodes > 1:
+        lines += [
+            "module load brics/nccl/2.26.6-1",
+            "export NCCL_DEBUG=INFO",
+            "export NCCL_DEBUG_FILE=" + shlex.quote(str(output / "nccl-%h-%p.log")),
+        ]
     run_dir = shlex.quote(str(run_dir))
     lines += [
         f"if [[ -e {run_dir} || -L {run_dir} ]]; then",
         "  echo 'Run directory exists; use fresh output or full-state resume.' >&2",
         "  exit 1",
         "fi",
-        "exec srun " + shlex.join(["uv", "run", "--frozen", "--no-sync", *command]),
+        "exec srun --kill-on-bad-exit=1 "
+        + shlex.join(["uv", "run", "--frozen", "--no-sync", *command]),
         "",
     ]
     (output / f"{name}.sh").write_text("\n".join(lines))
     return {
         "config": str(path),
         "config_sha256": checksum,
-        "gpus": gpus,
+        "nodes": nodes,
+        "gpus_per_node": gpus,
+        "gpus": nodes * gpus,
         "minutes": minutes,
     }
 
 
-def prepare_training(
-    output: Path, datasets: Path, phase: str, microbatch=1, epochs=None
+def prepare_training(  # noqa: PLR0915
+    output: Path, datasets: Path, phase: str, microbatch=None, epochs=None, *, nodes=8
 ):
     """Preserve 32 real windows and 256 member predictions per optimizer update."""
-    if microbatch not in (1, 2, 4, 8) or not datasets.is_absolute():
-        msg = "Use an absolute dataset root and a microbatch of 1, 2, 4 or 8."
+    if nodes not in (1, 2, 4, 8) or not datasets.is_absolute():
+        msg = "Use an absolute dataset root and 1, 2, 4 or 8 four-GPU nodes."
+        raise ValueError(msg)
+    microbatch = 8 // nodes if microbatch is None else microbatch
+    if microbatch not in (1, 2, 4, 8) or microbatch > 8 // nodes:
+        msg = "Use a microbatch that preserves 32 real windows across all ranks."
         raise ValueError(msg)
     if phase not in ("smoke", "timing", "train"):
         raise ValueError(phase)
-    target = 1 if phase == "smoke" else (16 if epochs is None else epochs)
-    if phase == "train" and epochs is None:
-        msg = "Production requires an epoch horizon chosen from measured throughput."
+    target = (
+        {"smoke": 1, "timing": 16, "train": REFERENCE_EPOCHS}[phase]
+        if epochs is None
+        else epochs
+    )
+    if (phase == "train" and target != REFERENCE_EPOCHS) or (
+        phase == "smoke" and target != 1
+    ):
+        msg = "Matched production requires 4096 epochs; smoke requires one."
         raise ValueError(msg)
     if target < 1 or (phase == "timing" and (target < 8 or target % 8)):
         msg = "Use positive epochs; timing requires a multiple of eight."
@@ -111,7 +134,7 @@ def prepare_training(
                 f"hydra.searchpath=[file://{ROOT}/local_hydra]",
             ],
         )
-    accumulation = 8 // microbatch
+    accumulation = (8 // nodes) // microbatch
     workdir = output / "run"
     checkpoint = workdir / (
         "encoder_processor_decoder.ckpt" if phase == "train" else f"{phase}.ckpt"
@@ -119,8 +142,9 @@ def prepare_training(
     with open_dict(cfg):
         cfg.datamodule.well_base_path = str(datasets)
         cfg.datamodule.batch_size = microbatch
-        cfg.optimizer.cosine_epochs = target if phase == "train" else 4096
+        cfg.optimizer.cosine_epochs = REFERENCE_EPOCHS
         cfg.trainer.max_epochs = target
+        cfg.trainer.num_nodes = nodes
         cfg.trainer.max_time = None
         cfg.trainer.accumulate_grad_batches = accumulation
         cfg.trainer.limit_train_batches = (
@@ -157,7 +181,7 @@ def prepare_training(
         cfg.logging.wandb.enabled = phase == "train"
         cfg.logging.wandb.id = uuid.uuid4().hex[:8]
         cfg.logging.wandb.resume = "allow"
-        cfg.logging.wandb.name = f"rb_ambient_lola_crps_{phase}"
+        cfg.logging.wandb.name = f"rb_ambient_matched_crps_{phase}"
     command = [
         "python",
         "-m",
@@ -175,12 +199,16 @@ def prepare_training(
         command,
         commit=commit,
         gpus=4,
-        minutes={"smoke": 30, "timing": 240, "train": 1440}[phase],
+        minutes={"smoke": 15, "timing": 30 if nodes == 8 else 240, "train": 1440}[
+            phase
+        ],
         run_dir=workdir,
+        nodes=nodes,
     )
     state = {
         "source_commit": commit,
         "datasets_root": str(datasets),
+        "nodes": nodes,
         "microbatch": microbatch,
         "phase": phase,
         "epochs": target,
@@ -225,7 +253,7 @@ def prepare_evaluation(
         cfg.eval.mode = "ambient"
         cfg.eval.checkpoint = str(checkpoint)
         cfg.eval.use_ema = False
-        cfg.eval.devices = 1
+        cfg.eval.devices = cfg.eval.num_nodes = 1
         cfg.eval.n_members = 16
         cfg.eval.batch_size = 1
         cfg.eval.chunk_size = 8
@@ -321,7 +349,8 @@ def main():
     train.add_argument("--phase", choices=["smoke", "timing", "train"], default="smoke")
     train.add_argument("--output", type=Path, required=True)
     train.add_argument("--datasets-root", type=Path, required=True)
-    train.add_argument("--microbatch", type=int, default=1)
+    train.add_argument("--nodes", type=int, choices=[1, 2, 4, 8], default=8)
+    train.add_argument("--microbatch", type=int)
     train.add_argument("--epochs", type=int)
     evaluate = sub.add_parser("evaluation")
     evaluate.add_argument("--output", type=Path, required=True)
@@ -336,6 +365,7 @@ def main():
             args.phase,
             args.microbatch,
             args.epochs,
+            nodes=args.nodes,
         )
     else:
         state = prepare_evaluation(

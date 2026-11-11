@@ -1,16 +1,28 @@
-# Large masked ambient CRPS preparation
+# Matched masked ambient CRPS preparation
 
-The existing `crps_spatiotemporal_ambient` preset is the large ambient
-counterpart to the completed `fm_spatiotemporal_latent` and
-`crps_spatiotemporal_latent` experiments. Reuse those latent models and their
-frozen C64 autoencoder/cache. This preparation adds no latent training runs.
+The `crps_spatiotemporal_ambient_matched` preset matches the transformer trunk
+of the completed `fm_spatiotemporal_latent` and `crps_spatiotemporal_latent`
+experiments. Reuse those latent models and their frozen C64 autoencoder/cache.
+This preparation adds no latent training runs.
 
 The ambient model uses normalized 512×128 fields with four channels, identity
-encoder/decoder, a width-2048 transformer with 16 blocks/16 heads and
+encoder/decoder, a width-1024 transformer with 16 blocks/eight heads and
 `[1,16,16]` patches. Five frames form 1,280 joint spatiotemporal tokens. The
 shared prefix-mask policy and unreduced alpha-fair CRPS loss are unchanged.
 `train_in_latent_space: true` delegates loss to the processor; the identity
 codec keeps its inputs and targets in ambient space.
+
+The ambient processor has 225,969,408 parameters versus 222,888,512 for latent
+FM and 223,019,328 for latent CRPS. Ambient patch projections account for the
+small difference. These counts exclude the frozen latent autoencoder; report
+that component separately. The original width-2048 ambient preset remains a
+separate capacity extension and is not selected by this preparation.
+
+Production retains **4096 epochs × 64 updates = 262,144 optimizer updates**
+and the full 4096-epoch cosine horizon across all allocations. This matches
+the latent update schedule, not elapsed time or GPU-hours. CRPS uses 32 real
+windows × eight members per update; latent FM uses 256 real windows × one
+member, so their real-example exposure differs.
 
 ## Prepare locally
 
@@ -21,50 +33,50 @@ can refer to their eventual location on the execution machine:
 
 ```bash
 uv run --frozen --no-sync python -m slurm_scripts.comparison.the_well.rayleigh_benard.prepare_ambient_crps training \
-  --phase smoke --datasets-root /path/to/datasets --output /path/to/new_smoke
+  --phase train --datasets-root /path/to/datasets --output /path/to/new_training
+```
 
+Optional deployment checks can be prepared separately:
+
+```bash
+uv run --frozen --no-sync python -m slurm_scripts.comparison.the_well.rayleigh_benard.prepare_ambient_crps training \
+  --phase smoke --datasets-root /path/to/datasets --output /path/to/new_smoke
 uv run --frozen --no-sync python -m slurm_scripts.comparison.the_well.rayleigh_benard.prepare_ambient_crps training \
   --phase timing --datasets-root /path/to/datasets --output /path/to/new_timing
 ```
 
 | Profile | Epochs | Updates/epoch | Allocation | Cosine horizon |
 | --- | ---: | ---: | ---: | ---: |
-| Smoke | 1 | 1 | 30 min | 4096 epochs |
-| Timing | 16 by default | 64 | 4 h | 4096 epochs |
-| Train | Explicit measured horizon | 64 | 24 h | Same selected horizon |
+| Smoke | 1 | 1 | 15 min | 4096 epochs |
+| Timing | 16 by default | 64 | 30 min on eight nodes | 4096 epochs |
+| Train | 4096 total | 64 | 24 h per allocation | 4096 epochs |
 
-All request one node and four GPUs/tasks. The default microbatch is one real
-window per GPU with accumulation eight. Together with eight training members,
-this preserves 32 real windows and 256 member-window predictions per optimizer
-update. `--microbatch` accepts 1, 2, 4 or 8; accumulation adjusts accordingly.
+The default is eight nodes, four GPUs/tasks per node, one real window per GPU
+and no accumulation: 32 real windows and 256 member-window predictions per
+optimizer update. `--nodes` also accepts 1, 2 or 4, with default per-GPU batches
+8, 4 or 2 respectively. An explicit smaller `--microbatch` increases accumulation
+to preserve the global batch. Larger batches that change exposure are rejected.
+Multi-node scripts load the existing Isambard NCCL/OFI module and record transport
+logs; verify Libfabric/CXI/GDRDMA in those logs when deploying a new runtime.
+
 Training and validation batch limits scale with accumulation, retaining 64
-optimizer updates per sampling epoch and 512 real validation windows per check.
-Smoke uses only one validation batch. Validation runs every eight epochs during
-timing/training; timing epochs must be a multiple of eight. No downsampling or
-reduced-width model is used by these prepared GPU jobs.
+optimizer updates per epoch and 512 real validation windows per check. Smoke
+uses one validation batch. Validation runs every eight epochs during timing and
+production; timing epochs must be a multiple of eight. This matches latent CRPS's
+validation exposure/cadence; latent FM validates on more real windows. Inputs
+retain native resolution and the five-frame masked spatiotemporal window.
 
-Check actual loader lengths and full-width memory use before timing. Accumulation
-preserves exposure counts but changes execution and logging overhead. Time the
-microbatch that production will use. Both validation cycles and final checkpoint
-writing must complete before treating the default 16-epoch probe as evidence.
-Timing records are read with the existing workflow:
-
-```bash
-uv run --frozen --no-sync autocast time-epochs \
-  --from-checkpoint /path/to/new_timing/run/timing.ckpt -b 24 -m 0.05
-```
-
-An alternative total budget can be assessed with `-b`, after deciding the
-scientific comparison. Neither 24 nor 48 training hours are inferred from the
-old ambient models or reheated continuation results. Once selected, prepare
-production with `--phase train --epochs N`; omitting `--epochs` is an error.
-There is no production placeholder or automatic job submission.
+Use the existing matching-model memory, throughput and resume measurements
+where the runtime and accumulation are unchanged. Further probes can check a
+new deployment; they do not select a shorter production schedule. Production
+always uses 4096 total epochs, and a conflicting `--epochs` override is rejected.
+Timing on fewer than eight nodes retains a four-hour allocation cap.
 
 Production uses an epoch-boundary Timer with 30 minutes reserved in each
-24-hour allocation. Verify the measured worst epoch, validation and final save
-fit that headroom. A longer logical schedule needs separately reviewed manual
+24-hour allocation. Check epoch, validation and save times against that headroom.
+The complete schedule may need multiple allocations, using manual
 continuations: restore full model/optimizer/scheduler/EMA state from this run's
-completed-epoch checkpoint, retain its total epoch/cosine horizons and W&B ID,
+completed-epoch checkpoint, retain its total 4096-epoch/cosine horizons and W&B ID,
 and use `reset_resume_time_budget=true` for a fresh allocation Timer. Cumulative
 training-time diagnostics remain available separately. Both Slurm and Lightning
 automatic requeue are disabled. Initial training scripts reject existing run
