@@ -295,3 +295,11 @@ prediction API. Historical ambient test-loader CSVs used standardized fields
 and are not directly comparable. Latent models encode the selected raw inputs
 with their frozen autoencoder. The runner saves per-window/lead/channel scores,
 including separate spread/skill components, without another inference pass.
+
+### Large ambient CRPS preparation
+
+See [the ambient preparation guide](ambient_crps_preparation.md) for resolved
+memory-smoke, timing, training and matched evaluation configurations. These
+reuse the existing full-width masked ambient preset and completed latent
+baselines. The preparation commands write configurations and scripts without
+submitting jobs; the production horizon is chosen from measured throughput.
