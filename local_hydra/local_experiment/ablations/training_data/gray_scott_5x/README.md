@@ -84,6 +84,15 @@ The 120 validation trajectories are new; checkpoint selection is therefore not
 identical to the original 24-case protocol. State that change explicitly. The
 published validation files remain available for a selection sensitivity check.
 
+Both CRPS budgets select the best validation MultiWinkler checkpoint from the
+first validation, following the September GPE/GS/AD U-Net ablations. The
+`gs5x_crps` trainer replaces the separate pre-25% and after-25% MultiWinkler
+trackers with one overall tracker starting at 0%. It retains the after-50% and
+after-75% trackers, coverage trackers, 5%-interval snapshots, best validation
+loss and EMA. This differs from the published GS ViT selection after 25%;
+report the selection rule explicitly. Existing prepared campaigns retain their
+saved callback list and source commit until deliberately refreshed.
+
 Supply dataset and artifact paths through environment variables:
 
 ```bash

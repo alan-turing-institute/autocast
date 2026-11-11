@@ -2,6 +2,7 @@
 defaults:
   - /local_experiment/epd/gray_scott/crps_vit_azula_large
   - override /datamodule: gray_scott_5x
+  - override /trainer: gs5x_crps
   - _self_
 
 experiment_name: ablation_training_data_gs5x_crps_vit_azula_large_24h
