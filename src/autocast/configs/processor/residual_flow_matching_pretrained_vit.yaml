@@ -1,0 +1,22 @@
+# A deterministic ViT reference from a matching local EPD run.
+# See the processor walkthrough for required config/normalization provenance.
+defaults:
+  - flow_matching_vit
+  - /flow_source@source: iid_gaussian
+  - /processor@reference.processor: vit_latent
+  - _self_
+
+_target_: autocast.processors.residual_flow_matching.ResidualFlowMatchingProcessor
+integrator: euler
+
+reference:
+  _target_: autocast.processors.residual_reference.ProcessorReference
+  checkpoint_path: ???
+  config_path: ???
+  frozen: true
+
+residual_normalizer:
+  _target_: autocast.processors.residual_normalization.ResidualNormalizer
+  n_steps_output: auto
+  n_channels: auto
+  granularity: lead_channel

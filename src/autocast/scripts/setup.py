@@ -24,7 +24,9 @@ from autocast.models.encoder_processor_decoder_ensemble import (
 )
 from autocast.models.processor import ProcessorModel
 from autocast.models.processor_ensemble import ProcessorModelEnsemble
+from autocast.processors.residual_reference import ProcessorReference
 from autocast.scripts.data import batch_to_device, build_datamodule
+from autocast.scripts.reference import load_processor_references
 from autocast.types.batch import Batch, EncodedBatch
 
 log = logging.getLogger(__name__)
@@ -178,6 +180,24 @@ def _uses_masked_window(processor_config: DictConfig) -> bool:
     )
 
 
+def _apply_dimensions(
+    config: DictConfig, dimensions: dict[str, Any], *, validate: bool
+) -> None:
+    for key, value in dimensions.items():
+        _set_if_auto(config, key, value)
+        compatible_zero = key == "global_cond_channels" and value is None
+        if (
+            validate
+            and key in config
+            and config[key] != value
+            and not (compatible_zero and config[key] == 0)
+        ):
+            raise ValueError(
+                f"Reference dimension {key}={config[key]} is incompatible with "
+                f"processor coordinates ({value})."
+            )
+
+
 def _apply_processor_channel_defaults(
     processor_config: DictConfig | None,
     *,
@@ -188,26 +208,47 @@ def _apply_processor_channel_defaults(
     n_channels_out: int,
     global_cond_channels: int | None = None,
     spatial_resolution: tuple[int, ...] | None = None,
+    validate_dimensions: bool = False,
 ) -> None:
     """Apply inferred channel/step defaults to processor and backbone configs."""
     if processor_config is None:
         return
 
-    _set_if_auto(processor_config, "in_channels", in_channels)
-    _set_if_auto(processor_config, "out_channels", out_channels)
-    _set_if_auto(processor_config, "n_steps_input", n_steps_input)
-    _set_if_auto(processor_config, "n_steps_output", n_steps_output)
-    _set_if_auto(processor_config, "n_channels_out", n_channels_out)
-    _set_if_auto(processor_config, "global_cond_channels", global_cond_channels)
-    _set_if_auto(
+    dimensions = {
+        "in_channels": in_channels,
+        "out_channels": out_channels,
+        "n_steps_input": n_steps_input,
+        "n_steps_output": n_steps_output,
+        "n_channels_out": n_channels_out,
+        "global_cond_channels": global_cond_channels,
+        "spatial_resolution": (
+            list(spatial_resolution) if spatial_resolution is not None else None
+        ),
+    }
+    _apply_dimensions(
         processor_config,
-        "spatial_resolution",
-        list(spatial_resolution) if spatial_resolution is not None else None,
+        dimensions,
+        validate=validate_dimensions,
     )
 
     reference_config = processor_config.get("reference")
     if isinstance(reference_config, DictConfig):
         _set_if_auto(reference_config, "n_steps_output", n_steps_output)
+        target = reference_config.get("_target_")
+        if target and issubclass(get_class(target), ProcessorReference):
+            _apply_processor_channel_defaults(
+                reference_config.get("processor"),
+                **{
+                    **dimensions,
+                    "n_steps_input": processor_config.get(
+                        "n_steps_input", n_steps_input
+                    ),
+                    "n_steps_output": processor_config.get(
+                        "n_steps_output", n_steps_output
+                    ),
+                },
+                validate_dimensions=True,
+            )
 
     residual_normalizer_config = processor_config.get("residual_normalizer")
     if residual_normalizer_config is None:
@@ -227,18 +268,24 @@ def _apply_processor_channel_defaults(
     backbone_cond_steps = backbone_n_steps if use_masked_window else n_steps_input
     backbone_cond_channels = n_channels_out if use_masked_window else in_channels
 
-    # Backbone applies steps multiplier internally, so we pass per-step channels
-    _set_if_auto(backbone_config, "in_channels", n_channels_out)  # z has n_channels_out
-    _set_if_auto(backbone_config, "out_channels", n_channels_out)
-    _set_if_auto(backbone_config, "cond_channels", backbone_cond_channels)
-    _set_if_auto(backbone_config, "n_steps_input", backbone_cond_steps)
-    _set_if_auto(backbone_config, "n_steps_output", backbone_n_steps)
-    if global_cond_channels is not None:
-        _set_if_auto(backbone_config, "global_cond_channels", global_cond_channels)
-    else:
-        _set_if_auto(backbone_config, "global_cond_channels", 0)
-        if "include_global_cond" in backbone_config:
-            backbone_config.include_global_cond = False
+    # Keep existing defaults unchanged outside the nested-reference path.
+    backbone_dimensions = {
+        "in_channels": n_channels_out,
+        "out_channels": n_channels_out,
+        "cond_channels": backbone_cond_channels,
+        "n_steps_input": backbone_cond_steps,
+        "n_steps_output": backbone_n_steps,
+        "global_cond_channels": global_cond_channels or 0,
+    }
+    if validate_dimensions:
+        backbone_dimensions["spatial_resolution"] = dimensions["spatial_resolution"]
+    _apply_dimensions(
+        backbone_config,
+        backbone_dimensions,
+        validate=validate_dimensions,
+    )
+    if global_cond_channels is None and "include_global_cond" in backbone_config:
+        backbone_config.include_global_cond = False
 
 
 def setup_datamodule(
@@ -674,7 +721,9 @@ def setup_processor_model(
     if is_ensemble:
         kwargs["n_members"] = model_config.get("n_members")
 
-    return cls(**kwargs)
+    return load_processor_references(
+        cls(**kwargs), config, _get_available_dataset(datamodule)
+    )
 
 
 def _load_residual_delta_normalizer(
@@ -835,7 +884,7 @@ def setup_epd_model(
     if is_ensemble:
         kwargs["n_members"] = model_config.get("n_members")
 
-    return cls(**kwargs)
+    return load_processor_references(cls(**kwargs), config, dataset)
 
 
 def _resolve_input_noise_injector(model_config: DictConfig) -> tuple[Any | None, int]:
