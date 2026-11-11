@@ -1,5 +1,6 @@
 """Unit tests for evaluation batch-limit resolution."""
 
+import random
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -7,7 +8,9 @@ from typing import Any, cast
 import matplotlib.pyplot as plt
 import pytest
 import torch
+import yaml
 from omegaconf import OmegaConf
+from torch.utils.data import DataLoader, Dataset
 
 from autocast.data.datamodule import SpatioTemporalDataModule
 from autocast.data.dataset import ReactionDiffusionDataset
@@ -29,6 +32,7 @@ from autocast.scripts.eval.encoder_processor_decoder import (
     LOLA_WRAPPED_ENCODER_TARGET,
     THE_WELL_DATAMODULE_TARGET,
     DumpSplit,
+    _apply_rollout_subset,
     _build_encode_once_rollout_predict,
     _build_eval_predict_fn,
     _build_lola_autoencoder_config_nodes,
@@ -97,6 +101,80 @@ def test_resolve_rollout_batch_limit_prefers_explicit_rollout_limit():
     )
 
     assert _resolve_rollout_batch_limit(eval_cfg) == 5
+
+
+class _IndexedTrajectories(Dataset):
+    def __init__(self, files):
+        self.well_dataset = SimpleNamespace(
+            files_paths=list(files), n_trajectories_per_file=list(files.values())
+        )
+        self.norm = SimpleNamespace(core_field_names=["buoyancy", "pressure"])
+        self.size = sum(files.values())
+
+    def __len__(self):
+        return self.size
+
+    def __getitem__(self, index):
+        return index
+
+
+def test_rollout_subset_default_leaves_datamodule_unchanged():
+    assert _apply_rollout_subset(SimpleNamespace(), OmegaConf.create({})) is None
+
+
+def test_rb_subset_is_random_unique_and_identical_across_models_and_passes(REPO_ROOT):
+    path = (
+        REPO_ROOT
+        / "slurm_scripts/comparison/the_well/rayleigh_benard/test64_seed0.yaml"
+    )
+    selection = yaml.safe_load(path.read_text())
+    indices = selection["indices"]
+    assert indices == random.Random(selection["seed"]).sample(range(175), 64)
+    assert len(set(indices)) == 64
+    assert min(indices) < 64 < max(indices)
+    eval_cfg = OmegaConf.create({"rollout_subset": str(path)})
+    for _ in range(2):  # Independently loaded FM and CRPS datamodules.
+        dataset = _IndexedTrajectories(selection["files"])
+        datamodule = SimpleNamespace(rollout_test_dataset=dataset, test_dataset=dataset)
+        assert _apply_rollout_subset(datamodule, eval_cfg) == selection
+        assert datamodule.test_dataset is dataset  # Single-window tests are unchanged.
+        assert _resolve_rollout_channel_names(datamodule.rollout_test_dataset) == [
+            "buoyancy",
+            "pressure",
+        ]
+        for batch_size in (1, 7):  # Metric, per-timestep and video passes share IDs.
+            batches = DataLoader(datamodule.rollout_test_dataset, batch_size=batch_size)
+            assert torch.cat(list(batches)).tolist() == indices
+
+
+@pytest.mark.parametrize("indices", [[], [1, 1], [-1], [3], [True], [1.5]])
+def test_rollout_subset_rejects_invalid_indices(indices, tmp_path):
+    path = tmp_path / "subset.yaml"
+    path.write_text(yaml.safe_dump({"population_size": 3, "indices": indices}))
+    dataset = _IndexedTrajectories({"test.hdf5": 3})
+    datamodule = SimpleNamespace(rollout_test_dataset=dataset)
+    with pytest.raises(ValueError, match="unique integers"):
+        _apply_rollout_subset(
+            datamodule, OmegaConf.create({"rollout_subset": str(path)})
+        )
+    assert datamodule.rollout_test_dataset is dataset
+
+
+@pytest.mark.parametrize("mismatch", ["population", "file_order"])
+def test_rollout_subset_rejects_dataset_mismatch(mismatch, tmp_path):
+    files = {"a.hdf5": 2, "b.hdf5": 1}
+    selection = {"population_size": 3, "files": files, "indices": [0, 2]}
+    if mismatch == "population":
+        selection["population_size"] = 4
+    else:
+        selection["files"] = dict(reversed(list(files.items())))
+    path = tmp_path / "subset.yaml"
+    path.write_text(yaml.safe_dump(selection, sort_keys=False))
+    datamodule = SimpleNamespace(rollout_test_dataset=_IndexedTrajectories(files))
+    with pytest.raises(ValueError, match="does not match"):
+        _apply_rollout_subset(
+            datamodule, OmegaConf.create({"rollout_subset": str(path)})
+        )
 
 
 def test_trajectory_statistics_default_to_dedicated_sibling_directory(tmp_path):
