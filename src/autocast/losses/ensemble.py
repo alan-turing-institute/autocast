@@ -190,3 +190,42 @@ class CoefficientCRPSLoss(EnsembleLoss):
             n_ensemble * (n_ensemble - 1)
         )
         return truth - coefficient * spread
+
+
+class _BoundedGradientSqrt(torch.autograd.Function):
+    """Square root whose derivative is bounded where its value vanishes.
+
+    PyTorch differentiates the square root as ``grad / (2 * result)``, which
+    diverges where the result is zero, for instance at a vanishing component
+    or a pair of coincident points. Flooring the result in that denominator
+    bounds the derivative and leaves forward values exact.
+    """
+
+    @staticmethod
+    def forward(ctx, tensor: Tensor, floor: int | float) -> Tensor:  # type: ignore[override]
+        result = tensor.clamp_min(0.0).sqrt()
+        ctx.save_for_backward(result)
+        ctx.floor = floor
+        return result
+
+    @staticmethod
+    def backward(ctx, grad_output: Tensor) -> tuple[Tensor, None]:  # type: ignore[override]
+        (result,) = ctx.saved_tensors
+        return grad_output / (2.0 * result.clamp_min(ctx.floor)), None
+
+
+def _bounded_gradient_sqrt(tensor: Tensor) -> Tensor:
+    """Square root whose derivative is bounded at its dtype's resolution."""
+    floor = torch.finfo(tensor.dtype).eps ** 0.5
+    # apply() is untyped, so the Tensor result has to be asserted.
+    return cast(Tensor, _BoundedGradientSqrt.apply(tensor, floor))
+
+
+def _distance_power(distances: Tensor, exponent: float) -> Tensor:
+    """Raise distances to a power, choosing a zero gradient at coincidences."""
+    positive = distances > 0
+    # Fractional powers have an infinite derivative at zero. Masking after
+    # exponentiation would still backpropagate 0 * infinity as NaN.
+    return (
+        torch.where(positive, distances, 1.0).pow(exponent).masked_fill(~positive, 0.0)
+    )
