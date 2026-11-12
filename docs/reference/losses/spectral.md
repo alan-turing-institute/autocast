@@ -4,6 +4,10 @@
 CRPS. It scores complex coefficients, not their power or magnitude alone, so
 coefficient phase differences contribute to the loss.
 
+The notebook `notebooks/09_spectral_losses.ipynb` walks through Fourier,
+wavelet and physical-space scale decompositions on a small simulated
+ensemble, with standalone coefficient-loss examples.
+
 ## Using the preset
 
 Select the loss in an ensemble EPD configuration. For example, to adapt the

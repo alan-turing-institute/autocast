@@ -101,3 +101,8 @@ objective:
 composed. `requires_ambient_predictions` does not change the loss value; it
 makes setup reject latent-space training, because the decomposition needs
 decoded fields.
+
+The notebook `notebooks/09_spectral_losses.ipynb` walks through these
+decompositions on a small simulated ensemble. It reconstructs each scale in
+physical space, demonstrates standalone coefficient losses and visualizes the
+effect of smoothing on the decompositions.
