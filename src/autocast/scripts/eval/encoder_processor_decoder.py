@@ -8,7 +8,7 @@ from collections.abc import Callable, Mapping, Sequence
 from enum import StrEnum
 from pathlib import Path
 from types import MethodType
-from typing import Any
+from typing import Any, cast
 
 import hydra
 import lightning as L
@@ -65,13 +65,11 @@ from autocast.metrics.trajectory import (
     TrajectoryTask,
     build_trajectory_metadata,
 )
-from autocast.models.encoder_processor_decoder import EncoderProcessorDecoder
-from autocast.models.encoder_processor_decoder_ensemble import (
-    EncoderProcessorDecoderEnsemble,
-)
 from autocast.models.processor import ProcessorModel
 from autocast.models.processor_ensemble import ProcessorModelEnsemble
+from autocast.processors.rollout import RolloutMixin
 from autocast.scripts.config import save_resolved_config
+from autocast.scripts.data import RolloutDataModule
 from autocast.scripts.execution import (
     benchmark_metric_rows,
     extract_state_dict,
@@ -1105,12 +1103,7 @@ def _save_rollout_snapshot_panels(
 
 
 def _render_rollouts(  # noqa: PLR0912, PLR0915
-    model: (
-        EncoderProcessorDecoder
-        | EncoderProcessorDecoderEnsemble
-        | ProcessorModel
-        | ProcessorModelEnsemble
-    ),
+    model: torch.nn.Module,
     dataloader,
     batch_indices: Sequence[int],
     video_dir: Path,
@@ -1161,7 +1154,8 @@ def _render_rollouts(  # noqa: PLR0912, PLR0915
             if rollout_predict_fn is None:
                 # Match the metric path; custom predictors apply their own crop.
                 rollout_batch = _crop_rollout_batch_start(batch, rollout_start)
-                preds, trues = model.rollout(
+                # Fabric forwards custom methods without exposing their types.
+                preds, trues = cast(RolloutMixin, model).rollout(
                     rollout_batch,
                     stride=stride,
                     max_rollout_steps=max_rollout_steps,
@@ -1711,7 +1705,7 @@ def _is_metadata_row(row: Mapping[str, float | str]) -> bool:
 
 
 def _split_metric_and_metadata_rows(
-    rows: list[dict[str, float | str]],
+    rows: Sequence[object],
 ) -> tuple[list[dict[str, float | str]], list[dict[str, float | str]]]:
     metric_rows: list[dict[str, float | str]] = []
     metadata_rows: list[dict[str, float | str]] = []
@@ -1749,12 +1743,7 @@ def _make_metadata_row(
 
 
 def _parameter_count_rows(
-    model: (
-        EncoderProcessorDecoderEnsemble
-        | EncoderProcessorDecoder
-        | ProcessorModel
-        | ProcessorModelEnsemble
-    ),
+    model: torch.nn.Module,
 ) -> list[dict[str, float | str]]:
     def _count(module: torch.nn.Module | None, *, trainable: bool = False) -> int:
         if module is None:
@@ -1870,12 +1859,7 @@ def _training_runtime_rows(
 
 def _evaluation_metadata_rows(
     checkpoint_payload: Mapping[str, Any],
-    model: (
-        EncoderProcessorDecoderEnsemble
-        | EncoderProcessorDecoder
-        | ProcessorModel
-        | ProcessorModelEnsemble
-    ),
+    model: torch.nn.Module,
 ) -> list[dict[str, float | str]]:
     rows: list[dict[str, float | str]] = []
     rows.extend(_training_runtime_rows(checkpoint_payload))
@@ -1888,12 +1872,7 @@ def _collect_benchmark_rows(
     eval_cfg: DictConfig,
     cfg: DictConfig,
     stats: Mapping[str, Any],
-    model: (
-        EncoderProcessorDecoderEnsemble
-        | EncoderProcessorDecoder
-        | ProcessorModel
-        | ProcessorModelEnsemble
-    ),
+    model: torch.nn.Module,
     checkpoint_path: Path,
     device: str,
     eval_batch_size: int,
@@ -3058,6 +3037,9 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
         raise ValueError(msg)
 
     if trajectory_statistics_enabled:
+        if not isinstance(datamodule, RolloutDataModule):
+            msg = "Trajectory statistics require a rollout_test_dataloader method."
+            raise TypeError(msg)
         # Check rollout metadata before the potentially expensive single-step pass.
         _validate_trajectory_loader(
             datamodule.rollout_test_dataloader(batch_size=eval_batch_size),
@@ -3455,6 +3437,9 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
         or compute_rollout_metrics
         or trajectory_statistics_enabled
     ):
+        if not isinstance(datamodule, RolloutDataModule):
+            msg = "Rollout evaluation requires a rollout_test_dataloader method."
+            raise TypeError(msg)
         max_rollout_steps = eval_cfg.get("max_rollout_steps", 10)
         rollout_start = int(eval_cfg.get("rollout_start", 0) or 0)
         if rollout_start < 0:

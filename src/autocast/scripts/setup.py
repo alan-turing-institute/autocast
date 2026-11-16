@@ -8,12 +8,13 @@ from typing import Any
 import torch
 import yaml
 from hydra.utils import get_class, instantiate
+from lightning import LightningDataModule
 from omegaconf import DictConfig
 from the_well.data.normalization import RMSNormalization, ZScoreNormalization
 from torch import nn
+from torch.utils.data import Dataset
 
-from autocast.data.datamodule import SpatioTemporalDataModule, TheWellDataModule
-from autocast.data.dataset import SpatioTemporalDataset, TheWell
+from autocast.data.dataset import TheWell
 from autocast.decoders.base import Decoder
 from autocast.encoders.base import Encoder, EncoderWithCond
 from autocast.models.autoencoder import AE, AELoss
@@ -243,7 +244,7 @@ def _apply_processor_channel_defaults(
 
 def setup_datamodule(
     config: DictConfig,
-) -> tuple[SpatioTemporalDataModule | TheWellDataModule, DictConfig, dict]:
+) -> tuple[LightningDataModule, DictConfig, dict]:
     """Create the datamodule and infer data shapes."""
     datamodule = build_datamodule(config)
 
@@ -452,7 +453,7 @@ def setup_autoencoder_components(
 
 
 def _get_available_dataset(
-    datamodule: SpatioTemporalDataModule | TheWellDataModule,
+    datamodule: LightningDataModule,
 ) -> Any:
     """Reuse the available split's metadata, including eval-only datasets."""
     for name in ("train_dataset", "val_dataset", "test_dataset"):
@@ -465,7 +466,7 @@ def _get_available_dataset(
 def setup_autoencoder_model(
     config: DictConfig,
     stats: dict,
-    datamodule: SpatioTemporalDataModule | TheWellDataModule,
+    datamodule: LightningDataModule,
 ) -> AE:
     """Build the full autoencoder model (encoder, decoder, loss)."""
     encoder, decoder = setup_autoencoder_components(config, stats)
@@ -624,7 +625,7 @@ def _maybe_add_metric_overrides(
 def setup_processor_model(
     config: DictConfig,
     stats: dict,
-    datamodule: SpatioTemporalDataModule | TheWellDataModule,
+    datamodule: LightningDataModule,
 ) -> ProcessorModel:
     """Set up just the processor model for training on latents."""
     model_config = config.get("model", {})
@@ -678,7 +679,7 @@ def setup_processor_model(
 
 
 def _load_residual_delta_normalizer(
-    stats_path: str | Path, dataset: SpatioTemporalDataset
+    stats_path: str | Path, dataset: Dataset
 ) -> ZScoreNormalization | RMSNormalization:
     """Load delta statistics using the dataset's format and field order."""
     well = dataset.well_dataset if isinstance(dataset, TheWell) else None
@@ -705,7 +706,7 @@ def _load_residual_delta_normalizer(
 def setup_epd_model(
     config: DictConfig,
     stats: dict,
-    datamodule: SpatioTemporalDataModule | TheWellDataModule,
+    datamodule: LightningDataModule,
 ) -> EncoderProcessorDecoder | EncoderProcessorDecoderEnsemble:
     """Orchestrate the creation of the full Encoder-Processor-Decoder model."""
     model_config = config.get("model", {})

@@ -709,7 +709,7 @@ def _pooled_excess_kurtosis(
     sum2: torch.Tensor,
     sum3: torch.Tensor,
     sum4: torch.Tensor,
-    n: float,
+    n: int | float,
 ) -> torch.Tensor:
     """Excess kurtosis of a pooled sample from its raw power sums.
 
