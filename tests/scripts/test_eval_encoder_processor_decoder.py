@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
+import lightning as L
 import matplotlib.pyplot as plt
 import pytest
 import torch
@@ -46,6 +47,7 @@ from autocast.scripts.eval.encoder_processor_decoder import (
     _deterministic_member_metric_name,
     _dump_rollout_tensors,
     _load_lola_autoencoder_config_from_cache,
+    _mark_forward_methods_if_available,
     _maybe_inject_encoder_decoder_from_autoencoder_checkpoint,
     _maybe_swap_to_ambient_datamodule,
     _needs_autoencoder_injection,
@@ -790,7 +792,10 @@ def test_training_runtime_rows_fall_back_to_average_without_epoch_times():
     assert rows == []
 
 
-def test_render_rollouts_resolves_indices_within_batched_samples(tmp_path, monkeypatch):
+@pytest.mark.parametrize("use_fabric", [False, True])
+def test_render_rollouts_resolves_indices_within_batched_samples(
+    tmp_path, monkeypatch, use_fabric
+):
     class DummyModel(torch.nn.Module):
         def rollout(self, *_args, **_kwargs):
             preds = torch.randn(4, 3, 2, 2, 1)
@@ -807,8 +812,13 @@ def test_render_rollouts_resolves_indices_within_batched_samples(tmp_path, monke
         _fake_plot_spatiotemporal_video,
     )
 
+    model = DummyModel()
+    if use_fabric:
+        model = cast(Any, L.Fabric(accelerator="cpu", devices=1).setup_module(model))
+        _mark_forward_methods_if_available(model, methods=("rollout",))
+
     out_paths = _render_rollouts(
-        model=cast(Any, DummyModel()),
+        rollout_fn=model.rollout,
         dataloader=[object()],
         batch_indices=[0, 1, 2, 3],
         video_dir=tmp_path,
@@ -850,7 +860,7 @@ def test_render_rollouts_can_use_custom_rollout_predict(tmp_path, monkeypatch):
         return preds, trues
 
     out_paths = _render_rollouts(
-        model=cast(Any, DummyModel()),
+        rollout_fn=DummyModel().rollout,
         dataloader=[object()],
         batch_indices=[1],
         video_dir=tmp_path,
@@ -891,7 +901,7 @@ def test_render_rollouts_can_emit_single_member_diagnostics(tmp_path, monkeypatc
     )
 
     out_paths = _render_rollouts(
-        model=cast(Any, DummyModel()),
+        rollout_fn=DummyModel().rollout,
         dataloader=[object()],
         batch_indices=[0],
         video_dir=tmp_path,
@@ -936,7 +946,7 @@ def test_render_rollouts_can_emit_separate_member_files(tmp_path, monkeypatch):
     )
 
     out_paths = _render_rollouts(
-        model=cast(Any, DummyModel()),
+        rollout_fn=DummyModel().rollout,
         dataloader=[object()],
         batch_indices=[0],
         video_dir=tmp_path,
@@ -985,7 +995,7 @@ def test_render_rollouts_can_emit_inline_and_separate_member_files(
     )
 
     out_paths = _render_rollouts(
-        model=cast(Any, DummyModel()),
+        rollout_fn=DummyModel().rollout,
         dataloader=[object()],
         batch_indices=[0],
         video_dir=tmp_path,
@@ -1036,7 +1046,7 @@ def test_render_rollouts_forwards_transpose_spatial_to_plots(tmp_path, monkeypat
     )
 
     out_paths = _render_rollouts(
-        model=cast(Any, DummyModel()),
+        rollout_fn=DummyModel().rollout,
         dataloader=[object()],
         batch_indices=[0],
         video_dir=tmp_path / "videos",
@@ -2546,7 +2556,7 @@ def test_render_rollouts_initializes_at_requested_start(tmp_path, monkeypatch, s
         lambda **kwargs: rendered.append(kwargs),
     )
     _render_rollouts(
-        model=cast(Any, DummyModel()),
+        rollout_fn=DummyModel().rollout,
         dataloader=[batch],
         batch_indices=[0],
         video_dir=tmp_path,

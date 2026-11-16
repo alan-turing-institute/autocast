@@ -87,7 +87,7 @@ from autocast.scripts.setup import (
 )
 from autocast.scripts.training import apply_float32_matmul_precision
 from autocast.scripts.utils import get_default_config_path
-from autocast.types import TensorBTSC, TensorBTSCM
+from autocast.types import RolloutOutput, TensorBTSC, TensorBTSCM
 from autocast.types.batch import Batch, EncodedBatch
 from autocast.utils import plot_spatiotemporal_snapshots, plot_spatiotemporal_video
 from autocast.utils.plots import (
@@ -1103,7 +1103,7 @@ def _save_rollout_snapshot_panels(
 
 
 def _render_rollouts(  # noqa: PLR0912, PLR0915
-    model: torch.nn.Module,
+    rollout_fn: Callable[..., RolloutOutput],
     dataloader,
     batch_indices: Sequence[int],
     video_dir: Path,
@@ -1128,6 +1128,7 @@ def _render_rollouts(  # noqa: PLR0912, PLR0915
     member_render_mode: str = DEFAULT_ROLLOUT_MEMBER_RENDER_MODE,
     rollout_start: int = 0,
 ) -> list[Path]:
+    """Render predictions from a rollout method or a custom evaluation predictor."""
     # Return early if no rollout indices are requested
     if not batch_indices:
         return []
@@ -1154,8 +1155,7 @@ def _render_rollouts(  # noqa: PLR0912, PLR0915
             if rollout_predict_fn is None:
                 # Match the metric path; custom predictors apply their own crop.
                 rollout_batch = _crop_rollout_batch_start(batch, rollout_start)
-                # Fabric forwards custom methods without exposing their types.
-                preds, trues = cast(RolloutMixin, model).rollout(
+                preds, trues = rollout_fn(
                     rollout_batch,
                     stride=stride,
                     max_rollout_steps=max_rollout_steps,
@@ -3504,7 +3504,8 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 else None
             )
             _render_rollouts(
-                model,  # pyright: ignore[reportArgumentType]
+                # Keep Fabric's forwarding for precision and distributed execution.
+                cast(RolloutMixin, model).rollout,
                 rollout_loader,
                 batch_indices,
                 video_dir,

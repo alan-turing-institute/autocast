@@ -29,7 +29,13 @@ def REPO_ROOT() -> Path:
 
 @pytest.fixture
 def validation_error():
-    """Allow annotations to reject inputs before explicit validation runs."""
+    """Expect input rejection with or without runtime type checking.
+
+    Beartype may reject an argument before the function's own validator runs.
+    Accept that parameter violation only when runtime checking is enabled;
+    otherwise require the requested exception. Apply ``match`` only to the
+    function's validation error, whose message it describes.
+    """
     typechecking = (
         os.getenv("RUNTIME_TYPECHECKING", "False").strip().lower()
         in _RUNTIME_TYPECHECKING_ENABLED
