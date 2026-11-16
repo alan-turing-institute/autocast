@@ -53,6 +53,8 @@ jobs:
           uv run prek run --stage manual --all-files
 
       - name: Test with pytest
+        env:
+          RUNTIME_TYPECHECKING: ${{ matrix.os == 'ubuntu-latest' && '1' || '0' }}
         run: |
           # stop pytest after 3 failures to save CI time
           uv run pytest --maxfail=3 --cov-report=xml --cov-report=html
