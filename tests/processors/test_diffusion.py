@@ -4,7 +4,7 @@ import lightning as L
 import pytest
 import torch
 from azula.noise import VPSchedule
-from azula.sample import EulerSampler
+from azula.sample import EulerSampler, Sampler
 from conftest import get_optimizer_config
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
@@ -87,9 +87,7 @@ class _CaptureBackbone(nn.Module):
         return torch.zeros_like(x_t)
 
 
-class _IdentitySampler:
-    start = 1.0
-
+class _IdentitySampler(Sampler):
     def __call__(self, x: torch.Tensor, **_: object) -> torch.Tensor:
         return x
 

@@ -127,9 +127,9 @@ def test_checkpoint_rejects_conflicting_names_and_unrelated_keys():
         processor.load_state_dict(state, strict=True)
 
 
-def test_rejects_ambiguous_configuration_and_dataset_normalizers():
+def test_rejects_ambiguous_configuration_and_dataset_normalizers(validation_error):
     normalizer = ResidualStandardizer(n_steps_output=2, n_channels=1)
-    with pytest.raises(ValueError, match="both"):
+    with validation_error(ValueError, match="both"):
         _processor(residual_normalizer=normalizer, standardizer=normalizer)
-    with pytest.raises(TypeError, match="ResidualNormalizer"):
+    with validation_error(TypeError, match="ResidualNormalizer"):
         _processor(residual_normalizer=nn.Identity())

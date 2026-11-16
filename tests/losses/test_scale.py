@@ -179,11 +179,11 @@ def test_low_pass_rejects_invalid_cutoffs(cutoff):
         FourierLowPass(cutoff)
 
 
-def test_gaussian_boundary_contract():
-    with pytest.raises(ValueError, match="Unknown scale boundary"):
+def test_gaussian_boundary_contract(validation_error):
+    with validation_error(ValueError, match="Unknown scale boundary"):
         GaussianSmoothing(1, boundary="unknown")  # pyright: ignore[reportArgumentType]
     tensor = torch.ones(1, 1, 3, 1)
-    with pytest.raises(ValueError, match="longer than the kernel radius"):
+    with validation_error(ValueError, match="longer than the kernel radius"):
         GaussianSmoothing(1)(tensor, n_spatial_dims=1)
     torch.testing.assert_close(
         GaussianSmoothing(1, boundary="periodic")(tensor, n_spatial_dims=1), tensor

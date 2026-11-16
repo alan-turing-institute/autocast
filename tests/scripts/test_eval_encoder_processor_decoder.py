@@ -10,7 +10,7 @@ import pytest
 import torch
 import yaml
 from omegaconf import OmegaConf
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, TensorDataset
 
 from autocast.data.datamodule import SpatioTemporalDataModule
 from autocast.data.dataset import ReactionDiffusionDataset
@@ -791,7 +791,7 @@ def test_training_runtime_rows_fall_back_to_average_without_epoch_times():
 
 
 def test_render_rollouts_resolves_indices_within_batched_samples(tmp_path, monkeypatch):
-    class DummyModel:
+    class DummyModel(torch.nn.Module):
         def rollout(self, *_args, **_kwargs):
             preds = torch.randn(4, 3, 2, 2, 1)
             trues = torch.randn(4, 3, 2, 2, 1)
@@ -828,7 +828,7 @@ def test_render_rollouts_resolves_indices_within_batched_samples(tmp_path, monke
 
 
 def test_render_rollouts_can_use_custom_rollout_predict(tmp_path, monkeypatch):
-    class DummyModel:
+    class DummyModel(torch.nn.Module):
         def rollout(self, *_args, **_kwargs):
             msg = "standard rollout should not be called"
             raise AssertionError(msg)
@@ -870,7 +870,7 @@ def test_render_rollouts_can_use_custom_rollout_predict(tmp_path, monkeypatch):
 
 
 def test_render_rollouts_can_emit_single_member_diagnostics(tmp_path, monkeypatch):
-    class DummyModel:
+    class DummyModel(torch.nn.Module):
         def rollout(self, *_args, **_kwargs):
             member0 = torch.zeros(1, 2, 2, 2, 1)
             member1 = torch.full_like(member0, 4.0)
@@ -915,7 +915,7 @@ def test_render_rollouts_can_emit_single_member_diagnostics(tmp_path, monkeypatc
 
 
 def test_render_rollouts_can_emit_separate_member_files(tmp_path, monkeypatch):
-    class DummyModel:
+    class DummyModel(torch.nn.Module):
         def rollout(self, *_args, **_kwargs):
             member0 = torch.zeros(1, 2, 2, 2, 1)
             member1 = torch.full_like(member0, 4.0)
@@ -964,7 +964,7 @@ def test_render_rollouts_can_emit_separate_member_files(tmp_path, monkeypatch):
 def test_render_rollouts_can_emit_inline_and_separate_member_files(
     tmp_path, monkeypatch
 ):
-    class DummyModel:
+    class DummyModel(torch.nn.Module):
         def rollout(self, *_args, **_kwargs):
             member0 = torch.zeros(1, 2, 2, 2, 1)
             member1 = torch.full_like(member0, 4.0)
@@ -1011,7 +1011,7 @@ def test_render_rollouts_can_emit_inline_and_separate_member_files(
 
 
 def test_render_rollouts_forwards_transpose_spatial_to_plots(tmp_path, monkeypatch):
-    class DummyModel:
+    class DummyModel(torch.nn.Module):
         def rollout(self, *_args, **_kwargs):
             preds = torch.zeros(1, 2, 2, 3, 1)
             trues = torch.ones_like(preds)
@@ -1123,14 +1123,16 @@ class _FakeRolloutDatamodule:
 
     def __init__(self):
         self.calls: list[tuple[str, int | None]] = []
+        self.test_loader = DataLoader(TensorDataset(torch.empty(0)))
+        self.valid_loader = DataLoader(TensorDataset(torch.empty(0)))
 
     def rollout_test_dataloader(self, batch_size=None):
         self.calls.append(("test", batch_size))
-        return "test_loader"
+        return self.test_loader
 
     def rollout_valid_dataloader(self, batch_size=None):
         self.calls.append(("valid", batch_size))
-        return "valid_loader"
+        return self.valid_loader
 
 
 def test_resolve_dump_rollout_dataloader_uses_test_split_by_default():
@@ -1140,7 +1142,7 @@ def test_resolve_dump_rollout_dataloader_uses_test_split_by_default():
         datamodule, dump_split=DumpSplit.TEST, batch_size=4
     )
 
-    assert loader == "test_loader"
+    assert loader is datamodule.test_loader
     assert datamodule.calls == [("test", 4)]
 
 
@@ -1151,7 +1153,7 @@ def test_resolve_dump_rollout_dataloader_switches_to_validation_split():
         datamodule, dump_split=DumpSplit.VALID, batch_size=4
     )
 
-    assert loader == "valid_loader"
+    assert loader is datamodule.valid_loader
     assert datamodule.calls == [("valid", 4)]
 
 
@@ -2533,7 +2535,7 @@ def test_render_rollouts_initializes_at_requested_start(tmp_path, monkeypatch, s
     )
     rendered = []
 
-    class DummyModel:
+    class DummyModel(torch.nn.Module):
         def rollout(self, selected, **_kwargs):
             assert selected.input_fields.flatten().tolist() == [float(start)]
             targets = selected.output_fields

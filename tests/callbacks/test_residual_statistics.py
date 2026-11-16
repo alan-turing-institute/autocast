@@ -3,6 +3,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 from typing import cast
+from unittest.mock import Mock
 
 import lightning as L
 import pytest
@@ -76,8 +77,9 @@ class _DataModule:
         return []
 
 
-class _Trainer:
+class _Trainer(Mock):
     def __init__(self, datamodule: _DataModule | L.LightningDataModule) -> None:
+        super().__init__(spec=L.Trainer)
         self.datamodule = datamodule
         self.strategy = _SingleProcessStrategy()
         self.is_global_zero = True

@@ -381,8 +381,8 @@ def test_radial_fourier_rejects_invalid_edges(edges, match):
         RadialFourierDecomposition(edges)
 
 
-def test_radial_fourier_rejects_invalid_normalization():
-    with pytest.raises(ValueError, match="Unknown Fourier normalization"):
+def test_radial_fourier_rejects_invalid_normalization(validation_error):
+    with validation_error(ValueError, match="Unknown Fourier normalization"):
         RadialFourierDecomposition([0.5], norm="none")  # pyright: ignore[reportArgumentType]
 
 

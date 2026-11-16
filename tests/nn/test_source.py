@@ -251,8 +251,8 @@ def test_separable_gp_accepts_accelerator_channel_correlation():
     assert source.channel_factor.device.type == device.type
 
 
-def test_separable_gp_validates_spatial_boundaries():
-    with pytest.raises(ValueError, match="must be one of"):
+def test_separable_gp_validates_spatial_boundaries(validation_error):
+    with validation_error(ValueError, match="must be one of"):
         _separable_source(spatial_boundaries="open")
 
 
