@@ -23,8 +23,8 @@ WAVES = ((3, 0), (0, 3), (2, 2), (2, -2))
         [[1, 0, 1]],
     ],
 )
-def test_invalid_wavevectors(waves):
-    with pytest.raises(ValueError, match="Spatial noise"):
+def test_invalid_wavevectors(validation_error, waves):
+    with validation_error(ValueError, match="Spatial noise"):
         SpatialFourierSource(waves)
 
 

@@ -130,6 +130,7 @@ def run(args):  # noqa: PLR0912, PLR0915
     from omegaconf import DictConfig, OmegaConf
     from torch.utils.data import Subset
 
+    from autocast.data.datamodule import TheWellDataModule
     from autocast.metrics.coverage import Coverage
     from autocast.scripts.data import batch_to_device
     from autocast.scripts.eval.encoder_processor_decoder import (
@@ -184,6 +185,9 @@ def run(args):  # noqa: PLR0912, PLR0915
     L.seed_everything(42, workers=True)
     torch.set_float32_matmul_precision("high")
     datamodule, cfg, stats = setup_datamodule(cfg)
+    if not isinstance(datamodule, TheWellDataModule):
+        msg = "Paired window evaluation requires TheWellDataModule"
+        raise TypeError(msg)
     indices = validate_selection(datamodule.test_dataset, selection)
     # The test loader accepts a map-style Subset at runtime.
     datamodule.test_dataset = Subset(datamodule.test_dataset, indices)  # pyright: ignore[reportAttributeAccessIssue]

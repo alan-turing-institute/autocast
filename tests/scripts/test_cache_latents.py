@@ -47,16 +47,16 @@ def _make_full_traj_dataloader(
 
         def __getitem__(self, idx):
             return Batch(
-                input_fields=torch.randn(t_in, w, h, c),
-                output_fields=torch.randn(t_out, w, h, c),
+                input_fields=torch.randn(1, t_in, w, h, c),
+                output_fields=torch.randn(1, t_out, w, h, c),
                 constant_scalars=None,
                 constant_fields=None,
             )
 
     def _collate(items):
         return Batch(
-            input_fields=torch.stack([x.input_fields for x in items]),
-            output_fields=torch.stack([x.output_fields for x in items]),
+            input_fields=torch.cat([x.input_fields for x in items]),
+            output_fields=torch.cat([x.output_fields for x in items]),
             constant_scalars=None,
             constant_fields=None,
         )
@@ -75,17 +75,17 @@ def _make_cond_dataloader(cond_dim=3, t_in=1, t_out=9):
 
         def __getitem__(self, idx):
             return Batch(
-                input_fields=torch.randn(t_in, 8, 8, 2),
-                output_fields=torch.randn(t_out, 8, 8, 2),
-                constant_scalars=torch.randn(cond_dim),
+                input_fields=torch.randn(1, t_in, 8, 8, 2),
+                output_fields=torch.randn(1, t_out, 8, 8, 2),
+                constant_scalars=torch.randn(1, cond_dim),
                 constant_fields=None,
             )
 
     def _collate(items):
         return Batch(
-            input_fields=torch.stack([x.input_fields for x in items]),
-            output_fields=torch.stack([x.output_fields for x in items]),
-            constant_scalars=torch.stack([x.constant_scalars for x in items]),
+            input_fields=torch.cat([x.input_fields for x in items]),
+            output_fields=torch.cat([x.output_fields for x in items]),
+            constant_scalars=torch.cat([x.constant_scalars for x in items]),
             constant_fields=None,
         )
 

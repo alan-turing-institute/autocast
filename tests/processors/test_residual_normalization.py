@@ -91,8 +91,10 @@ def test_set_statistics_floors_zero_scale_and_persists_state():
         ({"epsilon": 0.0}, "epsilon"),
     ],
 )
-def test_residual_normalizer_configuration_is_validated(kwargs, message):
-    with pytest.raises(ValueError, match=message):
+def test_residual_normalizer_configuration_is_validated(
+    validation_error, kwargs, message
+):
+    with validation_error(ValueError, match=message):
         ResidualNormalizer(n_steps_output=4, n_channels=1, **kwargs)
 
 

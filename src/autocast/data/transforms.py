@@ -32,7 +32,7 @@ class LogScalars(Augmentation):
         self.scalar_names = {name.lower() for name in scalar_names}
 
     def __call__(
-        self, data: TrajectoryData, metadata: TrajectoryMetadata
+        self, data: TrajectoryData, metadata: TrajectoryMetadata | None
     ) -> TrajectoryData:
         scalars = data.get("constant_scalars")
         if scalars:

@@ -2,8 +2,7 @@
 
 import math
 from pathlib import Path
-from types import SimpleNamespace
-from typing import cast
+from unittest.mock import Mock
 
 import lightning as L
 import torch
@@ -22,8 +21,8 @@ from autocast.scripts.training import (
 
 def test_timer_resume_preserves_elapsed_time_and_epoch_history(monkeypatch):
     clock = [1000.0]
-    trainer = cast(L.Trainer, None)
-    model = cast(L.LightningModule, None)
+    trainer = Mock(spec=L.Trainer)
+    model = Mock(spec=L.LightningModule)
     monkeypatch.setattr("autocast.scripts.training.perf_counter", lambda: clock[0])
     callback = TrainingTimerCallback()
     callback.load_state_dict(
@@ -56,7 +55,7 @@ def test_timer_resume_preserves_elapsed_time_and_epoch_history(monkeypatch):
 
 
 def test_fractional_snapshot_matches_legacy_state_before_restore(tmp_path):
-    trainer = cast(L.Trainer, SimpleNamespace(estimated_stepping_batches=101))
+    trainer = Mock(spec=L.Trainer, estimated_stepping_batches=101)
     original = ProgressModelCheckpoint(
         dirpath=tmp_path, every_n_train_steps_fraction=0.05, save_top_k=-1
     )
@@ -66,7 +65,7 @@ def test_fractional_snapshot_matches_legacy_state_before_restore(tmp_path):
     restored = ProgressModelCheckpoint(
         dirpath=tmp_path, every_n_train_steps_fraction=0.05, save_top_k=-1
     )
-    restored.on_load_checkpoint(trainer, cast(L.LightningModule, None), checkpoint)
+    restored.on_load_checkpoint(trainer, Mock(spec=L.LightningModule), checkpoint)
     assert restored.state_key in checkpoint["callbacks"]
     restored.load_state_dict(checkpoint["callbacks"][restored.state_key])
     assert restored._every_n_train_steps == 6

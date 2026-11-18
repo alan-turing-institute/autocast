@@ -1,11 +1,12 @@
 import os
+from collections.abc import Callable
 from functools import partial
 from pathlib import Path
 
 import torch
 from lightning.pytorch import LightningDataModule
 from omegaconf import DictConfig
-from the_well.data.normalization import ZScoreNormalization
+from the_well.data.normalization import RMSNormalization, ZScoreNormalization
 from torch.utils.data import DataLoader
 
 from autocast.data.dataset import SpatioTemporalDataset, TheWell
@@ -23,7 +24,8 @@ class TheWellDataModule(LightningDataModule):
         batch_size: int = 4,
         use_normalization: bool = False,
         # TODO: consider how to pass normalization stats/path
-        normalization_type: type[ZScoreNormalization] | None = ZScoreNormalization,
+        normalization_type: Callable[..., ZScoreNormalization | RMSNormalization]
+        | None = ZScoreNormalization,
         autoencoder_mode: bool = False,
         num_workers: int | None = None,  # Auto-detect if None
         normalization_path: str = "../stats.yaml",
@@ -177,7 +179,8 @@ class SpatioTemporalDataModule(LightningDataModule):
         autoencoder_mode: bool = False,
         full_trajectory_mode: bool = False,
         use_normalization: bool = False,
-        normalization_type: type[ZScoreNormalization] | None = ZScoreNormalization,
+        normalization_type: Callable[..., ZScoreNormalization | RMSNormalization]
+        | None = ZScoreNormalization,
         normalization_path: None | str = None,
         normalization_stats: dict | DictConfig | None = None,
         num_workers: int | None = None,

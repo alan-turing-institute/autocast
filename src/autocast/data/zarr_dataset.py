@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
 import torch
 import yaml
 from lightning.pytorch import LightningDataModule
+from omegaconf import DictConfig
 from the_well.data.normalization import ZScoreNormalization
 from torch.utils.data import DataLoader, Dataset
 
@@ -49,13 +51,13 @@ class ZarrDataset(Dataset):
         n_steps_output: int = 1,
         stride: int = 1,
         start_frame: int = 0,
-        channel_idxs: tuple[int, ...] | list[int] | None = None,
+        channel_idxs: Sequence[int] | None = None,
         autoencoder_mode: bool = False,
         full_trajectory_mode: bool = False,
         dtype: torch.dtype = torch.float32,
         use_normalization: bool = False,
         normalization_path: str | Path | None = None,
-        normalization_stats: dict | None = None,
+        normalization_stats: dict | DictConfig | None = None,
     ) -> None:
         """Configure windowing and optional training-derived normalization."""
         if full_trajectory_mode:
@@ -223,13 +225,13 @@ class ZarrDataModule(LightningDataModule):
         batch_size: int = 16,
         num_workers: int = 0,
         start_frame: int = 0,
-        channel_idxs: tuple[int, ...] | list[int] | None = None,
+        channel_idxs: Sequence[int] | None = None,
         dtype: torch.dtype = torch.float32,
         autoencoder_mode: bool = False,
         full_trajectory_mode: bool = False,
         use_normalization: bool = True,
         normalization_path: str | Path | None = None,
-        normalization_stats: dict | None = None,
+        normalization_stats: dict | DictConfig | None = None,
         rollout_steps: int = 12,
         rollout_window_stride: int | None = None,
         pin_memory: bool = True,

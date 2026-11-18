@@ -6,7 +6,7 @@ import torch
 import yaml
 from omegaconf import DictConfig
 from the_well.data import Augmentation, WellDataset
-from the_well.data.normalization import ZScoreNormalization
+from the_well.data.normalization import RMSNormalization, ZScoreNormalization
 from torch.utils.data import Dataset
 
 from autocast.data.metadata import Metadata
@@ -44,7 +44,8 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         dtype: torch.dtype = torch.float32,
         verbose: bool = False,
         use_normalization: bool = False,
-        normalization_type: type[ZScoreNormalization] | None = ZScoreNormalization,
+        normalization_type: Callable[..., ZScoreNormalization | RMSNormalization]
+        | None = ZScoreNormalization,
         normalization_path: str | None = None,
         normalization_stats: dict | DictConfig | None = None,
         start_frame: int = 0,

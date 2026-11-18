@@ -266,8 +266,8 @@ def test_invalid_reduction_is_rejected(loss_cls):
 
 
 @pytest.mark.parametrize("target_shape", [(1, 1, 1, 1, 3), (1, 1, 1, 2), (1, 1, 1)])
-def test_shapes_must_match_exactly_without_broadcasting(target_shape):
-    with pytest.raises(ValueError, match="final ensemble axis"):
+def test_shapes_must_match_exactly_without_broadcasting(validation_error, target_shape):
+    with validation_error(ValueError, match="final ensemble axis"):
         CoefficientCRPSLoss()(torch.ones(1, 1, 1, 1, 3), torch.ones(target_shape))
 
 
@@ -277,14 +277,14 @@ def test_empty_ensemble_is_rejected():
 
 
 @pytest.mark.parametrize("integer_target", [False, True])
-def test_integer_inputs_are_rejected(integer_target):
+def test_integer_inputs_are_rejected(validation_error, integer_target):
     preds = torch.ones(
         1, 1, 1, 1, 2, dtype=torch.float32 if integer_target else torch.int64
     )
     targets = torch.ones(
         1, 1, 1, 1, dtype=torch.int64 if integer_target else torch.float32
     )
-    with pytest.raises(TypeError, match="floating point or complex"):
+    with validation_error(TypeError, match="floating point or complex"):
         CoefficientCRPSLoss()(preds, targets)
 
 

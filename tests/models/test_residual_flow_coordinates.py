@@ -3,7 +3,9 @@
 from dataclasses import replace
 from types import SimpleNamespace
 from typing import cast
+from unittest.mock import Mock
 
+import lightning as L
 import pytest
 import torch
 from einops import repeat
@@ -203,7 +205,8 @@ def test_online_and_cached_statistics_match(coordinates, toy_batch):
         return value
 
     for model, batch in [(online_model, toy_batch), (cached_model, encoded)]:
-        trainer = SimpleNamespace(
+        trainer = Mock(
+            spec=L.Trainer,
             is_global_zero=True,
             world_size=1,
             global_rank=0,

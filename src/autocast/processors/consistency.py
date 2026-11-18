@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
-from typing import Protocol, cast
+from typing import Protocol, cast, runtime_checkable
 
 import torch
 from torch import nn
@@ -11,6 +11,7 @@ from autocast.processors.base import Processor
 from autocast.types import EncodedBatch, Tensor
 
 
+@runtime_checkable
 class _FlowTeacher(Protocol):
     """The flow-matching teacher interface the consistency student consumes."""
 

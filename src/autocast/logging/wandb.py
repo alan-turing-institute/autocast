@@ -44,7 +44,7 @@ def _extract_wandb_cfg(
 def _build_logger_kwargs(
     wandb_cfg: dict[str, Any],
     *,
-    experiment_name: str,
+    experiment_name: str | None,
     run_name: str | None,
     job_type: str | None,
     work_dir: Path | None,
@@ -100,7 +100,7 @@ def _build_logger_kwargs(
 def create_wandb_logger(
     logging_cfg: dict[str, Any] | DictConfig | None,
     *,
-    experiment_name: str,
+    experiment_name: str | None,
     run_name: str | None = None,
     job_type: str | None = None,
     work_dir: Path | None = None,

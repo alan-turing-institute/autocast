@@ -5,6 +5,7 @@ from pathlib import Path
 from time import perf_counter
 from types import SimpleNamespace
 from typing import cast
+from unittest.mock import Mock
 
 import lightning as L
 import pytest
@@ -24,6 +25,7 @@ from autocast.callbacks.metrics import ValidationMetricPlotCallback
 from autocast.callbacks.residual_statistics import ResidualStatisticsCallback
 from autocast.data.datamodule import SpatioTemporalDataModule
 from autocast.encoders.base import EncoderWithCond
+from autocast.encoders.identity import IdentityEncoder
 from autocast.nn.noise.source import TemporalOUSource
 from autocast.processors.residual_flow_matching import ResidualFlowMatchingProcessor
 from autocast.scripts.setup import (
@@ -627,7 +629,7 @@ def test_attach_reset_timer_callback_inserts_before_timer():
     assert reset_idx < timer_idx
 
 
-def _trainer_stub(**overrides) -> SimpleNamespace:
+def _trainer_stub(**overrides) -> Mock:
     defaults = {
         "estimated_stepping_batches": 100,
         "max_steps": -1,
@@ -639,7 +641,7 @@ def _trainer_stub(**overrides) -> SimpleNamespace:
         "callback_metrics": {},
     }
     defaults.update(overrides)
-    return SimpleNamespace(**defaults)
+    return Mock(spec=L.Trainer, **defaults)
 
 
 def test_progress_model_checkpoint_resolves_fractional_train_steps():
@@ -651,7 +653,7 @@ def test_progress_model_checkpoint_resolves_fractional_train_steps():
     )
 
     trainer = _trainer_stub(estimated_stepping_batches=101)
-    callback.on_fit_start(cast(L.Trainer, trainer), cast(L.LightningModule, object()))
+    callback.on_fit_start(cast(L.Trainer, trainer), Mock(spec=L.LightningModule))
 
     assert callback._every_n_train_steps == 6
 
@@ -889,7 +891,8 @@ def test_validation_metric_plot_callback_saves_val_metric_history(tmp_path: Path
         log_to_logger=False,
         plot_metric_objects=False,
     )
-    trainer = SimpleNamespace(
+    trainer = Mock(
+        spec=L.Trainer,
         callback_metrics={
             "val_loss": torch.tensor(1.5),
             "val_vector": torch.ones(2),
@@ -901,7 +904,7 @@ def test_validation_metric_plot_callback_saves_val_metric_history(tmp_path: Path
         sanity_checking=False,
         loggers=[],
     )
-    pl_module = SimpleNamespace(val_metrics=None)
+    pl_module = Mock(spec=L.LightningModule, val_metrics=None)
 
     callback.on_validation_end(
         cast(L.Trainer, trainer), cast(L.LightningModule, pl_module)
@@ -934,7 +937,8 @@ def test_validation_metric_plot_callback_saves_custom_metric_plot(tmp_path: Path
         log_to_logger=False,
         plot_metric_objects=True,
     )
-    trainer = SimpleNamespace(
+    trainer = Mock(
+        spec=L.Trainer,
         callback_metrics={},
         default_root_dir=tmp_path,
         global_step=12,
@@ -942,8 +946,9 @@ def test_validation_metric_plot_callback_saves_custom_metric_plot(tmp_path: Path
         sanity_checking=False,
         loggers=[],
     )
-    pl_module = SimpleNamespace(
-        val_metrics=MetricCollection({"diagnostic": PlotMetric()}).clone(prefix="val_")
+    pl_module = Mock(
+        spec=L.LightningModule,
+        val_metrics=MetricCollection({"diagnostic": PlotMetric()}).clone(prefix="val_"),
     )
 
     callback.on_validation_end(
@@ -974,7 +979,8 @@ def test_validation_metric_plot_callback_wandb_log_omits_step(tmp_path: Path):
 
     run = FakeWandbRun()
     logger = SimpleNamespace(experiment=run)
-    trainer = SimpleNamespace(
+    trainer = Mock(
+        spec=L.Trainer,
         callback_metrics={"val_loss": torch.tensor(1.5)},
         default_root_dir=tmp_path,
         global_step=1189,
@@ -982,7 +988,7 @@ def test_validation_metric_plot_callback_wandb_log_omits_step(tmp_path: Path):
         sanity_checking=False,
         loggers=[logger],
     )
-    pl_module = SimpleNamespace(val_metrics=None)
+    pl_module = Mock(spec=L.LightningModule, val_metrics=None)
 
     callback.on_validation_end(
         cast(L.Trainer, trainer), cast(L.LightningModule, pl_module)
@@ -1119,25 +1125,25 @@ def test_epd_metric_overrides_are_forwarded(
 
 
 def test_infer_latent_spatial_resolution_channels_last_with_time():
-    class DummyEncoder:
+    class DummyEncoder(IdentityEncoder):
         channel_axis = -1
         outputs_time_channel_concat = False
 
     encoded = torch.randn(2, 3, 16, 16, 8)  # B,T,W,H,C
     spatial = _infer_latent_spatial_resolution(
-        encoded, cast(EncoderWithCond, DummyEncoder())
+        encoded, cast(EncoderWithCond, DummyEncoder(in_channels=1))
     )
     assert spatial == (16, 16)
 
 
 def test_infer_latent_spatial_resolution_channels_first_time_concat():
-    class DummyEncoder:
+    class DummyEncoder(IdentityEncoder):
         channel_axis = 1
         outputs_time_channel_concat = True
 
     encoded = torch.randn(2, 24, 16, 16)  # B,C*T,W,H
     spatial = _infer_latent_spatial_resolution(
-        encoded, cast(EncoderWithCond, DummyEncoder())
+        encoded, cast(EncoderWithCond, DummyEncoder(in_channels=1))
     )
     assert spatial == (16, 16)
 

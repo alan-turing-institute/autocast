@@ -278,7 +278,7 @@ class TemporalBackboneBase(nn.Module, ABC):
         self,
         x_t: TensorBTSC,
         t: Tensor | None,
-        cond: TensorBTSC,
+        cond: TensorBTSC | None,
         global_cond: Tensor | None = None,
         loss_weight: Tensor | None = None,
     ) -> TensorBTSC:

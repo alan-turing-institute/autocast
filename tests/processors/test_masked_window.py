@@ -7,6 +7,7 @@ from torch import nn
 
 from autocast.losses.ensemble import AlphaFairCRPSLoss
 from autocast.models.processor_ensemble import ProcessorModelEnsemble
+from autocast.nn.spatiotemporal_vit import SpatiotemporalViTBackbone
 from autocast.processors.flow_matching_masked_window import (
     FlowMatchingMaskedWindowProcessor,
 )
@@ -48,7 +49,7 @@ class _ContextMask:
         return mask
 
 
-class _WindowBackbone(nn.Module):
+class _WindowBackbone(SpatiotemporalViTBackbone):
     conditioning = "mask"
     use_precomputed_modulation = True
     n_steps_input = n_steps_output = 5
@@ -56,14 +57,19 @@ class _WindowBackbone(nn.Module):
     mod_features = 4
 
     def __init__(self):
-        super().__init__()
+        # The processor's annotation requires this backbone class; skip its
+        # constructor so the test keeps a lightweight stand-in.
+        nn.Module.__init__(self)
         self.scale = nn.Parameter(torch.ones(()))
         self.seen = []
 
-    def forward(self, x, t, cond, global_cond):
-        self.seen.append((x.detach().clone(), t.detach().clone(), cond.clone()))
+    def forward(self, x_t, t, cond, global_cond=None, loss_weight=None):  # noqa: ARG002
+        assert t is not None
+        assert cond is not None
+        assert global_cond is not None
+        self.seen.append((x_t.detach().clone(), t.detach().clone(), cond.clone()))
         value = rearrange(global_cond[:, 0], "b -> b 1 1 1 1")
-        return self.scale * torch.where(cond.bool(), 100.0, value).expand_as(x)
+        return self.scale * torch.where(cond.bool(), 100.0, value).expand_as(x_t)
 
 
 def _ensemble_processor(**overrides):

@@ -296,11 +296,11 @@ def test_multivariate_scores_vector_dims_shapes(MetricCls, vector_dims, expected
 
 
 @pytest.mark.parametrize("MetricCls", [EnergyScore, VariogramScore])
-def test_multivariate_scores_vector_dims_typos_invalid(MetricCls):
-    with pytest.raises(ValueError):  # noqa: PT011
+def test_multivariate_scores_vector_dims_typos_invalid(validation_error, MetricCls):
+    with validation_error(ValueError):
         MetricCls(vector_dims="spatials")
 
-    with pytest.raises(ValueError):  # noqa: PT011
+    with validation_error(ValueError):
         MetricCls(vector_dims="temproal")
 
 
