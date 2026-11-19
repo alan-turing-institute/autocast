@@ -20,6 +20,7 @@ dependencies = [
     "lightning>=2.5.6",
     "neuraloperator>=2.0.0",
     "pandas>=2.1",
+    "prodigyopt==1.1.2",
     "the-well>=1.1.0",
     "timm>=0.9",
     "torch>=2.9.1",

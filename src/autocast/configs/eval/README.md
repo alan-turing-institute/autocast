@@ -58,13 +58,19 @@ All eval configs support these parameters:
 - `metrics`: List of metrics to compute (default includes mse/mae/rmse/vrmse,
   power spectrum scores `psrmse*`, cross-correlation spectrum scores `pscc*`,
   and ensemble scores `crps`, `fcrps`, `afcrps`, `spread`, `skill`, `ssr`,
-  `winkler`. Note that for ensemble predictions, `skill` is the RMSE of the
-  ensemble mean, so it matches `rmse` numerically and is included for explicit
-  spread/skill reporting.)
-- `skip_memory_intensive_metrics`: When `true` (default), skip high-memory
-  metrics such as `energy` and `variogram` even if they are listed in
-  `metrics`. Opt in with `eval.metrics=[...,energy]`
-  `eval.skip_memory_intensive_metrics=false`.
+  `ssr_pooled`, `collection_coverage`, `winkler`. Note that for ensemble
+  predictions, `skill` is the RMSE of the ensemble mean, so it matches `rmse`
+  numerically and is included for explicit spread/skill reporting.)
+- `include_memory_intensive_metrics`: When `false` (default), skip high-memory
+  metrics even if they are listed in `metrics`. These are the variogram family
+  and the multivariate Dawid-Sebastiani score (`dss`) -- the ones whose state is
+  D-by-D in the field size. Membership comes from each metric class's
+  `memory_intensive` flag rather than a maintained name list, so a new registry
+  alias of a guarded class is covered automatically. Opt in with
+  `eval.include_memory_intensive_metrics=true`.
+  The older inverted key `eval.skip_memory_intensive_metrics` is still honoured
+  when the positive one is absent. Note `energy` is *not* guarded: its cost is
+  in the member count, not the field size.
 - Deterministic metrics on ensemble predictions are scored on the ensemble
   mean by default, matching LOLA's VRMSE/skill evaluation.
 - `csv_path`: Custom path for metrics CSV (default: work_dir/evaluation_metrics.csv)

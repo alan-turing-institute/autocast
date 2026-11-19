@@ -1,0 +1,14 @@
+# Prodigy (Mishchenko and Defazio, ICML 2024) on the campaign-2 plateau schedule.
+#
+# Prodigy is Adam with a step size it estimates itself, so learning_rate is a multiplier
+# left at 1; the plateau schedule cuts that multiplier exactly as it cuts AdamW's rate,
+# and min_lr_ratio puts the floor at 1% of it. The rate rule (learning_rate: auto, D208)
+# is refused with it and no range test runs. Adopted for the three-form toy test (D316)
+# after the rule's rate blew up 10 toy runs in their first epoch. Every other setting is
+# campaign2_plateau's. Pick it with `optimizer=prodigy_plateau`.
+defaults:
+  - campaign2_plateau
+  - _self_
+
+optimizer: "prodigy"
+learning_rate: 1.0

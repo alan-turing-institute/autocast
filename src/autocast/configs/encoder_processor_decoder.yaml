@@ -12,6 +12,17 @@ defaults:
   - optional loss@model.loss_func: null
 
 seed: 42
+# Validation-plateau stop, ON by default (owner ruling 2026-10-04, D205): patience 100,
+# min_delta 0; the checkpoint callbacks keep the best epoch. Replayed on 248 finished
+# runs, patience 100 never kept a checkpoint more than 1% off the run's own best (50
+# did twice). A run that must train its full budget (matched-budget grids, drifting,
+# memorisation probes) sets `early_stopping.enabled: false` in its preset, with why.
+early_stopping:
+  enabled: true
+  monitor: val_loss
+  mode: min
+  patience: 100
+  min_delta: 0.0
 experiment_name: epd
 autoencoder_checkpoint: null
 umask: "0002"

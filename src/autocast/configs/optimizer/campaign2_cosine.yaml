@@ -1,0 +1,19 @@
+# Campaign-2's optimiser (AdamW, betas, rate, no decay, no warmup: the same as
+# campaign2_plateau) with a cosine schedule stepped per optimiser update, ending at
+# 1% of the peak. For the flow-matching rollout-study cells (owner, 2026-10-29): a
+# flow's validation loss sits on a noise floor, so the plateau rule cannot read it;
+# the update budget is the budget and the rate falls on a fixed schedule over it.
+# The horizon is the trainer's own count of updates (max_epochs x updates per epoch),
+# so it is the run's whole length unless a cell sets cosine_steps.
+name: "${.optimizer}_${.learning_rate}_${.scheduler}"
+optimizer: "adamw"
+betas: [0.9, 0.99]
+learning_rate: 1e-4
+weight_decay: 0.0
+warmup: 0
+scheduler: "cosine"
+scheduler_interval: "step"
+cosine_steps: null
+# 0.01 puts the floor at 1e-6; the entry point refuses a zero floor.
+min_lr_ratio: 0.01
+aux_lr_mult: 1.0

@@ -48,11 +48,18 @@ metrics:
   - spread
   - skill
   - ssr
+  - ssr_pooled
+  - collection_coverage
   - winkler
 
-# Skip high-memory metrics such as energy score and variogram unless explicitly
-# opted in with `eval.skip_memory_intensive_metrics=false`.
-skip_memory_intensive_metrics: true
+# Skip high-memory metrics -- the variogram family and the multivariate
+# Dawid-Sebastiani score, whose state is D-by-D in the field size -- unless
+# explicitly opted in. Membership is read off each metric class's
+# `memory_intensive` flag, not a name list, so registry aliases are covered too.
+# `include_memory_intensive_metrics` is the preferred spelling;
+# `skip_memory_intensive_metrics` is the older, inverted key and is still
+# honoured when the positive one is absent.
+include_memory_intensive_metrics: false
 
 # Output paths (default to work_dir if not specified)
 csv_path: null

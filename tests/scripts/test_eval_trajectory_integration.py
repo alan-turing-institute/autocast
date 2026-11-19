@@ -1,11 +1,14 @@
 """Exercise trajectory outputs through the complete evaluation orchestration."""
 
+from pathlib import Path
+
 import pandas as pd
 import pytest
 import torch
 from einops import repeat
 from omegaconf import OmegaConf
 
+import autocast
 from autocast.data.datamodule import SpatioTemporalDataModule
 from autocast.data.zarr_dataset import ZarrDataModule
 from autocast.decoders.identity import IdentityDecoder
@@ -40,14 +43,14 @@ class _DoubleDecoder(IdentityDecoder):
         return 2 * z
 
 
-@pytest.mark.parametrize("mode", ["ambient", "encode_once"])
-@pytest.mark.parametrize(
-    ("trajectory_statistics", "compute_metrics"),
-    [(False, False), (False, True), (True, False)],
+EVAL_MODULE = "autocast.scripts.eval.encoder_processor_decoder"
+DEFAULT_EVAL_CONFIG = (
+    Path(autocast.__file__).parent / "configs" / "eval" / "default.yaml"
 )
-def test_evaluation_keeps_trajectory_and_diagnostic_outputs_separate(
-    tmp_path, monkeypatch, mode, trajectory_statistics, compute_metrics
-):
+
+
+def _install_ensemble_eval_fixture(tmp_path, monkeypatch):
+    """Patch the eval setup to a tiny 3-member model; return its checkpoint path."""
     data = {"data": repeat(torch.arange(7.0), "t -> b t h w c", b=2, h=2, w=2, c=1)}
     datamodule = SpatioTemporalDataModule(
         data_path=None,
@@ -66,6 +69,32 @@ def test_evaluation_keeps_trajectory_and_diagnostic_outputs_separate(
     )
     checkpoint = tmp_path / "model.ckpt"
     torch.save({"state_dict": model.state_dict()}, checkpoint)
+    monkeypatch.setattr(
+        f"{EVAL_MODULE}.setup_datamodule",
+        lambda config: (
+            datamodule,
+            config,
+            {
+                "example_batch": next(iter(datamodule.test_dataloader())),
+                "n_steps_output": 1,
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        f"{EVAL_MODULE}.setup_epd_model", lambda *_args, **_kwargs: model
+    )
+    return checkpoint
+
+
+@pytest.mark.parametrize("mode", ["ambient", "encode_once"])
+@pytest.mark.parametrize(
+    ("trajectory_statistics", "compute_metrics"),
+    [(False, False), (False, True), (True, False)],
+)
+def test_evaluation_keeps_trajectory_and_diagnostic_outputs_separate(
+    tmp_path, monkeypatch, mode, trajectory_statistics, compute_metrics
+):
+    checkpoint = _install_ensemble_eval_fixture(tmp_path, monkeypatch)
     cfg = OmegaConf.create(
         {
             "model": {"encoder": {}, "decoder": {}, "n_members": 3},
@@ -97,20 +126,6 @@ def test_evaluation_keeps_trajectory_and_diagnostic_outputs_separate(
             f"{eval_module}._maybe_inject_encoder_decoder_from_autoencoder_checkpoint",
             lambda config: config,
         )
-    monkeypatch.setattr(
-        f"{eval_module}.setup_datamodule",
-        lambda config: (
-            datamodule,
-            config,
-            {
-                "example_batch": next(iter(datamodule.test_dataloader())),
-                "n_steps_output": 1,
-            },
-        ),
-    )
-    monkeypatch.setattr(
-        f"{eval_module}.setup_epd_model", lambda *_args, **_kwargs: model
-    )
     legacy_csv = tmp_path / "evaluation_metrics.csv"
     if trajectory_statistics:
         legacy_csv.write_text("Existing evaluation\n")
@@ -292,3 +307,63 @@ def test_zarr_rejects_absolute_rollout_start_before_model_setup(
     monkeypatch.setattr(f"{eval_module}.setup_epd_model", unexpected_model_setup)
     with pytest.raises(ValueError, match=r"datamodule\.start_frame"):
         run_evaluation(cfg, work_dir=tmp_path)
+
+
+def _default_eval_cfg(checkpoint, **overrides):
+    """The shipped `configs/eval/default.yaml`, pointed at the tiny fixture."""
+    shipped = OmegaConf.load(
+        Path(autocast.__file__).parent / "configs" / "eval" / "default.yaml"
+    )
+    fixture = {
+        "checkpoint": str(checkpoint),
+        "mode": "ambient",
+        "accelerator": "cpu",
+        "batch_size": 2,
+        "rollout_start": 1,
+        "max_rollout_steps": 3,
+        "compute_rollout_metrics": True,
+        "metric_windows_rollout": [[0, 3]],
+        **overrides,
+    }
+    return OmegaConf.create(
+        {
+            "model": {"encoder": {}, "decoder": {}, "n_members": 3},
+            "datamodule": {"start_frame": 1},
+            "eval": OmegaConf.merge(shipped, fixture),
+        }
+    )
+
+
+@pytest.mark.parametrize("include_memory_intensive", [False, True])
+def test_default_eval_config_scores_cheap_new_metrics_and_guards_the_costly_ones(
+    tmp_path, monkeypatch, include_memory_intensive
+):
+    """Defaults write `ssr_pooled` and `collection_coverage`, and no variogram.
+
+    A variogram is selectable by name but sits behind
+    `eval.include_memory_intensive_metrics`: it must be absent from the shipped
+    defaults, and present once that switch is on. `autocorr_match` needs at least
+    two lead steps, so it is scored on the 3-step rollout window and left out of
+    the single-step pass instead of failing the run.
+    """
+    default_metrics = list(OmegaConf.load(DEFAULT_EVAL_CONFIG).metrics)
+    assert not {"variogram", "dss"} & set(default_metrics)
+    checkpoint = _install_ensemble_eval_fixture(tmp_path, monkeypatch)
+    cfg = _default_eval_cfg(
+        checkpoint,
+        include_memory_intensive_metrics=include_memory_intensive,
+        metrics=[*default_metrics, "variogram", "dss", "autocorr_match"],
+    )
+
+    run_evaluation(cfg, work_dir=tmp_path)
+
+    for csv_name in ("evaluation_metrics.csv", "rollout_metrics.csv"):
+        columns = set(pd.read_csv(tmp_path / csv_name))
+        assert {"ssr_pooled", "collection_coverage"} <= columns
+        if include_memory_intensive:
+            assert {"variogram", "dss"} <= columns
+        else:
+            assert not columns & {"variogram", "dss"}
+    assert list(tmp_path.glob("test_collection_coverage_window_*.csv"))
+    assert "autocorr_match" not in set(pd.read_csv(tmp_path / "evaluation_metrics.csv"))
+    assert "autocorr_match" in set(pd.read_csv(tmp_path / "rollout_metrics.csv"))
