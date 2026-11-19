@@ -53,3 +53,42 @@ def test_gathered_attention_passes_only_neighbor_pairs_to_sdpa(monkeypatch):
             "attn_mask": (1, 24, 1, 5),
         },
     ]
+
+
+def test_checkpointed_gather_saves_less_memory_and_preserves_dropout():
+    reference = GatheredGraphAttention(
+        MultiheadSelfAttention(16, attention_heads=2, dropout=0.2),
+        checkpoint_gather=False,
+    )
+    checkpointed = GatheredGraphAttention(
+        MultiheadSelfAttention(16, attention_heads=2, dropout=0.2)
+    )
+    checkpointed.load_state_dict(reference.state_dict(), strict=True)
+    tokens = torch.randn(2, 16, 16, requires_grad=True)
+    pos = torch.cartesian_prod(torch.arange(4.0), torch.arange(4.0))
+    neighbors = periodic_grid_neighbors(4, 4, 2, device=tokens.device)
+
+    def run(attention):
+        storages = {}
+
+        def pack(tensor):
+            storage = tensor.untyped_storage()
+            storages[storage.data_ptr()] = storage.nbytes()
+            return tensor
+
+        with (
+            torch.random.fork_rng(devices=[]),
+            torch.autograd.graph.saved_tensors_hooks(pack, lambda tensor: tensor),
+        ):
+            torch.manual_seed(123)
+            output = attention(tokens, pos, neighbors)
+        gradients = torch.autograd.grad(
+            output.square().mean(), (tokens, *attention.parameters())
+        )
+        return output, gradients, sum(storages.values())
+
+    expected, expected_gradients, reference_bytes = run(reference)
+    actual, actual_gradients, checkpointed_bytes = run(checkpointed)
+    torch.testing.assert_close(actual, expected)
+    torch.testing.assert_close(actual_gradients, expected_gradients)
+    assert checkpointed_bytes < reference_bytes

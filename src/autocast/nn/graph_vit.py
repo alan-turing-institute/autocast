@@ -8,6 +8,7 @@ from azula.nn.attention import MultiheadSelfAttention, apply_rope
 from azula.nn.vit import ViT
 from einops import rearrange
 from torch import Tensor, nn
+from torch.utils.checkpoint import checkpoint
 
 GraphAttentionBackend = Literal["masked", "gathered"]
 
@@ -40,7 +41,11 @@ def periodic_grid_neighbors(
 class GatheredGraphAttention(nn.Module):
     """Evaluate Azula self-attention only on a fixed-size list of neighbors."""
 
-    def __init__(self, attention: MultiheadSelfAttention):
+    checkpoint_gather: bool = True
+
+    def __init__(
+        self, attention: MultiheadSelfAttention, *, checkpoint_gather: bool = True
+    ):
         super().__init__()
         self.qkv_proj = attention.qkv_proj
         self.y_proj = attention.y_proj
@@ -49,6 +54,7 @@ class GatheredGraphAttention(nn.Module):
         self.theta_proj = attention.theta_proj
         self.heads = attention.heads
         self.dropout = attention.dropout
+        self.checkpoint_gather = checkpoint_gather
 
     def _position_bias(self, pos: Tensor, neighbors: Tensor) -> Tensor | None:
         if self.bias_proj is None:
@@ -65,6 +71,25 @@ class GatheredGraphAttention(nn.Module):
         dot = torch.einsum("hnd,hnkd->hnk", p, shifted[:, neighbors])
         return rearrange(-(query_norm + key_norm - 2 * dot), "h n k -> 1 (h n) 1 k")
 
+    def _attend(
+        self,
+        q: Tensor,
+        k: Tensor,
+        v: Tensor,
+        bias: Tensor | None,
+        neighbors: Tensor,
+        dropout_p: float,
+    ) -> Tensor:
+        # Fold nodes into the head axis to keep one query per neighborhood and
+        # allow a single position bias to broadcast across the batch.
+        return F.scaled_dot_product_attention(
+            query=rearrange(q, "b h n d -> b (h n) 1 d"),
+            key=rearrange(k[:, :, neighbors], "b h n k d -> b (h n) k d"),
+            value=rearrange(v[:, :, neighbors], "b h n k d -> b (h n) k d"),
+            attn_mask=bias,
+            dropout_p=dropout_p,
+        )
+
     def forward(self, x: Tensor, pos: Tensor, neighbors: Tensor) -> Tensor:
         """Gather keys and values before calling scaled dot-product attention."""
         q, k, v = rearrange(
@@ -75,15 +100,20 @@ class GatheredGraphAttention(nn.Module):
             theta = rearrange(self.theta_proj(pos), "n (h d) -> h n d", h=self.heads)
             q, k = apply_rope(q, k, theta)
 
-        # Fold nodes into the head axis to keep one query per neighborhood and
-        # allow a single position bias to broadcast across the batch.
-        attended = F.scaled_dot_product_attention(
-            query=rearrange(q, "b h n d -> b (h n) 1 d"),
-            key=rearrange(k[:, :, neighbors], "b h n k d -> b (h n) k d"),
-            value=rearrange(v[:, :, neighbors], "b h n k d -> b (h n) k d"),
-            attn_mask=self._position_bias(pos, neighbors),
-            dropout_p=self.dropout if self.training else 0.0,
+        dropout_p = self.dropout if self.training else 0.0
+        attention_inputs = (
+            q,
+            k,
+            v,
+            self._position_bias(pos, neighbors),
+            neighbors,
+            dropout_p,
         )
+        if self.checkpoint_gather and torch.is_grad_enabled():
+            # Save the original projections and regenerate the edge-sized K/V.
+            attended = checkpoint(self._attend, *attention_inputs, use_reentrant=False)
+        else:
+            attended = self._attend(*attention_inputs)
         return self.y_proj(
             rearrange(attended, "b (h n) 1 d -> b n (h d)", h=self.heads)
         )
@@ -120,7 +150,12 @@ class PeriodicGraphViT(ViT):
                 if not isinstance(attention, MultiheadSelfAttention):
                     msg = "Installed Azula has an unsupported self-attention module."
                     raise RuntimeError(msg)
-                block.set_submodule("msa", GatheredGraphAttention(attention))
+                block.set_submodule(
+                    "msa",
+                    GatheredGraphAttention(
+                        attention, checkpoint_gather=not block.checkpointing
+                    ),
+                )
 
     def forward(
         self, x: Tensor, mod: Tensor | None = None, cond: Tensor | None = None

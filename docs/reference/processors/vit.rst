@@ -143,5 +143,7 @@ With a hop count set, ``model.processor.graph_attention_backend=masked``
 (the default) passes a dense mask to Azula attention. The ``gathered`` backend
 uses the same neighbourhood and gathers keys and values before computing
 attention. It evaluates only neighbour pairs and uses the same learned weights
-and positional bias. The gather materializes keys and values for each edge,
-so throughput and memory use depend on the batch and neighbourhood size.
+and positional bias. Materializing keys and values for each edge can increase
+peak memory, including with the 256 patch tokens in SWE64. During backward,
+the gathered backend recomputes those tensors from the original projections.
+It checkpoints only the gather and attention when block checkpointing is off.
