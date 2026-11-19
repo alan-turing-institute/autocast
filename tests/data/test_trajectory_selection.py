@@ -1,5 +1,6 @@
 """Trajectory selection precedes windowing and preserves source identities."""
 
+from functools import partial
 from pathlib import Path
 
 import h5py
@@ -26,15 +27,29 @@ def payload():
     }
 
 
+@pytest.fixture
+def make_dataset(payload):
+    return partial(SpatioTemporalDataset, data_path=None, data=payload)
+
+
+def _save(data, path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.suffix == ".pt":
+        torch.save(data, path)
+    else:
+        with h5py.File(path, "w") as handle:
+            for name, value in data.items():
+                if value is not None:
+                    handle.create_dataset(name, data=value)
+
+
 @pytest.mark.parametrize(
     ("selection", "indices"), [(None, [0, 1, 2, 3]), (2, [0, 1]), ([3, 1], [3, 1])]
 )
 def test_selection_keeps_complete_trajectories_and_constants(
-    payload, selection, indices
+    payload, make_dataset, selection, indices
 ):
-    dataset = SpatioTemporalDataset(
-        data_path=None, data=payload, trajectories=selection, stride=2
-    )
+    dataset = make_dataset(trajectories=selection, stride=2)
     assert dataset.n_trajectories == len(indices)
     assert len(dataset) == len(indices) * 3
     assert dataset.trajectory_indices == indices
@@ -42,16 +57,13 @@ def test_selection_keeps_complete_trajectories_and_constants(
     assert dataset.sample_window_indices == [0, 1, 2] * len(indices)
     for local_idx, source_idx in enumerate(indices):
         sample = dataset[local_idx * 3]
-        assert torch.equal(sample.input_fields, payload["data"][source_idx, :1])
-        assert torch.equal(sample.output_fields, payload["data"][source_idx, 1:2])
-        assert sample.constant_scalars is not None
-        assert sample.constant_fields is not None
-        assert torch.equal(
-            sample.constant_scalars, payload["constant_scalars"][source_idx]
-        )
-        assert torch.equal(
-            sample.constant_fields, payload["constant_fields"][source_idx]
-        )
+        for field, expected in (
+            ("input_fields", payload["data"][source_idx, :1]),
+            ("output_fields", payload["data"][source_idx, 1:2]),
+            ("constant_scalars", payload["constant_scalars"][source_idx]),
+            ("constant_fields", payload["constant_fields"][source_idx]),
+        ):
+            assert torch.equal(getattr(sample, field), expected), field
     assert payload["data"].shape[0] == 4
 
 
@@ -73,20 +85,35 @@ def test_selection_keeps_complete_trajectories_and_constants(
     ],
 )
 def test_invalid_selections_fail_before_windowing(
-    payload, selection, error, validation_error
+    make_dataset, selection, error, validation_error
 ):
     with validation_error(error, match="trajector"):
-        SpatioTemporalDataset(data_path=None, data=payload, trajectories=selection)
+        make_dataset(trajectories=selection)
 
 
 @pytest.mark.parametrize("autoencoder_mode", [False, True])
-def test_datamodule_selects_only_valid_and_test(payload, autoencoder_mode):
+@pytest.mark.parametrize("use_normalization", [False, True])
+def test_datamodule_selection_and_training_normalization(
+    payload, autoencoder_mode, use_normalization
+):
+    stats = {
+        "stats": {
+            "mean": {"U": 2.0, "V": 4.0},
+            "std": {"U": 1.0, "V": 2.0},
+            "mean_delta": {"U": 0.0, "V": 0.0},
+            "std_delta": {"U": 0.1, "V": 0.2},
+        },
+        "core_field_names": ["U", "V"],
+        "constant_field_names": [],
+    }
     dm = SpatioTemporalDataModule(
         data_path=None,
         data=dict.fromkeys(("train", "valid", "test"), payload),
         valid_trajectories=[3, 1],
         test_trajectories=2,
         autoencoder_mode=autoencoder_mode,
+        use_normalization=use_normalization,
+        normalization_stats=stats,
         num_workers=0,
         pin_memory=False,
     )
@@ -94,6 +121,7 @@ def test_datamodule_selects_only_valid_and_test(payload, autoencoder_mode):
     assert dm.train_dataset.trajectory_indices == [0, 1, 2, 3]
     assert dm.val_dataset.trajectory_indices == [3, 1]
     assert dm.test_dataset.trajectory_indices == [0, 1]
+    datasets = [dm.train_dataset, dm.val_dataset, dm.test_dataset]
     if not autoencoder_mode:
         valid_rollout = dm.rollout_valid_dataloader().dataset
         test_rollout = dm.rollout_test_dataloader().dataset
@@ -103,7 +131,15 @@ def test_datamodule_selects_only_valid_and_test(payload, autoencoder_mode):
         assert test_rollout.sample_trajectory_indices == [0, 1]
         assert dm.rollout_val_dataset.sample_trajectory_indices == [0, 1, 2, 3]
         assert test_rollout.data is dm.test_dataset.data
-        assert torch.equal(valid_rollout[0].input_fields, payload["data"][3, :1])
+        datasets += [valid_rollout, test_rollout]
+    for dataset in datasets:
+        raw = payload["data"][dataset.trajectory_indices[0], :1]
+        expected = (
+            (raw - torch.tensor([2.0, 4.0])) / torch.tensor([1.0, 2.0])
+            if use_normalization
+            else raw
+        )
+        assert torch.equal(dataset[0].input_fields, expected)
 
 
 @pytest.mark.parametrize(
@@ -142,177 +178,95 @@ def test_custom_parser_can_crop_rows_after_calling_super(payload):
         def parse_data(self, data):
             super().parse_data(data)
             self.data = self.data[:2]
-            assert self.constant_scalars is not None
-            assert self.constant_fields is not None
-            self.constant_scalars = self.constant_scalars[:2]
-            self.constant_fields = self.constant_fields[:2]
 
-    dataset = CroppingDataset(data_path=None, data=payload)
+    dataset = CroppingDataset(data_path=None, data={"data": payload["data"]})
 
     assert dataset.trajectory_indices == [0, 1]
     assert dataset.sample_trajectory_indices == [0] * 5 + [1] * 5
     assert torch.equal(dataset.data, payload["data"][:2])
 
 
-def test_selection_and_preloaded_reuse_preserve_frames_channels_and_ids(payload):
-    dataset = SpatioTemporalDataset(
-        data_path=None,
-        data=payload,
-        trajectories=[3, 1],
-        channel_idxs=(1,),
-        start_frame=2,
-    )
-    rollout = SpatioTemporalDataset(
-        data_path=None,
+@pytest.mark.parametrize(("selection", "indices"), [(None, [3, 1]), ([1], [1])])
+def test_preloaded_reuse_preserves_frames_channels_and_source_ids(
+    payload, make_dataset, selection, indices
+):
+    dataset = make_dataset(trajectories=[3, 1], channel_idxs=(1,), start_frame=2)
+    rollout = make_dataset(
         data=dataset.to_preloaded_data(),
+        trajectories=selection,
         full_trajectory_mode=True,
         channel_idxs=(1,),
         start_frame=2,
     )
-
-    assert rollout.data is dataset.data
-    assert rollout.sample_trajectory_indices == [3, 1]
-    assert torch.equal(rollout[0].input_fields, payload["data"][3, 2:3, ..., 1:])
-    assert torch.equal(rollout[0].output_fields, payload["data"][3, 3:, ..., 1:])
-    assert build_trajectory_metadata(rollout) == {3: {"cs0": 103.0}, 1: {"cs0": 101.0}}
-
-
-def test_reselecting_preloaded_data_uses_source_indices(payload):
-    selected = SpatioTemporalDataset(data_path=None, data=payload, trajectories=[3, 1])
-    reused = SpatioTemporalDataset(
-        data_path=None, data=selected.to_preloaded_data(), trajectories=[1]
-    )
-
-    assert reused.trajectory_indices == [1]
-    assert torch.equal(reused.data, payload["data"][1:2])
+    if selection is None:
+        assert rollout.data is dataset.data
+    expected = payload["data"][indices, 2:, ..., 1:]
+    assert torch.equal(rollout.data, expected)
+    assert rollout.sample_trajectory_indices == indices
+    assert torch.equal(rollout[0].input_fields, expected[0, :1])
+    assert torch.equal(rollout[0].output_fields, expected[0, 1:])
+    assert build_trajectory_metadata(rollout) == {
+        index: {"cs0": 100.0 + index} for index in indices
+    }
     with pytest.raises(ValueError, match="Unavailable trajectory indices"):
-        SpatioTemporalDataset(
-            data_path=None, data=selected.to_preloaded_data(), trajectories=[0]
-        )
+        make_dataset(data=dataset.to_preloaded_data(), trajectories=[0], start_frame=2)
 
 
 @pytest.mark.parametrize(
-    ("source", "stored_ids"),
+    ("source", "ids_type"),
     [
         ("memory", None),
         ("pt", None),
-        ("memory", np.array([3, 1, 0, 2])),
-        ("h5", np.array([3, 1, 0, 2])),
-        ("memory", torch.tensor([3, 1, 0, 2])),
-        ("pt", torch.tensor([3, 1, 0, 2])),
+        ("memory", np.array),
+        ("h5", np.array),
+        ("memory", torch.tensor),
+        ("pt", torch.tensor),
+        ("pt", list),
+        ("h5", list),
     ],
 )
-def test_preloaded_ids_accept_arrays_and_none(tmp_path, payload, source, stored_ids):
-    data = {**payload, "_trajectory_indices": stored_ids}
-    indices = [0, 1, 2, 3] if stored_ids is None else [3, 1, 0, 2]
-    if source == "pt":
-        # Tensor IDs retain torch.load's default restricted loading behavior.
-        path = tmp_path / "data.pt"
-        torch.save(data, path)
-        dataset = SpatioTemporalDataset(data_path=str(path), full_trajectory_mode=True)
-    elif source == "h5":
-        path = tmp_path / "data.h5"
-        with h5py.File(path, "w") as handle:
-            for name, value in data.items():
-                handle.create_dataset(name, data=value)
-        dataset = SpatioTemporalDataset(data_path=str(path), full_trajectory_mode=True)
-    else:
+def test_preloaded_ids_and_file_round_trips(
+    tmp_path, payload, make_dataset, source, ids_type
+):
+    selected = make_dataset(trajectories=[3, 1])
+    data = selected.to_preloaded_data()
+    data["_trajectory_indices"] = None if ids_type is None else ids_type([3, 1])
+    indices = [0, 1] if ids_type is None else [3, 1]
+    if source == "memory":
         dataset = SpatioTemporalDataset(
             data_path=None, data=data, full_trajectory_mode=True
         )
-
-    assert dataset.sample_trajectory_indices == indices
-    assert build_trajectory_metadata(dataset) == {
-        source_idx: {"cs0": 100.0 + row_idx}
-        for row_idx, source_idx in enumerate(indices)
-    }
-
-
-def test_selected_splits_keep_training_normalization(payload):
-    stats = {
-        "stats": {
-            "mean": {"U": 2.0, "V": 4.0},
-            "std": {"U": 1.0, "V": 2.0},
-            "mean_delta": {"U": 0.0, "V": 0.0},
-            "std_delta": {"U": 0.1, "V": 0.2},
-        },
-        "core_field_names": ["U", "V"],
-        "constant_field_names": [],
-    }
-    dm = SpatioTemporalDataModule(
-        data_path=None,
-        data=dict.fromkeys(("train", "valid", "test"), payload),
-        valid_trajectories=[3, 1],
-        test_trajectories=2,
-        use_normalization=True,
-        normalization_stats=stats,
-        num_workers=0,
-        pin_memory=False,
-    )
-
-    for dataset in (
-        dm.train_dataset,
-        dm.val_dataset,
-        dm.test_dataset,
-        dm.rollout_valid_dataloader().dataset,
-        dm.rollout_test_dataset,
-    ):
-        assert isinstance(dataset, SpatioTemporalDataset)
-        source_idx = dataset.trajectory_indices[0]
-        raw = payload["data"][source_idx, :1]
-        expected = (raw - torch.tensor([2.0, 4.0])) / torch.tensor([1.0, 2.0])
-        assert torch.equal(dataset[0].input_fields, expected)
-
-
-@pytest.mark.parametrize("suffix", ["pt", "h5"])
-def test_saved_selection_preserves_source_ids(tmp_path, payload, suffix):
-    selected = SpatioTemporalDataset(data_path=None, data=payload, trajectories=[3, 1])
-    path = tmp_path / f"selected.{suffix}"
-    if suffix == "pt":
-        torch.save(selected.to_preloaded_data(), path)
     else:
-        with h5py.File(path, "w") as handle:
-            for name, value in selected.to_preloaded_data().items():
-                if value is not None:
-                    handle.create_dataset(name, data=value)
-
-    reused = SpatioTemporalDataset(data_path=str(path), full_trajectory_mode=True)
-
-    assert reused.sample_trajectory_indices == [3, 1]
-    assert build_trajectory_metadata(reused) == {3: {"cs0": 103.0}, 1: {"cs0": 101.0}}
+        path = tmp_path / f"data.{source}"
+        _save(data, path)
+        dataset = SpatioTemporalDataset(data_path=str(path), full_trajectory_mode=True)
+    assert dataset.sample_trajectory_indices == indices
+    assert torch.equal(dataset.data, payload["data"][[3, 1]])
+    assert build_trajectory_metadata(dataset) == {
+        index: {"cs0": value}
+        for index, value in zip(indices, [103.0, 101.0], strict=True)
+    }
 
 
 @pytest.mark.parametrize(
-    ("overrides", "valid_ids", "test_ids"),
+    ("valid", "test", "valid_ids", "test_ids"),
     [
-        ([], [0, 1, 2, 3], [0, 1, 2, 3]),
-        (
-            [
-                "+datamodule.valid_trajectories=null",
-                "+datamodule.test_trajectories=null",
-            ],
-            [0, 1, 2, 3],
-            [0, 1, 2, 3],
-        ),
-        (
-            ["+datamodule.valid_trajectories=2", "+datamodule.test_trajectories=[3,1]"],
-            [0, 1],
-            [3, 1],
-        ),
-        (
-            ["+datamodule.valid_trajectories=[3,1]", "+datamodule.test_trajectories=2"],
-            [3, 1],
-            [0, 1],
-        ),
+        (None, None, [0, 1, 2, 3], [0, 1, 2, 3]),
+        ("null", "null", [0, 1, 2, 3], [0, 1, 2, 3]),
+        ("2", "[3,1]", [0, 1], [3, 1]),
+        ("[3,1]", "2", [3, 1], [0, 1]),
     ],
 )
 def test_hydra_config_accepts_optional_trajectory_overrides(
-    tmp_path, payload, overrides, valid_ids, test_ids
+    tmp_path, payload, valid, test, valid_ids, test_ids
 ):
     for split in ("train", "valid", "test"):
-        directory = tmp_path / split
-        directory.mkdir()
-        torch.save(payload, directory / "data.pt")
+        _save(payload, tmp_path / split / "data.pt")
+    overrides = [
+        f"+datamodule.{split}_trajectories={value}"
+        for split, value in (("valid", valid), ("test", test))
+        if value is not None
+    ]
     config_dir = Path(autocast.__file__).parent / "configs"
     with initialize_config_dir(config_dir=str(config_dir), version_base=None):
         config = compose(
@@ -323,9 +277,7 @@ def test_hydra_config_accepts_optional_trajectory_overrides(
     dm = instantiate(config.datamodule)
 
     assert dm.train_dataset.trajectory_indices == [0, 1, 2, 3]
-    assert dm.val_dataset.sample_trajectory_indices == [
-        index for index in valid_ids for _ in range(2)
-    ]
-    assert dm.test_dataset.sample_trajectory_indices == [
-        index for index in test_ids for _ in range(2)
-    ]
+    for dataset, indices in ((dm.val_dataset, valid_ids), (dm.test_dataset, test_ids)):
+        assert dataset.sample_trajectory_indices == [
+            index for index in indices for _ in range(2)
+        ]

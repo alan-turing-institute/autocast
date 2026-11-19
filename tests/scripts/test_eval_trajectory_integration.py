@@ -91,20 +91,11 @@ def test_evaluation_exports_original_selected_trajectory_ids(tmp_path, monkeypat
     checkpoint = _install_ensemble_eval_fixture(
         tmp_path, monkeypatch, test_trajectories=[1]
     )
-    cfg = OmegaConf.create(
-        {
-            "model": {"encoder": {}, "decoder": {}, "n_members": 3},
-            "datamodule": {"start_frame": 1},
-            "eval": {
-                "checkpoint": str(checkpoint),
-                "mode": "ambient",
-                "accelerator": "cpu",
-                "metrics": ["mse"],
-                "max_rollout_steps": 3,
-                "metric_windows_rollout": [[0, 3]],
-                "trajectory_statistics": {"enabled": True},
-            },
-        }
+    cfg = _default_eval_cfg(
+        checkpoint,
+        metrics=["mse"],
+        rollout_start=0,
+        trajectory_statistics={"enabled": True},
     )
 
     run_evaluation(cfg, work_dir=tmp_path)
@@ -115,7 +106,6 @@ def test_evaluation_exports_original_selected_trajectory_ids(tmp_path, monkeypat
         ("rollout_metrics_per_timestep_per_trajectory.csv", 3),
     ):
         rows = pd.read_csv(tmp_path / "trajectory_statistics" / name)
-        assert len(rows) == count
         assert rows["trajectory_idx"].tolist() == [1] * count
         assert rows["trajectory_id"].tolist() == ["test_0001"] * count
 
