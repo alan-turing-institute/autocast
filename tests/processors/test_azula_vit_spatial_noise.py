@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 import torch
-from einops import repeat
+from einops import rearrange, repeat
 from hydra import compose, initialize_config_dir
 from hydra.utils import instantiate
 
@@ -54,6 +54,46 @@ def test_broadcast_noise_matches_global_and_checkpoint(include_global_cond):
     torch.testing.assert_close(
         spatial_model(x, local_z, cond), global_model(x, z, cond)
     )
+
+
+@pytest.mark.parametrize("checkpointing", [False, True])
+def test_graph_with_all_edges_matches_dense_vit(checkpointing):
+    config = {
+        "patch_size": (2, 4),
+        "spatial_resolution": (8, 12),
+        "noise_mode": "spatial",
+        "n_steps_input": 2,
+        "n_steps_output": 2,
+        "checkpointing": checkpointing,
+    }
+    dense = make_processor(**config)
+    graph = make_processor(**config, graph_hops=3)
+    graph.load_state_dict(dense.state_dict(), strict=True)
+
+    x = torch.randn(2, 2, 8, 12, 3, requires_grad=True)
+    noise = torch.randn(2, 12, 4, requires_grad=True)
+    dense_output = dense(x, noise)
+    graph_output = graph(x, noise)
+    torch.testing.assert_close(graph_output, dense_output)
+    torch.testing.assert_close(
+        torch.autograd.grad(
+            graph_output.square().mean(), (x, noise, *graph.parameters())
+        ),
+        torch.autograd.grad(
+            dense_output.square().mean(), (x, noise, *dense.parameters())
+        ),
+    )
+
+
+def test_graph_block_restricts_input_gradients_to_periodic_neighbors():
+    graph = make_processor(
+        patch_size=(2, 4), spatial_resolution=(8, 12), n_layers=1, graph_hops=1
+    )
+    x = torch.randn(1, 3, 8, 12, requires_grad=True)
+    output = graph(x, torch.ones(1, 4))
+    (gradient,) = torch.autograd.grad(output[:, :, :2, :4].square().sum(), x)
+    reached = rearrange(gradient, "b c (h ph) (w pw) -> (h w) (b c ph pw)", ph=2, pw=4)
+    assert reached.ne(0).any(dim=1).nonzero().flatten().tolist() == [0, 1, 2, 3, 9]
 
 
 @pytest.mark.parametrize(("patch_size", "n_tokens"), [(1, 64), (2, 16), ((2, 4), 8)])
@@ -149,7 +189,8 @@ def test_default_global_and_disabled_noise_are_unchanged():
 
 @pytest.mark.parametrize("n_steps_output", [1, 4])
 @pytest.mark.parametrize("structured", [False, True])
-def test_ensemble_crps_backward(n_steps_output, structured):
+@pytest.mark.parametrize("graph_hops", [None, 1])
+def test_ensemble_crps_backward(n_steps_output, structured, graph_hops):
     fields = torch.randn(2, 1, 8, 8, 3)
     targets = torch.randn(2, n_steps_output, 8, 8, 3)
     batch = Batch(fields, targets, None, None)
@@ -163,6 +204,7 @@ def test_ensemble_crps_backward(n_steps_output, structured):
             noise_mode="spatial",
             out_channels=3 * n_steps_output,
             noise_source=SpatialFourierSource(((1, 0),)) if structured else None,
+            graph_hops=graph_hops,
         ),
         n_members=4,
         loss_func=CRPSLoss(),
@@ -213,8 +255,15 @@ def test_explicit_spatial_forward_requires_noise_chunks():
         processor(torch.randn(2, 3, 8, 8))
 
 
-@pytest.mark.parametrize("preset", ["vit_azula_small", "vit_azula_large"])
-def test_hydra_spatial_mode_override(preset):
+@pytest.mark.parametrize(
+    ("preset", "graph_hops"),
+    [
+        ("vit_azula_small", None),
+        ("vit_azula_large", None),
+        ("graph_vit_azula_small", 2),
+    ],
+)
+def test_hydra_spatial_mode_override(preset, graph_hops):
     config_dir = Path(__file__).resolve().parents[2] / "src/autocast/configs"
     with initialize_config_dir(version_base=None, config_dir=str(config_dir)):
         cfg = compose(
@@ -231,6 +280,7 @@ def test_hydra_spatial_mode_override(preset):
                 "model.processor.n_layers=1",
             ],
         )
+    assert cfg.model.processor.graph_hops == graph_hops
     processor = instantiate(cfg.model.processor)
     assert processor.map(torch.randn(2, 3, 8, 8)).shape == (2, 3, 8, 8)
 

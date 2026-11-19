@@ -33,6 +33,8 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
     receives a ``(B, 1, H_tokens, W_tokens, D)`` reference on the actual input
     patch grid. Calls are independent; the singleton time slot is not a
     rollout trajectory. Explicit ``forward`` noise always bypasses sampling.
+
+    ``graph_hops`` optionally restricts attention to periodic patch neighborhoods.
     """
 
     def __init__(
@@ -60,6 +62,7 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
         rpb: bool = True,
         noise_mode: AdaLNNoiseMode | str = AdaLNNoiseMode.GLOBAL,
         noise_source: SourceDistribution | None = None,
+        graph_hops: int | None = None,
     ):
         super().__init__()
         self.n_spatial_dims = len(spatial_resolution)
@@ -144,6 +147,7 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
             checkpointing=checkpointing,
             use_precomputed_modulation=True,
             spatial_modulation=self.noise_mode == AdaLNNoiseMode.SPATIAL,
+            graph_hops=graph_hops,
         )
 
     def _noise_shape(self, x: Tensor) -> tuple[int, ...]:

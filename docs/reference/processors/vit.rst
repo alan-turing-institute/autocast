@@ -121,3 +121,21 @@ correlate an explicit time axis, but Azula's conditioning source sees only
 one effective time slot. With concatenation they correlate input-frame slots,
 not successive forecasts. No source state is carried across rollout calls;
 temporally persistent autoregressive noise requires a separate rollout API.
+
+Periodic graph attention
+------------------------
+
+Set ``graph_hops: 2`` in an Azula ViT processor configuration to attend over a
+periodic patch graph. For the packaged Azula ViT presets, use the Hydra
+override ``model.processor.graph_hops=2`` or select
+``processor@model.processor=graph_vit_azula_small``. Each patch attends to
+itself and patches within the specified number of grid steps, wrapping on
+both axes. With ``graph_hops: null``, every pair of patches can attend. A hop
+count of zero allows each patch to attend to itself.
+
+Set the hop count on the same SWE64 ViT configuration for a paired benchmark
+with the same patch size, positional encodings, weights layout and AdaLN
+configuration. This implementation passes a dense mask to Azula attention and
+has quadratic attention cost in the number of patches. Azula's positional bias
+uses ordinary grid coordinates, so equally close neighbours can receive
+different biases at the periodic seam and in the interior.
