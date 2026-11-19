@@ -1,5 +1,8 @@
 # Rayleigh-Benard comparison submitters
 
+For energy scores, trajectory-level error bands and controlled inference timing
+of the frozen matched checkpoints, see [Completing the comparison](diagnostics.md).
+
 This folder contains the maintained Rayleigh-Benard submitters for the
 post-merge `283/` Rayleigh-Benard stack. Some configs referenced here live on
 parallel `283/` branches today, so these entrypoints are intended for the final
