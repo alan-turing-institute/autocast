@@ -7,6 +7,9 @@ defaults:
 # Default to the standard EPD training checkpoint filename.
 checkpoint: encoder_processor_decoder.ckpt
 
+# Use bf16-mixed or 16-mixed to opt into AMP for inference.
+precision: 32-true
+
 # Override with EPD-specific metrics and settings
 metrics:
   - mse

@@ -2302,6 +2302,7 @@ def test_run_evaluation_passes_distributed_eval_config_to_fabric(tmp_path, monke
                 "strategy": "ddp",
                 "devices": 4,
                 "num_nodes": 2,
+                "precision": "bf16-mixed",
             },
             "model": {"n_members": 1},
         }
@@ -2354,6 +2355,7 @@ def test_run_evaluation_passes_distributed_eval_config_to_fabric(tmp_path, monke
         "strategy": "ddp",
         "devices": 4,
         "num_nodes": 2,
+        "precision": "bf16-mixed",
     }
 
 

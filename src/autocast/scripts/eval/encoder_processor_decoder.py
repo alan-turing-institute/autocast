@@ -298,6 +298,7 @@ def _build_encode_once_rollout_predict(
     device: Any,
     compare_to_autoencoded_target: bool = False,
     rollout_start: int = 0,
+    autocast: Callable[[], contextlib.AbstractContextManager] = contextlib.nullcontext,
 ) -> Callable[[Any], tuple[torch.Tensor, torch.Tensor | None]]:
     """Build a rollout closure that encodes once and compares against raw truth.
 
@@ -339,15 +340,17 @@ def _build_encode_once_rollout_predict(
         with torch.no_grad():
             batch = _crop_rollout_batch_start(batch, rollout_start)
             encoded_batch = encoder_decoder.encoder.encode_batch(batch)
-            preds_latent, trues_latent = processor_wrapper.rollout(
-                encoded_batch,
-                stride=rollout_stride,
-                max_rollout_steps=max_rollout_steps,
-                free_running_only=free_running_only,
-                n_members=n_members if n_members and n_members > 1 else None,
-            )
+            with autocast():
+                preds_latent, trues_latent = processor_wrapper.rollout(
+                    encoded_batch,
+                    stride=rollout_stride,
+                    max_rollout_steps=max_rollout_steps,
+                    free_running_only=free_running_only,
+                    n_members=n_members if n_members and n_members > 1 else None,
+                )
+            # Decode in the encoder's dtype after the rollout autocast ends.
             preds = _decode_tensor(
-                preds_latent,
+                preds_latent.to(encoded_batch.encoded_inputs.dtype),
                 _decode_to_raw,
                 n_members=n_members if n_members and n_members > 1 else None,
             )
@@ -3217,6 +3220,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
         strategy=strategy,
         devices=devices,
         num_nodes=num_nodes,
+        precision=eval_cfg.get("precision", "32-true"),
     )
     fabric.launch()
     if trajectory_statistics_enabled and int(fabric.world_size) != 1:
@@ -3499,6 +3503,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                     n_members=n_members if n_members and n_members > 1 else None,
                     device=fabric.device,
                     rollout_start=rollout_start,
+                    autocast=fabric.autocast,
                 )
                 if resolved_eval_path == EVAL_PATH_ENCODE_ONCE
                 else None
@@ -3630,6 +3635,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                         device=fabric.device,
                         compare_to_autoencoded_target=compare_to_autoencoded_target,
                         rollout_start=rollout_start,
+                        autocast=fabric.autocast,
                     )
                 return _standard_rollout_predict
 

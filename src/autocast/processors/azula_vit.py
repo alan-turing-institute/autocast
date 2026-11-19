@@ -60,6 +60,7 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
         rpb: bool = True,
         noise_mode: AdaLNNoiseMode | str = AdaLNNoiseMode.GLOBAL,
         noise_source: SourceDistribution | None = None,
+        compile_vit: bool = False,
     ):
         super().__init__()
         self.n_spatial_dims = len(spatial_resolution)
@@ -145,6 +146,8 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
             use_precomputed_modulation=True,
             spatial_modulation=self.noise_mode == AdaLNNoiseMode.SPATIAL,
         )
+        if compile_vit:
+            self.model.vit.compile()
 
     def _noise_shape(self, x: Tensor) -> tuple[int, ...]:
         """Return the noise shape on the processor's actual input patch grid."""

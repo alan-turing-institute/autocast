@@ -26,6 +26,7 @@ TIMEOUT_MIN=1439
 # Override for independent repeat fits, e.g.:
 #   TRAINING_SEED=43 ./slurm_scripts/comparison/epd/submit_crps_large.sh
 TRAINING_SEED="${TRAINING_SEED:-42}"
+TRAINING_PRECISION="${TRAINING_PRECISION:-32-true}"
 RUN_DRY_STATES=("true" "false")
 
 # Per-dataset local_experiment configs.
@@ -61,6 +62,8 @@ for datamodule in "${!EXPERIMENTS[@]}"; do
         uv run autocast epd --mode slurm "${dry_run_arg[@]}" \
             datamodule="${datamodule}" \
             local_experiment="${experiment}" \
+            +model.processor.compile_vit=true \
+            trainer.precision="${TRAINING_PRECISION}" \
             seed="${TRAINING_SEED}" \
             logging.wandb.enabled=true \
             optimizer.cosine_epochs="${cosine_epochs}" \
