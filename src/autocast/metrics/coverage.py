@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from pathlib import Path
 
 import numpy as np
@@ -72,17 +73,19 @@ class MultiCoverage(Metric):
     to integrate with PyTorch Lightning and TorchMetrics.
     """
 
-    def __init__(self, coverage_levels: list[float] | None = None):
+    def __init__(self, coverage_levels: Sequence[float] | None = None):
         super().__init__()
-        if coverage_levels is None:
-            coverage_levels = [
-                round(x, 2) for x in torch.linspace(0.05, 0.95, steps=19).tolist()
-            ]
-
-        self.coverage_levels = coverage_levels
+        # Evaluation configs pass an OmegaConf list here (`eval.coverage_levels`), so
+        # any sequence is accepted and copied into a plain list of floats.
+        levels = (
+            [round(x, 2) for x in torch.linspace(0.05, 0.95, steps=19).tolist()]
+            if coverage_levels is None
+            else [float(level) for level in coverage_levels]
+        )
+        self.coverage_levels = levels
         # List of Coverage metrics with reduce_all=False to allow per-channel analysis
         self.metrics = ModuleList(
-            [Coverage(coverage_level=cl, reduce_all=False) for cl in coverage_levels]
+            [Coverage(coverage_level=cl, reduce_all=False) for cl in levels]
         )
 
     def update(self, y_pred, y_true):

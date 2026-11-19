@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 import torch
 from einops import repeat
+from hydra import compose, initialize_config_dir
 from omegaconf import OmegaConf
 
 import autocast
@@ -309,11 +310,10 @@ def test_zarr_rejects_absolute_rollout_start_before_model_setup(
         run_evaluation(cfg, work_dir=tmp_path)
 
 
-def _default_eval_cfg(checkpoint, **overrides):
-    """The shipped `configs/eval/default.yaml`, pointed at the tiny fixture."""
-    shipped = OmegaConf.load(
-        Path(autocast.__file__).parent / "configs" / "eval" / "default.yaml"
-    )
+def _default_eval_cfg(checkpoint, shipped=None, **overrides):
+    """A shipped eval config (default: `configs/eval/default.yaml`) on the fixture."""
+    if shipped is None:
+        shipped = OmegaConf.load(DEFAULT_EVAL_CONFIG)
     fixture = {
         "checkpoint": str(checkpoint),
         "mode": "ambient",
@@ -367,3 +367,33 @@ def test_default_eval_config_scores_cheap_new_metrics_and_guards_the_costly_ones
     assert list(tmp_path.glob("test_collection_coverage_window_*.csv"))
     assert "autocorr_match" not in set(pd.read_csv(tmp_path / "evaluation_metrics.csv"))
     assert "autocorr_match" in set(pd.read_csv(tmp_path / "rollout_metrics.csv"))
+
+
+def test_reference_eval_config_composes_and_scores_every_metric_it_lists(
+    tmp_path, monkeypatch
+):
+    """`eval=reference` composes through its defaults and scores every listed metric.
+
+    The evaluator skips an unknown metric name with only a log warning, so a
+    misspelt name in the reference list would drop that column from every
+    comparison without failing a run.
+    """
+    with initialize_config_dir(
+        version_base=None, config_dir=str(DEFAULT_EVAL_CONFIG.parent.parent)
+    ):
+        reference = compose(
+            config_name="encoder_processor_decoder", overrides=["eval=reference"]
+        ).eval
+    checkpoint = _install_ensemble_eval_fixture(tmp_path, monkeypatch)
+    # The reference config inherits video batches; videos need ffmpeg, which CI
+    # runners lack, and this test checks metric columns only.
+    cfg = _default_eval_cfg(checkpoint, shipped=reference, batch_indices=[])
+
+    run_evaluation(cfg, work_dir=tmp_path)
+
+    # The reference config turns trajectory statistics on, which writes the run's
+    # CSVs under trajectory_statistics/.
+    assert reference.trajectory_statistics.enabled
+    for csv_name in ("evaluation_metrics.csv", "rollout_metrics.csv"):
+        columns = set(pd.read_csv(tmp_path / "trajectory_statistics" / csv_name))
+        assert set(reference.metrics) <= columns, set(reference.metrics) - columns
