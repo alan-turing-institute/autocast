@@ -74,7 +74,8 @@ def build_trajectory_metadata(dataset: Any) -> dict[int, dict[str, CsvValue]]:
     scalar_names = [f"cs{index}" for index in range(int(values.shape[1]))]
     rows: dict[int, dict[str, CsvValue]] = {}
 
-    for trajectory_idx, scalar_values in enumerate(values):
+    trajectory_indices = getattr(dataset, "trajectory_indices", range(len(values)))
+    for trajectory_idx, scalar_values in zip(trajectory_indices, values, strict=True):
         row: dict[str, CsvValue] = {
             name: float(value.item())
             for name, value in zip(scalar_names, scalar_values, strict=True)

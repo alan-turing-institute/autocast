@@ -1,5 +1,5 @@
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from functools import partial
 from pathlib import Path
 
@@ -161,7 +161,13 @@ class TheWellDataModule(LightningDataModule):
 
 
 class SpatioTemporalDataModule(LightningDataModule):
-    """A class for spatio-temporal data modules."""
+    """Load trajectory splits with optional validation/test trajectory selection.
+
+    ``valid_trajectories`` and ``test_trajectories`` accept None (all), a positive
+    count (first N), or a sequence of unique zero-based source trajectory indices.
+    Selection precedes windowing and applies to both windowed and rollout loaders.
+    All splits retain the supplied training normalization statistics.
+    """
 
     def __init__(
         self,
@@ -186,6 +192,8 @@ class SpatioTemporalDataModule(LightningDataModule):
         num_workers: int | None = None,
         pin_memory: bool = torch.cuda.is_available(),
         start_frame: int = 0,
+        valid_trajectories: int | Sequence[int] | None = None,
+        test_trajectories: int | Sequence[int] | None = None,
     ):
         super().__init__()
         self.verbose = verbose
@@ -202,6 +210,12 @@ class SpatioTemporalDataModule(LightningDataModule):
         train_path = base_path / "train" / fname if base_path else None
         valid_path = base_path / "valid" / fname if base_path else None
         test_path = base_path / "test" / fname if base_path else None
+        valid_selection = (
+            {} if valid_trajectories is None else {"trajectories": valid_trajectories}
+        )
+        test_selection = (
+            {} if test_trajectories is None else {"trajectories": test_trajectories}
+        )
 
         # Create training dataset first (without normalization)
         self.train_dataset = dataset_cls(
@@ -252,6 +266,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             normalization_type=normalization_type,
             normalization_path=normalization_path,
             normalization_stats=normalization_stats,
+            **valid_selection,
         )
         self.test_dataset = dataset_cls(
             data_path=str(test_path) if test_path is not None else None,
@@ -269,6 +284,7 @@ class SpatioTemporalDataModule(LightningDataModule):
             normalization_type=normalization_type,
             normalization_path=normalization_path,
             normalization_stats=normalization_stats,
+            **test_selection,
         )
 
         self.batch_size = batch_size
@@ -328,6 +344,7 @@ class SpatioTemporalDataModule(LightningDataModule):
                 normalization_type=normalization_type,
                 normalization_path=normalization_path,
                 normalization_stats=normalization_stats,
+                **valid_selection,
             )
             self._rollout_valid_dataset: SpatioTemporalDataset | None = None
 
