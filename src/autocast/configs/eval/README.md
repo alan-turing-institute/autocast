@@ -7,6 +7,9 @@ This directory contains composable evaluation configurations for different model
 - **`default.yaml`**: Base evaluation config with sensible defaults
 - **`encoder_processor_decoder.yaml`**: EPD-specific eval settings (extends default)
 - **`processor.yaml`**: Processor model eval settings (extends default)
+- **`reference.yaml`**: The protocol for comparing runs (`eval=reference`): every
+  setting that decides a reported number stated explicitly, the paper runs'
+  members, rollout length and windows, and the headline metrics named in the file
 
 ## Usage
 
