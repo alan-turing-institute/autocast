@@ -1,4 +1,4 @@
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Literal, TypeAlias, cast
 
@@ -682,6 +682,78 @@ def plot_spatiotemporal_snapshots_data_only(
     return fig
 
 
+def _instantiate_metric(
+    fn: Callable[[], Metric], device: str | torch.device | None
+) -> Metric:
+    """Build one fresh metric instance, moved to ``device`` if given."""
+    return fn().to(device) if device is not None else fn()
+
+
+def _instantiate_metrics(
+    fns: dict[str, Callable[[], Metric]], device: str | torch.device | None
+) -> dict[str, Metric]:
+    """Build a fresh metric instance for every entry in ``fns``."""
+    return {name: _instantiate_metric(fn, device) for name, fn in fns.items()}
+
+
+def _metric_fns_for_window_length(
+    metric_fns: dict[str, Callable[[], Metric]],
+    metric_min_window_steps: Mapping[str, int] | None,
+    window_len: int,
+) -> dict[str, Callable[[], Metric]]:
+    """Filter ``metric_fns`` down to those satisfied by an observed window length."""
+    if metric_min_window_steps is None:
+        return metric_fns
+    return {
+        name: fn
+        for name, fn in metric_fns.items()
+        if window_len >= metric_min_window_steps.get(name, 1)
+    }
+
+
+def _init_metrics_per_window(
+    metric_fns: dict[str, Callable[[], Metric]],
+    window_list: list[None | tuple[int, int]],
+    *,
+    metric_min_window_steps: Mapping[str, int] | None,
+    device: str | torch.device | None,
+) -> dict[None | tuple[int, int], dict[str, Metric]]:
+    """Eagerly build every window's metric instances, unless filtering lazily.
+
+    When ``metric_min_window_steps`` is None, every window in ``window_list``
+    gets every metric in ``metric_fns`` up front. Otherwise returns empty --
+    which metrics apply to a window can only be known once its actual
+    observed tensor length is seen, so windows are filled in lazily via
+    ``_get_or_init_metrics_for_window`` (see the per-window filtering block
+    in the caller).
+    """
+    if metric_min_window_steps is not None:
+        return {}
+    return {window: _instantiate_metrics(metric_fns, device) for window in window_list}
+
+
+def _get_or_init_metrics_for_window(
+    metrics_per_window: dict[None | tuple[int, int], dict[str, Metric]],
+    window: None | tuple[int, int],
+    *,
+    metric_fns: dict[str, Callable[[], Metric]],
+    metric_min_window_steps: Mapping[str, int] | None,
+    window_len: int,
+    device: str | torch.device | None,
+) -> dict[str, Metric]:
+    """Return ``window``'s metric dict, building+filtering it lazily on first sight.
+
+    A no-op lookup when the window was already built -- either eagerly (when
+    ``metric_min_window_steps`` is None) or lazily on an earlier batch.
+    """
+    if window not in metrics_per_window:
+        fns_for_window = _metric_fns_for_window_length(
+            metric_fns, metric_min_window_steps, window_len
+        )
+        metrics_per_window[window] = _instantiate_metrics(fns_for_window, device)
+    return metrics_per_window[window]
+
+
 def compute_metrics_from_dataloader(
     dataloader: Iterable,
     metric_fns: dict[str, Callable[[], Metric]],
@@ -691,6 +763,7 @@ def compute_metrics_from_dataloader(
     return_per_batch: bool = False,
     device: str | torch.device | None = None,
     batch_result_callback: Callable[[Tensor, Tensor], None] | None = None,
+    metric_min_window_steps: Mapping[str, int] | None = None,
 ) -> tuple[
     dict[None | tuple[int, int], dict[str, Metric]],
     tuple[TensorBTSCM, TensorBTSC] | None,
@@ -714,17 +787,28 @@ def compute_metrics_from_dataloader(
         batch_result_callback: Called once per successful inference batch with
             unsliced predictions and targets, allowing streaming derived outputs
             without retaining predictions or launching another inference pass.
+        metric_min_window_steps: Per-metric minimum window length (number of
+            timesteps). A metric named here is excluded from any window (explicit,
+            or the implicit whole-sequence window when ``windows`` is None) whose
+            *actual observed* length -- from the real predicted/true tensors, the
+            first time that window sees a non-empty batch -- is below its minimum.
+            None (default) disables this and is byte-identical to before: every
+            window gets every metric in ``metric_fns``, built eagerly before the
+            batch loop. Passing this activates lazy, per-window, data-driven
+            construction instead; a window that never sees a non-empty batch
+            across the whole dataloader then never appears in the returned dict
+            (vs. an eagerly-built-but-never-updated metric under the default).
 
     Returns:
         The populated metrics, optionally the tensors, and optionally per-batch metrics.
     """
-    metrics_per_window = {
-        window: {
-            name: fn().to(device) if device is not None else fn()
-            for name, fn in metric_fns.items()
-        }
-        for window in (windows or [None])
-    }
+    window_list = list(dict.fromkeys(windows or [None]))  # de-dupe, preserve order
+    metrics_per_window = _init_metrics_per_window(
+        metric_fns,
+        window_list,
+        metric_min_window_steps=metric_min_window_steps,
+        device=device,
+    )
     all_preds = [] if return_tensors else None
     all_trues = [] if return_tensors else None
     per_batch_rows = [] if return_per_batch else None
@@ -764,7 +848,7 @@ def compute_metrics_from_dataloader(
             # preds, trues = preds.cpu(), trues.cpu()
 
             # Get metrics for each window
-            for window, metrics_dict in metrics_per_window.items():
+            for window in window_list:
                 p, t = (
                     (preds, trues)
                     if window is None
@@ -775,6 +859,15 @@ def compute_metrics_from_dataloader(
                 )
                 if p.numel() == 0 or t.numel() == 0:
                     continue
+
+                metrics_dict = _get_or_init_metrics_for_window(
+                    metrics_per_window,
+                    window,
+                    metric_fns=metric_fns,
+                    metric_min_window_steps=metric_min_window_steps,
+                    window_len=p.shape[1],
+                    device=device,
+                )
 
                 # Update accumulated metrics
                 for metric in metrics_dict.values():
@@ -792,8 +885,10 @@ def compute_metrics_from_dataloader(
                         "window": f"{window[0]}-{window[1]}" if window else "all",
                         "batch_idx": batch_idx,
                     }
-                    for name, fn in metric_fns.items():
-                        m = fn().to(device) if device is not None else fn()
+                    for name, fn in _metric_fns_for_window_length(
+                        metric_fns, metric_min_window_steps, p.shape[1]
+                    ).items():
+                        m = _instantiate_metric(fn, device)
                         m.update(p, t)
                         if (val := _get_val(m)) is not None:
                             row[name] = val

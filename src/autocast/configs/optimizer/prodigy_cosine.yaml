@@ -1,0 +1,13 @@
+# Prodigy (Mishchenko and Defazio, ICML 2024) on the campaign-2 cosine schedule.
+#
+# Prodigy is Adam with a step size it estimates itself, so learning_rate is a multiplier
+# left at 1; the cosine schedule takes that multiplier down to min_lr_ratio of it, as it
+# does AdamW's rate. The rate rule (learning_rate: auto, D208) is refused with it and no
+# range test runs (D316). Every other setting is campaign2_cosine's. Pick it with
+# `optimizer=prodigy_cosine`.
+defaults:
+  - campaign2_cosine
+  - _self_
+
+optimizer: "prodigy"
+learning_rate: 1.0

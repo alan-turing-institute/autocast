@@ -1,6 +1,7 @@
 """Evaluation CLI for encoder-processor-decoder checkpoints."""
 
 import contextlib
+import functools
 import logging
 import os
 import time
@@ -47,18 +48,33 @@ from autocast.metrics import (
     PowerSpectrumRMSEMid,
     PowerSpectrumRMSETail,
 )
-from autocast.metrics.coverage import MultiCoverage
+from autocast.metrics.collection_coverage import MultiCollectionCoverage
+from autocast.metrics.coverage import (
+    MultiCoverage,
+    MultivariateRankHistogram,
+    RankHistogram,
+)
 from autocast.metrics.ensemble import (
     CRPS,
+    AlmostFairEnergyScore,
     AlphaFairCRPS,
+    DawidSebastianiScore,
     EnergyScore,
     EnsembleSkill,
     EnsembleSpread,
     FairCRPS,
+    LogScore,
+    PooledSpreadSkillRatio,
+    SpatialVariogramScore,
+    SpatiotemporalVariogramScore,
     SpreadSkillRatio,
+    TemporalAutocorrelationMatch,
+    TemporalVariogramScore,
     VariogramScore,
     WinklerScore,
 )
+from autocast.metrics.rank_histogram import _RankHistogramBase
+from autocast.metrics.scale_bands import ScaleBandScores
 from autocast.metrics.trajectory import (
     CsvValue,
     TrajectoryMetricAccumulator,
@@ -126,11 +142,53 @@ AVAILABLE_METRICS_ENSEMBLE = {
     "fcrps": FairCRPS,
     "afcrps": AlphaFairCRPS,
     "energy": EnergyScore,
+    "afenergy": AlmostFairEnergyScore,
     "variogram": VariogramScore,
+    "variogram_spatial": SpatialVariogramScore,
+    "variogram_temporal": TemporalVariogramScore,
+    "variogram_spatiotemporal": SpatiotemporalVariogramScore,
+    "log_score": LogScore,
+    "dss": DawidSebastianiScore,
+    "autocorr_match": TemporalAutocorrelationMatch,
+    "rank_histogram": RankHistogram,
+    "mv_rank_histogram": MultivariateRankHistogram,
+    # Coverage of REGIONAL sums, swept over region size. Per-point coverage is
+    # invariant to cross-point correlation by construction, so it cannot
+    # distinguish a model that states the correlation from one that assumes it
+    # away; the regional read can, because independent errors cancel under
+    # aggregation and correlated ones do not. Every constructor argument
+    # defaults (region_sizes=None defers to the field shape on first update), so
+    # this needs no per-dataset wiring.
+    "collection_coverage": MultiCollectionCoverage,
+    # One-step error of the mean, spread / error and members' power per band of
+    # cycles (the scorecard's by-scale rows); writes <prefix>_scale_bands_window_
+    # <w>.csv. Bands from eval.metric_kwargs.scale_bands.bands (default D286's).
+    "scale_bands": ScaleBandScores,
+    # ⚠ `DependenceRankHistogram` MUST NOT be registered here bare. Its default
+    # pair weighting measures site distance in the FLATTENED array, which is
+    # correct only for a straight line whose ends are not adjacent -- wrong for
+    # any grid and any periodic field (on 64x64 it weights a vertical neighbour
+    # at one sixty-fourth of a horizontal one, silently). The rollout diagnostic
+    # path binds the geometry from config via `_dependence_pair_weights`; use
+    # that rather than adding a bare entry to this table.
     "spread": EnsembleSpread,
     "skill": EnsembleSkill,
     "ssr": SpreadSkillRatio,
+    # Same quantity as "ssr", but the division is taken once after pooling over
+    # cases and space instead of once per case. "ssr" is biased high on
+    # correlated fields (it averages ratios); this one reads 1 for a calibrated
+    # ensemble at any correlation length. Both are selectable so a run can
+    # report them side by side.
+    "ssr_pooled": PooledSpreadSkillRatio,
     "winkler": WinklerScore,
+    # Alias of WinklerScore for a second, distinct central interval (e.g. a 99%
+    # tail interval alongside the default one). The alpha is bound HERE, so
+    # selecting "winkler_99" yields alpha=0.01 whether or not the caller also
+    # sets `eval.metric_kwargs.winkler_99.alpha` -- a kwarg passed at call time
+    # simply overrides the bound one. Binding it is deliberate: with the alpha
+    # left to config, a run that forgot the key would silently report a second
+    # copy of the DEFAULT interval under the name "winkler_99".
+    "winkler_99": functools.partial(WinklerScore, alpha=0.01),
 }
 
 DEFAULT_EVAL_METRICS = [
@@ -158,7 +216,61 @@ DEFAULT_EVAL_METRICS = [
     "winkler",
 ]
 
-MEMORY_INTENSIVE_METRICS = {"variogram", "energy"}
+
+def _registry_class_flag(entry: Any, attr: str, default: object) -> Any:
+    """Read a per-class metric flag off a registry entry, whatever its shape.
+
+    Registry values are not all `BaseMetric` subclasses: some are plain
+    `torchmetrics.Metric` subclasses (the coverage-module rank histograms) and
+    some are `functools.partial` aliases that bind a constructor argument. A
+    bare `entry.attr` raises on the first and reads nothing useful on the
+    second, so a partial alias of a memory-intensive class would slip past the
+    guard silently. Unwrap the partial, then fall back to the default the
+    `BaseMetric` attribute itself declares.
+    """
+    cls = entry.func if isinstance(entry, functools.partial) else entry
+    return getattr(cls, attr, default)
+
+
+# Names resolving to a metric class flagged `memory_intensive` (the variogram
+# family and the multivariate Dawid-Sebastiani score, all D-by-D in the field
+# size -- see `autocast.metrics.base.BaseMetric.memory_intensive`). Derived from
+# the class attribute rather than hand-listed, so any new registry alias of an
+# existing memory-intensive class (e.g. a future `variogram_spatial_v2`) is
+# covered automatically.
+MEMORY_INTENSIVE_METRICS = frozenset(
+    name
+    for registry in (AVAILABLE_METRICS, AVAILABLE_METRICS_ENSEMBLE)
+    for name, cls in registry.items()
+    if _registry_class_flag(cls, "memory_intensive", False)
+)
+
+# Names resolving to a metric class with `min_window_steps > 1` (temporal-
+# dependence scalars needing at least two lead steps to form a lag/pair --
+# see `autocast.metrics.base.BaseMetric.min_window_steps`). Derived from the
+# class attribute for the same reason as `MEMORY_INTENSIVE_METRICS` above:
+# any new registry alias of an existing class is covered automatically,
+# instead of a separately maintained name allowlist. `autocorr_match` raises
+# on a shorter window; `variogram_temporal` and `variogram_spatiotemporal`
+# don't raise but silently degenerate (the former to a fake-perfect 0, the
+# latter to a value numerically identical to `variogram_spatial`), which is
+# just as misleading in a CSV -- all are excluded on the same terms. Passed
+# to `compute_metrics_from_dataloader` so windows (explicit, e.g. from
+# `metric_windows`/`metric_windows_rollout`, or the implicit whole-sequence
+# window) shorter than a metric's minimum are filtered out per-window, based
+# on the actual observed tensor length -- not a single global
+# `n_steps_output` check, since one rollout pass legitimately mixes window
+# lengths (e.g. the default `metric_windows_rollout` includes both a
+# single-step [0, 1] window and longer ones). Also used (via
+# `_is_single_step_incompatible`) to exclude these names, unconditionally,
+# from the per-timestep rollout metric builder below, which only ever sees
+# T=1 slices by construction and so can never satisfy any minimum > 1.
+METRIC_MIN_WINDOW_STEPS: Mapping[str, int] = {
+    name: _registry_class_flag(cls, "min_window_steps", 1)
+    for registry in (AVAILABLE_METRICS, AVAILABLE_METRICS_ENSEMBLE)
+    for name, cls in registry.items()
+    if _registry_class_flag(cls, "min_window_steps", 1) > 1
+}
 
 EVAL_MODES = ("auto", "encode_once", "ambient", "latent")
 DEFAULT_EVAL_MODE = "auto"
@@ -866,6 +978,35 @@ def _resolve_rollout_channel_names(dataset: Any) -> list[str] | None:
     return channel_names
 
 
+def _plot_or_warn(metric: Any, /, **kwargs: Any) -> None:
+    """Render a metric's diagram, but never let a rendering failure end the run.
+
+    ⛔ **This exists because a plotting failure discarded a COMPLETED 5.4-hour
+    scoring pass, measured 2026-09-02.** The cns64 ARFC eval computed all 35 test
+    metrics, logged every one of them, and then died inside
+    ``matplotlib.font_manager`` on a font file a venv rebuild had removed under
+    the running process. ``evaluation_metrics.csv`` is written well after this
+    loop, so nothing was persisted: the numbers existed only in memory and went
+    with the process. Re-running cost the whole 5.4 hours again.
+
+    A diagram is a convenience; the scores are the deliverable, and the
+    deliverable must not depend on the convenience. The failure is logged with
+    its exception so it stays visible rather than silent.
+
+    ⚠ One consequence to know: ``MultiCollectionCoverage.plot`` also writes the
+    per-window CSV the figure scripts read, so a swallowed failure here costs
+    that curve too -- the run survives with a gap rather than dying whole, which
+    is the trade this makes deliberately.
+    """
+    try:
+        metric.plot(**kwargs)
+    except Exception:
+        log.exception(
+            "plotting %s failed; scores are unaffected and the run continues",
+            type(metric).__name__,
+        )
+
+
 def _process_metrics_results(
     results: dict[None | tuple[int, int], dict[str, Metric]],
     per_batch_rows: list[dict[str, float | str]] | None = None,
@@ -902,10 +1043,60 @@ def _process_metrics_results(
 
             # If this is coverage, also plot it
             if name == "coverage" and isinstance(metric, MultiCoverage):
-                metric.plot(
+                _plot_or_warn(
+                    metric,
                     save_path=plot_dir
                     / f"{log_prefix.lower()}_coverage_window_{window_str}.png",
                     title=f"{log_prefix} Coverage Window {window}",
+                )
+
+            # Rank-histogram diagrams (univariate PIT and joint multivariate).
+            # MultivariateRankHistogram subclasses RankHistogram, so one check
+            # covers both, and metric.name keeps their output files distinct.
+            if isinstance(metric, RankHistogram):
+                _plot_or_warn(
+                    metric,
+                    save_path=plot_dir
+                    / f"{log_prefix.lower()}_{metric.name}_window_{window_str}.png",
+                    title=f"{log_prefix} {metric.name} window {window}",
+                )
+
+            # Regional-sum coverage, written per window so the region-size sweep
+            # can be read at every rollout lead rather than once per run. `plot`
+            # writes the CSV beside the figure, which is the machine-readable
+            # form every downstream figure script consumes.
+            if isinstance(metric, MultiCollectionCoverage):
+                _plot_or_warn(
+                    metric,
+                    save_path=plot_dir
+                    / (
+                        f"{log_prefix.lower()}_collection_coverage_window_"
+                        f"{window_str}.png"
+                    ),
+                    title=f"{log_prefix} Collection Coverage Window {window}",
+                )
+
+            # The by-scale table, written per window like the coverage sweep.
+            if isinstance(metric, ScaleBandScores):
+                _plot_or_warn(
+                    metric,
+                    save_path=plot_dir
+                    / f"{log_prefix.lower()}_scale_bands_window_{window_str}.png",
+                )
+
+            # The rank_histogram module's family (average, band-depth, pooled
+            # multivariate, dependence) is a SEPARATE hierarchy from
+            # coverage.RankHistogram above -- it derives from
+            # `_RankHistogramBase`, so the check above does not reach it and
+            # these were previously never written per window. Keyed by the
+            # REGISTRY name, not `metric.name`: two registry entries may share a
+            # class (differing only in bound kwargs) and would collide on it.
+            if isinstance(metric, _RankHistogramBase):
+                _plot_or_warn(
+                    metric,
+                    save_path=plot_dir
+                    / f"{log_prefix.lower()}_{name}_window_{window_str}.png",
+                    title=f"{log_prefix} {name} Window {window}",
                 )
 
             # Try to get a scalar value for csv
@@ -1590,9 +1781,50 @@ def _normalize_rollout_member_render_mode(value: str | None) -> str:
     return normalized
 
 
-def _should_skip_metric(name: str, *, skip_memory_intensive: bool = True) -> bool:
-    """Return True when a metric should be excluded due to memory cost."""
-    return skip_memory_intensive and name in MEMORY_INTENSIVE_METRICS
+def _is_single_step_incompatible(name: str) -> bool:
+    """Return True when `name` needs more lead steps than a T=1 slice can give.
+
+    Used only on the per-timestep rollout path (each slice is a fixed T=1 by
+    construction); the windowed test/rollout paths instead filter per-window,
+    against the actual observed tensor length, via `metric_min_window_steps`
+    inside `compute_metrics_from_dataloader`.
+    """
+    return name in METRIC_MIN_WINDOW_STEPS
+
+
+def _should_skip_metric(name: str, include_memory_intensive: bool = False) -> bool:
+    """Return True when a metric should be excluded due to memory cost.
+
+    Memory-intensive metrics (``MEMORY_INTENSIVE_METRICS`` -- the variogram family
+    and the multivariate Dawid-Sebastiani score, all D-by-D in the field size) are
+    skipped by default so a stray entry in a metric list cannot silently blow up
+    memory. Callers that have budgeted for the cost opt in with
+    ``include_memory_intensive`` (set from ``eval.include_memory_intensive_metrics``).
+    The default keeps the guard, so eval outputs stay byte-identical whenever the
+    flag is absent.
+    """
+    return name in MEMORY_INTENSIVE_METRICS and not include_memory_intensive
+
+
+def _resolve_include_memory_intensive(eval_cfg: DictConfig) -> bool:
+    """Resolve the memory-guard opt-in, honouring either config key.
+
+    Two spellings of the same switch exist:
+    ``eval.include_memory_intensive_metrics`` (positive, default False -- the
+    kept spelling) and the older ``eval.skip_memory_intensive_metrics`` (negative,
+    default True, no longer shipped in ``configs/eval/default.yaml``). Both are
+    read, because a config
+    that sets only the legacy key would otherwise be silently ignored -- and a
+    dropped guard flag does not fail, it quietly runs or quietly skips a metric.
+    The positive key wins when a config sets both.
+    """
+    include = eval_cfg.get("include_memory_intensive_metrics", None)
+    if include is not None:
+        return bool(include)
+    skip = eval_cfg.get("skip_memory_intensive_metrics", None)
+    if skip is not None:
+        return not bool(skip)
+    return False
 
 
 def _normalize_per_batch_rows(rows: Any) -> list[dict[str, float | str]]:
@@ -3269,9 +3501,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
 
     evaluation_rows: list[dict[str, float | str]] = []
     compute_test_metrics = eval_cfg.get("compute_test_metrics", True)
-    skip_memory_intensive_metrics = bool(
-        eval_cfg.get("skip_memory_intensive_metrics", True)
-    )
+    include_memory_intensive = _resolve_include_memory_intensive(eval_cfg)
 
     if dump_requested:
         log.info(
@@ -3283,9 +3513,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
         test_metric_fns: dict[str, Callable[[], Metric]] = {}
 
         for name in metrics_list:
-            if _should_skip_metric(
-                name, skip_memory_intensive=skip_memory_intensive_metrics
-            ):
+            if _should_skip_metric(name, include_memory_intensive):
                 log.info("Skipping metric '%s' due to memory cost.", name)
                 continue
             if name in AVAILABLE_METRICS:
@@ -3366,6 +3594,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
             windows=test_windows,
             return_per_batch=True,
             device=fabric.device,
+            metric_min_window_steps=METRIC_MIN_WINDOW_STEPS,
             batch_result_callback=(
                 test_trajectory_accumulator.update
                 if test_trajectory_accumulator is not None
@@ -3540,9 +3769,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
 
         if compute_rollout_metrics or trajectory_statistics_enabled:
             for name in metrics_list:
-                if _should_skip_metric(
-                    name, skip_memory_intensive=skip_memory_intensive_metrics
-                ):
+                if _should_skip_metric(name, include_memory_intensive):
                     log.info("Skipping rollout metric '%s' due to memory cost.", name)
                     continue
                 if name in AVAILABLE_METRICS:
@@ -3642,11 +3869,29 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
             # Per-timestep, per-channel rollout metrics (rows=metrics, cols=timestep)
             per_timestep_metric_fns: dict[str, Callable[[], Metric]] = {}
             for name, metric_factory in rollout_metric_fns.items():
-                if _should_skip_metric(
-                    name, skip_memory_intensive=skip_memory_intensive_metrics
-                ):
+                if _should_skip_metric(name, include_memory_intensive):
                     log.info(
                         "Skipping rollout per-timestep metric '%s' due to memory cost.",
+                        name,
+                    )
+                    continue
+                if isinstance(metric_factory, type) and issubclass(
+                    metric_factory, RankHistogram
+                ):
+                    # Aggregate calibration diagrams; no per-timestep expansion.
+                    continue
+                if _is_single_step_incompatible(name):
+                    # Per-timestep slices are always length 1 by construction
+                    # (`compute_metrics_per_timestep_from_dataloader` updates
+                    # each metric with a single (B, 1, S, C) slice per
+                    # timestep), so a metric needing >1 step can never be
+                    # satisfied here -- unlike the windowed passes above,
+                    # there is no window length to check.
+                    log.info(
+                        "Skipping single-step-incompatible metric '%s' on the "
+                        "per-timestep rollout path (always T=1 per slice); it "
+                        "still runs on the windowed rollout path for windows "
+                        "long enough to satisfy it.",
                         name,
                     )
                     continue
@@ -3734,6 +3979,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                         windows=windows,
                         return_per_batch=True,
                         device=fabric.device,
+                        metric_min_window_steps=METRIC_MIN_WINDOW_STEPS,
                         batch_result_callback=(
                             rollout_trajectory_accumulator.update
                             if rollout_trajectory_accumulator is not None

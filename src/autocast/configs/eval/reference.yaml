@@ -1,0 +1,77 @@
+# Reference evaluation: the protocol to score runs with when they are compared.
+#
+# Use with `eval=reference`. Every setting that decides a reported number is
+# stated here rather than inherited, so a later change to `default.yaml` or
+# `encoder_processor_decoder.yaml` does not move reference scores. The base is
+# the evaluation the September 2026 paper runs used (10 members, 25-step
+# rollouts, the rollout windows below), with the newer metrics added.
+#
+# Headline metrics for a comparison:
+#   vrmse_v2             accuracy of the ensemble mean
+#   afcrps               overall probabilistic skill
+#   ssr_pooled           spread/error ratio, divided once after pooling over cases
+#                        and space (read this, not `ssr`, which averages one ratio
+#                        per forecast case)
+#   coverage             multi-level coverage error (written whenever
+#                        n_members > 1; levels below)
+#   collection_coverage  regional coverage, for spatial coherence
+# The rest of the list is detail for following a result up.
+#
+# Not on by default here, add them by name when needed: the variogram family
+# and `dss` (seconds per 64x64 batch; they also need
+# include_memory_intensive_metrics=true), `log_score`, `autocorr_match`,
+# `rank_histogram`, `mv_rank_histogram`, `scale_bands`.
+defaults:
+  - encoder_processor_decoder
+
+metrics:
+  - mse
+  - mae
+  - nmse
+  - nmae
+  - rmse
+  - nrmse
+  - vmse
+  - vrmse
+  - vmse_v2
+  - vrmse_v2
+  - linf
+  - psrmse
+  - psrmse_low
+  - psrmse_mid
+  - psrmse_high
+  - psrmse_tail
+  - pscc
+  - pscc_low
+  - pscc_mid
+  - pscc_high
+  - pscc_tail
+  - crps
+  - fcrps
+  - afcrps
+  - energy
+  - afenergy
+  - spread
+  - skill
+  - ssr
+  - ssr_pooled
+  - collection_coverage
+  - winkler
+include_memory_intensive_metrics: false
+
+n_members: 10
+compute_coverage: true
+coverage_levels: [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95]
+compute_test_metrics: true
+metric_windows: [null]
+compute_rollout_metrics: true
+compute_rollout_coverage: true
+free_running_only: true
+rollout_start: 0
+max_rollout_steps: 25
+metric_windows_rollout: [[0, 1], [0, 4], [6, 12], [13, 30], [31, 99]]
+
+trajectory_statistics:
+  enabled: true
+  include_per_timestep: true
+  sampling_seed: 42

@@ -1,4 +1,4 @@
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any, Literal
 
 import h5py
@@ -49,6 +49,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         normalization_path: str | None = None,
         normalization_stats: dict | DictConfig | None = None,
         start_frame: int = 0,
+        trajectories: int | Sequence[int] | None = None,
     ):
         """Initialize the dataset.
 
@@ -79,6 +80,10 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
                 before constructing input/output windows. This is an absolute
                 offset in the original data, including when reusing preloaded
                 tensors. Already removed frames cannot be restored. Defaults to 0.
+            trajectories: Whole trajectories to use before windowing. None keeps
+                all available trajectories; a positive integer keeps the first N;
+                a sequence selects unique source indices in the supplied order.
+                Source indices survive preloaded reuse and trajectory statistics.
         """
         self.dtype = dtype
         self.verbose = verbose
@@ -95,6 +100,8 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         # TODO: consider ensuring only one passed and not overridden
         if data is not None:
             self.parse_data(data)
+
+        self._select_trajectories(trajectories)
 
         if isinstance(start_frame, bool) or not isinstance(start_frame, int):
             msg = f"start_frame must be an integer, got {start_frame!r}."
@@ -210,7 +217,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
 
             # Store each subtrajectory separately
             for sub_idx in range(input_fields.shape[0]):
-                self.sample_trajectory_indices.append(traj_idx)
+                self.sample_trajectory_indices.append(self.trajectory_indices[traj_idx])
                 self.sample_window_indices.append(sub_idx)
                 self.all_input_fields.append(
                     input_fields[sub_idx].to(self.dtype)
@@ -268,6 +275,80 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             if isinstance(applied_start_frame, h5py.Dataset)
             else applied_start_frame
         )
+        trajectory_indices = f.get("_trajectory_indices")
+        self._preloaded_trajectory_indices = (
+            trajectory_indices[()]
+            if isinstance(trajectory_indices, h5py.Dataset)
+            else trajectory_indices
+        )
+
+    def _set_trajectory_indices(self) -> None:
+        """Read optional source IDs, defaulting to row indices for custom readers."""
+        # Custom readers written before trajectory selection only populate tensors.
+        trajectory_indices = getattr(self, "_preloaded_trajectory_indices", None)
+        if trajectory_indices is None:
+            trajectory_indices = getattr(self, "trajectory_indices", None)
+        if trajectory_indices is None:
+            trajectory_indices = range(self.data.shape[0])
+        elif hasattr(trajectory_indices, "tolist"):
+            trajectory_indices = trajectory_indices.tolist()
+        self.trajectory_indices = list(trajectory_indices)
+
+    def _select_trajectories(self, trajectories: int | Sequence[int] | None) -> None:
+        """Select complete rows while retaining their original split indices."""
+        self._set_trajectory_indices()
+        available = self.trajectory_indices
+        n_available = self.data.shape[0]
+        if (
+            len(available) != n_available
+            or any(type(index) is not int or index < 0 for index in available)
+            or len(set(available)) != n_available
+        ):
+            msg = "Preloaded trajectory indices must be unique and match the data rows."
+            raise ValueError(msg)
+        if trajectories is None:
+            return
+
+        selection: slice | list[int]
+        if type(trajectories) is int:
+            if not 1 <= trajectories <= n_available:
+                msg = (
+                    f"trajectories must be between 1 and {n_available}, "
+                    f"got {trajectories}."
+                )
+                raise ValueError(msg)
+            selection = slice(0, trajectories)
+            selected_indices = available[:trajectories]
+        elif isinstance(trajectories, Sequence) and not isinstance(
+            trajectories, str | bytes
+        ):
+            selected_indices = list(trajectories)
+            if any(type(index) is not int for index in selected_indices):
+                msg = "Explicit trajectory indices must be integers."
+                raise TypeError(msg)
+            if not selected_indices or len(set(selected_indices)) != len(
+                selected_indices
+            ):
+                msg = "Explicit trajectory indices must be non-empty and unique."
+                raise ValueError(msg)
+            positions = {index: position for position, index in enumerate(available)}
+            missing = [index for index in selected_indices if index not in positions]
+            if missing:
+                msg = f"Unavailable trajectory indices: {missing}."
+                raise ValueError(msg)
+            selection = [positions[index] for index in selected_indices]
+        else:
+            msg = (
+                "trajectories must be None, a positive count or a sequence of indices."
+            )
+            raise TypeError(msg)
+
+        self.data = self.data[selection]
+        if self.constant_scalars is not None:
+            self.constant_scalars = self.constant_scalars[selection]
+        if self.constant_fields is not None:
+            self.constant_fields = self.constant_fields[selection]
+        self.trajectory_indices = selected_indices
 
     def read_data(self, data_path: str):
         """Read data.
@@ -293,6 +374,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             self.constant_fields = data.get("constant_fields", None)
             self._channel_idxs_applied = bool(data.get("_channel_idxs_applied", False))
             self._applied_start_frame = data.get("_applied_start_frame", 0)
+            self._preloaded_trajectory_indices = data.get("_trajectory_indices")
             return
         msg = "No data provided to parse."
         raise ValueError(msg)
@@ -305,6 +387,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             "constant_fields": self.constant_fields,
             "_channel_idxs_applied": self._channel_idxs_applied,
             "_applied_start_frame": self._applied_start_frame,
+            "_trajectory_indices": self.trajectory_indices,
         }
 
     def __len__(self):  # noqa: D105

@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.11, <3.13"
 resolution-markers = [
     "python_full_version >= '3.12' and sys_platform == 'linux'",
@@ -177,6 +177,7 @@ dependencies = [
     { name = "neuraloperator" },
     { name = "nvidia-ml-py" },
     { name = "pandas" },
+    { name = "prodigyopt" },
     { name = "ptwt" },
     { name = "pytorch-wavelets" },
     { name = "the-well" },
@@ -233,6 +234,7 @@ requires-dist = [
     { name = "nvidia-ml-py", specifier = ">=13.595.45" },
     { name = "pandas", specifier = ">=2.1" },
     { name = "prek", marker = "extra == 'dev'", specifier = ">=0.4.2" },
+    { name = "prodigyopt", specifier = "==1.1.2" },
     { name = "ptwt", specifier = ">=1.0.1" },
     { name = "pyright", marker = "extra == 'dev'", specifier = "==1.1.407" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.0.1" },
@@ -2061,6 +2063,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/46/c0/a4ddbf38034afe67cfa97c4bd81c86429ada098e7c323218d9f9fd061566/prek-0.4.4-py3-none-win32.whl", hash = "sha256:143154b329c05b2f9fa3230e604d02d9c4297dd43f96135a8ba166772e8ecd60", size = 5240317, upload-time = "2026-06-04T07:26:08.726Z" },
     { url = "https://files.pythonhosted.org/packages/bc/8c/fe97b5b095187bb2f93bbe406bccf108c879e5e4c83f165809b0d16ce0fb/prek-0.4.4-py3-none-win_amd64.whl", hash = "sha256:c38c5140ae2ea55ebb02e6ca590a416664ea1af287cdd21f54daeec53a81015a", size = 5626104, upload-time = "2026-06-04T07:26:14.81Z" },
     { url = "https://files.pythonhosted.org/packages/25/63/3586226d536796e65f8e725b531d6104e55caaa18659bdcb512661629586/prek-0.4.4-py3-none-win_arm64.whl", hash = "sha256:3efa28fb37b9ddbafb7759da8d497f0d36cf02a05816e15d6541f5669d5d2114", size = 5470399, upload-time = "2026-06-04T07:26:13.231Z" },
+]
+
+[[package]]
+name = "prodigyopt"
+version = "1.1.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/6b/8e/5ee7ea4f8ca1e1d8d5d868c6c97e53e8dc769caa383b5a16afc6fd7b28c7/prodigyopt-1.1.2.tar.gz", hash = "sha256:f6ef74944895c9b9a0045e55fdd04d07bdb03b9f09a2c77e2ec772c9d1ece15f", size = 9431, upload-time = "2025-01-16T14:58:31.352Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/57/26/a798a2e274d77944e784c1c577b85fcbdb7189e59ff821d9a2d6b462f853/prodigyopt-1.1.2-py3-none-any.whl", hash = "sha256:4f8f79f71d37e4a501527fc30ecc847731369dc7cbe12e6a178157924e30ce03", size = 10546, upload-time = "2025-01-16T14:58:28.858Z" },
 ]
 
 [[package]]

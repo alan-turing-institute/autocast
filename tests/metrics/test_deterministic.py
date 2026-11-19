@@ -19,6 +19,7 @@ from autocast.metrics.deterministic import (
     PowerSpectrumRMSELow,
     PowerSpectrumRMSEMid,
     PowerSpectrumRMSETail,
+    _cross_correlation_rmse_bands,
     _isotropic_binning,
 )
 from autocast.types import TensorBTSC, TensorBTSCM
@@ -71,7 +72,9 @@ def _lola_isotropic_cross_correlation(
 
     sx = torch.fft.fftn(x, dim=(-2, -1), norm="ortho")
     sy = torch.fft.fftn(y, dim=(-2, -1), norm="ortho")
-    c = torch.abs(sx * torch.conj(sy)).flatten(start_dim=-2)
+    # Deliberate deviation from LOLA's fourier.py, which takes torch.abs here and so
+    # discards the phase (2026-10-15): the real part keeps it.
+    c = torch.real(sx * torch.conj(sy)).flatten(start_dim=-2)
 
     c_iso = torch.zeros((*c.shape[:-1], edges.numel()), dtype=x.dtype, device=x.device)
     c_iso = c_iso.scatter_add(dim=-1, index=indices.expand_as(c), src=c)
@@ -212,6 +215,36 @@ def test_power_spectrum_rmse_increases_with_spectral_scale(MetricCls):
 @pytest.mark.parametrize(
     "MetricCls",
     [
+        PowerSpectrumRMSE,
+        PowerSpectrumRMSELow,
+        PowerSpectrumRMSEMid,
+        PowerSpectrumRMSEHigh,
+        PowerSpectrumRMSETail,
+        PowerSpectrumCCRMSE,
+    ],
+)
+def test_power_spectrum_finite_on_degenerate_spatial_axis(MetricCls):
+    # A 1-D field carried as (B, T, Sx, Sy=1, C) drives min(spatial) to 1, which
+    # used to round the isotropic bin count to 0 and crash in scatter_add. The
+    # metric must now run to a finite value instead of raising.
+    torch.manual_seed(0)
+    y_true: TensorBTSC = torch.randn((2, 2, 8, 1, 1))
+    y_pred: TensorBTSC = torch.randn((2, 2, 8, 1, 1))
+
+    value = MetricCls()(y_pred, y_true)
+    assert torch.isfinite(value).all()
+
+
+def test_isotropic_binning_degenerate_axis_has_at_least_one_bin():
+    # Degenerate (Sx, 1) grid: guarantee >= 1 bin so `edges` spans [0, max] and the
+    # bucketize indices fit the scatter_add target (regression for the Sy=1 crash).
+    edges, _counts, _indices = _isotropic_binning((8, 1))
+    assert edges.numel() >= 2  # bins + 1 >= 2 => at least one non-empty freq bin
+
+
+@pytest.mark.parametrize(
+    "MetricCls",
+    [
         PowerSpectrumCCRMSE,
         PowerSpectrumCCRMSELow,
         PowerSpectrumCCRMSEMid,
@@ -226,6 +259,53 @@ def test_cross_correlation_rmse_nonzero_for_uncorrelated(MetricCls):
 
     value = MetricCls()(y_pred, y_true)
     assert torch.all(value > 0)
+
+
+#: A misplaced forecast scores at least this (coherence below 0.5); a perfect one below
+#: PERFECT_MAX (the eps guard only).
+WRONG_MIN, PERFECT_MAX = 0.5, 1e-2
+
+
+def _smooth_field(seed: int) -> TensorBTSC:
+    """Smooth periodic random field (4, 1, 64, 64, 1): power in the low/mid bands."""
+    gen = torch.Generator().manual_seed(seed)
+    x = torch.randn((4, 1, 64, 64, 1), generator=gen, dtype=torch.float64)
+    k = torch.fft.fftfreq(64, dtype=torch.float64)
+    filt = torch.exp(-(k[:, None] ** 2 + k[None, :] ** 2) * (2 * math.pi * 4) ** 2 / 2)
+    f = torch.fft.ifftn(
+        torch.fft.fftn(x, dim=(2, 3)) * filt[None, None, :, :, None], dim=(2, 3)
+    ).real
+    return f / f.std()
+
+
+@pytest.mark.parametrize(
+    ("label", "transform"),
+    [
+        ("shifted", lambda f: torch.roll(f, shifts=(17, 23), dims=(2, 3))),
+        ("sign-flipped", lambda f: -f),
+    ],
+)
+def test_cross_correlation_rmse_sees_phase(label, transform):
+    # Regression for the phase-blind cross spectrum (|P||T|, LOLA's definition): a
+    # shifted or sign-flipped forecast has the truth's power spectrum exactly, so it
+    # used to score as a perfect forecast. It must now score far worse, in every band
+    # with power, deterministic and ensemble alike.
+    y_true = _smooth_field(0)
+    y_bad = transform(y_true)
+    for y_pred, bad in ((y_true, y_bad), (y_true[..., None], y_bad[..., None])):
+        perfect = _cross_correlation_rmse_bands(y_pred, y_true, eps=1e-6)
+        wrong = _cross_correlation_rmse_bands(bad, y_true, eps=1e-6)
+        for band in range(2):  # low and mid carry the smooth field's power
+            assert wrong[band].mean() > WRONG_MIN, label
+            assert perfect[band].mean() < PERFECT_MAX, label
+
+
+def test_cross_correlation_rmse_is_two_when_anti_correlated():
+    # Coherence -1 in every bin gives (1 - (-1))^2 = 4 per bin, an RMSE of 2.
+    y_true = _smooth_field(1)
+    low, mid, _high, _tail = _cross_correlation_rmse_bands(-y_true, y_true, eps=1e-6)
+    assert torch.allclose(low, torch.full_like(low, 2.0), atol=1e-3)
+    assert torch.allclose(mid, torch.full_like(mid, 2.0), atol=1e-3)
 
 
 def test_cross_correlation_rmse_near_zero_for_identical():

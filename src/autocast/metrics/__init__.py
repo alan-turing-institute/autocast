@@ -1,4 +1,24 @@
-from .coverage import Coverage, MultiCoverage
+from .closed_form_predictive import (
+    ClosedFormGaussianCRPS,
+    ClosedFormLogScore,
+    ClosedFormPredictiveStats,
+    ClosedFormSpread,
+    ClosedFormStudentTCRPS,
+    compute_closed_form_predictive_stats,
+    probe_closed_form_predictive,
+    student_t_crps_pointwise,
+)
+from .collection_coverage import (
+    CollectionCoverage,
+    MultiCollectionCoverage,
+    default_region_sizes,
+)
+from .coverage import (
+    Coverage,
+    MultiCoverage,
+    MultivariateRankHistogram,
+    RankHistogram,
+)
 from .deterministic import (
     MAE,
     MSE,
@@ -24,21 +44,54 @@ from .deterministic import (
 )
 from .ensemble import (
     CRPS,
+    AlmostFairEnergyScore,
     AlphaFairCRPS,
     AlphaFairCRPSMAETerm,
     AlphaFairCRPSSpreadTerm,
     CRPSMAETerm,
     CRPSSpreadTerm,
+    DawidSebastianiScore,
     EnergyScore,
     EnsembleSkill,
     EnsembleSpread,
     FairCRPS,
     FairCRPSMAETerm,
     FairCRPSSpreadTerm,
+    LogScore,
     MultiWinkler,
+    PooledSpreadSkillRatio,
+    SpatialVariogramScore,
+    SpatiotemporalVariogramScore,
     SpreadSkillRatio,
+    TemporalAutocorrelationMatch,
+    TemporalVariogramScore,
     VariogramScore,
     WinklerScore,
+)
+from .gaussian import (
+    BaseGaussianMetric,
+    GaussianCoverage,
+    GaussianCRPS,
+    GaussianWinkler,
+)
+from .lag_trace import lag_trace_rho
+
+# NOTE: two DIFFERENT classes are called ``MultivariateRankHistogram`` in this
+# package. ``coverage.MultivariateRankHistogram`` -- exported here under that
+# name, and what the eval registry serves as ``mv_rank_histogram`` -- keeps one
+# histogram PER CHANNEL and averages their total-variation distances, so
+# per-channel miscalibration cannot cancel; every published rank-ladder
+# ``mv_rank_histogram`` number was produced with it. ``rank_histogram`` pools the
+# channels into one shared histogram instead, where opposing per-channel shapes
+# partially cancel; it is imported below under its explicit spelling so the two
+# can coexist without one silently shadowing the other. Its module keeps
+# ``MultivariateRankHistogram`` as a redirect for branches that import the old
+# name from there -- that redirect is deliberately NOT re-exported here.
+from .rank_histogram import (
+    AverageRankHistogram,
+    BandDepthRankHistogram,
+    DependenceRankHistogram,
+    PooledMultivariateRankHistogram,
 )
 
 __all__ = [
@@ -53,21 +106,41 @@ __all__ = [
     "VMSE2",
     "VRMSE",
     "VRMSE2",
+    "AlmostFairEnergyScore",
     "AlphaFairCRPS",
     "AlphaFairCRPSMAETerm",
     "AlphaFairCRPSSpreadTerm",
+    "AverageRankHistogram",
+    "BandDepthRankHistogram",
+    "BaseGaussianMetric",
     "CRPSMAETerm",
     "CRPSSpreadTerm",
+    "ClosedFormGaussianCRPS",
+    "ClosedFormLogScore",
+    "ClosedFormPredictiveStats",
+    "ClosedFormSpread",
+    "ClosedFormStudentTCRPS",
+    "CollectionCoverage",
     "Coverage",
+    "DawidSebastianiScore",
+    "DependenceRankHistogram",
     "EnergyScore",
     "EnsembleSkill",
     "EnsembleSpread",
     "FairCRPS",
     "FairCRPSMAETerm",
     "FairCRPSSpreadTerm",
+    "GaussianCRPS",
+    "GaussianCoverage",
+    "GaussianWinkler",
     "LInfinity",
+    "LogScore",
+    "MultiCollectionCoverage",
     "MultiCoverage",
     "MultiWinkler",
+    "MultivariateRankHistogram",
+    "PooledMultivariateRankHistogram",
+    "PooledSpreadSkillRatio",
     "PowerSpectrumCCRMSE",
     "PowerSpectrumCCRMSEHigh",
     "PowerSpectrumCCRMSELow",
@@ -78,9 +151,19 @@ __all__ = [
     "PowerSpectrumRMSELow",
     "PowerSpectrumRMSEMid",
     "PowerSpectrumRMSETail",
+    "RankHistogram",
+    "SpatialVariogramScore",
+    "SpatiotemporalVariogramScore",
     "SpreadSkillRatio",
+    "TemporalAutocorrelationMatch",
+    "TemporalVariogramScore",
     "VariogramScore",
     "WinklerScore",
+    "compute_closed_form_predictive_stats",
+    "default_region_sizes",
+    "lag_trace_rho",
+    "probe_closed_form_predictive",
+    "student_t_crps_pointwise",
 ]
 
 ALL_DETERMINISTIC_METRICS = (
@@ -116,13 +199,26 @@ ALL_ENSEMBLE_METRICS = (
     FairCRPS,
     FairCRPSMAETerm,
     FairCRPSSpreadTerm,
+    LogScore,
+    DawidSebastianiScore,
     EnergyScore,
+    AlmostFairEnergyScore,
     VariogramScore,
+    LogScore,
+    DawidSebastianiScore,
     EnsembleSpread,
     EnsembleSkill,
+    PooledSpreadSkillRatio,
     SpreadSkillRatio,
     WinklerScore,
     MultiWinkler,
     Coverage,
     MultiCoverage,
+    RankHistogram,
+    MultivariateRankHistogram,
+)
+ALL_GAUSSIAN_METRICS = (
+    GaussianCRPS,
+    GaussianCoverage,
+    GaussianWinkler,
 )
