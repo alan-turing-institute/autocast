@@ -63,6 +63,9 @@ class TrainingChain(Callback):
         if str(config["optimizer"].get("scheduler_interval")).lower() == "time":
             msg = "Use an epoch- or step-based scheduler for a training chain."
             raise ValueError(msg)
+        if (trainer.min_epochs or 0) > 1 or (trainer.min_steps or 0) > 0:
+            msg = "Training chains require min_epochs <= 1 and min_steps unset or zero."
+            raise ValueError(msg)
 
         previous = self.directory / f"segment-{self.segment - 1:04d}.ckpt"
         expected = None if self.segment == 1 else previous

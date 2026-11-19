@@ -44,6 +44,10 @@ def test_chain_reuses_launcher_with_afterok_dependency(tmp_path, monkeypatch, ca
     assert "segment-0001.ckpt" in script.read_text()
     assert (chain / "segment-0002.job-id").read_text() == "92\n"
 
+    # Executing the generated Slurm script requires a POSIX environment.
+    if sys.platform == "win32":
+        return
+
     monkeypatch.setenv("SLURM_JOB_ID", "92")
     endpoint = chain / "segment-0001.ckpt"
     (chain / "finished").symlink_to(endpoint.name)

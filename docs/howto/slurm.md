@@ -37,6 +37,8 @@ uv run autocast processor --mode slurm --chain 2 --dry-run \
 
 `--dry-run` prints the scripts and dependencies. Set `trainer.max_epochs` and any
 explicit cosine horizon for the whole run. Use an epoch- or step-based scheduler.
+Leave `trainer.min_steps` unset and keep `trainer.min_epochs` at most one so
+training can hand off after any completed epoch.
 The budget starts with the batch script. The chain uses the longest observed
 epoch to decide whether another can fit, reserving 10% of each allocation
 (1–30 minutes) for checkpointing. Allow enough walltime for setup and at least

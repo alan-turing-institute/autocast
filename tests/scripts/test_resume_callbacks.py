@@ -152,6 +152,12 @@ def test_slurm_chain_preserves_optimizer_and_cosine_state(tmp_path, monkeypatch)
     time_scheduler.optimizer.scheduler_interval = "TIME"
     with pytest.raises(ValueError, match="epoch- or step-based scheduler"):
         run_training(time_scheduler, _DeterministicModel(), datamodule, tmp_path)
+    for minimum in ({"min_epochs": 2}, {"min_steps": 1}):
+        minimum_config = config.copy()
+        minimum_config.trainer.update(minimum)
+        with pytest.raises(ValueError, match="Training chains require min_epochs"):
+            run_training(minimum_config, _DeterministicModel(), datamodule, tmp_path)
+    config.trainer.min_epochs = 1
     run_training(config, _DeterministicModel(), datamodule, tmp_path)
     first_path = chain_dir / "segment-0001.ckpt"
     assert not first_path.is_symlink()
