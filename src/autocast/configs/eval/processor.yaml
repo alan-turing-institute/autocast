@@ -32,6 +32,8 @@ metrics:
   - spread
   - skill
   - ssr
+  - ssr_pooled
+  - collection_coverage
   - winkler
 
 max_rollout_steps: 25

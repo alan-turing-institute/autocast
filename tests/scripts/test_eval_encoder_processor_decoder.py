@@ -65,6 +65,7 @@ from autocast.scripts.eval.encoder_processor_decoder import (
     _resolve_auto_eval_mode,
     _resolve_dump_rollout_dataloader,
     _resolve_eval_path,
+    _resolve_include_memory_intensive,
     _resolve_rollout_batch_limit,
     _resolve_rollout_channel_names,
     _resolve_rollout_timestep_limit,
@@ -683,15 +684,45 @@ def test_default_eval_metrics_include_spread_and_skill_for_lola_comparison():
 
 
 def test_should_skip_metric_skips_memory_intensive_ones():
+    """The default guard holds, on the class-derived membership.
+
+    Membership is derived from each metric class's `memory_intensive` flag, so
+    `energy` is NOT guarded (its cost is in the member count, not D-by-D in the
+    field), while the variogram family and the Dawid-Sebastiani score are.
+    """
     assert _should_skip_metric("variogram") is True
-    assert _should_skip_metric("energy") is True
+    assert _should_skip_metric("variogram_temporal") is True
+    assert _should_skip_metric("dss") is True
+    assert _should_skip_metric("energy") is False
     assert _should_skip_metric("crps") is False
     assert _should_skip_metric("ssr") is False
 
 
 def test_should_skip_metric_can_opt_in_to_memory_intensive_ones():
-    assert _should_skip_metric("variogram", skip_memory_intensive=False) is False
-    assert _should_skip_metric("energy", skip_memory_intensive=False) is False
+    assert _should_skip_metric("variogram", include_memory_intensive=True) is False
+    assert _should_skip_metric("dss", include_memory_intensive=True) is False
+
+
+@pytest.mark.parametrize(
+    ("eval_cfg", "expected"),
+    [
+        ({}, False),
+        ({"include_memory_intensive_metrics": True}, True),
+        ({"skip_memory_intensive_metrics": False}, True),
+        ({"skip_memory_intensive_metrics": True}, False),
+        (
+            {
+                "include_memory_intensive_metrics": False,
+                "skip_memory_intensive_metrics": False,
+            },
+            False,
+        ),
+    ],
+)
+def test_resolve_include_memory_intensive_honours_both_keys(eval_cfg, expected):
+    """The legacy inverted key still works; the positive key wins when both set."""
+    resolved = _resolve_include_memory_intensive(cast(Any, OmegaConf.create(eval_cfg)))
+    assert resolved is expected
 
 
 def test_resolve_rollout_channel_names_from_norm_already_subset():
