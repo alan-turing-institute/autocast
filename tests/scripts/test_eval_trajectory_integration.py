@@ -342,7 +342,9 @@ def test_default_eval_config_scores_cheap_new_metrics_and_guards_the_costly_ones
 
     A variogram is selectable by name but sits behind
     `eval.include_memory_intensive_metrics`: it must be absent from the shipped
-    defaults, and present once that switch is on.
+    defaults, and present once that switch is on. `autocorr_match` needs at least
+    two lead steps, so it is scored on the 3-step rollout window and left out of
+    the single-step pass instead of failing the run.
     """
     default_metrics = list(OmegaConf.load(DEFAULT_EVAL_CONFIG).metrics)
     assert not {"variogram", "dss"} & set(default_metrics)
@@ -350,7 +352,7 @@ def test_default_eval_config_scores_cheap_new_metrics_and_guards_the_costly_ones
     cfg = _default_eval_cfg(
         checkpoint,
         include_memory_intensive_metrics=include_memory_intensive,
-        metrics=[*default_metrics, "variogram", "dss"],
+        metrics=[*default_metrics, "variogram", "dss", "autocorr_match"],
     )
 
     run_evaluation(cfg, work_dir=tmp_path)
@@ -363,3 +365,5 @@ def test_default_eval_config_scores_cheap_new_metrics_and_guards_the_costly_ones
         else:
             assert not columns & {"variogram", "dss"}
     assert list(tmp_path.glob("test_collection_coverage_window_*.csv"))
+    assert "autocorr_match" not in set(pd.read_csv(tmp_path / "evaluation_metrics.csv"))
+    assert "autocorr_match" in set(pd.read_csv(tmp_path / "rollout_metrics.csv"))

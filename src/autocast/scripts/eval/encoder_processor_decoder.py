@@ -245,6 +245,33 @@ MEMORY_INTENSIVE_METRICS = frozenset(
     if _registry_class_flag(cls, "memory_intensive", False)
 )
 
+# Names resolving to a metric class with `min_window_steps > 1` (temporal-
+# dependence scalars needing at least two lead steps to form a lag/pair --
+# see `autocast.metrics.base.BaseMetric.min_window_steps`). Derived from the
+# class attribute for the same reason as `MEMORY_INTENSIVE_METRICS` above:
+# any new registry alias of an existing class is covered automatically,
+# instead of a separately maintained name allowlist. `autocorr_match` raises
+# on a shorter window; `variogram_temporal` and `variogram_spatiotemporal`
+# don't raise but silently degenerate (the former to a fake-perfect 0, the
+# latter to a value numerically identical to `variogram_spatial`), which is
+# just as misleading in a CSV -- all are excluded on the same terms. Passed
+# to `compute_metrics_from_dataloader` so windows (explicit, e.g. from
+# `metric_windows`/`metric_windows_rollout`, or the implicit whole-sequence
+# window) shorter than a metric's minimum are filtered out per-window, based
+# on the actual observed tensor length -- not a single global
+# `n_steps_output` check, since one rollout pass legitimately mixes window
+# lengths (e.g. the default `metric_windows_rollout` includes both a
+# single-step [0, 1] window and longer ones). Also used (via
+# `_is_single_step_incompatible`) to exclude these names, unconditionally,
+# from the per-timestep rollout metric builder below, which only ever sees
+# T=1 slices by construction and so can never satisfy any minimum > 1.
+METRIC_MIN_WINDOW_STEPS: Mapping[str, int] = {
+    name: _registry_class_flag(cls, "min_window_steps", 1)
+    for registry in (AVAILABLE_METRICS, AVAILABLE_METRICS_ENSEMBLE)
+    for name, cls in registry.items()
+    if _registry_class_flag(cls, "min_window_steps", 1) > 1
+}
+
 EVAL_MODES = ("auto", "encode_once", "ambient", "latent")
 DEFAULT_EVAL_MODE = "auto"
 ROLLOUT_MEMBER_RENDER_MODES = ("inline", "separate", "both")
@@ -1749,6 +1776,17 @@ def _normalize_rollout_member_render_mode(value: str | None) -> str:
         )
         raise ValueError(msg)
     return normalized
+
+
+def _is_single_step_incompatible(name: str) -> bool:
+    """Return True when `name` needs more lead steps than a T=1 slice can give.
+
+    Used only on the per-timestep rollout path (each slice is a fixed T=1 by
+    construction); the windowed test/rollout paths instead filter per-window,
+    against the actual observed tensor length, via `metric_min_window_steps`
+    inside `compute_metrics_from_dataloader`.
+    """
+    return name in METRIC_MIN_WINDOW_STEPS
 
 
 def _should_skip_metric(name: str, include_memory_intensive: bool = False) -> bool:
@@ -3552,6 +3590,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
             windows=test_windows,
             return_per_batch=True,
             device=fabric.device,
+            metric_min_window_steps=METRIC_MIN_WINDOW_STEPS,
             batch_result_callback=(
                 test_trajectory_accumulator.update
                 if test_trajectory_accumulator is not None
@@ -3830,6 +3869,26 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                         name,
                     )
                     continue
+                if isinstance(metric_factory, type) and issubclass(
+                    metric_factory, RankHistogram
+                ):
+                    # Aggregate calibration diagrams; no per-timestep expansion.
+                    continue
+                if _is_single_step_incompatible(name):
+                    # Per-timestep slices are always length 1 by construction
+                    # (`compute_metrics_per_timestep_from_dataloader` updates
+                    # each metric with a single (B, 1, S, C) slice per
+                    # timestep), so a metric needing >1 step can never be
+                    # satisfied here -- unlike the windowed passes above,
+                    # there is no window length to check.
+                    log.info(
+                        "Skipping single-step-incompatible metric '%s' on the "
+                        "per-timestep rollout path (always T=1 per slice); it "
+                        "still runs on the windowed rollout path for windows "
+                        "long enough to satisfy it.",
+                        name,
+                    )
+                    continue
                 if name == "coverage":
                     per_timestep_metric_fns[name] = metric_factory
                 else:
@@ -3914,6 +3973,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                         windows=windows,
                         return_per_batch=True,
                         device=fabric.device,
+                        metric_min_window_steps=METRIC_MIN_WINDOW_STEPS,
                         batch_result_callback=(
                             rollout_trajectory_accumulator.update
                             if rollout_trajectory_accumulator is not None
