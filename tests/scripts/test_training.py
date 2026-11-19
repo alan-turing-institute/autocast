@@ -1229,22 +1229,28 @@ def test_final_checkpoint_survives_standalone_validation(tmp_path: Path):
 @pytest.mark.parametrize(
     "name", ["autoencoder", "encoder_processor_decoder", "processor"]
 )
-def test_early_stopping_is_on_by_default_at_patience_100(config_dir: str, name: str):
-    """D205: every top-level config enables the stop at patience 100, min_delta 0.
+def test_early_stopping_is_off_by_default_and_patience_100_when_on(
+    config_dir: str, name: str
+):
+    """Every top-level config leaves the stop off, at patience 100 once enabled.
 
-    The values live in the config (not only the code fallback) so each run's
-    resolved config records them, which the grid scorers read back.
+    Off because a flow-matching ``val_loss`` is a fresh draw at every validation
+    and patience 100 ends those runs far from their best (aiphys#246). The
+    values live in the config so each run's resolved config records them, which
+    the grid scorers read back; an absent block is off as well.
     """
     cfg = _load_config(config_dir, name)
-    assert cfg.early_stopping.enabled is True
+    assert cfg.early_stopping.enabled is False
+    assert _early_stopping_callbacks(cfg) == []
     assert cfg.early_stopping.patience == DEFAULT_EARLY_STOPPING_PATIENCE == 100
     assert cfg.early_stopping.min_delta == 0.0
+    with open_dict(cfg):
+        cfg.early_stopping.enabled = True
     (stop,) = _early_stopping_callbacks(cfg)
     assert cast(EarlyStopping, stop).patience == 100
     with open_dict(cfg):
         del cfg["early_stopping"]
-    (fallback,) = _early_stopping_callbacks(cfg)
-    assert cast(EarlyStopping, fallback).patience == 100
+    assert _early_stopping_callbacks(cfg) == []
 
 
 @pytest.mark.parametrize(("every_n", "checks"), [(1, 100), (5, 20), (3, 34)])
@@ -1255,6 +1261,7 @@ def test_early_stopping_patience_is_in_epochs_not_validation_checks(
     cfg = _load_config(config_dir, "encoder_processor_decoder")
     with open_dict(cfg):
         cfg.trainer.check_val_every_n_epoch = every_n
+        cfg.early_stopping.enabled = True
     (stop,) = _early_stopping_callbacks(cfg)
     assert cast(EarlyStopping, stop).patience == checks
 
