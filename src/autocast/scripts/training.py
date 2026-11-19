@@ -411,15 +411,18 @@ class TrainingTimerCallback(Callback):
 
 
 def _early_stopping_callbacks(config: DictConfig) -> list[Callback]:
-    """Return a validation-plateau early stop unless it is switched off.
+    """Return a validation-plateau early stop when it is switched on.
 
-    ON by default since 2026-10-04 (owner ruling, D205): patience 100, min_delta 0,
-    set in the top-level configs. Before that it was opt-in (patience 20 in code,
-    50 in the campaign presets per D156). Replayed on 248 finished runs, patience
-    100 never kept a checkpoint more than 1% off the run's own best; 50 did twice,
-    including the gpe64 standardised-conditioning retrain (epoch 65 kept, best 133).
-    A run that must train its full budget sets ``early_stopping.enabled=false``;
-    tune with ``early_stopping.patience=N``, ``.monitor``, ``.min_delta``.
+    OFF by default (the top-level configs and an absent block); a run switches it
+    on with ``early_stopping.enabled=true`` and tunes it with
+    ``early_stopping.patience=N`` (default 100 epochs), ``.monitor``,
+    ``.min_delta``. Replayed on 248 finished runs, patience 100 never kept a
+    checkpoint more than 1% off the run's own best; 50 did twice, including the
+    gpe64 standardised-conditioning retrain (epoch 65 kept, best 133). On the
+    64x64 PDEs it keeps the best checkpoint of every CRPS and ARFC run, but a
+    flow-matching ``val_loss`` is a fresh Monte Carlo draw at each validation, so
+    an early low draw ends the run at a checkpoint 2.4-22x worse than its best
+    (aiphys#246); hence off by default.
 
     Why this exists: the training budget is otherwise a fixed epoch count, which
     is simultaneously too generous for easy substrates and too small for hard
@@ -440,7 +443,7 @@ def _early_stopping_callbacks(config: DictConfig) -> list[Callback]:
     only, so its stop reason in the logs is never ambiguous.
     """
     early_cfg = config.get("early_stopping") or {}
-    if not early_cfg.get("enabled", True):
+    if not early_cfg.get("enabled", False):
         return []
     # ``patience`` is in EPOCHS (D205 measured it on runs that validated every
     # epoch). Lightning counts validation CHECKS, so a run validating every k-th

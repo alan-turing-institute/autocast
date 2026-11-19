@@ -12,13 +12,15 @@ defaults:
   - optional loss@model.loss_func: null
 
 seed: 42
-# Validation-plateau stop, ON by default (owner ruling 2026-10-04, D205): patience 100,
-# min_delta 0; the checkpoint callbacks keep the best epoch. Replayed on 248 finished
-# runs, patience 100 never kept a checkpoint more than 1% off the run's own best (50
-# did twice). A run that must train its full budget (matched-budget grids, drifting,
-# memorisation probes) sets `early_stopping.enabled: false` in its preset, with why.
+# Validation-plateau stop, OFF by default; switch it on per run with
+# `early_stopping.enabled: true` (patience 100 epochs, min_delta 0; the checkpoint
+# callbacks keep the best epoch). Patience 100 keeps the best checkpoint of CRPS and
+# ARFC runs on AD64, CNS64, GS64 and GPE64 and of 248 earlier runs. Flow matching's
+# val_loss is drawn afresh at every validation (noise and flow time), and patience
+# 100 stops those runs at epochs 485-644 of ~3,000 with a checkpoint 2.4-22x worse
+# than the best (aiphys#246), so the stop is not on by default.
 early_stopping:
-  enabled: true
+  enabled: false
   monitor: val_loss
   mode: min
   patience: 100
