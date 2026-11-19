@@ -1,5 +1,14 @@
 # Rayleigh-Benard comparison submitters
 
+For training presets and guarded continuations, see the
+[ambient preparation guide](ambient_crps_preparation.md). To reproduce the
+archived four-model results, including trajectory error bands and inference
+timing, see the [frozen-checkpoint comparison](diagnostics.md).
+
+Shared reference evaluation ([PR #489](https://github.com/alan-turing-institute/autocast/pull/489))
+and an RB reference preset are follow-on work for new comparisons and
+re-evaluation of these checkpoints. The guides here preserve the archived protocol.
+
 This folder contains the maintained Rayleigh-Benard submitters for the
 post-merge `283/` Rayleigh-Benard stack. Some configs referenced here live on
 parallel `283/` branches today, so these entrypoints are intended for the final
@@ -295,3 +304,12 @@ prediction API. Historical ambient test-loader CSVs used standardized fields
 and are not directly comparable. Latent models encode the selected raw inputs
 with their frozen autoencoder. The runner saves per-window/lead/channel scores,
 including separate spread/skill components, without another inference pass.
+
+### Matched ambient CRPS preparation
+
+See [the ambient preparation guide](ambient_crps_preparation.md) for resolved
+memory-smoke, timing, training and matched evaluation configurations. These
+use `crps_spatiotemporal_ambient_matched` to match the completed latent models'
+1024/16/8 transformer trunk and full 4096 × 64-update schedule. The default
+eight-node layout preserves 32 real windows × eight members per update.
+Preparation commands write configurations and scripts without submitting jobs.
