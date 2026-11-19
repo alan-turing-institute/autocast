@@ -5,8 +5,10 @@ from pathlib import Path
 from unittest.mock import Mock
 
 import lightning as L
+import pytest
 import torch
-from lightning.pytorch.callbacks import Callback, ModelCheckpoint, Timer
+from lightning.pytorch.callbacks import Callback, EarlyStopping, ModelCheckpoint, Timer
+from omegaconf import OmegaConf
 from torch.utils.data import DataLoader, TensorDataset
 
 from autocast.callbacks.checkpoint import ProgressModelCheckpoint
@@ -16,7 +18,10 @@ from autocast.models.optimizer_mixin import OptimizerMixin
 from autocast.scripts.training import (
     TrainingTimerCallback,
     _attach_reset_timer_callback,
+    run_training,
 )
+from autocast.scripts.training_chain import TrainingChain
+from autocast.scripts.workflow.commands import infer_eval_checkpoint
 
 
 def test_timer_resume_preserves_elapsed_time_and_epoch_history(monkeypatch):
@@ -107,6 +112,106 @@ class _StopAfterTwoEpochs(Callback):
     def on_train_epoch_end(self, trainer, pl_module):  # noqa: ARG002
         if trainer.current_epoch == 1:
             trainer.should_stop = True
+
+
+def test_slurm_chain_preserves_optimizer_and_cosine_state(tmp_path, monkeypatch):
+    chain_dir = tmp_path / ".chain"
+    chain_dir.mkdir()
+    dataset = TensorDataset(torch.ones(4))
+    datamodule = L.LightningDataModule.from_datasets(
+        train_dataset=dataset, val_dataset=dataset, batch_size=1, num_workers=0
+    )
+    config = OmegaConf.create(
+        {
+            "optimizer": _DeterministicModel().optimizer_config,
+            "early_stopping": {"enabled": False},
+            "output": {"save_config": True},
+            "trainer": {
+                "_target_": "lightning.pytorch.Trainer",
+                "max_epochs": 3,
+                "max_time": "00:12:00:00",
+                "accelerator": "cpu",
+                "devices": 1,
+                "enable_progress_bar": False,
+                "enable_model_summary": False,
+                "num_sanity_val_steps": 0,
+            },
+        }
+    )
+    clock = [0]
+    monkeypatch.setattr("autocast.scripts.training_chain.time", lambda: clock[0])
+    check_deadline = TrainingChain.on_train_epoch_end
+
+    def advance_clock(self, trainer, pl_module):
+        clock[0] += 10
+        check_deadline(self, trainer, pl_module)
+
+    monkeypatch.setattr(TrainingChain, "on_train_epoch_end", advance_clock)
+    monkeypatch.setenv("AUTOCAST_SLURM_CHAIN", "1:17:test-chain")
+    time_scheduler = config.copy()
+    time_scheduler.optimizer.scheduler_interval = "TIME"
+    with pytest.raises(ValueError, match="epoch- or step-based scheduler"):
+        run_training(time_scheduler, _DeterministicModel(), datamodule, tmp_path)
+    run_training(config, _DeterministicModel(), datamodule, tmp_path)
+    first_path = chain_dir / "segment-0001.ckpt"
+    assert not first_path.is_symlink()
+    assert not (chain_dir / "finished").exists()
+    resolved_config = tmp_path / "resolved_config.yaml"
+    first_config = resolved_config.read_bytes()
+
+    config.resume_from_checkpoint = str(first_path)
+    monkeypatch.setenv("AUTOCAST_SLURM_CHAIN", "2:19:test-chain")
+    with pytest.raises(RuntimeError, match="too little time to start"):
+        run_training(config, _DeterministicModel(), datamodule, tmp_path)
+    monkeypatch.setenv("AUTOCAST_SLURM_CHAIN", "2:100:test-chain")
+    changed_horizon = config.copy()
+    changed_horizon.trainer.max_epochs = 4
+    with pytest.raises(ValueError, match="configuration changed"):
+        run_training(changed_horizon, _DeterministicModel(), datamodule, tmp_path)
+    resumed_model = _DeterministicModel()
+    run_training(config, resumed_model, datamodule, tmp_path)
+    assert len(resumed_model.learning_rates) == 8
+    assert resumed_model.learning_rates[0] == 1e-4 * (1 + math.cos(math.pi / 4096)) / 2
+    last_path = chain_dir / "segment-0002.ckpt"
+    assert (chain_dir / "finished").resolve(strict=True) == last_path
+    assert infer_eval_checkpoint(tmp_path) == last_path.resolve()
+    assert resolved_config.read_bytes() == first_config
+    last_checkpoint = torch.load(last_path, weights_only=False)
+    assert last_checkpoint["global_step"] == 12
+    assert last_checkpoint["optimizer_states"][0]["state"][0]["step"] == 12
+    assert last_checkpoint["lr_schedulers"][0]["cosine_horizon"] == 4096
+
+
+@pytest.mark.parametrize(
+    ("stop_epoch", "early_stop_options"),
+    [(1, {"stopping_threshold": 1.5}), (2, {"patience": 1})],
+)
+def test_slurm_chain_finishes_when_early_stop_coincides_with_cutoff(
+    stop_epoch, early_stop_options, tmp_path, monkeypatch
+):
+    (tmp_path / ".chain").mkdir()
+    clock = iter(range(0, 30, 10))
+    monkeypatch.setattr("autocast.scripts.training_chain.time", lambda: next(clock))
+    early_stop = EarlyStopping(
+        "val_loss", check_on_train_epoch_end=True, **early_stop_options
+    )
+    trainer = L.Trainer(
+        accelerator="cpu",
+        devices=1,
+        max_epochs=3,
+        logger=False,
+        enable_checkpointing=False,
+        num_sanity_val_steps=0,
+        callbacks=[early_stop],
+    )
+    chain = TrainingChain(tmp_path, 1, (stop_epoch + 1) * 10, "test-chain")
+    chain.prepare(trainer, {"optimizer": {}}, None, weights_only=False)
+    loader = DataLoader(TensorDataset(torch.ones(2)), batch_size=1)
+    trainer.fit(_DeterministicModel(), loader, loader)
+
+    assert trainer.current_epoch == stop_epoch
+    assert early_stop.stopped_epoch == stop_epoch - 1
+    assert not chain.save_endpoint(trainer)
 
 
 def _trainer(root: Path, *, interrupted: bool = False, reset_timer: bool = False):

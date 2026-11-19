@@ -30,6 +30,7 @@ from autocast.processors.residual_normalization import ResidualNormalizer
 from autocast.scripts.config import save_resolved_config
 from autocast.scripts.data import batch_to_device
 from autocast.scripts.setup import setup_autoencoder_model, setup_datamodule
+from autocast.scripts.training_chain import TrainingChain
 
 log = logging.getLogger(__name__)
 
@@ -109,8 +110,10 @@ def _latest_callback_checkpoint_path(trainer: L.Trainer) -> Path | None:
     return max(candidates, key=lambda path: path.stat().st_mtime)
 
 
-def _link_checkpoint_target_to_latest(trainer: L.Trainer, target_path: Path) -> bool:
-    source_path = _latest_callback_checkpoint_path(trainer)
+def _link_checkpoint_target_to_latest(
+    trainer: L.Trainer, target_path: Path, *, source_path: Path | None = None
+) -> bool:
+    source_path = source_path or _latest_callback_checkpoint_path(trainer)
     if source_path is None:
         return False
 
@@ -521,6 +524,7 @@ def run_training(
     """Standardized training loop."""
     # Ensure work_dir is a Path
     work_dir = Path(work_dir)
+    chain = TrainingChain.from_environment(work_dir)
 
     apply_float32_matmul_precision(config)
 
@@ -531,13 +535,16 @@ def run_training(
         if logging_cfg is not None
         else {}
     )
+    if chain is not None:
+        chain.configure_logging(logging_cfg_resolved)
+    resolved_config = OmegaConf.to_container(config, resolve=True)
     wandb_logger, _watch_cfg = create_wandb_logger(
         logging_cfg_resolved,  # type: ignore TODO: fix
         experiment_name=config.get("experiment_name"),
         run_name=run_name,
         job_type=job_type,
         work_dir=work_dir,
-        config={"hydra": OmegaConf.to_container(config, resolve=True)},
+        config={"hydra": resolved_config},
     )
 
     # Get output config and save resolved config if requested
@@ -566,8 +573,18 @@ def run_training(
         ):
             callback.setdefault("save_last", "link")
 
+    if chain is None:
+        callbacks.append(CheckpointAliasSymlinkCallback(checkpoint_path))
+    else:
+        # The chain timer owns this allocation's budget. Keep the fit horizon intact.
+        trainer_cfg["max_time"] = None
+        alias = checkpoint_path.parent.resolve() / checkpoint_path.name
+        if not alias.is_relative_to(work_dir) or alias.is_relative_to(chain.directory):
+            msg = (
+                "The checkpoint alias must be under the run directory, outside .chain."
+            )
+            raise ValueError(msg)
     callbacks += [
-        CheckpointAliasSymlinkCallback(checkpoint_path),
         TrainingTimerCallback(),
         *_gpu_util_callbacks(config),
         *_early_stopping_callbacks(config),
@@ -579,10 +596,34 @@ def run_training(
         default_root_dir=str(work_dir),
         logger=wandb_logger,
     )
+    _fit_training(trainer, model, datamodule, config, resolved_config, work_dir, chain)
 
-    if output_cfg.get("save_config") and trainer.is_global_zero:
-        save_resolved_config(config, work_dir)
+    if chain is None:
+        _finalize_training_checkpoint(trainer, checkpoint_path)
+    else:
+        continuing = chain.save_endpoint(trainer)
+        if trainer.is_global_zero:
+            _link_checkpoint_target_to_latest(
+                trainer, checkpoint_path, source_path=chain.checkpoint
+            )
+            if not continuing:
+                (chain.directory / "finished").symlink_to(chain.checkpoint.name)
+    trainer.strategy.barrier("checkpoint-alias-finalize")
 
+    if chain is None and not skip_test:
+        trainer.test(model=model, datamodule=datamodule)
+
+
+def _fit_training(
+    trainer: L.Trainer,
+    model: L.LightningModule,
+    datamodule: L.LightningDataModule,
+    config: DictConfig,
+    resolved_config: object,
+    work_dir: Path,
+    chain: TrainingChain | None,
+) -> None:
+    output_cfg = config.get("output", {})
     resume_checkpoint = config.get("resume_from_checkpoint") or output_cfg.get(
         "resume_from_checkpoint"
     )
@@ -601,6 +642,20 @@ def run_training(
         resume_weights_only=resume_weights_only,
         reset_resume_time_budget=reset_resume_time_budget,
     )
+    if chain is not None:
+        chain.prepare(
+            trainer,
+            resolved_config,
+            resume_checkpoint,
+            weights_only=resume_weights_only,
+        )
+    if (
+        (chain is None or chain.segment == 1)
+        and output_cfg.get("save_config")
+        and trainer.is_global_zero
+    ):
+        save_resolved_config(config, work_dir)
+
     _attach_reset_timer_callback(
         trainer,
         enabled=(
@@ -634,6 +689,8 @@ def run_training(
         log.info("Starting training from scratch (no resume checkpoint).")
         trainer.fit(model=model, datamodule=datamodule)
 
+
+def _finalize_training_checkpoint(trainer: L.Trainer, checkpoint_path: Path) -> None:
     # Save stable checkpoint target (prefer callback checkpoint) immediately
     # after fit so a checkpoint exists even if optional test later fails.
     #
@@ -654,13 +711,6 @@ def run_training(
         if trainer.is_global_zero:
             checkpoint_path.unlink()
         trainer.save_checkpoint(checkpoint_path)
-
-    # Ensure non-zero ranks observe the finalized checkpoint before test.
-    trainer.strategy.barrier("checkpoint-alias-finalize")
-
-    # Run testing if not skipped.
-    if not skip_test:
-        trainer.test(model=model, datamodule=datamodule)
 
 
 @torch.no_grad()

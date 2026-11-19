@@ -402,6 +402,7 @@ def run_module(
     dry_run: bool = False,
     mode: str = "local",
     runtime_typechecking: bool = False,
+    chain: int | None = None,
 ) -> None:
     """Execute *module* locally or via SLURM depending on *mode*."""
     if mode == "slurm":
@@ -410,6 +411,7 @@ def run_module(
             overrides,
             dry_run=dry_run,
             runtime_typechecking=runtime_typechecking,
+            chain=chain,
         )
         return
 
@@ -569,8 +571,14 @@ def train_command(
     run_id: str | None = None,
     runtime_typechecking: bool = False,
     dry_run: bool = False,
+    chain: int | None = None,
 ) -> tuple[Path, str]:
     """Run a training command."""
+    if chain is not None and (
+        kind not in {"epd", "processor"} or mode != "slurm" or resume_from is not None
+    ):
+        msg = "--chain starts a new EPD or processor run and requires --mode slurm."
+        raise ValueError(msg)
     final_work_dir, resolved_run_id, command_overrides = build_train_overrides(
         kind=kind,
         mode=mode,
@@ -589,6 +597,7 @@ def train_command(
         dry_run=dry_run,
         mode=mode,
         runtime_typechecking=runtime_typechecking,
+        chain=chain,
     )
     return final_work_dir, resolved_run_id
 

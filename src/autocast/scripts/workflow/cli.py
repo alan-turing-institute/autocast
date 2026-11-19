@@ -92,6 +92,13 @@ def build_parser() -> argparse.ArgumentParser:
         sub = subparsers.add_parser(name)
         _add_train_args(sub)
         _add_common_args(sub)
+        if name != "ae":
+            sub.add_argument(
+                "--chain",
+                type=int,
+                metavar="N",
+                help="Start one run across N dependent Slurm allocations.",
+            )
 
     # -- eval --------------------------------------------------------------
     eval_parser = subparsers.add_parser("eval")
@@ -293,6 +300,7 @@ def main() -> None:
             overrides=combined_overrides,
             runtime_typechecking=args.runtime_typechecking,
             dry_run=args.dry_run,
+            chain=getattr(args, "chain", None),
         )
         return
 
