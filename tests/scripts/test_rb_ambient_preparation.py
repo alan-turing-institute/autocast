@@ -1,6 +1,7 @@
 """Check ambient preparation without loading data, allocating GPUs or fitting."""
 
 import ast
+import os
 import shlex
 import subprocess
 from pathlib import Path
@@ -68,7 +69,8 @@ def test_training_preserves_reference_exposure_and_probe_horizon(
         assert cfg.trainer.max_time is None
         assert cfg.trainer.callbacks[-1].interval == "epoch"
     script = output / f"{phase}.sh"
-    subprocess.run(["bash", "-n", str(script)], check=True)
+    if os.name == "posix":
+        subprocess.run(["bash", "-n", str(script)], check=True)
     body = script.read_text()
     assert f"#SBATCH --nodes={nodes}" in body
     assert "#SBATCH --gpus-per-node=4" in body
@@ -77,18 +79,20 @@ def test_training_preserves_reference_exposure_and_probe_horizon(
     assert "${SLURM_JOB_ID:?" in body
     assert ("module load brics/nccl/2.26.6-1" in body) == (nodes > 1)
     assert "srun --kill-on-bad-exit=1" in body
-    # Validate the checksum line itself, including paths containing spaces.
-    checksum_line = next(
-        line for line in body.splitlines() if line.startswith("printf")
-    )
-    printed = subprocess.check_output(
-        ["bash", "-c", checksum_line.split(" | ")[0]], text=True
-    )
     job = state["jobs"][phase]
     assert job["gpus"] == 4 * nodes
-    assert printed == f"{job['config_sha256']}  {job['config']}\n"
+    if os.name == "posix":
+        # Validate the checksum line itself, including paths containing spaces.
+        checksum_line = next(
+            line for line in body.splitlines() if line.startswith("printf")
+        )
+        printed = subprocess.check_output(
+            ["bash", "-c", checksum_line.split(" | ")[0]], text=True
+        )
+        assert printed == f"{job['config_sha256']}  {job['config']}\n"
 
 
+@pytest.mark.skipif(os.name != "posix", reason="Slurm run guards require POSIX Bash")
 @pytest.mark.parametrize("existing", ["absent", "directory", "dangling_link"])
 def test_initial_job_rejects_partial_run_outputs(tmp_path, existing):
     output = tmp_path / "new preparation"
@@ -209,7 +213,8 @@ def test_evaluation_reuses_both_saved_cohorts_and_fitted_model(tmp_path):
         assert not cfg.eval.compute_rollout_autoencoded_target_metrics
         assert _resolve_rollout_batch_limit(cfg.eval) is None
         script = output / f"{name}.sh"
-        subprocess.run(["bash", "-n", str(script)], check=True)
+        if os.name == "posix":
+            subprocess.run(["bash", "-n", str(script)], check=True)
         assert "#SBATCH --no-requeue" in script.read_text()
         args = shlex.split(script.read_text().split("exec srun ", 1)[1])
         if name == "rollout":
@@ -219,12 +224,12 @@ def test_evaluation_reuses_both_saved_cohorts_and_fitted_model(tmp_path):
             assert "global_step" in code
         else:
             assert args[args.index("--expected-step") + 1] == "8192"
-        (output / name).mkdir()
-        guard = (
-            "if [[" + script.read_text().split("if [[", 1)[1].split("exec srun", 1)[0]
-        )
-        result = subprocess.run(
-            ["bash", "-c", guard], check=False, capture_output=True, text=True
-        )
-        assert result.returncode == 1
-        assert "Run directory exists" in result.stderr
+        if os.name == "posix":
+            (output / name).mkdir()
+            body = script.read_text()
+            guard = "if [[" + body.split("if [[", 1)[1].split("exec srun", 1)[0]
+            result = subprocess.run(
+                ["bash", "-c", guard], check=False, capture_output=True, text=True
+            )
+            assert result.returncode == 1
+            assert "Run directory exists" in result.stderr

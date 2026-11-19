@@ -2,8 +2,8 @@
 
 import argparse
 import json
+import os
 import subprocess
-import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -15,16 +15,13 @@ import yaml
 from omegaconf import OmegaConf
 
 from autocast.metrics.ensemble import EnergyScore
-
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT))
-from slurm_scripts.comparison.the_well.rayleigh_benard import (  # noqa: E402
+from slurm_scripts.comparison.the_well.rayleigh_benard import (
     complete_diagnostics as runner,
 )
-from slurm_scripts.comparison.the_well.rayleigh_benard import (  # noqa: E402
+from slurm_scripts.comparison.the_well.rayleigh_benard import (
     plot_diagnostics as plots,
 )
-from slurm_scripts.comparison.the_well.rayleigh_benard.paired_test_windows import (  # noqa: E402
+from slurm_scripts.comparison.the_well.rayleigh_benard.paired_test_windows import (
     make_selection,
 )
 
@@ -215,7 +212,8 @@ def test_prepare_pins_inputs_generates_eval_only_scripts_and_refuses_overwrite(
     assert Path(pinned.datamodule.normalization_path).read_bytes() == stats.read_bytes()
     for phase in ["pilot", "production"]:
         script = args.output / f"ambient_test-{phase}.sbatch"
-        subprocess.run(["bash", "-n", str(script)], check=True)
+        if os.name == "posix":
+            subprocess.run(["bash", "-n", str(script)], check=True)
         text = script.read_text()
         assert "#SBATCH --gpus=1" in text
         assert "--time=" in text

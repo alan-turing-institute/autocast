@@ -145,7 +145,7 @@ torchvision = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["tests"]
+pythonpath = ["tests", "."]
 norecursedirs = ["outputs", "slurm_scripts"]
 filterwarnings = [
     # Ignore Lightning warnings that are expected/benign in test environment

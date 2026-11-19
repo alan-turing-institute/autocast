@@ -214,7 +214,8 @@ def test_two_segments_preserve_scientific_settings_and_identity(
     )
     for stage in ("first", "second"):
         script = target / stage / "train.sh"
-        subprocess.run(["bash", "-n", str(script)], check=True)
+        if os.name == "posix":
+            subprocess.run(["bash", "-n", str(script)], check=True)
         text = script.read_text()
         assert "--no-requeue" in text
         assert "--kill-on-bad-exit=1" in text
@@ -311,8 +312,9 @@ def test_lola_chain_preserves_identity_and_skips_finished_training(
         completed = 4096 if stage == finish_at else (index + 1) * 2
         _complete_chain_segment(target, stage, payload, completed)
     assert json.loads((target / "completed.json").read_text())["global_step"] == 262144
-    for script in target.glob("*.sh"):
-        subprocess.run(["bash", "-n", str(script)], check=True)
+    if os.name == "posix":
+        for script in target.glob("*.sh"):
+            subprocess.run(["bash", "-n", str(script)], check=True)
 
 
 def test_lola_chain_rejects_changed_science(tmp_path, lola_source, payload):
@@ -329,6 +331,7 @@ def test_lola_chain_rejects_changed_science(tmp_path, lola_source, payload):
         ops.prepare_chain_stage(target / "plan.json", "third")
 
 
+@pytest.mark.skipif(os.name != "posix", reason="Slurm submission requires POSIX Bash")
 @pytest.mark.parametrize("fail_at", [None, 2])
 def test_chain_submission_records_dependencies_and_refuses_duplicates(
     tmp_path, lola_source, fail_at
