@@ -6,6 +6,7 @@ import torch
 from einops import rearrange
 from torch import Tensor, nn
 
+from autocast.nn.graph_vit import GraphAttentionBackend
 from autocast.nn.noise.source import SourceDistribution, _sample_checked
 from autocast.nn.vit import SpatialViTBackbone
 from autocast.processors.base import Processor
@@ -35,6 +36,7 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
     rollout trajectory. Explicit ``forward`` noise always bypasses sampling.
 
     ``graph_hops`` optionally restricts attention to periodic patch neighborhoods.
+    Select ``graph_attention_backend="gathered"`` to score only graph neighbors.
     """
 
     def __init__(
@@ -63,6 +65,7 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
         noise_mode: AdaLNNoiseMode | str = AdaLNNoiseMode.GLOBAL,
         noise_source: SourceDistribution | None = None,
         graph_hops: int | None = None,
+        graph_attention_backend: GraphAttentionBackend = "masked",
     ):
         super().__init__()
         self.n_spatial_dims = len(spatial_resolution)
@@ -148,6 +151,7 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
             use_precomputed_modulation=True,
             spatial_modulation=self.noise_mode == AdaLNNoiseMode.SPATIAL,
             graph_hops=graph_hops,
+            graph_attention_backend=graph_attention_backend,
         )
 
     def _noise_shape(self, x: Tensor) -> tuple[int, ...]:

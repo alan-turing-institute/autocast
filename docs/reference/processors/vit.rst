@@ -135,7 +135,13 @@ count of zero allows each patch to attend to itself.
 
 Set the hop count on the same SWE64 ViT configuration for a paired benchmark
 with the same patch size, positional encodings, weights layout and AdaLN
-configuration. This implementation passes a dense mask to Azula attention and
-has quadratic attention cost in the number of patches. Azula's positional bias
-uses ordinary grid coordinates, so equally close neighbours can receive
-different biases at the periodic seam and in the interior.
+configuration. Azula's positional bias uses ordinary grid coordinates, so
+equally close neighbours can receive different biases at the periodic seam
+and in the interior.
+
+With a hop count set, ``model.processor.graph_attention_backend=masked``
+(the default) passes a dense mask to Azula attention. The ``gathered`` backend
+uses the same neighbourhood and gathers keys and values before computing
+attention. It evaluates only neighbour pairs and uses the same learned weights
+and positional bias. The gather materializes keys and values for each edge,
+so throughput and memory use depend on the batch and neighbourhood size.
