@@ -4,7 +4,7 @@ from datetime import timedelta
 from pathlib import Path
 from time import perf_counter
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
 from unittest.mock import Mock
 
 import lightning as L
@@ -13,7 +13,7 @@ import torch
 from conftest import get_optimizer_config
 from hydra import compose, initialize_config_dir
 from hydra.utils import instantiate
-from lightning.pytorch.callbacks import Callback, ModelCheckpoint, Timer
+from lightning.pytorch.callbacks import Callback, EarlyStopping, ModelCheckpoint, Timer
 from matplotlib import pyplot as plt
 from omegaconf import DictConfig, OmegaConf, open_dict
 from torch.utils.data import DataLoader, Dataset, TensorDataset
@@ -28,6 +28,7 @@ from autocast.encoders.base import EncoderWithCond
 from autocast.encoders.identity import IdentityEncoder
 from autocast.nn.noise.source import TemporalOUSource
 from autocast.processors.residual_flow_matching import ResidualFlowMatchingProcessor
+from autocast.scripts import training
 from autocast.scripts.setup import (
     _infer_latent_spatial_resolution,
     setup_autoencoder_model,
@@ -35,9 +36,11 @@ from autocast.scripts.setup import (
     setup_processor_model,
 )
 from autocast.scripts.training import (
+    DEFAULT_EARLY_STOPPING_PATIENCE,
     ResetResumeTimerCallback,
     TrainingTimerCallback,
     _attach_reset_timer_callback,
+    _early_stopping_callbacks,
     _ensure_residual_statistics_callback,
     _validate_resume_settings,
     run_training,
@@ -1221,3 +1224,125 @@ def test_final_checkpoint_survives_standalone_validation(tmp_path: Path):
 
     assert not final_path.is_symlink()
     assert final_path.read_bytes() == saved_endpoint
+
+
+@pytest.mark.parametrize(
+    "name", ["autoencoder", "encoder_processor_decoder", "processor"]
+)
+def test_early_stopping_is_on_by_default_at_patience_100(config_dir: str, name: str):
+    """D205: every top-level config enables the stop at patience 100, min_delta 0.
+
+    The values live in the config (not only the code fallback) so each run's
+    resolved config records them, which the grid scorers read back.
+    """
+    cfg = _load_config(config_dir, name)
+    assert cfg.early_stopping.enabled is True
+    assert cfg.early_stopping.patience == DEFAULT_EARLY_STOPPING_PATIENCE == 100
+    assert cfg.early_stopping.min_delta == 0.0
+    (stop,) = _early_stopping_callbacks(cfg)
+    assert cast(EarlyStopping, stop).patience == 100
+    with open_dict(cfg):
+        del cfg["early_stopping"]
+    (fallback,) = _early_stopping_callbacks(cfg)
+    assert cast(EarlyStopping, fallback).patience == 100
+
+
+@pytest.mark.parametrize(("every_n", "checks"), [(1, 100), (5, 20), (3, 34)])
+def test_early_stopping_patience_is_in_epochs_not_validation_checks(
+    config_dir: str, every_n: int, checks: int
+):
+    """Validating every k-th epoch must not multiply the patience by k."""
+    cfg = _load_config(config_dir, "encoder_processor_decoder")
+    with open_dict(cfg):
+        cfg.trainer.check_val_every_n_epoch = every_n
+    (stop,) = _early_stopping_callbacks(cfg)
+    assert cast(EarlyStopping, stop).patience == checks
+
+
+def test_early_stopping_can_be_declined_and_never_replaces_callbacks(config_dir: str):
+    """A run can switch the stop off, and it is APPENDED, never merged into the list.
+
+    The trainer config's ``callbacks`` list carries every checkpoint callback
+    plus the non-finite-loss guard, and Hydra list overrides *replace* rather
+    than append -- so adding early stopping via a child config would silently
+    drop all of them. It is therefore appended in ``run_training`` instead, and
+    this test pins both halves of that contract.
+    """
+    cfg = _load_config(config_dir, "autoencoder")
+
+    # Off only when a run declines it.
+    with open_dict(cfg):
+        cfg.early_stopping.enabled = False
+    assert _early_stopping_callbacks(cfg) == []
+
+    targets = [str(c.get("_target_", "")) for c in cfg.trainer.callbacks]
+    assert any(t.endswith("ModelCheckpoint") for t in targets)
+    n_callbacks_before = len(cfg.trainer.callbacks)
+
+    patience = 7
+    with open_dict(cfg):
+        cfg.early_stopping = {
+            "enabled": True,
+            "patience": patience,
+            "monitor": "val_loss",
+        }
+
+    stops = _early_stopping_callbacks(cfg)
+    assert len(stops) == 1
+    stop = cast(EarlyStopping, stops[0])
+    assert stop.monitor == "val_loss"
+    assert stop.patience == patience
+    # The stop is on a validation plateau only, so its reason is unambiguous.
+    assert stop.check_finite is False
+
+    # Enabling it must not have disturbed the configured callback list.
+    assert len(cfg.trainer.callbacks) == n_callbacks_before
+    targets_after = [str(c.get("_target_", "")) for c in cfg.trainer.callbacks]
+    assert targets_after == targets
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_train_autoencoder_honours_early_stopping(
+    config_dir: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    enabled: bool,
+):
+    """The autoencoder path carries the stop.
+
+    Until 2026-10-16 ``train_autoencoder`` did not append it, so
+    ``early_stopping.enabled: true`` was ignored: the 32x32 shallow-water
+    autoencoder trained ~1000 epochs past its validation minimum (epoch 34).
+    Data, model, fitting and saving are stubbed; the trainer is the one the
+    composed config builds.
+    """
+    cfg = _load_config(
+        config_dir,
+        "autoencoder",
+        ["trainer.accelerator=cpu", f"early_stopping.enabled={enabled}"],
+    )
+    seen: list[list[Any]] = []
+    monkeypatch.setattr(
+        training, "apply_float32_matmul_precision", lambda *_a, **_k: None
+    )
+    monkeypatch.setattr(training, "create_wandb_logger", lambda *_, **__: (None, None))
+    monkeypatch.setattr(training, "setup_datamodule", lambda c: (None, c, {}))
+    monkeypatch.setattr(
+        training, "setup_autoencoder_model", lambda *_, **__: torch.nn.Linear(1, 1)
+    )
+    monkeypatch.setattr(training, "_save_reconstructions", lambda *_: None)
+    monkeypatch.setattr(
+        L.Trainer, "fit", lambda self, **_: seen.append(list(self.callbacks))
+    )
+    monkeypatch.setattr(L.Trainer, "save_checkpoint", lambda *_, **__: None)
+
+    training.train_autoencoder(cfg, tmp_path)
+
+    (callbacks,) = seen
+    stops = [c for c in callbacks if isinstance(c, EarlyStopping)]
+    if enabled:
+        (stop,) = stops
+        assert stop.monitor == "val_loss"
+        assert stop.patience == DEFAULT_EARLY_STOPPING_PATIENCE
+    else:
+        assert stops == []

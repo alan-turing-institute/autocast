@@ -1,6 +1,7 @@
 """Training functions and utils for AutoCast experiments."""
 
 import logging
+import math
 import os
 import shutil
 from pathlib import Path
@@ -10,7 +11,12 @@ from typing import cast
 import lightning as L
 import torch
 from hydra.utils import instantiate
-from lightning.pytorch.callbacks import Callback, ModelCheckpoint, Timer
+from lightning.pytorch.callbacks import (
+    Callback,
+    EarlyStopping,
+    ModelCheckpoint,
+    Timer,
+)
 from lightning.pytorch.trainer.states import TrainerFn
 from matplotlib import pyplot as plt
 from omegaconf import DictConfig, OmegaConf
@@ -26,6 +32,11 @@ from autocast.scripts.data import batch_to_device
 from autocast.scripts.setup import setup_autoencoder_model, setup_datamodule
 
 log = logging.getLogger(__name__)
+
+# Validation-plateau stop. ON by default since 2026-10-04 (D205); the top-level
+# configs carry the same values, so a run's resolved config records them.
+DEFAULT_EARLY_STOPPING_MONITOR = "val_loss"
+DEFAULT_EARLY_STOPPING_PATIENCE = 100
 
 
 _VALID_MATMUL_PRECISIONS = {"highest", "high", "medium"}
@@ -399,6 +410,65 @@ class TrainingTimerCallback(Callback):
         self._resume_pending = True
 
 
+def _early_stopping_callbacks(config: DictConfig) -> list[Callback]:
+    """Return a validation-plateau early stop unless it is switched off.
+
+    ON by default since 2026-10-04 (owner ruling, D205): patience 100, min_delta 0,
+    set in the top-level configs. Before that it was opt-in (patience 20 in code,
+    50 in the campaign presets per D156). Replayed on 248 finished runs, patience
+    100 never kept a checkpoint more than 1% off the run's own best; 50 did twice,
+    including the gpe64 standardised-conditioning retrain (epoch 65 kept, best 133).
+    A run that must train its full budget sets ``early_stopping.enabled=false``;
+    tune with ``early_stopping.patience=N``, ``.monitor``, ``.min_delta``.
+
+    Why this exists: the training budget is otherwise a fixed epoch count, which
+    is simultaneously too generous for easy substrates and too small for hard
+    ones. Measured 2026-07-28: the clean diffusion toys reach their final
+    reported metric within ~0.3% by 10% of an 80-epoch budget, while the chaotic
+    Lorenz-96 toy is still improving at epoch 75-78 of the same 80. Pairing a
+    generous ``trainer.max_epochs`` with this stop lets each substrate take what
+    it needs instead of being hand-tuned.
+
+    Returned as an appended callback rather than a config-list entry on purpose.
+    The trainer config's ``callbacks`` list has ~18 entries and Hydra list
+    overrides *replace* rather than append, so adding this in a child config
+    would silently drop every checkpoint callback and the non-finite-loss guard.
+    Appending here — the same route ``_gpu_util_callbacks`` already uses — cannot
+    do that.
+
+    ``check_finite`` is left off: this callback stops on a validation plateau
+    only, so its stop reason in the logs is never ambiguous.
+    """
+    early_cfg = config.get("early_stopping") or {}
+    if not early_cfg.get("enabled", True):
+        return []
+    # ``patience`` is in EPOCHS (D205 measured it on runs that validated every
+    # epoch). Lightning counts validation CHECKS, so a run validating every k-th
+    # epoch would otherwise wait k times longer than configured (2026-10-04: ARFC
+    # runs validate every 5th epoch, which turned patience 100 into 500 epochs).
+    patience_epochs = int(early_cfg.get("patience", DEFAULT_EARLY_STOPPING_PATIENCE))
+    every_n = int((config.get("trainer") or {}).get("check_val_every_n_epoch") or 1)
+    patience_checks = math.ceil(patience_epochs / every_n)
+    if every_n > 1:
+        log.info(
+            "Early stopping: patience %d epochs = %d validation checks "
+            "(validation every %d epochs)",
+            patience_epochs,
+            patience_checks,
+            every_n,
+        )
+    return [
+        EarlyStopping(
+            monitor=str(early_cfg.get("monitor", DEFAULT_EARLY_STOPPING_MONITOR)),
+            mode=str(early_cfg.get("mode", "min")),
+            patience=patience_checks,
+            min_delta=float(early_cfg.get("min_delta", 0.0)),
+            check_finite=False,
+            verbose=True,
+        )
+    ]
+
+
 def _gpu_util_callbacks(config: DictConfig) -> list[Callback]:
     """Return a per-rank GPU-utilization logger if ``log_gpu_util`` is set.
 
@@ -497,6 +567,7 @@ def run_training(
         CheckpointAliasSymlinkCallback(checkpoint_path),
         TrainingTimerCallback(),
         *_gpu_util_callbacks(config),
+        *_early_stopping_callbacks(config),
     ]
     trainer_cfg["callbacks"] = callbacks
 
@@ -682,6 +753,7 @@ def train_autoencoder(
     )
     trainer.callbacks.append(TrainingTimerCallback())
     trainer.callbacks.extend(_gpu_util_callbacks(config))
+    trainer.callbacks.extend(_early_stopping_callbacks(config))
     output_cfg = config.get("output", {})
     if output_cfg.get("save_config", False) and trainer.is_global_zero:
         save_resolved_config(

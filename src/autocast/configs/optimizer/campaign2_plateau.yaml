@@ -1,0 +1,81 @@
+# Campaign-2 schedule: constant learning rate, decayed on a validation plateau.
+#
+# Cosine is deliberately NOT used here. Three measurements from 2026-08-05
+# retired it for this campaign (CAMPAIGN_PROTOCOL_2026-08-05 §1):
+#
+#   1. Under cosine the loss tail flattens BY CONSTRUCTION as the rate anneals,
+#      so a flat tail carries no information about convergence. On L96 at 192
+#      trajectories the 240-epoch runs drift only 0.06-0.08% from their own best
+#      to their final epoch, while a 3x budget twin lands 20-26 paired seed
+#      standard deviations better.
+#   2. Annealing is not what was buying performance: at the matched epoch, with
+#      its rate still at ~77% of base, the 720-epoch run was already ahead of
+#      the 240-epoch run's fully-annealed best.
+#   3. A cosine run cannot tell you what a shorter budget would have achieved,
+#      so every rung of a budget ladder costs a separate run.
+#
+# The operational consequence, and the reason this file exists: with no horizon
+# baked into the schedule there is nothing to invalidate on resume. A run that
+# has not settled is simply continued -- it picks up at the rate it stopped at,
+# and ReduceLROnPlateau's own state (patience counter, best-so-far) rides in the
+# checkpoint. Every knob below is declared rather than left to a default, so it
+# is recorded in each run's resolved config and readable afterwards; they were
+# unreachable from Hydra until optimizer_mixin gained the passthrough.
+name: "${.optimizer}_${.learning_rate}_${.scheduler}"
+optimizer: "adamw"
+betas: [0.9, 0.99]
+learning_rate: 1e-4
+weight_decay: 0.0
+warmup: 0
+scheduler: "plateau"
+
+# Decay when validation stops improving for `plateau_patience` epochs, by
+# `plateau_factor`, then ignore the next `plateau_cooldown` epochs while the new
+# rate takes effect. min_lr_ratio is the FLOOR as a fraction of learning_rate,
+# in the same units the cosine branch uses -- 0.01 puts the floor at 1e-6.
+# The convergence gate reads whether that floor was reached: a run still at full
+# rate has not been given the chance to settle, whatever its curve looks like.
+plateau_patience: 15
+plateau_factor: 0.3
+plateau_cooldown: 5
+plateau_threshold: 1.0e-4
+# rel_abs, not rel. The threshold is "one epoch's noise expressed relative to
+# the current best" (§3b item 3), and torch's "rel" writes that as
+# best*(1-threshold) -- a formula only valid for a POSITIVE metric. The low-rank
+# arms minimise a negative NLL, and for a negative best that bar sits ABOVE it,
+# so every epoch counted as an improvement and the rate never cut once: all five
+# l96c/lowrank cells finished at their base rate and then failed the convergence
+# gate's rate leg for a configuration reason.
+#
+# ⚠ 2026-08-15 — READ THIS BEFORE TRUSTING ANY RATE TRAJECTORY FROM THIS CONFIG.
+# A fresh scheduler starts at torch's mode_worse sentinel, best = +inf, where the
+# rel_abs bar is inf - threshold*inf = nan and every comparison against nan is
+# False. So from 2026-08-10 (8a542354, where rel_abs landed) until 2026-08-15,
+# best NEVER left infinity: nothing counted as an improvement, the bad-epoch
+# counter ran free, and the rate decayed on a fixed patience+cooldown timer,
+# blind to the curve. Measured on a 132-epoch diff1d run -- cuts at 16/37/58/79,
+# exactly 21 apart, best still inf in the final checkpoint. Replayed through the
+# fixed scheduler the same curve cuts first at 74-78 and never reaches the floor.
+# ⛔ Any run of this config finished before the fix has a rate trajectory carrying
+# NO information about convergence, so assert_settled's rate-floor leg must not be
+# read as a pass for it -- the mirror of plateau_rate_can_decay's case, in the
+# direction that fails silently. Record:
+# notes/design/training_infrastructure/lr_schedule/results_long_run_plateau_defect_2026-08-15.md
+#
+# "rel_abs" is the same rule written
+# sign-safely, best - threshold*|best|, and is IDENTICAL to "rel" wherever the
+# best is positive AND FINITE -- so it changes nothing for the arms that were
+# already fine. The "and finite" is the whole of the 2026-08-15 defect above.
+# See WarmupReduceLROnPlateau.is_better.
+plateau_threshold_mode: "rel_abs"
+# The metric the rate decays on. auto = val/fit (the fit averaged over every rung) on a rank-ladder (ARFC) model,
+# val_loss on every other model. On the ladder val_loss scores one random rung per item plus the regulariser: as the
+# rate falls val/fit goes quiet but val_loss does not (2-5x noisier after the first cut, 10-37x near the floor), and
+# that noise took every 32x32 and 64x64 shallow-water ARFC run to the rate floor by epoch 150-265 (2026-10-25).
+plateau_monitor: auto
+min_lr_ratio: 0.01
+
+# Auxiliary-network learning-rate multiplier, relative to `learning_rate`.
+# Read only when a submodule declares `auxiliary_parameters()` (Mean Flow
+# Distillation's tracking field); 1.0 leaves every other arm byte-identical.
+aux_lr_mult: 1.0
