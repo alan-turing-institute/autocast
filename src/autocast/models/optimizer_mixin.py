@@ -49,6 +49,8 @@ class WeightDecayScope(StrEnum):
 #: The optimizer-config key a warm start sets to start Prodigy's step-size estimate at
 #: the source's (a name shared with ``analysis.warm_start_inherit``, not a setting).
 PRODIGY_D0_KEY = "prodigy_d0"
+#: The optimizer-config key that scales Prodigy's step-size estimate (its ``d_coef``).
+PRODIGY_D_COEF_KEY = "prodigy_d_coef"
 
 
 class OptimizerName(StrEnum):
@@ -939,16 +941,18 @@ class OptimizerMixin(nn.Module):
             betas = cfg.get("betas", [0.9, 0.999])
             # ``prodigy_d0`` is set only by a warm start that carries the source's
             # step-size estimate over (``inherit_prodigy_d0``); absent, Prodigy's own
-            # default d0 stands.
-            if PRODIGY_D0_KEY in cfg:
-                return Prodigy(
-                    params,
-                    lr=lr,
-                    betas=betas,
-                    weight_decay=weight_decay,
-                    d0=float(cfg[PRODIGY_D0_KEY]),
-                )
-            return Prodigy(params, lr=lr, betas=betas, weight_decay=weight_decay)
+            # default d0 stands. ``prodigy_d_coef`` scales the step estimate, the
+            # authors' knob for a smaller step (their README: 0.5 or 0.1); absent,
+            # their 1.0.
+            keys = (("d0", PRODIGY_D0_KEY), ("d_coef", PRODIGY_D_COEF_KEY))
+            # Any: Prodigy also takes bool and int keywords, so pyright refuses a
+            # dict of floats unpacked into its signature.
+            extra: dict[str, Any] = {
+                name: float(cfg[key]) for name, key in keys if key in cfg
+            }
+            return Prodigy(
+                params, lr=lr, betas=betas, weight_decay=weight_decay, **extra
+            )
         return self._create_psgd(
             cfg, params=params, lr=lr, weight_decay=float(weight_decay)
         )

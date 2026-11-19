@@ -19,6 +19,7 @@ from torch.multiprocessing.spawn import ProcessRaisedException, spawn
 from autocast.models.optimizer_mixin import (
     ALLOW_COSINE_HORIZON_CHANGE_ENV_VAR,
     PRODIGY_D0_KEY,
+    PRODIGY_D_COEF_KEY,
     HorizonAwareLambdaLR,
     OptimizerMixin,
     WarmupReduceLROnPlateau,
@@ -499,6 +500,12 @@ class TestProdigy:
             cast("Any", {**self._CFG, PRODIGY_D0_KEY: 0.00524})
         )
         assert inherited.param_groups[0]["d"] == pytest.approx(0.00524)
+        # prodigy_d_coef reaches Prodigy; absent, the authors' 1.0.
+        assert optimizer.param_groups[0]["d_coef"] == pytest.approx(1.0)
+        scaled = mixin._create_optimizer(
+            cast("Any", {**self._CFG, PRODIGY_D_COEF_KEY: 0.3})
+        )
+        assert scaled.param_groups[0]["d_coef"] == pytest.approx(0.3)
 
     def test_an_unknown_name_is_still_refused_by_name(
         self, mixin: _ToyMixinUser
