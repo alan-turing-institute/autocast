@@ -142,7 +142,8 @@ def test_two_segments_preserve_scientific_settings_and_identity(
         cfg = compose(
             config_name="encoder_processor_decoder",
             overrides=[
-                "local_experiment=the_well/rayleigh_benard/crps_spatiotemporal_ambient_matched"
+                "local_experiment=the_well/rayleigh_benard/crps_spatiotemporal_ambient_matched",
+                f"hydra.searchpath=[file://{REPO_ROOT}/local_hydra]",
             ],
         )
     cfg.trainer.num_nodes = 8
@@ -240,7 +241,8 @@ def lola_source(REPO_ROOT):
         cfg = compose(
             config_name="encoder_processor_decoder",
             overrides=[
-                "local_experiment=the_well/rayleigh_benard/crps_spatiotemporal_ambient"
+                "local_experiment=the_well/rayleigh_benard/crps_spatiotemporal_ambient",
+                f"hydra.searchpath=[file://{REPO_ROOT}/local_hydra]",
             ],
         )
     cfg.trainer.num_nodes = 8

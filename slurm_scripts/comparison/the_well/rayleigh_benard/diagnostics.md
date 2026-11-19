@@ -85,5 +85,5 @@ Scientific checks run in ordinary CI. From this controller checkout, run the
 opt-in campaign checks with the recorded `4b2c0499` scientific checkout:
 
 ```bash
-uv run --project /path/to/4b2c0499 --frozen pytest tests/reproduction/rayleigh_benard
+uv run --project /path/to/4b2c0499 --frozen --extra dev pytest tests/reproduction/rayleigh_benard
 ```
