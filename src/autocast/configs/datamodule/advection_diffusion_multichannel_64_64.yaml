@@ -4,8 +4,6 @@ batch_size: 16
 n_steps_input: 1
 n_steps_output: 4
 stride: 1
-valid_trajectories: null
-test_trajectories: null
 verbose: false
 use_normalization: false
 normalization_stats:

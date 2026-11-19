@@ -5,14 +5,18 @@ Data loading, preprocessing, and dataset implementations.
 ## Validation and test trajectories
 
 `SpatioTemporalDataModule` can select whole validation and test trajectories
-before constructing windows or distributed sampling. Both options default to
-`null`, which uses the complete split:
+before constructing windows or distributed sampling. Both options are optional:
+omitting them or setting them to `null` uses the complete split. Existing configs
+need no changes. Add the options only when selecting trajectories:
 
 ```yaml
 datamodule:
   valid_trajectories: 20
   test_trajectories: [0, 3, 7]
 ```
+
+For Hydra CLI overrides, use `+datamodule.valid_trajectories=20` or
+`'+datamodule.test_trajectories=[0,3,7]'` to add an option absent from the config.
 
 A positive integer selects the first N trajectories in the split's stored order.
 A list selects the specified zero-based indices in that order. Empty lists,

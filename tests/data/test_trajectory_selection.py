@@ -5,8 +5,8 @@ from pathlib import Path
 import h5py
 import pytest
 import torch
+from hydra import compose, initialize_config_dir
 from hydra.utils import instantiate
-from omegaconf import OmegaConf
 
 import autocast
 from autocast.data.datamodule import SpatioTemporalDataModule
@@ -196,18 +196,50 @@ def test_saved_selection_preserves_source_ids(tmp_path, payload, suffix):
     assert build_trajectory_metadata(reused) == {3: {"cs0": 103.0}, 1: {"cs0": 101.0}}
 
 
-def test_hydra_config_accepts_explicit_trajectory_list(tmp_path, payload):
+@pytest.mark.parametrize(
+    ("overrides", "valid_ids", "test_ids"),
+    [
+        ([], [0, 1, 2, 3], [0, 1, 2, 3]),
+        (
+            [
+                "+datamodule.valid_trajectories=null",
+                "+datamodule.test_trajectories=null",
+            ],
+            [0, 1, 2, 3],
+            [0, 1, 2, 3],
+        ),
+        (
+            ["+datamodule.valid_trajectories=2", "+datamodule.test_trajectories=[3,1]"],
+            [0, 1],
+            [3, 1],
+        ),
+        (
+            ["+datamodule.valid_trajectories=[3,1]", "+datamodule.test_trajectories=2"],
+            [3, 1],
+            [0, 1],
+        ),
+    ],
+)
+def test_hydra_config_accepts_optional_trajectory_overrides(
+    tmp_path, payload, overrides, valid_ids, test_ids
+):
     for split in ("train", "valid", "test"):
         directory = tmp_path / split
         directory.mkdir()
         torch.save(payload, directory / "data.pt")
-    config_path = Path(autocast.__file__).parent / "configs/datamodule/autosim.yaml"
-    config = OmegaConf.load(config_path)
-    config.data_path = str(tmp_path)
-    config.valid_trajectories = [3, 1]
-    config.test_trajectories = 2
+    config_dir = Path(autocast.__file__).parent / "configs"
+    with initialize_config_dir(config_dir=str(config_dir), version_base=None):
+        config = compose(
+            config_name="datamodule/autosim",
+            overrides=[f"datamodule.data_path={tmp_path}", *overrides],
+        )
 
-    dm = instantiate(config)
+    dm = instantiate(config.datamodule)
 
-    assert dm.val_dataset.sample_trajectory_indices == [3] * 2 + [1] * 2
-    assert dm.test_dataset.sample_trajectory_indices == [0] * 2 + [1] * 2
+    assert dm.train_dataset.trajectory_indices == [0, 1, 2, 3]
+    assert dm.val_dataset.sample_trajectory_indices == [
+        index for index in valid_ids for _ in range(2)
+    ]
+    assert dm.test_dataset.sample_trajectory_indices == [
+        index for index in test_ids for _ in range(2)
+    ]
