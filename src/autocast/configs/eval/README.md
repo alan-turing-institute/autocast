@@ -9,6 +9,9 @@ This directory contains composable evaluation configurations for different model
 - **`processor.yaml`**: Processor model eval settings (extends default)
 - **`reference.yaml`**: Shared comparison settings (`eval=reference`) for
   ensemble size, rollout length, scoring windows, and metrics.
+- **`the_well/rayleigh_benard.yaml`**: RB comparison settings
+  (`eval=the_well/rayleigh_benard`): 16 members, start frame 16 and 180 forecast
+  frames, using the same metric list as `reference`.
 
 ## Usage
 
@@ -57,6 +60,10 @@ All eval configs support these parameters:
   gated separately via `compute_rollout_metrics`. Enabling
   `trajectory_statistics.enabled` requires both metric passes and overrides
   these skip flags; its outputs go to the trajectory statistics directory.
+- `denormalize_test_metrics`: Score EPD next-window predictions and targets
+  in physical units using the fitted normalizer. Defaults to `false`, including
+  in `eval=reference`. The RB preset enables it. Ambient and encode-once
+  rollouts already score in physical units.
 - `sampling_seed`: Optional non-negative integer for stochastic inference,
   independent of the top-level training `seed`. Resets PyTorch sampling before
   next-window scoring; rollout scoring uses this seed plus one unless overridden
@@ -65,7 +72,8 @@ All eval configs support these parameters:
   With both outer seeds null, existing behaviour is retained: trajectory mode
   uses its nested seed (default 42), and ordinary evaluation does not reseed.
 - `rollout_sampling_seed`: Optional seed for rollout scoring, including the
-  per-timestep scoring pass, and for rollout tensor dumps.
+  per-timestep scoring pass, and for rollout tensor dumps. This permits the
+  RB preset's next-window/rollout seed pair of 42/0.
 - `test_subset_seed`: Optional seed for sampling test windows without replacement
   when `max_test_batches` is set. Trajectory statistics require the full loader.
 - `metrics`: List of metrics to compute (default includes mse/mae/rmse/vrmse,
@@ -135,6 +143,29 @@ With the inherited seed, auxiliary rollout passes continue the RNG sequence
 from the main rollout pass. Explicit eval seeds reset those passes.
 Set `eval.trajectory_statistics.enabled=false` for partial, multi-device,
 single-member, or unsupported loaders. The seed still applies.
+
+## Rayleigh-Benard reference
+
+`eval=the_well/rayleigh_benard` scores in physical units with 16 members and
+180 forecast frames from frame 16. For a saved latent FM run:
+
+```bash
+uv run autocast eval --workdir <latent-fm-run> \
+  eval=the_well/rayleigh_benard eval.checkpoint=processor.ckpt \
+  eval.mode=encode_once \
+  ++model.processor.integrator=ab3 model.processor.flow_ode_steps=16
+```
+
+For ambient CRPS, use `eval.mode=ambient` and the EPD checkpoint. Set
+`eval.rollout_subset` to the absolute path of
+[`test64_seed0.yaml`](../../../../slurm_scripts/comparison/the_well/rayleigh_benard/test64_seed0.yaml)
+to reuse the 64-trajectory rollout cohort.
+With batch size 1, use
+`eval.max_test_batches=512 eval.test_subset_seed=42 eval.max_rollout_batches=0`
+to sample 512 test windows reproducibly and leave rollouts uncapped.
+Use the [archived runner](../../../../slurm_scripts/comparison/the_well/rayleigh_benard/diagnostics.md)
+from [PR #487](https://github.com/alan-turing-institute/autocast/pull/487)
+to reproduce the paired-window tables and trajectory standard errors.
 
 ## Multi-GPU Evaluation
 

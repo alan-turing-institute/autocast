@@ -4,12 +4,18 @@ import pytest
 import torch
 from hydra import compose, initialize_config_dir
 from hydra.utils import get_class
+from omegaconf import OmegaConf
 
+from autocast.data.encoded_dataset import MiniWellDataModule
 from autocast.nn.spatiotemporal_vit import SpatiotemporalViTBackbone
 from autocast.processors.diffusion import DiffusionProcessor
 from autocast.processors.flow_matching import FlowMatchingProcessor
 from autocast.processors.spatiotemporal_vit import (
     SpatiotemporalViTMaskedWindowProcessor,
+)
+from autocast.scripts.data import build_datamodule
+from autocast.scripts.eval.encoder_processor_decoder import (
+    _build_lola_raw_datamodule_config,
 )
 from autocast.scripts.setup import (
     _build_processor,
@@ -25,6 +31,71 @@ def single_thread():
     torch.set_num_threads(1)
     yield
     torch.set_num_threads(previous)
+
+
+@pytest.mark.parametrize("config_name", ["encoder_processor_decoder", "processor"])
+def test_rb_reference_composes_with_complete_forecast_truth(config_name, REPO_ROOT):
+    with initialize_config_dir(
+        str(REPO_ROOT / "src/autocast/configs"), version_base=None
+    ):
+        cfg = compose(
+            config_name=config_name,
+            overrides=["datamodule=rayleigh_benard", "eval=the_well/rayleigh_benard"],
+        )
+        reference = compose(config_name=config_name, overrides=["eval=reference"])
+
+    assert cfg.datamodule.well_dataset_name == "rayleigh_benard"
+    assert cfg.eval.n_members == 16
+    assert cfg.eval.batch_size == cfg.datamodule.batch_size == 1
+    assert cfg.eval.denormalize_test_metrics
+    assert not reference.eval.denormalize_test_metrics
+    assert cfg.eval.sampling_seed == 42
+    assert cfg.eval.rollout_sampling_seed == 0
+    assert cfg.eval.rollout_start == 16
+    assert cfg.eval.max_rollout_steps * cfg.datamodule.n_steps_output == 180
+    assert cfg.datamodule.max_rollout_steps >= (
+        cfg.eval.rollout_start + cfg.datamodule.n_steps_input + 180
+    )
+    assert cfg.eval.metrics == reference.eval.metrics
+    assert cfg.eval.coverage_levels == reference.eval.coverage_levels
+    assert OmegaConf.to_container(cfg.eval.metric_windows_rollout) == [
+        None,
+        [0, 4],
+        [6, 12],
+        [13, 30],
+        [31, 99],
+    ]
+    assert not cfg.eval.trajectory_statistics.enabled
+    assert reference.eval.trajectory_statistics.enabled
+    assert reference.eval.trajectory_statistics.include_per_timestep
+
+
+def test_rb_reference_preserves_horizon_through_cached_latent_setup(
+    REPO_ROOT, tmp_path
+):
+    with initialize_config_dir(
+        str(REPO_ROOT / "src/autocast/configs"), version_base=None
+    ):
+        cfg = compose(
+            config_name="processor",
+            overrides=[
+                "local_experiment=the_well/rayleigh_benard/fm_spatiotemporal_latent",
+                "eval=the_well/rayleigh_benard",
+            ],
+        )
+    # Construct the cache loader without any data access. Its constructor must
+    # not receive the raw loader's horizon, which remains available for the swap.
+    datamodule = build_datamodule(cfg)
+    assert isinstance(datamodule, MiniWellDataModule)
+    assert datamodule.n_steps_output == 4
+    assert cfg.datamodule.max_rollout_steps == 200
+    raw = _build_lola_raw_datamodule_config(
+        OmegaConf.create({"dataset": {"name": "rayleigh_benard"}}),
+        tmp_path,
+        cfg.datamodule,
+    )
+    assert raw.max_rollout_steps == 200
+    assert not raw.use_normalization
 
 
 @pytest.mark.parametrize(

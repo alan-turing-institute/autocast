@@ -8,6 +8,7 @@ import torch
 from einops import repeat
 from hydra import compose, initialize_config_dir
 from omegaconf import OmegaConf
+from the_well.data.normalization import ZScoreNormalization
 
 import autocast
 from autocast.data.datamodule import SpatioTemporalDataModule
@@ -50,7 +51,9 @@ DEFAULT_EVAL_CONFIG = (
 )
 
 
-def _install_ensemble_eval_fixture(tmp_path, monkeypatch, test_trajectories=None):
+def _install_ensemble_eval_fixture(
+    tmp_path, monkeypatch, test_trajectories=None, *, norm=None
+):
     """Patch the eval setup to a tiny 3-member model; return its checkpoint path."""
     data = {"data": repeat(torch.arange(7.0), "t -> b t h w c", b=2, h=2, w=2, c=1)}
     datamodule = SpatioTemporalDataModule(
@@ -68,6 +71,7 @@ def _install_ensemble_eval_fixture(tmp_path, monkeypatch, test_trajectories=None
         ),
         processor=_IncrementProcessor(),
         n_members=3,
+        norm=norm,
     )
     checkpoint = tmp_path / "model.ckpt"
     torch.save({"state_dict": model.state_dict()}, checkpoint)
@@ -432,6 +436,49 @@ def test_seeded_rollout_dump_is_reproducible(tmp_path, monkeypatch):
         dumps.append(dump["preds"])
 
     torch.testing.assert_close(dumps[0], dumps[1], rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("mode", ["ambient", "encode_once"])
+def test_physical_next_window_metrics_use_fitted_normalization(
+    tmp_path, monkeypatch, mode
+):
+    norm = ZScoreNormalization(
+        stats={
+            "mean": {"field": 5.0},
+            "std": {"field": 3.0},
+            "mean_delta": {"field": 0.0},
+            "std_delta": {"field": 1.0},
+        },
+        core_field_names=["field"],
+        core_constant_field_names=[],
+    )
+    checkpoint = _install_ensemble_eval_fixture(tmp_path, monkeypatch, norm=norm)
+    if mode == "encode_once":
+        monkeypatch.setattr(
+            f"{EVAL_MODULE}._maybe_inject_encoder_decoder_from_autoencoder_checkpoint",
+            lambda config: config,
+        )
+    scores = []
+    for physical in (None, False, True):
+        work_dir = tmp_path / str(physical)
+        work_dir.mkdir()
+        cfg = _default_eval_cfg(
+            checkpoint,
+            mode=mode,
+            metrics=["mse"],
+            compute_rollout_metrics=False,
+            denormalize_test_metrics=physical,
+        )
+        if physical is None:
+            del cfg.eval.denormalize_test_metrics
+        if mode == "encode_once":
+            cfg.autoencoder_checkpoint = str(tmp_path / "autoencoder.ckpt")
+        run_evaluation(cfg, work_dir=work_dir)
+        scores.append(pd.read_csv(work_dir / "evaluation_metrics.csv")["mse"].iloc[0])
+
+    assert scores[0] > 0
+    assert scores[1] == scores[0]
+    assert scores[2] == pytest.approx(9 * scores[0])
 
 
 @pytest.mark.parametrize("include_memory_intensive", [False, True])

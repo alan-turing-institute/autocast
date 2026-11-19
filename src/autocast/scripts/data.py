@@ -36,6 +36,14 @@ def build_datamodule(
         msg = f"datamodule config must be a mapping, got {type(dm_container).__name__}"
         raise TypeError(msg)
 
+    if (
+        dm_container.get("_target_")
+        == "autocast.data.encoded_dataset.MiniWellDataModule"
+    ):
+        # A Well eval preset can carry this until the raw-data swap. Cached
+        # windows have no rollout horizon; retain it in config, not their loader.
+        dm_container.pop("max_rollout_steps", None)
+
     # Configure simulator if provided
     sim_cfg = config.get("simulator")
     if sim_cfg is not None:

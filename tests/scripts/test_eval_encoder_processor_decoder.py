@@ -2053,15 +2053,17 @@ def test_maybe_swap_to_ambient_datamodule_swaps_for_encode_once(tmp_path):
     assert cfg.datamodule.data_path == "/path/to/raw"
 
 
-def test_maybe_swap_to_ambient_datamodule_loads_from_cache_dir(tmp_path):
+@pytest.mark.parametrize("rollout_steps", [None, 200])
+def test_maybe_swap_to_ambient_datamodule_loads_from_cache_dir(tmp_path, rollout_steps):
     ae_cfg_path = tmp_path / "autoencoder_config.yaml"
     OmegaConf.save(
         OmegaConf.create(
             {
                 "datamodule": {
-                    "_target_": "raw.TheWellDataModule",
+                    "_target_": THE_WELL_DATAMODULE_TARGET,
                     "data_path": "/path/to/raw",
                     "use_normalization": True,
+                    "max_rollout_steps": 100,
                 }
             }
         ),
@@ -2072,6 +2074,7 @@ def test_maybe_swap_to_ambient_datamodule_loads_from_cache_dir(tmp_path):
             "datamodule": {
                 "_target_": "cached.LatentDataModule",
                 "data_path": str(tmp_path),
+                "max_rollout_steps": rollout_steps,
             }
         }
     )
@@ -2087,9 +2090,10 @@ def test_maybe_swap_to_ambient_datamodule_loads_from_cache_dir(tmp_path):
     )
 
     assert result is cfg
-    assert cfg.datamodule._target_ == "raw.TheWellDataModule"
+    assert cfg.datamodule._target_ == THE_WELL_DATAMODULE_TARGET
     assert cfg.datamodule.data_path == "/path/to/raw"
     assert cfg.datamodule.use_normalization is True
+    assert cfg.datamodule.max_rollout_steps == (rollout_steps or 100)
 
 
 @pytest.mark.parametrize("eval_mode", ["ambient", "encode_once"])

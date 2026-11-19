@@ -1,0 +1,32 @@
+# @package _global_
+# Shared reference scoring with the rollout settings from the archived RB
+# diagnostics (PR #487, see diagnostics.md in the RB comparison directory).
+# Select with eval=the_well/rayleigh_benard; method/codec settings stay with
+# the run (latent FM uses encode_once, integrator=ab3 and flow_ode_steps=16).
+# Pass the absolute path to test64_seed0.yaml as eval.rollout_subset to select
+# the diagnostic's 64 trajectories; the default evaluates the complete test set.
+defaults:
+  - /eval/reference@_global_.eval
+  - _self_
+
+eval:
+  n_members: 16
+  batch_size: 1
+  denormalize_test_metrics: true
+  sampling_seed: 42
+  rollout_sampling_seed: 0
+  rollout_start: 16
+  max_rollout_steps: 45  # Four frames per block: 180 forecast frames.
+  # Four reference rollout windows, plus the full horizon (null).
+  metric_windows_rollout: [null, [0, 4], [6, 12], [13, 30], [31, 99]]
+  transpose_spatial: true
+  rollout_snapshot_timesteps: [0, 3, 19, 79, 179]
+  # The Well datasets do not expose the generic accumulator's trajectory IDs.
+  # The archived runner provides per-trajectory and paired-window diagnostics.
+  trajectory_statistics:
+    enabled: false
+
+datamodule:
+  batch_size: 1
+  # Include the context, initial offset and complete 180-frame forecast.
+  max_rollout_steps: 200

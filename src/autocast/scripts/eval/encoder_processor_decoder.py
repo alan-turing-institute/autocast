@@ -372,6 +372,7 @@ def _build_eval_predict_fn(
     is_processor_model: bool,
     decode_fn: Callable[[torch.Tensor], torch.Tensor] | None = None,
     n_members: int | None = None,
+    denormalize: bool = False,
 ) -> Callable[[Any], Any]:
     """Build the prediction callable used by evaluation metrics."""
     if is_processor_model:
@@ -397,6 +398,16 @@ def _build_eval_predict_fn(
             return latent_pred, batch.encoded_output_fields
 
         return predict_fn
+
+    if denormalize:
+        _mark_forward_methods_if_available(model, methods=("predict_step",))
+
+        def predict_physical(batch):
+            return model.predict_step(batch, batch_idx=0), model.denormalize_tensor(
+                batch.output_fields
+            )
+
+        return predict_physical
 
     return model
 
@@ -2746,7 +2757,7 @@ def _resolve_auto_eval_mode(
     return "latent"
 
 
-def _maybe_swap_to_ambient_datamodule(  # noqa: PLR0912
+def _maybe_swap_to_ambient_datamodule(  # noqa: PLR0912, PLR0915
     cfg: DictConfig,
     *,
     eval_mode: str,
@@ -2839,6 +2850,10 @@ def _maybe_swap_to_ambient_datamodule(  # noqa: PLR0912
             )
             if isinstance(step_value, int) and step_value > 0:
                 OmegaConf.update(swapped_datamodule, step_key, step_value, merge=True)
+        if swapped_datamodule.get("_target_") == THE_WELL_DATAMODULE_TARGET:
+            rollout_steps = original_datamodule.get("max_rollout_steps")
+            if rollout_steps is not None:
+                swapped_datamodule.max_rollout_steps = rollout_steps
         if (
             isinstance(original_datamodule, Mapping)
             and "start_frame" in original_datamodule
@@ -3636,6 +3651,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
             is_processor_model=is_processor_model,
             decode_fn=decode_fn,
             n_members=n_members if n_members and n_members > 1 else None,
+            denormalize=bool(eval_cfg.get("denormalize_test_metrics", False)),
         )
 
         test_trajectory_accumulator = None
