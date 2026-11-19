@@ -385,7 +385,9 @@ def test_reference_eval_config_composes_and_scores_every_metric_it_lists(
             config_name="encoder_processor_decoder", overrides=["eval=reference"]
         ).eval
     checkpoint = _install_ensemble_eval_fixture(tmp_path, monkeypatch)
-    cfg = _default_eval_cfg(checkpoint, shipped=reference)
+    # The reference config inherits video batches; videos need ffmpeg, which CI
+    # runners lack, and this test checks metric columns only.
+    cfg = _default_eval_cfg(checkpoint, shipped=reference, batch_indices=[])
 
     run_evaluation(cfg, work_dir=tmp_path)
 
