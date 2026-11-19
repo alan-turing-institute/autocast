@@ -945,7 +945,11 @@ class OptimizerMixin(nn.Module):
             # authors' knob for a smaller step (their README: 0.5 or 0.1); absent,
             # their 1.0.
             keys = (("d0", PRODIGY_D0_KEY), ("d_coef", PRODIGY_D_COEF_KEY))
-            extra = {name: float(cfg[key]) for name, key in keys if key in cfg}
+            # Any: Prodigy also takes bool and int keywords, so pyright refuses a
+            # dict of floats unpacked into its signature.
+            extra: dict[str, Any] = {
+                name: float(cfg[key]) for name, key in keys if key in cfg
+            }
             return Prodigy(
                 params, lr=lr, betas=betas, weight_decay=weight_decay, **extra
             )
