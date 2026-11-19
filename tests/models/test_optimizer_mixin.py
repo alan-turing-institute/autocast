@@ -556,8 +556,11 @@ class TestPlateauSchedulerConfig:
         Mutation this catches: restoring the hard-coded ``"val_loss"``.
         """
         optimizer = torch.optim.AdamW(mixin.parameters(), lr=1e-3)
-        config = mixin._build_scheduler_config(
-            optimizer, {**self._CFG, "plateau_monitor": "val_rmse"}
+        config = cast(
+            dict[str, Any],
+            mixin._build_scheduler_config(
+                optimizer, {**self._CFG, "plateau_monitor": "val_rmse"}
+            ),
         )
 
         assert config["lr_scheduler"]["monitor"] == "val_rmse"
@@ -567,11 +570,12 @@ class TestPlateauSchedulerConfig:
         change. Mutation this catches: a different default, which would silently
         re-point every run that never named a monitor."""
         optimizer = torch.optim.AdamW(mixin.parameters(), lr=1e-3)
-        config = mixin._build_scheduler_config(optimizer, self._CFG)
+        config = cast(
+            dict[str, Any], mixin._build_scheduler_config(optimizer, self._CFG)
+        )
 
         assert config["lr_scheduler"]["monitor"] == "val_loss"
         assert config["lr_scheduler"]["interval"] == "epoch"
-
 
     @pytest.mark.parametrize("interval", ["time", "step"])
     def test_a_non_epoch_interval_is_refused_rather_than_mapped(
@@ -605,8 +609,11 @@ class TestPlateauSchedulerConfig:
         """Negative control: the default must still build, or the guard is too
         wide and every existing plateau config breaks."""
         optimizer = torch.optim.AdamW(mixin.parameters(), lr=1e-3)
-        built = mixin._build_scheduler_config(
-            optimizer, {**self._CFG, "scheduler_interval": "epoch"}
+        built = cast(
+            dict[str, Any],
+            mixin._build_scheduler_config(
+                optimizer, {**self._CFG, "scheduler_interval": "epoch"}
+            ),
         )
         assert built["lr_scheduler"]["interval"] == "epoch"
 
@@ -1333,7 +1340,7 @@ class TestWeightDecayScope:
         return cast("Any", base)
 
     @staticmethod
-    def _group_of(opt: torch.optim.Optimizer, param: nn.Parameter) -> dict[str, Any]:
+    def _group_of(opt: torch.optim.Optimizer, param: torch.Tensor) -> dict[str, Any]:
         return next(g for g in opt.param_groups if any(p is param for p in g["params"]))
 
     def test_default_scope_is_the_old_single_group(self) -> None:
@@ -1366,4 +1373,3 @@ class TestWeightDecayScope:
             _DecayScopeUser()._create_optimizer(
                 self._cfg(weight_decay_scope="everything")
             )
-
