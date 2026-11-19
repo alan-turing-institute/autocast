@@ -1,10 +1,8 @@
 # Reference evaluation: the protocol to score runs with when they are compared.
 #
-# Use with `eval=reference`. Every setting that decides a reported number is
-# stated here rather than inherited, so a later change to `default.yaml` or
-# `encoder_processor_decoder.yaml` does not move reference scores. The base is
-# the evaluation the September 2026 paper runs used (10 members, 25-step
-# rollouts, the rollout windows below), with the newer metrics added.
+# Use with `eval=reference`. The metric selection, sampling seed, ensemble size
+# and scoring windows are pinned here. The run supplies mode, solver, weights
+# and test data.
 #
 # Headline metrics for a comparison:
 #   vrmse_v2             accuracy of the ensemble mean
@@ -60,6 +58,8 @@ metrics:
 include_memory_intensive_metrics: false
 
 n_members: 10
+# Keep legacy nested overrides effective unless the outer seed is set explicitly.
+sampling_seed: ${.trajectory_statistics.sampling_seed}
 compute_coverage: true
 coverage_levels: [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95]
 compute_test_metrics: true
@@ -72,6 +72,7 @@ max_rollout_steps: 25
 metric_windows_rollout: [[0, 1], [0, 4], [6, 12], [13, 30], [31, 99]]
 
 trajectory_statistics:
+  # Disable for partial loaders, rollout subsets, or single-member runs.
   enabled: true
   include_per_timestep: true
   sampling_seed: 42

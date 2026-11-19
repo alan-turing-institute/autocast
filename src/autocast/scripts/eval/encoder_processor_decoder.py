@@ -4,6 +4,7 @@ import contextlib
 import functools
 import logging
 import os
+import random
 import time
 from collections.abc import Callable, Mapping, Sequence
 from enum import StrEnum
@@ -725,8 +726,31 @@ def _trajectory_statistics_seed(eval_cfg: DictConfig) -> int:
     return seed
 
 
-def _seed_trajectory_sampling(seed: int) -> None:
-    """Reset torch sampling immediately before a trajectory inference pass."""
+def _evaluation_sampling_seed(
+    eval_cfg: DictConfig, *, rollout: bool = False
+) -> int | None:
+    """Resolve explicit inference seeds, retaining the legacy trajectory fallback."""
+    offset = int(rollout)
+    if rollout and eval_cfg.get("rollout_sampling_seed") is not None:
+        field = "eval.rollout_sampling_seed"
+        seed = eval_cfg.rollout_sampling_seed
+        offset = 0
+    else:
+        field = "eval.sampling_seed"
+        seed = eval_cfg.get("sampling_seed")
+        if seed is None:
+            trajectory_cfg = eval_cfg.get("trajectory_statistics") or {}
+            if not trajectory_cfg.get("enabled", False):
+                return None
+            seed = _trajectory_statistics_seed(eval_cfg)
+    if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
+        msg = f"{field} must be a non-negative integer or null."
+        raise ValueError(msg)
+    return seed + offset
+
+
+def _seed_evaluation_sampling(seed: int) -> None:
+    """Reset torch sampling immediately before an evaluation inference pass."""
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
@@ -859,6 +883,42 @@ def _limit_batches(dataloader, max_batches: int | None):
             yield batch
 
     return _generator()
+
+
+def _sample_test_windows(
+    loader: DataLoader, *, max_batches: int | None, seed: int
+) -> DataLoader:
+    """Select a fixed random subset before Fabric distributes the test loader."""
+    if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
+        msg = "eval.test_subset_seed must be a non-negative integer."
+        raise ValueError(msg)
+    if max_batches is None or max_batches <= 0:
+        msg = "eval.test_subset_seed requires a positive eval.max_test_batches."
+        raise ValueError(msg)
+    if not isinstance(loader.sampler, SequentialSampler) or loader.batch_size is None:
+        msg = "Test window sampling requires a sequential loader with a batch size."
+        raise ValueError(msg)
+
+    total = len(loader.sampler)
+    count = min(max_batches * loader.batch_size, total)
+    if count == total:
+        return loader
+    indices = sorted(random.Random(seed).sample(range(total), count))
+    log.info("Selected %s of %s test windows with seed %s", count, total, seed)
+    return DataLoader(
+        Subset(loader.dataset, indices),
+        batch_size=loader.batch_size,
+        num_workers=loader.num_workers,
+        collate_fn=loader.collate_fn,
+        pin_memory=loader.pin_memory,
+        drop_last=loader.drop_last,
+        timeout=loader.timeout,
+        worker_init_fn=loader.worker_init_fn,
+        multiprocessing_context=loader.multiprocessing_context,
+        generator=loader.generator,
+        prefetch_factor=loader.prefetch_factor,
+        persistent_workers=loader.persistent_workers,
+    )
 
 
 def _resolve_rollout_batch_limit(eval_cfg: DictConfig) -> int | None:
@@ -3125,8 +3185,18 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     trajectory_include_per_timestep = bool(
         trajectory_cfg.get("include_per_timestep", True)
     )
-    trajectory_sampling_seed = (
-        _trajectory_statistics_seed(eval_cfg) if trajectory_statistics_enabled else None
+    sampling_seed = _evaluation_sampling_seed(eval_cfg)
+    rollout_sampling_seed = _evaluation_sampling_seed(eval_cfg, rollout=True)
+    seed_cfg = OmegaConf.to_container(eval_cfg, resolve=False)
+    inherits_trajectory_seed = (
+        isinstance(seed_cfg, dict)
+        and seed_cfg.get("sampling_seed") == "${.trajectory_statistics.sampling_seed}"
+    )
+    explicit_rollout_seed = (
+        rollout_sampling_seed
+        if eval_cfg.get("rollout_sampling_seed") is not None
+        or (eval_cfg.get("sampling_seed") is not None and not inherits_trajectory_seed)
+        else None
     )
     if trajectory_statistics_enabled and (
         (max_test_batches is not None and max_test_batches > 0)
@@ -3138,7 +3208,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
         )
         raise ValueError(msg)
     if trajectory_statistics_enabled and latent_space_metrics:
-        msg = "Trajectory paper statistics must be computed in decoded data space."
+        msg = "Trajectory statistics must be computed in decoded data space."
         raise ValueError(msg)
     _validate_latent_space_metrics_flag(
         requested_eval_mode=requested_eval_mode,
@@ -3489,6 +3559,11 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
         if trajectory_statistics_enabled
         else None
     )
+    test_subset_seed = eval_cfg.get("test_subset_seed")
+    if test_subset_seed is not None:
+        raw_test_loader = _sample_test_windows(
+            raw_test_loader, max_batches=max_test_batches, seed=test_subset_seed
+        )
     test_loader = _limit_batches(
         fabric.setup_dataloaders(raw_test_loader), max_test_batches
     )
@@ -3564,10 +3639,11 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
         )
 
         test_trajectory_accumulator = None
+        if sampling_seed is not None:
+            _seed_evaluation_sampling(sampling_seed)
         if trajectory_statistics_enabled:
-            assert trajectory_sampling_seed is not None
+            assert sampling_seed is not None
             assert test_dataset_for_trajectories is not None
-            _seed_trajectory_sampling(trajectory_sampling_seed)
             test_trajectory_accumulator = _build_trajectory_accumulator(
                 dataset=test_dataset_for_trajectories,
                 metric_fns=test_metric_fns,
@@ -3579,7 +3655,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                     model=model,
                     resolved_eval_path=resolved_eval_path,
                     n_members=int(n_members),
-                    sampling_seed=trajectory_sampling_seed,
+                    sampling_seed=sampling_seed,
                 ),
             )
 
@@ -3920,13 +3996,14 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                             )
                         )
 
-            def _write_rollout_metric_outputs(
+            def _write_rollout_metric_outputs(  # noqa: PLR0915
                 *,
                 rollout_predict: Callable[[Any], Any],
                 csv_name: str,
                 metadata_csv_name: str,
                 per_timestep_stem: str,
                 log_prefix: str,
+                scoring_seed: int | None,
                 collect_trajectory_statistics: bool = False,
             ) -> None:
                 raw_rollout_metrics_loader = datamodule.rollout_test_dataloader(
@@ -3945,11 +4022,11 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 )
 
                 rollout_trajectory_accumulator = None
+                if scoring_seed is not None:
+                    _seed_evaluation_sampling(scoring_seed)
                 if collect_trajectory_statistics:
-                    assert trajectory_sampling_seed is not None
+                    assert scoring_seed is not None
                     assert rollout_dataset_for_trajectories is not None
-                    rollout_sampling_seed = trajectory_sampling_seed + 1
-                    _seed_trajectory_sampling(rollout_sampling_seed)
                     rollout_trajectory_accumulator = _build_trajectory_accumulator(
                         dataset=rollout_dataset_for_trajectories,
                         metric_fns=rollout_metric_fns,
@@ -3961,7 +4038,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                             model=model,
                             resolved_eval_path=resolved_eval_path,
                             n_members=int(n_members),
-                            sampling_seed=rollout_sampling_seed,
+                            sampling_seed=scoring_seed,
                         ),
                     )
 
@@ -4052,6 +4129,8 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                     ),
                     max_rollout_batches,
                 )
+                if explicit_rollout_seed is not None:
+                    _seed_evaluation_sampling(explicit_rollout_seed)
                 per_timestep_results = compute_metrics_per_timestep_from_dataloader(
                     dataloader=rollout_loader_per_timestep,
                     metric_fns=per_timestep_metric_fns,
@@ -4133,6 +4212,8 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                     if resolved_eval_path == EVAL_PATH_LATENT_CACHED_LATENT_ONLY
                     else "denormalized"
                 )
+                if explicit_rollout_seed is not None:
+                    _seed_evaluation_sampling(explicit_rollout_seed)
                 _dump_rollout_tensors(
                     rollout_predict=rollout_predict,
                     dataloader=dump_loader,
@@ -4149,6 +4230,11 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                             cfg.get("datamodule", {}).get("data_path", "")
                         ),
                         "value_space": dump_value_space,
+                        **(
+                            {"evaluation_sampling_seed": explicit_rollout_seed}
+                            if explicit_rollout_seed is not None
+                            else {}
+                        ),
                     },
                     fabric=fabric,
                     n_traj_cap=eval_cfg.get("dump_max_traj", None),
@@ -4160,6 +4246,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                     metadata_csv_name="rollout_metadata.csv",
                     per_timestep_stem="rollout_metrics_per_timestep",
                     log_prefix="Rollout",
+                    scoring_seed=rollout_sampling_seed,
                     collect_trajectory_statistics=trajectory_statistics_enabled,
                 )
 
@@ -4176,6 +4263,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                                 "rollout_metrics_per_timestep_autoencoded_target"
                             ),
                             log_prefix="Rollout AE-target",
+                            scoring_seed=explicit_rollout_seed,
                         )
                     else:
                         log.warning(

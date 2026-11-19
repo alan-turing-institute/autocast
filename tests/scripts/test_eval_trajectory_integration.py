@@ -358,6 +358,82 @@ def _default_eval_cfg(checkpoint, shipped=None, **overrides):
     )
 
 
+def test_seeded_forecasts_match_with_trajectory_statistics(tmp_path, monkeypatch):
+    checkpoint = _install_ensemble_eval_fixture(tmp_path, monkeypatch)
+    predictions = []
+
+    def stochastic_map(self, x, global_cond=None):  # noqa: ARG001
+        preds = x + self.increment + torch.randn_like(x)
+        predictions.append(preds.detach().clone())
+        return preds
+
+    monkeypatch.setattr(_IncrementProcessor, "map", stochastic_map)
+    runs = []
+    for enabled in (False, True):
+        work_dir = tmp_path / str(enabled)
+        work_dir.mkdir()
+        cfg = _default_eval_cfg(
+            checkpoint,
+            metrics=["mse"],
+            sampling_seed=81,
+            trajectory_statistics={"enabled": enabled},
+        )
+        torch.manual_seed(1 if enabled else 0)
+        predictions.clear()
+        run_evaluation(cfg, work_dir=work_dir)
+        runs.append(list(predictions))
+
+    assert runs[0]
+    torch.testing.assert_close(runs[0], runs[1], rtol=0, atol=0)
+
+
+@pytest.mark.parametrize(
+    ("sampling_seed", "expected"),
+    [("${.trajectory_statistics.sampling_seed}", [42, 43]), (42, [42, 43, 43])],
+)
+def test_reference_rollout_reseeds_auxiliary_pass_only_for_explicit_seed(
+    tmp_path, monkeypatch, sampling_seed, expected
+):
+    checkpoint = _install_ensemble_eval_fixture(tmp_path, monkeypatch)
+    seeds = []
+    monkeypatch.setattr(f"{EVAL_MODULE}._seed_evaluation_sampling", seeds.append)
+    cfg = _default_eval_cfg(
+        checkpoint,
+        metrics=["mse"],
+        sampling_seed=sampling_seed,
+        trajectory_statistics={"enabled": True},
+    )
+    run_evaluation(cfg, work_dir=tmp_path)
+    assert seeds == expected
+
+
+def test_seeded_rollout_dump_is_reproducible(tmp_path, monkeypatch):
+    checkpoint = _install_ensemble_eval_fixture(tmp_path, monkeypatch)
+
+    def stochastic_map(self, x, global_cond=None):  # noqa: ARG001
+        return x + self.increment + torch.randn_like(x)
+
+    monkeypatch.setattr(_IncrementProcessor, "map", stochastic_map)
+    dumps = []
+    for index in range(2):
+        work_dir = tmp_path / str(index)
+        work_dir.mkdir()
+        cfg = _default_eval_cfg(
+            checkpoint,
+            metrics=["mse"],
+            compute_test_metrics=False,
+            dump_rollout_tensors=True,
+            rollout_sampling_seed=0,
+        )
+        torch.manual_seed(1000 + index)
+        run_evaluation(cfg, work_dir=work_dir)
+        dump = torch.load(work_dir / "rollout_tensors.pt", weights_only=True)
+        assert dump["meta"]["evaluation_sampling_seed"] == 0
+        dumps.append(dump["preds"])
+
+    torch.testing.assert_close(dumps[0], dumps[1], rtol=0, atol=0)
+
+
 @pytest.mark.parametrize("include_memory_intensive", [False, True])
 def test_default_eval_config_scores_cheap_new_metrics_and_guards_the_costly_ones(
     tmp_path, monkeypatch, include_memory_intensive
@@ -418,6 +494,8 @@ def test_reference_eval_config_composes_and_scores_every_metric_it_lists(
     # The reference config turns trajectory statistics on, which writes the run's
     # CSVs under trajectory_statistics/.
     assert reference.trajectory_statistics.enabled
+    output_dir = tmp_path / "trajectory_statistics"
     for csv_name in ("evaluation_metrics.csv", "rollout_metrics.csv"):
-        columns = set(pd.read_csv(tmp_path / "trajectory_statistics" / csv_name))
+        columns = set(pd.read_csv(output_dir / csv_name))
         assert set(reference.metrics) <= columns, set(reference.metrics) - columns
+    assert (output_dir / "rollout_metrics_per_timestep_per_trajectory.csv").exists()

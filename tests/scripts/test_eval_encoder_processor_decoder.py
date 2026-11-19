@@ -46,6 +46,7 @@ from autocast.scripts.eval.encoder_processor_decoder import (
     _deterministic_member_average_metric_name,
     _deterministic_member_metric_name,
     _dump_rollout_tensors,
+    _evaluation_sampling_seed,
     _load_lola_autoencoder_config_from_cache,
     _mark_forward_methods_if_available,
     _maybe_inject_encoder_decoder_from_autoencoder_checkpoint,
@@ -70,6 +71,7 @@ from autocast.scripts.eval.encoder_processor_decoder import (
     _resolve_rollout_channel_names,
     _resolve_rollout_timestep_limit,
     _resolve_trajectory_statistics_dir,
+    _sample_test_windows,
     _should_skip_metric,
     _split_metric_and_metadata_rows,
     _training_runtime_rows,
@@ -231,6 +233,51 @@ def test_trajectory_statistics_seed_requires_non_negative_integer(seed):
 
     with pytest.raises(ValueError, match="non-negative integer"):
         _trajectory_statistics_seed(eval_cfg)
+
+
+def test_evaluation_sampling_seed_preserves_legacy_fallback():
+    cfg = OmegaConf.create({"trajectory_statistics": {"sampling_seed": 7}})
+    assert _evaluation_sampling_seed(cfg) is None
+    assert _evaluation_sampling_seed(cfg, rollout=True) is None
+
+    cfg.trajectory_statistics.enabled = True
+    assert _evaluation_sampling_seed(cfg) == 7
+    assert _evaluation_sampling_seed(cfg, rollout=True) == 8
+
+
+def test_explicit_evaluation_seeds_override_legacy_defaults():
+    cfg = OmegaConf.create(
+        {"sampling_seed": 0, "trajectory_statistics": {"enabled": True}}
+    )
+    assert _evaluation_sampling_seed(cfg) == 0
+    assert _evaluation_sampling_seed(cfg, rollout=True) == 1
+
+    cfg.rollout_sampling_seed = 5
+    assert _evaluation_sampling_seed(cfg, rollout=True) == 5
+
+
+@pytest.mark.parametrize(
+    ("field", "seed"), [("sampling_seed", True), ("rollout_sampling_seed", -1)]
+)
+def test_evaluation_sampling_seed_rejects_invalid_values(field, seed):
+    cfg = OmegaConf.create({field: seed})
+    with pytest.raises(ValueError, match=f"eval.{field} must be"):
+        _evaluation_sampling_seed(cfg, rollout=field == "rollout_sampling_seed")
+
+
+def test_test_window_subset_is_seeded_and_respects_batch_limit():
+    loader = DataLoader(TensorDataset(torch.arange(20)), batch_size=2)
+
+    def selected_windows(seed):
+        subset = _sample_test_windows(loader, max_batches=3, seed=seed)
+        assert len(subset) == 3
+        return torch.cat([windows for (windows,) in subset]).tolist()
+
+    windows = selected_windows(seed=42)
+    assert len(set(windows)) == 6
+    assert windows == selected_windows(seed=42)
+    assert windows != selected_windows(seed=43)
+    assert windows != list(range(6))
 
 
 def test_crop_rollout_batch_start_shifts_raw_full_trajectory_batch():

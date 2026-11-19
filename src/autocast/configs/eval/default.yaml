@@ -19,6 +19,15 @@ latent_space_metrics: false
 # metrics are controlled separately via `compute_rollout_metrics`.
 compute_test_metrics: true
 
+# Select a repeatable random sample when max_test_batches is set.
+test_subset_seed: null
+
+# Seed stochastic predictions independently of trajectory-statistics output.
+# Null preserves legacy behaviour: only trajectory statistics reseed inference.
+sampling_seed: null
+# Null uses sampling_seed + 1 (or the legacy trajectory seed + 1).
+rollout_sampling_seed: null
+
 # Evaluation metrics to compute
 metrics:
   - mse
@@ -107,10 +116,8 @@ strategy: auto
 devices: 1 # default single-GPU eval; override with int (e.g. 4) for multi-GPU DDP
 num_nodes: 1
 
-# Optional trajectory-level paper statistics. These are written under a dedicated
-# directory and never replace the legacy aggregate evaluation CSVs. The current
-# implementation deliberately requires a complete, single-device test pass so the
-# sequential dataset metadata can be validated exactly.
+# Optional trajectory statistics are written alongside the aggregate CSVs.
+# They require complete, sequential test and rollout loaders on one device.
 # Enabling this runs both metric passes even when compute_test_metrics or
 # compute_rollout_metrics is false.
 trajectory_statistics:
