@@ -565,11 +565,14 @@ def test_run_module_slurm_forwards_runtime_typechecking(monkeypatch):
         overrides,
         dry_run=False,
         runtime_typechecking=False,
+        *,
+        chain=None,
     ):
         captured["module"] = module
         captured["overrides"] = overrides
         captured["dry_run"] = dry_run
         captured["runtime_typechecking"] = runtime_typechecking
+        captured["chain"] = chain
 
     monkeypatch.setattr(
         "autocast.scripts.workflow.commands.submit_via_sbatch",
@@ -585,6 +588,7 @@ def test_run_module_slurm_forwards_runtime_typechecking(monkeypatch):
 
     assert captured["module"] == "autocast.scripts.train.autoencoder"
     assert captured["runtime_typechecking"] is True
+    assert captured["chain"] is None
 
 
 def test_infer_dataset_from_workdir_from_datamodule_data_path(tmp_path):
