@@ -4,7 +4,17 @@
 three completed 226M/223M checkpoints and the exploratory 859M midpoint.
 Checkpoint and codec weights remain external; manifests pin their hashes.
 
+This runner preserves the archived comparison's protocol. Shared reference
+evaluation ([PR #489](https://github.com/alan-turing-institute/autocast/pull/489))
+and an RB reference preset are follow-on work, including re-evaluation of these
+checkpoints. Report those as new reference evaluations when sampling,
+aggregation or score definitions change.
+
 ## Prepare and evaluate
+
+Supply the saved resolved configs and window selections at the recipe's paths
+under `--outputs-root`, together with the raw The Well data, fitted normalization
+files and model/codec checkpoints referenced by those configs.
 
 From a clean checkout with `uv sync --frozen --extra dev` completed:
 

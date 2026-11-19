@@ -1,7 +1,13 @@
 # Rayleigh-Benard comparison submitters
 
-For energy scores, trajectory-level error bands and controlled inference timing
-of the frozen matched checkpoints, see [Completing the comparison](diagnostics.md).
+For training presets and guarded continuations, see the
+[ambient preparation guide](ambient_crps_preparation.md). To reproduce the
+archived four-model results, including trajectory error bands and inference
+timing, see the [frozen-checkpoint comparison](diagnostics.md).
+
+Shared reference evaluation ([PR #489](https://github.com/alan-turing-institute/autocast/pull/489))
+and an RB reference preset are follow-on work for new comparisons and
+re-evaluation of these checkpoints. The guides here preserve the archived protocol.
 
 This folder contains the maintained Rayleigh-Benard submitters for the
 post-merge `283/` Rayleigh-Benard stack. Some configs referenced here live on

@@ -6,6 +6,15 @@ Both retain 4096 epochs, 64 updates per epoch and the full cosine schedule.
 CRPS uses 32 real windows with eight members per update. Matching latent
 update counts does not match real-window exposure or compute.
 
+Training presets under `local_hydra/local_experiment/the_well/rayleigh_benard/`:
+
+| Model | Preset |
+| --- | --- |
+| Ambient CRPS 226M | [crps_spatiotemporal_ambient_matched.yaml](../../../../local_hydra/local_experiment/the_well/rayleigh_benard/crps_spatiotemporal_ambient_matched.yaml) |
+| Ambient CRPS 859M | [crps_spatiotemporal_ambient.yaml](../../../../local_hydra/local_experiment/the_well/rayleigh_benard/crps_spatiotemporal_ambient.yaml) |
+| Latent CRPS 223M | [crps_spatiotemporal_latent.yaml](../../../../local_hydra/local_experiment/the_well/rayleigh_benard/crps_spatiotemporal_latent.yaml) |
+| Latent FM 223M | [fm_spatiotemporal_latent.yaml](../../../../local_hydra/local_experiment/the_well/rayleigh_benard/fm_spatiotemporal_latent.yaml) |
+
 ## Prepare training
 
 From a clean, committed checkout with the existing uv environment:
@@ -45,7 +54,7 @@ Preparation does not submit jobs. Running the generated `queue.sh ACCOUNT
 PARTITION` submits a chain; later allocations skip training after a verified
 262,144-update endpoint.
 
-## Prepare evaluation
+## Prepare archived evaluation jobs
 
 ```bash
 uv run --frozen --no-sync python -m slurm_scripts.comparison.the_well.rayleigh_benard.prepare_ambient_crps evaluation \
