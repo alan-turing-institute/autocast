@@ -3,6 +3,8 @@
 `complete_diagnostics.py` evaluates the models in `diagnostics_models.yaml`:
 three completed 226M/223M checkpoints and the exploratory 859M midpoint.
 Checkpoint and codec weights remain external; manifests pin their hashes.
+The recipe checks these against the archived production hashes, including
+fitted normalization when relocating data.
 
 This runner preserves the archived comparison's protocol. Shared reference
 evaluation ([PR #489](https://github.com/alan-turing-institute/autocast/pull/489))
@@ -78,3 +80,10 @@ uv run --frozen python -m slurm_scripts.comparison.the_well.rayleigh_benard.plot
 The builder verifies hashes, matched physical identities, checkpoint steps
 and complete finite outputs before writing figures, tables and provenance.
 Choose a fresh comparison destination.
+
+Scientific checks run in ordinary CI. From this controller checkout, run the
+opt-in campaign checks with the recorded `4b2c0499` scientific checkout:
+
+```bash
+uv run --project /path/to/4b2c0499 --frozen pytest tests/reproduction/rayleigh_benard
+```

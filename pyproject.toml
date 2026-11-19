@@ -145,8 +145,8 @@ torchvision = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["tests", "."]
-norecursedirs = ["outputs", "slurm_scripts"]
+pythonpath = ["tests"]
+norecursedirs = ["outputs", "slurm_scripts", "reproduction"]
 filterwarnings = [
     # Ignore Lightning warnings that are expected/benign in test environment
     "ignore:You are trying to `self.log\\(\\)` but the `self.trainer` reference is not registered:UserWarning",

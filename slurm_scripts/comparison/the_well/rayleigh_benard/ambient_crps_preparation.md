@@ -50,6 +50,9 @@ branch's history; prepared artifacts also record the controller hash.
 - `prepare-chain` prepares a bounded dependent chain for the larger model.
 
 Use the controller's `--help` for paths and allocation options.
+Its CLI preserves the original two-allocation matched campaign and the
+four-allocation larger-model chain; additional continuations use the existing
+training resume interface.
 Preparation does not submit jobs. Running the generated `queue.sh ACCOUNT
 PARTITION` submits a chain; later allocations skip training after a verified
 262,144-update endpoint.

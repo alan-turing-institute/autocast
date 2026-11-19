@@ -1,9 +1,6 @@
-"""Regression checks for frozen-cohort RB diagnostic completion."""
+"""Scientific contracts for the frozen-cohort RB comparison."""
 
-import argparse
 import json
-import os
-import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -13,17 +10,13 @@ import pytest
 import torch
 import yaml
 from omegaconf import OmegaConf
+from rb_reproduction import diagnostic_case, load_rb_tool
 
 from autocast.metrics.ensemble import EnergyScore
-from slurm_scripts.comparison.the_well.rayleigh_benard import (
-    complete_diagnostics as runner,
-)
-from slurm_scripts.comparison.the_well.rayleigh_benard import (
-    plot_diagnostics as plots,
-)
-from slurm_scripts.comparison.the_well.rayleigh_benard.paired_test_windows import (
-    make_selection,
-)
+
+runner = load_rb_tool("complete_diagnostics")
+plots = load_rb_tool("plot_diagnostics")
+make_selection = load_rb_tool("paired_test_windows").make_selection
 
 
 @pytest.mark.parametrize("spatial_shape", [(64,), (8, 8)])
@@ -144,84 +137,66 @@ def test_archived_fm_sampler_and_raw_weight_policy_are_guarded():
         runner.validate_config(cfg, entry)
 
 
-def test_prepare_pins_inputs_generates_eval_only_scripts_and_refuses_overwrite(
-    tmp_path, monkeypatch
-):
-    outputs = tmp_path / "outputs"
-    archive = outputs / "archived"
-    archive.mkdir(parents=True)
-    checkpoint = archive / "frozen.ckpt"
-    checkpoint.write_bytes(b"frozen test weights")
-    stats = archive / "stats.yaml"
-    stats.write_text("mean: 1\nstd: 2\n")
-    cohort = yaml.safe_load((runner.HERE / "test64_seed0.yaml").read_text())
-    (archive / "window_selection.yaml").write_text(
-        yaml.safe_dump(make_selection(cohort))
-    )
-    config = {
-        "eval": {"mode": "ambient", "use_ema": False, "checkpoint": str(checkpoint)},
-        "datamodule": {
-            "well_dataset_name": "rayleigh_benard",
-            "use_normalization": True,
-            "normalization_path": str(stats),
-            "n_steps_input": 1,
-            "n_steps_output": 4,
-            "min_dt_stride": 1,
-            "max_dt_stride": 1,
-        },
-        "model": {},
-        "logging": {"wandb": {"enabled": True}},
-    }
-    (archive / "resolved_test_config.yaml").write_text(yaml.safe_dump(config))
-    recipe = tmp_path / "recipe.yaml"
-    recipe.write_text(
-        yaml.safe_dump(
-            {
-                "models": {
-                    "ambient_test": {
-                        "label": "Test",
-                        "mode": "ambient",
-                        "expected_step": 262144,
-                        "config": "archived/resolved_test_config.yaml",
-                        "checkpoint_sha256": runner.sha256(checkpoint),
-                    }
-                }
-            }
-        )
-    )
-    monkeypatch.setattr(
-        runner,
-        "source_record",
-        lambda root: {"source_commit": "abc123", "source_root": str(root)},
-    )
-    args = argparse.Namespace(
-        recipe=recipe,
-        outputs_root=outputs,
-        output=tmp_path / "campaign",
-        raw_data_root=None,
-        autoencoder_root=None,
-        workers=2,
-        horizon=180,
-        account="test.account",
-    )
-    runner.prepare(args)
-    manifest = json.loads((args.output / "manifest.json").read_text())
-    entry = manifest["models"]["ambient_test"]
-    assert entry["dependencies"][str(checkpoint)] == runner.sha256(checkpoint)
+def test_prepare_pins_inputs_and_refuses_overwrite(tmp_path, monkeypatch):
+    case = diagnostic_case(tmp_path, monkeypatch)
+    runner.prepare(case.args)
+    manifest = json.loads((case.args.output / "manifest.json").read_text())
+    entry = manifest["models"]["test_model"]
+    assert entry["dependencies"][str(case.checkpoint)] == runner.sha256(case.checkpoint)
     pinned = OmegaConf.load(entry["config"])
-    assert Path(pinned.datamodule.normalization_path).read_bytes() == stats.read_bytes()
-    for phase in ["pilot", "production"]:
-        script = args.output / f"ambient_test-{phase}.sbatch"
-        if os.name == "posix":
-            subprocess.run(["bash", "-n", str(script)], check=True)
-        text = script.read_text()
-        assert "#SBATCH --gpus=1" in text
-        assert "--time=" in text
-        assert "sbatch " not in text
-        assert " train " not in text
-        assert ("--pilot" in text) == (phase == "pilot")
+    assert (
+        Path(pinned.datamodule.normalization_path).read_bytes()
+        == case.stats.read_bytes()
+    )
     with pytest.raises(FileExistsError):
-        runner.prepare(args)
+        runner.prepare(case.args)
+
+
+@pytest.mark.parametrize(
+    "artifact", ["checkpoint", "encoder", "decoder", "normalization"]
+)
+def test_preparation_rejects_changed_archived_artifact(tmp_path, monkeypatch, artifact):
+    case = diagnostic_case(
+        tmp_path, monkeypatch, latent=artifact in ("encoder", "decoder")
+    )
+    targets = {
+        "checkpoint": case.checkpoint,
+        "normalization": case.stats,
+        **case.codecs,
+    }
+    targets[artifact].write_bytes(b"replacement artifact")
+    with pytest.raises(ValueError, match="hash changed"):
+        runner.prepare(case.args)
+
+
+def test_preparation_requires_known_checkpoint_hash(tmp_path, monkeypatch):
+    case = diagnostic_case(tmp_path, monkeypatch)
+    del case.entry["checkpoint_sha256"]
+    case.args.recipe.write_text(yaml.safe_dump({"models": {"test_model": case.entry}}))
+    with pytest.raises(ValueError, match=r"Missing archived.*hash"):
+        runner.prepare(case.args)
+
+
+@pytest.mark.parametrize("changed", [False, True])
+def test_data_relocation_preserves_fitted_normalization(tmp_path, monkeypatch, changed):
+    case = diagnostic_case(tmp_path, monkeypatch)
+    relocated = tmp_path / "data/rayleigh_benard"
+    relocated.mkdir(parents=True)
+    (relocated / "stats.yaml").write_bytes(
+        b"different stats" if changed else case.stats.read_bytes()
+    )
+    case.args.raw_data_root = relocated.parent
+    if changed:
+        with pytest.raises(ValueError, match=r"normalization.*hash changed"):
+            runner.prepare(case.args)
+    else:
+        runner.prepare(case.args)
+        manifest = json.loads((case.args.output / "manifest.json").read_text())
+        cfg = OmegaConf.load(manifest["models"]["test_model"]["config"])
+        assert (
+            Path(cfg.datamodule.normalization_path).read_bytes()
+            == case.stats.read_bytes()
+        )
 
 
 def test_comparison_refuses_missing_production_outputs(tmp_path):

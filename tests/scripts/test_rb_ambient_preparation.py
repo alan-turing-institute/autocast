@@ -1,26 +1,17 @@
-"""Check ambient preparation without loading data, allocating GPUs or fitting."""
+"""Scientific contracts for the RB training and evaluation presets."""
 
-import ast
-import os
-import shlex
-import subprocess
 from pathlib import Path
 
 import pytest
 import torch
 from hydra.utils import instantiate
 from omegaconf import OmegaConf
+from rb_reproduction import load_rb_tool
 
-from autocast.scripts.eval.encoder_processor_decoder import (
-    _resolve_rollout_batch_limit,
-)
 from autocast.scripts.setup import _build_processor
-from slurm_scripts.comparison.the_well.rayleigh_benard import (
-    prepare_ambient_crps as prep,
-)
-from slurm_scripts.comparison.the_well.rayleigh_benard.paired_test_windows import (
-    make_selection,
-)
+
+prep = load_rb_tool("prepare_ambient_crps")
+make_selection = load_rb_tool("paired_test_windows").make_selection
 
 
 @pytest.fixture(autouse=True)
@@ -68,49 +59,6 @@ def test_training_preserves_reference_exposure_and_probe_horizon(
     if phase == "train":
         assert cfg.trainer.max_time is None
         assert cfg.trainer.callbacks[-1].interval == "epoch"
-    script = output / f"{phase}.sh"
-    if os.name == "posix":
-        subprocess.run(["bash", "-n", str(script)], check=True)
-    body = script.read_text()
-    assert f"#SBATCH --nodes={nodes}" in body
-    assert "#SBATCH --gpus-per-node=4" in body
-    assert "#SBATCH --ntasks-per-node=4" in body
-    assert "#SBATCH --no-requeue" in body
-    assert "${SLURM_JOB_ID:?" in body
-    assert ("module load brics/nccl/2.26.6-1" in body) == (nodes > 1)
-    assert "srun --kill-on-bad-exit=1" in body
-    job = state["jobs"][phase]
-    assert job["gpus"] == 4 * nodes
-    if os.name == "posix":
-        # Validate the checksum line itself, including paths containing spaces.
-        checksum_line = next(
-            line for line in body.splitlines() if line.startswith("printf")
-        )
-        printed = subprocess.check_output(
-            ["bash", "-c", checksum_line.split(" | ")[0]], text=True
-        )
-        assert printed == f"{job['config_sha256']}  {job['config']}\n"
-
-
-@pytest.mark.skipif(os.name != "posix", reason="Slurm run guards require POSIX Bash")
-@pytest.mark.parametrize("existing", ["absent", "directory", "dangling_link"])
-def test_initial_job_rejects_partial_run_outputs(tmp_path, existing):
-    output = tmp_path / "new preparation"
-    prep.prepare_training(output, tmp_path / "data", "smoke")
-    run_dir = output / "run"
-    if existing == "directory":
-        run_dir.mkdir()
-    elif existing == "dangling_link":
-        run_dir.symlink_to(tmp_path / "missing", target_is_directory=True)
-    # Exercise only the rendered guard, never the training command.
-    body = (output / "smoke.sh").read_text()
-    guard = "if [[" + body.split("if [[", 1)[1].split("exec srun", 1)[0]
-    result = subprocess.run(
-        ["bash", "-c", guard], check=False, capture_output=True, text=True
-    )
-    assert result.returncode == (0 if existing == "absent" else 1)
-    if existing != "absent":
-        assert "Run directory exists" in result.stderr
 
 
 @pytest.mark.parametrize(
@@ -211,25 +159,5 @@ def test_evaluation_reuses_both_saved_cohorts_and_fitted_model(tmp_path):
         assert cfg.datamodule.max_rollout_steps == 200
         assert not cfg.eval.compute_test_metrics
         assert not cfg.eval.compute_rollout_autoencoded_target_metrics
-        assert _resolve_rollout_batch_limit(cfg.eval) is None
-        script = output / f"{name}.sh"
-        if os.name == "posix":
-            subprocess.run(["bash", "-n", str(script)], check=True)
-        assert "#SBATCH --no-requeue" in script.read_text()
-        args = shlex.split(script.read_text().split("exec srun ", 1)[1])
-        if name == "rollout":
-            code = args[args.index("-c") + 1]
-            ast.parse(code)
-            assert "L.seed_everything(42" in code
-            assert "global_step" in code
-        else:
-            assert args[args.index("--expected-step") + 1] == "8192"
-        if os.name == "posix":
-            (output / name).mkdir()
-            body = script.read_text()
-            guard = "if [[" + body.split("if [[", 1)[1].split("exec srun", 1)[0]
-            result = subprocess.run(
-                ["bash", "-c", guard], check=False, capture_output=True, text=True
-            )
-            assert result.returncode == 1
-            assert "Run directory exists" in result.stderr
+        assert cfg.eval.max_rollout_batches is None
+        assert cfg.eval.max_test_batches is None

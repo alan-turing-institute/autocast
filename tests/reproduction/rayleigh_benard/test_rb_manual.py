@@ -16,6 +16,7 @@ import torch
 from hydra import compose, initialize_config_dir
 from lightning.pytorch.callbacks import ModelCheckpoint, Timer
 from omegaconf import OmegaConf
+from rb_reproduction import load_rb_tool
 from torch.utils.data import DataLoader, TensorDataset
 
 from autocast.callbacks.ema import EMACallback
@@ -25,7 +26,8 @@ from autocast.scripts.training import (
     TrainingTimerCallback,
     _attach_reset_timer_callback,
 )
-from slurm_scripts.comparison.the_well.rayleigh_benard import rb_manual as ops
+
+ops = load_rb_tool("rb_manual")
 
 
 @pytest.fixture(scope="module")

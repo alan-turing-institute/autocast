@@ -45,6 +45,16 @@ def sha256(path: Path) -> str:
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
+def verify_sha256(path: Path, expected: str | None, label: str) -> str:
+    """Require the archived identity, rather than accepting the current file."""
+    if not expected:
+        raise ValueError(f"Missing archived {label} hash")
+    actual = sha256(path)
+    if actual != expected:
+        raise ValueError(f"Archived {label} hash changed: {path}")
+    return actual
+
+
 def save_json(path: Path, value: object) -> None:
     """Save provenance with intentional newlines."""
     path.write_text(json.dumps(value, indent=2) + "\n")
@@ -127,9 +137,9 @@ def prepare(args) -> None:  # noqa: PLR0915
         if archived != paired:
             raise ValueError(f"Archived paired-window selection changed for {name}")
         checkpoint = Path(cfg.eval.checkpoint).resolve()
-        checkpoint_hash = sha256(checkpoint)
-        if entry.get("checkpoint_sha256", checkpoint_hash) != checkpoint_hash:
-            raise ValueError(f"Frozen checkpoint hash changed for {name}")
+        checkpoint_hash = verify_sha256(
+            checkpoint, entry.get("checkpoint_sha256"), f"{name} checkpoint"
+        )
         dependencies = {str(checkpoint): checkpoint_hash}
         with open_dict(cfg):
             cfg.datamodule.batch_size = 1
@@ -149,14 +159,22 @@ def prepare(args) -> None:  # noqa: PLR0915
                     if args.autoencoder_root:
                         cfg.model[part].runpath = str(args.autoencoder_root)
                     weights = Path(cfg.model[part].runpath) / "state.pth"
-                    dependencies[str(weights)] = sha256(weights)
+                    dependencies[str(weights)] = verify_sha256(
+                        weights,
+                        entry.get("codec_sha256", {}).get(part),
+                        f"{name} {part} codec",
+                    )
             # Archive normalization rather than relying on a mutable stats file.
             if cfg.datamodule.use_normalization:
                 stats = Path(cfg.datamodule.normalization_path)
                 archived_stats = assets / f"{name}-stats.yaml"
                 archived_stats.write_bytes(stats.read_bytes())
                 cfg.datamodule.normalization_path = str(archived_stats)
-                dependencies[str(archived_stats)] = sha256(archived_stats)
+                dependencies[str(archived_stats)] = verify_sha256(
+                    archived_stats,
+                    entry.get("normalization_sha256"),
+                    f"{name} normalization",
+                )
         config = assets / f"{name}.yaml"
         OmegaConf.save(cfg, config)
         models[name] = {
