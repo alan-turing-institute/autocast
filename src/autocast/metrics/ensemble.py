@@ -1368,9 +1368,13 @@ class DawidSebastianiScore(BTSCMMetric):
         out_dtype = y_pred.dtype if y_pred.is_floating_point() else torch.float32
 
         def _block_score(pred_block: Tensor, true_block: Tensor) -> Tensor:
-            # float64 for a stable Cholesky / log-determinant.
-            members = pred_block.to(torch.float64)  # (rows, D, M)
-            obs = true_block.to(torch.float64)  # (rows, D)
+            # float64 for a stable Cholesky / log-determinant. Apple's MPS backend
+            # has no float64, so there the block is scored on the CPU and the
+            # score returned to the input's device.
+            device = pred_block.device
+            work = torch.device("cpu") if device.type == "mps" else device
+            members = pred_block.to(work, torch.float64)  # (rows, D, M)
+            obs = true_block.to(work, torch.float64)  # (rows, D)
 
             # Sigma is diagonal-plus-rank-M, so log-det and the Mahalanobis term
             # come from an (M, M) factorisation instead of a (D, D) one. Exact,
@@ -1380,7 +1384,7 @@ class DawidSebastianiScore(BTSCMMetric):
             )
 
             block_score = 0.5 * (d * math.log(2.0 * math.pi) + log_det + mahalanobis)
-            return block_score.to(out_dtype)
+            return block_score.to(device, out_dtype)
 
         # The dominant cost per frame is the (rows, D, D) covariance/Cholesky --
         # quadratic in the vector size D, same as VariogramScore's all-pairs term
