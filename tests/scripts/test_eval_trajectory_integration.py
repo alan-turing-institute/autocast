@@ -49,7 +49,7 @@ DEFAULT_EVAL_CONFIG = (
 )
 
 
-def _install_ensemble_eval_fixture(tmp_path, monkeypatch):
+def _install_ensemble_eval_fixture(tmp_path, monkeypatch, test_trajectories=None):
     """Patch the eval setup to a tiny 3-member model; return its checkpoint path."""
     data = {"data": repeat(torch.arange(7.0), "t -> b t h w c", b=2, h=2, w=2, c=1)}
     datamodule = SpatioTemporalDataModule(
@@ -59,6 +59,7 @@ def _install_ensemble_eval_fixture(tmp_path, monkeypatch):
         batch_size=2,
         num_workers=0,
         pin_memory=False,
+        test_trajectories=test_trajectories,
     )
     model = EncoderProcessorDecoderEnsemble(
         encoder_decoder=EncoderDecoder(
@@ -84,6 +85,39 @@ def _install_ensemble_eval_fixture(tmp_path, monkeypatch):
         f"{EVAL_MODULE}.setup_epd_model", lambda *_args, **_kwargs: model
     )
     return checkpoint
+
+
+def test_evaluation_exports_original_selected_trajectory_ids(tmp_path, monkeypatch):
+    checkpoint = _install_ensemble_eval_fixture(
+        tmp_path, monkeypatch, test_trajectories=[1]
+    )
+    cfg = OmegaConf.create(
+        {
+            "model": {"encoder": {}, "decoder": {}, "n_members": 3},
+            "datamodule": {"start_frame": 1},
+            "eval": {
+                "checkpoint": str(checkpoint),
+                "mode": "ambient",
+                "accelerator": "cpu",
+                "metrics": ["mse"],
+                "max_rollout_steps": 3,
+                "metric_windows_rollout": [[0, 3]],
+                "trajectory_statistics": {"enabled": True},
+            },
+        }
+    )
+
+    run_evaluation(cfg, work_dir=tmp_path)
+
+    for name, count in (
+        ("single_step_metrics_per_trajectory.csv", 1),
+        ("rollout_metrics_per_trajectory.csv", 1),
+        ("rollout_metrics_per_timestep_per_trajectory.csv", 3),
+    ):
+        rows = pd.read_csv(tmp_path / "trajectory_statistics" / name)
+        assert len(rows) == count
+        assert rows["trajectory_idx"].tolist() == [1] * count
+        assert rows["trajectory_id"].tolist() == ["test_0001"] * count
 
 
 @pytest.mark.parametrize("mode", ["ambient", "encode_once"])
