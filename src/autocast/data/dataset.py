@@ -83,7 +83,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             trajectories: Whole trajectories to use before windowing. None keeps
                 all available trajectories; a positive integer keeps the first N;
                 a sequence selects unique source indices in the supplied order.
-                Source indices survive preloaded reuse and evaluation exports.
+                Source indices survive preloaded reuse and trajectory statistics.
         """
         self.dtype = dtype
         self.verbose = verbose
@@ -276,16 +276,27 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             else applied_start_frame
         )
         trajectory_indices = f.get("_trajectory_indices")
-        if isinstance(trajectory_indices, h5py.Dataset):
-            trajectory_indices = trajectory_indices[()].tolist()
-        self.trajectory_indices = (
-            list(range(self.data.shape[0]))
-            if trajectory_indices is None
-            else list(trajectory_indices)
+        self._preloaded_trajectory_indices = (
+            trajectory_indices[()]
+            if isinstance(trajectory_indices, h5py.Dataset)
+            else trajectory_indices
         )
+
+    def _set_trajectory_indices(self) -> None:
+        """Read optional source IDs, defaulting to row indices for custom readers."""
+        # Custom readers written before trajectory selection only populate tensors.
+        trajectory_indices = getattr(self, "_preloaded_trajectory_indices", None)
+        if trajectory_indices is None:
+            trajectory_indices = getattr(self, "trajectory_indices", None)
+        if trajectory_indices is None:
+            trajectory_indices = range(self.data.shape[0])
+        elif hasattr(trajectory_indices, "tolist"):
+            trajectory_indices = trajectory_indices.tolist()
+        self.trajectory_indices = list(trajectory_indices)
 
     def _select_trajectories(self, trajectories: int | Sequence[int] | None) -> None:
         """Select complete rows while retaining their original split indices."""
+        self._set_trajectory_indices()
         available = self.trajectory_indices
         n_available = self.data.shape[0]
         if (
@@ -363,9 +374,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             self.constant_fields = data.get("constant_fields", None)
             self._channel_idxs_applied = bool(data.get("_channel_idxs_applied", False))
             self._applied_start_frame = data.get("_applied_start_frame", 0)
-            self.trajectory_indices = list(
-                data.get("_trajectory_indices", range(self.data.shape[0]))
-            )
+            self._preloaded_trajectory_indices = data.get("_trajectory_indices")
             return
         msg = "No data provided to parse."
         raise ValueError(msg)

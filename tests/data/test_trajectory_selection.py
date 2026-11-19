@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import h5py
+import numpy as np
 import pytest
 import torch
 from hydra import compose, initialize_config_dir
@@ -105,6 +106,54 @@ def test_datamodule_selects_only_valid_and_test(payload, autoencoder_mode):
         assert torch.equal(valid_rollout[0].input_fields, payload["data"][3, :1])
 
 
+@pytest.mark.parametrize(
+    ("selection", "indices"), [(None, [0, 1, 2, 3]), (2, [0, 1]), ([3, 1], [3, 1])]
+)
+def test_custom_reader_needs_no_trajectory_metadata(payload, selection, indices):
+    class CustomDataset(SpatioTemporalDataset):
+        def read_data(self, data_path):
+            self.data_path = data_path
+            self.data = payload["data"]
+            self.constant_scalars = payload["constant_scalars"]
+            self.constant_fields = payload["constant_fields"]
+
+    dm = SpatioTemporalDataModule(
+        data_path="custom_dataset",
+        dataset_cls=CustomDataset,
+        valid_trajectories=selection,
+        test_trajectories=selection,
+        num_workers=0,
+        pin_memory=False,
+    )
+
+    assert dm.train_dataset.trajectory_indices == [0, 1, 2, 3]
+    assert dm.val_dataset.trajectory_indices == indices
+    assert dm.test_dataset.trajectory_indices == indices
+    valid_rollout = dm.rollout_valid_dataloader().dataset
+    test_rollout = dm.rollout_test_dataset
+    assert isinstance(valid_rollout, SpatioTemporalDataset)
+    assert valid_rollout.sample_trajectory_indices == indices
+    assert test_rollout.sample_trajectory_indices == indices
+    assert torch.equal(valid_rollout[0].input_fields, payload["data"][indices[0], :1])
+
+
+def test_custom_parser_can_crop_rows_after_calling_super(payload):
+    class CroppingDataset(SpatioTemporalDataset):
+        def parse_data(self, data):
+            super().parse_data(data)
+            self.data = self.data[:2]
+            assert self.constant_scalars is not None
+            assert self.constant_fields is not None
+            self.constant_scalars = self.constant_scalars[:2]
+            self.constant_fields = self.constant_fields[:2]
+
+    dataset = CroppingDataset(data_path=None, data=payload)
+
+    assert dataset.trajectory_indices == [0, 1]
+    assert dataset.sample_trajectory_indices == [0] * 5 + [1] * 5
+    assert torch.equal(dataset.data, payload["data"][:2])
+
+
 def test_selection_and_preloaded_reuse_preserve_frames_channels_and_ids(payload):
     dataset = SpatioTemporalDataset(
         data_path=None,
@@ -140,6 +189,43 @@ def test_reselecting_preloaded_data_uses_source_indices(payload):
         SpatioTemporalDataset(
             data_path=None, data=selected.to_preloaded_data(), trajectories=[0]
         )
+
+
+@pytest.mark.parametrize(
+    ("source", "stored_ids"),
+    [
+        ("memory", None),
+        ("pt", None),
+        ("memory", np.array([3, 1, 0, 2])),
+        ("h5", np.array([3, 1, 0, 2])),
+        ("memory", torch.tensor([3, 1, 0, 2])),
+        ("pt", torch.tensor([3, 1, 0, 2])),
+    ],
+)
+def test_preloaded_ids_accept_arrays_and_none(tmp_path, payload, source, stored_ids):
+    data = {**payload, "_trajectory_indices": stored_ids}
+    indices = [0, 1, 2, 3] if stored_ids is None else [3, 1, 0, 2]
+    if source == "pt":
+        # Tensor IDs retain torch.load's default restricted loading behavior.
+        path = tmp_path / "data.pt"
+        torch.save(data, path)
+        dataset = SpatioTemporalDataset(data_path=str(path), full_trajectory_mode=True)
+    elif source == "h5":
+        path = tmp_path / "data.h5"
+        with h5py.File(path, "w") as handle:
+            for name, value in data.items():
+                handle.create_dataset(name, data=value)
+        dataset = SpatioTemporalDataset(data_path=str(path), full_trajectory_mode=True)
+    else:
+        dataset = SpatioTemporalDataset(
+            data_path=None, data=data, full_trajectory_mode=True
+        )
+
+    assert dataset.sample_trajectory_indices == indices
+    assert build_trajectory_metadata(dataset) == {
+        source_idx: {"cs0": 100.0 + row_idx}
+        for row_idx, source_idx in enumerate(indices)
+    }
 
 
 def test_selected_splits_keep_training_normalization(payload):
