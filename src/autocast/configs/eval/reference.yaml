@@ -70,3 +70,8 @@ free_running_only: true
 rollout_start: 0
 max_rollout_steps: 25
 metric_windows_rollout: [[0, 1], [0, 4], [6, 12], [13, 30], [31, 99]]
+
+trajectory_statistics:
+  enabled: true
+  include_per_timestep: true
+  sampling_seed: 42

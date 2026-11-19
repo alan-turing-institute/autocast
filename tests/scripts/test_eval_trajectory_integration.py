@@ -391,6 +391,9 @@ def test_reference_eval_config_composes_and_scores_every_metric_it_lists(
 
     run_evaluation(cfg, work_dir=tmp_path)
 
+    # The reference config turns trajectory statistics on, which writes the run's
+    # CSVs under trajectory_statistics/.
+    assert reference.trajectory_statistics.enabled
     for csv_name in ("evaluation_metrics.csv", "rollout_metrics.csv"):
-        columns = set(pd.read_csv(tmp_path / csv_name))
+        columns = set(pd.read_csv(tmp_path / "trajectory_statistics" / csv_name))
         assert set(reference.metrics) <= columns, set(reference.metrics) - columns
