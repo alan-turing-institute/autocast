@@ -343,16 +343,14 @@ class TestTimeCosineSchedule:
         with pytest.raises(ValueError, match="max_time"):
             m._create_scheduler(opt, cfg)
 
-    def test_rejects_restarts_in_time_mode(self) -> None:
+    @pytest.mark.parametrize("scheduler", ["cosine_with_restarts", "step"])
+    def test_rejects_unsupported_schedulers_in_time_mode(self, scheduler: str) -> None:
         m = _ToyMixinUser()
         m.trainer = _FakeTrainer(Timer(duration="00:01:00:00"))  # type: ignore[attr-defined]
         opt = torch.optim.SGD(m.parameters(), lr=1.0)
-        cfg = cast(
-            "Any",
-            {"scheduler": "cosine_with_restarts", "scheduler_interval": "time"},
-        )
-        with pytest.raises(ValueError, match="cosine_with_restarts"):
-            m._create_scheduler(opt, cfg)
+        cfg = {"scheduler": scheduler, "scheduler_interval": "time"}
+        with pytest.raises(ValueError, match=rf"{scheduler} is not supported"):
+            m._build_scheduler_config(opt, cfg)
 
     def test_rejects_absolute_warmup_in_time_mode(self) -> None:
         with pytest.raises(ValueError, match="fraction"):

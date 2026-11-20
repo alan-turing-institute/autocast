@@ -576,7 +576,7 @@ def run_training(
     if chain is None:
         callbacks.append(CheckpointAliasSymlinkCallback(checkpoint_path))
     else:
-        # The chain timer owns this allocation's budget. Keep the fit horizon intact.
+        # The chain installs an epoch-boundary timer if the schedule needs one.
         trainer_cfg["max_time"] = None
         alias = checkpoint_path.parent.resolve() / checkpoint_path.name
         if not alias.is_relative_to(work_dir) or alias.is_relative_to(chain.directory):

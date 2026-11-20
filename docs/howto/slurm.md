@@ -36,13 +36,19 @@ uv run autocast processor --mode slurm --chain 2 --dry-run \
 ```
 
 `--dry-run` prints the scripts and dependencies. Set `trainer.max_epochs` and any
-explicit cosine horizon for the whole run. Use an epoch- or step-based scheduler.
+explicit cosine horizon for the whole run.
 Leave `trainer.min_steps` unset and keep `trainer.min_epochs` at most one so
 training can hand off after any completed epoch.
-The budget starts with the batch script. The chain uses the longest observed
-epoch to decide whether another can fit, reserving 10% of each allocation
-(1–30 minutes) for checkpointing. Allow enough walltime for setup and at least
-one full epoch, including any validation.
+
+For time-based cosine scheduling, set `++optimizer.scheduler_interval=time`
+and use `trainer.max_time` for the total training budget (for example,
+`trainer.max_time=02:00:00:00` for 48 hours). The clock resumes from the checkpoint
+and excludes queue time. Training finishes at an epoch boundary.
+
+The per-allocation budget (`hydra.launcher.timeout_min`) starts with the batch
+script. The chain uses the longest observed epoch to decide whether another can
+fit, reserving 10% of each allocation (1–30 minutes) for checkpointing. Allow
+enough walltime for setup and at least one full epoch, including any validation.
 
 Each continuation restores its predecessor's full checkpoint. The usual
 checkpoint path points to the latest endpoint for evaluation. The run keeps its
