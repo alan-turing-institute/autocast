@@ -1,0 +1,31 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/afcrps_spatial1d_residual_one_output_12block_256ep_8h
+  - override /trainer: swe64s_noise_ablations
+  - _self_
+
+experiment_name: swe64s_campaign_nested_afcrps
+swe64_pool_root: ???
+swe64_train_trajectories: ???
+
+datamodule:
+  data_path: ${swe64_pool_root}/train${swe64_train_trajectories}
+  normalization_path: ${swe64_pool_root}/train200/stats.yml
+  valid_trajectories: 100
+  test_trajectories: 100
+
+trainer:
+  # With 4 GPUs and batch 32 per GPU, each sampled epoch uses 64,000 windows.
+  limit_train_batches: 500
+
+resume_from_checkpoint: null
+resume_weights_only: false
+reset_resume_time_budget: false
+
+logging:
+  wandb:
+    enabled: true
+    mode: online
+    id: null
+    resume: null
+    log_model: false

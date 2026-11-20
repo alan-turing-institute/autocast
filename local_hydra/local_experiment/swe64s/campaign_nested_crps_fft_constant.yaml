@@ -1,0 +1,18 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/campaign_nested_crps_fft
+  - _self_
+
+experiment_name: swe64s_campaign_nested_crps_fft_constant
+
+optimizer:
+  learning_rate: 1e-4
+  scheduler: null
+  scheduler_interval: null
+  cosine_epochs: null
+  cosine_t_max: null
+  min_lr_ratio: null
+  warmup: null
+
+trainer:
+  max_epochs: 512

@@ -1,0 +1,7 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/campaign_nested_afcrps
+  - /loss/ensemble_fourier_crps@model.loss_func
+  - _self_
+
+experiment_name: swe64s_campaign_nested_crps_fft

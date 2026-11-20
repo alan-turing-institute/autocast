@@ -1697,3 +1697,45 @@ revision happens to import.
 Longer runs, spectral losses, parameter sweeps, structured-noise controls and
 differentiable-physics variants are follow-on comparisons. They should not
 change these baseline presets in place.
+
+## Nested SWE64 campaign
+
+Use the verified nested views `train200`, `train1000` and `train5000`,
+each with 321 frames per trajectory and the common 100 validation and
+100 test trajectories. All runs use `train200/stats.yml` for field and
+one-step delta scaling. Confirm the actual input paths and split hashes
+against the dataset transfer record and the stats hash in the preview.
+
+```sh
+uv run --frozen python scripts/swe64s/prepare_campaign.py \
+  --pool-root "$SWE64_POOL_ROOT" --output-root "$SWE64S_OUTPUTS/nested-v1" \
+  --account "$SLURM_ACCOUNT" --preflight
+```
+
+This prints dry-run commands for dense and two-hop masked attention on
+the 1,000 pool and the constant-rate arm on the 5,000 pool. Each initial
+preflight uses two 500-update epochs at the intended four-GPU batch
+and precision, with the full validation split. The second command
+restores the full preflight checkpoint for one more epoch while keeping
+the learning-rate schedule fixed. It depends on successful completion
+of the first command. Use the epoch timer and profiler output to inspect
+startup, batch delivery, validation and checkpoint overhead. Compare
+the step counter and LR across the resume boundary. The preflight
+allows 30 minutes per allocation and uses its own output directories.
+
+Omit `--preflight` for the initial five production previews. The 200,
+1,000 and 5,000 CRPS-FFT anchors use 128k updates with cosine decay. The
+1,000 and 5,000 constant-rate arms use `1e-4` up to 256k updates.
+The common 32k snapshot cadence includes 64k, 128k, 192k and 256k
+in each completed fixed-rate run. All of these budgets
+are subject to the sustained-validation-rise callback. Size the
+allocation from the preflight results and record the actual exposure.
+
+Use repeatable `--run` options to select the remaining loss and noise
+arms or the RPB-off dense and masked graph arms. For each architecture's
+one-step/two-step pair, pass its selected checkpoint with
+`--parent-checkpoint`. Both runs use two-future windows, the same
+two-step validation, and a fresh 32k-update cosine schedule. The
+two-step treatment backpropagates through the predicted feedback.
+Generate final previews on the target from the pinned source revision
+so the paths and source SHA match the launch environment.

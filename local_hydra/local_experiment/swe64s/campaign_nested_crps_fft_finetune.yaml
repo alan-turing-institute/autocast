@@ -1,0 +1,12 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/campaign_nested_crps_fft
+  - /local_experiment/swe64s/crps_fft_finetune_32k_common
+  - _self_
+
+experiment_name: swe64s_campaign_nested_crps_fft_finetune
+swe64_train_trajectories: 1000
+
+model:
+  processor:
+    rpb: false
