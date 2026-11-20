@@ -145,6 +145,14 @@ def test_gathered_graph_requires_graph_hops():
         make_processor(graph_attention_backend="gathered")
 
 
+@pytest.mark.parametrize("graph_hops", [None, 1])
+def test_unknown_graph_attention_backend_reports_valid_choices(
+    graph_hops, validation_error
+):
+    with validation_error(ValueError, match="must be 'masked' or 'gathered'"):
+        make_processor(graph_hops=graph_hops, graph_attention_backend="gathred")
+
+
 @pytest.mark.parametrize(("patch_size", "n_tokens"), [(1, 64), (2, 16), ((2, 4), 8)])
 @pytest.mark.parametrize("with_time", [False, True])
 def test_map_samples_independent_token_noise(patch_size, n_tokens, with_time):

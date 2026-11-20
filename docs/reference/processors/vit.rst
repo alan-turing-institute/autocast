@@ -147,3 +147,5 @@ and positional bias. Materializing keys and values for each edge can increase
 peak memory, including with the 256 patch tokens in SWE64. During backward,
 the gathered backend recomputes those tensors from the original projections.
 It checkpoints only the gather and attention when block checkpointing is off.
+On CUDA, large graphs use separate groups of query patches to stay within
+kernel launch limits.

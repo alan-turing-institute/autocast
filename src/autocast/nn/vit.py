@@ -8,7 +8,11 @@ from einops.layers.torch import Rearrange
 from torch import nn
 
 from autocast.nn.base import TemporalBackboneBase
-from autocast.nn.graph_vit import GraphAttentionBackend, PeriodicGraphViT
+from autocast.nn.graph_vit import (
+    GraphAttentionBackend,
+    PeriodicGraphViT,
+    validate_graph_attention_backend,
+)
 
 
 class SpatialViTBackbone(TemporalBackboneBase):
@@ -192,6 +196,7 @@ class SpatialViTBackbone(TemporalBackboneBase):
             ViT module
         """
         if graph_hops is None and graph_attention_backend != "masked":
+            validate_graph_attention_backend(graph_attention_backend)
             msg = "Selecting a graph attention backend requires graph_hops."
             raise ValueError(msg)
         build_vit = (

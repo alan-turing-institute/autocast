@@ -1,6 +1,6 @@
 """Azula ViT with attention over a periodic graph of patch tokens."""
 
-from typing import Literal
+from typing import Literal, get_args
 
 import torch
 import torch.nn.functional as F
@@ -11,6 +11,14 @@ from torch import Tensor, nn
 from torch.utils.checkpoint import checkpoint
 
 GraphAttentionBackend = Literal["masked", "gathered"]
+_CUDA_MAX_GRID_HEADS = 65_535
+
+
+def validate_graph_attention_backend(backend: str) -> None:
+    """Reject unknown graph attention backends before validating graph hops."""
+    if backend not in get_args(GraphAttentionBackend):
+        msg = "graph_attention_backend must be 'masked' or 'gathered'."
+        raise ValueError(msg)
 
 
 def periodic_grid_neighbors(
@@ -69,7 +77,17 @@ class GatheredGraphAttention(nn.Module):
         query_norm = p.square().sum(dim=-1, keepdim=True)
         key_norm = shifted.square().sum(dim=-1)[:, neighbors]
         dot = torch.einsum("hnd,hnkd->hnk", p, shifted[:, neighbors])
-        return rearrange(-(query_norm + key_norm - 2 * dot), "h n k -> 1 (h n) 1 k")
+        return -(query_norm + key_norm - 2 * dot)
+
+    def _queries_per_call(self, q: Tensor) -> int:
+        if not q.is_cuda:
+            return q.shape[-2]
+        # The CUDA memory-efficient SDPA launch uses packed heads as grid.y.
+        limit = _CUDA_MAX_GRID_HEADS // self.heads
+        if limit == 0:
+            msg = "Gathered graph attention on CUDA supports at most 65,535 heads."
+            raise ValueError(msg)
+        return limit
 
     def _attend(
         self,
@@ -82,13 +100,16 @@ class GatheredGraphAttention(nn.Module):
     ) -> Tensor:
         # Fold nodes into the head axis to keep one query per neighborhood and
         # allow a single position bias to broadcast across the batch.
-        return F.scaled_dot_product_attention(
+        attended = F.scaled_dot_product_attention(
             query=rearrange(q, "b h n d -> b (h n) 1 d"),
             key=rearrange(k[:, :, neighbors], "b h n k d -> b (h n) k d"),
             value=rearrange(v[:, :, neighbors], "b h n k d -> b (h n) k d"),
-            attn_mask=bias,
+            attn_mask=rearrange(bias, "h n k -> 1 (h n) 1 k")
+            if bias is not None
+            else None,
             dropout_p=dropout_p,
         )
+        return rearrange(attended, "b (h n) 1 d -> b n (h d)", h=self.heads)
 
     def forward(self, x: Tensor, pos: Tensor, neighbors: Tensor) -> Tensor:
         """Gather keys and values before calling scaled dot-product attention."""
@@ -101,22 +122,31 @@ class GatheredGraphAttention(nn.Module):
             q, k = apply_rope(q, k, theta)
 
         dropout_p = self.dropout if self.training else 0.0
-        attention_inputs = (
-            q,
-            k,
-            v,
-            self._position_bias(pos, neighbors),
-            neighbors,
-            dropout_p,
-        )
-        if self.checkpoint_gather and torch.is_grad_enabled():
-            # Save the original projections and regenerate the edge-sized K/V.
-            attended = checkpoint(self._attend, *attention_inputs, use_reentrant=False)
-        else:
-            attended = self._attend(*attention_inputs)
-        return self.y_proj(
-            rearrange(attended, "b (h n) 1 d -> b n (h d)", h=self.heads)
-        )
+        bias = self._position_bias(pos, neighbors)
+        queries_per_call = self._queries_per_call(q)
+        checkpoint_gather = self.checkpoint_gather and torch.is_grad_enabled()
+        outputs = []
+        for start in range(0, neighbors.shape[0], queries_per_call):
+            rows = slice(start, start + queries_per_call)
+            chunk_bias = bias[:, rows] if bias is not None else None
+            attention_inputs = (
+                q[:, :, rows],
+                k,
+                v,
+                chunk_bias,
+                neighbors[rows],
+                dropout_p,
+            )
+            if checkpoint_gather:
+                # Save the projections and regenerate the edge-sized K/V per chunk.
+                output = checkpoint(
+                    self._attend, *attention_inputs, use_reentrant=False
+                )
+            else:
+                output = self._attend(*attention_inputs)
+            outputs.append(output)
+        attended = outputs[0] if len(outputs) == 1 else torch.cat(outputs, dim=1)
+        return self.y_proj(attended)
 
 
 class PeriodicGraphViT(ViT):
@@ -138,9 +168,7 @@ class PeriodicGraphViT(ViT):
         if type(graph_hops) is not int or graph_hops < 0:
             msg = "graph_hops must be a nonnegative integer."
             raise ValueError(msg)
-        if graph_attention_backend not in ("masked", "gathered"):
-            msg = "graph_attention_backend must be 'masked' or 'gathered'."
-            raise ValueError(msg)
+        validate_graph_attention_backend(graph_attention_backend)
         super().__init__(spatial=spatial, **kwargs)
         self.graph_hops = graph_hops
         self.graph_attention_backend = graph_attention_backend

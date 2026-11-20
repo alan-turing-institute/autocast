@@ -92,3 +92,32 @@ def test_checkpointed_gather_saves_less_memory_and_preserves_dropout():
     torch.testing.assert_close(actual, expected)
     torch.testing.assert_close(actual_gradients, expected_gradients)
     assert checkpointed_bytes < reference_bytes
+
+
+@pytest.mark.parametrize("rpb", [True, False])
+def test_chunked_gather_matches_unchunked_outputs_and_gradients(monkeypatch, rpb):
+    attention = GatheredGraphAttention(
+        MultiheadSelfAttention(16, attention_heads=2, pos_features=2, rpb=rpb)
+    )
+    tokens = torch.randn(2, 12, 16, requires_grad=True)
+    pos = torch.cartesian_prod(torch.arange(4.0), torch.arange(3.0))
+    neighbors = periodic_grid_neighbors(4, 3, 1, device=tokens.device)
+    inputs = (tokens, *attention.parameters())
+    expected = attention(tokens, pos, neighbors)
+    expected_gradients = torch.autograd.grad(expected.square().mean(), inputs)
+
+    original = F.scaled_dot_product_attention
+    packed_heads = []
+
+    def record_attention(**kwargs):
+        packed_heads.append(kwargs["query"].shape[1])
+        return original(**kwargs)
+
+    monkeypatch.setattr(attention, "_queries_per_call", lambda _q: 5)
+    monkeypatch.setattr(F, "scaled_dot_product_attention", record_attention)
+    actual = attention(tokens, pos, neighbors)
+    assert packed_heads == [10, 10, 4]
+    torch.testing.assert_close(actual, expected)
+    torch.testing.assert_close(
+        torch.autograd.grad(actual.square().mean(), inputs), expected_gradients
+    )
