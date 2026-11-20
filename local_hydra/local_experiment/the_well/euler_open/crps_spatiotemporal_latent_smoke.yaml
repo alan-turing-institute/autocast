@@ -1,0 +1,10 @@
+# @package _global_
+defaults:
+  - /local_experiment/the_well/euler_open/crps_spatiotemporal_latent
+  - /local_experiment/the_well/euler_open/_latent_smoke
+  - _self_
+
+experiment_name: the_well_euler_open_crps_spatiotemporal_latent_smoke
+
+model:
+  n_members: 2

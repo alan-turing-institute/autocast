@@ -1,4 +1,4 @@
-"""RB-only paired next-window evaluation; shared library defaults are unchanged."""
+"""Paired next-window evaluation on selected The Well trajectories."""
 
 # Keep manifest preparation independent of the GPU runtime imports.
 # ruff: noqa: PLC0415
@@ -15,8 +15,10 @@ from typing import cast
 import yaml
 
 
-def make_selection(trajectories, seed=0):
-    """Select eight distinct contexts per trajectory, preserving physical IDs."""
+def make_selection(
+    trajectories, seed=0, *, frames=200, stride=1, windows_per_trajectory=8
+):
+    """Select distinct contexts per trajectory, preserving physical IDs."""
     rng = random.Random(seed)
     files = list(trajectories["files"].items())
     windows = []
@@ -29,8 +31,7 @@ def make_selection(trajectories, seed=0):
             local -= count
         else:
             raise ValueError(f"Unknown trajectory {trajectory}")
-        # These RB files contain 200 frames; 1 input + 4 outputs gives 196 starts.
-        for start in rng.sample(range(196), 8):
+        for start in rng.sample(range(frames - 4 * stride), windows_per_trajectory):
             windows.append(
                 {
                     "trajectory_idx": trajectory,
@@ -40,15 +41,18 @@ def make_selection(trajectories, seed=0):
                 }
             )
     windows.sort(key=lambda row: (row["trajectory_idx"], row["context_frame"]))
-    return {
+    selection = {
         "seed": seed,
         "n_steps_input": 1,
         "n_steps_output": 4,
-        "frames_per_trajectory": 200,
-        "windows_per_trajectory": 8,
+        "frames_per_trajectory": frames,
+        "windows_per_trajectory": windows_per_trajectory,
         "files": dict(files),
         "windows": windows,
     }
+    if stride != 1:
+        selection["stride"] = stride
+    return selection
 
 
 def validate_selection(dataset, selection):
@@ -56,6 +60,9 @@ def validate_selection(dataset, selection):
     from autocast.data.transforms import LogScalars
 
     well = dataset.well_dataset
+    dataset_name = selection.get("dataset")
+    if dataset_name is not None and dataset_name != well.metadata.dataset_name:
+        raise ValueError(f"Paired test selection requires {dataset_name}")
     expected_files = list(selection["files"])
     actual_files = [Path(path).name for path in well.files_paths]
     if actual_files != expected_files:
@@ -64,18 +71,22 @@ def validate_selection(dataset, selection):
     if list(well.n_trajectories_per_file) != list(selection["files"].values()):
         msg = "Test trajectory counts differ from the saved selection"
         raise ValueError(msg)
+    stride = selection.get("stride", 1)
     if (
         well.n_steps_input,
         well.n_steps_output,
         well.min_dt_stride,
         well.max_dt_stride,
-    ) != (1, 4, 1, 1):
-        msg = "Paired evaluation requires 1-to-4 windows with fixed stride 1"
-        raise ValueError(msg)
-    if any(n != 200 for n in well.n_steps_per_trajectory) or any(
-        n != 196 for n in well.n_windows_per_trajectory
+    ) != (1, 4, stride, stride):
+        raise ValueError(
+            f"Paired evaluation requires 1-to-4 windows at stride {stride}"
+        )
+    frames = selection["frames_per_trajectory"]
+    starts = frames - 4 * stride
+    if any(n != frames for n in well.n_steps_per_trajectory) or any(
+        n != starts for n in well.n_windows_per_trajectory
     ):
-        msg = "RB frame/window counts differ from the saved selection"
+        msg = "Frame/window counts differ from the saved selection"
         raise ValueError(msg)
     if well.transform is not None and not isinstance(well.transform, LogScalars):
         msg = "Paired test windows must not use random augmentation"
@@ -84,9 +95,10 @@ def validate_selection(dataset, selection):
         (row["file"], row["trajectory_in_file"], row["context_frame"])
         for row in selection["windows"]
     ]
-    if len(identities) != 512 or len(set(identities)) != 512:
-        msg = "Expected exactly 512 distinct windows"
-        raise ValueError(msg)
+    windows_per_trajectory = selection["windows_per_trajectory"]
+    expected_windows = 64 * windows_per_trajectory
+    if len(identities) != expected_windows or len(set(identities)) != expected_windows:
+        raise ValueError(f"Expected exactly {expected_windows} distinct windows")
     counts = {}
     indices = []
     for row in selection["windows"]:
@@ -96,21 +108,20 @@ def validate_selection(dataset, selection):
         )
         expected = (
             max(int(well.file_index_offsets[file_idx]), 0)
-            + row["trajectory_in_file"] * 196
+            + row["trajectory_in_file"] * starts
             + row["context_frame"]
         )
         if not (
             0 <= row["trajectory_in_file"] < well.n_trajectories_per_file[file_idx]
-            and 0 <= row["context_frame"] < 196
+            and 0 <= row["context_frame"] < starts
             and bisect_right(well.file_index_offsets, expected) - 1 == file_idx
             and row["trajectory_idx"] == trajectory
         ):
             raise ValueError(f"Window identity mismatch: {row}")
         indices.append(expected)
         counts[trajectory] = counts.get(trajectory, 0) + 1
-    if len(counts) != 64 or set(counts.values()) != {8}:
-        msg = "Expected eight windows from each of 64 trajectories"
-        raise ValueError(msg)
+    if len(counts) != 64 or set(counts.values()) != {windows_per_trajectory}:
+        raise ValueError(f"Expected {windows_per_trajectory} windows per trajectory")
     return indices
 
 
@@ -121,7 +132,15 @@ def physical_prediction(model, batch):
     return prediction, truth
 
 
-def run(args):  # noqa: PLR0912, PLR0915
+def run(  # noqa: PLR0912, PLR0915
+    args,
+    *,
+    configure_encode_once=None,
+    predict_window=physical_prediction,
+    max_windows=None,
+    reference_diagnostics=False,
+    device="cuda",
+):
     """Score the selected windows once with shared setup and metric functions."""
     import lightning as L
     import numpy as np
@@ -131,6 +150,7 @@ def run(args):  # noqa: PLR0912, PLR0915
     from torch.utils.data import Subset
 
     from autocast.data.datamodule import TheWellDataModule
+    from autocast.external.lola.field_transform import named_field_indices
     from autocast.metrics.coverage import Coverage
     from autocast.scripts.data import batch_to_device
     from autocast.scripts.eval.encoder_processor_decoder import (
@@ -156,7 +176,11 @@ def run(args):  # noqa: PLR0912, PLR0915
     if not isinstance(cfg, DictConfig):
         msg = "Expected an evaluation configuration mapping"
         raise TypeError(msg)
-    if cfg.eval.mode == "encode_once":
+    if getattr(args, "checkpoint", None) is not None:
+        cfg.eval.checkpoint = str(args.checkpoint.resolve())
+    if cfg.eval.mode == "encode_once" and configure_encode_once is not None:
+        cfg = configure_encode_once(cfg)
+    elif cfg.eval.mode == "encode_once":
         loaded = _load_lola_autoencoder_config_from_datamodule(cfg)
         if loaded is None:
             msg = "Cannot resolve the frozen LOLA autoencoder"
@@ -169,7 +193,7 @@ def run(args):  # noqa: PLR0912, PLR0915
         msg = "Expected a raw-field ambient or encode_once evaluation"
         raise ValueError(msg)
     cfg.datamodule.batch_size = 1
-    cfg.datamodule.num_workers = 2
+    cfg.datamodule.num_workers = cfg.eval.get("num_workers", 2)
     cfg.datamodule.cache_small = False
     cfg.eval.n_members = args.members
     cfg.model.n_members = args.members
@@ -189,6 +213,17 @@ def run(args):  # noqa: PLR0912, PLR0915
         msg = "Paired window evaluation requires TheWellDataModule"
         raise TypeError(msg)
     indices = validate_selection(datamodule.test_dataset, selection)
+    windows = selection["windows"]
+    if max_windows is not None:
+        indices, windows = indices[:max_windows], windows[:max_windows]
+    fields = selection.get("fields")
+    field_order = None
+    if fields is not None:
+        field_order = named_field_indices(
+            datamodule.test_dataset.well_metadata.field_names.values(), fields
+        )
+        cfg.model.encoder.field_indices = field_order
+    n_channels = stats["channel_count"]
     # The test loader accepts a map-style Subset at runtime.
     datamodule.test_dataset = Subset(datamodule.test_dataset, indices)  # pyright: ignore[reportAttributeAccessIssue]
     OmegaConf.save(cfg, out / "resolved_test_config.yaml")
@@ -215,7 +250,7 @@ def run(args):  # noqa: PLR0912, PLR0915
     if bool(model.norm is not None) != bool(cfg.datamodule.use_normalization):
         msg = "Model/data normalization disagree"
         raise ValueError(msg)
-    device = torch.device("cuda")
+    device = torch.device(device)
     model = model.eval().to(device)
     names = [
         "mse",
@@ -230,11 +265,27 @@ def run(args):  # noqa: PLR0912, PLR0915
         "skill",
         "ssr",
     ]
-    metrics = {
-        name: (AVAILABLE_METRICS | AVAILABLE_METRICS_ENSEMBLE)[name]().to(device)
-        for name in names
-    }
-    metrics["coverage_0.9"] = Coverage(coverage_level=0.9).to(device)
+    metrics = {}
+    levels = []
+    reference_score = None
+    if reference_diagnostics:
+        from slurm_scripts.comparison.the_well.rayleigh_benard import (
+            complete_diagnostics,
+        )
+
+        reference_score = complete_diagnostics.score_leads
+        levels = complete_diagnostics.LEVELS
+        metric_names = [
+            *complete_diagnostics.METRICS,
+            *(f"coverage_{level:g}" for level in levels),
+        ]
+    else:
+        metrics = {
+            name: (AVAILABLE_METRICS | AVAILABLE_METRICS_ENSEMBLE)[name]().to(device)
+            for name in names
+        }
+        metrics["coverage_0.9"] = Coverage(coverage_level=0.9).to(device)
+        metric_names = list(metrics)
     rows = []
     started = time.monotonic()
     with (
@@ -243,7 +294,9 @@ def run(args):  # noqa: PLR0912, PLR0915
     ):
         for position, raw_batch in enumerate(datamodule.test_dataloader()):
             batch = batch_to_device(raw_batch, device)
-            pred, truth = physical_prediction(model, batch)
+            pred, truth = predict_window(model, batch)
+            if field_order is not None:
+                truth = truth[..., field_order]
             if (
                 pred.shape[:-1] != truth.shape
                 or pred.shape[1] != 4
@@ -252,24 +305,47 @@ def run(args):  # noqa: PLR0912, PLR0915
                 raise ValueError(
                     f"Unexpected forecast shapes: {pred.shape}, {truth.shape}"
                 )
-            scores = {
-                name: metric.score(pred, truth).cpu().numpy()[0]
-                for name, metric in metrics.items()
-            }
+            if reference_score is not None:
+                # Each score is per channel. Split the native Euler grid so
+                # Coverage's per-lead torch.quantile stays below 2**24 inputs.
+                pieces = [
+                    reference_score(p, t)
+                    for p, t in zip(
+                        pred.split(2, dim=-2), truth.split(2, dim=-1), strict=True
+                    )
+                ]
+                scores = {
+                    name: np.concatenate([part[name] for part in pieces], axis=-1)
+                    for name in pieces[0]
+                }
+            else:
+                scores = {
+                    name: metric.score(pred, truth).cpu().numpy()[0]
+                    for name, metric in metrics.items()
+                }
             if not all(
-                v.shape == (4, 4) and np.isfinite(v).all() for v in scores.values()
+                v.shape == (4, n_channels) and np.isfinite(v).all()
+                for v in scores.values()
             ):
                 raise ValueError(f"Invalid metrics at selected window {position}")
             block = []
             for lead in range(4):
-                for channel in range(4):
+                for channel in range(n_channels):
                     block.append(
                         {
                             "selection_position": position,
-                            **selection["windows"][position],
+                            **windows[position],
                             "dataset_index": indices[position],
                             "lead": lead + 1,
                             "channel": channel,
+                            **(
+                                {
+                                    "field": fields[channel],
+                                    "lead_raw_frames": (lead + 1) * selection["stride"],
+                                }
+                                if fields is not None
+                                else {}
+                            ),
                             **{
                                 name: float(v[lead, channel])
                                 for name, v in scores.items()
@@ -286,23 +362,39 @@ def run(args):  # noqa: PLR0912, PLR0915
                             "completed_windows": position + 1,
                             "total_windows": len(indices),
                             "elapsed_s": time.monotonic() - started,
-                            "peak_gpu_allocated_gib": torch.cuda.max_memory_allocated()
-                            / 1024**3,
+                            "peak_gpu_allocated_gib": (
+                                torch.cuda.max_memory_allocated() / 1024**3
+                                if device.type == "cuda"
+                                else None
+                            ),
                         }
                     ),
                     flush=True,
                 )
     frame = pd.DataFrame(rows)
-    if len(frame) != 512 * 4 * 4:
-        msg = "Evaluation did not consume exactly 512 complete windows"
+    if len(frame) != len(indices) * 4 * n_channels:
+        msg = "Evaluation did not consume every selected window"
         raise ValueError(msg)
-    frame.groupby("selection_position")[list(metrics)].mean().to_csv(
+    frame.groupby("selection_position")[metric_names].mean().to_csv(
         out / "per_window_metrics.csv"
     )
-    frame.groupby(["lead", "channel"])[list(metrics)].mean().to_csv(
+    frame.groupby(["lead", "channel"])[metric_names].mean().to_csv(
         out / "per_lead_channel_metrics.csv"
     )
-    summary = cast("pd.Series", frame[list(metrics)].mean())
+    summary = cast("pd.Series", frame[metric_names].mean())
+    if levels:
+        coverage = np.asarray(summary[[f"coverage_{q:g}" for q in levels]])
+        summary["coverage_mae"] = float(np.abs(coverage - levels).mean())
+        if frame["trajectory_idx"].nunique() > 1:
+            from slurm_scripts.comparison.the_well.rayleigh_benard import (
+                plot_diagnostics,
+            )
+
+            uncertainty = plot_diagnostics.trajectory_stats(frame, [])
+            uncertainty["coverage_mae_mean"], uncertainty["coverage_mae_se"] = (
+                plot_diagnostics.calibration_mae_stats(frame)
+            )
+            uncertainty.to_csv(out / "trajectory_summary.csv", index=False)
     summary.rename("mean").to_csv(out / "summary.csv")
     pd.DataFrame([{"window": "all", "batch_idx": "all", **summary.to_dict()}]).to_csv(
         out / "evaluation_metrics.csv", index=False
@@ -314,7 +406,7 @@ def run(args):  # noqa: PLR0912, PLR0915
                 "checkpoint": str(checkpoint),
                 **checkpoint_info,
                 "window_manifest_sha256": manifest_hash,
-                "n_windows": 512,
+                "n_windows": len(indices),
                 "n_members": args.members,
                 "targets": "raw physical fields",
                 "normalizer_inverted": model.norm is not None,
@@ -327,7 +419,8 @@ def run(args):  # noqa: PLR0912, PLR0915
         + "\n"
     )
     (out / "COMPLETE").write_text(
-        "512 windows, four leads, four channels; physical-unit scoring\n"
+        f"{len(indices)} windows, four leads, {n_channels} channels, "
+        "physical-unit scoring\n"
     )
 
 

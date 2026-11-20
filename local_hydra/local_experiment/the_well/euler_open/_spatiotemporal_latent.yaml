@@ -1,0 +1,48 @@
+# @package _global_
+defaults:
+  - /local_experiment/the_well/euler_open/_sources
+  - _self_
+
+datamodule:
+  data_path: ${euler_open_lola.cache.directory}
+  n_steps_input: 1
+  n_steps_output: 4
+  stride: ${euler_open_lola.cache.window_stride}
+
+model:
+  processor:
+    context_mask:
+      rho: 0.66  # Published Euler surrogate's prefix probability.
+    backbone:
+      in_channels: 64
+      out_channels: 64
+      cond_channels: 64
+      global_cond_channels: 5
+      mod_features: 256
+      hid_channels: 1024
+      hid_blocks: 16
+      attention_heads: 8
+      ffn_factor: 4
+      qk_norm: true
+      rope: true
+      rpb: false
+      patch_size: [1, 1, 1]
+      window_size: null
+      dropout: 0.05
+      checkpointing: false
+
+trainer:
+  precision: bf16-mixed
+
+logging:
+  wandb:
+    mode: offline
+
+eval:
+  mode: encode_once
+  n_members: 16
+  use_ema: false
+  chunk_size: 4
+  num_workers: 0
+  compute_rollout_metrics: false
+  compute_rollout_coverage: false

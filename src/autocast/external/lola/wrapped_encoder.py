@@ -5,6 +5,7 @@ import torch
 from einops import rearrange
 
 from autocast.encoders.base import EncoderWithCond
+from autocast.external.lola.field_transform import standardize_fields
 from autocast.external.lola.lola_autoencoder import get_autoencoder
 from autocast.types.batch import Batch
 
@@ -39,6 +40,8 @@ class WrappedEncoder(ChannelsFirstEncoder):
     wrapped_autoencoder: torch.nn.Module
     wrapped_encode_func: Callable
     log_scalars: bool
+    mean: torch.Tensor
+    std: torch.Tensor
 
     def __init__(self, **kwargs):
         super().__init__()
@@ -46,6 +49,8 @@ class WrappedEncoder(ChannelsFirstEncoder):
         std = kwargs.pop("std", None)
         self.chunk_size = kwargs.pop("chunk_size", None)
         self.log_scalars = bool(kwargs.pop("log_scalars", False))
+        self.field_indices = kwargs.pop("field_indices", ())
+        self.log1p_indices = kwargs.pop("log1p_indices", ())
         self.latent_channels = kwargs["lat_channels"]
         self.register_buffer(
             "mean",
@@ -67,8 +72,13 @@ class WrappedEncoder(ChannelsFirstEncoder):
         self.wrapped_encode_func = self.wrapped_autoencoder.encode
 
     def preprocess(self, batch: Batch) -> Batch:
+        fields = batch.input_fields
+        if self.field_indices:
+            fields = fields[..., list(self.field_indices)]
         batch = Batch(
-            input_fields=(batch.input_fields - self.mean) / self.std,
+            input_fields=standardize_fields(
+                fields, self.mean, self.std, self.log1p_indices
+            ),
             output_fields=batch.output_fields,
             constant_scalars=batch.constant_scalars,
             constant_fields=batch.constant_fields,

@@ -1,0 +1,56 @@
+# @package _global_
+euler_open_lola:
+  autocast_revision: ${oc.env:AUTOCAST_SOURCE_REVISION,local-unrecorded}
+  lola_repository: https://github.com/PolymathicAI/lola
+  lola_revision: 944ef5e877493a68cfec0564049c9335e5935d73
+  lola_surrogate_reference:
+    archive_url: https://users.flatironinstitute.org/~polymathic/data/lola/sm/s259b4l6_euler_all_f32c64_vit_large.zip
+    config_sha256: 9e4050aa3d87713b786d752f3657133266341410c319060633572ecf2f2f1a7f
+  comparison: https://github.com/alan-turing-institute/aiphys/issues/112
+  dataset: euler_multi_quadrants_openBC
+  well_base_path: /projects/u6eo/autocast/datasets
+  flatiron_source: https://sdsc-users.flatironinstitute.org/~polymathic/data/the_well/datasets/euler_multi_quadrants_openBC
+  frames: 101
+  physical_shape: [512, 512, 5]
+  latent_shape: [64, 16, 16]  # C, H, W in HDF5, channels-last in the processor
+  fields: [energy, density, pressure, momentum_x, momentum_y]
+  log1p_indices: [0, 1, 2]
+  conditioning: [gamma, x_lower_open, x_upper_open, y_lower_open, y_upper_open]
+  codec:
+    name: n6g8kix8_euler_all_dcae_f32c64_large
+    training_datasets: [euler_multi_quadrants_openBC, euler_multi_quadrants_periodicBC]
+    directory: /projects/u6eo/autocast/datasets/.lola-well-stage/euler-open80-pilot-Is8lKD/attempt-8633077-DHEcZ8/codec
+    archive_url: https://users.flatironinstitute.org/~polymathic/data/lola/ae/n6g8kix8_euler_all_dcae_f32c64_large.zip
+    archive_sha256: c2e6192849a33d27074835b250d426843f98f627d0b10deea8857c40989fad1a
+    config_sha256: a79cfa7645d9a4bc299d6429704d7a9b6c8c096ce917fc46a894d9ad7f1e2fea
+    state_sha256: 692a0e177a817d9de0d70aa471a326fbf1f84dd42b5cf4b7b99d909753dadab1
+    stats:
+      mean: [1.20, 0.60, 0.58, 0.00, 0.00]
+      std: [0.51, 0.27, 0.29, 0.53, 0.52]
+  # Canonical Flatiron inventory. Each shard has one gamma and all trajectories
+  # are stored in source order. Smoke uses the first shard and row in each split.
+  shards:
+    - gamma_1.13_C3H8_16
+    - gamma_1.22_C2H6_15
+    - gamma_1.33_H2O_20
+    - gamma_1.365_Dry_air_1000
+    - gamma_1.3_CO2_20
+    - gamma_1.404_H2_100_Dry_air_-15
+    - gamma_1.453_H2_-76
+    - gamma_1.4_Dry_air_20
+    - gamma_1.597_H2_-181
+    - gamma_1.76_Ar_-180
+  trajectories_per_shard: {train: 400, valid: 50, test: 50}
+  cache:
+    directory: ${oc.env:EULER_CACHE_DIR,./datasets/euler_open_lola_f32c64}
+    backend: ${oc.env:EULER_CACHE_BACKEND,autocast}
+    frame_stride: 1
+    # All raw frames are cached. Apply stride at window construction only.
+    window_stride: 4
+    shards_per_split: 10
+    trajectory_limit: null
+    encode_chunk_size: 4
+  paired_test:
+    seed: 0
+    trajectories: 64
+    windows_per_trajectory: 8

@@ -1,0 +1,32 @@
+# @package _global_
+euler_open_lola:
+  cache:
+    directory: ${oc.env:EULER_CACHE_DIR,./datasets/euler_open_lola_f32c64_smoke}
+    shards_per_split: 1
+    trajectory_limit: 1
+
+datamodule:
+  batch_size: 1
+  num_workers: 0
+  pin_memory: false
+  persistent_workers: false
+
+logging:
+  wandb:
+    enabled: false
+
+output:
+  skip_test: false
+
+trainer:
+  devices: 1
+  strategy: auto
+  max_epochs: 1
+  max_steps: 2
+  max_time: "00:00:20:00"
+  limit_train_batches: 2
+  limit_val_batches: 1
+  limit_test_batches: 1
+  check_val_every_n_epoch: 1
+  log_every_n_steps: 1
+  callbacks: []

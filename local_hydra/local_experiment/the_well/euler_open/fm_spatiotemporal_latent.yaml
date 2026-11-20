@@ -1,0 +1,13 @@
+# @package _global_
+defaults:
+  - /local_experiment/the_well/rayleigh_benard/fm_spatiotemporal_latent
+  - /local_experiment/the_well/euler_open/_spatiotemporal_latent
+  - _self_
+
+experiment_name: the_well_euler_open_fm_spatiotemporal_latent
+
+model:
+  processor:
+    # Use the RB paired evaluator's sixteen vector-field evaluations.
+    integrator: ab3
+    flow_ode_steps: 16

@@ -1,0 +1,61 @@
+# @package _global_
+defaults:
+  - /local_experiment/the_well/rayleigh_benard/crps_spatiotemporal_ambient_matched
+  - /local_experiment/the_well/euler_open/_sources
+  - override /datamodule: the_well
+  - _self_
+
+experiment_name: the_well_euler_open_crps_spatiotemporal_ambient_matched
+umask: "0027"
+
+datamodule:
+  well_dataset_name: ${euler_open_lola.dataset}
+  well_base_path: ${euler_open_lola.well_base_path}
+  n_steps_input: 1
+  n_steps_output: 4
+  min_dt_stride: ${euler_open_lola.cache.window_stride}
+  max_dt_stride: ${euler_open_lola.cache.window_stride}
+  num_workers: 8
+  use_normalization: false  # The deterministic encoder/decoder own the transforms.
+  cache_small: false
+  return_grid: false
+
+model:
+  encoder:
+    _target_: autocast.external.lola.field_transform.StandardizedFieldEncoder
+    mean: ${euler_open_lola.codec.stats.mean}
+    std: ${euler_open_lola.codec.stats.std}
+    log1p_indices: ${euler_open_lola.log1p_indices}
+  decoder:
+    _target_: autocast.external.lola.field_transform.StandardizedFieldDecoder
+    mean: ${euler_open_lola.codec.stats.mean}
+    std: ${euler_open_lola.codec.stats.std}
+    log1p_indices: ${euler_open_lola.log1p_indices}
+  processor:
+    context_mask:
+      rho: 0.66
+    backbone:
+      # Same trunk as latent, with the RB ambient protocol's 16x16 patches
+      # and gradient checkpointing at the native 512x512 resolution.
+      in_channels: 5
+      out_channels: 5
+      cond_channels: 5
+      global_cond_channels: 5
+      rope: true
+      rpb: false
+      window_size: null
+
+trainer:
+  precision: bf16-mixed
+
+logging:
+  wandb:
+    mode: offline
+
+eval:
+  mode: ambient
+  n_members: 16
+  use_ema: false
+  num_workers: 0
+  compute_rollout_metrics: false
+  compute_rollout_coverage: false

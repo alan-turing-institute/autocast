@@ -1,0 +1,9 @@
+# @package _global_
+defaults:
+  - /local_experiment/the_well/rayleigh_benard/crps_spatiotemporal_latent
+  - /local_experiment/the_well/euler_open/_spatiotemporal_latent
+  - _self_
+
+# AutoCast uses masked alpha-fair CRPS with stochastic modulation. The
+# published LoLA latent surrogate uses MSE.
+experiment_name: the_well_euler_open_crps_spatiotemporal_latent

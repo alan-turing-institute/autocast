@@ -281,7 +281,7 @@ our estimates remain projections, not completed 4,096-epoch runs.
 
 ### Paired next-window diagnostic
 
-`paired_test_windows.py` is an RB-only runner using the existing model setup,
+`paired_test_windows.py` runs the RB protocol using the existing model setup,
 physical-output prediction API and metrics. It leaves library defaults unchanged.
 It selects eight random contexts from each trajectory in `test64_seed0.yaml`
 (512 windows), saves file/trajectory/frame identities, and verifies them against
