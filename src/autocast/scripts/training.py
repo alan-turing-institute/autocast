@@ -598,20 +598,28 @@ def run_training(
     )
     _fit_training(trainer, model, datamodule, config, resolved_config, work_dir, chain)
 
-    if chain is None:
-        _finalize_training_checkpoint(trainer, checkpoint_path)
-    else:
-        continuing = chain.save_endpoint(trainer)
-        if trainer.is_global_zero:
-            _link_checkpoint_target_to_latest(
-                trainer, checkpoint_path, source_path=chain.checkpoint
-            )
-            if not continuing:
-                (chain.directory / "finished").symlink_to(chain.checkpoint.name)
-    trainer.strategy.barrier("checkpoint-alias-finalize")
+    if chain is not None:
+        _finalize_chain_checkpoint(trainer, checkpoint_path, chain)
+        return
 
-    if chain is None and not skip_test:
+    _finalize_training_checkpoint(trainer, checkpoint_path)
+    trainer.strategy.barrier("checkpoint-alias-finalize")
+    if not skip_test:
         trainer.test(model=model, datamodule=datamodule)
+
+
+def _finalize_chain_checkpoint(
+    trainer: L.Trainer, checkpoint_path: Path, chain: TrainingChain
+) -> None:
+    continuing = chain.save_endpoint(trainer)
+    if trainer.is_global_zero:
+        _link_checkpoint_target_to_latest(
+            trainer, checkpoint_path, source_path=chain.checkpoint
+        )
+        if not continuing:
+            (chain.directory / "finished").symlink_to(chain.checkpoint.name)
+    trainer.strategy.barrier("checkpoint-alias-finalize")
+    chain.check_time_budget_on_exit()
 
 
 def _fit_training(

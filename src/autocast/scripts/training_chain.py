@@ -17,11 +17,20 @@ log = logging.getLogger(__name__)
 class TrainingChain(Callback):
     """Stop at an epoch boundary and hand off one full-state checkpoint."""
 
-    def __init__(self, work_dir: Path, segment: int, deadline: int, run_id: str):
+    def __init__(
+        self,
+        work_dir: Path,
+        segment: int,
+        deadline: int,
+        run_id: str,
+        *,
+        final: bool = False,
+    ):
         self.directory = work_dir / ".chain"
         self.segment = segment
         self.run_id = run_id
         self.deadline = deadline
+        self._final = final
         self.checkpoint = self.directory / f"segment-{segment:04d}.ckpt"
         self._last_epoch_end = 0.0
         self._longest_epoch = 0.0
@@ -37,7 +46,8 @@ class TrainingChain(Callback):
         if value is None:
             return None
         segment, deadline, run_id = value.split(":")
-        return cls(work_dir, int(segment), int(deadline), run_id)
+        final = os.environ.get("AUTOCAST_SLURM_CHAIN_FINAL") == "1"
+        return cls(work_dir, int(segment), int(deadline), run_id, final=final)
 
     def configure_logging(self, logging_config: object) -> None:
         """Give enabled W&B logging one run identity across allocations."""
@@ -183,11 +193,22 @@ class TrainingChain(Callback):
         self._handoff = continue_training
         trainer.save_checkpoint(self.checkpoint, weights_only=False)
         if trainer.is_global_zero:
+            status = "training finished"
+            if continue_training:
+                status = "allocations exhausted" if self._final else "continue chain"
             log.info(
                 "Saved %s at epoch %d, step %d (%s).",
                 self.checkpoint,
                 trainer.current_epoch,
                 trainer.global_step,
-                "continue chain" if continue_training else "training finished",
+                status,
             )
         return continue_training
+
+    def check_time_budget_on_exit(self) -> None:
+        """Report an incomplete timed run after its final checkpoint is linked."""
+        if self._final and self._handoff and self._run_timer is not None:
+            msg = (
+                f"Slurm chain exhausted its allocations. Resume from {self.checkpoint}."
+            )
+            raise RuntimeError(msg)

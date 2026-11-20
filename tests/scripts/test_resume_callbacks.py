@@ -192,15 +192,21 @@ def test_slurm_chain_preserves_optimizer_and_cosine_state(tmp_path, monkeypatch)
 
 
 @pytest.mark.parametrize(
-    ("run_budget", "second_allocation_budget", "train_end_delay"),
+    ("run_budget", "second_allocation_budget", "train_end_delay", "finished"),
     [
-        pytest.param(14, 22, 0, id="run-budget-first"),
-        pytest.param(14, 11, 0, id="both-at-epoch-end"),
-        pytest.param(17, 11, 2, id="run-budget-during-train-end"),
+        pytest.param(14, 22, 0, True, id="run-budget-first"),
+        pytest.param(14, 11, 0, True, id="both-at-epoch-end"),
+        pytest.param(17, 11, 2, True, id="run-budget-during-train-end"),
+        pytest.param(20, 11, 0, False, id="allocations-exhausted"),
     ],
 )
 def test_slurm_chain_preserves_time_cosine_across_a_queue_gap(
-    run_budget, second_allocation_budget, train_end_delay, tmp_path, monkeypatch
+    run_budget,
+    second_allocation_budget,
+    train_end_delay,
+    finished,
+    tmp_path,
+    monkeypatch,
 ):
     clock = Mock(return_value=0)
     train_step = _DeterministicModel.training_step
@@ -256,9 +262,16 @@ def test_slurm_chain_preserves_time_cosine_across_a_queue_gap(
     second_deadline = clock.return_value + second_allocation_budget
     config.resume_from_checkpoint = str(chain_dir / "segment-0001.ckpt")
     monkeypatch.setenv("AUTOCAST_SLURM_CHAIN", f"2:{second_deadline}:time-test")
-    run_training(config, resumed, datamodule, tmp_path)
+    monkeypatch.setenv("AUTOCAST_SLURM_CHAIN_FINAL", "1")
     last_path = chain_dir / "segment-0002.ckpt"
-    assert (chain_dir / "finished").resolve(strict=True) == last_path
+    if finished:
+        run_training(config, resumed, datamodule, tmp_path)
+        assert (chain_dir / "finished").resolve(strict=True) == last_path
+    else:
+        with pytest.raises(RuntimeError, match="Slurm chain exhausted its allocations"):
+            run_training(config, resumed, datamodule, tmp_path)
+        assert not (chain_dir / "finished").exists()
+        assert infer_eval_checkpoint(tmp_path) == last_path.resolve()
 
     expected_rates = [
         1e-4 * (0.05 + 0.95 * (1 + math.cos(math.pi * elapsed / run_budget)) / 2)

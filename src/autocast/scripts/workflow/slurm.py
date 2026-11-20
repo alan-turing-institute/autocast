@@ -518,6 +518,7 @@ def _submit_training_chain(
             f"mkdir {shlex.quote(str(segment.with_suffix('.started')))}",
             f'export AUTOCAST_SLURM_CHAIN="{index}:'
             f'$((allocation_start + {budget * 60})):{run_id}"',
+            f"export AUTOCAST_SLURM_CHAIN_FINAL={int(index == segments)}",
         ]
         previous, _ = _submit_one_sbatch_job(
             module=module,
