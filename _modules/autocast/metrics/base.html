@@ -1,0 +1,910 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../../../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>autocast.metrics.base &#8212; AutoCast: Spatiotemporal Forecasting</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../../../_static/styles/theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+<link href="../../../_static/styles/pydata-sphinx-theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/styles/sphinx-book-theme.css?v=3c74b3bc" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/togglebutton.css?v=9c3e77be" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/mystnb.11b39860a7a0cbfd473a3ad8a317855267ff0bd372690045ca344a6b62be495e.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sphinx-thebe.css?v=4fa983c6" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sphinx-design.min.css?v=95c83b7e" />
+  
+  <!-- So that users can add custom icons -->
+  <script src="../../../_static/scripts/fontawesome.js?digest=8878045cc6db502f8baf"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../../../_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf" />
+<link rel="preload" as="script" href="../../../_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf" />
+
+    <script src="../../../_static/documentation_options.js?v=9eb32ce0"></script>
+    <script src="../../../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../../../_static/copybutton.js?v=7f8ff830"></script>
+    <script src="../../../_static/scripts/sphinx-book-theme.js?v=fab101a9"></script>
+    <script>let toggleHintShow = 'Click to show';</script>
+    <script>let toggleHintHide = 'Click to hide';</script>
+    <script>let toggleOpenOnPrint = 'true';</script>
+    <script src="../../../_static/togglebutton.js?v=b8b12719"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script src="../../../_static/design-tabs.js?v=f930bc37"></script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script async="async" src="../../../_static/sphinx-thebe.js?v=c100c467"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script>DOCUMENTATION_OPTIONS.pagename = '_modules/autocast/metrics/base';</script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="" />
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="../../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search this book..."
+         aria-label="Search this book..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+        
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../../../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../../../_static/AC.png" class="logo__image only-light" alt="AutoCast: Spatiotemporal Forecasting - Home"/>
+    <img src="../../../_static/AC.png" class="logo__image only-dark pst-js-only" alt="AutoCast: Spatiotemporal Forecasting - Home"/>
+  
+  
+</a></div>
+        <div class="sidebar-primary-item">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button></div>
+        <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item navbar-nav active">
+        
+        <ul class="nav bd-sidenav bd-sidenav__home-link">
+            <li class="toctree-l1">
+                <a class="reference internal" href="../../../index.html">
+                    Welcome to AutoCast
+                </a>
+            </li>
+        </ul>
+        <ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../../installation.html">Installation</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../walkthrough/index.html">Walkthrough</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../walkthrough/simulate-data.html">Simulating data</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../walkthrough/autoencoder.html">Training an autoencoder</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../walkthrough/processor.html">Training a processor</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../walkthrough/epd.html">Full encoder-processor-decoder</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../walkthrough/ensembles.html">Training model ensembles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../walkthrough/eval.html">Evaluating a trained model</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../howto/index.html">How-tos</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../howto/output-paths.html">Output paths</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../howto/slurm.html">Running AutoCast on SLURM</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../howto/wandb.html">Weights &amp; Biases logging</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../howto/resume.html">Resuming from a checkpoint</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../howto/configs.html">Configurations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../howto/other-commands.html">Direct usage of lower-level Hydra scripts</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../contributing.html">Contributing</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../reference/index.html">API Reference</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/models/index.html">Models</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/models/encoder_decoder.html">autocast.models.encoder_decoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/models/encoder_processor_decoder.html">autocast.models.encoder_processor_decoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/models/autoencoder.html">autocast.models.autoencoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/models/variational_autoencoder.html">autocast.models.variational_autoencoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/models/processor.html">autocast.models.processor</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/processors/index.html">Processors</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/processors/base.html">autocast.processors.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/processors/unet.html">autocast.processors.unet</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/processors/swin_vit.html">autocast.processors.swin_vit</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/processors/vit.html">autocast.processors.vit</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/processors/flow_matching.html">autocast.processors.flow_matching</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/processors/diffusion.html">autocast.processors.diffusion</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/processors/noise.html">autocast.processors.noise</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/encoders/index.html">Encoders</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/encoders/base.html">autocast.encoders.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/encoders/dc.html">autocast.encoders.dc</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/encoders/unet.html">autocast.encoders.unet</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/encoders/identity.html">autocast.encoders.identity</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/decoders/index.html">Decoders</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/decoders/base.html">autocast.decoders.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/decoders/dc.html">autocast.decoders.dc</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/decoders/identity.html">autocast.decoders.identity</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/data/index.html">Data</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/data/datamodule.html">autocast.data.datamodule</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/data/dataset.html">autocast.data.dataset</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/data/encoded_dataset.html">autocast.data.encoded_dataset</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/data/metadata.html">autocast.data.metadata</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/metrics/index.html">Metrics</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/metrics/base.html">autocast.metrics.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/metrics/deterministic.html">autocast.metrics.deterministic</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/metrics/ensemble.html">autocast.metrics.ensemble</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/metrics/coverage.html">autocast.metrics.coverage</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/losses/index.html">Losses</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/losses/ensemble.html">autocast.losses.ensemble</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/losses/spectral.html">Composing grid-space and spectral losses</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/losses/scale.html">Scale losses</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/losses/wavelet.html">Wavelet losses</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/types/index.html">Types</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/types/types.html">autocast.types.types</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/types/batch.html">autocast.types.batch</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/nn/index.html">Neural Network Utilities</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../spatiotemporal_vit.html">Spatial and spatiotemporal ViT backbones</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/nn/residual.html">autocast.nn.residual</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/nn/spatial_attention.html">autocast.nn.spatial_attention</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/utils/index.html">Utilities</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/utils/optimizer.html">autocast.utils.optimizer</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/utils/plots.html">autocast.utils.plots</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/benchmarking/index.html">Benchmarking</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/benchmarking/inference.html">autocast.benchmarking.inference</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../reference/logging/index.html">Logging</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../reference/logging/wandb.html">autocast.logging.wandb</a></li>
+</ul>
+</details></li>
+</ul>
+</details></li>
+</ul>
+
+    </div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+      <div class="sidebar-primary-item">
+<div id="ethical-ad-placement"
+      class="flat"
+      data-ea-publisher="readthedocs"
+      data-ea-type="readthedocs-sidebar"
+      data-ea-manual="true">
+</div></div>
+  </div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+
+<div class="sbt-scroll-pixel-helper"></div>
+
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item"><button class="sidebar-toggle primary-toggle btn btn-sm" title="Toggle primary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <span class="fa-solid fa-bars"></span>
+</button></div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+
+<div class="article-header-buttons">
+
+
+
+
+
+<div class="dropdown dropdown-source-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Source repositories">
+    <i class="fab fa-github"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="https://github.com/alan-turing-institute/autocast" target="_blank"
+   class="btn btn-sm btn-source-repository-button dropdown-item"
+   title="Source repository"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fab fa-github"></i>
+  </span>
+<span class="btn__text-container">Repository</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/alan-turing-institute/autocast/issues/new?title=Issue%20on%20page%20%2F_modules/autocast/metrics/base.html&body=Your%20issue%20content%20here." target="_blank"
+   class="btn btn-sm btn-source-issues-button dropdown-item"
+   title="Open an issue"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-lightbulb"></i>
+  </span>
+<span class="btn__text-container">Open issue</span>
+</a>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+<button onclick="toggleFullScreen()"
+  class="btn btn-sm btn-fullscreen-button pst-navbar-icon"
+  title="Fullscreen mode"
+  data-bs-placement="bottom" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+
+
+<button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button pst-js-only" aria-label="Color mode" data-bs-title="Color mode"  data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <i class="theme-switch fa-solid fa-sun                fa-lg" data-mode="light" title="Light"></i>
+  <i class="theme-switch fa-solid fa-moon               fa-lg" data-mode="dark"  title="Dark"></i>
+  <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"  title="System Settings"></i>
+</button>
+
+
+<button class="btn btn-sm pst-navbar-icon search-button search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+</button>
+
+</div></div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="jb-print-docs-body" class="onlyprint">
+    <h1></h1>
+    <!-- Table of contents -->
+    <div id="print-main-content">
+        <div id="jb-print-toc">
+            
+        </div>
+    </div>
+</div>
+
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <h1>Source code for autocast.metrics.base</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">abc</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">dataclasses</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">ABC</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Mapping</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Generic</span><span class="p">,</span> <span class="n">TypeVar</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torchmetrics</span><span class="w"> </span><span class="kn">import</span> <span class="n">Metric</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">autocast.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">TensorBSC</span><span class="p">,</span> <span class="n">TensorBTC</span><span class="p">,</span> <span class="n">TensorBTSC</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autocast.types.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">ArrayLike</span><span class="p">,</span> <span class="n">Tensor</span>
+
+<span class="n">TPred</span> <span class="o">=</span> <span class="n">TypeVar</span><span class="p">(</span><span class="s2">&quot;TPred&quot;</span><span class="p">,</span> <span class="n">bound</span><span class="o">=</span><span class="n">Tensor</span><span class="p">)</span>
+<span class="n">TTrue</span> <span class="o">=</span> <span class="n">TypeVar</span><span class="p">(</span><span class="s2">&quot;TTrue&quot;</span><span class="p">,</span> <span class="n">bound</span><span class="o">=</span><span class="n">Tensor</span><span class="p">)</span>
+
+<span class="c1"># Default cap on the all-pairs ``(rows, ..., D, D, ...)`` block that the</span>
+<span class="c1"># variogram-family metrics build, in tensor elements. 2**27 elements is 1 GiB of</span>
+<span class="c1"># float64 (512 MiB of float32), chosen to leave a 30 GB workstation room for the</span>
+<span class="c1"># rest of an assessment suite while staying large enough that ordinary training</span>
+<span class="c1"># and eval batches take the single-block path.</span>
+<span class="n">DEFAULT_MAX_PAIR_ELEMENTS</span> <span class="o">=</span> <span class="mi">2</span><span class="o">**</span><span class="mi">27</span>
+
+
+<div class="viewcode-block" id="rows_per_pair_block">
+<a class="viewcode-back" href="../../../reference/metrics/base.html#autocast.metrics.base.rows_per_pair_block">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">rows_per_pair_block</span><span class="p">(</span>
+    <span class="n">elements_per_row</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">max_elements</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">DEFAULT_MAX_PAIR_ELEMENTS</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Leading-axis rows whose all-pairs block fits within ``max_elements``.</span>
+
+<span class="sd">    All-pairs metrics cost ``O(D^2)`` per row and are independent across the</span>
+<span class="sd">    leading axis, so an oversized input is processed in row blocks rather than</span>
+<span class="sd">    refused: scoring a whole test split in one call costs extra passes instead of</span>
+<span class="sd">    extra memory, and the result is unchanged.</span>
+
+<span class="sd">    Returns at least ``1`` -- a single row is the indivisible unit, so a cap</span>
+<span class="sd">    below one row&#39;s cost degrades to row-by-row rather than raising.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">max_elements</span> <span class="o">//</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">elements_per_row</span><span class="p">))</span></div>
+
+
+
+<div class="viewcode-block" id="block_pairwise_frames">
+<a class="viewcode-back" href="../../../reference/metrics/base.html#autocast.metrics.base.block_pairwise_frames">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">block_pairwise_frames</span><span class="p">(</span>
+    <span class="n">y_pred_vector</span><span class="p">:</span> <span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">y_true_vector</span><span class="p">:</span> <span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">elements_per_row</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">max_elements</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">compute</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">Tensor</span><span class="p">],</span> <span class="n">Tensor</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tensor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Apply an all-pairs ``compute`` frame-by-frame, in memory-capped blocks.</span>
+
+<span class="sd">    ``y_pred_vector`` is ``(*leading, D, M)`` and ``y_true_vector`` is</span>
+<span class="sd">    ``(*leading, D)``, the output of a metric&#39;s ``vector_dims`` selection</span>
+<span class="sd">    (:func:`autocast.metrics.ensemble._vectorize_selected_dims`). Depending on</span>
+<span class="sd">    ``vector_dims``, ``leading`` can carry batch alone, or batch together with</span>
+<span class="sd">    lead-time and/or channel -- but every entry along it is an independent</span>
+<span class="sd">    scoring frame: the all-pairs work for one frame never touches another.</span>
+<span class="sd">    Blocking is therefore exact, not an approximation -- flattening every</span>
+<span class="sd">    ``leading`` axis into one blockable row axis (rather than only the batch</span>
+<span class="sd">    axis) lets the row cap from :func:`rows_per_pair_block` reach below a</span>
+<span class="sd">    single original batch row, e.g. also splitting across lead-time and</span>
+<span class="sd">    channel for a spatial vector.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        y_pred_vector: Ensemble predictions, ``(*leading, D, M)``.</span>
+<span class="sd">        y_true_vector: Ground truth, ``(*leading, D)``.</span>
+<span class="sd">        elements_per_row: Element count of ``compute``&#39;s dominant intermediate</span>
+<span class="sd">            for a *single* frame (e.g. ``D * D * M`` for an all-pairs</span>
+<span class="sd">            ``(D, D, M)`` tensor, ``D * D`` for a ``(D, D)`` covariance).</span>
+<span class="sd">        max_elements: Cap on one block&#39;s total element count.</span>
+<span class="sd">        compute: Maps one row-block of ``(pred, true)`` -- shapes</span>
+<span class="sd">            ``(rows, D, M)`` and ``(rows, D)`` -- to its per-frame result,</span>
+<span class="sd">            ``(rows, ...)``.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        ``compute``&#39;s per-frame results, concatenated and reshaped back onto</span>
+<span class="sd">        the original ``leading`` axes: ``(*leading, ...)``.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">leading_shape</span> <span class="o">=</span> <span class="n">y_true_vector</span><span class="o">.</span><span class="n">shape</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">d</span> <span class="o">=</span> <span class="n">y_true_vector</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">m</span> <span class="o">=</span> <span class="n">y_pred_vector</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">pred_flat</span> <span class="o">=</span> <span class="n">y_pred_vector</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">d</span><span class="p">,</span> <span class="n">m</span><span class="p">)</span>
+    <span class="n">true_flat</span> <span class="o">=</span> <span class="n">y_true_vector</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">d</span><span class="p">)</span>
+    <span class="n">n_rows</span> <span class="o">=</span> <span class="n">pred_flat</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="n">rows</span> <span class="o">=</span> <span class="n">rows_per_pair_block</span><span class="p">(</span><span class="n">elements_per_row</span><span class="p">,</span> <span class="n">max_elements</span><span class="p">)</span>
+    <span class="n">blocks</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="n">compute</span><span class="p">(</span><span class="n">pred_flat</span><span class="p">[</span><span class="n">start</span> <span class="p">:</span> <span class="n">start</span> <span class="o">+</span> <span class="n">rows</span><span class="p">],</span> <span class="n">true_flat</span><span class="p">[</span><span class="n">start</span> <span class="p">:</span> <span class="n">start</span> <span class="o">+</span> <span class="n">rows</span><span class="p">])</span>
+        <span class="k">for</span> <span class="n">start</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">n_rows</span><span class="p">,</span> <span class="n">rows</span><span class="p">)</span>
+    <span class="p">]</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">(</span><span class="n">blocks</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">result</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">*</span><span class="n">leading_shape</span><span class="p">,</span> <span class="o">*</span><span class="n">result</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span></div>
+
+
+
+<div class="viewcode-block" id="LeadStateSpec">
+<a class="viewcode-back" href="../../../reference/metrics/base.html#autocast.metrics.base.LeadStateSpec">[docs]</a>
+<span class="nd">@dataclasses</span><span class="o">.</span><span class="n">dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">slots</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">LeadStateSpec</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;The shape and dtype one rank&#39;s :class:`BaseMetric` accumulator holds.</span>
+
+<span class="sd">    Exchanged between ranks so every one of them enters ``compute()`` with a</span>
+<span class="sd">    stack-compatible state -- see :meth:`BaseMetric.align_lead_state` for why a</span>
+<span class="sd">    disagreement is fatal rather than cosmetic.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">shape</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
+    <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_grown_to_lead_width</span><span class="p">(</span><span class="n">state</span><span class="p">:</span> <span class="n">Tensor</span><span class="p">,</span> <span class="n">n_leads</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tensor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;``state`` with its leading (lead-step) axis zero-extended to ``n_leads``.</span>
+
+<span class="sd">    Returns ``state`` untouched when it is already at least that wide, so the</span>
+<span class="sd">    common path costs a shape comparison and no allocation.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">state</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="n">n_leads</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">state</span>
+    <span class="n">grown</span> <span class="o">=</span> <span class="n">state</span><span class="o">.</span><span class="n">new_zeros</span><span class="p">((</span><span class="n">n_leads</span><span class="p">,</span> <span class="o">*</span><span class="n">state</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">:]))</span>
+    <span class="n">grown</span><span class="p">[:</span> <span class="n">state</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]]</span> <span class="o">=</span> <span class="n">state</span>
+    <span class="k">return</span> <span class="n">grown</span>
+
+
+<div class="viewcode-block" id="BaseMetric">
+<a class="viewcode-back" href="../../../reference/metrics/base.html#autocast.metrics.base.BaseMetric">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">BaseMetric</span><span class="p">(</span><span class="n">Metric</span><span class="p">,</span> <span class="n">Generic</span><span class="p">[</span><span class="n">TPred</span><span class="p">,</span> <span class="n">TTrue</span><span class="p">],</span> <span class="n">ABC</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Shared template for spatial metrics that reduce over spatial axes.</span>
+
+<span class="sd">    ⛔ **The accumulator is RAGGED along the lead axis, and it has to be.**</span>
+<span class="sd">    ``InvalidFrameAction.TRUNCATE`` feeds each trajectory its valid prefix</span>
+<span class="sd">    (:class:`~autocast.analysis.validity.InvalidFrameAction`), so consecutive</span>
+<span class="sd">    ``update`` calls carry different numbers of lead steps. A short call</span>
+<span class="sd">    accumulates into the LEADING SLICE of the buffer and a long one GROWS it;</span>
+<span class="sd">    ``lead_samples`` records, per lead step, how many trajectories actually</span>
+<span class="sd">    reached that far, and :meth:`compute` divides per lead rather than by one</span>
+<span class="sd">    global count.</span>
+
+<span class="sd">    ⛔ **The per-lead count is not bookkeeping -- it is the survivorship guard**</span>
+<span class="sd">    (D101). Once trajectories truncate at different frames a long-lead average</span>
+<span class="sd">    runs over a shrinking, non-random subset, so a model looks BETTER at long</span>
+<span class="sd">    leads precisely because its worst cases dropped out. The count is a metric</span>
+<span class="sd">    state, reduced across ranks with the score, and it is what the evaluator</span>
+<span class="sd">    publishes beside every windowed number.</span>
+
+<span class="sd">    ⚠ Before this existed, ``self.sum_score += score_summed`` failed TWO ways on</span>
+<span class="sd">    a ragged prefix, measured 2026-08-26 on jobs `6140907`/`6140908`: a</span>
+<span class="sd">    length-3 score into a length-4 buffer RAISED, and -- worse -- a length-1</span>
+<span class="sd">    score into a length-4 buffer BROADCAST silently, writing one lead&#39;s value</span>
+<span class="sd">    into all four.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c1"># Per-class flag for callers that gate expensive metrics (e.g. the eval</span>
+    <span class="c1"># script&#39;s memory guard). Subclasses whose covariance/vector state scales</span>
+    <span class="c1"># as D-by-D in the field size override this to True so the flag travels</span>
+    <span class="c1"># with the class -- any registry alias of that class inherits it too,</span>
+    <span class="c1"># instead of a separately maintained name allowlist.</span>
+    <span class="n">memory_intensive</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+
+    <span class="c1"># Per-class minimum number of lead timesteps a call needs to be valid.</span>
+    <span class="c1"># Subclasses that reduce over the lead axis (e.g. a lag/pair-based</span>
+    <span class="c1"># temporal-dependence diagnostic) override this so the requirement</span>
+    <span class="c1"># travels with the class -- any registry alias inherits it too, instead</span>
+    <span class="c1"># of a separately maintained name-to-minimum table.</span>
+    <span class="n">min_window_steps</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span>
+
+    <span class="c1"># Names of the states whose LEADING axis is the lead step and which hold a</span>
+    <span class="c1"># per-lead sum. Subclasses accumulating something other than `sum_score`</span>
+    <span class="c1"># (e.g. a pooled numerator and denominator that must not be divided until</span>
+    <span class="c1"># the end) name theirs here, and the ragged-prefix handling, the per-lead</span>
+    <span class="c1"># count and the cross-rank shape agreement all follow -- rather than each</span>
+    <span class="c1"># such subclass re-deriving them and getting the ragged case wrong again.</span>
+    <span class="n">lead_axis_states</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;sum_score&quot;</span><span class="p">,)</span>
+
+    <span class="c1"># Declared so the states read as tensors rather than as the</span>
+    <span class="c1"># `Tensor | Module` union `nn.Module.__getattr__` returns. Annotation only:</span>
+    <span class="c1"># `add_state` below is still what creates and registers them.</span>
+    <span class="n">sum_score</span><span class="p">:</span> <span class="n">Tensor</span>
+    <span class="n">total_samples</span><span class="p">:</span> <span class="n">Tensor</span>
+    <span class="n">lead_samples</span><span class="p">:</span> <span class="n">Tensor</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">reduce_all</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">dist_sync_on_step</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">dist_sync_on_step</span><span class="o">=</span><span class="n">dist_sync_on_step</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">reduce_all</span> <span class="o">=</span> <span class="n">reduce_all</span>
+
+        <span class="c1"># States shared by all derived metrics</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">add_state</span><span class="p">(</span><span class="s2">&quot;sum_score&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">0.0</span><span class="p">),</span> <span class="n">dist_reduce_fx</span><span class="o">=</span><span class="s2">&quot;sum&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">add_state</span><span class="p">(</span><span class="s2">&quot;total_samples&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span> <span class="n">dist_reduce_fx</span><span class="o">=</span><span class="s2">&quot;sum&quot;</span><span class="p">)</span>
+        <span class="c1"># Per-lead-step contributing trajectory count -- the divisor `compute`</span>
+        <span class="c1"># uses, and the survivorship population the evaluator publishes. Summed</span>
+        <span class="c1"># across ranks like the score, so the two can never disagree.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">add_state</span><span class="p">(</span>
+            <span class="s2">&quot;lead_samples&quot;</span><span class="p">,</span>
+            <span class="n">default</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">long</span><span class="p">),</span>
+            <span class="n">dist_reduce_fx</span><span class="o">=</span><span class="s2">&quot;sum&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Internal flag to set shape of sum_score</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_initialized</span> <span class="o">=</span> <span class="kc">False</span>
+
+    <span class="nd">@abc</span><span class="o">.</span><span class="n">abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_check_input</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">:</span> <span class="n">ArrayLike</span><span class="p">,</span> <span class="n">y_true</span><span class="p">:</span> <span class="n">ArrayLike</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">TPred</span><span class="p">,</span> <span class="n">TTrue</span><span class="p">]:</span> <span class="o">...</span>
+
+    <span class="nd">@abc</span><span class="o">.</span><span class="n">abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_score</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">:</span> <span class="n">TPred</span><span class="p">,</span> <span class="n">y_true</span><span class="p">:</span> <span class="n">TTrue</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TensorBTC</span> <span class="o">|</span> <span class="n">TensorBSC</span> <span class="o">|</span> <span class="n">TensorBTSC</span><span class="p">:</span> <span class="o">...</span>
+
+<div class="viewcode-block" id="BaseMetric.score">
+<a class="viewcode-back" href="../../../reference/metrics/base.html#autocast.metrics.base.BaseMetric.score">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">score</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">:</span> <span class="n">ArrayLike</span><span class="p">,</span> <span class="n">y_true</span><span class="p">:</span> <span class="n">ArrayLike</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TensorBTC</span> <span class="o">|</span> <span class="n">TensorBSC</span> <span class="o">|</span> <span class="n">TensorBTSC</span><span class="p">:</span>
+        <span class="n">y_pred_tensor</span><span class="p">,</span> <span class="n">y_true_tensor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_check_input</span><span class="p">(</span><span class="n">y_pred</span><span class="p">,</span> <span class="n">y_true</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_score</span><span class="p">(</span><span class="n">y_pred_tensor</span><span class="p">,</span> <span class="n">y_true_tensor</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="BaseMetric.update">
+<a class="viewcode-back" href="../../../reference/metrics/base.html#autocast.metrics.base.BaseMetric.update">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">update</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">:</span> <span class="n">ArrayLike</span><span class="p">,</span> <span class="n">y_true</span><span class="p">:</span> <span class="n">ArrayLike</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Update metric state with a batch of predictions and targets.</span>
+
+<span class="sd">        A call may carry FEWER lead steps than an earlier one (a truncated</span>
+<span class="sd">        prefix) or MORE (a full batch after a truncated one). Both are handled:</span>
+<span class="sd">        the score lands on the leading ``score.shape[1]`` lead steps of the</span>
+<span class="sd">        buffer, and the buffer grows when a call is wider than it is.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Compute score for the batch. Shape of score depends on</span>
+        <span class="c1"># reduction strategy</span>
+        <span class="n">score</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">score</span><span class="p">(</span><span class="n">y_pred</span><span class="p">,</span> <span class="n">y_true</span><span class="p">)</span>
+
+        <span class="n">batch_size</span> <span class="o">=</span> <span class="n">score</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+        <span class="c1"># Sum over batch dimension: (B, T, C) -&gt; (T, C)</span>
+        <span class="n">score_summed</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">score</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_accumulate_over_leads</span><span class="p">({</span><span class="s2">&quot;sum_score&quot;</span><span class="p">:</span> <span class="n">score_summed</span><span class="p">},</span> <span class="n">batch_size</span><span class="p">)</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_accumulate_over_leads</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">updates</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Tensor</span><span class="p">],</span> <span class="n">n_samples</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Add per-lead sums into the leading slice of the named states.</span>
+
+<span class="sd">        The one place ragged prefixes are handled, so every accumulator that</span>
+<span class="sd">        carries a lead axis gets the same treatment: a short update lands on</span>
+<span class="sd">        the leading leads, a long one widens the buffer, and ``lead_samples``</span>
+<span class="sd">        records how many trajectories reached each lead.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            updates: This call&#39;s per-lead sums, keyed by state name. Every</span>
+<span class="sd">                entry must share the same leading (lead-step) length.</span>
+<span class="sd">            n_samples: Trajectories this call summed over -- what each lead it</span>
+<span class="sd">                touched gains in population.</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            ValueError: If a state and its update disagree anywhere but the</span>
+<span class="sd">                lead axis.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">n_leads</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="nb">iter</span><span class="p">(</span><span class="n">updates</span><span class="o">.</span><span class="n">values</span><span class="p">()))</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+        <span class="c1"># Lazily set correct shape for the accumulators on the first batch</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_initialized</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">updates</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="nb">setattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">value</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">lead_samples</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span>
+                <span class="n">n_leads</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">long</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="nb">next</span><span class="p">(</span><span class="nb">iter</span><span class="p">(</span><span class="n">updates</span><span class="o">.</span><span class="n">values</span><span class="p">()))</span><span class="o">.</span><span class="n">device</span>
+            <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_initialized</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># ⛔ Only the LEAD axis may differ between calls. A mismatch</span>
+            <span class="c1"># anywhere else means two different score shapes reached one</span>
+            <span class="c1"># metric, which `+=` would either broadcast silently or reject with</span>
+            <span class="c1"># a message naming an axis rather than the cause.</span>
+            <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">updates</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="n">state</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">state</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">!=</span> <span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">:]:</span>
+                    <span class="n">msg</span> <span class="o">=</span> <span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;metric state &#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; and its update disagree away &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;from the lead axis: accumulated </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2"> &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;vs this call&#39;s </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">. Only the leading &quot;</span>
+                        <span class="s2">&quot;(lead-step) axis may vary between updates -- everything &quot;</span>
+                        <span class="s2">&quot;after it is fixed by the field, so a difference there is &quot;</span>
+                        <span class="s2">&quot;two different quantities being summed into one &quot;</span>
+                        <span class="s2">&quot;accumulator.&quot;</span>
+                    <span class="p">)</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+                <span class="nb">setattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">_grown_to_lead_width</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">n_leads</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">lead_samples</span> <span class="o">=</span> <span class="n">_grown_to_lead_width</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">lead_samples</span><span class="p">,</span> <span class="n">n_leads</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">updates</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">)[:</span><span class="n">n_leads</span><span class="p">]</span> <span class="o">+=</span> <span class="n">value</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lead_samples</span><span class="p">[:</span><span class="n">n_leads</span><span class="p">]</span> <span class="o">+=</span> <span class="n">n_samples</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">total_samples</span> <span class="o">+=</span> <span class="n">n_samples</span>
+
+<div class="viewcode-block" id="BaseMetric.compute">
+<a class="viewcode-back" href="../../../reference/metrics/base.html#autocast.metrics.base.BaseMetric.compute">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">compute</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tensor</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Compute final metric value.</span>
+
+<span class="sd">        ⭐ **Per-lead division, and it reduces to the old one exactly.** Each</span>
+<span class="sd">        lead step is divided by the number of trajectories that actually</span>
+<span class="sd">        reached it, so the leads a truncated run never got to do not dilute the</span>
+<span class="sd">        ones it did. When nothing truncates every entry of ``lead_samples``</span>
+<span class="sd">        equals ``total_samples`` and this is bit-for-bit the previous</span>
+<span class="sd">        ``sum_score / total_samples``.</span>
+
+<span class="sd">        ⭐ **``reduce_all`` averages the LEADS EQUALLY, not by population**, and</span>
+<span class="sd">        the choice is deliberate. A population-weighted headline would shift</span>
+<span class="sd">        weight onto the early leads exactly as a model truncates more, so</span>
+<span class="sd">        diverging would IMPROVE its headline -- a second flattering mechanism</span>
+<span class="sd">        stacked on top of the thinned-subset one. Equal lead weight keeps two</span>
+<span class="sd">        models&#39; headlines composed of the same leads however differently they</span>
+<span class="sd">        truncate. It does NOT make the scalar survivorship-safe: a long lead</span>
+<span class="sd">        averaged over three survivors still counts for as much as a short one</span>
+<span class="sd">        averaged over three hundred, which is why ``lead_samples`` is published</span>
+<span class="sd">        beside the number and why a headline is quoted only over the</span>
+<span class="sd">        full-population horizon (D101).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">total_samples</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s2">&quot;No samples were provided to the metric&quot;</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+        <span class="c1"># Every lead index below the buffer&#39;s width was covered by the update</span>
+        <span class="c1"># that set that width, so no count here is zero; a defensive 0/0 would</span>
+        <span class="c1"># give NaN, which is the right answer for a lead nothing reached.</span>
+        <span class="n">counts</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lead_samples</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">sum_score</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+        <span class="n">score</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">sum_score</span> <span class="o">/</span> <span class="n">counts</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">*</span><span class="p">(</span><span class="mi">1</span><span class="p">,)</span> <span class="o">*</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">sum_score</span><span class="o">.</span><span class="n">ndim</span> <span class="o">-</span> <span class="mi">1</span><span class="p">))</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">reduce_all</span><span class="p">:</span>
+            <span class="c1"># Average over time and channels</span>
+            <span class="k">return</span> <span class="n">score</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+
+        <span class="k">return</span> <span class="n">score</span></div>
+
+
+<div class="viewcode-block" id="BaseMetric.lead_state_spec">
+<a class="viewcode-back" href="../../../reference/metrics/base.html#autocast.metrics.base.BaseMetric.lead_state_spec">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">lead_state_spec</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">LeadStateSpec</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;This metric&#39;s accumulator shape, or None if it never updated.</span>
+
+<span class="sd">        Read off the first of `lead_axis_states`; a subclass declaring several</span>
+<span class="sd">        accumulates them from one score, so they share a shape.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_initialized</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="n">state</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">lead_axis_states</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="k">return</span> <span class="n">LeadStateSpec</span><span class="p">(</span><span class="nb">tuple</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">shape</span><span class="p">),</span> <span class="n">state</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="BaseMetric.align_lead_state">
+<a class="viewcode-back" href="../../../reference/metrics/base.html#autocast.metrics.base.BaseMetric.align_lead_state">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">align_lead_state</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">spec</span><span class="p">:</span> <span class="n">LeadStateSpec</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Grow (or materialise) the accumulator to ``spec``, keeping its value.</span>
+
+<span class="sd">        ⛔ **A DDP requirement, not a tidy-up.** ``dist_reduce_fx=&quot;sum&quot;`` routes</span>
+<span class="sd">        every state through torchmetrics&#39; ``_sync_dist``, which gathers the</span>
+<span class="sd">        ranks&#39; tensors and then calls ``torch.stack`` on them</span>
+<span class="sd">        (``torchmetrics/metric.py:533``). ``gather_all_tensors`` pads to the</span>
+<span class="sd">        largest size and trims each entry back to its OWN size</span>
+<span class="sd">        (``torchmetrics/utilities/distributed.py:138-150``), so the stack sees</span>
+<span class="sd">        differently-shaped tensors and RAISES. Under TRUNCATE the widths are a</span>
+<span class="sd">        per-rank fact -- one rank&#39;s trajectories may all die at lead 3 while</span>
+<span class="sd">        another&#39;s run to 4 -- so the widths have to be agreed before</span>
+<span class="sd">        ``compute()``. A rank that never updated is the same hazard in its</span>
+<span class="sd">        sharpest form: its default state is 0-dimensional, which sends it down</span>
+<span class="sd">        ``gather_all_tensors``&#39; scalar branch while its peers all-gather sizes,</span>
+<span class="sd">        and mismatched collectives hang rather than fail.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            spec: The world&#39;s agreed accumulator shape and dtype.</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            ValueError: If ``spec`` is narrower than this rank&#39;s own state, or</span>
+<span class="sd">                disagrees with it away from the lead axis -- either means the</span>
+<span class="sd">                agreement was computed wrongly, and silently reshaping would</span>
+<span class="sd">                sum two different quantities together.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">device</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">lead_axis_states</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span><span class="o">.</span><span class="n">device</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_initialized</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">lead_axis_states</span><span class="p">:</span>
+                <span class="n">state</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">state</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">!=</span> <span class="n">spec</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">:]:</span>
+                    <span class="n">msg</span> <span class="o">=</span> <span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;cannot align metric state &#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2"> to </span><span class="si">{</span><span class="n">spec</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">: the axes after &quot;</span>
+                        <span class="s2">&quot;the lead axis differ, so these are not the same quantity.&quot;</span>
+                    <span class="p">)</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">spec</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">state</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]:</span>
+                    <span class="n">msg</span> <span class="o">=</span> <span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;cannot align metric state &#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2"> to the narrower </span><span class="si">{</span><span class="n">spec</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">: &quot;</span>
+                        <span class="s2">&quot;lead steps this rank scored would be dropped.&quot;</span>
+                    <span class="p">)</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+                <span class="nb">setattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">_grown_to_lead_width</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">spec</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">lead_samples</span> <span class="o">=</span> <span class="n">_grown_to_lead_width</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">lead_samples</span><span class="p">,</span> <span class="n">spec</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+            <span class="k">return</span>
+
+        <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">lead_axis_states</span><span class="p">:</span>
+            <span class="nb">setattr</span><span class="p">(</span>
+                <span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">spec</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">spec</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+            <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lead_samples</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">spec</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">long</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_initialized</span> <span class="o">=</span> <span class="kc">True</span></div>
+
+
+<div class="viewcode-block" id="BaseMetric.reset">
+<a class="viewcode-back" href="../../../reference/metrics/base.html#autocast.metrics.base.BaseMetric.reset">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Reset metric state and initialization flag.&quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">reset</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_initialized</span> <span class="o">=</span> <span class="kc">False</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_infer_n_spatial_dims</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tensor</span><span class="p">:</span> <span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Infer number of spatial dimensions from tensor shape.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">tensor</span><span class="o">.</span><span class="n">ndim</span> <span class="o">-</span> <span class="mi">3</span>  <span class="c1"># Subtract B, T, C</span></div>
+
+</pre></div>
+
+                </article>
+              
+
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+<div class="bd-footer-content__inner container">
+  
+  <div class="footer-item">
+    
+<p class="component-author">
+By AI for Physical Systems Team at The Alan Turing Institute
+</p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+  <div class="footer-item">
+    
+<div class="extra_footer">
+  Copyright &copy; 2026
+
+</div>
+  </div>
+  
+</div>
+          </footer>
+        
+
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="../../../_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf"></script>
+<script defer src="../../../_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf"></script>
+
+  <footer class="bd-footer">
+  </footer>
+  </body>
+</html>

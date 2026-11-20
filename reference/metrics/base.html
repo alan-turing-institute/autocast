@@ -1,0 +1,915 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>autocast.metrics.base &#8212; AutoCast: Spatiotemporal Forecasting</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../../_static/styles/theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+<link href="../../_static/styles/pydata-sphinx-theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
+    <link rel="stylesheet" type="text/css" href="../../_static/styles/sphinx-book-theme.css?v=3c74b3bc" />
+    <link rel="stylesheet" type="text/css" href="../../_static/togglebutton.css?v=9c3e77be" />
+    <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../_static/mystnb.11b39860a7a0cbfd473a3ad8a317855267ff0bd372690045ca344a6b62be495e.css" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sphinx-thebe.css?v=4fa983c6" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sphinx-design.min.css?v=95c83b7e" />
+  
+  <!-- So that users can add custom icons -->
+  <script src="../../_static/scripts/fontawesome.js?digest=8878045cc6db502f8baf"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../../_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf" />
+<link rel="preload" as="script" href="../../_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf" />
+
+    <script src="../../_static/documentation_options.js?v=9eb32ce0"></script>
+    <script src="../../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../../_static/copybutton.js?v=7f8ff830"></script>
+    <script src="../../_static/scripts/sphinx-book-theme.js?v=fab101a9"></script>
+    <script>let toggleHintShow = 'Click to show';</script>
+    <script>let toggleHintHide = 'Click to hide';</script>
+    <script>let toggleOpenOnPrint = 'true';</script>
+    <script src="../../_static/togglebutton.js?v=b8b12719"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script src="../../_static/design-tabs.js?v=f930bc37"></script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script async="async" src="../../_static/sphinx-thebe.js?v=c100c467"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'reference/metrics/base';</script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="autocast.metrics.deterministic" href="deterministic.html" />
+    <link rel="prev" title="Metrics" href="index.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="" />
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search this book..."
+         aria-label="Search this book..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../../_static/AC.png" class="logo__image only-light" alt="AutoCast: Spatiotemporal Forecasting - Home"/>
+    <img src="../../_static/AC.png" class="logo__image only-dark pst-js-only" alt="AutoCast: Spatiotemporal Forecasting - Home"/>
+  
+  
+</a></div>
+        <div class="sidebar-primary-item">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button></div>
+        <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item navbar-nav active">
+        
+        <ul class="nav bd-sidenav bd-sidenav__home-link">
+            <li class="toctree-l1">
+                <a class="reference internal" href="../../index.html">
+                    Welcome to AutoCast
+                </a>
+            </li>
+        </ul>
+        <ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../walkthrough/index.html">Walkthrough</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../walkthrough/simulate-data.html">Simulating data</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../walkthrough/autoencoder.html">Training an autoencoder</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../walkthrough/processor.html">Training a processor</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../walkthrough/epd.html">Full encoder-processor-decoder</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../walkthrough/ensembles.html">Training model ensembles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../walkthrough/eval.html">Evaluating a trained model</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../howto/index.html">How-tos</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../howto/output-paths.html">Output paths</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../howto/slurm.html">Running AutoCast on SLURM</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../howto/wandb.html">Weights &amp; Biases logging</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../howto/resume.html">Resuming from a checkpoint</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../howto/configs.html">Configurations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../howto/other-commands.html">Direct usage of lower-level Hydra scripts</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="../../contributing.html">Contributing</a></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="../index.html">API Reference</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2 has-children"><a class="reference internal" href="../models/index.html">Models</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../models/encoder_decoder.html">autocast.models.encoder_decoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../models/encoder_processor_decoder.html">autocast.models.encoder_processor_decoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../models/autoencoder.html">autocast.models.autoencoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../models/variational_autoencoder.html">autocast.models.variational_autoencoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../models/processor.html">autocast.models.processor</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../processors/index.html">Processors</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../processors/base.html">autocast.processors.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../processors/unet.html">autocast.processors.unet</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../processors/swin_vit.html">autocast.processors.swin_vit</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../processors/vit.html">autocast.processors.vit</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../processors/flow_matching.html">autocast.processors.flow_matching</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../processors/diffusion.html">autocast.processors.diffusion</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../processors/noise.html">autocast.processors.noise</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../encoders/index.html">Encoders</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../encoders/base.html">autocast.encoders.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../encoders/dc.html">autocast.encoders.dc</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../encoders/unet.html">autocast.encoders.unet</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../encoders/identity.html">autocast.encoders.identity</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../decoders/index.html">Decoders</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../decoders/base.html">autocast.decoders.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../decoders/dc.html">autocast.decoders.dc</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../decoders/identity.html">autocast.decoders.identity</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../data/index.html">Data</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../data/datamodule.html">autocast.data.datamodule</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../data/dataset.html">autocast.data.dataset</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../data/encoded_dataset.html">autocast.data.encoded_dataset</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../data/metadata.html">autocast.data.metadata</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 current active has-children"><a class="reference internal" href="index.html">Metrics</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l3 current active"><a class="current reference internal" href="#">autocast.metrics.base</a></li>
+<li class="toctree-l3"><a class="reference internal" href="deterministic.html">autocast.metrics.deterministic</a></li>
+<li class="toctree-l3"><a class="reference internal" href="ensemble.html">autocast.metrics.ensemble</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coverage.html">autocast.metrics.coverage</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../losses/index.html">Losses</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../losses/ensemble.html">autocast.losses.ensemble</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../losses/spectral.html">Composing grid-space and spectral losses</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../losses/scale.html">Scale losses</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../losses/wavelet.html">Wavelet losses</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../types/index.html">Types</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../types/types.html">autocast.types.types</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../types/batch.html">autocast.types.batch</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../nn/index.html">Neural Network Utilities</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../spatiotemporal_vit.html">Spatial and spatiotemporal ViT backbones</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../nn/residual.html">autocast.nn.residual</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../nn/spatial_attention.html">autocast.nn.spatial_attention</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../utils/index.html">Utilities</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../utils/optimizer.html">autocast.utils.optimizer</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../utils/plots.html">autocast.utils.plots</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../benchmarking/index.html">Benchmarking</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../benchmarking/inference.html">autocast.benchmarking.inference</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../logging/index.html">Logging</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../logging/wandb.html">autocast.logging.wandb</a></li>
+</ul>
+</details></li>
+</ul>
+</details></li>
+</ul>
+
+    </div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+      <div class="sidebar-primary-item">
+<div id="ethical-ad-placement"
+      class="flat"
+      data-ea-publisher="readthedocs"
+      data-ea-type="readthedocs-sidebar"
+      data-ea-manual="true">
+</div></div>
+  </div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+
+<div class="sbt-scroll-pixel-helper"></div>
+
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item"><button class="sidebar-toggle primary-toggle btn btn-sm" title="Toggle primary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <span class="fa-solid fa-bars"></span>
+</button></div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+
+<div class="article-header-buttons">
+
+
+
+
+
+<div class="dropdown dropdown-source-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Source repositories">
+    <i class="fab fa-github"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="https://github.com/alan-turing-institute/autocast" target="_blank"
+   class="btn btn-sm btn-source-repository-button dropdown-item"
+   title="Source repository"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fab fa-github"></i>
+  </span>
+<span class="btn__text-container">Repository</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/alan-turing-institute/autocast/issues/new?title=Issue%20on%20page%20%2Freference/metrics/base.html&body=Your%20issue%20content%20here." target="_blank"
+   class="btn btn-sm btn-source-issues-button dropdown-item"
+   title="Open an issue"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-lightbulb"></i>
+  </span>
+<span class="btn__text-container">Open issue</span>
+</a>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+
+
+<div class="dropdown dropdown-download-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Download this page">
+    <i class="fas fa-download"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="../../_sources/reference/metrics/base.rst" target="_blank"
+   class="btn btn-sm btn-download-source-button dropdown-item"
+   title="Download source file"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file"></i>
+  </span>
+<span class="btn__text-container">.rst</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li>
+<button onclick="window.print()"
+  class="btn btn-sm btn-download-pdf-button dropdown-item"
+  title="Print to PDF"
+  data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file-pdf"></i>
+  </span>
+<span class="btn__text-container">.pdf</span>
+</button>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+<button onclick="toggleFullScreen()"
+  class="btn btn-sm btn-fullscreen-button pst-navbar-icon"
+  title="Fullscreen mode"
+  data-bs-placement="bottom" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+
+
+<button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button pst-js-only" aria-label="Color mode" data-bs-title="Color mode"  data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <i class="theme-switch fa-solid fa-sun                fa-lg" data-mode="light" title="Light"></i>
+  <i class="theme-switch fa-solid fa-moon               fa-lg" data-mode="dark"  title="Dark"></i>
+  <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"  title="System Settings"></i>
+</button>
+
+
+<button class="btn btn-sm pst-navbar-icon search-button search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+</button>
+<button class="sidebar-toggle secondary-toggle btn btn-sm pst-navbar-icon" title="Toggle secondary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <span class="fa-solid fa-list"></span>
+</button>
+</div></div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="jb-print-docs-body" class="onlyprint">
+    <h1>autocast.metrics.base</h1>
+    <!-- Table of contents -->
+    <div id="print-main-content">
+        <div id="jb-print-toc">
+            
+            <div>
+                <h2> Contents </h2>
+            </div>
+            <nav aria-label="Page">
+                <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.base.rows_per_pair_block"><code class="docutils literal notranslate"><span class="pre">rows_per_pair_block()</span></code></a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.base.block_pairwise_frames"><code class="docutils literal notranslate"><span class="pre">block_pairwise_frames()</span></code></a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.base.LeadStateSpec"><code class="docutils literal notranslate"><span class="pre">LeadStateSpec</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.base.LeadStateSpec.shape"><code class="docutils literal notranslate"><span class="pre">LeadStateSpec.shape</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.base.LeadStateSpec.dtype"><code class="docutils literal notranslate"><span class="pre">LeadStateSpec.dtype</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.base.BaseMetric"><code class="docutils literal notranslate"><span class="pre">BaseMetric</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.base.BaseMetric.memory_intensive"><code class="docutils literal notranslate"><span class="pre">BaseMetric.memory_intensive</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.base.BaseMetric.min_window_steps"><code class="docutils literal notranslate"><span class="pre">BaseMetric.min_window_steps</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.base.BaseMetric.lead_axis_states"><code class="docutils literal notranslate"><span class="pre">BaseMetric.lead_axis_states</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.base.BaseMetric.sum_score"><code class="docutils literal notranslate"><span class="pre">BaseMetric.sum_score</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.base.BaseMetric.total_samples"><code class="docutils literal notranslate"><span class="pre">BaseMetric.total_samples</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.base.BaseMetric.lead_samples"><code class="docutils literal notranslate"><span class="pre">BaseMetric.lead_samples</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.base.BaseMetric.score"><code class="docutils literal notranslate"><span class="pre">BaseMetric.score()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.base.BaseMetric.update"><code class="docutils literal notranslate"><span class="pre">BaseMetric.update()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.base.BaseMetric.compute"><code class="docutils literal notranslate"><span class="pre">BaseMetric.compute()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.base.BaseMetric.lead_state_spec"><code class="docutils literal notranslate"><span class="pre">BaseMetric.lead_state_spec()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.base.BaseMetric.align_lead_state"><code class="docutils literal notranslate"><span class="pre">BaseMetric.align_lead_state()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.base.BaseMetric.reset"><code class="docutils literal notranslate"><span class="pre">BaseMetric.reset()</span></code></a></li>
+</ul>
+</li>
+</ul>
+            </nav>
+        </div>
+    </div>
+</div>
+
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section id="module-autocast.metrics.base">
+<span id="autocast-metrics-base"></span><h1>autocast.metrics.base<a class="headerlink" href="#module-autocast.metrics.base" title="Link to this heading">#</a></h1>
+<dl class="py function">
+<dt class="sig sig-object py" id="autocast.metrics.base.rows_per_pair_block">
+<span class="sig-name descname"><span class="pre">rows_per_pair_block</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">elements_per_row</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_elements</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">134217728</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/metrics/base.html#rows_per_pair_block"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.metrics.base.rows_per_pair_block" title="Link to this definition">#</a></dt>
+<dd><p>Leading-axis rows whose all-pairs block fits within <code class="docutils literal notranslate"><span class="pre">max_elements</span></code>.</p>
+<p>All-pairs metrics cost <code class="docutils literal notranslate"><span class="pre">O(D^2)</span></code> per row and are independent across the
+leading axis, so an oversized input is processed in row blocks rather than
+refused: scoring a whole test split in one call costs extra passes instead of
+extra memory, and the result is unchanged.</p>
+<p>Returns at least <code class="docutils literal notranslate"><span class="pre">1</span></code> – a single row is the indivisible unit, so a cap
+below one row’s cost degrades to row-by-row rather than raising.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>elements_per_row</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a>)</p></li>
+<li><p><strong>max_elements</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)">int</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="autocast.metrics.base.block_pairwise_frames">
+<span class="sig-name descname"><span class="pre">block_pairwise_frames</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">y_pred_vector</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">y_true_vector</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">elements_per_row</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_elements</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">compute</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/metrics/base.html#block_pairwise_frames"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.metrics.base.block_pairwise_frames" title="Link to this definition">#</a></dt>
+<dd><p>Apply an all-pairs <code class="docutils literal notranslate"><span class="pre">compute</span></code> frame-by-frame, in memory-capped blocks.</p>
+<p><code class="docutils literal notranslate"><span class="pre">y_pred_vector</span></code> is <code class="docutils literal notranslate"><span class="pre">(*leading,</span> <span class="pre">D,</span> <span class="pre">M)</span></code> and <code class="docutils literal notranslate"><span class="pre">y_true_vector</span></code> is
+<code class="docutils literal notranslate"><span class="pre">(*leading,</span> <span class="pre">D)</span></code>, the output of a metric’s <code class="docutils literal notranslate"><span class="pre">vector_dims</span></code> selection
+(<code class="xref py py-func docutils literal notranslate"><span class="pre">autocast.metrics.ensemble._vectorize_selected_dims()</span></code>). Depending on
+<code class="docutils literal notranslate"><span class="pre">vector_dims</span></code>, <code class="docutils literal notranslate"><span class="pre">leading</span></code> can carry batch alone, or batch together with
+lead-time and/or channel – but every entry along it is an independent
+scoring frame: the all-pairs work for one frame never touches another.
+Blocking is therefore exact, not an approximation – flattening every
+<code class="docutils literal notranslate"><span class="pre">leading</span></code> axis into one blockable row axis (rather than only the batch
+axis) lets the row cap from <a class="reference internal" href="#autocast.metrics.base.rows_per_pair_block" title="autocast.metrics.base.rows_per_pair_block"><code class="xref py py-func docutils literal notranslate"><span class="pre">rows_per_pair_block()</span></code></a> reach below a
+single original batch row, e.g. also splitting across lead-time and
+channel for a spatial vector.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>y_pred_vector</strong> (<a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.15)"><em>Tensor</em></a>) – Ensemble predictions, <code class="docutils literal notranslate"><span class="pre">(*leading,</span> <span class="pre">D,</span> <span class="pre">M)</span></code>.</p></li>
+<li><p><strong>y_true_vector</strong> (<a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.15)"><em>Tensor</em></a>) – Ground truth, <code class="docutils literal notranslate"><span class="pre">(*leading,</span> <span class="pre">D)</span></code>.</p></li>
+<li><p><strong>elements_per_row</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a>) – Element count of <code class="docutils literal notranslate"><span class="pre">compute</span></code>’s dominant intermediate
+for a <em>single</em> frame (e.g. <code class="docutils literal notranslate"><span class="pre">D</span> <span class="pre">*</span> <span class="pre">D</span> <span class="pre">*</span> <span class="pre">M</span></code> for an all-pairs
+<code class="docutils literal notranslate"><span class="pre">(D,</span> <span class="pre">D,</span> <span class="pre">M)</span></code> tensor, <code class="docutils literal notranslate"><span class="pre">D</span> <span class="pre">*</span> <span class="pre">D</span></code> for a <code class="docutils literal notranslate"><span class="pre">(D,</span> <span class="pre">D)</span></code> covariance).</p></li>
+<li><p><strong>max_elements</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a>) – Cap on one block’s total element count.</p></li>
+<li><p><strong>compute</strong> (<a class="reference external" href="https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable" title="(in Python v3.15)"><em>Callable</em></a><em>[</em><em>[</em><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.15)"><em>Tensor</em></a><em>, </em><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.15)"><em>Tensor</em></a><em>]</em><em>, </em><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.15)"><em>Tensor</em></a><em>]</em>) – Maps one row-block of <code class="docutils literal notranslate"><span class="pre">(pred,</span> <span class="pre">true)</span></code> – shapes
+<code class="docutils literal notranslate"><span class="pre">(rows,</span> <span class="pre">D,</span> <span class="pre">M)</span></code> and <code class="docutils literal notranslate"><span class="pre">(rows,</span> <span class="pre">D)</span></code> – to its per-frame result,
+<code class="docutils literal notranslate"><span class="pre">(rows,</span> <span class="pre">...)</span></code>.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><code class="docutils literal notranslate"><span class="pre">compute</span></code>’s per-frame results, concatenated and reshaped back onto
+the original <code class="docutils literal notranslate"><span class="pre">leading</span></code> axes: <code class="docutils literal notranslate"><span class="pre">(*leading,</span> <span class="pre">...)</span></code>.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.15)"><em>Tensor</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="autocast.metrics.base.LeadStateSpec">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">LeadStateSpec</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">shape</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dtype</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/metrics/base.html#LeadStateSpec"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.metrics.base.LeadStateSpec" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/builtins/functions.html#object" title="(in Python v3.15)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
+<p>The shape and dtype one rank’s <a class="reference internal" href="#autocast.metrics.base.BaseMetric" title="autocast.metrics.base.BaseMetric"><code class="xref py py-class docutils literal notranslate"><span class="pre">BaseMetric</span></code></a> accumulator holds.</p>
+<p>Exchanged between ranks so every one of them enters <code class="docutils literal notranslate"><span class="pre">compute()</span></code> with a
+stack-compatible state – see <a class="reference internal" href="#autocast.metrics.base.BaseMetric.align_lead_state" title="autocast.metrics.base.BaseMetric.align_lead_state"><code class="xref py py-meth docutils literal notranslate"><span class="pre">BaseMetric.align_lead_state()</span></code></a> for why a
+disagreement is fatal rather than cosmetic.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>shape</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="(in Python v3.15)"><em>tuple</em></a><em>[</em><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em>, </em><em>...</em><em>]</em>)</p></li>
+<li><p><strong>dtype</strong> (<a class="reference external" href="https://docs.pytorch.org/docs/stable/tensor_attributes.html#torch.dtype" title="(in PyTorch v2.15)"><em>dtype</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autocast.metrics.base.LeadStateSpec.shape">
+<span class="sig-name descname"><span class="pre">shape</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="(in Python v3.15)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><span class="pre">int</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#autocast.metrics.base.LeadStateSpec.shape" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autocast.metrics.base.LeadStateSpec.dtype">
+<span class="sig-name descname"><span class="pre">dtype</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensor_attributes.html#torch.dtype" title="(in PyTorch v2.15)"><span class="pre">dtype</span></a></em><a class="headerlink" href="#autocast.metrics.base.LeadStateSpec.dtype" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="autocast.metrics.base.BaseMetric">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">BaseMetric</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">reduce_all</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dist_sync_on_step</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/metrics/base.html#BaseMetric"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.metrics.base.BaseMetric" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Metric</span></code>, <a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Generic" title="(in Python v3.15)"><code class="xref py py-class docutils literal notranslate"><span class="pre">Generic</span></code></a>[<code class="xref py py-obj docutils literal notranslate"><span class="pre">TPred</span></code>, <code class="xref py py-obj docutils literal notranslate"><span class="pre">TTrue</span></code>], <a class="reference external" href="https://docs.python.org/3/library/abc.html#abc.ABC" title="(in Python v3.15)"><code class="xref py py-class docutils literal notranslate"><span class="pre">ABC</span></code></a></p>
+<p>Shared template for spatial metrics that reduce over spatial axes.</p>
+<p>⛔ <strong>The accumulator is RAGGED along the lead axis, and it has to be.</strong>
+<code class="docutils literal notranslate"><span class="pre">InvalidFrameAction.TRUNCATE</span></code> feeds each trajectory its valid prefix
+(<code class="xref py py-class docutils literal notranslate"><span class="pre">InvalidFrameAction</span></code>), so consecutive
+<code class="docutils literal notranslate"><span class="pre">update</span></code> calls carry different numbers of lead steps. A short call
+accumulates into the LEADING SLICE of the buffer and a long one GROWS it;
+<code class="docutils literal notranslate"><span class="pre">lead_samples</span></code> records, per lead step, how many trajectories actually
+reached that far, and <a class="reference internal" href="#autocast.metrics.base.BaseMetric.compute" title="autocast.metrics.base.BaseMetric.compute"><code class="xref py py-meth docutils literal notranslate"><span class="pre">compute()</span></code></a> divides per lead rather than by one
+global count.</p>
+<p>⛔ <strong>The per-lead count is not bookkeeping – it is the survivorship guard</strong>
+(D101). Once trajectories truncate at different frames a long-lead average
+runs over a shrinking, non-random subset, so a model looks BETTER at long
+leads precisely because its worst cases dropped out. The count is a metric
+state, reduced across ranks with the score, and it is what the evaluator
+publishes beside every windowed number.</p>
+<p>⚠ Before this existed, <code class="docutils literal notranslate"><span class="pre">self.sum_score</span> <span class="pre">+=</span> <span class="pre">score_summed</span></code> failed TWO ways on
+a ragged prefix, measured 2026-08-26 on jobs <cite>6140907</cite>/<cite>6140908</cite>: a
+length-3 score into a length-4 buffer RAISED, and – worse – a length-1
+score into a length-4 buffer BROADCAST silently, writing one lead’s value
+into all four.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>reduce_all</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#bool" title="(in Python v3.15)"><em>bool</em></a>)</p></li>
+<li><p><strong>dist_sync_on_step</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#bool" title="(in Python v3.15)"><em>bool</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autocast.metrics.base.BaseMetric.memory_intensive">
+<span class="sig-name descname"><span class="pre">memory_intensive</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#bool" title="(in Python v3.15)"><span class="pre">bool</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">False</span></em><a class="headerlink" href="#autocast.metrics.base.BaseMetric.memory_intensive" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autocast.metrics.base.BaseMetric.min_window_steps">
+<span class="sig-name descname"><span class="pre">min_window_steps</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><span class="pre">int</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">1</span></em><a class="headerlink" href="#autocast.metrics.base.BaseMetric.min_window_steps" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autocast.metrics.base.BaseMetric.lead_axis_states">
+<span class="sig-name descname"><span class="pre">lead_axis_states</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="(in Python v3.15)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">('sum_score',)</span></em><a class="headerlink" href="#autocast.metrics.base.BaseMetric.lead_axis_states" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autocast.metrics.base.BaseMetric.sum_score">
+<span class="sig-name descname"><span class="pre">sum_score</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.15)"><span class="pre">Tensor</span></a></em><a class="headerlink" href="#autocast.metrics.base.BaseMetric.sum_score" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autocast.metrics.base.BaseMetric.total_samples">
+<span class="sig-name descname"><span class="pre">total_samples</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.15)"><span class="pre">Tensor</span></a></em><a class="headerlink" href="#autocast.metrics.base.BaseMetric.total_samples" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autocast.metrics.base.BaseMetric.lead_samples">
+<span class="sig-name descname"><span class="pre">lead_samples</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.15)"><span class="pre">Tensor</span></a></em><a class="headerlink" href="#autocast.metrics.base.BaseMetric.lead_samples" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="autocast.metrics.base.BaseMetric.score">
+<span class="sig-name descname"><span class="pre">score</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">y_pred</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">y_true</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/metrics/base.html#BaseMetric.score"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.metrics.base.BaseMetric.score" title="Link to this definition">#</a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>y_pred</strong> (<a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.15)"><em>Tensor</em></a><em> | </em><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)"><em>ndarray</em></a>)</p></li>
+<li><p><strong>y_true</strong> (<a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.15)"><em>Tensor</em></a><em> | </em><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)"><em>ndarray</em></a>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><em>Float</em>[Tensor, ‘batch time channel’] | <em>Float</em>[Tensor, ‘batch spatial *spatial channel’] | <em>Float</em>[Tensor, ‘batch time spatial *spatial channel’]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="autocast.metrics.base.BaseMetric.update">
+<span class="sig-name descname"><span class="pre">update</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">y_pred</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">y_true</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/metrics/base.html#BaseMetric.update"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.metrics.base.BaseMetric.update" title="Link to this definition">#</a></dt>
+<dd><p>Update metric state with a batch of predictions and targets.</p>
+<p>A call may carry FEWER lead steps than an earlier one (a truncated
+prefix) or MORE (a full batch after a truncated one). Both are handled:
+the score lands on the leading <code class="docutils literal notranslate"><span class="pre">score.shape[1]</span></code> lead steps of the
+buffer, and the buffer grows when a call is wider than it is.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>y_pred</strong> (<a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.15)"><em>Tensor</em></a><em> | </em><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)"><em>ndarray</em></a>)</p></li>
+<li><p><strong>y_true</strong> (<a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.15)"><em>Tensor</em></a><em> | </em><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)"><em>ndarray</em></a>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="autocast.metrics.base.BaseMetric.compute">
+<span class="sig-name descname"><span class="pre">compute</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/metrics/base.html#BaseMetric.compute"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.metrics.base.BaseMetric.compute" title="Link to this definition">#</a></dt>
+<dd><p>Compute final metric value.</p>
+<p>⭐ <strong>Per-lead division, and it reduces to the old one exactly.</strong> Each
+lead step is divided by the number of trajectories that actually
+reached it, so the leads a truncated run never got to do not dilute the
+ones it did. When nothing truncates every entry of <code class="docutils literal notranslate"><span class="pre">lead_samples</span></code>
+equals <code class="docutils literal notranslate"><span class="pre">total_samples</span></code> and this is bit-for-bit the previous
+<code class="docutils literal notranslate"><span class="pre">sum_score</span> <span class="pre">/</span> <span class="pre">total_samples</span></code>.</p>
+<p>⭐ <strong>``reduce_all`` averages the LEADS EQUALLY, not by population</strong>, and
+the choice is deliberate. A population-weighted headline would shift
+weight onto the early leads exactly as a model truncates more, so
+diverging would IMPROVE its headline – a second flattering mechanism
+stacked on top of the thinned-subset one. Equal lead weight keeps two
+models’ headlines composed of the same leads however differently they
+truncate. It does NOT make the scalar survivorship-safe: a long lead
+averaged over three survivors still counts for as much as a short one
+averaged over three hundred, which is why <code class="docutils literal notranslate"><span class="pre">lead_samples</span></code> is published
+beside the number and why a headline is quoted only over the
+full-population horizon (D101).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.15)"><em>Tensor</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="autocast.metrics.base.BaseMetric.lead_state_spec">
+<span class="sig-name descname"><span class="pre">lead_state_spec</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/metrics/base.html#BaseMetric.lead_state_spec"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.metrics.base.BaseMetric.lead_state_spec" title="Link to this definition">#</a></dt>
+<dd><p>This metric’s accumulator shape, or None if it never updated.</p>
+<p>Read off the first of <cite>lead_axis_states</cite>; a subclass declaring several
+accumulates them from one score, so they share a shape.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#autocast.metrics.base.LeadStateSpec" title="autocast.metrics.base.LeadStateSpec"><em>LeadStateSpec</em></a> | None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="autocast.metrics.base.BaseMetric.align_lead_state">
+<span class="sig-name descname"><span class="pre">align_lead_state</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">spec</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/metrics/base.html#BaseMetric.align_lead_state"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.metrics.base.BaseMetric.align_lead_state" title="Link to this definition">#</a></dt>
+<dd><p>Grow (or materialise) the accumulator to <code class="docutils literal notranslate"><span class="pre">spec</span></code>, keeping its value.</p>
+<p>⛔ <strong>A DDP requirement, not a tidy-up.</strong> <code class="docutils literal notranslate"><span class="pre">dist_reduce_fx=&quot;sum&quot;</span></code> routes
+every state through torchmetrics’ <code class="docutils literal notranslate"><span class="pre">_sync_dist</span></code>, which gathers the
+ranks’ tensors and then calls <code class="docutils literal notranslate"><span class="pre">torch.stack</span></code> on them
+(<code class="docutils literal notranslate"><span class="pre">torchmetrics/metric.py:533</span></code>). <code class="docutils literal notranslate"><span class="pre">gather_all_tensors</span></code> pads to the
+largest size and trims each entry back to its OWN size
+(<code class="docutils literal notranslate"><span class="pre">torchmetrics/utilities/distributed.py:138-150</span></code>), so the stack sees
+differently-shaped tensors and RAISES. Under TRUNCATE the widths are a
+per-rank fact – one rank’s trajectories may all die at lead 3 while
+another’s run to 4 – so the widths have to be agreed before
+<code class="docutils literal notranslate"><span class="pre">compute()</span></code>. A rank that never updated is the same hazard in its
+sharpest form: its default state is 0-dimensional, which sends it down
+<code class="docutils literal notranslate"><span class="pre">gather_all_tensors</span></code>’ scalar branch while its peers all-gather sizes,
+and mismatched collectives hang rather than fail.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>spec</strong> (<a class="reference internal" href="#autocast.metrics.base.LeadStateSpec" title="autocast.metrics.base.LeadStateSpec"><em>LeadStateSpec</em></a>) – The world’s agreed accumulator shape and dtype.</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError" title="(in Python v3.15)"><strong>ValueError</strong></a> – If <code class="docutils literal notranslate"><span class="pre">spec</span></code> is narrower than this rank’s own state, or
+    disagrees with it away from the lead axis – either means the
+    agreement was computed wrongly, and silently reshaping would
+    sum two different quantities together.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="autocast.metrics.base.BaseMetric.reset">
+<span class="sig-name descname"><span class="pre">reset</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/autocast/metrics/base.html#BaseMetric.reset"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autocast.metrics.base.BaseMetric.reset" title="Link to this definition">#</a></dt>
+<dd><p>Reset metric state and initialization flag.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+
+    <script type="text/x-thebe-config">
+    {
+        requestKernel: true,
+        binderOptions: {
+            repo: "binder-examples/jupyter-stacks-datascience",
+            ref: "master",
+        },
+        codeMirrorConfig: {
+            theme: "abcdef",
+            mode: "python"
+        },
+        kernelOptions: {
+            name: "python3",
+            path: "./reference/metrics"
+        },
+        predefinedOutput: true
+    }
+    </script>
+    <script>kernelName = 'python3'</script>
+
+                </article>
+              
+
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="index.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Metrics</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="deterministic.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">autocast.metrics.deterministic</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item"><div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> Contents
+  </div>
+  <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.base.rows_per_pair_block"><code class="docutils literal notranslate"><span class="pre">rows_per_pair_block()</span></code></a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.base.block_pairwise_frames"><code class="docutils literal notranslate"><span class="pre">block_pairwise_frames()</span></code></a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.base.LeadStateSpec"><code class="docutils literal notranslate"><span class="pre">LeadStateSpec</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.base.LeadStateSpec.shape"><code class="docutils literal notranslate"><span class="pre">LeadStateSpec.shape</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.base.LeadStateSpec.dtype"><code class="docutils literal notranslate"><span class="pre">LeadStateSpec.dtype</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.base.BaseMetric"><code class="docutils literal notranslate"><span class="pre">BaseMetric</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.base.BaseMetric.memory_intensive"><code class="docutils literal notranslate"><span class="pre">BaseMetric.memory_intensive</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.base.BaseMetric.min_window_steps"><code class="docutils literal notranslate"><span class="pre">BaseMetric.min_window_steps</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.base.BaseMetric.lead_axis_states"><code class="docutils literal notranslate"><span class="pre">BaseMetric.lead_axis_states</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.base.BaseMetric.sum_score"><code class="docutils literal notranslate"><span class="pre">BaseMetric.sum_score</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.base.BaseMetric.total_samples"><code class="docutils literal notranslate"><span class="pre">BaseMetric.total_samples</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.base.BaseMetric.lead_samples"><code class="docutils literal notranslate"><span class="pre">BaseMetric.lead_samples</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.base.BaseMetric.score"><code class="docutils literal notranslate"><span class="pre">BaseMetric.score()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.base.BaseMetric.update"><code class="docutils literal notranslate"><span class="pre">BaseMetric.update()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.base.BaseMetric.compute"><code class="docutils literal notranslate"><span class="pre">BaseMetric.compute()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.base.BaseMetric.lead_state_spec"><code class="docutils literal notranslate"><span class="pre">BaseMetric.lead_state_spec()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.base.BaseMetric.align_lead_state"><code class="docutils literal notranslate"><span class="pre">BaseMetric.align_lead_state()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#autocast.metrics.base.BaseMetric.reset"><code class="docutils literal notranslate"><span class="pre">BaseMetric.reset()</span></code></a></li>
+</ul>
+</li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+<div class="bd-footer-content__inner container">
+  
+  <div class="footer-item">
+    
+<p class="component-author">
+By AI for Physical Systems Team at The Alan Turing Institute
+</p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+  <div class="footer-item">
+    
+<div class="extra_footer">
+  Copyright &copy; 2026
+
+</div>
+  </div>
+  
+</div>
+          </footer>
+        
+
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="../../_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf"></script>
+<script defer src="../../_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf"></script>
+
+  <footer class="bd-footer">
+  </footer>
+  </body>
+</html>
