@@ -63,9 +63,13 @@ class LastFrameReference(ReferenceTrajectory):
 class ProcessorReference(ReferenceTrajectory):
     """Use another processor as a processor-coordinate reference generator.
 
-    This Python API wraps an already instantiated processor whose dimensions
-    are resolved and pretrained weights are loaded by the caller. It does not
-    load checkpoints or resolve nested Hydra ``auto`` fields.
+    The Python API accepts an already instantiated processor. In Hydra configs,
+    setup resolves nested dimensions; optional ``checkpoint_path`` and
+    ``config_path`` request validated initialization from a local EPD run.
+    Both files are required, and loading is performed by model setup, which has
+    access to the parent coordinates. See the processor walkthrough for the
+    supported checkpoint provenance. Forward and train calls do not reread the
+    files; reconstructing a model for resume still requires them during setup.
 
     The wrapped processor receives ``x`` and ``global_cond`` unchanged. Its
     ``map`` output must already use the same ambient or latent coordinates,
@@ -75,10 +79,23 @@ class ProcessorReference(ReferenceTrajectory):
     generative processor's ``map``; the wrapped map must be deterministic.
     """
 
-    def __init__(self, processor: Processor, *, frozen: bool = True) -> None:
+    def __init__(
+        self,
+        processor: Processor,
+        *,
+        frozen: bool = True,
+        checkpoint_path: str | None = None,
+        config_path: str | None = None,
+    ) -> None:
         super().__init__()
+        if (checkpoint_path is None) != (config_path is None):
+            msg = "ProcessorReference requires both checkpoint_path and config_path."
+            raise ValueError(msg)
         self.processor = processor
         self.frozen = frozen
+        self.checkpoint_path = checkpoint_path
+        self.config_path = config_path
+        self.checkpoint_loaded = checkpoint_path is None
         if frozen:
             self.processor.requires_grad_(False)
             self.processor.eval()
@@ -92,6 +109,9 @@ class ProcessorReference(ReferenceTrajectory):
 
     def forward(self, x: Tensor, global_cond: Tensor | None = None) -> Tensor:
         """Return the wrapped processor's output without coordinate transforms."""
+        if not self.checkpoint_loaded:
+            msg = "Configured ProcessorReference checkpoints require model setup."
+            raise RuntimeError(msg)
         context = torch.no_grad() if self.frozen else nullcontext()
         with context:
             return self.processor.map(x, global_cond)

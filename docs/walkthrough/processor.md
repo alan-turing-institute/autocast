@@ -165,32 +165,82 @@ uv run autocast processor \
 
 The default reference repeats the latest frame in processor coordinates. Input
 and forecast channels must align; use `reference.channel_indices` when inputs
-include additional conditioning channels. `ProcessorReference` is a Python API
-for wrapping an **already loaded, deterministic** processor with matching input
-coordinates, output horizon and channels. It does not infer nested `auto` values
-or load pretrained weights. For a matching resolved config and processor-model
-checkpoint:
+include additional conditioning channels. To initialize a deterministic pretrained
+`ProcessorReference` through the normal EPD setup, select the example config:
 
-```python
-import torch
-from hydra.utils import instantiate
-from omegaconf import OmegaConf
-from autocast.processors.residual_reference import ProcessorReference
-
-config = OmegaConf.load("/path/to/run/resolved_config.yaml")
-processor = instantiate(config.model.processor)
-state = torch.load("/path/to/run/processor.ckpt", map_location="cpu", weights_only=False)["state_dict"]
-processor.load_state_dict(
-    {key.removeprefix("processor."): value for key, value in state.items()
-     if key.startswith("processor.")},
-    strict=True,
-)
-reference = ProcessorReference(processor)
+```bash
+processor@model.processor=residual_flow_matching_pretrained_vit \
+model.processor.reference.checkpoint_path=/path/to/reference/run/model.ckpt \
+model.processor.reference.config_path=/path/to/reference/run/resolved_config.yaml \
+model.train_in_latent_space=true \
+model.loss_func=null \
+model.residual_prediction=false
 ```
 
-Freezing disables gradients and dropout; it does not make a generative `map`
-deterministic. An external ambient reference for a latent processor needs an
-explicit adapter handling input normalization and output encoding.
+The example wraps `vit_latent` and requires nonempty global conditioning (constant
+scalars or boundary conditions). Train the reference with those same processor
+settings, or override `reference.processor` to match
+its saved `model.processor` config (including architecture and conditioning).
+Nested processor/backbone `auto` dimensions are inferred from the parent's actual
+processor coordinates, including latent spatial resolution. Compatible explicit
+dimensions are preserved; incompatible dimensions are rejected.
+
+Supply the **paired, unmodified resolved config and EPD checkpoint from the same
+reference run**, using the same model/encoder implementation. The loader checks
+their declared provenance; it cannot authenticate that independently supplied files
+really came from that run or detect changes to the implementation. It supports:
+
+- Identical `SpatioTemporalDataModule` configs and simulator settings in both runs,
+  including field selection, time windows, and data location. Keep the underlying
+  data and its field ordering unchanged. Even operational config differences are
+  rejected by this conservative check.
+- Explicit `datamodule.use_normalization=false`, or default Z-score normalization
+  with the complete `datamodule.normalization_stats` mapping saved inline in both
+  resolved configs (`stats`, `core_field_names`, and `constant_field_names`). A
+  `normalization_path` alone is insufficient: its contents may have changed since
+  training. The live parent's normalizer is also checked against these statistics.
+- Identical resolved encoder/decoder configs and exact checkpoint codec state.
+  Learned codecs must be frozen in both runs. For latent coordinates, initialize
+  the parent with the same `autoencoder_checkpoint` used by the reference run;
+  its resulting weights must match the codec state in the reference checkpoint.
+  The reference loader never loads or replaces the parent's codec or normalizer.
+- Full-state processor outputs without `model.residual_prediction` on the source
+  model or input noise injectors in either run. The wrapped `map` must be
+  deterministic in evaluation mode and already return full processor-coordinate
+  states, rather than denormalized states or standardized residuals.
+
+Only local EPD `state_dict` checkpoints readable with
+`torch.load(map_location="cpu", weights_only=True)` are accepted. The loader uses
+the exact `processor.` prefix, checks all processor keys/shapes/dtypes, and loads
+strictly; it does not guess prefixes, choose EMA weights, or retry unsafe pickle
+loading. Metadata-free external checkpoints, The Well datamodules, custom
+normalizers, and processor-only cached-latent checkpoints are rejected because
+this path cannot establish their coordinate provenance. Existing checkpoint
+formats are unchanged; runs without the required saved metadata remain unsupported.
+
+Initialization happens once during setup, before parent checkpoint restoration.
+The reference's weights are part of the parent's normal state dict, so restored
+weights take precedence and forward/train calls do not reread the external file.
+Reconstructing a configured model still requires its initialization files; these
+options are not a replacement for the ordinary parent resume configuration.
+`frozen=true` preserves evaluation mode and disables gradients even after
+`model.train()`. `frozen=false` allows ordinary training behavior. Freezing does
+not remove randomness from a generative processor's `map`.
+
+The existing Python API remains available for custom trusted objects whose
+coordinates and weights have been established by the caller:
+
+```python
+from autocast.processors.residual_reference import ProcessorReference
+
+reference = ProcessorReference(already_loaded_processor, frozen=True)
+```
+
+Without checkpoint options, configured references also resolve nested dimensions,
+but the caller remains responsible for their weights and coordinate provenance.
+An external ambient reference for a latent processor needs an explicit adapter
+handling input normalization and output encoding. These checks establish the
+supported coordinate contract, not pretrained forecast skill.
 
 With an unfitted residual normalizer, the training entry point inserts
 `ResidualStatisticsCallback` before EMA. It fits training-only population moments
