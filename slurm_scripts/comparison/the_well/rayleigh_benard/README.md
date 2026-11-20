@@ -5,9 +5,9 @@ For training presets and guarded continuations, see the
 archived four-model results, including trajectory error bands and inference
 timing, see the [frozen-checkpoint comparison](diagnostics.md).
 
-Shared reference evaluation ([PR #489](https://github.com/alan-turing-institute/autocast/pull/489))
-and an RB reference preset are follow-on work for new comparisons and
-re-evaluation of these checkpoints. The guides here preserve the archived protocol.
+Use [`eval=the_well/rayleigh_benard`](../../../../src/autocast/configs/eval/README.md#rayleigh-benard-reference)
+for new comparisons using the shared reference metrics. The preset keeps the
+archived rollout settings and can reuse `test64_seed0.yaml` for the fixed cohort.
 
 This folder contains the maintained Rayleigh-Benard submitters for the
 post-merge `283/` Rayleigh-Benard stack. Some configs referenced here live on

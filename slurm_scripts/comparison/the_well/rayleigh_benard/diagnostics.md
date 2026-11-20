@@ -6,11 +6,8 @@ Checkpoint and codec weights remain external; manifests pin their hashes.
 The recipe checks these against the archived production hashes, including
 fitted normalization when relocating data.
 
-This runner preserves the archived comparison's protocol. Shared reference
-evaluation ([PR #489](https://github.com/alan-turing-institute/autocast/pull/489))
-and an RB reference preset are follow-on work, including re-evaluation of these
-checkpoints. Report those as new reference evaluations when sampling,
-aggregation or score definitions change.
+For the shared evaluator, see the
+[Rayleigh-Benard reference preset](../../../../src/autocast/configs/eval/README.md#rayleigh-benard-reference).
 
 ## Prepare and evaluate
 

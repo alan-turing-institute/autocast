@@ -8,6 +8,7 @@ import torch
 from einops import repeat
 from hydra import compose, initialize_config_dir
 from omegaconf import OmegaConf
+from the_well.data.normalization import ZScoreNormalization
 
 import autocast
 from autocast.data.datamodule import SpatioTemporalDataModule
@@ -50,7 +51,9 @@ DEFAULT_EVAL_CONFIG = (
 )
 
 
-def _install_ensemble_eval_fixture(tmp_path, monkeypatch, test_trajectories=None):
+def _install_ensemble_eval_fixture(
+    tmp_path, monkeypatch, test_trajectories=None, *, norm=None
+):
     """Patch the eval setup to a tiny 3-member model; return its checkpoint path."""
     data = {"data": repeat(torch.arange(7.0), "t -> b t h w c", b=2, h=2, w=2, c=1)}
     datamodule = SpatioTemporalDataModule(
@@ -68,6 +71,7 @@ def _install_ensemble_eval_fixture(tmp_path, monkeypatch, test_trajectories=None
         ),
         processor=_IncrementProcessor(),
         n_members=3,
+        norm=norm,
     )
     checkpoint = tmp_path / "model.ckpt"
     torch.save({"state_dict": model.state_dict()}, checkpoint)
@@ -358,6 +362,125 @@ def _default_eval_cfg(checkpoint, shipped=None, **overrides):
     )
 
 
+def test_seeded_forecasts_match_with_trajectory_statistics(tmp_path, monkeypatch):
+    checkpoint = _install_ensemble_eval_fixture(tmp_path, monkeypatch)
+    predictions = []
+
+    def stochastic_map(self, x, global_cond=None):  # noqa: ARG001
+        preds = x + self.increment + torch.randn_like(x)
+        predictions.append(preds.detach().clone())
+        return preds
+
+    monkeypatch.setattr(_IncrementProcessor, "map", stochastic_map)
+    runs = []
+    for enabled in (False, True):
+        work_dir = tmp_path / str(enabled)
+        work_dir.mkdir()
+        cfg = _default_eval_cfg(
+            checkpoint,
+            metrics=["mse"],
+            sampling_seed=81,
+            trajectory_statistics={"enabled": enabled},
+        )
+        torch.manual_seed(1 if enabled else 0)
+        predictions.clear()
+        run_evaluation(cfg, work_dir=work_dir)
+        runs.append(list(predictions))
+
+    assert runs[0]
+    torch.testing.assert_close(runs[0], runs[1], rtol=0, atol=0)
+
+
+@pytest.mark.parametrize(
+    ("sampling_seed", "expected"),
+    [("${.trajectory_statistics.sampling_seed}", [42, 43]), (42, [42, 43, 43])],
+)
+def test_reference_rollout_reseeds_auxiliary_pass_only_for_explicit_seed(
+    tmp_path, monkeypatch, sampling_seed, expected
+):
+    checkpoint = _install_ensemble_eval_fixture(tmp_path, monkeypatch)
+    seeds = []
+    monkeypatch.setattr(f"{EVAL_MODULE}._seed_evaluation_sampling", seeds.append)
+    cfg = _default_eval_cfg(
+        checkpoint,
+        metrics=["mse"],
+        sampling_seed=sampling_seed,
+        trajectory_statistics={"enabled": True},
+    )
+    run_evaluation(cfg, work_dir=tmp_path)
+    assert seeds == expected
+
+
+def test_seeded_rollout_dump_is_reproducible(tmp_path, monkeypatch):
+    checkpoint = _install_ensemble_eval_fixture(tmp_path, monkeypatch)
+
+    def stochastic_map(self, x, global_cond=None):  # noqa: ARG001
+        return x + self.increment + torch.randn_like(x)
+
+    monkeypatch.setattr(_IncrementProcessor, "map", stochastic_map)
+    dumps = []
+    for index in range(2):
+        work_dir = tmp_path / str(index)
+        work_dir.mkdir()
+        cfg = _default_eval_cfg(
+            checkpoint,
+            metrics=["mse"],
+            compute_test_metrics=False,
+            dump_rollout_tensors=True,
+            rollout_sampling_seed=0,
+        )
+        torch.manual_seed(1000 + index)
+        run_evaluation(cfg, work_dir=work_dir)
+        dump = torch.load(work_dir / "rollout_tensors.pt", weights_only=True)
+        assert dump["meta"]["evaluation_sampling_seed"] == 0
+        dumps.append(dump["preds"])
+
+    torch.testing.assert_close(dumps[0], dumps[1], rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("mode", ["ambient", "encode_once"])
+def test_physical_next_window_metrics_use_fitted_normalization(
+    tmp_path, monkeypatch, mode
+):
+    norm = ZScoreNormalization(
+        stats={
+            "mean": {"field": 5.0},
+            "std": {"field": 3.0},
+            "mean_delta": {"field": 0.0},
+            "std_delta": {"field": 1.0},
+        },
+        core_field_names=["field"],
+        core_constant_field_names=[],
+    )
+    checkpoint = _install_ensemble_eval_fixture(tmp_path, monkeypatch, norm=norm)
+    if mode == "encode_once":
+        monkeypatch.setattr(
+            f"{EVAL_MODULE}._maybe_inject_encoder_decoder_from_autoencoder_checkpoint",
+            lambda config: config,
+        )
+    scores = []
+    for physical in (None, False, True):
+        work_dir = tmp_path / str(physical)
+        work_dir.mkdir()
+        cfg = _default_eval_cfg(
+            checkpoint,
+            mode=mode,
+            metrics=["mse"],
+            compute_rollout_metrics=False,
+            denormalize_test_metrics=physical,
+        )
+        if physical is None:
+            del cfg.eval.denormalize_test_metrics
+        if mode == "encode_once":
+            cfg.autoencoder_checkpoint = str(tmp_path / "autoencoder.ckpt")
+        run_evaluation(cfg, work_dir=work_dir)
+        scores.append(pd.read_csv(work_dir / "evaluation_metrics.csv")["mse"].iloc[0])
+
+    assert scores[0] > 0
+    assert scores[1] == scores[0]
+    assert scores[2] == pytest.approx(9 * scores[0])
+
+
 @pytest.mark.parametrize("include_memory_intensive", [False, True])
 def test_default_eval_config_scores_cheap_new_metrics_and_guards_the_costly_ones(
     tmp_path, monkeypatch, include_memory_intensive
@@ -418,6 +541,8 @@ def test_reference_eval_config_composes_and_scores_every_metric_it_lists(
     # The reference config turns trajectory statistics on, which writes the run's
     # CSVs under trajectory_statistics/.
     assert reference.trajectory_statistics.enabled
+    output_dir = tmp_path / "trajectory_statistics"
     for csv_name in ("evaluation_metrics.csv", "rollout_metrics.csv"):
-        columns = set(pd.read_csv(tmp_path / "trajectory_statistics" / csv_name))
+        columns = set(pd.read_csv(output_dir / csv_name))
         assert set(reference.metrics) <= columns, set(reference.metrics) - columns
+    assert (output_dir / "rollout_metrics_per_timestep_per_trajectory.csv").exists()

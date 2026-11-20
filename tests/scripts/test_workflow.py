@@ -9,6 +9,8 @@ from unittest.mock import patch
 
 import pandas as pd
 import pytest
+from hydra import compose, initialize_config_dir
+from omegaconf import OmegaConf
 
 from autocast.scripts.workflow import cli as workflow_cli
 from autocast.scripts.workflow.cli import build_parser
@@ -16,6 +18,7 @@ from autocast.scripts.workflow.commands import (
     benchmark_command,
     benchmark_manifest_command,
     build_effective_eval_overrides,
+    build_eval_overrides,
     build_train_overrides,
     eval_command,
     infer_dataset_from_workdir,
@@ -767,6 +770,69 @@ def test_eval_command_includes_defaults_without_resolved_config(monkeypatch, tmp
     assert "eval=encoder_processor_decoder" in overrides
     assert any(o.startswith("datamodule=") for o in overrides)
     assert any(o.startswith("eval.checkpoint=") for o in overrides)
+
+
+@pytest.mark.parametrize("preset", ["reference", "the_well/rayleigh_benard"])
+def test_eval_preset_expands_into_saved_run_without_changing_model(tmp_path, preset):
+    original = {
+        "seed": 99,
+        "model": {"processor": {"flow_ode_steps": 16, "integrator": "ab3"}},
+        "datamodule": {"max_rollout_steps": 100, "use_normalization": False},
+        "eval": {"checkpoint": "processor.ckpt"},
+    }
+    OmegaConf.save(OmegaConf.create(original), tmp_path / "resolved_config.yaml")
+    _, overrides = build_eval_overrides(
+        mode="local",
+        dataset=None,
+        work_dir=str(tmp_path),
+        overrides=[f"eval={preset}", "eval.n_members=18"],
+        using_resolved_config=True,
+    )
+    assert not any(value.startswith("eval=") for value in overrides)
+    with initialize_config_dir(config_dir=str(tmp_path), version_base=None):
+        cfg = compose(config_name="resolved_config", overrides=overrides)
+    assert cfg.model == original["model"]
+    assert cfg.seed == 99
+    assert cfg.eval.n_members == 18
+    assert cfg.eval.sampling_seed == 42
+    assert "ssr_pooled" in cfg.eval.metrics
+    assert cfg.eval.trajectory_statistics.enabled == (preset == "reference")
+    assert cfg.datamodule.max_rollout_steps == (100 if preset == "reference" else 200)
+    assert not cfg.datamodule.use_normalization
+
+
+@pytest.mark.parametrize("saved_run", [False, True])
+@pytest.mark.parametrize("outer_seed", [None, 23])
+def test_reference_eval_preserves_legacy_seed_override(
+    tmp_path, REPO_ROOT, saved_run, outer_seed
+):
+    overrides = [
+        "eval=reference",
+        "eval.trajectory_statistics.sampling_seed=7",
+        "eval.trajectory_statistics.enabled=false",
+    ]
+    if outer_seed is not None:
+        overrides.append(f"eval.sampling_seed={outer_seed}")
+
+    config_dir = REPO_ROOT / "src/autocast/configs"
+    config_name = "encoder_processor_decoder"
+    if saved_run:
+        config_name = "resolved_config"
+        config_dir = tmp_path
+        OmegaConf.save(
+            OmegaConf.create({"eval": {}}), tmp_path / "resolved_config.yaml"
+        )
+        _, overrides = build_eval_overrides(
+            mode="local",
+            dataset=None,
+            work_dir=str(tmp_path),
+            overrides=overrides,
+            using_resolved_config=True,
+        )
+    with initialize_config_dir(config_dir=str(config_dir), version_base=None):
+        cfg = compose(config_name=config_name, overrides=overrides)
+
+    assert cfg.eval.sampling_seed == (7 if outer_seed is None else outer_seed)
 
 
 def test_eval_command_keeps_explicit_hydra_config(monkeypatch, tmp_path):
