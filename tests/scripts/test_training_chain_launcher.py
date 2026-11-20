@@ -42,6 +42,8 @@ def test_chain_reuses_launcher_with_afterok_dependency(tmp_path, monkeypatch, ca
     script = chain / "segment-0002.sh"
     assert "$((allocation_start + 4860))" in script.read_text()
     assert "segment-0001.ckpt" in script.read_text()
+    assert "AUTOCAST_SLURM_CHAIN_FINAL=0" in (chain / "segment-0001.sh").read_text()
+    assert "AUTOCAST_SLURM_CHAIN_FINAL=1" in script.read_text()
     assert (chain / "segment-0002.job-id").read_text() == "92\n"
 
     # Executing the generated Slurm script requires a POSIX environment.

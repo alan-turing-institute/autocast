@@ -35,18 +35,33 @@ uv run autocast processor --mode slurm --chain 2 --dry-run \
   +distributed=single_gpu_slurm ++trainer.max_epochs=500
 ```
 
-`--dry-run` prints the scripts and dependencies. Set `trainer.max_epochs` and any
-explicit cosine horizon for the whole run. Use an epoch- or step-based scheduler.
+`--dry-run` prints the scripts and dependencies. For epoch- or step-based
+schedules, set `trainer.max_epochs` and any explicit cosine horizon for the whole run.
 Leave `trainer.min_steps` unset and keep `trainer.min_epochs` at most one so
 training can hand off after any completed epoch.
-The budget starts with the batch script. The chain uses the longest observed
-epoch to decide whether another can fit, reserving 10% of each allocation
-(1–30 minutes) for checkpointing. Allow enough walltime for setup and at least
-one full epoch, including any validation.
+
+For time-based cosine scheduling, set `++optimizer.scheduler_interval=time`
+and set `trainer.max_time` explicitly for the total training budget. Use
+`++trainer.max_epochs=-1` to remove the epoch cap. The clock resumes from the
+checkpoint and excludes queue time. Training finishes at an epoch boundary.
+
+The per-allocation budget (`hydra.launcher.timeout_min`) starts with the batch
+script. The chain uses the longest observed epoch to decide whether another can
+fit, reserving 10% of each allocation (1–30 minutes) for checkpointing. Allow
+enough walltime for setup and at least one full epoch, including any validation.
+A 48-hour training budget (`trainer.max_time=02:00:00:00`) needs at least three
+24-hour allocations to allow for checkpointing, setup, and epoch boundaries.
 
 Each continuation restores its predecessor's full checkpoint. The usual
 checkpoint path points to the latest endpoint for evaluation. The run keeps its
 initial resolved config, and `.chain/` keeps each checkpoint, script, and job ID.
 Slurm logs record epoch, step, and handoff status. Later jobs skip training
-once `.chain/finished` points to the completed checkpoint. Run evaluation
-separately with `autocast eval --workdir <run-directory>`.
+once `.chain/finished` points to the completed checkpoint. If a time-based chain
+runs out of allocations, the final job saves a full checkpoint and exits with an error.
+
+To continue in a single allocation, pass the checkpoint from the error to
+`--resume-from` and reuse the original training settings, including `trainer.max_time`.
+Leave `reset_resume_time_budget` disabled and request enough walltime for the
+remaining training and checkpointing. Set `output.skip_test=true` to defer evaluation.
+
+Run evaluation with `autocast eval --workdir <run-directory>`.

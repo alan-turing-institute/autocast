@@ -1207,6 +1207,13 @@ class OptimizerMixin(nn.Module):
             msg = f"min_lr_ratio must be in [0, 1]. Got: {min_lr_ratio}"
             raise ValueError(msg)
 
+        if scheduler_interval == "time" and scheduler_name in {
+            SchedulerName.COSINE_WITH_RESTARTS,
+            SchedulerName.STEP,
+        }:
+            msg = f"{scheduler_name} is not supported with scheduler_interval='time'."
+            raise ValueError(msg)
+
         if scheduler_name in {
             SchedulerName.COSINE,
             SchedulerName.COSINE_WITH_RESTARTS,
@@ -1232,12 +1239,6 @@ class OptimizerMixin(nn.Module):
                     stacklevel=2,
                 )
             if scheduler_interval == "time":
-                if scheduler_name == SchedulerName.COSINE_WITH_RESTARTS:
-                    msg = (
-                        "cosine_with_restarts is not supported with "
-                        "scheduler_interval='time'."
-                    )
-                    raise ValueError(msg)
                 self._require_time_budget()
                 return self._create_time_cosine(optimizer, cfg, min_lr_ratio)
 
