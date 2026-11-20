@@ -1,0 +1,5 @@
+defaults:
+  - vit_azula_small
+  - _self_
+
+graph_hops: 2

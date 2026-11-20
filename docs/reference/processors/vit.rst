@@ -121,3 +121,31 @@ correlate an explicit time axis, but Azula's conditioning source sees only
 one effective time slot. With concatenation they correlate input-frame slots,
 not successive forecasts. No source state is carried across rollout calls;
 temporally persistent autoregressive noise requires a separate rollout API.
+
+Periodic graph attention
+------------------------
+
+Set ``graph_hops: 2`` in an Azula ViT processor configuration to attend over a
+periodic patch graph. For the packaged Azula ViT presets, use the Hydra
+override ``model.processor.graph_hops=2`` or select
+``processor@model.processor=graph_vit_azula_small``. Each patch attends to
+itself and patches within the specified number of grid steps, wrapping on
+both axes. With ``graph_hops: null``, every pair of patches can attend. A hop
+count of zero allows each patch to attend to itself.
+
+Set the hop count on the same SWE64 ViT configuration for a paired benchmark
+with the same patch size, positional encodings, weights layout and AdaLN
+configuration. Azula's positional bias uses ordinary grid coordinates, so
+equally close neighbours can receive different biases at the periodic seam
+and in the interior.
+
+With a hop count set, ``model.processor.graph_attention_backend=masked``
+(the default) passes a dense mask to Azula attention. The ``gathered`` backend
+uses the same neighbourhood and gathers keys and values before computing
+attention. It evaluates only neighbour pairs and uses the same learned weights
+and positional bias. Materializing keys and values for each edge can increase
+peak memory, including with the 256 patch tokens in SWE64. During backward,
+the gathered backend recomputes those tensors from the original projections.
+It checkpoints only the gather and attention when block checkpointing is off.
+On CUDA, large graphs use separate groups of query patches to stay within
+kernel launch limits.
