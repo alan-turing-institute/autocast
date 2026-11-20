@@ -1,0 +1,34 @@
+# Paths are relative to --outputs-root. No training is performed.
+models:
+  ambient_matched:
+    label: Ambient CRPS 226M
+    expected_step: 262144
+    mode: ambient
+    config: 2026-11-13/rb_ambient_matched_eval_final_262144/paired/resolved_test_config.yaml
+    checkpoint_sha256: 0f7c9dcb2e81c0e292792cb7b7e99f758c601e65104b995720848fbed5d06c85
+    normalization_sha256: 5785f305979e5a123bb17abb2512dd5ac0919329b5a20392bcf8b8403b7f6359
+  crps_latent:
+    label: Latent CRPS 223M
+    expected_step: 262144
+    mode: encode_once
+    config: 2026-11-10/rb_overall_coverage_142115Z/crps_latent/resolved_test_config.yaml
+    checkpoint_sha256: be8e4c9d01acc486b38a8f6b31e702da30e491534fce0efcc29a92dd16ea3209
+    codec_sha256:
+      encoder: d45c90baa77e0b7958186ad828ec23d29cda1197ff38f846b7173f38b32111ed
+      decoder: d45c90baa77e0b7958186ad828ec23d29cda1197ff38f846b7173f38b32111ed
+  fm_latent:
+    label: Latent FM 223M
+    expected_step: 262144
+    mode: encode_once
+    config: 2026-11-10/rb_overall_coverage_142115Z/fm_latent/resolved_test_config.yaml
+    checkpoint_sha256: 05e5ac810bfcede9f6ea7961e91d603507b8df92afee71ea6c4c010a770cbab8
+    codec_sha256:
+      encoder: d45c90baa77e0b7958186ad828ec23d29cda1197ff38f846b7173f38b32111ed
+      decoder: d45c90baa77e0b7958186ad828ec23d29cda1197ff38f846b7173f38b32111ed
+  ambient_large_midpoint:
+    label: Ambient CRPS 859M (half training)
+    expected_step: 131072
+    mode: ambient
+    config: 2026-11-13/rb_ambient_lola_midpoint_eval_131072/paired/resolved_test_config.yaml
+    checkpoint_sha256: d80d0a94e483fab14f3732d462e8092b1f95385cde47c72a40d7a8dd6e802c1d
+    normalization_sha256: 5785f305979e5a123bb17abb2512dd5ac0919329b5a20392bcf8b8403b7f6359

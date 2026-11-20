@@ -1,12 +1,18 @@
 """Exercise trajectory outputs through the complete evaluation orchestration."""
 
+from pathlib import Path
+
 import pandas as pd
 import pytest
 import torch
 from einops import repeat
+from hydra import compose, initialize_config_dir
 from omegaconf import OmegaConf
+from the_well.data.normalization import ZScoreNormalization
 
+import autocast
 from autocast.data.datamodule import SpatioTemporalDataModule
+from autocast.data.zarr_dataset import ZarrDataModule
 from autocast.decoders.identity import IdentityDecoder
 from autocast.encoders.identity import IdentityEncoder
 from autocast.models.encoder_decoder import EncoderDecoder
@@ -39,14 +45,16 @@ class _DoubleDecoder(IdentityDecoder):
         return 2 * z
 
 
-@pytest.mark.parametrize("mode", ["ambient", "encode_once"])
-@pytest.mark.parametrize(
-    ("trajectory_statistics", "compute_metrics"),
-    [(False, False), (False, True), (True, False)],
+EVAL_MODULE = "autocast.scripts.eval.encoder_processor_decoder"
+DEFAULT_EVAL_CONFIG = (
+    Path(autocast.__file__).parent / "configs" / "eval" / "default.yaml"
 )
-def test_evaluation_keeps_trajectory_and_diagnostic_outputs_separate(
-    tmp_path, monkeypatch, mode, trajectory_statistics, compute_metrics
+
+
+def _install_ensemble_eval_fixture(
+    tmp_path, monkeypatch, test_trajectories=None, *, norm=None
 ):
+    """Patch the eval setup to a tiny 3-member model; return its checkpoint path."""
     data = {"data": repeat(torch.arange(7.0), "t -> b t h w c", b=2, h=2, w=2, c=1)}
     datamodule = SpatioTemporalDataModule(
         data_path=None,
@@ -55,6 +63,7 @@ def test_evaluation_keeps_trajectory_and_diagnostic_outputs_separate(
         batch_size=2,
         num_workers=0,
         pin_memory=False,
+        test_trajectories=test_trajectories,
     )
     model = EncoderProcessorDecoderEnsemble(
         encoder_decoder=EncoderDecoder(
@@ -62,9 +71,59 @@ def test_evaluation_keeps_trajectory_and_diagnostic_outputs_separate(
         ),
         processor=_IncrementProcessor(),
         n_members=3,
+        norm=norm,
     )
     checkpoint = tmp_path / "model.ckpt"
     torch.save({"state_dict": model.state_dict()}, checkpoint)
+    monkeypatch.setattr(
+        f"{EVAL_MODULE}.setup_datamodule",
+        lambda config: (
+            datamodule,
+            config,
+            {
+                "example_batch": next(iter(datamodule.test_dataloader())),
+                "n_steps_output": 1,
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        f"{EVAL_MODULE}.setup_epd_model", lambda *_args, **_kwargs: model
+    )
+    return checkpoint
+
+
+def test_evaluation_exports_original_selected_trajectory_ids(tmp_path, monkeypatch):
+    checkpoint = _install_ensemble_eval_fixture(
+        tmp_path, monkeypatch, test_trajectories=[1]
+    )
+    cfg = _default_eval_cfg(
+        checkpoint,
+        metrics=["mse"],
+        rollout_start=0,
+        trajectory_statistics={"enabled": True},
+    )
+
+    run_evaluation(cfg, work_dir=tmp_path)
+
+    for name, count in (
+        ("single_step_metrics_per_trajectory.csv", 1),
+        ("rollout_metrics_per_trajectory.csv", 1),
+        ("rollout_metrics_per_timestep_per_trajectory.csv", 3),
+    ):
+        rows = pd.read_csv(tmp_path / "trajectory_statistics" / name)
+        assert rows["trajectory_idx"].tolist() == [1] * count
+        assert rows["trajectory_id"].tolist() == ["test_0001"] * count
+
+
+@pytest.mark.parametrize("mode", ["ambient", "encode_once"])
+@pytest.mark.parametrize(
+    ("trajectory_statistics", "compute_metrics"),
+    [(False, False), (False, True), (True, False)],
+)
+def test_evaluation_keeps_trajectory_and_diagnostic_outputs_separate(
+    tmp_path, monkeypatch, mode, trajectory_statistics, compute_metrics
+):
+    checkpoint = _install_ensemble_eval_fixture(tmp_path, monkeypatch)
     cfg = OmegaConf.create(
         {
             "model": {"encoder": {}, "decoder": {}, "n_members": 3},
@@ -96,20 +155,6 @@ def test_evaluation_keeps_trajectory_and_diagnostic_outputs_separate(
             f"{eval_module}._maybe_inject_encoder_decoder_from_autoencoder_checkpoint",
             lambda config: config,
         )
-    monkeypatch.setattr(
-        f"{eval_module}.setup_datamodule",
-        lambda config: (
-            datamodule,
-            config,
-            {
-                "example_batch": next(iter(datamodule.test_dataloader())),
-                "n_steps_output": 1,
-            },
-        ),
-    )
-    monkeypatch.setattr(
-        f"{eval_module}.setup_epd_model", lambda *_args, **_kwargs: model
-    )
     legacy_csv = tmp_path / "evaluation_metrics.csv"
     if trajectory_statistics:
         legacy_csv.write_text("Existing evaluation\n")
@@ -163,3 +208,341 @@ def test_evaluation_keeps_trajectory_and_diagnostic_outputs_separate(
             )
     else:
         assert not (output_dir / "rollout_metrics_per_trajectory.csv").exists()
+
+
+@pytest.mark.parametrize("include_per_timestep", [True, False])
+def test_windowed_trajectory_statistics_validate_before_inference(
+    tmp_path, monkeypatch, include_per_timestep
+):
+    zarr = pytest.importorskip("zarr")
+    group = zarr.open_group(str(tmp_path / "test" / "data.zarr"), mode="w")
+    values = repeat(torch.arange(7.0), "t -> b t h w c", b=2, h=2, w=2, c=1)
+    group.create_array("data", data=values.numpy(), chunks=(1, 1, 2, 2, 1))
+    group.attrs.update(
+        schema="autosim.spatiotemporal",
+        schema_version=1,
+        field_names=["field_0"],
+        complete=True,
+    )
+    datamodule = ZarrDataModule(
+        tmp_path, rollout_steps=3, use_normalization=False, pin_memory=False
+    )
+    model = EncoderProcessorDecoderEnsemble(
+        encoder_decoder=EncoderDecoder(
+            encoder=IdentityEncoder(1), decoder=IdentityDecoder(1)
+        ),
+        processor=_IncrementProcessor(),
+        n_members=3,
+    )
+    checkpoint = tmp_path / "model.ckpt"
+    torch.save({"state_dict": model.state_dict()}, checkpoint)
+    cfg = OmegaConf.create(
+        {
+            "model": {"encoder": {}, "decoder": {}, "n_members": 3},
+            "datamodule": {},
+            "eval": {
+                "checkpoint": str(checkpoint),
+                "mode": "ambient",
+                "accelerator": "cpu",
+                "batch_size": 2,
+                "metrics": ["mse"],
+                "max_rollout_steps": 3,
+                "metric_windows_rollout": [[0, 3]],
+                "trajectory_statistics": {
+                    "enabled": True,
+                    "include_per_timestep": include_per_timestep,
+                },
+            },
+        }
+    )
+    eval_module = "autocast.scripts.eval.encoder_processor_decoder"
+    monkeypatch.setattr(
+        f"{eval_module}.setup_datamodule",
+        lambda config: (
+            datamodule,
+            config,
+            {
+                "example_batch": next(iter(datamodule.test_dataloader())),
+                "n_steps_output": 1,
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        f"{eval_module}.setup_epd_model", lambda *_args, **_kwargs: model
+    )
+    if include_per_timestep:
+
+        def unexpected_inference(*_args, **_kwargs):
+            pytest.fail("Trajectory metadata must be checked before inference.")
+
+        monkeypatch.setattr(model, "forward", unexpected_inference)
+        with pytest.raises(ValueError, match="include_per_timestep=false"):
+            run_evaluation(cfg, work_dir=tmp_path)
+        assert not list((tmp_path / "trajectory_statistics").glob("*.csv"))
+    else:
+        run_evaluation(cfg, work_dir=tmp_path)
+        output_dir = tmp_path / "trajectory_statistics"
+        rows = pd.read_csv(output_dir / "rollout_metrics_per_trajectory.csv")
+        assert rows["trajectory_idx"].tolist() == [0, 1]
+        assert rows["n_windows"].tolist() == [4, 4]
+        assert rows["mse"].tolist() == pytest.approx([0, 0])
+        assert not (
+            output_dir / "rollout_metrics_per_timestep_per_trajectory.csv"
+        ).exists()
+
+
+@pytest.mark.parametrize("mode", ["ambient", "encode_once"])
+@pytest.mark.parametrize("rollout_start", [3, 16])
+def test_zarr_rejects_absolute_rollout_start_before_model_setup(
+    tmp_path, monkeypatch, mode, rollout_start
+):
+    zarr = pytest.importorskip("zarr")
+    group = zarr.open_group(str(tmp_path / "test" / "data.zarr"), mode="w")
+    values = repeat(torch.arange(32.0), "t -> b t h w c", b=1, h=2, w=2, c=1)
+    group.create_array("data", data=values.numpy(), chunks=(1, 1, 2, 2, 1))
+    group.attrs.update(
+        schema="autosim.spatiotemporal",
+        schema_version=1,
+        field_names=["field_0"],
+        complete=True,
+    )
+    datamodule = ZarrDataModule(tmp_path, use_normalization=False, pin_memory=False)
+    checkpoint = tmp_path / "model.ckpt"
+    torch.save({"state_dict": {}}, checkpoint)
+    cfg = OmegaConf.create(
+        {
+            "model": {"encoder": {}, "decoder": {}},
+            "eval": {
+                "checkpoint": str(checkpoint),
+                "mode": mode,
+                "rollout_start": rollout_start,
+                "compute_rollout_metrics": True,
+            },
+        }
+    )
+    eval_module = "autocast.scripts.eval.encoder_processor_decoder"
+    monkeypatch.setattr(
+        f"{eval_module}.setup_datamodule",
+        lambda config: (
+            datamodule,
+            config,
+            {"example_batch": next(iter(datamodule.test_dataloader()))},
+        ),
+    )
+
+    def unexpected_model_setup(*_args, **_kwargs):
+        pytest.fail("Invalid rollout offsets must be rejected before model setup.")
+
+    monkeypatch.setattr(f"{eval_module}.setup_epd_model", unexpected_model_setup)
+    with pytest.raises(ValueError, match=r"datamodule\.start_frame"):
+        run_evaluation(cfg, work_dir=tmp_path)
+
+
+def _default_eval_cfg(checkpoint, shipped=None, **overrides):
+    """A shipped eval config (default: `configs/eval/default.yaml`) on the fixture."""
+    if shipped is None:
+        shipped = OmegaConf.load(DEFAULT_EVAL_CONFIG)
+    fixture = {
+        "checkpoint": str(checkpoint),
+        "mode": "ambient",
+        "accelerator": "cpu",
+        "batch_size": 2,
+        "rollout_start": 1,
+        "max_rollout_steps": 3,
+        "compute_rollout_metrics": True,
+        "metric_windows_rollout": [[0, 3]],
+        **overrides,
+    }
+    return OmegaConf.create(
+        {
+            "model": {"encoder": {}, "decoder": {}, "n_members": 3},
+            "datamodule": {"start_frame": 1},
+            "eval": OmegaConf.merge(shipped, fixture),
+        }
+    )
+
+
+def test_seeded_forecasts_match_with_trajectory_statistics(tmp_path, monkeypatch):
+    checkpoint = _install_ensemble_eval_fixture(tmp_path, monkeypatch)
+    predictions = []
+
+    def stochastic_map(self, x, global_cond=None):  # noqa: ARG001
+        preds = x + self.increment + torch.randn_like(x)
+        predictions.append(preds.detach().clone())
+        return preds
+
+    monkeypatch.setattr(_IncrementProcessor, "map", stochastic_map)
+    runs = []
+    for enabled in (False, True):
+        work_dir = tmp_path / str(enabled)
+        work_dir.mkdir()
+        cfg = _default_eval_cfg(
+            checkpoint,
+            metrics=["mse"],
+            sampling_seed=81,
+            trajectory_statistics={"enabled": enabled},
+        )
+        torch.manual_seed(1 if enabled else 0)
+        predictions.clear()
+        run_evaluation(cfg, work_dir=work_dir)
+        runs.append(list(predictions))
+
+    assert runs[0]
+    torch.testing.assert_close(runs[0], runs[1], rtol=0, atol=0)
+
+
+@pytest.mark.parametrize(
+    ("sampling_seed", "expected"),
+    [("${.trajectory_statistics.sampling_seed}", [42, 43]), (42, [42, 43, 43])],
+)
+def test_reference_rollout_reseeds_auxiliary_pass_only_for_explicit_seed(
+    tmp_path, monkeypatch, sampling_seed, expected
+):
+    checkpoint = _install_ensemble_eval_fixture(tmp_path, monkeypatch)
+    seeds = []
+    monkeypatch.setattr(f"{EVAL_MODULE}._seed_evaluation_sampling", seeds.append)
+    cfg = _default_eval_cfg(
+        checkpoint,
+        metrics=["mse"],
+        sampling_seed=sampling_seed,
+        trajectory_statistics={"enabled": True},
+    )
+    run_evaluation(cfg, work_dir=tmp_path)
+    assert seeds == expected
+
+
+def test_seeded_rollout_dump_is_reproducible(tmp_path, monkeypatch):
+    checkpoint = _install_ensemble_eval_fixture(tmp_path, monkeypatch)
+
+    def stochastic_map(self, x, global_cond=None):  # noqa: ARG001
+        return x + self.increment + torch.randn_like(x)
+
+    monkeypatch.setattr(_IncrementProcessor, "map", stochastic_map)
+    dumps = []
+    for index in range(2):
+        work_dir = tmp_path / str(index)
+        work_dir.mkdir()
+        cfg = _default_eval_cfg(
+            checkpoint,
+            metrics=["mse"],
+            compute_test_metrics=False,
+            dump_rollout_tensors=True,
+            rollout_sampling_seed=0,
+        )
+        torch.manual_seed(1000 + index)
+        run_evaluation(cfg, work_dir=work_dir)
+        dump = torch.load(work_dir / "rollout_tensors.pt", weights_only=True)
+        assert dump["meta"]["evaluation_sampling_seed"] == 0
+        dumps.append(dump["preds"])
+
+    torch.testing.assert_close(dumps[0], dumps[1], rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("mode", ["ambient", "encode_once"])
+def test_physical_next_window_metrics_use_fitted_normalization(
+    tmp_path, monkeypatch, mode
+):
+    norm = ZScoreNormalization(
+        stats={
+            "mean": {"field": 5.0},
+            "std": {"field": 3.0},
+            "mean_delta": {"field": 0.0},
+            "std_delta": {"field": 1.0},
+        },
+        core_field_names=["field"],
+        core_constant_field_names=[],
+    )
+    checkpoint = _install_ensemble_eval_fixture(tmp_path, monkeypatch, norm=norm)
+    if mode == "encode_once":
+        monkeypatch.setattr(
+            f"{EVAL_MODULE}._maybe_inject_encoder_decoder_from_autoencoder_checkpoint",
+            lambda config: config,
+        )
+    scores = []
+    for physical in (None, False, True):
+        work_dir = tmp_path / str(physical)
+        work_dir.mkdir()
+        cfg = _default_eval_cfg(
+            checkpoint,
+            mode=mode,
+            metrics=["mse"],
+            compute_rollout_metrics=False,
+            denormalize_test_metrics=physical,
+        )
+        if physical is None:
+            del cfg.eval.denormalize_test_metrics
+        if mode == "encode_once":
+            cfg.autoencoder_checkpoint = str(tmp_path / "autoencoder.ckpt")
+        run_evaluation(cfg, work_dir=work_dir)
+        scores.append(pd.read_csv(work_dir / "evaluation_metrics.csv")["mse"].iloc[0])
+
+    assert scores[0] > 0
+    assert scores[1] == scores[0]
+    assert scores[2] == pytest.approx(9 * scores[0])
+
+
+@pytest.mark.parametrize("include_memory_intensive", [False, True])
+def test_default_eval_config_scores_cheap_new_metrics_and_guards_the_costly_ones(
+    tmp_path, monkeypatch, include_memory_intensive
+):
+    """Defaults write `ssr_pooled` and `collection_coverage`, and no variogram.
+
+    A variogram is selectable by name but sits behind
+    `eval.include_memory_intensive_metrics`: it must be absent from the shipped
+    defaults, and present once that switch is on. `autocorr_match` needs at least
+    two lead steps, so it is scored on the 3-step rollout window and left out of
+    the single-step pass instead of failing the run.
+    """
+    default_metrics = list(OmegaConf.load(DEFAULT_EVAL_CONFIG).metrics)
+    assert not {"variogram", "dss"} & set(default_metrics)
+    checkpoint = _install_ensemble_eval_fixture(tmp_path, monkeypatch)
+    cfg = _default_eval_cfg(
+        checkpoint,
+        include_memory_intensive_metrics=include_memory_intensive,
+        metrics=[*default_metrics, "variogram", "dss", "autocorr_match"],
+    )
+
+    run_evaluation(cfg, work_dir=tmp_path)
+
+    for csv_name in ("evaluation_metrics.csv", "rollout_metrics.csv"):
+        columns = set(pd.read_csv(tmp_path / csv_name))
+        assert {"ssr_pooled", "collection_coverage"} <= columns
+        if include_memory_intensive:
+            assert {"variogram", "dss"} <= columns
+        else:
+            assert not columns & {"variogram", "dss"}
+    assert list(tmp_path.glob("test_collection_coverage_window_*.csv"))
+    assert "autocorr_match" not in set(pd.read_csv(tmp_path / "evaluation_metrics.csv"))
+    assert "autocorr_match" in set(pd.read_csv(tmp_path / "rollout_metrics.csv"))
+
+
+def test_reference_eval_config_composes_and_scores_every_metric_it_lists(
+    tmp_path, monkeypatch
+):
+    """`eval=reference` composes through its defaults and scores every listed metric.
+
+    The evaluator skips an unknown metric name with only a log warning, so a
+    misspelt name in the reference list would drop that column from every
+    comparison without failing a run.
+    """
+    with initialize_config_dir(
+        version_base=None, config_dir=str(DEFAULT_EVAL_CONFIG.parent.parent)
+    ):
+        reference = compose(
+            config_name="encoder_processor_decoder", overrides=["eval=reference"]
+        ).eval
+    checkpoint = _install_ensemble_eval_fixture(tmp_path, monkeypatch)
+    # The reference config inherits video batches; videos need ffmpeg, which CI
+    # runners lack, and this test checks metric columns only.
+    cfg = _default_eval_cfg(checkpoint, shipped=reference, batch_indices=[])
+
+    run_evaluation(cfg, work_dir=tmp_path)
+
+    # The reference config turns trajectory statistics on, which writes the run's
+    # CSVs under trajectory_statistics/.
+    assert reference.trajectory_statistics.enabled
+    output_dir = tmp_path / "trajectory_statistics"
+    for csv_name in ("evaluation_metrics.csv", "rollout_metrics.csv"):
+        columns = set(pd.read_csv(output_dir / csv_name))
+        assert set(reference.metrics) <= columns, set(reference.metrics) - columns
+    assert (output_dir / "rollout_metrics_per_timestep_per_trajectory.csv").exists()

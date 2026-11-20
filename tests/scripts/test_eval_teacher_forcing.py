@@ -1,7 +1,7 @@
 """Teacher-forcing evaluation validation and window-boundary regression tests."""
 
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any
 
 import pytest
 import torch
@@ -95,18 +95,17 @@ def test_encode_once_teacher_forcing_advances_at_four_frame_boundaries(ratio):
 def test_rollout_rendering_forwards_teacher_forcing(tmp_path, monkeypatch):
     captured: dict[str, Any] = {}
 
-    class DummyModel:
-        def rollout(self, *_args, **kwargs):
-            captured.update(kwargs)
-            prediction = torch.zeros(1, 2, 2, 2, 1)
-            return prediction, torch.ones_like(prediction)
+    def rollout(*_args, **kwargs):
+        captured.update(kwargs)
+        prediction = torch.zeros(1, 2, 2, 2, 1)
+        return prediction, torch.ones_like(prediction)
 
     monkeypatch.setattr(
         "autocast.scripts.eval.encoder_processor_decoder.plot_spatiotemporal_video",
         lambda **_kwargs: None,
     )
     _render_rollouts(
-        model=cast(Any, DummyModel()),
+        rollout_fn=rollout,
         dataloader=[object()],
         batch_indices=[0],
         video_dir=tmp_path,

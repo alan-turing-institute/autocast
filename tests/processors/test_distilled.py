@@ -1,10 +1,7 @@
-from typing import cast
-
 import pytest
 import torch
 from torch import nn
 
-from autocast.processors.base import Processor
 from autocast.processors.distilled import DistilledProcessor
 from autocast.processors.flow_matching import FlowMatchingProcessor
 from autocast.types import EncodedBatch
@@ -74,7 +71,7 @@ def test_set_teacher_rejects_non_flow_matching():
     else is rejected up front rather than failing cryptically during training."""
     proc = _student((4, 1), 1)
     with pytest.raises(TypeError, match="flow-matching-capable"):
-        proc.set_teacher(cast(Processor, object()))
+        proc.set_teacher(_student((4, 1), 1))
 
 
 @pytest.mark.parametrize(("spatial", "channels"), SHAPES)
@@ -98,6 +95,29 @@ def test_teacher_excluded_from_checkpoint():
     keys_before = set(proc.state_dict())
     proc.set_teacher(_teacher(2))
     assert set(proc.state_dict()) == keys_before
+
+
+@pytest.mark.parametrize("integrator", ["euler", "heun", "ab3"])
+def test_teacher_endpoint_preserves_sampling_integrator(integrator):
+    class TimeField(nn.Module):
+        def forward(self, z, t, cond=None, global_cond=None):  # noqa: ARG002
+            return t[:, None, None, None, None].square().expand_as(z)
+
+    teacher = FlowMatchingProcessor(
+        backbone=TimeField(),
+        integrator=integrator,
+        flow_ode_steps=4,
+        n_steps_output=1,
+        n_channels_out=1,
+    )
+    student = _student((4, 1), 1)
+    student.set_teacher(teacher)
+    x = torch.zeros(2, 1, 4, 1, 1)
+    torch.manual_seed(12)
+    expected = teacher.map(x, None)
+    torch.manual_seed(12)
+    actual = student._teacher_endpoint(torch.randn_like(x), x, None)
+    torch.testing.assert_close(actual, expected)
 
 
 def test_distillation_matches_teacher_and_keeps_spread():

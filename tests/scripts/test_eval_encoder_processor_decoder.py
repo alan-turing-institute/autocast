@@ -1,13 +1,17 @@
 """Unit tests for evaluation batch-limit resolution."""
 
+import random
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
+import lightning as L
 import matplotlib.pyplot as plt
 import pytest
 import torch
+import yaml
 from omegaconf import OmegaConf
+from torch.utils.data import DataLoader, Dataset, TensorDataset
 
 from autocast.data.datamodule import SpatioTemporalDataModule
 from autocast.data.dataset import ReactionDiffusionDataset
@@ -29,6 +33,7 @@ from autocast.scripts.eval.encoder_processor_decoder import (
     LOLA_WRAPPED_ENCODER_TARGET,
     THE_WELL_DATAMODULE_TARGET,
     DumpSplit,
+    _apply_rollout_subset,
     _build_encode_once_rollout_predict,
     _build_eval_predict_fn,
     _build_lola_autoencoder_config_nodes,
@@ -41,7 +46,9 @@ from autocast.scripts.eval.encoder_processor_decoder import (
     _deterministic_member_average_metric_name,
     _deterministic_member_metric_name,
     _dump_rollout_tensors,
+    _evaluation_sampling_seed,
     _load_lola_autoencoder_config_from_cache,
+    _mark_forward_methods_if_available,
     _maybe_inject_encoder_decoder_from_autoencoder_checkpoint,
     _maybe_swap_to_ambient_datamodule,
     _needs_autoencoder_injection,
@@ -59,10 +66,12 @@ from autocast.scripts.eval.encoder_processor_decoder import (
     _resolve_auto_eval_mode,
     _resolve_dump_rollout_dataloader,
     _resolve_eval_path,
+    _resolve_include_memory_intensive,
     _resolve_rollout_batch_limit,
     _resolve_rollout_channel_names,
     _resolve_rollout_timestep_limit,
     _resolve_trajectory_statistics_dir,
+    _sample_test_windows,
     _should_skip_metric,
     _split_metric_and_metadata_rows,
     _training_runtime_rows,
@@ -97,6 +106,80 @@ def test_resolve_rollout_batch_limit_prefers_explicit_rollout_limit():
     )
 
     assert _resolve_rollout_batch_limit(eval_cfg) == 5
+
+
+class _IndexedTrajectories(Dataset):
+    def __init__(self, files):
+        self.well_dataset = SimpleNamespace(
+            files_paths=list(files), n_trajectories_per_file=list(files.values())
+        )
+        self.norm = SimpleNamespace(core_field_names=["buoyancy", "pressure"])
+        self.size = sum(files.values())
+
+    def __len__(self):
+        return self.size
+
+    def __getitem__(self, index):
+        return index
+
+
+def test_rollout_subset_default_leaves_datamodule_unchanged():
+    assert _apply_rollout_subset(SimpleNamespace(), OmegaConf.create({})) is None
+
+
+def test_rb_subset_is_random_unique_and_identical_across_models_and_passes(REPO_ROOT):
+    path = (
+        REPO_ROOT
+        / "slurm_scripts/comparison/the_well/rayleigh_benard/test64_seed0.yaml"
+    )
+    selection = yaml.safe_load(path.read_text())
+    indices = selection["indices"]
+    assert indices == random.Random(selection["seed"]).sample(range(175), 64)
+    assert len(set(indices)) == 64
+    assert min(indices) < 64 < max(indices)
+    eval_cfg = OmegaConf.create({"rollout_subset": str(path)})
+    for _ in range(2):  # Independently loaded FM and CRPS datamodules.
+        dataset = _IndexedTrajectories(selection["files"])
+        datamodule = SimpleNamespace(rollout_test_dataset=dataset, test_dataset=dataset)
+        assert _apply_rollout_subset(datamodule, eval_cfg) == selection
+        assert datamodule.test_dataset is dataset  # Single-window tests are unchanged.
+        assert _resolve_rollout_channel_names(datamodule.rollout_test_dataset) == [
+            "buoyancy",
+            "pressure",
+        ]
+        for batch_size in (1, 7):  # Metric, per-timestep and video passes share IDs.
+            batches = DataLoader(datamodule.rollout_test_dataset, batch_size=batch_size)
+            assert torch.cat(list(batches)).tolist() == indices
+
+
+@pytest.mark.parametrize("indices", [[], [1, 1], [-1], [3], [True], [1.5]])
+def test_rollout_subset_rejects_invalid_indices(indices, tmp_path):
+    path = tmp_path / "subset.yaml"
+    path.write_text(yaml.safe_dump({"population_size": 3, "indices": indices}))
+    dataset = _IndexedTrajectories({"test.hdf5": 3})
+    datamodule = SimpleNamespace(rollout_test_dataset=dataset)
+    with pytest.raises(ValueError, match="unique integers"):
+        _apply_rollout_subset(
+            datamodule, OmegaConf.create({"rollout_subset": str(path)})
+        )
+    assert datamodule.rollout_test_dataset is dataset
+
+
+@pytest.mark.parametrize("mismatch", ["population", "file_order"])
+def test_rollout_subset_rejects_dataset_mismatch(mismatch, tmp_path):
+    files = {"a.hdf5": 2, "b.hdf5": 1}
+    selection = {"population_size": 3, "files": files, "indices": [0, 2]}
+    if mismatch == "population":
+        selection["population_size"] = 4
+    else:
+        selection["files"] = dict(reversed(list(files.items())))
+    path = tmp_path / "subset.yaml"
+    path.write_text(yaml.safe_dump(selection, sort_keys=False))
+    datamodule = SimpleNamespace(rollout_test_dataset=_IndexedTrajectories(files))
+    with pytest.raises(ValueError, match="does not match"):
+        _apply_rollout_subset(
+            datamodule, OmegaConf.create({"rollout_subset": str(path)})
+        )
 
 
 def test_trajectory_statistics_default_to_dedicated_sibling_directory(tmp_path):
@@ -150,6 +233,51 @@ def test_trajectory_statistics_seed_requires_non_negative_integer(seed):
 
     with pytest.raises(ValueError, match="non-negative integer"):
         _trajectory_statistics_seed(eval_cfg)
+
+
+def test_evaluation_sampling_seed_preserves_legacy_fallback():
+    cfg = OmegaConf.create({"trajectory_statistics": {"sampling_seed": 7}})
+    assert _evaluation_sampling_seed(cfg) is None
+    assert _evaluation_sampling_seed(cfg, rollout=True) is None
+
+    cfg.trajectory_statistics.enabled = True
+    assert _evaluation_sampling_seed(cfg) == 7
+    assert _evaluation_sampling_seed(cfg, rollout=True) == 8
+
+
+def test_explicit_evaluation_seeds_override_legacy_defaults():
+    cfg = OmegaConf.create(
+        {"sampling_seed": 0, "trajectory_statistics": {"enabled": True}}
+    )
+    assert _evaluation_sampling_seed(cfg) == 0
+    assert _evaluation_sampling_seed(cfg, rollout=True) == 1
+
+    cfg.rollout_sampling_seed = 5
+    assert _evaluation_sampling_seed(cfg, rollout=True) == 5
+
+
+@pytest.mark.parametrize(
+    ("field", "seed"), [("sampling_seed", True), ("rollout_sampling_seed", -1)]
+)
+def test_evaluation_sampling_seed_rejects_invalid_values(field, seed):
+    cfg = OmegaConf.create({field: seed})
+    with pytest.raises(ValueError, match=f"eval.{field} must be"):
+        _evaluation_sampling_seed(cfg, rollout=field == "rollout_sampling_seed")
+
+
+def test_test_window_subset_is_seeded_and_respects_batch_limit():
+    loader = DataLoader(TensorDataset(torch.arange(20)), batch_size=2)
+
+    def selected_windows(seed):
+        subset = _sample_test_windows(loader, max_batches=3, seed=seed)
+        assert len(subset) == 3
+        return torch.cat([windows for (windows,) in subset]).tolist()
+
+    windows = selected_windows(seed=42)
+    assert len(set(windows)) == 6
+    assert windows == selected_windows(seed=42)
+    assert windows != selected_windows(seed=43)
+    assert windows != list(range(6))
 
 
 def test_crop_rollout_batch_start_shifts_raw_full_trajectory_batch():
@@ -603,15 +731,45 @@ def test_default_eval_metrics_include_spread_and_skill_for_lola_comparison():
 
 
 def test_should_skip_metric_skips_memory_intensive_ones():
+    """The default guard holds, on the class-derived membership.
+
+    Membership is derived from each metric class's `memory_intensive` flag, so
+    `energy` is NOT guarded (its cost is in the member count, not D-by-D in the
+    field), while the variogram family and the Dawid-Sebastiani score are.
+    """
     assert _should_skip_metric("variogram") is True
-    assert _should_skip_metric("energy") is True
+    assert _should_skip_metric("variogram_temporal") is True
+    assert _should_skip_metric("dss") is True
+    assert _should_skip_metric("energy") is False
     assert _should_skip_metric("crps") is False
     assert _should_skip_metric("ssr") is False
 
 
 def test_should_skip_metric_can_opt_in_to_memory_intensive_ones():
-    assert _should_skip_metric("variogram", skip_memory_intensive=False) is False
-    assert _should_skip_metric("energy", skip_memory_intensive=False) is False
+    assert _should_skip_metric("variogram", include_memory_intensive=True) is False
+    assert _should_skip_metric("dss", include_memory_intensive=True) is False
+
+
+@pytest.mark.parametrize(
+    ("eval_cfg", "expected"),
+    [
+        ({}, False),
+        ({"include_memory_intensive_metrics": True}, True),
+        ({"skip_memory_intensive_metrics": False}, True),
+        ({"skip_memory_intensive_metrics": True}, False),
+        (
+            {
+                "include_memory_intensive_metrics": False,
+                "skip_memory_intensive_metrics": False,
+            },
+            False,
+        ),
+    ],
+)
+def test_resolve_include_memory_intensive_honours_both_keys(eval_cfg, expected):
+    """The legacy inverted key still works; the positive key wins when both set."""
+    resolved = _resolve_include_memory_intensive(cast(Any, OmegaConf.create(eval_cfg)))
+    assert resolved is expected
 
 
 def test_resolve_rollout_channel_names_from_norm_already_subset():
@@ -712,8 +870,11 @@ def test_training_runtime_rows_fall_back_to_average_without_epoch_times():
     assert rows == []
 
 
-def test_render_rollouts_resolves_indices_within_batched_samples(tmp_path, monkeypatch):
-    class DummyModel:
+@pytest.mark.parametrize("use_fabric", [False, True])
+def test_render_rollouts_resolves_indices_within_batched_samples(
+    tmp_path, monkeypatch, use_fabric
+):
+    class DummyModel(torch.nn.Module):
         def rollout(self, *_args, **_kwargs):
             preds = torch.randn(4, 3, 2, 2, 1)
             trues = torch.randn(4, 3, 2, 2, 1)
@@ -729,8 +890,13 @@ def test_render_rollouts_resolves_indices_within_batched_samples(tmp_path, monke
         _fake_plot_spatiotemporal_video,
     )
 
+    model = DummyModel()
+    if use_fabric:
+        model = cast(Any, L.Fabric(accelerator="cpu", devices=1).setup_module(model))
+        _mark_forward_methods_if_available(model, methods=("rollout",))
+
     out_paths = _render_rollouts(
-        model=cast(Any, DummyModel()),
+        rollout_fn=model.rollout,
         dataloader=[object()],
         batch_indices=[0, 1, 2, 3],
         video_dir=tmp_path,
@@ -750,7 +916,7 @@ def test_render_rollouts_resolves_indices_within_batched_samples(tmp_path, monke
 
 
 def test_render_rollouts_can_use_custom_rollout_predict(tmp_path, monkeypatch):
-    class DummyModel:
+    class DummyModel(torch.nn.Module):
         def rollout(self, *_args, **_kwargs):
             msg = "standard rollout should not be called"
             raise AssertionError(msg)
@@ -772,7 +938,7 @@ def test_render_rollouts_can_use_custom_rollout_predict(tmp_path, monkeypatch):
         return preds, trues
 
     out_paths = _render_rollouts(
-        model=cast(Any, DummyModel()),
+        rollout_fn=DummyModel().rollout,
         dataloader=[object()],
         batch_indices=[1],
         video_dir=tmp_path,
@@ -792,7 +958,7 @@ def test_render_rollouts_can_use_custom_rollout_predict(tmp_path, monkeypatch):
 
 
 def test_render_rollouts_can_emit_single_member_diagnostics(tmp_path, monkeypatch):
-    class DummyModel:
+    class DummyModel(torch.nn.Module):
         def rollout(self, *_args, **_kwargs):
             member0 = torch.zeros(1, 2, 2, 2, 1)
             member1 = torch.full_like(member0, 4.0)
@@ -813,7 +979,7 @@ def test_render_rollouts_can_emit_single_member_diagnostics(tmp_path, monkeypatc
     )
 
     out_paths = _render_rollouts(
-        model=cast(Any, DummyModel()),
+        rollout_fn=DummyModel().rollout,
         dataloader=[object()],
         batch_indices=[0],
         video_dir=tmp_path,
@@ -837,7 +1003,7 @@ def test_render_rollouts_can_emit_single_member_diagnostics(tmp_path, monkeypatc
 
 
 def test_render_rollouts_can_emit_separate_member_files(tmp_path, monkeypatch):
-    class DummyModel:
+    class DummyModel(torch.nn.Module):
         def rollout(self, *_args, **_kwargs):
             member0 = torch.zeros(1, 2, 2, 2, 1)
             member1 = torch.full_like(member0, 4.0)
@@ -858,7 +1024,7 @@ def test_render_rollouts_can_emit_separate_member_files(tmp_path, monkeypatch):
     )
 
     out_paths = _render_rollouts(
-        model=cast(Any, DummyModel()),
+        rollout_fn=DummyModel().rollout,
         dataloader=[object()],
         batch_indices=[0],
         video_dir=tmp_path,
@@ -886,7 +1052,7 @@ def test_render_rollouts_can_emit_separate_member_files(tmp_path, monkeypatch):
 def test_render_rollouts_can_emit_inline_and_separate_member_files(
     tmp_path, monkeypatch
 ):
-    class DummyModel:
+    class DummyModel(torch.nn.Module):
         def rollout(self, *_args, **_kwargs):
             member0 = torch.zeros(1, 2, 2, 2, 1)
             member1 = torch.full_like(member0, 4.0)
@@ -907,7 +1073,7 @@ def test_render_rollouts_can_emit_inline_and_separate_member_files(
     )
 
     out_paths = _render_rollouts(
-        model=cast(Any, DummyModel()),
+        rollout_fn=DummyModel().rollout,
         dataloader=[object()],
         batch_indices=[0],
         video_dir=tmp_path,
@@ -933,7 +1099,7 @@ def test_render_rollouts_can_emit_inline_and_separate_member_files(
 
 
 def test_render_rollouts_forwards_transpose_spatial_to_plots(tmp_path, monkeypatch):
-    class DummyModel:
+    class DummyModel(torch.nn.Module):
         def rollout(self, *_args, **_kwargs):
             preds = torch.zeros(1, 2, 2, 3, 1)
             trues = torch.ones_like(preds)
@@ -958,7 +1124,7 @@ def test_render_rollouts_forwards_transpose_spatial_to_plots(tmp_path, monkeypat
     )
 
     out_paths = _render_rollouts(
-        model=cast(Any, DummyModel()),
+        rollout_fn=DummyModel().rollout,
         dataloader=[object()],
         batch_indices=[0],
         video_dir=tmp_path / "videos",
@@ -1045,14 +1211,16 @@ class _FakeRolloutDatamodule:
 
     def __init__(self):
         self.calls: list[tuple[str, int | None]] = []
+        self.test_loader = DataLoader(TensorDataset(torch.empty(0)))
+        self.valid_loader = DataLoader(TensorDataset(torch.empty(0)))
 
     def rollout_test_dataloader(self, batch_size=None):
         self.calls.append(("test", batch_size))
-        return "test_loader"
+        return self.test_loader
 
     def rollout_valid_dataloader(self, batch_size=None):
         self.calls.append(("valid", batch_size))
-        return "valid_loader"
+        return self.valid_loader
 
 
 def test_resolve_dump_rollout_dataloader_uses_test_split_by_default():
@@ -1062,7 +1230,7 @@ def test_resolve_dump_rollout_dataloader_uses_test_split_by_default():
         datamodule, dump_split=DumpSplit.TEST, batch_size=4
     )
 
-    assert loader == "test_loader"
+    assert loader is datamodule.test_loader
     assert datamodule.calls == [("test", 4)]
 
 
@@ -1073,7 +1241,7 @@ def test_resolve_dump_rollout_dataloader_switches_to_validation_split():
         datamodule, dump_split=DumpSplit.VALID, batch_size=4
     )
 
-    assert loader == "valid_loader"
+    assert loader is datamodule.valid_loader
     assert datamodule.calls == [("valid", 4)]
 
 
@@ -1885,15 +2053,17 @@ def test_maybe_swap_to_ambient_datamodule_swaps_for_encode_once(tmp_path):
     assert cfg.datamodule.data_path == "/path/to/raw"
 
 
-def test_maybe_swap_to_ambient_datamodule_loads_from_cache_dir(tmp_path):
+@pytest.mark.parametrize("rollout_steps", [None, 200])
+def test_maybe_swap_to_ambient_datamodule_loads_from_cache_dir(tmp_path, rollout_steps):
     ae_cfg_path = tmp_path / "autoencoder_config.yaml"
     OmegaConf.save(
         OmegaConf.create(
             {
                 "datamodule": {
-                    "_target_": "raw.TheWellDataModule",
+                    "_target_": THE_WELL_DATAMODULE_TARGET,
                     "data_path": "/path/to/raw",
                     "use_normalization": True,
+                    "max_rollout_steps": 100,
                 }
             }
         ),
@@ -1904,6 +2074,7 @@ def test_maybe_swap_to_ambient_datamodule_loads_from_cache_dir(tmp_path):
             "datamodule": {
                 "_target_": "cached.LatentDataModule",
                 "data_path": str(tmp_path),
+                "max_rollout_steps": rollout_steps,
             }
         }
     )
@@ -1919,9 +2090,10 @@ def test_maybe_swap_to_ambient_datamodule_loads_from_cache_dir(tmp_path):
     )
 
     assert result is cfg
-    assert cfg.datamodule._target_ == "raw.TheWellDataModule"
+    assert cfg.datamodule._target_ == THE_WELL_DATAMODULE_TARGET
     assert cfg.datamodule.data_path == "/path/to/raw"
     assert cfg.datamodule.use_normalization is True
+    assert cfg.datamodule.max_rollout_steps == (rollout_steps or 100)
 
 
 @pytest.mark.parametrize("eval_mode", ["ambient", "encode_once"])
@@ -2455,7 +2627,7 @@ def test_render_rollouts_initializes_at_requested_start(tmp_path, monkeypatch, s
     )
     rendered = []
 
-    class DummyModel:
+    class DummyModel(torch.nn.Module):
         def rollout(self, selected, **_kwargs):
             assert selected.input_fields.flatten().tolist() == [float(start)]
             targets = selected.output_fields
@@ -2466,7 +2638,7 @@ def test_render_rollouts_initializes_at_requested_start(tmp_path, monkeypatch, s
         lambda **kwargs: rendered.append(kwargs),
     )
     _render_rollouts(
-        model=cast(Any, DummyModel()),
+        rollout_fn=DummyModel().rollout,
         dataloader=[batch],
         batch_indices=[0],
         video_dir=tmp_path,

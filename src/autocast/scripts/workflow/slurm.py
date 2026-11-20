@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shlex
 import subprocess
 from datetime import datetime
 from pathlib import Path
+from uuid import uuid4
 
 from omegaconf import OmegaConf
 
@@ -288,7 +290,7 @@ def extract_launcher_overrides(
     remaining: list[str] = []
 
     for override in overrides:
-        norm = normalized_override(override)
+        norm = override.lstrip("+")
         if norm.startswith("hydra/launcher="):
             launcher_name = norm.split("=", 1)[1]
             continue
@@ -414,77 +416,168 @@ def _submit_one_sbatch_job(
     job_name_suffix: str | None = None,
     umask_value: int,
     runtime_typechecking: bool,
+    chain_options: tuple[str, ...] = (),
+    dry_run: bool = False,
 ) -> tuple[str, str]:
     job_name = derive_sbatch_job_name(module, output_dir, job_overrides)
     if job_name_suffix:
         suffix = sanitize_name_part(job_name_suffix)
         if suffix:
-            job_name = f"{job_name}_{suffix}"[:120]
+            job_name = f"{job_name[: 119 - len(suffix)]}_{suffix}"
 
-    command_text = format_command(run_module_command(module, job_overrides))
-    launch_command = (
-        f"exec srun {command_text}"
-        if _should_use_srun(merged_launcher_cfg)
-        else f"exec {command_text}"
-    )
+    command = run_module_command(module, job_overrides)
+    if _should_use_srun(merged_launcher_cfg):
+        srun_args = ["--kill-on-bad-exit=1"] if chain_options else []
+        command = ["srun", *srun_args, *command]
     script_lines = [
         "#!/bin/bash",
         "set -euo pipefail",
         f"cd {shlex.quote(str(Path.cwd().resolve()))}",
         f"export RUNTIME_TYPECHECKING={str(runtime_typechecking).lower()}",
+        *(str(line) for line in setup_commands),
+        f"exec {format_command(command)}",
     ]
-    script_lines.extend(str(line) for line in setup_commands)
-    script_lines.append(launch_command)
-
-    with temporary_umask(umask_value):
-        output_dir.mkdir(parents=True, exist_ok=True)
-        batch_script_path.parent.mkdir(parents=True, exist_ok=True)
-        batch_script_path.write_text("\n".join(script_lines) + "\n", encoding="utf-8")
-
-    script_mode = 0o777 & (~umask_value)
-    os.chmod(batch_script_path, script_mode)
-
+    script = "\n".join(script_lines) + "\n"
     sbatch_cmd = _build_sbatch_command(
         job_name=job_name,
         log_dir=output_dir,
         launcher_cfg=merged_launcher_cfg,
         batch_script_path=batch_script_path,
     )
+    sbatch_cmd[-1:-1] = chain_options
+    if dry_run:
+        print(f"DRY-RUN: {format_command(sbatch_cmd)}\n{script}")
+        return f"<{batch_script_path.stem}-job-id>", job_name
 
+    with temporary_umask(umask_value):
+        output_dir.mkdir(parents=True, exist_ok=True)
+        batch_script_path.parent.mkdir(parents=True, exist_ok=True)
+        batch_script_path.write_text(script, encoding="utf-8")
+    os.chmod(batch_script_path, 0o777 & (~umask_value))
     result = subprocess.run(sbatch_cmd, check=True, capture_output=True, text=True)
     raw_job_id = result.stdout.strip().splitlines()[-1] if result.stdout else ""
     job_id = raw_job_id.split(";", 1)[0]
     return job_id, job_name
 
 
-def submit_via_sbatch(  # noqa: PLR0915
+def _submit_training_chain(
+    module: str,
+    output_dir: Path,
+    overrides: list[str],
+    launcher: dict,
+    *,
+    segments: int,
+    umask: int,
+    runtime_typechecking: bool,
+    dry_run: bool,
+) -> None:
+    if segments < 2 or len(expand_sweep_overrides(overrides)) != 1:
+        msg = "--chain requires at least two allocations and one configuration."
+        raise ValueError(msg)
+    if output_dir.exists() or output_dir.is_symlink():
+        raise ValueError(f"A training chain requires a new run directory: {output_dir}")
+    minutes = _as_positive_int(launcher.get("timeout_min"))
+    extra = launcher.get("additional_parameters")
+    extra = extra if isinstance(extra, dict) else {}
+    if minutes < 2 or "time" in extra:
+        msg = "Set hydra.launcher.timeout_min to an integer of at least two minutes."
+        raise ValueError(msg)
+    launcher.setdefault("nodes", extra.get("nodes", 1))
+    budget = minutes - min(30, max(1, minutes // 10))
+    run_id = uuid4().hex[:12]
+    chain_dir = output_dir / ".chain"
+    finished = shlex.quote(str(chain_dir / "finished"))
+    setup = launcher.get("setup", [])
+    if not dry_run:
+        with temporary_umask(umask):
+            output_dir.mkdir(parents=True, exist_ok=False)
+
+    previous = None
+    for index in range(1, segments + 1):
+        segment = chain_dir / f"segment-{index:04d}"
+        prologue = [
+            ': "${SLURM_JOB_ID:?Run inside a Slurm allocation}"',
+            "allocation_start=$(date +%s)",
+        ]
+        job_overrides = overrides.copy()
+        options = ("--no-requeue",)
+        if previous is not None:
+            options += (f"--dependency=afterok:{previous}", "--kill-on-invalid-dep=yes")
+            prologue += [
+                f"finished={finished}",
+                'if [[ -e "$finished" || -L "$finished" ]]; then',
+                '  [[ -L "$finished" && -f "$finished" ]] || '
+                "{ echo 'Chain completion checkpoint is missing' >&2; exit 1; }",
+                "  exit 0",
+                "fi",
+            ]
+            checkpoint = chain_dir / f"segment-{index - 1:04d}.ckpt"
+            resume = json.dumps(str(checkpoint), ensure_ascii=False)
+            job_overrides.append(f"++resume_from_checkpoint={resume}")
+        prologue += [
+            f"mkdir {shlex.quote(str(segment.with_suffix('.started')))}",
+            f'export AUTOCAST_SLURM_CHAIN="{index}:'
+            f'$((allocation_start + {budget * 60})):{run_id}"',
+            f"export AUTOCAST_SLURM_CHAIN_FINAL={int(index == segments)}",
+        ]
+        previous, _ = _submit_one_sbatch_job(
+            module=module,
+            output_dir=output_dir,
+            job_overrides=job_overrides,
+            setup_commands=[*prologue, *(setup if isinstance(setup, list) else [])],
+            merged_launcher_cfg=launcher,
+            batch_script_path=segment.with_suffix(".sh"),
+            job_name_suffix=segment.name,
+            umask_value=umask,
+            runtime_typechecking=runtime_typechecking,
+            chain_options=options,
+            dry_run=dry_run,
+        )
+        if not dry_run:
+            if not previous.isdecimal():
+                raise ValueError(f"Unexpected sbatch job ID: {previous!r}")
+            segment.with_suffix(".job-id").write_text(previous + "\n", encoding="utf-8")
+            print(f"Submitted Slurm job {previous} for {segment.name}", flush=True)
+
+
+def submit_via_sbatch(
     module: str,
     overrides: list[str],
     runtime_typechecking: bool = False,
     dry_run: bool = False,
+    *,
+    chain: int | None = None,
 ) -> None:
     """Submit *module* as one or more SLURM jobs via ``sbatch``."""
     merged_launcher_cfg, module_overrides = _resolve_launcher_submission_context(
         overrides
     )
 
-    if dry_run:
-        sweep_dir = extract_override_value(overrides, "hydra.sweep.dir")
-        run_dir_override = extract_override_value(overrides, "hydra.run.dir")
-        output_dir_raw = sweep_dir or run_dir_override
-        output_dir = (
-            Path(output_dir_raw).expanduser().resolve()
-            if output_dir_raw is not None
-            else Path.cwd().resolve()
+    output_dir_raw = extract_override_value(
+        overrides, "hydra.sweep.dir"
+    ) or extract_override_value(overrides, "hydra.run.dir")
+    output_dir = Path(output_dir_raw or ".").expanduser().resolve()
+    module_run_overrides = set_override(
+        strip_hydra_sweep_controls(module_overrides),
+        "hydra.run.dir",
+        json.dumps(str(output_dir), ensure_ascii=False) if chain else str(output_dir),
+    )
+
+    if chain is not None:
+        _submit_training_chain(
+            module,
+            output_dir,
+            module_run_overrides,
+            merged_launcher_cfg,
+            segments=chain,
+            umask=resolve_umask_from_overrides(overrides),
+            runtime_typechecking=runtime_typechecking,
+            dry_run=dry_run,
         )
+        return
 
-        module_run_overrides = [
-            *(o for o in module_overrides if not o.startswith("hydra.run.dir=")),
-            f"hydra.run.dir={output_dir}",
-        ]
-        module_run_overrides = strip_hydra_sweep_controls(module_run_overrides)
-        expanded_jobs = expand_sweep_overrides(module_run_overrides)
-
+    expanded_jobs = expand_sweep_overrides(module_run_overrides)
+    if dry_run:
         if len(expanded_jobs) == 1:
             print(
                 "DRY-RUN: "
@@ -515,14 +608,6 @@ def submit_via_sbatch(  # noqa: PLR0915
 
     umask_value = resolve_umask_from_overrides(overrides)
 
-    sweep_dir = extract_override_value(overrides, "hydra.sweep.dir")
-    run_dir_override = extract_override_value(overrides, "hydra.run.dir")
-    output_dir_raw = sweep_dir or run_dir_override
-    output_dir = (
-        Path(output_dir_raw).expanduser().resolve()
-        if output_dir_raw is not None
-        else Path.cwd().resolve()
-    )
     with temporary_umask(umask_value):
         output_dir.mkdir(parents=True, exist_ok=True)
     ensure_group_writable_parents(output_dir)
@@ -531,12 +616,6 @@ def submit_via_sbatch(  # noqa: PLR0915
     if not isinstance(setup_commands, list):
         setup_commands = []
 
-    module_run_overrides = [
-        *(o for o in module_overrides if not o.startswith("hydra.run.dir=")),
-        f"hydra.run.dir={output_dir}",
-    ]
-    module_run_overrides = strip_hydra_sweep_controls(module_run_overrides)
-    expanded_jobs = expand_sweep_overrides(module_run_overrides)
     submission_ts = _submission_timestamp()
 
     if len(expanded_jobs) == 1:

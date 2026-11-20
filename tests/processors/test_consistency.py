@@ -1,10 +1,7 @@
-from typing import cast
-
 import pytest
 import torch
 from torch import nn
 
-from autocast.processors.base import Processor
 from autocast.processors.consistency import ConsistencyDistilledProcessor
 from autocast.processors.flow_matching import FlowMatchingProcessor
 from autocast.types import EncodedBatch
@@ -136,7 +133,7 @@ def test_set_teacher_rejects_non_flow_matching():
     else is rejected up front rather than failing cryptically during training."""
     proc = _student((4, 1), 1)
     with pytest.raises(TypeError, match="flow-matching-capable"):
-        proc.set_teacher(cast(Processor, object()))
+        proc.set_teacher(_student((4, 1), 1))
 
 
 def test_teacher_excluded_from_checkpoint():

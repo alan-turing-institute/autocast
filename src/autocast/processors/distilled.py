@@ -2,15 +2,17 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
-from typing import Protocol, cast
+from typing import Protocol, cast, runtime_checkable
 
 import torch
 from torch import nn
 
 from autocast.processors.base import Processor
+from autocast.processors.flow_matching import FlowMatchingProcessor
 from autocast.types import EncodedBatch, Tensor
 
 
+@runtime_checkable
 class _FlowTeacher(Protocol):
     """The flow-matching teacher interface the distilled student consumes."""
 
@@ -125,6 +127,8 @@ class DistilledProcessor(Processor):
     ) -> Tensor:
         """Integrate the teacher's flow ODE from a *given* noise z to its sample."""
         teacher = self._teacher[0]
+        if isinstance(teacher, FlowMatchingProcessor):
+            return teacher.map_from_source(x, global_cond, source_states=z)
         steps = max(int(teacher.flow_ode_steps), 1)
         integrator = getattr(teacher, "integrator", "euler")
         dt = torch.tensor(1.0 / steps, device=z.device, dtype=z.dtype)

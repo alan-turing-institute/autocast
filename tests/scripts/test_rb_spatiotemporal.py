@@ -3,12 +3,26 @@
 import pytest
 import torch
 from hydra import compose, initialize_config_dir
+from hydra.utils import get_class
+from omegaconf import OmegaConf
 
+from autocast.data.encoded_dataset import MiniWellDataModule
 from autocast.nn.spatiotemporal_vit import SpatiotemporalViTBackbone
 from autocast.processors.diffusion import DiffusionProcessor
 from autocast.processors.flow_matching import FlowMatchingProcessor
-from autocast.scripts.setup import _build_processor, setup_processor_model
-from autocast.types import EncodedBatch
+from autocast.processors.spatiotemporal_vit import (
+    SpatiotemporalViTMaskedWindowProcessor,
+)
+from autocast.scripts.data import build_datamodule
+from autocast.scripts.eval.encoder_processor_decoder import (
+    _build_lola_raw_datamodule_config,
+)
+from autocast.scripts.setup import (
+    _build_processor,
+    setup_epd_model,
+    setup_processor_model,
+)
+from autocast.types import Batch, EncodedBatch
 
 
 @pytest.fixture(autouse=True)
@@ -17,6 +31,71 @@ def single_thread():
     torch.set_num_threads(1)
     yield
     torch.set_num_threads(previous)
+
+
+@pytest.mark.parametrize("config_name", ["encoder_processor_decoder", "processor"])
+def test_rb_reference_composes_with_complete_forecast_truth(config_name, REPO_ROOT):
+    with initialize_config_dir(
+        str(REPO_ROOT / "src/autocast/configs"), version_base=None
+    ):
+        cfg = compose(
+            config_name=config_name,
+            overrides=["datamodule=rayleigh_benard", "eval=the_well/rayleigh_benard"],
+        )
+        reference = compose(config_name=config_name, overrides=["eval=reference"])
+
+    assert cfg.datamodule.well_dataset_name == "rayleigh_benard"
+    assert cfg.eval.n_members == 16
+    assert cfg.eval.batch_size == cfg.datamodule.batch_size == 1
+    assert cfg.eval.denormalize_test_metrics
+    assert not reference.eval.denormalize_test_metrics
+    assert cfg.eval.sampling_seed == 42
+    assert cfg.eval.rollout_sampling_seed == 0
+    assert cfg.eval.rollout_start == 16
+    assert cfg.eval.max_rollout_steps * cfg.datamodule.n_steps_output == 180
+    assert cfg.datamodule.max_rollout_steps >= (
+        cfg.eval.rollout_start + cfg.datamodule.n_steps_input + 180
+    )
+    assert cfg.eval.metrics == reference.eval.metrics
+    assert cfg.eval.coverage_levels == reference.eval.coverage_levels
+    assert OmegaConf.to_container(cfg.eval.metric_windows_rollout) == [
+        None,
+        [0, 4],
+        [6, 12],
+        [13, 30],
+        [31, 99],
+    ]
+    assert not cfg.eval.trajectory_statistics.enabled
+    assert reference.eval.trajectory_statistics.enabled
+    assert reference.eval.trajectory_statistics.include_per_timestep
+
+
+def test_rb_reference_preserves_horizon_through_cached_latent_setup(
+    REPO_ROOT, tmp_path
+):
+    with initialize_config_dir(
+        str(REPO_ROOT / "src/autocast/configs"), version_base=None
+    ):
+        cfg = compose(
+            config_name="processor",
+            overrides=[
+                "local_experiment=the_well/rayleigh_benard/fm_spatiotemporal_latent",
+                "eval=the_well/rayleigh_benard",
+            ],
+        )
+    # Construct the cache loader without any data access. Its constructor must
+    # not receive the raw loader's horizon, which remains available for the swap.
+    datamodule = build_datamodule(cfg)
+    assert isinstance(datamodule, MiniWellDataModule)
+    assert datamodule.n_steps_output == 4
+    assert cfg.datamodule.max_rollout_steps == 200
+    raw = _build_lola_raw_datamodule_config(
+        OmegaConf.create({"dataset": {"name": "rayleigh_benard"}}),
+        tmp_path,
+        cfg.datamodule,
+    )
+    assert raw.max_rollout_steps == 200
+    assert not raw.use_normalization
 
 
 @pytest.mark.parametrize(
@@ -185,3 +264,141 @@ def test_rb_masked_configs_train_and_forecast_through_existing_setup(
     assert torch.isfinite(pred).all()
     if method == "crps":
         assert not torch.equal(pred[..., 0], pred[..., 1])
+
+
+def test_rb_ambient_spatiotemporal_protocol(REPO_ROOT):
+    with initialize_config_dir(
+        str(REPO_ROOT / "src/autocast/configs"), version_base=None
+    ):
+        cfg = compose(
+            config_name="encoder_processor_decoder",
+            overrides=[
+                "local_experiment=the_well/rayleigh_benard/crps_spatiotemporal_ambient",
+                "trainer.max_epochs=16",
+            ],
+        )
+        latent = compose(
+            config_name="processor",
+            overrides=[
+                "local_experiment=the_well/rayleigh_benard/crps_spatiotemporal_latent",
+                "trainer.max_epochs=16",
+            ],
+        )
+    assert cfg.optimizer == latent.optimizer
+    assert cfg.trainer == latent.trainer
+    # Public re-exports and implementation paths can name the same metric.
+    assert {
+        name: get_class(metric._target_)
+        for name, metric in cfg.model.val_metrics.items()
+    } == {
+        name: get_class(metric._target_)
+        for name, metric in latent.model.val_metrics.items()
+    }
+    for key in ("_target_", "context_mask", "loss_func", "n_noise_input_channels"):
+        assert cfg.model.processor[key] == latent.model.processor[key]
+    assert cfg.datamodule._target_ == "autocast.data.datamodule.TheWellDataModule"
+    assert "data_path" not in cfg.datamodule  # No cached-latent loader settings.
+    assert cfg.datamodule.use_normalization
+    assert cfg.datamodule.normalization_path.endswith("rayleigh_benard/stats.yaml")
+    assert list(cfg.datamodule.transform.scalar_names) == ["Rayleigh", "Prandtl"]
+    assert cfg.model.encoder._target_ == "autocast.encoders.identity.IdentityEncoder"
+    assert cfg.model.decoder._target_ == "autocast.decoders.identity.IdentityDecoder"
+    assert cfg.autoencoder_checkpoint is None
+    assert cfg.model.train_in_latent_space  # Delegate to masked processor loss.
+    assert cfg.model.loss_func is None
+    assert cfg.datamodule.batch_size == cfg.model.n_members == 8
+    assert cfg.datamodule.batch_size * cfg.trainer.devices == 32
+    assert 32 * cfg.model.processor.n_members == 256
+    assert cfg.trainer.accumulate_grad_batches == 1
+    assert cfg.trainer.limit_train_batches == 64
+    assert cfg.optimizer.cosine_epochs == 4096
+    assert cfg.optimizer.learning_rate == 1e-4
+    assert cfg.eval.rollout_start == cfg.eval.n_members == 16
+    backbone = cfg.model.processor.backbone
+    assert (backbone.hid_channels, backbone.hid_blocks, backbone.attention_heads) == (
+        2048,
+        16,
+        16,
+    )
+    assert list(backbone.patch_size) == [1, 16, 16]
+    assert backbone.checkpointing
+    with torch.device("meta"):
+        processor = _build_processor(
+            cfg.model,
+            {
+                "in_channels": 4,
+                "out_channels": 4,
+                "n_channels_out": 4,
+                "n_steps_input": 1,
+                "n_steps_output": 4,
+                "spatial_resolution": (512, 128),
+            },
+            global_cond_channels=6,
+        )
+    assert isinstance(processor, SpatiotemporalViTMaskedWindowProcessor)
+    assert processor.backbone.vit.in_proj.in_features == 2 * 4 * 16 * 16
+    assert len(processor.backbone.vit.blocks) == 16
+
+
+def test_rb_ambient_masked_loss_and_forecast_keep_physical_grid(
+    REPO_ROOT, dummy_datamodule
+):
+    with initialize_config_dir(
+        str(REPO_ROOT / "src/autocast/configs"), version_base=None
+    ):
+        cfg = compose(
+            config_name="encoder_processor_decoder",
+            overrides=[
+                "local_experiment=the_well/rayleigh_benard/crps_spatiotemporal_ambient"
+            ],
+        )
+    # Keep the pixel patch/grid and real setup path; shrink only the trunk.
+    backbone = cfg.model.processor.backbone
+    backbone.hid_channels, backbone.hid_blocks = 8, 1
+    backbone.attention_heads, backbone.mod_features = 2, 4
+    backbone.dropout = 0.0
+    cfg.model.n_members = 3
+    batch = Batch(
+        input_fields=torch.randn(1, 1, 512, 128, 4),
+        output_fields=torch.randn(1, 4, 512, 128, 4),
+        constant_scalars=torch.tensor([[2.0, 4.0]]),
+        constant_fields=None,
+        boundary_conditions=torch.zeros(1, 2, 2),
+    )
+    model = setup_epd_model(
+        cfg,
+        {
+            "channel_count": 4,
+            "n_steps_input": 1,
+            "n_steps_output": 4,
+            "example_batch": batch,
+        },
+        dummy_datamodule,
+    )
+    encoded = model.encoder_decoder.encoder.encode_batch(batch)
+    torch.testing.assert_close(encoded.encoded_inputs, batch.input_fields)
+    torch.testing.assert_close(encoded.encoded_output_fields, batch.output_fields)
+    assert encoded.global_cond is not None
+    torch.testing.assert_close(encoded.global_cond[:, :2], batch.constant_scalars)
+    assert encoded.global_cond.shape == (1, 6)
+    processor = model.processor
+    assert isinstance(processor, SpatiotemporalViTMaskedWindowProcessor)
+    shapes = []
+    hook = processor.backbone.vit.blocks[0].register_forward_pre_hook(
+        lambda _, args: shapes.append(args[0].shape)
+    )
+    loss, pred = model.loss(batch)
+    assert pred is None  # Masked processor owns the training ensemble/loss.
+    assert torch.isfinite(loss)
+    loss.backward()
+    assert all(
+        p.grad is not None and torch.isfinite(p.grad).all() for p in model.parameters()
+    )
+    with torch.no_grad():
+        pred = model(batch)
+    hook.remove()
+    assert shapes
+    assert all(shape == (3, 1280, 8) for shape in shapes)
+    assert pred.shape == (1, 4, 512, 128, 4, 3)
+    assert torch.isfinite(pred).all()
+    assert not torch.equal(pred[..., 0], pred[..., 1])

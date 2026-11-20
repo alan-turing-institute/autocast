@@ -110,3 +110,67 @@ The dimensions here are:
 - 1 input channel (the concentration)
 
 Now that we have some data in hand, let's move on to training a model on it!
+
+## Larger datasets with Zarr
+
+AutoSim can also export synthetic fields as sharded Zarr v3 arrays. Install the
+optional reader with `uv sync --extra zarr`. Select `datamodule=zarr` and set
+`datamodule.data_path` to a dataset root containing `train/data.zarr`,
+`valid/data.zarr`, `test/data.zarr` and training-derived `stats.yml`.
+
+The reader expects the `autosim.spatiotemporal` schema, version 1: each split is
+a Zarr group with a `data` array in `[trajectory, time, height, width, channel]`
+order, field names, provenance and a completion attribute. External Zarr stores
+need preprocessing or an adapter to this schema; the file format alone does
+not define variable selection or channel order.
+
+Initialization reads metadata, and each sample reads only its requested window.
+Choose `n_steps_input`, `n_steps_output` and `stride` in the datamodule; `stride`
+advances the window start, while frames within the window remain consecutive.
+Storage shards do not reset trajectories, and windows can cross shard boundaries.
+Distributed training partitions these window indices with its normal sampler.
+
+`datamodule.rollout_steps` bounds the target horizon of evaluation windows.
+Shorter trajectories use the available frames after the context and `start_frame`;
+the horizon must still contain at least one `n_steps_output` prediction block.
+`datamodule.rollout_window_stride` optionally changes the spacing between their
+start frames, defaulting to the training window stride.
+Keep `eval.rollout_start=0` for Zarr: it assumes full trajectories. To start window
+sampling later, set `datamodule.start_frame` (use `+datamodule.start_frame=N` on the
+command line); this offsets the first context frame without shortening each window.
+For trajectory statistics over multiple rollout windows per trajectory, set
+`eval.trajectory_statistics.include_per_timestep=false`. Per-timestep trajectory
+statistics currently require one sample per trajectory; evaluation checks this
+before computing metrics.
+The full-trajectory latent-cache workflow is not supported by this reader: long
+trajectories require a streaming encoder, rather than loading an entire sequence
+onto the device. Existing `.pt` and HDF5 configurations retain their own loaders.
+
+### Measuring the storage layout
+
+Create otherwise identical datasets using different AutoSim `dataset.chunk_steps`
+and `dataset.shard_steps` values, then compare the actual lazy DataLoader:
+
+```bash
+uv run --extra zarr python -m autocast.scripts.benchmark_zarr_loader \
+  ../data/layout_a/train/data.zarr ../data/layout_b/train/data.zarr \
+  --input-steps 2 --output-steps 12 --batch-size 2 --workers 2 \
+  --warmup-batches 5 --batches 100 --output outputs/loader-comparison.json
+```
+
+The benchmark uses the same random window indices for each layout. It reports
+metadata initialization, first-batch startup, steady-state samples per second,
+effective returned bytes per second and batch-wait latency. Throughput includes
+the full measured consumption loop, not just time spent waiting for batches.
+The batch size is **per process**, not the global training batch. File-cache
+state is uncontrolled; these are CPU loader measurements, not physical disk
+bandwidth or GPU training throughput. Repeat representative cases on the target
+filesystem, including multiple training ranks, before selecting a layout.
+
+Read chunks control how much data each small window must fetch. Shards group
+chunks into larger files to reduce file count. Neither size fixes the training
+window length. Compare short and longer windows, several worker counts and
+prefetch depths; more workers are not necessarily faster. Worker-prefetch memory
+scales roughly with `workers × prefetch_factor × batch_size × window_bytes`,
+in addition to codec buffers and filesystem caches. The datamodule uses spawned
+workers and process-local array handles.

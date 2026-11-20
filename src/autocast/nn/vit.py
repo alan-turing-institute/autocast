@@ -2,6 +2,7 @@
 
 from collections.abc import Sequence
 from enum import Enum
+from functools import partial
 
 from azula.nn.vit import ViT
 from einops.layers.torch import Rearrange
@@ -10,6 +11,11 @@ from torch import nn
 from autocast.nn.base import TemporalBackboneBase
 from autocast.nn.blockwise_vit import BlockwiseViT
 from autocast.nn.fourier_vit import FourierViT
+from autocast.nn.graph_vit import (
+    GraphAttentionBackend,
+    PeriodicGraphViT,
+    validate_graph_attention_backend,
+)
 
 
 class ViTModulationMode(str, Enum):
@@ -64,6 +70,8 @@ class SpatialViTBackbone(TemporalBackboneBase):
         spatial_modulation: bool = False,
         modulation_mode: ViTModulationMode | str = ViTModulationMode.ADALN,
         fourier_num_bands: int = 4,
+        graph_hops: int | None = None,
+        graph_attention_backend: GraphAttentionBackend = "masked",
     ):
         """Initialize the spatial ViT backbone.
 
@@ -110,6 +118,8 @@ class SpatialViTBackbone(TemporalBackboneBase):
                 spectral_noise instead accepts block-specific spatial AdaLN
                 vectors, without filtering activations.
             fourier_num_bands: Number of overlapping radial bands in Fourier mode.
+            graph_hops: Optional maximum attention distance in periodic 2D grid hops.
+            graph_attention_backend: How to evaluate attention over the graph.
         """
         if window_size is not None:
             msg = (
@@ -118,6 +128,9 @@ class SpatialViTBackbone(TemporalBackboneBase):
             )
             raise ValueError(msg)
         modulation_mode = ViTModulationMode(modulation_mode)
+        if graph_hops is not None and modulation_mode != ViTModulationMode.ADALN:
+            msg = "Graph attention requires modulation_mode='adaln'."
+            raise ValueError(msg)
         if modulation_mode == ViTModulationMode.FOURIER and spatial_modulation:
             msg = "Fourier modulation currently requires global conditioning."
             raise ValueError(msg)
@@ -165,6 +178,8 @@ class SpatialViTBackbone(TemporalBackboneBase):
             rope=rope,
             rpb=rpb,
             checkpointing=checkpointing,
+            graph_hops=graph_hops,
+            graph_attention_backend=graph_attention_backend,
         )
         self.vit = (
             FourierViT(vit, self.mod_features, fourier_num_bands)
@@ -191,10 +206,18 @@ class SpatialViTBackbone(TemporalBackboneBase):
         """Return the ViT backbone."""
         return self.vit
 
-    def _build_backbone(self, **kwargs) -> ViT:
+    def _build_backbone(
+        self,
+        *,
+        graph_hops: int | None = None,
+        graph_attention_backend: GraphAttentionBackend = "masked",
+        **kwargs,
+    ) -> ViT:
         """Build the ViT backbone.
 
         Args:
+            graph_hops: When set, restrict attention to this many periodic grid hops.
+            graph_attention_backend: How to evaluate attention over the graph.
             **kwargs: Keyword arguments including:
                 - hid_channels: Hidden dimension for ViT transformer
                 - hid_blocks: Number of transformer blocks
@@ -212,7 +235,20 @@ class SpatialViTBackbone(TemporalBackboneBase):
         Returns:
             ViT module
         """
-        return ViT(
+        if graph_hops is None and graph_attention_backend != "masked":
+            validate_graph_attention_backend(graph_attention_backend)
+            msg = "Selecting a graph attention backend requires graph_hops."
+            raise ValueError(msg)
+        build_vit = (
+            ViT
+            if graph_hops is None
+            else partial(
+                PeriodicGraphViT,
+                graph_hops=graph_hops,
+                graph_attention_backend=graph_attention_backend,
+            )
+        )
+        return build_vit(
             in_channels=self.in_channels * self.n_steps_output,
             out_channels=self.out_channels * self.n_steps_output,
             cond_channels=self.cond_channels * self.n_steps_input,

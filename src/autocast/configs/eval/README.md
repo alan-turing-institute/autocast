@@ -7,6 +7,11 @@ This directory contains composable evaluation configurations for different model
 - **`default.yaml`**: Base evaluation config with sensible defaults
 - **`encoder_processor_decoder.yaml`**: EPD-specific eval settings (extends default)
 - **`processor.yaml`**: Processor model eval settings (extends default)
+- **`reference.yaml`**: Shared comparison settings (`eval=reference`) for
+  ensemble size, rollout length, scoring windows, and metrics.
+- **`the_well/rayleigh_benard.yaml`**: RB comparison settings
+  (`eval=the_well/rayleigh_benard`): 16 members, start frame 16 and 180 forecast
+  frames, using the same metric list as `reference`.
 
 ## Usage
 
@@ -55,22 +60,50 @@ All eval configs support these parameters:
   gated separately via `compute_rollout_metrics`. Enabling
   `trajectory_statistics.enabled` requires both metric passes and overrides
   these skip flags; its outputs go to the trajectory statistics directory.
+- `denormalize_test_metrics`: Score EPD next-window predictions and targets
+  in physical units using the fitted normalizer. Defaults to `false`, including
+  in `eval=reference`. The RB preset enables it. Ambient and encode-once
+  rollouts already score in physical units.
+- `sampling_seed`: Optional non-negative integer for stochastic inference,
+  independent of the top-level training `seed`. Resets PyTorch sampling before
+  next-window scoring; rollout scoring uses this seed plus one unless overridden
+  by `rollout_sampling_seed`. An explicit outer seed takes precedence over the
+  legacy `trajectory_statistics.sampling_seed`, even when the latter is inherited.
+  With both outer seeds null, existing behaviour is retained: trajectory mode
+  uses its nested seed (default 42), and ordinary evaluation does not reseed.
+- `rollout_sampling_seed`: Optional seed for rollout scoring, including the
+  per-timestep scoring pass, and for rollout tensor dumps. This permits the
+  RB preset's next-window/rollout seed pair of 42/0.
+- `test_subset_seed`: Optional seed for sampling test windows without replacement
+  when `max_test_batches` is set. Trajectory statistics require the full loader.
 - `metrics`: List of metrics to compute (default includes mse/mae/rmse/vrmse,
   power spectrum scores `psrmse*`, cross-correlation spectrum scores `pscc*`,
   and ensemble scores `crps`, `fcrps`, `afcrps`, `spread`, `skill`, `ssr`,
-  `winkler`. Note that for ensemble predictions, `skill` is the RMSE of the
-  ensemble mean, so it matches `rmse` numerically and is included for explicit
-  spread/skill reporting.)
-- `skip_memory_intensive_metrics`: When `true` (default), skip high-memory
-  metrics such as `energy` and `variogram` even if they are listed in
-  `metrics`. Opt in with `eval.metrics=[...,energy]`
-  `eval.skip_memory_intensive_metrics=false`.
+  `ssr_pooled`, `collection_coverage`, `winkler`. Note that for ensemble
+  predictions, `skill` is the RMSE of the ensemble mean, so it matches `rmse`
+  numerically and is included for explicit spread/skill reporting.)
+- `include_memory_intensive_metrics`: When `false` (default), skip high-memory
+  metrics even if they are listed in `metrics`. These are the variogram family
+  and the multivariate Dawid-Sebastiani score (`dss`) -- the ones whose state is
+  D-by-D in the field size. Membership comes from each metric class's
+  `memory_intensive` flag rather than a maintained name list, so a new registry
+  alias of a guarded class is covered automatically. Opt in with
+  `eval.include_memory_intensive_metrics=true`.
+  The older inverted key `eval.skip_memory_intensive_metrics` is still honoured
+  when the positive one is absent. Note `energy` is *not* guarded: its cost is
+  in the member count, not the field size.
 - Deterministic metrics on ensemble predictions are scored on the ensemble
   mean by default, matching LOLA's VRMSE/skill evaluation.
 - `csv_path`: Custom path for metrics CSV (default: work_dir/evaluation_metrics.csv)
 - `video_dir`: Custom directory for rollout videos (default: work_dir/videos)
 - `batch_indices`: List of rollout sample indices to visualize (resolved across
   batched rollout dataloader samples)
+- `rollout_subset`: Optional path to a YAML manifest containing `population_size`
+  and unique `indices` for the stored `rollout_test_dataset`. An optional `files`
+  mapping verifies The Well's ordered filenames and trajectory counts. Applies
+  to test rollout metrics, dumps and videos; single-window tests are unchanged.
+  The manifest is copied beside the metrics. Defaults to `null` (all trajectories);
+  incompatible with complete-dataset `trajectory_statistics` and validation dumps.
 - `video_format`: Video format (mp4 or gif)
 - `video_sample_index`: Sample index within batch to visualize
 - `fps`: Frames per second for videos
@@ -100,6 +133,39 @@ All eval configs support these parameters:
 - Ensemble-only metrics (`crps`, `fcrps`, `afcrps`, `energy`, `variogram`,
   `spread`, `skill`, `ssr`, `winkler`) are skipped automatically when
   `model.n_members <= 1`
+
+## Seeded reference evaluation
+
+`eval=reference` enables per-trajectory and per-lead rollout outputs alongside
+aggregate metrics. Set `eval.sampling_seed` to override the default inherited
+from `eval.trajectory_statistics.sampling_seed` (42).
+With the inherited seed, auxiliary rollout passes continue the RNG sequence
+from the main rollout pass. Explicit eval seeds reset those passes.
+Set `eval.trajectory_statistics.enabled=false` for partial, multi-device,
+single-member, or unsupported loaders. The seed still applies.
+
+## Rayleigh-Benard reference
+
+`eval=the_well/rayleigh_benard` scores in physical units with 16 members and
+180 forecast frames from frame 16. For a saved latent FM run:
+
+```bash
+uv run autocast eval --workdir <latent-fm-run> \
+  eval=the_well/rayleigh_benard eval.checkpoint=processor.ckpt \
+  eval.mode=encode_once \
+  ++model.processor.integrator=ab3 model.processor.flow_ode_steps=16
+```
+
+For ambient CRPS, use `eval.mode=ambient` and the EPD checkpoint. Set
+`eval.rollout_subset` to the absolute path of
+[`test64_seed0.yaml`](../../../../slurm_scripts/comparison/the_well/rayleigh_benard/test64_seed0.yaml)
+to reuse the 64-trajectory rollout cohort.
+With batch size 1, use
+`eval.max_test_batches=512 eval.test_subset_seed=42 eval.max_rollout_batches=0`
+to sample 512 test windows reproducibly and leave rollouts uncapped.
+Use the [archived runner](../../../../slurm_scripts/comparison/the_well/rayleigh_benard/diagnostics.md)
+from [PR #487](https://github.com/alan-turing-institute/autocast/pull/487)
+to reproduce the paired-window tables and trajectory standard errors.
 
 ## Multi-GPU Evaluation
 

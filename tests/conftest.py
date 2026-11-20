@@ -1,15 +1,21 @@
+import os
+import re
 from collections.abc import Callable
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
 import torch
+from beartype.roar import BeartypeCallHintParamViolation
 from einops import rearrange
 from omegaconf import OmegaConf
 from torch import Tensor, nn
 from torch.utils.data import DataLoader, Dataset
 
+from autocast import _RUNTIME_TYPECHECKING_ENABLED
 from autocast.data.datamodule import SpatioTemporalDataModule
+from autocast.data.dataset import SpatioTemporalDataset
 from autocast.processors.base import Processor
 from autocast.scripts.setup import setup_epd_model
 from autocast.types import Batch, EncodedBatch
@@ -19,6 +25,33 @@ from autocast.utils import get_optimizer_config
 @pytest.fixture
 def REPO_ROOT() -> Path:
     return Path(__file__).parent.parent
+
+
+@pytest.fixture
+def validation_error():
+    """Expect input rejection with or without runtime type checking.
+
+    Beartype may reject an argument before the function's own validator runs.
+    Accept that parameter violation only when runtime checking is enabled;
+    otherwise require the requested exception. Apply ``match`` only to the
+    function's validation error, whose message it describes.
+    """
+    typechecking = (
+        os.getenv("RUNTIME_TYPECHECKING", "False").strip().lower()
+        in _RUNTIME_TYPECHECKING_ENABLED
+    )
+
+    @contextmanager
+    def raises(error: type[Exception], match: str | None = None):
+        errors = (error, BeartypeCallHintParamViolation) if typechecking else error
+        with pytest.raises(errors) as caught:
+            yield caught
+        if match is not None and not isinstance(
+            caught.value, BeartypeCallHintParamViolation
+        ):
+            assert re.search(match, str(caught.value)), str(caught.value)
+
+    return raises
 
 
 @pytest.fixture
@@ -191,7 +224,7 @@ def dummy_loader(batch_dataset: Dataset) -> DataLoader:
 def dummy_datamodule():
     """Create a minimal mock datamodule for testing."""
     datamodule = Mock(spec=SpatioTemporalDataModule)
-    train_dataset = Mock()
+    train_dataset = Mock(spec=SpatioTemporalDataset)
     train_dataset.norm = None  # No normalization by default
     datamodule.train_dataset = train_dataset
     return datamodule

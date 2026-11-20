@@ -1,36 +1,60 @@
+import itertools
+import math
+
 import pytest
 import torch
 from einops import rearrange, repeat
 
 from autocast.metrics import ALL_ENSEMBLE_METRICS
-from autocast.metrics.base import BaseMetric
+from autocast.metrics.base import (
+    DEFAULT_MAX_PAIR_ELEMENTS,
+    BaseMetric,
+    rows_per_pair_block,
+)
 from autocast.metrics.coverage import Coverage
 from autocast.metrics.deterministic import RMSE
 from autocast.metrics.ensemble import (
     CRPS,
+    AlmostFairEnergyScore,
     AlphaFairCRPS,
     AlphaFairCRPSMAETerm,
     AlphaFairCRPSSpreadTerm,
     CRPSMAETerm,
     CRPSSpreadTerm,
+    DawidSebastianiScore,
     EnergyScore,
     EnsembleSkill,
     EnsembleSpread,
     FairCRPSSpreadTerm,
+    LogScore,
     MultiWinkler,
+    PooledSpreadSkillRatio,
+    SpatialVariogramScore,
+    SpatiotemporalVariogramScore,
     SpreadSkillRatio,
+    TemporalAutocorrelationMatch,
+    TemporalVariogramScore,
     VariogramScore,
     WinklerScore,
     _alpha_fair_crps_score,
     _common_crps_score,
+    _shrunk_covariance,
 )
+from autocast.processors.drifting import _energy_score
 from autocast.types import TensorBTSC
 from autocast.types.types import TensorBTC
+
+# Metrics with no per-batch score() by construction: the generic parametrized
+# tests below all call score(), which these cannot answer. PooledSpreadSkillRatio
+# divides only after accumulating across batches, so a per-batch value would
+# defeat its purpose; it is exercised through update()/compute() by its own
+# dedicated tests instead.
+SCORELESS_METRICS = (PooledSpreadSkillRatio,)
 
 ENSEMBLE_BASE_METRICS = tuple(
     metric_cls
     for metric_cls in ALL_ENSEMBLE_METRICS
-    if issubclass(metric_cls, BaseMetric)
+    if issubclass(metric_cls, BaseMetric) and metric_cls not in SCORELESS_METRICS
 )
 
 ENSEMBLE_ERROR_METRICS = tuple(
@@ -45,12 +69,20 @@ ENSEMBLE_ERROR_METRICS = tuple(
         CRPSSpreadTerm,
         FairCRPSSpreadTerm,
         AlphaFairCRPSSpreadTerm,
+        # The Dawid-Sebastiani score is a log-score, not a distance-to-truth:
+        # a zero-spread, exactly-correct forecast has *infinite* density, so it
+        # does not vanish when y_pred == y_true. Tested separately below.
+        DawidSebastianiScore,
+        # LogScore is DawidSebastianiScore's marginal (per-site) counterpart --
+        # same log-density construction, so it shares the same non-vanishing
+        # behaviour at y_pred == y_true.
+        LogScore,
     ]
 )
 
 
 def _make_metric(MetricCls):
-    if MetricCls in (EnergyScore, VariogramScore):
+    if MetricCls in (AlmostFairEnergyScore, EnergyScore, VariogramScore):
         return MetricCls(vector_dims="spatial")
     return MetricCls()
 
@@ -152,6 +184,156 @@ def test_variogram_score_manual_value():
     assert torch.allclose(score, expected)
 
 
+def test_variogram_score_is_invariant_to_pair_block_chunking():
+    """Capping the all-pairs block changes peak memory, never the score.
+
+    Batch entries are independent, so a cap that forces one block per entry must
+    reproduce the single-block result exactly. This is what makes scoring a whole
+    enlarged test split feasible: unchunked, a spatiotemporal vector over 400
+    cases needs tens of GB and is simply refused by the allocator.
+    """
+    torch.manual_seed(3)
+    y_pred = torch.randn(6, 2, 4, 1, 5, dtype=torch.float64)
+    y_true = torch.randn(6, 2, 4, 1, dtype=torch.float64)
+
+    kwargs = {"p": 0.5, "vector_dims": "spatial_temporal", "reduce_all": False}
+    unchunked = VariogramScore(**kwargs).score(y_pred, y_true)
+    # D = 2 leads * 4 sites = 8, M = 5 -> one batch entry per block.
+    chunked = VariogramScore(max_pair_elements=8 * 8 * 5, **kwargs).score(
+        y_pred, y_true
+    )
+
+    assert chunked.shape == unchunked.shape
+    torch.testing.assert_close(chunked, unchunked, rtol=1e-13, atol=1e-13)
+
+
+def test_variogram_score_blocks_below_the_batch_row():
+    """Blocking must reach below one batch row -- across lead-time and channel.
+
+    For ``vector_dims="spatial"`` the leading (independent) axes are batch,
+    lead-time *and* channel, since only the spatial sites are vectorized into
+    D. A cap that forces one (batch, lead, channel) frame per block -- finer
+    than one batch row -- must still reproduce the unchunked score exactly:
+    this is the fix for the OOM (a whole-batch-row block was 16x too big to
+    shrink further at the reported 64x64/T4/C4/M8 eval shape).
+    """
+    torch.manual_seed(4)
+    # (B=2, T=3, S=5, C=4): D = 5 sites, M = 6 members. Every leading extent is
+    # DISTINCT and the leading shape (2, 3, 4) is deliberately NOT palindromic:
+    # with a symmetric shape a helper that reshapes the blocks back onto the
+    # leading axes in the WRONG ORDER still round-trips, and this assertion
+    # cannot see it. Verified by mutation -- reversing the reshape order fails
+    # this test only because the extents differ.
+    y_pred = torch.randn(2, 3, 5, 4, 6, dtype=torch.float64)
+    y_true = torch.randn(2, 3, 5, 4, dtype=torch.float64)
+
+    kwargs = {"p": 0.5, "vector_dims": "spatial", "reduce_all": False}
+    unchunked = VariogramScore(**kwargs).score(y_pred, y_true)
+    # D=5, M=6 -> one (b, t, c) frame costs 5*5*6=150 elements; one batch row
+    # (bundling T=3, C=4) would cost 1800. Capping at 150 forces one frame per
+    # block -- splitting across T and C, not just B.
+    chunked = VariogramScore(max_pair_elements=5 * 5 * 6, **kwargs).score(
+        y_pred, y_true
+    )
+
+    assert chunked.shape == unchunked.shape
+    torch.testing.assert_close(chunked, unchunked, rtol=1e-13, atol=1e-13)
+
+
+@pytest.mark.parametrize(
+    ("metric_cls", "kwargs", "tol"),
+    [
+        (VariogramScore, {"p": 0.5, "vector_dims": "spatial"}, 1e-12),
+        (DawidSebastianiScore, {"vector_dims": "spatial", "jitter": 1e-6}, 1e-9),
+    ],
+)
+def test_blocked_frames_land_on_the_right_leading_positions(metric_cls, kwargs, tol):
+    """Each block's result must be reassembled at the frame it came FROM.
+
+    The chunked-vs-unchunked assertions nearby cannot see this. Both of their
+    branches run through ``block_pairwise_frames``, so a systematic
+    reassembly bug -- reshaping onto the leading axes in the wrong ORDER, say
+    -- corrupts both sides identically and the comparison still passes.
+    Verified by mutation: reversing that reshape leaves those tests green.
+
+    This one is absolute, not relative. It pins the output shape as a literal
+    and checks every entry against a reference scored ONE FRAME AT A TIME,
+    each frame sliced out and passed in on its own, so the helper plays no
+    part in producing the expected value.
+    """
+    torch.manual_seed(11)
+    # All leading extents distinct (B=2, T=3, C=4) so a transposed or reversed
+    # reassembly cannot round-trip into the same shape.
+    y_pred = torch.randn(2, 3, 5, 4, 6, dtype=torch.float64)
+    y_true = torch.randn(2, 3, 5, 4, dtype=torch.float64)
+
+    # One frame per block: D=5, M=6 -> variogram 150 elements, DSS 25.
+    cap = 5 * 5 * 6 if metric_cls is VariogramScore else 5 * 5
+    scored = metric_cls(max_pair_elements=cap, reduce_all=False, **kwargs).score(
+        y_pred, y_true
+    )
+
+    assert tuple(scored.shape) == (2, 3, 4)
+
+    for b, t, c in itertools.product(range(2), range(3), range(4)):
+        frame = metric_cls(reduce_all=False, **kwargs).score(
+            y_pred[b : b + 1, t : t + 1, :, c : c + 1, :],
+            y_true[b : b + 1, t : t + 1, :, c : c + 1],
+        )
+        torch.testing.assert_close(
+            scored[b, t, c], frame.reshape(()), rtol=tol, atol=tol
+        )
+
+
+def test_variogram_score_rejects_nonpositive_max_pair_elements():
+    """A zero/negative cap is a caller error, not a silently unbounded run."""
+    with pytest.raises(ValueError, match="max_pair_elements must be positive"):
+        VariogramScore(max_pair_elements=0)
+
+
+def test_variogram_score_p_half_full_frame_matches_reference():
+    """VS-0.5 (the study's config: p=0.5, uniform weights, full frame).
+
+    Pins the correlation-sensitive proper score the cal-study reports: order
+    p=0.5, default uniform weights, vectorising the whole (spatial, channel)
+    frame. Reference is the brute-force double sum over the frame's elements.
+    """
+    torch.manual_seed(0)
+    # (B=2, T=1, S=3, C=2) frame -> D = 3 * 2 = 6 vector elements, M=5 members.
+    y_pred = torch.randn(2, 1, 3, 2, 5, dtype=torch.float64)
+    y_true = torch.randn(2, 1, 3, 2, dtype=torch.float64)
+
+    metric = VariogramScore(
+        p=0.5, vector_dims="spatial_temporal_channels", reduce_all=False
+    )
+    score = metric.score(y_pred, y_true).reshape(2)  # one value per batch element
+
+    p = 0.5
+    xv = y_pred.reshape(2, 6, 5)
+    yv = y_true.reshape(2, 6)
+    ref = torch.zeros(2, dtype=torch.float64)
+    for b in range(2):
+        total = 0.0
+        for i in range(6):
+            for j in range(6):
+                ens_exp = (xv[b, i] - xv[b, j]).abs().pow(p).mean()
+                obs = (yv[b, i] - yv[b, j]).abs().pow(p)
+                total = total + (ens_exp - obs) ** 2  # uniform weight w_ij = 1
+        ref[b] = total
+    assert torch.allclose(score, ref, atol=1e-10)
+
+
+def test_variogram_score_weights_default_is_uniform():
+    """The default (weights=None) equals an explicit all-ones weight matrix."""
+    torch.manual_seed(1)
+    y_pred = torch.randn(1, 1, 4, 1, 3, dtype=torch.float64)  # D = 4
+    y_true = torch.randn(1, 1, 4, 1, dtype=torch.float64)
+    kw = {"p": 0.5, "vector_dims": "spatial_temporal_channels", "reduce_all": False}
+    default = VariogramScore(**kw).score(y_pred, y_true)
+    explicit = VariogramScore(weights=torch.ones(4, 4), **kw).score(y_pred, y_true)
+    assert torch.allclose(default, explicit, atol=1e-12)
+
+
 def test_energy_score_invalid_alpha():
     with pytest.raises(ValueError):  # noqa: PT011
         EnergyScore(alpha=0.0)
@@ -206,6 +388,22 @@ def test_afcrps_component_metrics_match_manual_decomposition():
     assert torch.allclose(spread_term, torch.tensor([[[0.875]]]))
     assert torch.allclose(afcrps, mae_term - spread_term)
     assert torch.allclose(afcrps, torch.tensor([[[0.125]]]))
+
+
+def test_dss_penalizes_overdispersion_when_mean_is_correct():
+    # When the ensemble mean already matches the truth, the (y-mean)^2/var term
+    # is ~0 and the score is dominated by 0.5*log(2*pi*var): a tighter ensemble
+    # is rewarded and an over-dispersed one penalised. This is exactly the
+    # over-dispersion the low-rank head exhibits.
+    torch.manual_seed(0)
+    truth = torch.zeros((1, 1, 4096, 1))
+    tight = torch.randn((1, 1, 4096, 1, 32)) * 0.1
+    wide = torch.randn((1, 1, 4096, 1, 32)) * 1.0
+
+    s_tight = DawidSebastianiScore().score(tight, truth).mean()
+    s_wide = DawidSebastianiScore().score(wide, truth).mean()
+
+    assert s_tight < s_wide
 
 
 def test_multiwinkler_matches_mean_winkler_scores():
@@ -296,12 +494,157 @@ def test_multivariate_scores_vector_dims_shapes(MetricCls, vector_dims, expected
 
 
 @pytest.mark.parametrize("MetricCls", [EnergyScore, VariogramScore])
-def test_multivariate_scores_vector_dims_typos_invalid(MetricCls):
-    with pytest.raises(ValueError):  # noqa: PT011
+def test_multivariate_scores_vector_dims_typos_invalid(validation_error, MetricCls):
+    with validation_error(ValueError):
         MetricCls(vector_dims="spatials")
 
-    with pytest.raises(ValueError):  # noqa: PT011
+    with validation_error(ValueError):
         MetricCls(vector_dims="temproal")
+
+
+@pytest.mark.parametrize(
+    ("MetricCls", "expected_vector_dims", "expected_name"),
+    [
+        (SpatialVariogramScore, "spatial", "variogram_spatial"),
+        (TemporalVariogramScore, "temporal", "variogram_temporal"),
+        (
+            SpatiotemporalVariogramScore,
+            "spatial_temporal",
+            "variogram_spatiotemporal",
+        ),
+    ],
+)
+def test_variogram_vector_dims_aliases_default(
+    MetricCls, expected_vector_dims, expected_name
+):
+    """Each alias bakes in its column's default vector_dims and its own name."""
+    metric = MetricCls()
+    assert metric.vector_dims == expected_vector_dims
+    assert metric.name == expected_name
+
+
+def test_variogram_alias_default_stays_overridable():
+    """The alias only changes the default -- vector_dims stays overridable."""
+    metric = SpatialVariogramScore(vector_dims="temporal")
+    assert metric.vector_dims == "temporal"
+
+
+def test_variogram_alias_scores_identically_to_base():
+    """An alias must score identically to VariogramScore at the same vector_dims."""
+    torch.manual_seed(0)
+    y_pred = torch.randn((2, 3, 4, 5, 6))
+    y_true = torch.randn((2, 3, 4, 5))
+    kw = {"p": 0.5, "score_dims": None, "reduce_all": False}
+    alias = SpatialVariogramScore(**kw).score(y_pred, y_true)
+    base = VariogramScore(vector_dims="spatial", **kw).score(y_pred, y_true)
+    assert torch.allclose(alias, base)
+
+
+# --- TemporalAutocorrelationMatch (Phase 3) ---
+
+
+def _ar1_ensemble(rho, n_members, n_steps, *, seed):
+    """Seeded AR(1) ensemble started from the stationary distribution.
+
+    Returns a y_pred-shaped tensor ``(B=1, T=n_steps, S=1, C=1, M=n_members)``.
+    """
+    g = torch.Generator().manual_seed(seed)
+    stationary_std = (1.0 / (1.0 - rho**2)) ** 0.5  # 1.0 at rho = 0
+    x = torch.empty(n_members, n_steps)
+    x[:, 0] = torch.randn(n_members, generator=g) * stationary_std
+    for t in range(1, n_steps):
+        x[:, t] = rho * x[:, t - 1] + torch.randn(n_members, generator=g)
+    # (M, T) -> (B, T, S, C, M)
+    return x.permute(1, 0)[None, :, None, None, :]
+
+
+def test_autocorr_estimator_matches_hand_computed_biased_acf():
+    """The biased ACF on a deterministic ramp matches the hand-computed values."""
+    # x = [1, 2, 3, 4]; mean 2.5; var-sum 5.0.
+    # lag1 = (1.25)/5 = 0.25; lag2 = (-1.5)/5 = -0.3; lag3 = (-2.25)/5 = -0.45.
+    y_true = torch.tensor([1.0, 2.0, 3.0, 4.0]).reshape(1, 4, 1, 1)
+    acf = TemporalAutocorrelationMatch()._truth_autocorr(y_true, max_lag=3)
+    expected = torch.tensor([0.25, -0.3, -0.45])
+    assert torch.allclose(acf.reshape(3), expected, atol=1e-6)
+
+
+def test_autocorr_is_scale_invariant_for_small_magnitude_fields():
+    """Autocorrelation is scale-invariant; an absolute denom floor would shrink it."""
+    torch.manual_seed(0)
+    base = torch.randn(1, 64, 1, 1)  # (B, T, S, C)
+    metric = TemporalAutocorrelationMatch()
+    acf_small = metric._truth_autocorr(base * 1e-7, max_lag=3)
+    acf_large = metric._truth_autocorr(base * 1e7, max_lag=3)
+    assert torch.allclose(acf_small, acf_large, atol=1e-6)
+
+
+def test_autocorr_match_recovers_ar1_rho_k():
+    """Member-pooled autocorrelation of AR(1) paths recovers rho^k (analytic)."""
+    rho = 0.7
+    y_pred = _ar1_ensemble(rho, n_members=512, n_steps=256, seed=0)
+    acf = (
+        TemporalAutocorrelationMatch()
+        ._member_pooled_autocorr(y_pred, max_lag=3)
+        .reshape(3)
+    )
+    for k, recovered in enumerate(acf.tolist(), start=1):
+        assert abs(recovered - rho**k) < 0.03
+
+
+def test_autocorr_match_discrepancy_zero_when_ensemble_matches_truth():
+    """Ensemble and observation from the same AR(1) -> near-zero discrepancy profile."""
+    rho = 0.6
+    y_pred = _ar1_ensemble(rho, n_members=512, n_steps=256, seed=1)
+    y_true = _ar1_ensemble(rho, n_members=1, n_steps=256, seed=2)[..., 0]
+    profile = TemporalAutocorrelationMatch(max_lag=5).discrepancy_profile(
+        y_pred, y_true
+    )
+    assert profile.shape == (1, 1, 1, 5)
+    assert profile.max().item() < 0.15
+
+
+def test_autocorr_match_discrepancy_flags_wrong_autocorr():
+    """An iid ensemble against a strongly autocorrelated truth is flagged at lag 1."""
+    y_pred = _ar1_ensemble(0.0, n_members=512, n_steps=256, seed=3)  # iid
+    y_true = _ar1_ensemble(0.9, n_members=1, n_steps=256, seed=4)[..., 0]  # rho=0.9
+    profile = TemporalAutocorrelationMatch(max_lag=3).discrepancy_profile(
+        y_pred, y_true
+    )
+    assert profile.reshape(3)[0].item() > 0.5
+
+
+def test_autocorr_match_score_shape_and_scalar_reduction():
+    """_score collapses the lead axis to a singleton; default reduce_all -> scalar."""
+    y_pred = _ar1_ensemble(0.5, n_members=16, n_steps=32, seed=5)
+    y_true = _ar1_ensemble(0.5, n_members=1, n_steps=32, seed=6)[..., 0]
+    unreduced = TemporalAutocorrelationMatch(
+        max_lag=4, score_dims=None, reduce_all=False
+    ).score(y_pred, y_true)
+    assert unreduced.shape == (1, 1, 1, 1)  # (B, 1, S, C)
+    metric = TemporalAutocorrelationMatch(max_lag=4)
+    metric.update(y_pred, y_true)
+    assert metric.compute().ndim == 0
+
+
+def test_autocorr_match_handles_multiple_spatial_dims():
+    """The lead-axis reduction preserves multiple spatial dims -> (B, 1, S1, S2, C)."""
+    torch.manual_seed(0)
+    y_pred = torch.randn((2, 8, 3, 4, 5, 6))  # B, T, S1, S2, C, M
+    y_true = torch.randn((2, 8, 3, 4, 5))
+    score = TemporalAutocorrelationMatch(
+        max_lag=3, score_dims=None, reduce_all=False
+    ).score(y_pred, y_true)
+    assert score.shape == (2, 1, 3, 4, 5)
+
+
+def test_autocorr_match_invalid_parameters():
+    with pytest.raises(ValueError):  # noqa: PT011
+        TemporalAutocorrelationMatch(max_lag=0)
+    # A single lead step cannot form a lag.
+    y_pred = torch.randn((1, 1, 1, 1, 4))
+    y_true = torch.randn((1, 1, 1, 1))
+    with pytest.raises(ValueError):  # noqa: PT011
+        TemporalAutocorrelationMatch().score(y_pred, y_true)
 
 
 def test_spread_skill_ratio_matches_reference_formula():
@@ -392,14 +735,23 @@ def test_spread_skill_ratio_over_time_tracks_growing_skill_when_spread_is_fixed(
 
 def test_spread_skill_ratio_over_time_calibrated_stays_near_one():
     """Well-dispersed ensemble: members and truth drawn iid from the same
-    per-lead-time distribution, with independent noise for truth. For a
-    perfectly calibrated ensemble the corrected SSR has expectation 1.0 at
-    every lead time, irrespective of how the per-t variance scales.
+    per-lead-time distribution, with independent noise for truth.
 
     The classical identities used here:
       - E[spread^2]  = sigma_t^2           (unbiased variance estimator)
       - E[skill^2]   = sigma_t^2 * (M+1)/M (ensemble mean vs independent truth)
       -> SSR_corrected = sqrt(M/(M+1)) * sqrt((M+1)/M) = 1.
+
+    SCOPE (important, and narrower than it looks): those identities constrain the
+    ratio of the two EXPECTATIONS. ``SpreadSkillRatio`` forms one ratio per case
+    and averages the ratios, which is a different functional and equals 1 only
+    when each case averages over many effectively independent sites. This test
+    uses SPATIALLY INDEPENDENT noise over 256 sites, so it lives in exactly that
+    regime and passes. It is therefore NOT evidence that the metric reads 1 on
+    correlated fields -- it does not. See
+    ``test_spread_skill_ratio_mean_of_ratios_is_biased_on_correlated_fields``
+    for the measured departure, and ``PooledSpreadSkillRatio`` for the estimator
+    that does hold at any correlation length.
     """
     B, S1, S2, C, M = 16, 16, 16, 1, 16
     sigma_t = torch.tensor([0.5, 1.0, 2.0, 4.0])
@@ -415,6 +767,85 @@ def test_spread_skill_ratio_over_time_calibrated_stays_near_one():
 
     # Sampling noise at (B=16, S=256, M=16); 10% tolerance is comfortably safe.
     assert torch.all(torch.abs(per_t - 1.0) < 0.1), per_t
+
+
+def _calibrated_correlated_draw(corr_len, n=16, batch=16, n_lead=2, members=16, seed=0):
+    """Members and truth drawn from ONE Gaussian law with a given spatial
+    correlation length, so the ensemble is calibrated by construction
+    (exchangeable draws). corr_len=0 gives spatially independent noise.
+    """
+    generator = torch.Generator().manual_seed(seed)
+
+    def draw():
+        field = torch.randn((batch, n_lead, 1, n, n), generator=generator)
+        if corr_len > 0:
+            axis = torch.arange(n)
+            dist = torch.minimum(axis, n - axis).float()
+            scale = corr_len / math.sqrt(2.0)
+            kernel = torch.exp(
+                -0.5 * ((dist[:, None] ** 2 + dist[None, :] ** 2) / scale**2)
+            )
+            field = torch.fft.irfft2(
+                torch.fft.rfft2(field) * torch.fft.rfft2(kernel), s=(n, n)
+            )
+            field = field / field.std()
+        return field.permute(0, 1, 3, 4, 2)  # (B, T, S1, S2, C)
+
+    y_pred = torch.stack([draw() for _ in range(members)], dim=-1)
+    return y_pred, draw()
+
+
+@pytest.mark.parametrize("corr_len", [0, 1, 2, 4, 8])
+def test_pooled_spread_skill_ratio_reads_one_at_any_correlation_length(corr_len):
+    """The property the metric exists to have: a provably calibrated ensemble
+    scores 1, whatever the field's smoothness.
+
+    This is the check the mean-of-ratios form cannot pass -- see the companion
+    test below. Dividing only after pooling over cases and space keeps the
+    estimator on the ratio-of-expectations that the calibration identity
+    actually constrains.
+    """
+    metric = PooledSpreadSkillRatio()
+    for update_idx in range(8):
+        y_pred, y_true = _calibrated_correlated_draw(corr_len, seed=update_idx)
+        metric.update(y_pred, y_true)
+
+    assert abs(float(metric.compute()) - 1.0) < 0.05
+
+
+def test_spread_skill_ratio_mean_of_ratios_is_biased_on_correlated_fields():
+    """Pin the KNOWN, intentional bias of the mean-of-ratios form.
+
+    Not a defect being tolerated silently: ``SpreadSkillRatio`` reproduces the
+    aggregation used by the reference implementation it was ported from, and is
+    kept for comparability. This test records what that choice costs, so the
+    number is never mistaken for a calibration failure of the model under test.
+
+    On a perfectly calibrated ensemble the value grows with the field's
+    correlation length -- there is no single "calibrated" reference value for
+    this estimator, which is why it must be read against a matched null and why
+    ``PooledSpreadSkillRatio`` exists.
+    """
+    values = {}
+    for corr_len in (0, 4, 8):
+        metric = SpreadSkillRatio()
+        for update_idx in range(8):
+            y_pred, y_true = _calibrated_correlated_draw(corr_len, seed=update_idx)
+            metric.update(y_pred, y_true)
+        values[corr_len] = float(metric.compute())
+
+    # Independent sites: the regime where mean-of-ratios happens to be fine.
+    assert abs(values[0] - 1.0) < 0.05
+    # Smooth fields: materially high, and monotonically worse with smoothness.
+    assert values[4] > 1.1
+    assert values[8] > values[4]
+
+    # The pooled estimator stays at 1 on the very same draws.
+    pooled = PooledSpreadSkillRatio()
+    for update_idx in range(8):
+        y_pred, y_true = _calibrated_correlated_draw(8, seed=update_idx)
+        pooled.update(y_pred, y_true)
+    assert abs(float(pooled.compute()) - 1.0) < 0.05
 
 
 def test_spread_skill_ratio_stateful_returns_per_lead_time_and_is_mean_of_ratios():
@@ -686,3 +1117,384 @@ def test_alpha_fair_crps_gradients_match_reference():
     (grad_ref,) = torch.autograd.grad(ref, y_pred_ref)
 
     assert torch.allclose(grad_fast, grad_ref, atol=1e-10, rtol=1e-10)
+
+
+def test_almost_fair_energy_identical_members_is_zero_spread():
+    y_pred = torch.ones((2, 3, 4, 4, 5, 6))  # (B,T,S,S,C,M)
+    y_true = torch.ones((2, 3, 4, 4, 5))
+    metric = AlmostFairEnergyScore(a_f=0.95)
+    metric.update(y_pred, y_true)
+    # identical members & equal to truth => score 0
+    torch.testing.assert_close(metric.compute(), torch.tensor(0.0), atol=1e-5, rtol=0)
+
+
+def test_almost_fair_energy_naive_endpoint_matches_energyscore():
+    """a_f->0 must equal the existing naive EnergyScore (joint vector_dims)."""
+    torch.manual_seed(0)
+    y_pred = torch.randn((2, 3, 4, 4, 5, 6))
+    y_true = torch.randn((2, 3, 4, 4, 5))
+    af0 = AlmostFairEnergyScore(a_f=1e-9, vector_dims="spatial_temporal_channels")
+    naive = EnergyScore(alpha=1.0, vector_dims="spatial_temporal_channels")
+    af0.update(y_pred, y_true)
+    naive.update(y_pred, y_true)
+    torch.testing.assert_close(af0.compute(), naive.compute(), atol=1e-4, rtol=1e-3)
+
+
+def test_almost_fair_energy_m1_raises():
+    y_pred = torch.ones((1, 1, 1, 1, 1, 1))  # M=1
+    y_true = torch.ones((1, 1, 1, 1, 1))
+    with pytest.raises(ValueError, match="at least 2 ensemble members"):
+        AlmostFairEnergyScore(a_f=0.95).score(y_pred, y_true)
+
+
+@pytest.mark.parametrize("a_f", [0.95, 1.0])
+def test_almost_fair_energy_metric_matches_loss_helper(a_f):
+    """The validation metric must equal the training loss it selects lambda on.
+
+    ``AlmostFairEnergyScore`` (the eval/val metric, BTSCM layout) and
+    ``_energy_score`` (the DriftingProcessor loss term, (B, K, D) layout) are
+    two views of the same object. With ``vector_dims="spatial_temporal_channels"``
+    the metric vectorises the whole field, exactly as the loss flattens it, so
+    the per-sample score — and its batch mean — must agree to machine precision.
+    This pins the roadmap's "metric mirrors the loss" assumption.
+    """
+    torch.manual_seed(0)
+    b, t, s, c, m = 3, 2, 4, 2, 6
+    y_pred = torch.randn(b, t, s, s, c, m)
+    y_true = torch.randn(b, t, s, s, c)
+
+    # Loss-helper view: members -> K axis, the whole field flattened -> D.
+    # Euclidean distance is permutation-invariant over D, so the exact flatten
+    # order need not match the metric's internal vectorisation.
+    d = t * s * s * c
+    gen_b = y_pred.permute(0, 5, 1, 2, 3, 4).reshape(b, m, d)
+    pos_b = y_true.reshape(b, 1, d)
+    loss_val = _energy_score(gen_b, pos_b, a_f=a_f)
+
+    metric = AlmostFairEnergyScore(a_f=a_f, vector_dims="spatial_temporal_channels")
+    metric.update(y_pred, y_true)
+
+    torch.testing.assert_close(metric.compute(), loss_val, atol=1e-4, rtol=1e-4)
+
+
+# ---------------------------------------------------------------------------
+# LogScore -- per-site marginal logarithmic score (column 1 of the suite).
+# The marginal (diagonal) Gaussian ignorance score: the univariate companion to
+# the multivariate DawidSebastianiScore (column 2). Sensitive to the density at
+# the realised truth per site, so it complements the CDF-oriented CRPS.
+# ---------------------------------------------------------------------------
+
+
+def test_log_score_manual_value():
+    # One sample/timestep/point/channel; two members {0, 2}; truth = 1.
+    y_pred = torch.tensor([[[[[0.0, 2.0]]]]])  # (1, 1, 1, 1, 2)
+    y_true = torch.tensor([[[[1.0]]]])  # (1, 1, 1, 1)
+
+    score = LogScore(reduce_all=False).score(y_pred, y_true)
+
+    # mean = 1, unbiased var = ((0-1)^2 + (2-1)^2) / (2-1) = 2
+    # log-score = 0.5*log(2*pi*var) + 0.5*(y-mean)^2/var = 0.5*log(4*pi) + 0
+    expected = 0.5 * math.log(2.0 * math.pi * 2.0)
+    assert torch.allclose(score, torch.tensor([[[expected]]]), atol=1e-6)
+
+
+def test_log_score_penalizes_overdispersion_when_mean_is_correct():
+    # When the mean already matches the truth the (y-mean)^2/var term is ~0 and
+    # the score is dominated by 0.5*log(2*pi*var): a tighter ensemble is rewarded
+    # and an over-dispersed one penalised.
+    torch.manual_seed(0)
+    truth = torch.zeros((1, 1, 4096, 1))
+    tight = torch.randn((1, 1, 4096, 1, 32)) * 0.1
+    wide = torch.randn((1, 1, 4096, 1, 32)) * 1.0
+
+    s_tight = LogScore().score(tight, truth).mean()
+    s_wide = LogScore().score(wide, truth).mean()
+
+    assert s_tight < s_wide
+
+
+def test_log_score_tail_miss_is_penalized():
+    # A too-narrow predictive that misses a genuine tail observation is punished
+    # hard by the density-at-truth term -- far more than a calibrated ensemble.
+    # This is the column-1 tail read the log-score earns its place for.
+    torch.manual_seed(0)
+    m = 64
+    truth = torch.full((1, 1, 2048, 1), 3.0)  # a tail value under N(0, 1)
+    calibrated = torch.randn((1, 1, 2048, 1, m)) * 1.0
+    narrow = torch.randn((1, 1, 2048, 1, m)) * 0.2
+
+    s_cal = LogScore().score(calibrated, truth).mean()
+    s_narrow = LogScore().score(narrow, truth).mean()
+
+    assert s_narrow > s_cal
+
+
+def test_log_score_var_floor_guards_collapsed_ensemble():
+    # All members identical and equal to truth -> sample var is exactly 0.
+    # The hard var_floor keeps the score finite (no -inf / nan).
+    y_pred = torch.ones((1, 1, 4, 1, 8))
+    y_true = torch.ones((1, 1, 4, 1))
+
+    score = LogScore(var_floor=1e-6).score(y_pred, y_true)
+
+    assert torch.isfinite(score).all()
+    # (y - mean) = 0, so score = 0.5*log(2*pi*var_floor) for every point.
+    expected = 0.5 * math.log(2.0 * math.pi * 1e-6)
+    assert torch.allclose(score, torch.full_like(score, expected), atol=1e-5)
+
+
+def test_log_score_rejects_nonpositive_var_floor():
+    with pytest.raises(ValueError, match="var_floor must be positive"):
+        LogScore(var_floor=0.0)
+
+
+# ---------------------------------------------------------------------------
+# DawidSebastianiScore -- multivariate (full-covariance) Gaussian ignorance
+# score (column 2 of the suite). Correlation-sensitive via Sigma^-1; the
+# covariance is Ledoit-Wolf shrinkage-regularised so it stays invertible when
+# D > M-1.
+# ---------------------------------------------------------------------------
+
+
+def _gaussian_nll_reference(cov, members_dm, obs_vec, d):
+    """Reference multivariate Gaussian NLL 0.5*(D*log2pi + logdet + mahalanobis)."""
+    delta = obs_vec - members_dm.mean(dim=-1)
+    _sign, logabsdet = torch.linalg.slogdet(cov)
+    maha = float(delta @ torch.linalg.solve(cov, delta))
+    return 0.5 * (d * math.log(2.0 * math.pi) + float(logabsdet) + maha)
+
+
+def test_lw_shrinkage_matches_sklearn():
+    # The batched Ledoit-Wolf helper must reproduce sklearn's reference exactly
+    # (same 1/M empirical covariance, same optimal intensity, same shrunk cov).
+    ledoit_wolf = pytest.importorskip("sklearn.covariance").ledoit_wolf
+
+    torch.manual_seed(0)
+    n_samples, d = 40, 12
+    x = torch.randn(n_samples, d, dtype=torch.float64)  # (samples, features)
+    sk_cov, sk_gamma = ledoit_wolf(x.numpy())
+
+    members = x.transpose(0, 1).reshape(1, d, n_samples)  # (..., D, M)
+    cov, _mean, gamma = _shrunk_covariance(
+        members, method="ledoit_wolf", intensity=None, jitter=0.0
+    )
+
+    assert abs(float(gamma.reshape(()).item()) - float(sk_gamma)) < 1e-10
+    torch.testing.assert_close(
+        cov.reshape(d, d), torch.from_numpy(sk_cov), atol=1e-10, rtol=1e-10
+    )
+
+
+def test_shrunk_covariance_fixed_requires_intensity():
+    # method="fixed" with no intensity is a caller bug the class-level validation
+    # normally catches before this helper runs; this locks the helper's own guard.
+    members = torch.randn(2, 3, 5, dtype=torch.float64)  # (..., D, M)
+    with pytest.raises(ValueError, match="intensity"):
+        _shrunk_covariance(members, method="fixed", intensity=None, jitter=0.0)
+
+
+def test_memory_intensive_flag_on_variogram_and_dss_family():
+    # Class-attribute flag, not a hand-maintained name list: every VariogramScore
+    # subclass inherits it, DSS sets it directly, cheap metrics stay False.
+    for cls in (
+        VariogramScore,
+        SpatialVariogramScore,
+        TemporalVariogramScore,
+        SpatiotemporalVariogramScore,
+        DawidSebastianiScore,
+    ):
+        assert cls.memory_intensive is True
+    for cls in (CRPS, LogScore, TemporalAutocorrelationMatch):
+        assert cls.memory_intensive is False
+    assert BaseMetric.memory_intensive is False
+
+
+def test_dss_matches_gaussian_nll_reference():
+    # The full metric must equal the multivariate Gaussian negative log-density
+    # with Sigma the Ledoit-Wolf shrunk covariance.
+    ledoit_wolf = pytest.importorskip("sklearn.covariance").ledoit_wolf
+
+    torch.manual_seed(1)
+    n_samples, d = 30, 5
+    members = torch.randn(1, 1, d, 1, n_samples, dtype=torch.float64)  # B T S C M
+    truth = torch.randn(1, 1, d, 1, dtype=torch.float64)  # B T S C
+
+    x = members[0, 0, :, 0, :]  # (D, M)
+    sk_cov = torch.from_numpy(ledoit_wolf(x.transpose(0, 1).numpy())[0])
+    expected = _gaussian_nll_reference(sk_cov, x, truth[0, 0, :, 0], d)
+
+    metric = DawidSebastianiScore(vector_dims="spatial", jitter=0.0, reduce_all=False)
+    score = metric.score(members, truth)  # (B, T, C) = (1, 1, 1)
+    assert torch.allclose(
+        score, torch.tensor([[[expected]]], dtype=torch.float64), atol=1e-8
+    )
+
+
+def test_dss_flags_wrong_correlation_but_log_score_does_not():
+    # Correct marginals, wrong correlation: DSS (column 2) flags it; LogScore
+    # (column 1, marginal) is blind to it. This is the column-exclusivity the
+    # suite is built on.
+    torch.manual_seed(0)
+    n_frames, d, m, rho = 256, 8, 64, 0.8
+
+    corr = torch.full((d, d), rho, dtype=torch.float64)
+    corr.fill_diagonal_(1.0)
+    chol = torch.linalg.cholesky(corr)
+
+    def correlated(n, k):
+        z = torch.randn(n, k, d, dtype=torch.float64)
+        return z @ chol.transpose(0, 1)  # (n, k, d), unit marginals, corr rho
+
+    def to_pred(x):  # (n, m, d) -> (n, 1, d, 1, m)
+        return x.permute(0, 2, 1).reshape(n_frames, 1, d, 1, m)
+
+    truth = torch.randn(n_frames, d, dtype=torch.float64) @ chol.transpose(0, 1)
+    y_true = truth.reshape(n_frames, 1, d, 1)
+    correct = correlated(n_frames, m)  # right correlation
+    whitened = torch.randn(n_frames, m, d, dtype=torch.float64)  # unit var, no corr
+
+    s_correct = (
+        DawidSebastianiScore(vector_dims="spatial")
+        .score(to_pred(correct), y_true)
+        .mean()
+    )
+    s_whitened = (
+        DawidSebastianiScore(vector_dims="spatial")
+        .score(to_pred(whitened), y_true)
+        .mean()
+    )
+    # DSS rewards the correctly-correlated ensemble.
+    assert s_correct < s_whitened
+
+    ls_correct = LogScore().score(to_pred(correct), y_true).mean()
+    ls_whitened = LogScore().score(to_pred(whitened), y_true).mean()
+    # LogScore is marginal: the two unit-variance ensembles are ~indistinguishable,
+    # far below the DSS separation.
+    assert abs(float(ls_correct - ls_whitened)) < 0.1 * abs(
+        float(s_whitened - s_correct)
+    )
+
+
+def test_dss_collapsed_ensemble_is_finite():
+    # Members collapse to the truth -> sample covariance is exactly zero; the
+    # diagonal jitter keeps the Cholesky/logdet finite.
+    y_pred = torch.ones((1, 1, 4, 1, 8))
+    y_true = torch.ones((1, 1, 4, 1))
+    score = DawidSebastianiScore(vector_dims="spatial").score(y_pred, y_true)
+    assert torch.isfinite(score).all()
+
+
+def test_dss_accepts_integer_fields():
+    # Integer-valued fields must not crash or truncate: the score is computed in
+    # float64 and returned as a float (regression -- the previous cast to
+    # y_true.dtype truncated the log-density to int / crashed the base reduction).
+    torch.manual_seed(0)
+    y_pred = torch.randint(0, 5, (4, 1, 6, 1, 16))
+    y_true = torch.randint(0, 5, (4, 1, 6, 1))
+    score = DawidSebastianiScore(vector_dims="spatial").score(y_pred, y_true)
+    assert score.is_floating_point()
+    assert torch.isfinite(score).all()
+
+
+def test_dss_fixed_shrinkage_reduces_to_sample_cov():
+    # shrinkage="fixed" with intensity 0 and no jitter == raw sample-covariance NLL.
+    torch.manual_seed(2)
+    n_samples, d = 50, 6
+    members = torch.randn(1, 1, d, 1, n_samples, dtype=torch.float64)
+    truth = torch.randn(1, 1, d, 1, dtype=torch.float64)
+
+    x = members[0, 0, :, 0, :]
+    xc = x - x.mean(-1, keepdim=True)
+    cov = xc @ xc.transpose(0, 1) / n_samples
+    expected = _gaussian_nll_reference(cov, x, truth[0, 0, :, 0], d)
+
+    metric = DawidSebastianiScore(
+        vector_dims="spatial",
+        shrinkage="fixed",
+        shrinkage_intensity=0.0,
+        jitter=0.0,
+        reduce_all=False,
+    )
+    score = metric.score(members, truth)
+    assert torch.allclose(
+        score, torch.tensor([[[expected]]], dtype=torch.float64), atol=1e-8
+    )
+
+
+def test_dss_rejects_bad_config(validation_error):
+    with validation_error(ValueError, match="vector_dims"):
+        DawidSebastianiScore(vector_dims="bogus")  # pyright: ignore[reportArgumentType]
+    with validation_error(ValueError, match="shrinkage must be"):
+        DawidSebastianiScore(shrinkage="bogus")  # pyright: ignore[reportArgumentType]
+    with pytest.raises(ValueError, match="shrinkage_intensity"):
+        DawidSebastianiScore(shrinkage="fixed")  # intensity required
+    with pytest.raises(ValueError, match="shrinkage_intensity"):
+        DawidSebastianiScore(shrinkage="fixed", shrinkage_intensity=1.5)
+    with pytest.raises(ValueError, match="jitter must be non-negative"):
+        DawidSebastianiScore(jitter=-1.0)
+    with pytest.raises(ValueError, match="max_pair_elements must be positive"):
+        DawidSebastianiScore(max_pair_elements=0)
+
+
+def test_dss_score_is_invariant_to_pair_block_chunking():
+    """Capping the per-frame covariance block changes peak memory, never the
+    score -- DSS's analogue of VariogramScore's chunking-invariance test.
+
+    Unlike VariogramScore, DSS previously had no blocking at all: the full
+    ``(B, T, C, D, D)`` covariance was built in one allocation, which is why it
+    was the first metric to OOM in production. ``_shrunk_covariance``, the
+    Cholesky factorisation and the triangular solve all broadcast over the
+    leading (batch, lead-time, channel) axes independently -- no cross-frame
+    coupling -- so blocking frame-by-frame is exact.
+    """
+    torch.manual_seed(5)
+    # (B=2, T=3, S=5, C=4): D = 5 sites, M = 6 members. Leading extents are all
+    # DISTINCT and (2, 3, 4) is not palindromic -- see the sibling variogram
+    # test for why a symmetric shape hides block-reassembly order bugs.
+    y_pred = torch.randn(2, 3, 5, 4, 6, dtype=torch.float64)
+    y_true = torch.randn(2, 3, 5, 4, dtype=torch.float64)
+
+    kwargs = {"vector_dims": "spatial", "jitter": 1e-6, "reduce_all": False}
+    unchunked = DawidSebastianiScore(**kwargs).score(y_pred, y_true)
+    # D=5 -> one (b, t, c) frame's covariance costs 5*5=25 elements; one batch
+    # row (bundling T=3, C=4) would cost 300. Capping at 25 forces one frame per
+    # block, splitting across T and C, not just B.
+    chunked = DawidSebastianiScore(max_pair_elements=5 * 5, **kwargs).score(
+        y_pred, y_true
+    )
+
+    assert chunked.shape == unchunked.shape
+    torch.testing.assert_close(chunked, unchunked, rtol=1e-10, atol=1e-10)
+
+
+def test_ad64_shape_variogram_and_dss_block_sizes():
+    """Regression pin for the eval shape that OOM'd (jobs 6038001, 6042592):
+
+    64x64 grid (S=4096 sites), T=4 lead steps, C=4 channels, M=8 members. Before
+    this fix, the coarsest achievable block bundled T and C into the leading
+    axis; after it, the per-frame (b, t, c) block is the coarsest unit. Pins
+    the element counts so a future change to the blocking granularity is
+    caught here rather than rediscovered as an OOM.
+    """
+    n_sites, n_leads, n_channels, n_members = 4096, 4, 4, 8
+
+    # variogram_spatial: D = n_sites; per-frame block is exactly the default cap.
+    variogram_spatial_frame = n_sites * n_sites * n_members
+    variogram_spatial_old_row = n_leads * n_channels * variogram_spatial_frame
+    assert variogram_spatial_frame == DEFAULT_MAX_PAIR_ELEMENTS
+    assert variogram_spatial_old_row == 16 * DEFAULT_MAX_PAIR_ELEMENTS
+
+    # dss (vector_dims="spatial", float64): D = n_sites; per-frame covariance is
+    # comfortably under the cap even though the old, unblocked full allocation
+    # (B * T * C * D * D) was not.
+    dss_frame = n_sites * n_sites
+    assert dss_frame < DEFAULT_MAX_PAIR_ELEMENTS
+
+    # variogram_spatial's per-frame cost sits exactly at the cap, so blocking
+    # floors at one frame -- it cannot shrink further without changing the
+    # score's definition. DSS's per-frame covariance is 8x smaller, so several
+    # frames share a block; either way, no block ever needs the old B-row size.
+    assert rows_per_pair_block(variogram_spatial_frame, DEFAULT_MAX_PAIR_ELEMENTS) == 1
+    dss_rows_per_block = rows_per_pair_block(dss_frame, DEFAULT_MAX_PAIR_ELEMENTS)
+    assert dss_rows_per_block == DEFAULT_MAX_PAIR_ELEMENTS // dss_frame
+    assert dss_rows_per_block * dss_frame <= DEFAULT_MAX_PAIR_ELEMENTS

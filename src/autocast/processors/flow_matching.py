@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import torch
 from torch import nn
 
@@ -11,7 +13,7 @@ from autocast.types import EncodedBatch, Tensor
 class FlowMatchingProcessor(Processor):
     """Processor that wraps a flow-matching generative model."""
 
-    _INTEGRATORS = ("euler", "heun")
+    _INTEGRATORS = ("euler", "heun", "ab3")
 
     def __init__(
         self,
@@ -74,7 +76,8 @@ class FlowMatchingProcessor(Processor):
 
         Starting from noise, integrate the learned vector field until t=1 with
         the configured fixed-step scheme: forward Euler (``integrator="euler"``,
-        one field evaluation per step) or Heun's explicit trapezoid method
+        one field evaluation per step), Adams-Bashforth (``integrator="ab3"``,
+        one evaluation per step with Euler/AB2 startup), or Heun's trapezoid method
         (``integrator="heun"``, two field evaluations per step, second-order
         accurate).
 
@@ -99,20 +102,33 @@ class FlowMatchingProcessor(Processor):
         """Integrate the flow ODE from caller-supplied source states."""
         template = x.new_empty(self._output_shape(x))
         self._validate_source_states(source_states, template)
-        z = source_states
-        batch_size = x.shape[0]
-        device, dtype = x.device, x.dtype
-        t = torch.zeros(batch_size, device=device, dtype=dtype)
+        return self._integrate(
+            source_states, lambda z, t: self.flow_field(z, t, x, global_cond)
+        )
 
-        # Fixed-step integration over the flow field.
-        dt = torch.tensor(1.0 / self.flow_ode_steps, device=device, dtype=dtype)
+    def _integrate(
+        self, z: Tensor, field: Callable[[Tensor, Tensor], Tensor]
+    ) -> Tensor:
+        """Integrate on [0, 1], keeping multistep history local to this sample."""
+        t = torch.zeros(z.shape[0], device=z.device, dtype=z.dtype)
+        dt = torch.tensor(1.0 / self.flow_ode_steps, device=z.device, dtype=z.dtype)
+        integrator = getattr(self, "integrator", "euler")
+        history: list[Tensor] = []
         for _ in range(self.flow_ode_steps):
-            if self.integrator == "heun":
-                k1 = self.flow_field(z, t, x, global_cond)
-                k2 = self.flow_field(z + dt * k1, t + dt, x, global_cond)
+            if integrator == "heun":
+                k1 = field(z, t)
+                k2 = field(z + dt * k1, t + dt)
                 z = z + dt * 0.5 * (k1 + k2)
             else:
-                z = z + dt * self.flow_field(z, t, x, global_cond)
+                velocity = field(z, t)
+                step = velocity
+                if integrator == "ab3":
+                    if len(history) == 1:
+                        step = (3 * velocity - history[-1]) / 2
+                    elif len(history) == 2:
+                        step = (23 * velocity - 16 * history[-1] + 5 * history[-2]) / 12
+                    history = [*history[-1:], velocity]
+                z = z + dt * step
             t = t + dt
         return z
 

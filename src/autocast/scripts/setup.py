@@ -8,12 +8,13 @@ from typing import Any
 import torch
 import yaml
 from hydra.utils import get_class, instantiate
+from lightning import LightningDataModule
 from omegaconf import DictConfig
 from the_well.data.normalization import RMSNormalization, ZScoreNormalization
 from torch import nn
+from torch.utils.data import Dataset
 
-from autocast.data.datamodule import SpatioTemporalDataModule, TheWellDataModule
-from autocast.data.dataset import SpatioTemporalDataset, TheWell
+from autocast.data.dataset import TheWell
 from autocast.decoders.base import Decoder
 from autocast.encoders.base import Encoder, EncoderWithCond
 from autocast.models.autoencoder import AE, AELoss
@@ -243,7 +244,7 @@ def _apply_processor_channel_defaults(
 
 def setup_datamodule(
     config: DictConfig,
-) -> tuple[SpatioTemporalDataModule | TheWellDataModule, DictConfig, dict]:
+) -> tuple[LightningDataModule, DictConfig, dict]:
     """Create the datamodule and infer data shapes."""
     datamodule = build_datamodule(config)
 
@@ -461,10 +462,21 @@ def setup_autoencoder_components(
     return encoder, decoder
 
 
+def _get_available_dataset(
+    datamodule: LightningDataModule,
+) -> Any:
+    """Reuse the available split's metadata, including eval-only datasets."""
+    for name in ("train_dataset", "val_dataset", "test_dataset"):
+        dataset = getattr(datamodule, name, None)
+        if dataset is not None:
+            return dataset
+    return None
+
+
 def setup_autoencoder_model(
     config: DictConfig,
     stats: dict,
-    datamodule: SpatioTemporalDataModule | TheWellDataModule,
+    datamodule: LightningDataModule,
 ) -> AE:
     """Build the full autoencoder model (encoder, decoder, loss)."""
     encoder, decoder = setup_autoencoder_components(config, stats)
@@ -472,7 +484,7 @@ def setup_autoencoder_model(
     loss_config = model_config.get("loss")
     loss = instantiate(loss_config) if loss_config is not None else None
     optimizer_config = _get_optimizer_config(config)
-    norm = getattr(datamodule.train_dataset, "norm", None)
+    norm = getattr(_get_available_dataset(datamodule), "norm", None)
     model = AE(
         encoder=encoder,
         decoder=decoder,
@@ -623,7 +635,7 @@ def _maybe_add_metric_overrides(
 def setup_processor_model(
     config: DictConfig,
     stats: dict,
-    datamodule: SpatioTemporalDataModule | TheWellDataModule,
+    datamodule: LightningDataModule,
 ) -> ProcessorModel:
     """Set up just the processor model for training on latents."""
     model_config = config.get("model", {})
@@ -657,7 +669,7 @@ def setup_processor_model(
 
     data_config = config.get("datamodule", {})
     optimizer_config = _get_optimizer_config(config)
-    norm = getattr(datamodule.train_dataset, "norm", None)
+    norm = getattr(_get_available_dataset(datamodule), "norm", None)
     kwargs = {
         "processor": processor,
         "stride": data_config.get("stride", stats["n_steps_output"]),
@@ -677,7 +689,7 @@ def setup_processor_model(
 
 
 def _load_residual_delta_normalizer(
-    stats_path: str | Path, dataset: SpatioTemporalDataset
+    stats_path: str | Path, dataset: Dataset
 ) -> ZScoreNormalization | RMSNormalization:
     """Load delta statistics using the dataset's format and field order."""
     well = dataset.well_dataset if isinstance(dataset, TheWell) else None
@@ -704,7 +716,7 @@ def _load_residual_delta_normalizer(
 def setup_epd_model(
     config: DictConfig,
     stats: dict,
-    datamodule: SpatioTemporalDataModule | TheWellDataModule,
+    datamodule: LightningDataModule,
 ) -> EncoderProcessorDecoder | EncoderProcessorDecoderEnsemble:
     """Orchestrate the creation of the full Encoder-Processor-Decoder model."""
     model_config = config.get("model", {})
@@ -802,7 +814,8 @@ def setup_epd_model(
     cls = EncoderProcessorDecoderEnsemble if is_ensemble else EncoderProcessorDecoder
 
     optimizer_config = _get_optimizer_config(config)
-    norm = getattr(datamodule.train_dataset, "norm", None)
+    dataset = _get_available_dataset(datamodule)
+    norm = getattr(dataset, "norm", None)
     delta_norm = None
     delta_stats_path = model_config.get("residual_delta_stats_path")
     if (
@@ -810,9 +823,7 @@ def setup_epd_model(
         and model_config.get("residual_prediction", False)
         and model_config.get("residual_use_delta_stats", True)
     ):
-        delta_norm = _load_residual_delta_normalizer(
-            delta_stats_path, datamodule.train_dataset
-        )
+        delta_norm = _load_residual_delta_normalizer(delta_stats_path, dataset)
     kwargs = {
         "encoder_decoder": EncoderDecoder(
             encoder,

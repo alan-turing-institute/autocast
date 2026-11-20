@@ -36,11 +36,12 @@ metrics:
   - spread
   - skill
   - ssr
+  - ssr_pooled
+  - collection_coverage
   - winkler
 
 max_rollout_steps: 25
-# Absolute trajectory timestep used as the final conditioning frame. LOLA's
-# Rayleigh-Benard paper figures use start=16; keep the generic default at 0.
+# Absolute trajectory timestep used as the final conditioning frame.
 rollout_start: 0
 batch_size: 1
 max_test_batches: null

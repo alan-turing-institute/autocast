@@ -4,7 +4,8 @@ from datetime import timedelta
 from pathlib import Path
 from time import perf_counter
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
+from unittest.mock import Mock
 
 import lightning as L
 import pytest
@@ -12,7 +13,7 @@ import torch
 from conftest import get_optimizer_config
 from hydra import compose, initialize_config_dir
 from hydra.utils import instantiate
-from lightning.pytorch.callbacks import Callback, ModelCheckpoint, Timer
+from lightning.pytorch.callbacks import Callback, EarlyStopping, ModelCheckpoint, Timer
 from matplotlib import pyplot as plt
 from omegaconf import DictConfig, OmegaConf, open_dict
 from torch.utils.data import DataLoader, Dataset, TensorDataset
@@ -24,8 +25,10 @@ from autocast.callbacks.metrics import ValidationMetricPlotCallback
 from autocast.callbacks.residual_statistics import ResidualStatisticsCallback
 from autocast.data.datamodule import SpatioTemporalDataModule
 from autocast.encoders.base import EncoderWithCond
+from autocast.encoders.identity import IdentityEncoder
 from autocast.nn.noise.source import TemporalOUSource
 from autocast.processors.residual_flow_matching import ResidualFlowMatchingProcessor
+from autocast.scripts import training
 from autocast.scripts.setup import (
     _infer_latent_spatial_resolution,
     setup_autoencoder_model,
@@ -33,9 +36,11 @@ from autocast.scripts.setup import (
     setup_processor_model,
 )
 from autocast.scripts.training import (
+    DEFAULT_EARLY_STOPPING_PATIENCE,
     ResetResumeTimerCallback,
     TrainingTimerCallback,
     _attach_reset_timer_callback,
+    _early_stopping_callbacks,
     _ensure_residual_statistics_callback,
     _validate_resume_settings,
     run_training,
@@ -627,7 +632,7 @@ def test_attach_reset_timer_callback_inserts_before_timer():
     assert reset_idx < timer_idx
 
 
-def _trainer_stub(**overrides) -> SimpleNamespace:
+def _trainer_stub(**overrides) -> Mock:
     defaults = {
         "estimated_stepping_batches": 100,
         "max_steps": -1,
@@ -639,7 +644,7 @@ def _trainer_stub(**overrides) -> SimpleNamespace:
         "callback_metrics": {},
     }
     defaults.update(overrides)
-    return SimpleNamespace(**defaults)
+    return Mock(spec=L.Trainer, **defaults)
 
 
 def test_progress_model_checkpoint_resolves_fractional_train_steps():
@@ -651,7 +656,7 @@ def test_progress_model_checkpoint_resolves_fractional_train_steps():
     )
 
     trainer = _trainer_stub(estimated_stepping_batches=101)
-    callback.on_fit_start(cast(L.Trainer, trainer), cast(L.LightningModule, object()))
+    callback.on_fit_start(cast(L.Trainer, trainer), Mock(spec=L.LightningModule))
 
     assert callback._every_n_train_steps == 6
 
@@ -889,7 +894,8 @@ def test_validation_metric_plot_callback_saves_val_metric_history(tmp_path: Path
         log_to_logger=False,
         plot_metric_objects=False,
     )
-    trainer = SimpleNamespace(
+    trainer = Mock(
+        spec=L.Trainer,
         callback_metrics={
             "val_loss": torch.tensor(1.5),
             "val_vector": torch.ones(2),
@@ -901,7 +907,7 @@ def test_validation_metric_plot_callback_saves_val_metric_history(tmp_path: Path
         sanity_checking=False,
         loggers=[],
     )
-    pl_module = SimpleNamespace(val_metrics=None)
+    pl_module = Mock(spec=L.LightningModule, val_metrics=None)
 
     callback.on_validation_end(
         cast(L.Trainer, trainer), cast(L.LightningModule, pl_module)
@@ -934,7 +940,8 @@ def test_validation_metric_plot_callback_saves_custom_metric_plot(tmp_path: Path
         log_to_logger=False,
         plot_metric_objects=True,
     )
-    trainer = SimpleNamespace(
+    trainer = Mock(
+        spec=L.Trainer,
         callback_metrics={},
         default_root_dir=tmp_path,
         global_step=12,
@@ -942,8 +949,9 @@ def test_validation_metric_plot_callback_saves_custom_metric_plot(tmp_path: Path
         sanity_checking=False,
         loggers=[],
     )
-    pl_module = SimpleNamespace(
-        val_metrics=MetricCollection({"diagnostic": PlotMetric()}).clone(prefix="val_")
+    pl_module = Mock(
+        spec=L.LightningModule,
+        val_metrics=MetricCollection({"diagnostic": PlotMetric()}).clone(prefix="val_"),
     )
 
     callback.on_validation_end(
@@ -974,7 +982,8 @@ def test_validation_metric_plot_callback_wandb_log_omits_step(tmp_path: Path):
 
     run = FakeWandbRun()
     logger = SimpleNamespace(experiment=run)
-    trainer = SimpleNamespace(
+    trainer = Mock(
+        spec=L.Trainer,
         callback_metrics={"val_loss": torch.tensor(1.5)},
         default_root_dir=tmp_path,
         global_step=1189,
@@ -982,7 +991,7 @@ def test_validation_metric_plot_callback_wandb_log_omits_step(tmp_path: Path):
         sanity_checking=False,
         loggers=[logger],
     )
-    pl_module = SimpleNamespace(val_metrics=None)
+    pl_module = Mock(spec=L.LightningModule, val_metrics=None)
 
     callback.on_validation_end(
         cast(L.Trainer, trainer), cast(L.LightningModule, pl_module)
@@ -1119,25 +1128,25 @@ def test_epd_metric_overrides_are_forwarded(
 
 
 def test_infer_latent_spatial_resolution_channels_last_with_time():
-    class DummyEncoder:
+    class DummyEncoder(IdentityEncoder):
         channel_axis = -1
         outputs_time_channel_concat = False
 
     encoded = torch.randn(2, 3, 16, 16, 8)  # B,T,W,H,C
     spatial = _infer_latent_spatial_resolution(
-        encoded, cast(EncoderWithCond, DummyEncoder())
+        encoded, cast(EncoderWithCond, DummyEncoder(in_channels=1))
     )
     assert spatial == (16, 16)
 
 
 def test_infer_latent_spatial_resolution_channels_first_time_concat():
-    class DummyEncoder:
+    class DummyEncoder(IdentityEncoder):
         channel_axis = 1
         outputs_time_channel_concat = True
 
     encoded = torch.randn(2, 24, 16, 16)  # B,C*T,W,H
     spatial = _infer_latent_spatial_resolution(
-        encoded, cast(EncoderWithCond, DummyEncoder())
+        encoded, cast(EncoderWithCond, DummyEncoder(in_channels=1))
     )
     assert spatial == (16, 16)
 
@@ -1215,3 +1224,132 @@ def test_final_checkpoint_survives_standalone_validation(tmp_path: Path):
 
     assert not final_path.is_symlink()
     assert final_path.read_bytes() == saved_endpoint
+
+
+@pytest.mark.parametrize(
+    "name", ["autoencoder", "encoder_processor_decoder", "processor"]
+)
+def test_early_stopping_is_off_by_default_and_patience_100_when_on(
+    config_dir: str, name: str
+):
+    """Every top-level config leaves the stop off, at patience 100 once enabled.
+
+    Off because a flow-matching ``val_loss`` is a fresh draw at every validation
+    and patience 100 ends those runs far from their best (aiphys#246). The
+    values live in the config so each run's resolved config records them, which
+    the grid scorers read back; an absent block is off as well.
+    """
+    cfg = _load_config(config_dir, name)
+    assert cfg.early_stopping.enabled is False
+    assert _early_stopping_callbacks(cfg) == []
+    assert cfg.early_stopping.patience == DEFAULT_EARLY_STOPPING_PATIENCE == 100
+    assert cfg.early_stopping.min_delta == 0.0
+    with open_dict(cfg):
+        cfg.early_stopping.enabled = True
+    (stop,) = _early_stopping_callbacks(cfg)
+    assert cast(EarlyStopping, stop).patience == 100
+    with open_dict(cfg):
+        del cfg["early_stopping"]
+    assert _early_stopping_callbacks(cfg) == []
+
+
+@pytest.mark.parametrize(("every_n", "checks"), [(1, 100), (5, 20), (3, 34)])
+def test_early_stopping_patience_is_in_epochs_not_validation_checks(
+    config_dir: str, every_n: int, checks: int
+):
+    """Validating every k-th epoch must not multiply the patience by k."""
+    cfg = _load_config(config_dir, "encoder_processor_decoder")
+    with open_dict(cfg):
+        cfg.trainer.check_val_every_n_epoch = every_n
+        cfg.early_stopping.enabled = True
+    (stop,) = _early_stopping_callbacks(cfg)
+    assert cast(EarlyStopping, stop).patience == checks
+
+
+def test_early_stopping_can_be_declined_and_never_replaces_callbacks(config_dir: str):
+    """A run can switch the stop off, and it is APPENDED, never merged into the list.
+
+    The trainer config's ``callbacks`` list carries every checkpoint callback
+    plus the non-finite-loss guard, and Hydra list overrides *replace* rather
+    than append -- so adding early stopping via a child config would silently
+    drop all of them. It is therefore appended in ``run_training`` instead, and
+    this test pins both halves of that contract.
+    """
+    cfg = _load_config(config_dir, "autoencoder")
+
+    # Off only when a run declines it.
+    with open_dict(cfg):
+        cfg.early_stopping.enabled = False
+    assert _early_stopping_callbacks(cfg) == []
+
+    targets = [str(c.get("_target_", "")) for c in cfg.trainer.callbacks]
+    assert any(t.endswith("ModelCheckpoint") for t in targets)
+    n_callbacks_before = len(cfg.trainer.callbacks)
+
+    patience = 7
+    with open_dict(cfg):
+        cfg.early_stopping = {
+            "enabled": True,
+            "patience": patience,
+            "monitor": "val_loss",
+        }
+
+    stops = _early_stopping_callbacks(cfg)
+    assert len(stops) == 1
+    stop = cast(EarlyStopping, stops[0])
+    assert stop.monitor == "val_loss"
+    assert stop.patience == patience
+    # The stop is on a validation plateau only, so its reason is unambiguous.
+    assert stop.check_finite is False
+
+    # Enabling it must not have disturbed the configured callback list.
+    assert len(cfg.trainer.callbacks) == n_callbacks_before
+    targets_after = [str(c.get("_target_", "")) for c in cfg.trainer.callbacks]
+    assert targets_after == targets
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_train_autoencoder_honours_early_stopping(
+    config_dir: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    enabled: bool,
+):
+    """The autoencoder path carries the stop.
+
+    Until 2026-10-16 ``train_autoencoder`` did not append it, so
+    ``early_stopping.enabled: true`` was ignored: the 32x32 shallow-water
+    autoencoder trained ~1000 epochs past its validation minimum (epoch 34).
+    Data, model, fitting and saving are stubbed; the trainer is the one the
+    composed config builds.
+    """
+    cfg = _load_config(
+        config_dir,
+        "autoencoder",
+        ["trainer.accelerator=cpu", f"early_stopping.enabled={enabled}"],
+    )
+    seen: list[list[Any]] = []
+    monkeypatch.setattr(
+        training, "apply_float32_matmul_precision", lambda *_a, **_k: None
+    )
+    monkeypatch.setattr(training, "create_wandb_logger", lambda *_, **__: (None, None))
+    monkeypatch.setattr(training, "setup_datamodule", lambda c: (None, c, {}))
+    monkeypatch.setattr(
+        training, "setup_autoencoder_model", lambda *_, **__: torch.nn.Linear(1, 1)
+    )
+    monkeypatch.setattr(training, "_save_reconstructions", lambda *_: None)
+    monkeypatch.setattr(
+        L.Trainer, "fit", lambda self, **_: seen.append(list(self.callbacks))
+    )
+    monkeypatch.setattr(L.Trainer, "save_checkpoint", lambda *_, **__: None)
+
+    training.train_autoencoder(cfg, tmp_path)
+
+    (callbacks,) = seen
+    stops = [c for c in callbacks if isinstance(c, EarlyStopping)]
+    if enabled:
+        (stop,) = stops
+        assert stop.monitor == "val_loss"
+        assert stop.patience == DEFAULT_EARLY_STOPPING_PATIENCE
+    else:
+        assert stops == []

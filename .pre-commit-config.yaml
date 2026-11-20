@@ -16,6 +16,8 @@ repos:
   rev: v1.1.407
   hooks:
   - id: pyright
+    # Frozen campaign checks use their recorded scientific checkout.
+    exclude: ^tests/reproduction/
 - repo: https://github.com/kynan/nbstripout
   rev: 0.8.1
   hooks:

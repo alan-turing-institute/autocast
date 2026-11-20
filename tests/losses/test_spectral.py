@@ -166,8 +166,8 @@ def test_cuda_autocast_keeps_fft_and_gradients_on_device():
         ({"norm": "none"}, "Unknown Fourier normalization"),
     ],
 )
-def test_invalid_fourier_options_are_rejected(kwargs, match):
-    with pytest.raises(ValueError, match=match):
+def test_invalid_fourier_options_are_rejected(validation_error, kwargs, match):
+    with validation_error(ValueError, match=match):
         FourierDecomposition(**kwargs)
 
 

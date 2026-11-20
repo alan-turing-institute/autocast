@@ -1,21 +1,30 @@
 """Shared data and simulator configuration for AutoCast scripts."""
 
 import logging
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 import torch
 from hydra.utils import get_class, instantiate
+from lightning import LightningDataModule
 from omegaconf import DictConfig, OmegaConf
+from torch.utils.data import DataLoader
 
-from autocast.data.datamodule import SpatioTemporalDataModule, TheWellDataModule
+from autocast.data.datamodule import SpatioTemporalDataModule
 from autocast.types import Batch
 
 log = logging.getLogger(__name__)
 
 
+@runtime_checkable
+class RolloutDataModule(Protocol):
+    """Datamodules that provide full-trajectory test loaders."""
+
+    def rollout_test_dataloader(self, batch_size: int | None = None) -> DataLoader: ...
+
+
 def build_datamodule(
     config: DictConfig,
-) -> SpatioTemporalDataModule | TheWellDataModule:
+) -> LightningDataModule:
     """Build the DataModule from the Hydra configuration."""
     # Configure datamodule
     dm_cfg = config.get("datamodule")
@@ -26,6 +35,14 @@ def build_datamodule(
     if not isinstance(dm_container, dict):
         msg = f"datamodule config must be a mapping, got {type(dm_container).__name__}"
         raise TypeError(msg)
+
+    if (
+        dm_container.get("_target_")
+        == "autocast.data.encoded_dataset.MiniWellDataModule"
+    ):
+        # A Well eval preset can carry this until the raw-data swap. Cached
+        # windows have no rollout horizon; retain it in config, not their loader.
+        dm_container.pop("max_rollout_steps", None)
 
     # Configure simulator if provided
     sim_cfg = config.get("simulator")

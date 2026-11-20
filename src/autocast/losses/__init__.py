@@ -25,16 +25,27 @@ from autocast.losses.scale import (
     ScaleDecomposition,
     SmoothingOperator,
 )
-from autocast.losses.spectral import FourierDecomposition, RadialFourierDecomposition
+from autocast.losses.spectral import (
+    CoefficientLpLoss,
+    DTCWTDecomposition,
+    FourierDecomposition,
+    MagnitudeTransform,
+    PowerTransform,
+    RadialFourierDecomposition,
+    RMSAmplitudeTransform,
+    WaveletDecomposition,
+)
 from autocast.losses.vector import HelmholtzDecomposition, VelocityScoreLoss
 
 __all__ = [
     "AlphaFairCRPSLoss",
     "CRPSLoss",
     "CoefficientCRPSLoss",
+    "CoefficientLpLoss",
     "ComponentBranch",
     "ComponentObjective",
     "ComponentTransform",
+    "DTCWTDecomposition",
     "EnsembleMAELoss",
     "FairCRPSLoss",
     "FieldComponents",
@@ -45,6 +56,9 @@ __all__ = [
     "HelmholtzDecomposition",
     "IdentityDecomposition",
     "MCDropoutMSEL2Loss",
+    "MagnitudeTransform",
+    "PowerTransform",
+    "RMSAmplitudeTransform",
     "RadialFourierDecomposition",
     "ScaleDecomposition",
     "ScoringBranch",
@@ -53,5 +67,6 @@ __all__ = [
     "SpectralSpreadErrorLoss",
     "TransformedLoss",
     "VelocityScoreLoss",
+    "WaveletDecomposition",
     "WeightedSumLoss",
 ]

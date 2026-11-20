@@ -19,6 +19,18 @@ latent_space_metrics: false
 # metrics are controlled separately via `compute_rollout_metrics`.
 compute_test_metrics: true
 
+# Opt in to scoring EPD next-window predictions and targets in physical units.
+denormalize_test_metrics: false
+
+# Select a repeatable random sample when max_test_batches is set.
+test_subset_seed: null
+
+# Seed stochastic predictions independently of trajectory-statistics output.
+# Null preserves legacy behaviour: only trajectory statistics reseed inference.
+sampling_seed: null
+# Null uses sampling_seed + 1 (or the legacy trajectory seed + 1).
+rollout_sampling_seed: null
+
 # Evaluation metrics to compute
 metrics:
   - mse
@@ -48,11 +60,18 @@ metrics:
   - spread
   - skill
   - ssr
+  - ssr_pooled
+  - collection_coverage
   - winkler
 
-# Skip high-memory metrics such as energy score and variogram unless explicitly
-# opted in with `eval.skip_memory_intensive_metrics=false`.
-skip_memory_intensive_metrics: true
+# Skip high-memory metrics -- the variogram family and the multivariate
+# Dawid-Sebastiani score, whose state is D-by-D in the field size -- unless
+# explicitly opted in. Membership is read off each metric class's
+# `memory_intensive` flag, not a name list, so registry aliases are covered too.
+# `include_memory_intensive_metrics` is the preferred spelling;
+# `skip_memory_intensive_metrics` is the older, inverted key and is still
+# honoured when the positive one is absent.
+include_memory_intensive_metrics: false
 
 # Output paths (default to work_dir if not specified)
 csv_path: null
@@ -60,6 +79,10 @@ video_dir: null
 
 # Rollout sample indices to visualize
 batch_indices: []
+
+# Optional YAML manifest of fixed test-trajectory indices and dataset inventory.
+# Applies to all test rollout passes, including metrics and visualizations.
+rollout_subset: null
 
 # Video generation settings
 video_format: mp4  # gif or mp4
@@ -96,10 +119,8 @@ strategy: auto
 devices: 1 # default single-GPU eval; override with int (e.g. 4) for multi-GPU DDP
 num_nodes: 1
 
-# Optional trajectory-level paper statistics. These are written under a dedicated
-# directory and never replace the legacy aggregate evaluation CSVs. The current
-# implementation deliberately requires a complete, single-device test pass so the
-# sequential dataset metadata can be validated exactly.
+# Optional trajectory statistics are written alongside the aggregate CSVs.
+# They require complete, sequential test and rollout loaders on one device.
 # Enabling this runs both metric passes even when compute_test_metrics or
 # compute_rollout_metrics is false.
 trajectory_statistics:

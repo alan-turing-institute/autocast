@@ -14,9 +14,9 @@ This website provides detailed documentation on how to use `AutoCast`, including
 Our installation guide will get you up and running in no time
 :::
 
-:::{grid-item-card} 📚 Tutorials
-:link: https://alan-turing-institute.github.io/autocast/tutorial
-Learn how to use AutoCast with our in-depth tutorial
+:::{grid-item-card} 🧭 CLI walkthrough
+:link: https://alan-turing-institute.github.io/autocast/walkthrough/index.html
+Follow a complete experiment from simulation to evaluation
 :::
 
 :::{grid-item-card} 👥 Contributing

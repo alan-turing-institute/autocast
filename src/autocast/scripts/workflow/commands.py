@@ -11,6 +11,7 @@ import tempfile
 from pathlib import Path
 
 import pandas as pd
+from hydra import compose, initialize_config_dir
 from omegaconf import OmegaConf
 
 from autocast.scripts.utils import get_default_config_path, resolve_work_dir
@@ -148,6 +149,22 @@ def _resolved_eval_default_overrides() -> list[str]:
         return []
 
     return _flatten_overrides("eval", loaded)
+
+
+def _resolved_eval_preset_overrides(preset: str) -> list[str]:
+    """Expand an eval group for a saved config without Hydra defaults."""
+    with initialize_config_dir(
+        config_dir=str(Path(get_default_config_path()).resolve()), version_base=None
+    ):
+        cfg = compose(overrides=[f"+eval={preset}"])
+    # Resolve after the user overrides have been applied to the saved config.
+    loaded = OmegaConf.to_container(cfg, resolve=False)
+    assert isinstance(loaded, dict)
+    return [
+        override
+        for key, value in loaded.items()
+        for override in _flatten_overrides(str(key), value)
+    ]
 
 
 def _load_resolved_config_from_workdir(work_dir: str | Path) -> dict | None:
@@ -402,6 +419,7 @@ def run_module(
     dry_run: bool = False,
     mode: str = "local",
     runtime_typechecking: bool = False,
+    chain: int | None = None,
 ) -> None:
     """Execute *module* locally or via SLURM depending on *mode*."""
     if mode == "slurm":
@@ -410,6 +428,7 @@ def run_module(
             overrides,
             dry_run=dry_run,
             runtime_typechecking=runtime_typechecking,
+            chain=chain,
         )
         return
 
@@ -539,9 +558,15 @@ def build_eval_overrides(
         # were added). Re-inject key EPD eval defaults from the source eval config.
         # These are placed before `overrides` so callers can still override them.
         resolved_cfg = _load_resolved_config_from_workdir(base_work_dir)
-        command_overrides.extend(
-            _struct_safe_overrides(_resolved_eval_default_overrides(), resolved_cfg)
-        )
+        presets = [
+            value.split("=", 1)[1] for value in overrides if value.startswith("eval=")
+        ]
+        if presets:
+            eval_defaults = _resolved_eval_preset_overrides(presets[-1])
+            overrides = [value for value in overrides if not value.startswith("eval=")]
+        else:
+            eval_defaults = _resolved_eval_default_overrides()
+        command_overrides.extend(_struct_safe_overrides(eval_defaults, resolved_cfg))
         if dataset is not None:
             command_overrides.append(
                 f"datamodule.data_path={datasets_root() / dataset}"
@@ -569,8 +594,14 @@ def train_command(
     run_id: str | None = None,
     runtime_typechecking: bool = False,
     dry_run: bool = False,
+    chain: int | None = None,
 ) -> tuple[Path, str]:
     """Run a training command."""
+    if chain is not None and (
+        kind not in {"epd", "processor"} or mode != "slurm" or resume_from is not None
+    ):
+        msg = "--chain starts a new EPD or processor run and requires --mode slurm."
+        raise ValueError(msg)
     final_work_dir, resolved_run_id, command_overrides = build_train_overrides(
         kind=kind,
         mode=mode,
@@ -589,6 +620,7 @@ def train_command(
         dry_run=dry_run,
         mode=mode,
         runtime_typechecking=runtime_typechecking,
+        chain=chain,
     )
     return final_work_dir, resolved_run_id
 

@@ -7,6 +7,7 @@ from omegaconf import OmegaConf
 from the_well.data.normalization import ZScoreNormalization
 
 from autocast.encoders.base import Encoder
+from autocast.encoders.identity import IdentityEncoder
 from autocast.losses import MCDropoutMSEL2Loss
 from autocast.scripts.setup import (
     _apply_processor_channel_defaults,
@@ -236,11 +237,11 @@ def test_build_processor_uses_inferred_steps_when_processor_steps_not_explicit()
 
 
 def test_resolve_processor_temporal_steps_for_time_concatenating_encoder():
-    class TimeConcatEncoder:
+    class TimeConcatEncoder(IdentityEncoder):
         outputs_time_channel_concat = True
 
     steps_in, steps_out = _resolve_processor_temporal_steps(
-        TimeConcatEncoder(),  # type: ignore - just testing resolution logic, not actual encoder behavior
+        TimeConcatEncoder(in_channels=1),
         n_steps_input=4,
         n_steps_output=2,
     )
@@ -250,11 +251,11 @@ def test_resolve_processor_temporal_steps_for_time_concatenating_encoder():
 
 
 def test_resolve_processor_temporal_steps_for_regular_encoder():
-    class RegularEncoder:
+    class RegularEncoder(IdentityEncoder):
         outputs_time_channel_concat = False
 
     steps_in, steps_out = _resolve_processor_temporal_steps(
-        RegularEncoder(),  # type: ignore - just testing resolution logic, not actual encoder behavior
+        RegularEncoder(in_channels=1),
         n_steps_input=4,
         n_steps_output=2,
     )
@@ -264,11 +265,8 @@ def test_resolve_processor_temporal_steps_for_regular_encoder():
 
 
 def test_resolve_processor_temporal_steps_defaults_to_non_concat_when_missing_attr():
-    class EncoderWithoutFlag:
-        pass
-
     steps_in, steps_out = _resolve_processor_temporal_steps(
-        EncoderWithoutFlag(),  # type: ignore - just testing resolution logic, not actual encoder behavior
+        IdentityEncoder(in_channels=1),
         n_steps_input=4,
         n_steps_output=2,
     )

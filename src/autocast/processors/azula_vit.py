@@ -6,6 +6,7 @@ import torch
 from einops import rearrange
 from torch import Tensor, nn
 
+from autocast.nn.graph_vit import GraphAttentionBackend
 from autocast.nn.noise.learned_fourier import LearnedFourierNoise2d
 from autocast.nn.noise.source import SourceDistribution, _sample_checked
 from autocast.nn.vit import SpatialViTBackbone, ViTModulationMode
@@ -40,6 +41,9 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
     filtered separately for each block, before the shared channel projection
     and optional global conditioning. ``noise_radial_knots`` controls the
     radial response resolution; no fixed smoothing length is prescribed.
+
+    ``graph_hops`` optionally restricts attention to periodic patch neighborhoods.
+    Select ``graph_attention_backend="gathered"`` to score only graph neighbors.
     """
 
     def __init__(
@@ -70,6 +74,8 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
         modulation_mode: ViTModulationMode | str = ViTModulationMode.ADALN,
         fourier_num_bands: int = 4,
         noise_radial_knots: int = 16,
+        graph_hops: int | None = None,
+        graph_attention_backend: GraphAttentionBackend = "masked",
     ):
         super().__init__()
         self.n_spatial_dims = len(spatial_resolution)
@@ -177,6 +183,8 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
             spatial_modulation=self.noise_mode == AdaLNNoiseMode.SPATIAL,
             modulation_mode=modulation_mode,
             fourier_num_bands=fourier_num_bands,
+            graph_hops=graph_hops,
+            graph_attention_backend=graph_attention_backend,
         )
 
     def _noise_shape(self, x: Tensor) -> tuple[int, ...]:

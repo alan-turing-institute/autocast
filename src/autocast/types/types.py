@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from jaxtyping import Float, Inexact
+from jaxtyping import Float, Inexact, Real
 from torch.utils.data import DataLoader
 
 # Alias for torch.Tensor
@@ -29,6 +29,13 @@ TensorBCL = Float[Tensor, "batch channel latent *latent"]
 
 TensorBTSC = Float[Tensor, "batch time spatial *spatial channel"]  # Channels last
 TensorBTSCM = Float[Tensor, "batch time spatial *spatial channel ensemble"]  # ensemble
+# Integer or floating values, for metrics that accept integer-valued fields.
+TensorRealBTSC = Real[Tensor, "batch time spatial *spatial channel"]
+TensorRealBTSCM = Real[Tensor, "batch time spatial *spatial channel ensemble"]
+# Packed (mu, log_var) along the channel axis, so the final dim is 2*C. jaxtyping
+# cannot express the 2*C arithmetic constraint, so the trailing dim uses a distinct
+# name `double_channel` instead of `channel`.
+TensorBTSC2C = Float[Tensor, "batch time spatial *spatial double_channel"]
 TensorInexactBTSC = Inexact[
     Tensor, "batch time spatial *spatial channel"
 ]  # Real or complex

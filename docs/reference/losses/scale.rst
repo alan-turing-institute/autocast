@@ -6,6 +6,9 @@ be scored with ordinary grid-space CRPS. Unlike ``RadialFourierDecomposition``,
 its components are fields, not Fourier coefficients. Both predictions and
 targets undergo the same decomposition.
 
+The notebook ``notebooks/09_spectral_losses.ipynb`` compares these bands with
+Fourier and wavelet decompositions on a small simulated ensemble.
+
 Inputs have channels-last layout ``(B, T, S1, ..., Sd, C)`` with an optional
 final ensemble axis ``M``. Only the spatial axes are smoothed; batch, time,
 channels and members remain separate. Direct operator calls take

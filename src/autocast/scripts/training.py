@@ -1,6 +1,7 @@
 """Training functions and utils for AutoCast experiments."""
 
 import logging
+import math
 import os
 import shutil
 from pathlib import Path
@@ -10,14 +11,18 @@ from typing import cast
 import lightning as L
 import torch
 from hydra.utils import instantiate
-from lightning.pytorch.callbacks import Callback, ModelCheckpoint, Timer
+from lightning.pytorch.callbacks import (
+    Callback,
+    EarlyStopping,
+    ModelCheckpoint,
+    Timer,
+)
 from lightning.pytorch.trainer.states import TrainerFn
 from matplotlib import pyplot as plt
 from omegaconf import DictConfig, OmegaConf
 
 from autocast.callbacks.gpu_util import GpuUtilizationLogCallback
 from autocast.callbacks.residual_statistics import ResidualStatisticsCallback
-from autocast.data.datamodule import SpatioTemporalDataModule, TheWellDataModule
 from autocast.logging import create_wandb_logger
 from autocast.logging.wandb import maybe_watch_model
 from autocast.models.autoencoder import AE
@@ -25,8 +30,14 @@ from autocast.processors.residual_normalization import ResidualNormalizer
 from autocast.scripts.config import save_resolved_config
 from autocast.scripts.data import batch_to_device
 from autocast.scripts.setup import setup_autoencoder_model, setup_datamodule
+from autocast.scripts.training_chain import TrainingChain
 
 log = logging.getLogger(__name__)
+
+# Validation-plateau stop. ON by default since 2026-10-04 (D205); the top-level
+# configs carry the same values, so a run's resolved config records them.
+DEFAULT_EARLY_STOPPING_MONITOR = "val_loss"
+DEFAULT_EARLY_STOPPING_PATIENCE = 100
 
 
 _VALID_MATMUL_PRECISIONS = {"highest", "high", "medium"}
@@ -99,8 +110,10 @@ def _latest_callback_checkpoint_path(trainer: L.Trainer) -> Path | None:
     return max(candidates, key=lambda path: path.stat().st_mtime)
 
 
-def _link_checkpoint_target_to_latest(trainer: L.Trainer, target_path: Path) -> bool:
-    source_path = _latest_callback_checkpoint_path(trainer)
+def _link_checkpoint_target_to_latest(
+    trainer: L.Trainer, target_path: Path, *, source_path: Path | None = None
+) -> bool:
+    source_path = source_path or _latest_callback_checkpoint_path(trainer)
     if source_path is None:
         return False
 
@@ -400,6 +413,68 @@ class TrainingTimerCallback(Callback):
         self._resume_pending = True
 
 
+def _early_stopping_callbacks(config: DictConfig) -> list[Callback]:
+    """Return a validation-plateau early stop when it is switched on.
+
+    OFF by default (the top-level configs and an absent block); a run switches it
+    on with ``early_stopping.enabled=true`` and tunes it with
+    ``early_stopping.patience=N`` (default 100 epochs), ``.monitor``,
+    ``.min_delta``. Replayed on 248 finished runs, patience 100 never kept a
+    checkpoint more than 1% off the run's own best; 50 did twice, including the
+    gpe64 standardised-conditioning retrain (epoch 65 kept, best 133). On the
+    64x64 PDEs it keeps the best checkpoint of every CRPS and ARFC run, but a
+    flow-matching ``val_loss`` is a fresh Monte Carlo draw at each validation, so
+    an early low draw ends the run at a checkpoint 2.4-22x worse than its best
+    (aiphys#246); hence off by default.
+
+    Why this exists: the training budget is otherwise a fixed epoch count, which
+    is simultaneously too generous for easy substrates and too small for hard
+    ones. Measured 2026-07-28: the clean diffusion toys reach their final
+    reported metric within ~0.3% by 10% of an 80-epoch budget, while the chaotic
+    Lorenz-96 toy is still improving at epoch 75-78 of the same 80. Pairing a
+    generous ``trainer.max_epochs`` with this stop lets each substrate take what
+    it needs instead of being hand-tuned.
+
+    Returned as an appended callback rather than a config-list entry on purpose.
+    The trainer config's ``callbacks`` list has ~18 entries and Hydra list
+    overrides *replace* rather than append, so adding this in a child config
+    would silently drop every checkpoint callback and the non-finite-loss guard.
+    Appending here — the same route ``_gpu_util_callbacks`` already uses — cannot
+    do that.
+
+    ``check_finite`` is left off: this callback stops on a validation plateau
+    only, so its stop reason in the logs is never ambiguous.
+    """
+    early_cfg = config.get("early_stopping") or {}
+    if not early_cfg.get("enabled", False):
+        return []
+    # ``patience`` is in EPOCHS (D205 measured it on runs that validated every
+    # epoch). Lightning counts validation CHECKS, so a run validating every k-th
+    # epoch would otherwise wait k times longer than configured (2026-10-04: ARFC
+    # runs validate every 5th epoch, which turned patience 100 into 500 epochs).
+    patience_epochs = int(early_cfg.get("patience", DEFAULT_EARLY_STOPPING_PATIENCE))
+    every_n = int((config.get("trainer") or {}).get("check_val_every_n_epoch") or 1)
+    patience_checks = math.ceil(patience_epochs / every_n)
+    if every_n > 1:
+        log.info(
+            "Early stopping: patience %d epochs = %d validation checks "
+            "(validation every %d epochs)",
+            patience_epochs,
+            patience_checks,
+            every_n,
+        )
+    return [
+        EarlyStopping(
+            monitor=str(early_cfg.get("monitor", DEFAULT_EARLY_STOPPING_MONITOR)),
+            mode=str(early_cfg.get("mode", "min")),
+            patience=patience_checks,
+            min_delta=float(early_cfg.get("min_delta", 0.0)),
+            check_finite=False,
+            verbose=True,
+        )
+    ]
+
+
 def _gpu_util_callbacks(config: DictConfig) -> list[Callback]:
     """Return a per-rank GPU-utilization logger if ``log_gpu_util`` is set.
 
@@ -449,6 +524,7 @@ def run_training(
     """Standardized training loop."""
     # Ensure work_dir is a Path
     work_dir = Path(work_dir)
+    chain = TrainingChain.from_environment(work_dir)
 
     apply_float32_matmul_precision(config)
 
@@ -459,13 +535,16 @@ def run_training(
         if logging_cfg is not None
         else {}
     )
+    if chain is not None:
+        chain.configure_logging(logging_cfg_resolved)
+    resolved_config = OmegaConf.to_container(config, resolve=True)
     wandb_logger, _watch_cfg = create_wandb_logger(
         logging_cfg_resolved,  # type: ignore TODO: fix
         experiment_name=config.get("experiment_name"),
         run_name=run_name,
         job_type=job_type,
         work_dir=work_dir,
-        config={"hydra": OmegaConf.to_container(config, resolve=True)},
+        config={"hydra": resolved_config},
     )
 
     # Get output config and save resolved config if requested
@@ -494,10 +573,21 @@ def run_training(
         ):
             callback.setdefault("save_last", "link")
 
+    if chain is None:
+        callbacks.append(CheckpointAliasSymlinkCallback(checkpoint_path))
+    else:
+        # The chain installs an epoch-boundary timer if the schedule needs one.
+        trainer_cfg["max_time"] = None
+        alias = checkpoint_path.parent.resolve() / checkpoint_path.name
+        if not alias.is_relative_to(work_dir) or alias.is_relative_to(chain.directory):
+            msg = (
+                "The checkpoint alias must be under the run directory, outside .chain."
+            )
+            raise ValueError(msg)
     callbacks += [
-        CheckpointAliasSymlinkCallback(checkpoint_path),
         TrainingTimerCallback(),
         *_gpu_util_callbacks(config),
+        *_early_stopping_callbacks(config),
     ]
     trainer_cfg["callbacks"] = callbacks
 
@@ -506,10 +596,44 @@ def run_training(
         default_root_dir=str(work_dir),
         logger=wandb_logger,
     )
+    _fit_training(trainer, model, datamodule, config, resolved_config, work_dir, chain)
 
-    if output_cfg.get("save_config") and trainer.is_global_zero:
-        save_resolved_config(config, work_dir)
+    if chain is not None:
+        _finalize_chain_checkpoint(trainer, checkpoint_path, chain)
+        return
 
+    _finalize_training_checkpoint(trainer, checkpoint_path)
+    trainer.strategy.barrier("checkpoint-alias-finalize")
+    if not skip_test:
+        trainer.test(model=model, datamodule=datamodule)
+
+
+def _finalize_chain_checkpoint(
+    trainer: L.Trainer, checkpoint_path: Path, chain: TrainingChain
+) -> None:
+    continuing = chain.save_endpoint(trainer)
+    if trainer.is_global_zero:
+        _link_checkpoint_target_to_latest(
+            trainer, checkpoint_path, source_path=chain.checkpoint
+        )
+        if not continuing:
+            (chain.directory / "finished").symlink_to(chain.checkpoint.name)
+    trainer.strategy.barrier("checkpoint-alias-finalize")
+    # A worker's nonzero exit can interrupt rank zero's logging under srun.
+    if trainer.is_global_zero:
+        chain.check_time_budget_on_exit()
+
+
+def _fit_training(
+    trainer: L.Trainer,
+    model: L.LightningModule,
+    datamodule: L.LightningDataModule,
+    config: DictConfig,
+    resolved_config: object,
+    work_dir: Path,
+    chain: TrainingChain | None,
+) -> None:
+    output_cfg = config.get("output", {})
     resume_checkpoint = config.get("resume_from_checkpoint") or output_cfg.get(
         "resume_from_checkpoint"
     )
@@ -528,6 +652,20 @@ def run_training(
         resume_weights_only=resume_weights_only,
         reset_resume_time_budget=reset_resume_time_budget,
     )
+    if chain is not None:
+        chain.prepare(
+            trainer,
+            resolved_config,
+            resume_checkpoint,
+            weights_only=resume_weights_only,
+        )
+    if (
+        (chain is None or chain.segment == 1)
+        and output_cfg.get("save_config")
+        and trainer.is_global_zero
+    ):
+        save_resolved_config(config, work_dir)
+
     _attach_reset_timer_callback(
         trainer,
         enabled=(
@@ -561,6 +699,8 @@ def run_training(
         log.info("Starting training from scratch (no resume checkpoint).")
         trainer.fit(model=model, datamodule=datamodule)
 
+
+def _finalize_training_checkpoint(trainer: L.Trainer, checkpoint_path: Path) -> None:
     # Save stable checkpoint target (prefer callback checkpoint) immediately
     # after fit so a checkpoint exists even if optional test later fails.
     #
@@ -582,18 +722,11 @@ def run_training(
             checkpoint_path.unlink()
         trainer.save_checkpoint(checkpoint_path)
 
-    # Ensure non-zero ranks observe the finalized checkpoint before test.
-    trainer.strategy.barrier("checkpoint-alias-finalize")
-
-    # Run testing if not skipped.
-    if not skip_test:
-        trainer.test(model=model, datamodule=datamodule)
-
 
 @torch.no_grad()
 def _save_reconstructions(
     model: AE,
-    datamodule: SpatioTemporalDataModule | TheWellDataModule,
+    datamodule: L.LightningDataModule,
     work_dir: Path,
     max_batches: int = 4,
     cmap: str = "viridis",
@@ -683,6 +816,7 @@ def train_autoencoder(
     )
     trainer.callbacks.append(TrainingTimerCallback())
     trainer.callbacks.extend(_gpu_util_callbacks(config))
+    trainer.callbacks.extend(_early_stopping_callbacks(config))
     output_cfg = config.get("output", {})
     if output_cfg.get("save_config", False) and trainer.is_global_zero:
         save_resolved_config(

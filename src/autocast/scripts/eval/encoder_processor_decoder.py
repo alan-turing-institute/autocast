@@ -1,14 +1,16 @@
 """Evaluation CLI for encoder-processor-decoder checkpoints."""
 
 import contextlib
+import functools
 import logging
 import os
+import random
 import time
 from collections.abc import Callable, Mapping, Sequence
 from enum import StrEnum
 from pathlib import Path
 from types import MethodType
-from typing import Any
+from typing import Any, cast
 
 import hydra
 import lightning as L
@@ -18,10 +20,11 @@ import yaml
 from einops import rearrange
 from omegaconf import DictConfig, OmegaConf, open_dict
 from the_well.data.normalization import ZScoreNormalization
-from torch.utils.data import DataLoader, SequentialSampler
+from torch.utils.data import DataLoader, SequentialSampler, Subset
 from torchmetrics import Metric
 
 from autocast.benchmarking import benchmark_model, benchmark_rollout
+from autocast.data.zarr_dataset import ZarrDataModule
 from autocast.external.lola.wrapped_decoder import WrappedDecoder
 from autocast.metrics import (
     MAE,
@@ -46,31 +49,44 @@ from autocast.metrics import (
     PowerSpectrumRMSEMid,
     PowerSpectrumRMSETail,
 )
-from autocast.metrics.coverage import MultiCoverage
+from autocast.metrics.collection_coverage import MultiCollectionCoverage
+from autocast.metrics.coverage import (
+    MultiCoverage,
+    MultivariateRankHistogram,
+    RankHistogram,
+)
 from autocast.metrics.ensemble import (
     CRPS,
+    AlmostFairEnergyScore,
     AlphaFairCRPS,
+    DawidSebastianiScore,
     EnergyScore,
     EnsembleSkill,
     EnsembleSpread,
     FairCRPS,
+    LogScore,
+    PooledSpreadSkillRatio,
+    SpatialVariogramScore,
+    SpatiotemporalVariogramScore,
     SpreadSkillRatio,
+    TemporalAutocorrelationMatch,
+    TemporalVariogramScore,
     VariogramScore,
     WinklerScore,
 )
+from autocast.metrics.rank_histogram import _RankHistogramBase
+from autocast.metrics.scale_bands import ScaleBandScores
 from autocast.metrics.trajectory import (
     CsvValue,
     TrajectoryMetricAccumulator,
     TrajectoryTask,
     build_trajectory_metadata,
 )
-from autocast.models.encoder_processor_decoder import EncoderProcessorDecoder
-from autocast.models.encoder_processor_decoder_ensemble import (
-    EncoderProcessorDecoderEnsemble,
-)
 from autocast.models.processor import ProcessorModel
 from autocast.models.processor_ensemble import ProcessorModelEnsemble
+from autocast.processors.rollout import RolloutMixin
 from autocast.scripts.config import save_resolved_config
+from autocast.scripts.data import RolloutDataModule
 from autocast.scripts.execution import (
     benchmark_metric_rows,
     extract_state_dict,
@@ -88,7 +104,7 @@ from autocast.scripts.setup import (
 )
 from autocast.scripts.training import apply_float32_matmul_precision
 from autocast.scripts.utils import get_default_config_path
-from autocast.types import TensorBTSC, TensorBTSCM
+from autocast.types import RolloutOutput, TensorBTSC, TensorBTSCM
 from autocast.types.batch import Batch, EncodedBatch
 from autocast.utils import plot_spatiotemporal_snapshots, plot_spatiotemporal_video
 from autocast.utils.plots import (
@@ -127,11 +143,53 @@ AVAILABLE_METRICS_ENSEMBLE = {
     "fcrps": FairCRPS,
     "afcrps": AlphaFairCRPS,
     "energy": EnergyScore,
+    "afenergy": AlmostFairEnergyScore,
     "variogram": VariogramScore,
+    "variogram_spatial": SpatialVariogramScore,
+    "variogram_temporal": TemporalVariogramScore,
+    "variogram_spatiotemporal": SpatiotemporalVariogramScore,
+    "log_score": LogScore,
+    "dss": DawidSebastianiScore,
+    "autocorr_match": TemporalAutocorrelationMatch,
+    "rank_histogram": RankHistogram,
+    "mv_rank_histogram": MultivariateRankHistogram,
+    # Coverage of REGIONAL sums, swept over region size. Per-point coverage is
+    # invariant to cross-point correlation by construction, so it cannot
+    # distinguish a model that states the correlation from one that assumes it
+    # away; the regional read can, because independent errors cancel under
+    # aggregation and correlated ones do not. Every constructor argument
+    # defaults (region_sizes=None defers to the field shape on first update), so
+    # this needs no per-dataset wiring.
+    "collection_coverage": MultiCollectionCoverage,
+    # One-step error of the mean, spread / error and members' power per band of
+    # cycles (the scorecard's by-scale rows); writes <prefix>_scale_bands_window_
+    # <w>.csv. Bands from eval.metric_kwargs.scale_bands.bands (default D286's).
+    "scale_bands": ScaleBandScores,
+    # ⚠ `DependenceRankHistogram` MUST NOT be registered here bare. Its default
+    # pair weighting measures site distance in the FLATTENED array, which is
+    # correct only for a straight line whose ends are not adjacent -- wrong for
+    # any grid and any periodic field (on 64x64 it weights a vertical neighbour
+    # at one sixty-fourth of a horizontal one, silently). The rollout diagnostic
+    # path binds the geometry from config via `_dependence_pair_weights`; use
+    # that rather than adding a bare entry to this table.
     "spread": EnsembleSpread,
     "skill": EnsembleSkill,
     "ssr": SpreadSkillRatio,
+    # Same quantity as "ssr", but the division is taken once after pooling over
+    # cases and space instead of once per case. "ssr" is biased high on
+    # correlated fields (it averages ratios); this one reads 1 for a calibrated
+    # ensemble at any correlation length. Both are selectable so a run can
+    # report them side by side.
+    "ssr_pooled": PooledSpreadSkillRatio,
     "winkler": WinklerScore,
+    # Alias of WinklerScore for a second, distinct central interval (e.g. a 99%
+    # tail interval alongside the default one). The alpha is bound HERE, so
+    # selecting "winkler_99" yields alpha=0.01 whether or not the caller also
+    # sets `eval.metric_kwargs.winkler_99.alpha` -- a kwarg passed at call time
+    # simply overrides the bound one. Binding it is deliberate: with the alpha
+    # left to config, a run that forgot the key would silently report a second
+    # copy of the DEFAULT interval under the name "winkler_99".
+    "winkler_99": functools.partial(WinklerScore, alpha=0.01),
 }
 
 DEFAULT_EVAL_METRICS = [
@@ -159,7 +217,61 @@ DEFAULT_EVAL_METRICS = [
     "winkler",
 ]
 
-MEMORY_INTENSIVE_METRICS = {"variogram", "energy"}
+
+def _registry_class_flag(entry: Any, attr: str, default: object) -> Any:
+    """Read a per-class metric flag off a registry entry, whatever its shape.
+
+    Registry values are not all `BaseMetric` subclasses: some are plain
+    `torchmetrics.Metric` subclasses (the coverage-module rank histograms) and
+    some are `functools.partial` aliases that bind a constructor argument. A
+    bare `entry.attr` raises on the first and reads nothing useful on the
+    second, so a partial alias of a memory-intensive class would slip past the
+    guard silently. Unwrap the partial, then fall back to the default the
+    `BaseMetric` attribute itself declares.
+    """
+    cls = entry.func if isinstance(entry, functools.partial) else entry
+    return getattr(cls, attr, default)
+
+
+# Names resolving to a metric class flagged `memory_intensive` (the variogram
+# family and the multivariate Dawid-Sebastiani score, all D-by-D in the field
+# size -- see `autocast.metrics.base.BaseMetric.memory_intensive`). Derived from
+# the class attribute rather than hand-listed, so any new registry alias of an
+# existing memory-intensive class (e.g. a future `variogram_spatial_v2`) is
+# covered automatically.
+MEMORY_INTENSIVE_METRICS = frozenset(
+    name
+    for registry in (AVAILABLE_METRICS, AVAILABLE_METRICS_ENSEMBLE)
+    for name, cls in registry.items()
+    if _registry_class_flag(cls, "memory_intensive", False)
+)
+
+# Names resolving to a metric class with `min_window_steps > 1` (temporal-
+# dependence scalars needing at least two lead steps to form a lag/pair --
+# see `autocast.metrics.base.BaseMetric.min_window_steps`). Derived from the
+# class attribute for the same reason as `MEMORY_INTENSIVE_METRICS` above:
+# any new registry alias of an existing class is covered automatically,
+# instead of a separately maintained name allowlist. `autocorr_match` raises
+# on a shorter window; `variogram_temporal` and `variogram_spatiotemporal`
+# don't raise but silently degenerate (the former to a fake-perfect 0, the
+# latter to a value numerically identical to `variogram_spatial`), which is
+# just as misleading in a CSV -- all are excluded on the same terms. Passed
+# to `compute_metrics_from_dataloader` so windows (explicit, e.g. from
+# `metric_windows`/`metric_windows_rollout`, or the implicit whole-sequence
+# window) shorter than a metric's minimum are filtered out per-window, based
+# on the actual observed tensor length -- not a single global
+# `n_steps_output` check, since one rollout pass legitimately mixes window
+# lengths (e.g. the default `metric_windows_rollout` includes both a
+# single-step [0, 1] window and longer ones). Also used (via
+# `_is_single_step_incompatible`) to exclude these names, unconditionally,
+# from the per-timestep rollout metric builder below, which only ever sees
+# T=1 slices by construction and so can never satisfy any minimum > 1.
+METRIC_MIN_WINDOW_STEPS: Mapping[str, int] = {
+    name: _registry_class_flag(cls, "min_window_steps", 1)
+    for registry in (AVAILABLE_METRICS, AVAILABLE_METRICS_ENSEMBLE)
+    for name, cls in registry.items()
+    if _registry_class_flag(cls, "min_window_steps", 1) > 1
+}
 
 EVAL_MODES = ("auto", "encode_once", "ambient", "latent")
 DEFAULT_EVAL_MODE = "auto"
@@ -260,6 +372,7 @@ def _build_eval_predict_fn(
     is_processor_model: bool,
     decode_fn: Callable[[torch.Tensor], torch.Tensor] | None = None,
     n_members: int | None = None,
+    denormalize: bool = False,
 ) -> Callable[[Any], Any]:
     """Build the prediction callable used by evaluation metrics."""
     if is_processor_model:
@@ -285,6 +398,16 @@ def _build_eval_predict_fn(
             return latent_pred, batch.encoded_output_fields
 
         return predict_fn
+
+    if denormalize:
+        _mark_forward_methods_if_available(model, methods=("predict_step",))
+
+        def predict_physical(batch):
+            return model.predict_step(batch, batch_idx=0), model.denormalize_tensor(
+                batch.output_fields
+            )
+
+        return predict_physical
 
     return model
 
@@ -616,14 +739,39 @@ def _trajectory_statistics_seed(eval_cfg: DictConfig) -> int:
     return seed
 
 
-def _seed_trajectory_sampling(seed: int) -> None:
-    """Reset torch sampling immediately before a trajectory inference pass."""
+def _evaluation_sampling_seed(
+    eval_cfg: DictConfig, *, rollout: bool = False
+) -> int | None:
+    """Resolve explicit inference seeds, retaining the legacy trajectory fallback."""
+    offset = int(rollout)
+    if rollout and eval_cfg.get("rollout_sampling_seed") is not None:
+        field = "eval.rollout_sampling_seed"
+        seed = eval_cfg.rollout_sampling_seed
+        offset = 0
+    else:
+        field = "eval.sampling_seed"
+        seed = eval_cfg.get("sampling_seed")
+        if seed is None:
+            trajectory_cfg = eval_cfg.get("trajectory_statistics") or {}
+            if not trajectory_cfg.get("enabled", False):
+                return None
+            seed = _trajectory_statistics_seed(eval_cfg)
+    if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
+        msg = f"{field} must be a non-negative integer or null."
+        raise ValueError(msg)
+    return seed + offset
+
+
+def _seed_evaluation_sampling(seed: int) -> None:
+    """Reset torch sampling immediately before an evaluation inference pass."""
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 
 
-def _validate_trajectory_loader(dataloader: DataLoader, *, label: str) -> Any:
+def _validate_trajectory_loader(
+    dataloader: DataLoader, *, label: str, include_per_timestep: bool = False
+) -> Any:
     """Require the complete sequential loader semantics used by index metadata."""
     if not isinstance(dataloader.sampler, SequentialSampler):
         msg = f"{label} trajectory statistics require a sequential dataloader."
@@ -632,7 +780,7 @@ def _validate_trajectory_loader(dataloader: DataLoader, *, label: str) -> Any:
         msg = f"{label} trajectory statistics require drop_last=False."
         raise ValueError(msg)
 
-    dataset = dataloader.dataset
+    dataset: Any = dataloader.dataset
     missing = [
         name
         for name in ("sample_trajectory_indices", "sample_window_indices")
@@ -644,6 +792,16 @@ def _validate_trajectory_loader(dataloader: DataLoader, *, label: str) -> Any:
             f"trajectory metadata: {missing}."
         )
         raise TypeError(msg)
+    if include_per_timestep:
+        trajectory_indices = dataset.sample_trajectory_indices
+        if len(set(trajectory_indices)) != len(trajectory_indices):
+            msg = (
+                "Per-timestep trajectory metrics require one sample per trajectory; "
+                "the rollout loader contains multiple windows per trajectory. Set "
+                "eval.trajectory_statistics.include_per_timestep=false to aggregate "
+                "window metrics by trajectory."
+            )
+            raise ValueError(msg)
     return dataset
 
 
@@ -740,6 +898,42 @@ def _limit_batches(dataloader, max_batches: int | None):
     return _generator()
 
 
+def _sample_test_windows(
+    loader: DataLoader, *, max_batches: int | None, seed: int
+) -> DataLoader:
+    """Select a fixed random subset before Fabric distributes the test loader."""
+    if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
+        msg = "eval.test_subset_seed must be a non-negative integer."
+        raise ValueError(msg)
+    if max_batches is None or max_batches <= 0:
+        msg = "eval.test_subset_seed requires a positive eval.max_test_batches."
+        raise ValueError(msg)
+    if not isinstance(loader.sampler, SequentialSampler) or loader.batch_size is None:
+        msg = "Test window sampling requires a sequential loader with a batch size."
+        raise ValueError(msg)
+
+    total = len(loader.sampler)
+    count = min(max_batches * loader.batch_size, total)
+    if count == total:
+        return loader
+    indices = sorted(random.Random(seed).sample(range(total), count))
+    log.info("Selected %s of %s test windows with seed %s", count, total, seed)
+    return DataLoader(
+        Subset(loader.dataset, indices),
+        batch_size=loader.batch_size,
+        num_workers=loader.num_workers,
+        collate_fn=loader.collate_fn,
+        pin_memory=loader.pin_memory,
+        drop_last=loader.drop_last,
+        timeout=loader.timeout,
+        worker_init_fn=loader.worker_init_fn,
+        multiprocessing_context=loader.multiprocessing_context,
+        generator=loader.generator,
+        prefetch_factor=loader.prefetch_factor,
+        persistent_workers=loader.persistent_workers,
+    )
+
+
 def _resolve_rollout_batch_limit(eval_cfg: DictConfig) -> int | None:
     max_test_batches = eval_cfg.get("max_test_batches")
     max_rollout_batches = eval_cfg.get("max_rollout_batches")
@@ -784,7 +978,57 @@ def _resolve_rollout_timestep_limit(
     return int(max_rollout_steps) * int(rollout_stride)
 
 
+def _apply_rollout_subset(datamodule: Any, eval_cfg: DictConfig) -> dict | None:
+    """Apply a frozen test-trajectory selection to every rollout loader."""
+    path = eval_cfg.get("rollout_subset")
+    if path is None:
+        return None
+    if (eval_cfg.get("trajectory_statistics") or {}).get("enabled", False):
+        msg = "eval.rollout_subset cannot be combined with full trajectory statistics."
+        raise ValueError(msg)
+    if (
+        eval_cfg.get("dump_rollout_tensors", False)
+        and _normalize_dump_split(eval_cfg.get("dump_split")) != DumpSplit.TEST
+    ):
+        msg = "eval.rollout_subset selects test trajectories, not validation dumps."
+        raise ValueError(msg)
+
+    selection = yaml.safe_load(Path(hydra.utils.to_absolute_path(path)).read_text())
+    dataset = datamodule.rollout_test_dataset
+    population = len(dataset)
+    if population != selection["population_size"]:
+        msg = "Rollout subset population does not match the test dataset."
+        raise ValueError(msg)
+    if "files" in selection:
+        well = dataset.well_dataset
+        files = dict(
+            zip(
+                (Path(p).name for p in well.files_paths),
+                well.n_trajectories_per_file,
+                strict=True,
+            )
+        )
+        if list(files.items()) != list(selection["files"].items()):
+            msg = "Rollout subset file inventory/order does not match the test dataset."
+            raise ValueError(msg)
+    indices = selection["indices"]
+    if (
+        not indices
+        or any(type(i) is not int or not 0 <= i < population for i in indices)
+        or len(set(indices)) != len(indices)
+    ):
+        msg = "Rollout subset indices must be unique integers within the test dataset."
+        raise ValueError(msg)
+    datamodule.rollout_test_dataset = Subset(dataset, indices)
+    log.info(
+        "Selected %d of %d test trajectories from %s", len(indices), population, path
+    )
+    return selection
+
+
 def _resolve_rollout_channel_names(dataset: Any) -> list[str] | None:
+    while isinstance(dataset, Subset):
+        dataset = dataset.dataset
     if dataset is None:
         return None
 
@@ -818,6 +1062,35 @@ def _resolve_rollout_channel_names(dataset: Any) -> list[str] | None:
             return None
 
     return channel_names
+
+
+def _plot_or_warn(metric: Any, /, **kwargs: Any) -> None:
+    """Render a metric's diagram, but never let a rendering failure end the run.
+
+    ⛔ **This exists because a plotting failure discarded a COMPLETED 5.4-hour
+    scoring pass, measured 2026-09-02.** The cns64 ARFC eval computed all 35 test
+    metrics, logged every one of them, and then died inside
+    ``matplotlib.font_manager`` on a font file a venv rebuild had removed under
+    the running process. ``evaluation_metrics.csv`` is written well after this
+    loop, so nothing was persisted: the numbers existed only in memory and went
+    with the process. Re-running cost the whole 5.4 hours again.
+
+    A diagram is a convenience; the scores are the deliverable, and the
+    deliverable must not depend on the convenience. The failure is logged with
+    its exception so it stays visible rather than silent.
+
+    ⚠ One consequence to know: ``MultiCollectionCoverage.plot`` also writes the
+    per-window CSV the figure scripts read, so a swallowed failure here costs
+    that curve too -- the run survives with a gap rather than dying whole, which
+    is the trade this makes deliberately.
+    """
+    try:
+        metric.plot(**kwargs)
+    except Exception:
+        log.exception(
+            "plotting %s failed; scores are unaffected and the run continues",
+            type(metric).__name__,
+        )
 
 
 def _process_metrics_results(
@@ -856,10 +1129,60 @@ def _process_metrics_results(
 
             # If this is coverage, also plot it
             if name == "coverage" and isinstance(metric, MultiCoverage):
-                metric.plot(
+                _plot_or_warn(
+                    metric,
                     save_path=plot_dir
                     / f"{log_prefix.lower()}_coverage_window_{window_str}.png",
                     title=f"{log_prefix} Coverage Window {window}",
+                )
+
+            # Rank-histogram diagrams (univariate PIT and joint multivariate).
+            # MultivariateRankHistogram subclasses RankHistogram, so one check
+            # covers both, and metric.name keeps their output files distinct.
+            if isinstance(metric, RankHistogram):
+                _plot_or_warn(
+                    metric,
+                    save_path=plot_dir
+                    / f"{log_prefix.lower()}_{metric.name}_window_{window_str}.png",
+                    title=f"{log_prefix} {metric.name} window {window}",
+                )
+
+            # Regional-sum coverage, written per window so the region-size sweep
+            # can be read at every rollout lead rather than once per run. `plot`
+            # writes the CSV beside the figure, which is the machine-readable
+            # form every downstream figure script consumes.
+            if isinstance(metric, MultiCollectionCoverage):
+                _plot_or_warn(
+                    metric,
+                    save_path=plot_dir
+                    / (
+                        f"{log_prefix.lower()}_collection_coverage_window_"
+                        f"{window_str}.png"
+                    ),
+                    title=f"{log_prefix} Collection Coverage Window {window}",
+                )
+
+            # The by-scale table, written per window like the coverage sweep.
+            if isinstance(metric, ScaleBandScores):
+                _plot_or_warn(
+                    metric,
+                    save_path=plot_dir
+                    / f"{log_prefix.lower()}_scale_bands_window_{window_str}.png",
+                )
+
+            # The rank_histogram module's family (average, band-depth, pooled
+            # multivariate, dependence) is a SEPARATE hierarchy from
+            # coverage.RankHistogram above -- it derives from
+            # `_RankHistogramBase`, so the check above does not reach it and
+            # these were previously never written per window. Keyed by the
+            # REGISTRY name, not `metric.name`: two registry entries may share a
+            # class (differing only in bound kwargs) and would collide on it.
+            if isinstance(metric, _RankHistogramBase):
+                _plot_or_warn(
+                    metric,
+                    save_path=plot_dir
+                    / f"{log_prefix.lower()}_{name}_window_{window_str}.png",
+                    title=f"{log_prefix} {name} Window {window}",
                 )
 
             # Try to get a scalar value for csv
@@ -1060,12 +1383,7 @@ def _save_rollout_snapshot_panels(
 
 
 def _render_rollouts(  # noqa: PLR0912, PLR0915
-    model: (
-        EncoderProcessorDecoder
-        | EncoderProcessorDecoderEnsemble
-        | ProcessorModel
-        | ProcessorModelEnsemble
-    ),
+    rollout_fn: Callable[..., RolloutOutput],
     dataloader,
     batch_indices: Sequence[int],
     video_dir: Path,
@@ -1091,6 +1409,7 @@ def _render_rollouts(  # noqa: PLR0912, PLR0915
     rollout_start: int = 0,
     teacher_forcing_ratio: float = 0.0,
 ) -> list[Path]:
+    """Render predictions from a rollout method or a custom evaluation predictor."""
     # Return early if no rollout indices are requested
     if not batch_indices:
         return []
@@ -1117,7 +1436,7 @@ def _render_rollouts(  # noqa: PLR0912, PLR0915
             if rollout_predict_fn is None:
                 # Match the metric path; custom predictors apply their own crop.
                 rollout_batch = _crop_rollout_batch_start(batch, rollout_start)
-                preds, trues = model.rollout(
+                preds, trues = rollout_fn(
                     rollout_batch,
                     stride=stride,
                     max_rollout_steps=max_rollout_steps,
@@ -1550,9 +1869,50 @@ def _normalize_rollout_member_render_mode(value: str | None) -> str:
     return normalized
 
 
-def _should_skip_metric(name: str, *, skip_memory_intensive: bool = True) -> bool:
-    """Return True when a metric should be excluded due to memory cost."""
-    return skip_memory_intensive and name in MEMORY_INTENSIVE_METRICS
+def _is_single_step_incompatible(name: str) -> bool:
+    """Return True when `name` needs more lead steps than a T=1 slice can give.
+
+    Used only on the per-timestep rollout path (each slice is a fixed T=1 by
+    construction); the windowed test/rollout paths instead filter per-window,
+    against the actual observed tensor length, via `metric_min_window_steps`
+    inside `compute_metrics_from_dataloader`.
+    """
+    return name in METRIC_MIN_WINDOW_STEPS
+
+
+def _should_skip_metric(name: str, include_memory_intensive: bool = False) -> bool:
+    """Return True when a metric should be excluded due to memory cost.
+
+    Memory-intensive metrics (``MEMORY_INTENSIVE_METRICS`` -- the variogram family
+    and the multivariate Dawid-Sebastiani score, all D-by-D in the field size) are
+    skipped by default so a stray entry in a metric list cannot silently blow up
+    memory. Callers that have budgeted for the cost opt in with
+    ``include_memory_intensive`` (set from ``eval.include_memory_intensive_metrics``).
+    The default keeps the guard, so eval outputs stay byte-identical whenever the
+    flag is absent.
+    """
+    return name in MEMORY_INTENSIVE_METRICS and not include_memory_intensive
+
+
+def _resolve_include_memory_intensive(eval_cfg: DictConfig) -> bool:
+    """Resolve the memory-guard opt-in, honouring either config key.
+
+    Two spellings of the same switch exist:
+    ``eval.include_memory_intensive_metrics`` (positive, default False -- the
+    kept spelling) and the older ``eval.skip_memory_intensive_metrics`` (negative,
+    default True, no longer shipped in ``configs/eval/default.yaml``). Both are
+    read, because a config
+    that sets only the legacy key would otherwise be silently ignored -- and a
+    dropped guard flag does not fail, it quietly runs or quietly skips a metric.
+    The positive key wins when a config sets both.
+    """
+    include = eval_cfg.get("include_memory_intensive_metrics", None)
+    if include is not None:
+        return bool(include)
+    skip = eval_cfg.get("skip_memory_intensive_metrics", None)
+    if skip is not None:
+        return not bool(skip)
+    return False
 
 
 def _normalize_per_batch_rows(rows: Any) -> list[dict[str, float | str]]:
@@ -1668,7 +2028,7 @@ def _is_metadata_row(row: Mapping[str, float | str]) -> bool:
 
 
 def _split_metric_and_metadata_rows(
-    rows: list[dict[str, float | str]],
+    rows: Sequence[object],
 ) -> tuple[list[dict[str, float | str]], list[dict[str, float | str]]]:
     metric_rows: list[dict[str, float | str]] = []
     metadata_rows: list[dict[str, float | str]] = []
@@ -1706,12 +2066,7 @@ def _make_metadata_row(
 
 
 def _parameter_count_rows(
-    model: (
-        EncoderProcessorDecoderEnsemble
-        | EncoderProcessorDecoder
-        | ProcessorModel
-        | ProcessorModelEnsemble
-    ),
+    model: torch.nn.Module,
 ) -> list[dict[str, float | str]]:
     def _count(module: torch.nn.Module | None, *, trainable: bool = False) -> int:
         if module is None:
@@ -1827,12 +2182,7 @@ def _training_runtime_rows(
 
 def _evaluation_metadata_rows(
     checkpoint_payload: Mapping[str, Any],
-    model: (
-        EncoderProcessorDecoderEnsemble
-        | EncoderProcessorDecoder
-        | ProcessorModel
-        | ProcessorModelEnsemble
-    ),
+    model: torch.nn.Module,
 ) -> list[dict[str, float | str]]:
     rows: list[dict[str, float | str]] = []
     rows.extend(_training_runtime_rows(checkpoint_payload))
@@ -1845,12 +2195,7 @@ def _collect_benchmark_rows(
     eval_cfg: DictConfig,
     cfg: DictConfig,
     stats: Mapping[str, Any],
-    model: (
-        EncoderProcessorDecoderEnsemble
-        | EncoderProcessorDecoder
-        | ProcessorModel
-        | ProcessorModelEnsemble
-    ),
+    model: torch.nn.Module,
     checkpoint_path: Path,
     device: str,
     eval_batch_size: int,
@@ -2432,7 +2777,7 @@ def _resolve_auto_eval_mode(
     return "latent"
 
 
-def _maybe_swap_to_ambient_datamodule(  # noqa: PLR0912
+def _maybe_swap_to_ambient_datamodule(  # noqa: PLR0912, PLR0915
     cfg: DictConfig,
     *,
     eval_mode: str,
@@ -2525,6 +2870,10 @@ def _maybe_swap_to_ambient_datamodule(  # noqa: PLR0912
             )
             if isinstance(step_value, int) and step_value > 0:
                 OmegaConf.update(swapped_datamodule, step_key, step_value, merge=True)
+        if swapped_datamodule.get("_target_") == THE_WELL_DATAMODULE_TARGET:
+            rollout_steps = original_datamodule.get("max_rollout_steps")
+            if rollout_steps is not None:
+                swapped_datamodule.max_rollout_steps = rollout_steps
         if (
             isinstance(original_datamodule, Mapping)
             and "start_frame" in original_datamodule
@@ -2872,8 +3221,18 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     trajectory_include_per_timestep = bool(
         trajectory_cfg.get("include_per_timestep", True)
     )
-    trajectory_sampling_seed = (
-        _trajectory_statistics_seed(eval_cfg) if trajectory_statistics_enabled else None
+    sampling_seed = _evaluation_sampling_seed(eval_cfg)
+    rollout_sampling_seed = _evaluation_sampling_seed(eval_cfg, rollout=True)
+    seed_cfg = OmegaConf.to_container(eval_cfg, resolve=False)
+    inherits_trajectory_seed = (
+        isinstance(seed_cfg, dict)
+        and seed_cfg.get("sampling_seed") == "${.trajectory_statistics.sampling_seed}"
+    )
+    explicit_rollout_seed = (
+        rollout_sampling_seed
+        if eval_cfg.get("rollout_sampling_seed") is not None
+        or (eval_cfg.get("sampling_seed") is not None and not inherits_trajectory_seed)
+        else None
     )
     if trajectory_statistics_enabled and (
         (max_test_batches is not None and max_test_batches > 0)
@@ -2885,7 +3244,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
         )
         raise ValueError(msg)
     if trajectory_statistics_enabled and latent_space_metrics:
-        msg = "Trajectory paper statistics must be computed in decoded data space."
+        msg = "Trajectory statistics must be computed in decoded data space."
         raise ValueError(msg)
     _validate_latent_space_metrics_flag(
         requested_eval_mode=requested_eval_mode,
@@ -3004,6 +3363,27 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
         stats.get("example_batch"), EncodedBatch
     ):
         datamodule, cfg, stats = setup_datamodule(cfg)
+
+    if (
+        isinstance(datamodule, ZarrDataModule)
+        and int(eval_cfg.get("rollout_start", 0) or 0) > 0
+    ):
+        msg = (
+            "eval.rollout_start must be 0 for bounded Zarr rollout windows. "
+            "Use datamodule.start_frame to offset window sampling instead."
+        )
+        raise ValueError(msg)
+
+    if trajectory_statistics_enabled:
+        if not isinstance(datamodule, RolloutDataModule):
+            msg = "Trajectory statistics require a rollout_test_dataloader method."
+            raise TypeError(msg)
+        # Check rollout metadata before the potentially expensive single-step pass.
+        _validate_trajectory_loader(
+            datamodule.rollout_test_dataloader(batch_size=eval_batch_size),
+            label="Rollout",
+            include_per_timestep=trajectory_include_per_timestep,
+        )
 
     # Override model n_members from eval config if specified
     if "n_members" in eval_cfg:
@@ -3184,6 +3564,21 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
         )
         raise ValueError(msg)
 
+    rollout_subset = _apply_rollout_subset(datamodule, eval_cfg)
+    if rollout_subset is not None and fabric.global_rank == 0:
+        subset_path = csv_path.parent / "rollout_subset.yaml"
+        subset_path.parent.mkdir(parents=True, exist_ok=True)
+        if (
+            subset_path.exists()
+            and yaml.safe_load(subset_path.read_text()) != rollout_subset
+        ):
+            msg = (
+                f"Existing rollout subset differs: {subset_path}. "
+                "Choose a new output directory."
+            )
+            raise ValueError(msg)
+        subset_path.write_text(yaml.safe_dump(rollout_subset, sort_keys=False))
+
     # Setup model and loader with Fabric
     log.info("Model configuration n_members: %s", n_members)
     log.info("Model class: %s", type(model))
@@ -3200,6 +3595,11 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
         if trajectory_statistics_enabled
         else None
     )
+    test_subset_seed = eval_cfg.get("test_subset_seed")
+    if test_subset_seed is not None:
+        raw_test_loader = _sample_test_windows(
+            raw_test_loader, max_batches=max_test_batches, seed=test_subset_seed
+        )
     test_loader = _limit_batches(
         fabric.setup_dataloaders(raw_test_loader), max_test_batches
     )
@@ -3208,9 +3608,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
 
     evaluation_rows: list[dict[str, float | str]] = []
     compute_test_metrics = eval_cfg.get("compute_test_metrics", True)
-    skip_memory_intensive_metrics = bool(
-        eval_cfg.get("skip_memory_intensive_metrics", True)
-    )
+    include_memory_intensive = _resolve_include_memory_intensive(eval_cfg)
 
     if dump_requested:
         log.info(
@@ -3222,9 +3620,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
         test_metric_fns: dict[str, Callable[[], Metric]] = {}
 
         for name in metrics_list:
-            if _should_skip_metric(
-                name, skip_memory_intensive=skip_memory_intensive_metrics
-            ):
+            if _should_skip_metric(name, include_memory_intensive):
                 log.info("Skipping metric '%s' due to memory cost.", name)
                 continue
             if name in AVAILABLE_METRICS:
@@ -3276,13 +3672,15 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
             is_processor_model=is_processor_model,
             decode_fn=decode_fn,
             n_members=n_members if n_members and n_members > 1 else None,
+            denormalize=bool(eval_cfg.get("denormalize_test_metrics", False)),
         )
 
         test_trajectory_accumulator = None
+        if sampling_seed is not None:
+            _seed_evaluation_sampling(sampling_seed)
         if trajectory_statistics_enabled:
-            assert trajectory_sampling_seed is not None
+            assert sampling_seed is not None
             assert test_dataset_for_trajectories is not None
-            _seed_trajectory_sampling(trajectory_sampling_seed)
             test_trajectory_accumulator = _build_trajectory_accumulator(
                 dataset=test_dataset_for_trajectories,
                 metric_fns=test_metric_fns,
@@ -3294,7 +3692,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                     model=model,
                     resolved_eval_path=resolved_eval_path,
                     n_members=int(n_members),
-                    sampling_seed=trajectory_sampling_seed,
+                    sampling_seed=sampling_seed,
                 ),
             )
 
@@ -3305,6 +3703,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
             windows=test_windows,
             return_per_batch=True,
             device=fabric.device,
+            metric_min_window_steps=METRIC_MIN_WINDOW_STEPS,
             batch_result_callback=(
                 test_trajectory_accumulator.update
                 if test_trajectory_accumulator is not None
@@ -3380,6 +3779,9 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
         or compute_rollout_metrics
         or trajectory_statistics_enabled
     ):
+        if not isinstance(datamodule, RolloutDataModule):
+            msg = "Rollout evaluation requires a rollout_test_dataloader method."
+            raise TypeError(msg)
         max_rollout_steps = eval_cfg.get("max_rollout_steps", 10)
         rollout_start = int(eval_cfg.get("rollout_start", 0) or 0)
         if rollout_start < 0:
@@ -3445,7 +3847,8 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 else None
             )
             _render_rollouts(
-                model,  # pyright: ignore[reportArgumentType]
+                # Keep Fabric's forwarding for precision and distributed execution.
+                cast(RolloutMixin, model).rollout,
                 rollout_loader,
                 batch_indices,
                 video_dir,
@@ -3476,9 +3879,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
 
         if compute_rollout_metrics or trajectory_statistics_enabled:
             for name in metrics_list:
-                if _should_skip_metric(
-                    name, skip_memory_intensive=skip_memory_intensive_metrics
-                ):
+                if _should_skip_metric(name, include_memory_intensive):
                     log.info("Skipping rollout metric '%s' due to memory cost.", name)
                     continue
                 if name in AVAILABLE_METRICS:
@@ -3579,11 +3980,29 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
             # Per-timestep, per-channel rollout metrics (rows=metrics, cols=timestep)
             per_timestep_metric_fns: dict[str, Callable[[], Metric]] = {}
             for name, metric_factory in rollout_metric_fns.items():
-                if _should_skip_metric(
-                    name, skip_memory_intensive=skip_memory_intensive_metrics
-                ):
+                if _should_skip_metric(name, include_memory_intensive):
                     log.info(
                         "Skipping rollout per-timestep metric '%s' due to memory cost.",
+                        name,
+                    )
+                    continue
+                if isinstance(metric_factory, type) and issubclass(
+                    metric_factory, RankHistogram
+                ):
+                    # Aggregate calibration diagrams; no per-timestep expansion.
+                    continue
+                if _is_single_step_incompatible(name):
+                    # Per-timestep slices are always length 1 by construction
+                    # (`compute_metrics_per_timestep_from_dataloader` updates
+                    # each metric with a single (B, 1, S, C) slice per
+                    # timestep), so a metric needing >1 step can never be
+                    # satisfied here -- unlike the windowed passes above,
+                    # there is no window length to check.
+                    log.info(
+                        "Skipping single-step-incompatible metric '%s' on the "
+                        "per-timestep rollout path (always T=1 per slice); it "
+                        "still runs on the windowed rollout path for windows "
+                        "long enough to satisfy it.",
                         name,
                     )
                     continue
@@ -3618,13 +4037,14 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                             )
                         )
 
-            def _write_rollout_metric_outputs(
+            def _write_rollout_metric_outputs(  # noqa: PLR0915
                 *,
                 rollout_predict: Callable[[Any], Any],
                 csv_name: str,
                 metadata_csv_name: str,
                 per_timestep_stem: str,
                 log_prefix: str,
+                scoring_seed: int | None,
                 collect_trajectory_statistics: bool = False,
             ) -> None:
                 raw_rollout_metrics_loader = datamodule.rollout_test_dataloader(
@@ -3643,11 +4063,11 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 )
 
                 rollout_trajectory_accumulator = None
+                if scoring_seed is not None:
+                    _seed_evaluation_sampling(scoring_seed)
                 if collect_trajectory_statistics:
-                    assert trajectory_sampling_seed is not None
+                    assert scoring_seed is not None
                     assert rollout_dataset_for_trajectories is not None
-                    rollout_sampling_seed = trajectory_sampling_seed + 1
-                    _seed_trajectory_sampling(rollout_sampling_seed)
                     rollout_trajectory_accumulator = _build_trajectory_accumulator(
                         dataset=rollout_dataset_for_trajectories,
                         metric_fns=rollout_metric_fns,
@@ -3659,7 +4079,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                             model=model,
                             resolved_eval_path=resolved_eval_path,
                             n_members=int(n_members),
-                            sampling_seed=rollout_sampling_seed,
+                            sampling_seed=scoring_seed,
                         ),
                     )
 
@@ -3671,6 +4091,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                         windows=windows,
                         return_per_batch=True,
                         device=fabric.device,
+                        metric_min_window_steps=METRIC_MIN_WINDOW_STEPS,
                         batch_result_callback=(
                             rollout_trajectory_accumulator.update
                             if rollout_trajectory_accumulator is not None
@@ -3749,6 +4170,8 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                     ),
                     max_rollout_batches,
                 )
+                if explicit_rollout_seed is not None:
+                    _seed_evaluation_sampling(explicit_rollout_seed)
                 per_timestep_results = compute_metrics_per_timestep_from_dataloader(
                     dataloader=rollout_loader_per_timestep,
                     metric_fns=per_timestep_metric_fns,
@@ -3830,6 +4253,8 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                     if resolved_eval_path == EVAL_PATH_LATENT_CACHED_LATENT_ONLY
                     else "denormalized"
                 )
+                if explicit_rollout_seed is not None:
+                    _seed_evaluation_sampling(explicit_rollout_seed)
                 _dump_rollout_tensors(
                     rollout_predict=rollout_predict,
                     dataloader=dump_loader,
@@ -3846,6 +4271,11 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                             cfg.get("datamodule", {}).get("data_path", "")
                         ),
                         "value_space": dump_value_space,
+                        **(
+                            {"evaluation_sampling_seed": explicit_rollout_seed}
+                            if explicit_rollout_seed is not None
+                            else {}
+                        ),
                     },
                     fabric=fabric,
                     n_traj_cap=eval_cfg.get("dump_max_traj", None),
@@ -3857,6 +4287,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                     metadata_csv_name="rollout_metadata.csv",
                     per_timestep_stem="rollout_metrics_per_timestep",
                     log_prefix="Rollout",
+                    scoring_seed=rollout_sampling_seed,
                     collect_trajectory_statistics=trajectory_statistics_enabled,
                 )
 
@@ -3873,6 +4304,7 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                                 "rollout_metrics_per_timestep_autoencoded_target"
                             ),
                             log_prefix="Rollout AE-target",
+                            scoring_seed=explicit_rollout_seed,
                         )
                     else:
                         log.warning(

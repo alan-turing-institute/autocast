@@ -41,6 +41,7 @@ import torch
 from omegaconf import DictConfig, OmegaConf, open_dict
 
 from autocast.processors.flow_matching import FlowMatchingProcessor
+from autocast.scripts.data import RolloutDataModule
 from autocast.scripts.eval.encoder_processor_decoder import (
     _extract_processor_state_dict,
     _maybe_inject_encoder_decoder_from_autoencoder_checkpoint,
@@ -531,6 +532,9 @@ def main() -> None:  # noqa: PLR0912, PLR0915
         loader = datamodule.test_dataloader()
         loader_name = "test_dataloader"
     else:
+        if not isinstance(datamodule, RolloutDataModule):
+            msg = "Multi-window plots require a rollout_test_dataloader method."
+            raise TypeError(msg)
         loader = datamodule.rollout_test_dataloader()
         loader_name = "rollout_test_dataloader"
     log.info("Using %s", loader_name)

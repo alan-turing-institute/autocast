@@ -377,6 +377,13 @@ def _isotropic_binning_cpu(
     if bins is None:
         bins = math.floor(math.sqrt(k_iso.ndim) * min(k_iso.shape) / 2)
 
+    # A degenerate spatial axis (size 1, e.g. a 1-D field carried as (Sx, 1))
+    # drives ``min(shape)`` to 1, so the default bin count can round down to 0.
+    # That collapses ``edges`` to a single point ``[0.0]`` and makes the
+    # ``bucketize`` index overflow the size-1 ``scatter_add`` target downstream.
+    # Guarantee at least one bin so the (coarse) spectrum is defined, not a crash.
+    bins = max(bins, 1)
+
     edges = torch.linspace(0, k_iso.max(), bins + 1)
     indices = torch.bucketize(k_iso.flatten(), edges)
     counts = torch.bincount(indices, minlength=bins + 1)
@@ -434,6 +441,11 @@ def _isotropic_spectral_components(
     For ensembles, compute spectra per member and average spectra afterward,
     matching LOLA eval.py. This is not equivalent to taking the ensemble mean
     in physical space before the FFT.
+
+    The cross spectrum is the REAL part of ``P(k) * conj(T(k))``, so it keeps
+    the phase. LOLA (``lola/fourier.py``) and this function before 2026-10-15
+    took its magnitude, ``|P(k)||T(k)|``, which discards the phase: a forecast
+    shifted in space or with its sign flipped then scored as a perfect one.
     """
     has_ensemble = y_pred.ndim == y_true.ndim + 1
     if has_ensemble:
@@ -457,7 +469,7 @@ def _isotropic_spectral_components(
         )
         if compute_cross:
             cross = rearrange(
-                torch.abs(spec_pred * torch.conj(spec_true).unsqueeze(3)),
+                torch.real(spec_pred * torch.conj(spec_true).unsqueeze(3)),
                 "b t c m ... -> b t c m (...)",
             )
     else:
@@ -466,7 +478,7 @@ def _isotropic_spectral_components(
         )
         if compute_cross:
             cross = rearrange(
-                torch.abs(spec_pred * torch.conj(spec_true)),
+                torch.real(spec_pred * torch.conj(spec_true)),
                 "b t c ... -> b t c (...)",
             )
 
@@ -563,7 +575,14 @@ def _cross_correlation_rmse_bands(
     y_true: TensorBTSC,
     eps: float,
 ) -> tuple[TensorBTC, TensorBTC, TensorBTC, TensorBTC]:
-    """Compute LOLA-style per-band RMSE of cross-correlation spectra."""
+    """Compute per-band RMSE of the signed spectral coherence, LOLA's band layout.
+
+    Per isotropic bin, coherence = mean Re(P T*) / sqrt(mean |P|^2 mean |T|^2), in
+    [-1, 1]: 1 for a forecast in phase with the truth, 0 for unrelated phases, -1
+    for a sign-flipped one. The band score is the RMSE of (1 - coherence) over the
+    band's bins, so 0 is perfect and 2 is anti-correlated (see
+    ``_isotropic_spectral_components`` for why the real part, not LOLA's magnitude).
+    """
     n_spatial_dims = y_true.ndim - 3
     pred_spec, true_spec, cross_spec, freq_bins = _isotropic_spectral_components(
         y_pred, y_true, n_spatial_dims

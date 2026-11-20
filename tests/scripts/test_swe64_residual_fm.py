@@ -371,6 +371,7 @@ def test_cached_fit_sanity_validation_and_full_checkpoint_resume(
     resumed_cfg, _, restored = _setup_cached_model(synthetic_cache, small=True)
     resumed_cfg.trainer = cfg.trainer.copy()
     resumed_cfg.trainer.max_steps = 3
+    resumed_cfg.optimizer.cosine_steps = cfg.optimizer.cosine_steps
     with open_dict(resumed_cfg):
         resumed_cfg.resume_from_checkpoint = str(checkpoint)
 

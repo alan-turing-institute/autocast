@@ -7,6 +7,7 @@ from torch import nn
 
 from autocast.losses.ensemble import AlphaFairCRPSLoss
 from autocast.models.processor_ensemble import ProcessorModelEnsemble
+from autocast.nn.spatiotemporal_vit import SpatiotemporalViTBackbone
 from autocast.processors.flow_matching_masked_window import (
     FlowMatchingMaskedWindowProcessor,
 )
@@ -48,7 +49,7 @@ class _ContextMask:
         return mask
 
 
-class _WindowBackbone(nn.Module):
+class _WindowBackbone(SpatiotemporalViTBackbone):
     conditioning = "mask"
     use_precomputed_modulation = True
     n_steps_input = n_steps_output = 5
@@ -56,14 +57,19 @@ class _WindowBackbone(nn.Module):
     mod_features = 4
 
     def __init__(self):
-        super().__init__()
+        # The processor's annotation requires this backbone class; skip its
+        # constructor so the test keeps a lightweight stand-in.
+        nn.Module.__init__(self)
         self.scale = nn.Parameter(torch.ones(()))
         self.seen = []
 
-    def forward(self, x, t, cond, global_cond):
-        self.seen.append((x.detach().clone(), t.detach().clone(), cond.clone()))
+    def forward(self, x_t, t, cond, global_cond=None, loss_weight=None):  # noqa: ARG002
+        assert t is not None
+        assert cond is not None
+        assert global_cond is not None
+        self.seen.append((x_t.detach().clone(), t.detach().clone(), cond.clone()))
         value = rearrange(global_cond[:, 0], "b -> b 1 1 1 1")
-        return self.scale * torch.where(cond.bool(), 100.0, value).expand_as(x)
+        return self.scale * torch.where(cond.bool(), 100.0, value).expand_as(x_t)
 
 
 def _ensemble_processor(**overrides):
@@ -163,7 +169,8 @@ def test_fm_forecast_loss_ignores_observed_frames_and_balances_examples(monkeypa
     assert processor.loss(_batch()) > 1000
 
 
-def test_fm_explicit_source_clamps_context_and_preserves_seeded_sampling():
+@pytest.mark.parametrize("integrator", ["euler", "ab3"])
+def test_fm_explicit_source_clamps_context_and_preserves_seeded_sampling(integrator):
     batch = _batch()
     assert batch.global_cond is not None
     backbone = _WindowBackbone()
@@ -173,6 +180,7 @@ def test_fm_explicit_source_clamps_context_and_preserves_seeded_sampling():
         n_steps_output=4,
         n_channels_out=1,
         flow_ode_steps=3,
+        integrator=integrator,
     )
     # Legacy sampling draws the entire window before replacing observed frames.
     torch.manual_seed(17)
@@ -234,10 +242,13 @@ def test_legacy_pickled_fm_preserves_loss_and_gradients(tmp_path):
     assert backbone.scale.grad is not None
     expected_grad = backbone.scale.grad.clone()
     processor.zero_grad(set_to_none=True)
+    torch.manual_seed(17)
+    expected_sample = processor.map(_batch().encoded_inputs, _batch().global_cond)
 
     # Older full-object checkpoints lack these newly introduced options.
     del processor.context_mask
     del processor.loss_on_observed
+    del processor.integrator
     checkpoint = tmp_path / "legacy.pt"
     torch.save(processor, checkpoint)
     restored = torch.load(checkpoint, weights_only=False)
@@ -247,6 +258,33 @@ def test_legacy_pickled_fm_preserves_loss_and_gradients(tmp_path):
     torch.testing.assert_close(actual, expected)
     actual.backward()
     torch.testing.assert_close(restored.flow_matching_model.scale.grad, expected_grad)
+    torch.manual_seed(17)
+    torch.testing.assert_close(
+        restored.map(_batch().encoded_inputs, _batch().global_cond), expected_sample
+    )
+
+
+@pytest.mark.parametrize("integrator", ["euler", "heun", "ab3"])
+def test_masked_fm_integrators_preserve_context_and_constant_velocity(integrator):
+    backbone = _WindowBackbone()
+    processor = FlowMatchingMaskedWindowProcessor(
+        backbone=backbone,
+        n_steps_input=1,
+        n_steps_output=4,
+        n_channels_out=1,
+        flow_ode_steps=4,
+        integrator=integrator,
+    )
+    batch = _batch()
+    torch.manual_seed(12)
+    initial = torch.randn(2, 5, 2, 2, 1)
+    torch.manual_seed(12)
+    actual = processor.map(batch.encoded_inputs, batch.global_cond)
+    assert batch.global_cond is not None
+    expected = initial[:, 1:] + batch.global_cond[:, 0, None, None, None, None]
+    torch.testing.assert_close(actual, expected)
+    assert len(backbone.seen) == (8 if integrator == "heun" else 4)
+    assert all(torch.equal(z[:, :1], batch.encoded_inputs) for z, _, _ in backbone.seen)
 
 
 @pytest.mark.parametrize("broadcast", [False, True])
