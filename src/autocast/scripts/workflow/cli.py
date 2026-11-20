@@ -9,6 +9,7 @@ from autocast.scripts.workflow.commands import (
     benchmark_command,
     benchmark_manifest_command,
     cache_latents_command,
+    clean_command,
     eval_command,
     infer_dataset_from_workdir,
     infer_resume_checkpoint,
@@ -167,6 +168,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_common_args(cache_parser)
 
+    # -- clean -------------------------------------------------------------
+    clean_parser = subparsers.add_parser(
+        "clean",
+        description="Remove AutoCast checkpoint files below a path.",
+    )
+    clean_parser.add_argument("path", type=Path)
+    clean_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show how many checkpoint files would be removed without deleting them.",
+    )
+
     # -- time-epochs -------------------------------------------------------
     time_parser = subparsers.add_parser(
         "time-epochs",
@@ -260,7 +273,7 @@ def _resolve_resume_from(
     return str(inferred_resume) if inferred_resume is not None else None
 
 
-def main() -> None:
+def main() -> None:  # noqa: PLR0911, PLR0912
     """Parse command-line args and execute the selected workflow command."""
     parser = build_parser()
     args, unknown = parser.parse_known_args()
@@ -268,6 +281,12 @@ def main() -> None:
     unknown_flags = [token for token in unknown if token.startswith("-")]
     if unknown_flags:
         parser.error(f"unrecognized arguments: {' '.join(unknown_flags)}")
+
+    if args.command == "clean":
+        if unknown:
+            parser.error(f"unrecognized arguments: {' '.join(unknown)}")
+        clean_command(args.path, dry_run=args.dry_run)
+        return
 
     # Merge passthrough Hydra globals and positional/unknown overrides.
     combined_overrides = []
