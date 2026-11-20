@@ -619,7 +619,9 @@ def _finalize_chain_checkpoint(
         if not continuing:
             (chain.directory / "finished").symlink_to(chain.checkpoint.name)
     trainer.strategy.barrier("checkpoint-alias-finalize")
-    chain.check_time_budget_on_exit()
+    # A worker's nonzero exit can interrupt rank zero's logging under srun.
+    if trainer.is_global_zero:
+        chain.check_time_budget_on_exit()
 
 
 def _fit_training(
