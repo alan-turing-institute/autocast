@@ -29,7 +29,8 @@ trunk, with 1,280 spatiotemporal tokens for a five-frame latent window. It
 inherits the AutoCast/RB AdamW schedule and uses LoLA's published Euler context
 mask settings (Poisson rate 1, prefix probability 0.66, minimum one frame).
 AutoCast trains an eight-member, noise-modulated ensemble with masked alpha-fair
-CRPS and BF16 mixed precision. LoLA's latent surrogate trains with MSE. The
+CRPS. The latent presets use FP32 training with high float32 matmul precision,
+matching LoLA's training precision. LoLA's latent surrogate trains with MSE. The
 paired evaluation uses a fixed one-frame prefix and scores 16 members against
 raw targets after deterministic decoding, inverse standardization and
 `expm1` on the three transformed channels. It selects 64 open test trajectories

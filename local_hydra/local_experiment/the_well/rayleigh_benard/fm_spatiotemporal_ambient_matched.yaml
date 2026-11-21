@@ -22,4 +22,4 @@ model:
   val_metrics: []
 
 trainer:
-  precision: bf16-mixed
+  precision: 32-true  # Match the archived ambient CRPS baseline.

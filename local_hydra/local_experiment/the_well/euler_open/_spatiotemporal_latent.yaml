@@ -33,7 +33,7 @@ model:
       checkpointing: false
 
 trainer:
-  precision: bf16-mixed
+  precision: 32-true  # Match LoLA's FP32 training with high matmul precision.
 
 logging:
   wandb:
