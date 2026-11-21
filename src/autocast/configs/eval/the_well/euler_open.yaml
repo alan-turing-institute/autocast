@@ -1,0 +1,31 @@
+# @package _global_
+defaults:
+  - /eval/reference@_global_.eval
+  - _self_
+
+# Supply the paired-window manifest as eval.test_window_subset.
+# Select encode_once for latent checkpoints and ambient for full EPD checkpoints.
+eval:
+  n_members: 16
+  batch_size: 1
+  num_workers: 0
+  chunk_size: 4
+  use_ema: false
+  lola_decoder_noisy: false
+  denormalize_test_metrics: true
+  sampling_seed: 42
+  metrics: [vrmse, vrmse_v2, rmse, crps, afcrps, energy_spatial, spread, ssr_pooled]
+  metric_windows: [null, [0, 1], [1, 2], [2, 3], [3, 4]]
+  compute_rollout_metrics: false
+  compute_rollout_coverage: false
+  batch_indices: []
+  trajectory_statistics:
+    enabled: false
+  benchmark:
+    enabled: false
+  benchmark_rollout:
+    enabled: false
+
+datamodule:
+  batch_size: 1
+  num_workers: 0

@@ -76,6 +76,10 @@ All eval configs support these parameters:
   RB preset's next-window/rollout seed pair of 42/0.
 - `test_subset_seed`: Optional seed for sampling test windows without replacement
   when `max_test_batches` is set. Trajectory statistics require the full loader.
+- `test_window_subset`: Path to a paired The Well window manifest. The loader
+  verifies source files, trajectory rows and raw frame indices before scoring,
+  and copies the manifest beside the results. Use `max_test_batches` to cap a
+  probe. This option requires a sequential test loader.
 - `metrics`: List of metrics to compute (default includes mse/mae/rmse/vrmse,
   power spectrum scores `psrmse*`, cross-correlation spectrum scores `pscc*`,
   and ensemble scores `crps`, `fcrps`, `afcrps`, `spread`, `skill`, `ssr`,
@@ -166,6 +170,21 @@ to sample 512 test windows reproducibly and leave rollouts uncapped.
 Use the [archived runner](../../../../slurm_scripts/comparison/the_well/rayleigh_benard/diagnostics.md)
 from [PR #487](https://github.com/alan-turing-institute/autocast/pull/487)
 to reproduce the paired-window tables and trajectory standard errors.
+
+## Euler open-boundary paired windows
+
+Generate the manifest with
+`uv run python -m slurm_scripts.comparison.the_well.euler_open.workflow windows paired_windows.yaml`.
+Use its absolute path with either latent processor checkpoint.
+
+```bash
+uv run autocast eval --workdir <euler-latent-run> \
+  eval=the_well/euler_open eval.mode=encode_once \
+  eval.test_window_subset=/path/to/paired_windows.yaml
+```
+
+For matched ambient CRPS, use its EPD run directory and `eval.mode=ambient`.
+The preset scores the same four leads in physical space with 16 members.
 
 ## Multi-GPU Evaluation
 

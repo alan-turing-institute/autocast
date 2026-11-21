@@ -61,6 +61,17 @@ class Coverage(BTSCMMetric):
         q_tensor = torch.tensor(
             [q_low, q_high], device=y_pred.device, dtype=y_pred.dtype
         )
+        # torch.quantile limits input size even when reducing a small axis.
+        if y_pred.numel() > 2**24:
+            members = y_pred.shape[-1]
+            chunk = 2**24 // members
+            predictions = y_pred.reshape(-1, members).split(chunk)
+            truths = y_true.flatten().split(chunk)
+            indicators = []
+            for samples, targets in zip(predictions, truths, strict=True):
+                lower, upper = torch.quantile(samples, q_tensor, dim=-1)
+                indicators.append(interval_indicator(lower, upper, targets))
+            return torch.cat(indicators).reshape_as(y_true)
         quantiles = torch.quantile(y_pred, q_tensor, dim=-1)  # (2, B, T, S, C)
 
         return interval_indicator(quantiles[0], quantiles[1], y_true)

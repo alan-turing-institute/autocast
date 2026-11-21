@@ -7,11 +7,13 @@ from types import SimpleNamespace
 import h5py
 import pytest
 import torch
+import yaml
 from hydra import compose, initialize_config_dir
 from hydra.utils import instantiate
 from omegaconf import OmegaConf
 from torch import nn
 from torch.testing import assert_close
+from torch.utils.data import DataLoader, Dataset, Subset
 
 from autocast.data.encoded_dataset import MiniWellDataModule
 from autocast.external.lola.field_transform import (
@@ -20,22 +22,28 @@ from autocast.external.lola.field_transform import (
     standardize_fields,
 )
 from autocast.nn.spatiotemporal_vit import SpatiotemporalViTBackbone
+from autocast.scripts.eval.encoder_processor_decoder import (
+    _apply_test_window_subset,
+    _maybe_swap_to_ambient_datamodule,
+)
 from autocast.scripts.setup import _build_processor
-from autocast.types.batch import Batch
+from autocast.types.batch import Batch, EncodedBatch
 from slurm_scripts.comparison.the_well.euler_open import cache, workflow
 from slurm_scripts.comparison.the_well.rayleigh_benard.paired_test_windows import (
     validate_selection,
 )
 
 
-def test_euler_window_selection_matches_well_and_miniwell_offsets():
+def test_euler_window_selection_matches_well_and_miniwell_offsets(tmp_path):
     cfg = workflow.experiment_config("production")
     spec = cfg.euler_open_lola
     selection = workflow.paired_selection(spec)
     per_trajectory = 85
     per_file = 50 * per_trajectory
     well = SimpleNamespace(
-        metadata=SimpleNamespace(dataset_name=spec.dataset),
+        metadata=SimpleNamespace(
+            dataset_name=spec.dataset, field_names={0: list(spec.fields)}
+        ),
         files_paths=list(selection["files"]),
         n_trajectories_per_file=[50] * 10,
         n_steps_input=1,
@@ -56,6 +64,58 @@ def test_euler_window_selection_matches_well_and_miniwell_offsets():
     assert spec.cache.frame_stride == 1
     assert cfg.model.processor.context_mask.rho == 0.66
     assert len(cache.planned_shards(spec)) == 30
+
+    class WindowDataset(Dataset):
+        well_dataset = well
+
+        def __len__(self):
+            return 10 * per_file
+
+        def __getitem__(self, index):
+            return index
+
+    path = tmp_path / "source.yaml"
+    path.write_text(yaml.safe_dump(selection, sort_keys=False))
+    loader = _apply_test_window_subset(DataLoader(WindowDataset()), str(path), tmp_path)
+    assert isinstance(loader.dataset, Subset)
+    assert list(loader.dataset.indices) == indices
+    assert (
+        yaml.safe_load((tmp_path / "test_window_subset.yaml").read_text()) == selection
+    )
+
+
+def test_euler_evaluator_resolves_open_data_and_codec_transform(tmp_path):
+    cfg = workflow.experiment_config("production")
+    spec = cfg.euler_open_lola
+    codec = tmp_path / spec.dataset / spec.codec.name
+    cache_path = codec / "cache" / spec.dataset
+    cache_path.mkdir(parents=True)
+    (codec / "state.pth").touch()
+    OmegaConf.save(
+        {
+            "ae": {"lat_channels": 64},
+            "dataset": {
+                "name": "euler_all",
+                "physics": list(spec.codec.training_datasets),
+                "stats": OmegaConf.to_container(spec.codec.stats),
+                "transform": dict.fromkeys(spec.log1p_indices, "log1p"),
+            },
+        },
+        codec / "config.yaml",
+    )
+    cfg.datamodule.data_path = str(cache_path)
+    cfg.eval.lola_decoder_noisy = False
+    batch = EncodedBatch(torch.empty(0), torch.empty(0), None, {})
+    result = _maybe_swap_to_ambient_datamodule(
+        cfg, eval_mode="encode_once", example_batch=batch
+    )
+    assert result.datamodule.well_base_path == str(tmp_path)
+    assert result.datamodule.well_dataset_name == spec.dataset
+    assert result.datamodule.min_dt_stride == result.datamodule.max_dt_stride == 4
+    assert not result.datamodule.use_normalization
+    assert list(result.model.encoder.log1p_indices) == [0, 1, 2]
+    assert list(result.model.decoder.log1p_indices) == [0, 1, 2]
+    assert not result.model.decoder.noisy
 
 
 def test_euler_log_fields_round_trip_in_named_codec_order():

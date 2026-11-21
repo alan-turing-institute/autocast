@@ -25,6 +25,12 @@ denormalize_test_metrics: false
 # Select a repeatable random sample when max_test_batches is set.
 test_subset_seed: null
 
+# Optional manifest of exact source trajectories and raw test window starts.
+test_window_subset: null
+
+# Null keeps the LoLA wrapper default. Set false for deterministic decoding.
+lola_decoder_noisy: null
+
 # Seed stochastic predictions independently of trajectory-statistics output.
 # Null preserves legacy behaviour: only trajectory statistics reseed inference.
 sampling_seed: null

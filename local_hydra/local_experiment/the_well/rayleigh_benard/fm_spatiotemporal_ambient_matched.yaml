@@ -1,0 +1,25 @@
+# @package _global_
+defaults:
+  - /local_experiment/the_well/rayleigh_benard/_spatiotemporal_ambient
+  - override /processor@model.processor: flow_matching_masked_window_spatiotemporal_vit
+  - _self_
+
+experiment_name: the_well_rayleigh_benard_fm_spatiotemporal_ambient_matched
+
+# Four GPUs: 256 distinct windows and member-window predictions per update.
+datamodule:
+  batch_size: 64
+
+model:
+  processor:
+    integrator: ab3
+    flow_ode_steps: 16
+    loss_on_observed: false
+    backbone:
+      mod_features: 256
+      hid_channels: 1024
+      attention_heads: 8
+  val_metrics: []
+
+trainer:
+  precision: bf16-mixed

@@ -24,6 +24,7 @@ from torch.utils.data import DataLoader, SequentialSampler, Subset
 from torchmetrics import Metric
 
 from autocast.benchmarking import benchmark_model, benchmark_rollout
+from autocast.data.well_windows import validate_well_window_selection
 from autocast.data.zarr_dataset import ZarrDataModule
 from autocast.external.lola.wrapped_decoder import WrappedDecoder
 from autocast.metrics import (
@@ -143,6 +144,7 @@ AVAILABLE_METRICS_ENSEMBLE = {
     "fcrps": FairCRPS,
     "afcrps": AlphaFairCRPS,
     "energy": EnergyScore,
+    "energy_spatial": functools.partial(EnergyScore, vector_dims="spatial"),
     "afenergy": AlmostFairEnergyScore,
     "variogram": VariogramScore,
     "variogram_spatial": SpatialVariogramScore,
@@ -916,6 +918,10 @@ def _sample_test_windows(
         return loader
     indices = sorted(random.Random(seed).sample(range(total), count))
     log.info("Selected %s of %s test windows with seed %s", count, total, seed)
+    return _subset_test_window_loader(loader, indices)
+
+
+def _subset_test_window_loader(loader: DataLoader, indices: list[int]) -> DataLoader:
     return DataLoader(
         Subset(loader.dataset, indices),
         batch_size=loader.batch_size,
@@ -930,6 +936,32 @@ def _sample_test_windows(
         prefetch_factor=loader.prefetch_factor,
         persistent_workers=loader.persistent_workers,
     )
+
+
+def _apply_test_window_subset(
+    loader: DataLoader, path: str, output_dir: Path | None
+) -> DataLoader:
+    if (
+        not isinstance(loader.sampler, SequentialSampler)
+        or loader.batch_size is None
+        or getattr(loader.dataset, "well_dataset", None) is None
+    ):
+        msg = "A paired test window manifest requires a sequential The Well loader."
+        raise ValueError(msg)
+    selection = yaml.safe_load(Path(hydra.utils.to_absolute_path(path)).read_text())
+    indices = validate_well_window_selection(loader.dataset, selection)
+    if output_dir is not None:
+        _save_selection(selection, output_dir / "test_window_subset.yaml")
+    log.info("Selected %d test windows from %s", len(indices), path)
+    return _subset_test_window_loader(loader, indices)
+
+
+def _save_selection(selection: dict, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists() and yaml.safe_load(path.read_text()) != selection:
+        msg = f"Existing selection differs: {path}. Choose a new output directory."
+        raise ValueError(msg)
+    path.write_text(yaml.safe_dump(selection, sort_keys=False))
 
 
 def _resolve_rollout_batch_limit(eval_cfg: DictConfig) -> int | None:
@@ -2455,6 +2487,13 @@ def _build_lola_autoencoder_config_nodes(
         "mean": mean,
         "std": std,
     }
+    log1p_indices = [
+        int(index)
+        for index, transform in (ae_cfg.dataset.get("transform") or {}).items()
+        if transform == "log1p"
+    ]
+    if log1p_indices:
+        base_kwargs["log1p_indices"] = log1p_indices
     if chunk_size is not None:
         base_kwargs["chunk_size"] = int(chunk_size)
     encoder_cfg = OmegaConf.create(
@@ -2508,6 +2547,9 @@ def _build_lola_raw_datamodule_config(
     """Build an unnormalized raw TheWell datamodule for LoLA encode-once eval."""
     dataset_cfg = ae_cfg.get("dataset", {})
     dataset_name = dataset_cfg.get("name")
+    cache_dataset = Path(str(original_datamodule.get("data_path", ""))).name
+    if cache_dataset in (dataset_cfg.get("physics") or ()):
+        dataset_name = cache_dataset
     if not dataset_name:
         msg = (
             f"LoLA autoencoder config at {run_dir / 'config.yaml'} has no dataset.name."
@@ -2518,7 +2560,11 @@ def _build_lola_raw_datamodule_config(
     datamodule_cfg: dict[str, Any] = {
         "_target_": THE_WELL_DATAMODULE_TARGET,
         "well_dataset_name": str(dataset_name),
-        "well_base_path": _infer_lola_well_base_path(ae_cfg, run_dir),
+        "well_base_path": (
+            str(run_dir.parent.parent)
+            if run_dir.parent.name == dataset_name
+            else _infer_lola_well_base_path(ae_cfg, run_dir)
+        ),
         "n_steps_input": _positive_int(original_datamodule.get("n_steps_input"), 1),
         "n_steps_output": _positive_int(original_datamodule.get("n_steps_output"), 1),
         "min_dt_stride": stride,
@@ -2526,7 +2572,11 @@ def _build_lola_raw_datamodule_config(
         "batch_size": _positive_int(original_datamodule.get("batch_size"), 1),
         "num_workers": _positive_int(original_datamodule.get("num_workers"), 0),
         "use_normalization": False,
-        "normalization_path": _lola_stats_path(ae_cfg, run_dir),
+        "normalization_path": (
+            str(run_dir.parent / "stats.yaml")
+            if run_dir.parent.name == dataset_name
+            else _lola_stats_path(ae_cfg, run_dir)
+        ),
         "autoencoder_mode": False,
         "max_rollout_steps": _positive_int(
             original_datamodule.get("max_rollout_steps"), 100
@@ -2556,6 +2606,9 @@ def _inject_lola_autoencoder_components(
         run_dir,
         chunk_size=_read_eval_chunk_size(cfg),
     )
+    decoder_noisy = cfg.get("eval", {}).get("lola_decoder_noisy")
+    if decoder_noisy is not None:
+        decoder_cfg.noisy = decoder_noisy
     with open_dict(cfg):
         if cfg.get("model") is None:
             cfg.model = OmegaConf.create({})
@@ -3569,12 +3622,25 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
     if decoder_module is not None:
         decoder_module.to(fabric.device)
     raw_test_loader = datamodule.test_dataloader()
+    test_window_subset = eval_cfg.get("test_window_subset")
+    test_subset_seed = eval_cfg.get("test_subset_seed")
+    if test_window_subset is not None:
+        if trajectory_statistics_enabled or test_subset_seed is not None:
+            msg = (
+                "eval.test_window_subset cannot be combined with "
+                "trajectory_statistics or test_subset_seed."
+            )
+            raise ValueError(msg)
+        raw_test_loader = _apply_test_window_subset(
+            raw_test_loader,
+            test_window_subset,
+            csv_path.parent if fabric.global_rank == 0 else None,
+        )
     test_dataset_for_trajectories = (
         _validate_trajectory_loader(raw_test_loader, label="Single-step")
         if trajectory_statistics_enabled
         else None
     )
-    test_subset_seed = eval_cfg.get("test_subset_seed")
     if test_subset_seed is not None:
         raw_test_loader = _sample_test_windows(
             raw_test_loader, max_batches=max_test_batches, seed=test_subset_seed
