@@ -1729,6 +1729,9 @@ of the 1,000 and 5,000 pools, preview a CRPS-FFT anchor with 128k
 cosine-decayed updates and a constant-rate arm at `1e-4` up to 256k
 updates. The previously trained 200-trajectory run is the historical
 reference. Select `--run fft_200` explicitly if a repeat is needed.
+One-step campaign fits log scalar metrics to online W&B and keep full
+checkpoints in the run directory. The validation plotting callback is
+omitted.
 The common 32k snapshot cadence includes 64k, 128k, 192k and 256k
 in each completed fixed-rate run. All of these budgets
 are subject to the sustained-validation-rise callback. Size the

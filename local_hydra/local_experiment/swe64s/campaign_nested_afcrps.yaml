@@ -1,7 +1,7 @@
 # @package _global_
 defaults:
   - /local_experiment/swe64s/afcrps_spatial1d_residual_one_output_12block_256ep_8h
-  - override /trainer: swe64s_noise_ablations
+  - override /trainer: swe64s_campaign
   - _self_
 
 experiment_name: swe64s_campaign_nested_afcrps

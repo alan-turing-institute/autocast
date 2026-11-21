@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from hydra import compose, initialize_config_dir
 from hydra.utils import instantiate
+from omegaconf import OmegaConf
 
 from autocast.losses import AlphaFairCRPSLoss, WeightedSumLoss
 from autocast.models.optimizer_mixin import OptimizerMixin
@@ -148,6 +149,20 @@ def test_default_batch_covers_new_pool_sizes(tmp_path):
         "fixed_1000",
         "fixed_5000",
     ]
+    previous_trainer = OmegaConf.load(
+        ROOT / "local_hydra/trainer/swe64s_noise_ablations.yaml"
+    )
+    expected_callbacks = [
+        callback
+        for callback in previous_trainer.callbacks
+        if not callback._target_.endswith("ValidationMetricPlotCallback")
+    ]
+    for job in plan["jobs"]:
+        cfg = _compose(job["preview_command"])
+        assert cfg.trainer.callbacks == expected_callbacks
+        assert cfg.logging.wandb.enabled
+        assert cfg.logging.wandb.mode == "online"
+        assert not cfg.logging.wandb.log_model
 
 
 def test_finetune_rejects_mixing_graph_and_dense_parents(tmp_path):
