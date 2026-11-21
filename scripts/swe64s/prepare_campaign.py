@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-FIRST_RUNS = ("fft_200", "fft_1000", "fft_5000", "fixed_1000", "fixed_5000")
+FIRST_RUNS = ("fft_1000", "fft_5000", "fixed_1000", "fixed_5000")
 PREFLIGHT_RUNS = ("full_off_1000", "graph2_1000", "fixed_5000")
 
 
@@ -197,7 +197,7 @@ def build_plan(
         "source_commit": source,
         "working_tree_clean": clean,
         "normalization_sha256": stats_hash,
-        "valid_trajectories": 100,
+        "valid_trajectories": 20,
         "test_trajectories": 100,
         "target_data_verified": False,
         "jobs_submitted": False,

@@ -1700,9 +1700,10 @@ change these baseline presets in place.
 
 ## Nested SWE64 campaign
 
-Use the verified nested views `train200`, `train1000` and `train5000`,
-each with 321 frames per trajectory and the common 100 validation and
-100 test trajectories. All runs use `train200/stats.yml` for field and
+Use the verified nested views `train200`, `train1000` and `train5000`.
+Each trajectory has 321 frames. Select the first 20 validation rows to
+match the original validation set, and retain all 100 test trajectories.
+All runs use `train200/stats.yml` for field and
 one-step delta scaling. Confirm the actual input paths and split hashes
 against the dataset transfer record and the stats hash in the preview.
 
@@ -1715,7 +1716,7 @@ uv run --frozen python scripts/swe64s/prepare_campaign.py \
 This prints dry-run commands for dense and two-hop masked attention on
 the 1,000 pool and the constant-rate arm on the 5,000 pool. Each initial
 preflight uses two 500-update epochs at the intended four-GPU batch
-and precision, with the full validation split. The second command
+and precision, with the selected validation trajectories. The second command
 restores the full preflight checkpoint for one more epoch while keeping
 the learning-rate schedule fixed. It depends on successful completion
 of the first command. Use the epoch timer and profiler output to inspect
@@ -1723,9 +1724,11 @@ startup, batch delivery, validation and checkpoint overhead. Compare
 the step counter and LR across the resume boundary. The preflight
 allows 30 minutes per allocation and uses its own output directories.
 
-Omit `--preflight` for the initial five production previews. The 200,
-1,000 and 5,000 CRPS-FFT anchors use 128k updates with cosine decay. The
-1,000 and 5,000 constant-rate arms use `1e-4` up to 256k updates.
+Omit `--preflight` for the initial four production previews. For each
+of the 1,000 and 5,000 pools, preview a CRPS-FFT anchor with 128k
+cosine-decayed updates and a constant-rate arm at `1e-4` up to 256k
+updates. The previously trained 200-trajectory run is the historical
+reference. Select `--run fft_200` explicitly if a repeat is needed.
 The common 32k snapshot cadence includes 64k, 128k, 192k and 256k
 in each completed fixed-rate run. All of these budgets
 are subject to the sustained-validation-rise callback. Size the

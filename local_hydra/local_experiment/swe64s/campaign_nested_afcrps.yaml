@@ -11,7 +11,7 @@ swe64_train_trajectories: ???
 datamodule:
   data_path: ${swe64_pool_root}/train${swe64_train_trajectories}
   normalization_path: ${swe64_pool_root}/train200/stats.yml
-  valid_trajectories: 100
+  valid_trajectories: 20  # Original validation cases occupy the first 20 rows.
   test_trajectories: 100
 
 trainer:

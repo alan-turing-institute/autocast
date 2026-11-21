@@ -50,7 +50,8 @@ def test_campaign_arms_match_protocol(tmp_path, name):
     assert cfg.provenance.normalization_sha256 == plan["normalization_sha256"]
     assert cfg.datamodule.data_path == str(pool_root / f"train{run.pool}")
     assert cfg.datamodule.normalization_path == str(pool_root / "train200/stats.yml")
-    assert cfg.datamodule.valid_trajectories == cfg.datamodule.test_trajectories == 100
+    assert cfg.datamodule.valid_trajectories == plan["valid_trajectories"] == 20
+    assert cfg.datamodule.test_trajectories == plan["test_trajectories"] == 100
     assert cfg.model.residual_prediction
     assert cfg.model.residual_use_delta_stats
     assert cfg.model.residual_delta_stats_path is None
@@ -134,6 +135,19 @@ def test_preflight_resume_keeps_scheduler_and_data(tmp_path, name):
     assert resumed.resume_from_checkpoint == str(Path(job["output"]) / "preflight.ckpt")
     assert not initial.logging.wandb.enabled
     assert not resumed.logging.wandb.enabled
+
+
+def test_default_batch_covers_new_pool_sizes(tmp_path):
+    plan = CAMPAIGN["build_plan"](
+        pool_root=tmp_path / "pools",
+        output_root=tmp_path / "outputs",
+    )
+    assert [job["name"] for job in plan["jobs"]] == [
+        "fft_1000",
+        "fft_5000",
+        "fixed_1000",
+        "fixed_5000",
+    ]
 
 
 def test_finetune_rejects_mixing_graph_and_dense_parents(tmp_path):
