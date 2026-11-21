@@ -8,6 +8,7 @@ datamodule:
   n_steps_input: 1
   n_steps_output: 4
   stride: ${euler_open_lola.cache.window_stride}
+  val_shuffle_seed: 0  # Spread the capped validation pass across gamma shards.
 
 model:
   processor:

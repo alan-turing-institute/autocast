@@ -17,3 +17,4 @@ num_workers: 8
 pin_memory: true
 persistent_workers: true
 prefetch_factor: 2
+val_shuffle_seed: null

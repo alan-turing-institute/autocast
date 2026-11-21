@@ -58,6 +58,12 @@ and activation checkpointing, as in RB. Its larger patch projections add
 stride, gamma and boundary labels, masked CRPS and paired test manifest on
 the native grid.
 
+The latent recipes use a fixed, seeded permutation of validation windows
+across the full open split before Lightning applies the validation batch cap.
+This gives each gamma shard representation without adding validation batches.
+At 32 ranks and 16 batches, CRPS scores 512 windows and FM scores 4,096.
+The CRPS windows are a subset of the FM windows at these batch sizes.
+
 ## Local inspection
 
 ```bash

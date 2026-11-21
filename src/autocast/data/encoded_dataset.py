@@ -6,7 +6,7 @@ import h5py
 import torch
 from einops import rearrange
 from lightning.pytorch import LightningDataModule
-from torch.utils.data import ConcatDataset, DataLoader, Dataset
+from torch.utils.data import ConcatDataset, DataLoader, Dataset, Subset
 
 from autocast.types.batch import EncodedSample
 from autocast.types.collation import collate_encoded_samples
@@ -452,6 +452,7 @@ class MiniWellDataModule(LightningDataModule):
         pin_memory: bool = True,
         persistent_workers: bool | None = None,
         prefetch_factor: int | None = 2,
+        val_shuffle_seed: int | None = None,
     ):
         """Initialize the MiniWellDataModule.
 
@@ -469,6 +470,8 @@ class MiniWellDataModule(LightningDataModule):
                 Defaults to True when num_workers > 0.
             prefetch_factor: Number of batches loaded in advance per worker.
                 Only used when num_workers > 0.
+            val_shuffle_seed: Seed for a fixed validation window order. When
+                set, a capped validation pass samples across the full split.
         """
         super().__init__()
         self.data_path = Path(data_path) if data_path is not None else None
@@ -482,12 +485,15 @@ class MiniWellDataModule(LightningDataModule):
             num_workers > 0 if persistent_workers is None else persistent_workers
         )
         self.prefetch_factor = prefetch_factor
+        self.val_shuffle_seed = val_shuffle_seed
 
         self.train_dataset: Dataset | None = None
         self.val_dataset: Dataset | None = None
         self.test_dataset: Dataset | None = None
 
-    def _create_dataset(self, dir_path: Path) -> Dataset | None:
+    def _create_dataset(
+        self, dir_path: Path
+    ) -> MiniWellInputOutput | ConcatDataset | None:
         """Create a dataset from all h5 files in a directory."""
         if not dir_path.exists():
             return None
@@ -539,7 +545,12 @@ class MiniWellDataModule(LightningDataModule):
                 self.train_dataset = self._create_dataset(train_dir)
             if self.val_dataset is None:
                 valid_dir = self.data_path / "valid"
-                self.val_dataset = self._create_dataset(valid_dir)
+                dataset = self._create_dataset(valid_dir)
+                if dataset is not None and self.val_shuffle_seed is not None:
+                    generator = torch.Generator().manual_seed(self.val_shuffle_seed)
+                    indices = torch.randperm(len(dataset), generator=generator).tolist()
+                    dataset = Subset(dataset, indices)
+                self.val_dataset = dataset
 
         if (stage == "test" or stage is None) and self.test_dataset is None:
             test_dir = self.data_path / "test"

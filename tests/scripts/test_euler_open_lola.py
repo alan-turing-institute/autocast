@@ -84,6 +84,32 @@ def test_euler_window_selection_matches_well_and_miniwell_offsets(tmp_path):
     )
 
 
+def test_euler_capped_validation_covers_all_gamma_shards(tmp_path):
+    cfg = workflow.experiment_config("production")
+    valid_dir = tmp_path / "valid"
+    valid_dir.mkdir()
+    shards = cache.shard_names(cfg.euler_open_lola)
+    for name in shards:
+        with h5py.File(valid_dir / name, "w") as handle:
+            handle.create_dataset("state", shape=(50, 101, 1, 1, 1), dtype="f4")
+
+    dm = instantiate(cfg.datamodule, data_path=str(tmp_path), num_workers=0)
+    dataset = dm.val_dataloader().dataset
+    assert isinstance(dataset, Subset)
+    expected_shards = set(range(len(shards)))
+    per_shard = 50 * 85
+    for batch_size in (1, 8):  # CRPS and FM on 32 ranks.
+        window_count = 32 * batch_size * cfg.trainer.limit_val_batches
+        windows = dataset.indices[:window_count]
+        assert len(set(windows)) == window_count
+        assert {index // per_shard for index in windows} == expected_shards
+
+    other = instantiate(cfg.datamodule, data_path=str(tmp_path), num_workers=0)
+    other_dataset = other.val_dataloader().dataset
+    assert isinstance(other_dataset, Subset)
+    assert other_dataset.indices == dataset.indices
+
+
 def test_euler_evaluator_resolves_open_data_and_codec_transform(tmp_path):
     cfg = workflow.experiment_config("production")
     spec = cfg.euler_open_lola
