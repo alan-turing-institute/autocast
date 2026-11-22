@@ -37,6 +37,15 @@ def experiment_config(profile: str) -> DictConfig:
     return cfg
 
 
+def source_spec(cfg: DictConfig, source: str) -> DictConfig:
+    """Select a canonical source while sharing the published codec."""
+    if source == "open":
+        return cfg.euler_open_lola
+    spec = OmegaConf.merge(cfg.euler_open_lola, cfg.euler_periodic_lola)
+    assert isinstance(spec, DictConfig)
+    return spec
+
+
 def paired_selection(spec: DictConfig) -> dict:
     """Choose the shared open-only test cohort from the pinned file order."""
     files = dict.fromkeys(shard_names(spec), int(spec.trajectories_per_shard["test"]))
@@ -128,6 +137,7 @@ def main() -> None:
     parser.add_argument(
         "--profile", choices=("production", "smoke"), default="production"
     )
+    parser.add_argument("--source", choices=("open", "periodic"), default="open")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("plan")
     commands.add_parser("verify")
@@ -160,7 +170,7 @@ def main() -> None:
         )
         return
 
-    spec = experiment_config(args.profile).euler_open_lola
+    spec = source_spec(experiment_config(args.profile), args.source)
     if args.command == "plan":
         for index, (split, name) in enumerate(planned_shards(spec)):
             print(f"{index}\t{split}\t{name}")

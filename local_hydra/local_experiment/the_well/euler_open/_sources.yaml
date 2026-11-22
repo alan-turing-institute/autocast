@@ -8,6 +8,7 @@ euler_open_lola:
     config_sha256: 9e4050aa3d87713b786d752f3657133266341410c319060633572ecf2f2f1a7f
   comparison: https://github.com/alan-turing-institute/aiphys/issues/112
   dataset: euler_multi_quadrants_openBC
+  boundary_condition: OPEN
   well_base_path: /projects/u6eo/autocast/datasets
   flatiron_source: https://sdsc-users.flatironinstitute.org/~polymathic/data/the_well/datasets/euler_multi_quadrants_openBC
   frames: 101
@@ -19,7 +20,7 @@ euler_open_lola:
   codec:
     name: n6g8kix8_euler_all_dcae_f32c64_large
     training_datasets: [euler_multi_quadrants_openBC, euler_multi_quadrants_periodicBC]
-    directory: /projects/u6eo/autocast/datasets/.lola-well-stage/euler-open80-pilot-Is8lKD/attempt-8633077-DHEcZ8/codec
+    directory: ${oc.env:EULER_CODEC_DIR,/projects/u6eo/autocast/datasets/.lola-well-stage/euler-open80-pilot-Is8lKD/attempt-8633077-DHEcZ8/codec}
     archive_url: https://users.flatironinstitute.org/~polymathic/data/lola/ae/n6g8kix8_euler_all_dcae_f32c64_large.zip
     archive_sha256: c2e6192849a33d27074835b250d426843f98f627d0b10deea8857c40989fad1a
     config_sha256: a79cfa7645d9a4bc299d6429704d7a9b6c8c096ce917fc46a894d9ad7f1e2fea
@@ -54,3 +55,10 @@ euler_open_lola:
     seed: 0
     trajectories: 64
     windows_per_trajectory: 8
+
+# The periodic cache uses the same codec, field transforms and shard inventory.
+euler_periodic_lola:
+  dataset: euler_multi_quadrants_periodicBC
+  boundary_condition: PERIODIC
+  flatiron_source: https://sdsc-users.flatironinstitute.org/~polymathic/data/the_well/datasets/euler_multi_quadrants_periodicBC
+  conditioning: [gamma, x_lower_boundary, x_upper_boundary, y_lower_boundary, y_upper_boundary]

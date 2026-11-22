@@ -156,6 +156,14 @@ shards. It uses all frames in a trajectory in one encode call. Budget and test
 its memory separately from the four-frame chunks of the AutoCast path.
 [Pinned LoLA cache source](https://github.com/PolymathicAI/lola/blob/944ef5e877493a68cfec0564049c9335e5935d73/experiments/cache_latents.py).
 
+Use `cache-periodic production <absolute-cache-path>` to encode the canonical
+periodic split with the same pinned upstream script and unaugmented settings.
+The array still maps indices 0–9 to train, 10–19 to validation and 20–29 to
+test. The periodic cache validates its own boundary labels. Use
+`verify-periodic-cache production <absolute-cache-path>` after the full array.
+Set `EULER_CODEC_DIR` to select a local copy of the published codec. The cache
+checks both file hashes before encoding.
+
 ### Production array, training and paired evaluation
 
 Run this chain with `cache_path="$root/cache-lola"` and the upstream exports

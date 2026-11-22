@@ -1,4 +1,4 @@
-"""Stage canonical Flatiron Euler open-BC trajectories in the MiniWell format."""
+"""Stage canonical Flatiron Euler trajectories in the MiniWell format."""
 
 import hashlib
 import json
@@ -169,7 +169,7 @@ def _load_well_shard(spec: DictConfig, split: WellSplit, name: str) -> WellDatas
         or tuple(dataset.metadata.spatial_resolution) != tuple(spec.physical_shape[:-1])
         or dataset.metadata.constant_scalar_names != ["gamma"]
         or {kind.upper() for kind in dataset.metadata.boundary_condition_types}
-        != {"OPEN"}
+        != {spec.boundary_condition}
     ):
         raise ValueError(f"Unexpected canonical Euler metadata for {split}/{name}")
     return dataset
@@ -183,7 +183,7 @@ def _require_native_field_order(spec: DictConfig, dataset: WellDataset) -> None:
 
 
 def verify_ambient_source(spec: DictConfig) -> None:
-    """Verify native field order and open-BC metadata before ambient training."""
+    """Verify native field order and boundary metadata before ambient training."""
     for split, name in planned_shards(spec):
         _require_native_field_order(spec, _load_well_shard(spec, split, name))
 
@@ -218,6 +218,7 @@ def _write_shard(
         torch.load(directory / "state.pth", map_location="cpu", weights_only=True)
     )
     model.eval().requires_grad_(False).to(device)
+    boundary_code = BoundaryCondition[spec.boundary_condition].value
     with torch.inference_mode():
         for row in range(count):
             sample = dataset[row]
@@ -228,7 +229,7 @@ def _write_shard(
                 raw.shape != (spec.frames, *spec.physical_shape)
                 or label.shape != (len(spec.conditioning),)
                 or not torch.isfinite(label).all()
-                or not (bc == BoundaryCondition.OPEN.value).all()
+                or not (bc == boundary_code).all()
             ):
                 raise ValueError(
                     f"Invalid input at {provenance['source_shard']} row {row}"
@@ -333,10 +334,8 @@ def _cache_with_upstream(
         ):
             raise ValueError(f"Missing upstream state or label dataset in {output}")
         labels = np.asarray(label_dataset[:])
-        if (
-            not np.isfinite(labels).all()
-            or not (labels[:, 1:] == BoundaryCondition.OPEN.value).all()
-        ):
+        boundary_code = BoundaryCondition[spec.boundary_condition].value
+        if not np.isfinite(labels).all() or not (labels[:, 1:] == boundary_code).all():
             raise ValueError(f"Invalid upstream labels in {output}")
         for row in range(state.shape[0]):
             if not np.isfinite(np.asarray(state[row])).all():

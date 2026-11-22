@@ -15,10 +15,10 @@ fi
 export PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 export OMP_NUM_THREADS=4 MKL_NUM_THREADS=4
 
-operation=${1:?Specify cache, train, train-fm, train-ambient, eval or eval-ambient}
+operation=${1:?Specify cache, cache-periodic, verify-periodic-cache, train, train-fm, train-ambient, eval or eval-ambient}
 profile=${2:?Specify production or smoke}
 shift 2
-if [[ "$operation" == cache || "$operation" == train || "$operation" == train-fm ]]; then
+if [[ "$operation" == cache || "$operation" == cache-periodic || "$operation" == verify-periodic-cache || "$operation" == train || "$operation" == train-fm ]]; then
     export EULER_CACHE_DIR=${1:?Specify the absolute cache path}
     shift
     [[ "$EULER_CACHE_DIR" == /* ]] || { echo "Use an absolute cache path" >&2; exit 2; }
@@ -35,9 +35,16 @@ case "$profile" in
 esac
 
 workflow=(uv run --no-sync python -m slurm_scripts.comparison.the_well.euler_open.workflow --profile "$profile")
+if [[ "$operation" == cache-periodic || "$operation" == verify-periodic-cache ]]; then
+    export EULER_CACHE_BACKEND=upstream
+    workflow+=(--source periodic)
+fi
 case "$operation" in
-    cache)
+    cache|cache-periodic)
         exec srun --kill-on-bad-exit=1 "${workflow[@]}" cache "${SLURM_ARRAY_TASK_ID:?Use a Slurm array}"
+        ;;
+    verify-periodic-cache)
+        exec srun --kill-on-bad-exit=1 "${workflow[@]}" verify
         ;;
     train|train-fm|train-ambient)
         run_dir=${1:?Specify an absolute training run directory}

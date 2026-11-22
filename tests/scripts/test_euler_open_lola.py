@@ -274,10 +274,13 @@ def test_rb_and_euler_comparison_parameter_counts(
     assert backbone.n_steps_input == backbone.n_steps_output == 5
 
 
+@pytest.mark.parametrize(
+    ("source_name", "boundary_code"), [("open", 1), ("periodic", 2)]
+)
 def test_interrupted_shard_is_invisible_and_complete_shard_is_reused(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, source_name, boundary_code
 ):
-    spec = workflow.experiment_config("smoke").euler_open_lola
+    spec = workflow.source_spec(workflow.experiment_config("smoke"), source_name)
     spec.well_base_path = str(tmp_path / "datasets")
     spec.cache.directory = str(tmp_path / "cache")
     spec.physical_shape = [2, 2, 5]
@@ -286,7 +289,7 @@ def test_interrupted_shard_is_invisible_and_complete_shard_is_reused(
     sample = {
         "input_fields": raw,
         "constant_scalars": torch.tensor([1.13]),
-        "boundary_conditions": torch.ones(2, 2),
+        "boundary_conditions": torch.full((2, 2), boundary_code, dtype=torch.float32),
     }
     spec.cache.encode_chunk_size = 16
     for split, name in cache.planned_shards(spec):
@@ -342,7 +345,7 @@ def test_interrupted_shard_is_invisible_and_complete_shard_is_reused(
     data.setup("test")
     assert data.test_dataset is not None
     window = data.test_dataset[0]
-    assert_close(window.global_cond, torch.tensor([1.13, 1, 1, 1, 1]))
+    assert_close(window.global_cond, torch.tensor([1.13, *([boundary_code] * 4)]))
     physical = restore_fields(
         window.encoded_output_fields,
         torch.tensor(spec.codec.stats.mean),
