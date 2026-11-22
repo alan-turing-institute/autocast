@@ -1,6 +1,7 @@
 """Regressions for the Euler cache and paired raw-frame protocol."""
 
 import json
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -84,19 +85,51 @@ def test_euler_window_selection_matches_well_and_miniwell_offsets(tmp_path):
     )
 
 
-def test_euler_capped_validation_covers_all_gamma_shards(tmp_path):
-    cfg = workflow.experiment_config("production")
-    valid_dir = tmp_path / "valid"
-    valid_dir.mkdir()
-    shards = cache.shard_names(cfg.euler_open_lola)
-    for name in shards:
-        with h5py.File(valid_dir / name, "w") as handle:
-            handle.create_dataset("state", shape=(50, 101, 1, 1, 1), dtype="f4")
+def test_legacy_euler_evaluator_rejects_joint_checkpoints(
+    tmp_path, monkeypatch, capsys
+):
+    cfg = workflow.experiment_config("production", joint=True)
+    config = tmp_path / "joint.yaml"
+    OmegaConf.save(cfg, config)
+    manifest = tmp_path / "paired.yaml"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "workflow",
+            "evaluate",
+            str(config),
+            "processor.ckpt",
+            str(tmp_path),
+            str(manifest),
+        ],
+    )
+    with pytest.raises(SystemExit) as error:
+        workflow.main()
+    assert error.value.code == 2
+    assert "maintained evaluator" in capsys.readouterr().err
+    assert not manifest.exists()
 
-    dm = instantiate(cfg.datamodule, data_path=str(tmp_path), num_workers=0)
+
+@pytest.mark.parametrize("joint", [False, True])
+def test_euler_capped_validation_covers_all_gamma_shards(tmp_path, joint):
+    cfg = workflow.experiment_config("production", joint=joint)
+    sources = ("open", "periodic") if joint else ("open",)
+    roots = [str(tmp_path / source) for source in sources]
+    paths = {"data_paths": roots} if joint else {"data_path": roots[0]}
+    for source, root in zip(sources, roots, strict=True):
+        spec = workflow.source_spec(cfg, source)
+        for split in ("train", "valid", "test"):
+            split_dir = Path(root) / split
+            split_dir.mkdir(parents=True)
+            for name in cache.shard_names(spec):
+                with h5py.File(split_dir / name, "w") as handle:
+                    handle.create_dataset("state", shape=(50, 101, 1, 1, 1), dtype="f4")
+
+    dm = instantiate(cfg.datamodule, num_workers=0, **paths)
     dataset = dm.val_dataloader().dataset
     assert isinstance(dataset, Subset)
-    expected_shards = set(range(len(shards)))
+    expected_shards = set(range(10 * len(sources)))
     per_shard = 50 * 85
     for batch_size in (1, 8):  # CRPS and FM on 32 ranks.
         window_count = 32 * batch_size * cfg.trainer.limit_val_batches
@@ -104,10 +137,19 @@ def test_euler_capped_validation_covers_all_gamma_shards(tmp_path):
         assert len(set(windows)) == window_count
         assert {index // per_shard for index in windows} == expected_shards
 
-    other = instantiate(cfg.datamodule, data_path=str(tmp_path), num_workers=0)
+    other = instantiate(cfg.datamodule, num_workers=0, **paths)
     other_dataset = other.val_dataloader().dataset
     assert isinstance(other_dataset, Subset)
     assert other_dataset.indices == dataset.indices
+
+    if joint:
+        missing = instantiate(
+            cfg.datamodule,
+            data_paths=[roots[0], str(tmp_path / "missing")],
+            num_workers=0,
+        )
+        with pytest.raises(FileNotFoundError, match="No MiniWell shards"):
+            missing.setup("fit")
 
 
 def test_euler_evaluator_resolves_open_data_and_codec_transform(tmp_path):
@@ -281,6 +323,7 @@ def test_interrupted_shard_is_invisible_and_complete_shard_is_reused(
     tmp_path, monkeypatch, source_name, boundary_code
 ):
     spec = workflow.source_spec(workflow.experiment_config("smoke"), source_name)
+    spec.autocast_revision = "4" * 40
     spec.well_base_path = str(tmp_path / "datasets")
     spec.cache.directory = str(tmp_path / "cache")
     spec.physical_shape = [2, 2, 5]
@@ -296,7 +339,6 @@ def test_interrupted_shard_is_invisible_and_complete_shard_is_reused(
         source = Path(spec.well_base_path) / spec.dataset / "data" / split / name
         source.parent.mkdir(parents=True)
         source.touch()
-    fake_codec = OmegaConf.create({"ae": {}})
 
     class IdentityCodec(nn.Module):
         failure = True
@@ -318,7 +360,9 @@ def test_interrupted_shard_is_invisible_and_complete_shard_is_reused(
     codec = IdentityCodec()
     torch.save(codec.state_dict(), tmp_path / "state.pth")
     monkeypatch.setattr(cache, "_load_well_shard", lambda *_: FakeWell())
-    monkeypatch.setattr(cache, "load_codec_config", lambda _: (fake_codec, tmp_path))
+    monkeypatch.setattr(
+        cache, "load_codec_config", lambda _: (OmegaConf.create({"ae": {}}), tmp_path)
+    )
     monkeypatch.setattr(cache, "get_autoencoder", lambda **_: codec)
 
     with pytest.raises(RuntimeError, match="interrupted encode"):
@@ -331,6 +375,10 @@ def test_interrupted_shard_is_invisible_and_complete_shard_is_reused(
     cache.cache_shard(spec, 0, torch.device("cpu"))
     assert codec.calls == calls
     cache.verify_cache(spec)
+    spec.autocast_revision = "another-reader-revision"
+    with pytest.raises(ValueError, match="Cache provenance differs"):
+        cache.verify_cache(spec)
+    cache.verify_cache(spec, accept_recorded_revision=True)
     _, name = cache.planned_shards(spec)[0]
     with h5py.File(Path(spec.cache.directory) / "train" / name) as handle:
         state = handle["state"]

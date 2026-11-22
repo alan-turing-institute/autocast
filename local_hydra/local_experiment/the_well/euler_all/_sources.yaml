@@ -1,0 +1,9 @@
+# @package _global_
+euler_all_lola:
+  well_base_path: ${oc.env:AUTOCAST_DATASETS,${euler_open_lola.well_base_path}}
+  well_dataset_names:
+    - ${euler_open_lola.dataset}
+    - ${euler_periodic_lola.dataset}
+  cache_paths:
+    - ${oc.env:EULER_OPEN_CACHE_DIR,${euler_all_lola.well_base_path}/${euler_open_lola.dataset}/${euler_open_lola.codec.name}/cache/${euler_open_lola.dataset}}
+    - ${oc.env:EULER_PERIODIC_CACHE_DIR,${euler_all_lola.well_base_path}/${euler_periodic_lola.dataset}/${euler_open_lola.codec.name}/cache/${euler_periodic_lola.dataset}}

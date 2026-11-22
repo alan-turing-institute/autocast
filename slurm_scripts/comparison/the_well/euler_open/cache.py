@@ -3,6 +3,7 @@
 import hashlib
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -110,9 +111,19 @@ def _provenance(spec: DictConfig, split: str, name: str) -> dict:
     }
 
 
-def _validate_shard(path: Path, provenance: dict) -> None:
+def _validate_shard(
+    path: Path, provenance: dict, *, accept_recorded_revision: bool = False
+) -> str:
     with h5py.File(path, "r") as handle:
-        if json.loads(handle.attrs.get("provenance", "{}")) != provenance:
+        recorded = json.loads(handle.attrs.get("provenance", "{}"))
+        builder_revision = recorded.get("autocast_revision")
+        if not isinstance(builder_revision, str):
+            raise ValueError(f"Missing cache builder revision at {path}")
+        if accept_recorded_revision:
+            if re.fullmatch(r"[0-9a-f]{40}", builder_revision) is None:
+                raise ValueError(f"Unpinned cache builder revision at {path}")
+            provenance = {**provenance, "autocast_revision": builder_revision}
+        if recorded != provenance:
             raise ValueError(f"Cache provenance differs at {path}")
         count = provenance["source_trajectory_range"][1]
         for name, shape in (
@@ -126,9 +137,10 @@ def _validate_shard(path: Path, provenance: dict) -> None:
                 or dataset.dtype != np.dtype("float32")
             ):
                 raise ValueError(f"Invalid {name} shape or dtype in {path}")
+    return builder_revision
 
 
-def verify_cache(spec: DictConfig) -> None:
+def verify_cache(spec: DictConfig, *, accept_recorded_revision: bool = False) -> None:
     """Require exactly the planned complete MiniWell shards before training."""
     cache = Path(spec.cache.directory)
     plan = planned_shards(spec)
@@ -144,9 +156,16 @@ def verify_cache(spec: DictConfig) -> None:
                 f"{split}: missing shards {sorted(expected - actual)}, "
                 f"unexpected shards {sorted(actual - expected)}"
             )
-    for split, name in plan:
-        _validate_shard(cache / split / name, _provenance(spec, split, name))
+    revisions = {
+        _validate_shard(
+            cache / split / name,
+            _provenance(spec, split, name),
+            accept_recorded_revision=accept_recorded_revision,
+        )
+        for split, name in plan
+    }
     print(f"Verified {len(plan)} completed cache shards at {cache}", flush=True)
+    print(f"Cache builder revisions: {', '.join(sorted(revisions))}", flush=True)
 
 
 def _load_well_shard(spec: DictConfig, split: WellSplit, name: str) -> WellDataset:

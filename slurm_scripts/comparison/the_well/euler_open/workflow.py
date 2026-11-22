@@ -26,9 +26,10 @@ from slurm_scripts.comparison.the_well.rayleigh_benard.paired_test_windows impor
 )
 
 
-def experiment_config(profile: str) -> DictConfig:
+def experiment_config(profile: str, *, joint: bool = False) -> DictConfig:
     """Compose the same run configuration used by Hydra processor training."""
-    preset = "the_well/euler_open/crps_spatiotemporal_latent"
+    dataset = "euler_all" if joint else "euler_open"
+    preset = f"the_well/{dataset}/crps_spatiotemporal_latent"
     if profile == "smoke":
         preset += "_smoke"
     with initialize_config_dir(get_default_config_path(), version_base=None):
@@ -46,8 +47,28 @@ def source_spec(cfg: DictConfig, source: str) -> DictConfig:
     return spec
 
 
+def verify_joint_sources(*, ambient: bool) -> None:
+    """Verify each original source before combining its split with the other."""
+    cfg = experiment_config("production", joint=True)
+    for source, root in zip(
+        ("open", "periodic"), cfg.datamodule.data_paths, strict=True
+    ):
+        spec = source_spec(cfg, source).copy()
+        spec.well_base_path = cfg.euler_all_lola.well_base_path
+        if ambient:
+            verify_ambient_source(spec)
+        else:
+            spec.cache.directory = root
+            spec.cache.backend = "upstream"
+            spec.codec.directory = str(Path(root).parent.parent)
+            load_codec_config(spec)
+            # Build revisions remain in the shard receipts. A newer reader
+            # still checks the raw shard, codec, transforms and cache layout.
+            verify_cache(spec, accept_recorded_revision=True)
+
+
 def paired_selection(spec: DictConfig) -> dict:
-    """Choose the shared open-only test cohort from the pinned file order."""
+    """Choose a boundary-specific test cohort from the pinned file order."""
     files = dict.fromkeys(shard_names(spec), int(spec.trajectories_per_shard["test"]))
     seed = spec.paired_test.seed
     indices = sorted(
@@ -142,6 +163,8 @@ def main() -> None:
     commands.add_parser("plan")
     commands.add_parser("verify")
     commands.add_parser("verify-ambient")
+    commands.add_parser("verify-joint-cache")
+    commands.add_parser("verify-joint-ambient")
     cache = commands.add_parser("cache")
     cache.add_argument("index", type=int)
     select = commands.add_parser("windows")
@@ -156,6 +179,12 @@ def main() -> None:
 
     if args.command == "evaluate":
         cfg = OmegaConf.load(args.config)
+        if "euler_all_lola" in cfg or cfg.datamodule.get("data_paths"):
+            parser.error(
+                "Use the maintained evaluator with a per-boundary cache for joint Euler"
+            )
+        if args.source != "open":
+            parser.error("Use the maintained evaluator for periodic Euler")
         if cfg.eval.mode not in {"encode_once", "ambient"}:
             msg = "Euler paired evaluation requires encode_once or ambient mode"
             raise ValueError(msg)
@@ -168,6 +197,10 @@ def main() -> None:
             max_windows=2 if args.profile == "smoke" else None,
             reference_diagnostics=True,
         )
+        return
+
+    if args.command in {"verify-joint-cache", "verify-joint-ambient"}:
+        verify_joint_sources(ambient=args.command == "verify-joint-ambient")
         return
 
     spec = source_spec(experiment_config(args.profile), args.source)

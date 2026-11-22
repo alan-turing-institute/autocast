@@ -1,3 +1,5 @@
+import shutil
+
 import fsspec
 import h5py
 import pytest
@@ -7,9 +9,12 @@ from einops import repeat
 from hydra.utils import instantiate
 from omegaconf import OmegaConf
 from the_well.data.normalization import RMSNormalization, ZScoreNormalization
+from torch.utils.data import ConcatDataset, Subset
 
+from autocast.data.datamodule import TheWellDataModule
 from autocast.data.dataset import TheWell
 from autocast.scripts.setup import _load_residual_delta_normalizer
+from autocast.types.batch import Sample
 
 
 @pytest.mark.parametrize("normalization_type", [ZScoreNormalization, RMSNormalization])
@@ -88,6 +93,51 @@ def native_well_files(tmp_path):
                         dim_varying=[True, True],
                     )
     return root
+
+
+def test_joint_well_keeps_both_sources_and_uses_raw_fields(native_well_files):
+    open_name = "euler_multi_quadrants_openBC"
+    periodic_name = "euler_multi_quadrants_periodicBC"
+    open_source = native_well_files / open_name
+    (native_well_files / "rayleigh_benard").rename(open_source)
+    periodic_source = native_well_files / periodic_name
+    shutil.copytree(open_source, periodic_source)
+    for source, value in ((open_source, 14.0), (periodic_source, 42.0)):
+        for path in source.glob("data/*/sample.h5"):
+            with h5py.File(path, "r+") as shard:
+                shard.attrs["dataset_name"] = source.name
+                field = shard["t0_fields/z"]
+                assert isinstance(field, h5py.Dataset)
+                field[:] = value
+
+    dm = TheWellDataModule(
+        well_dataset_name=[open_name, periodic_name],
+        well_base_path=str(native_well_files),
+        use_normalization=False,
+        val_shuffle_seed=0,
+        batch_size=1,
+        num_workers=0,
+    )
+    for dataset in (dm.train_dataset, dm.test_dataset, dm.rollout_test_dataset):
+        assert isinstance(dataset, ConcatDataset)
+        for source, name in zip(
+            dataset.datasets, (open_name, periodic_name), strict=True
+        ):
+            assert isinstance(source, TheWell)
+            assert source.well_metadata.dataset_name == name
+        periodic_start = dataset.cumulative_sizes[0]
+        for index, value in ((0, 14.0), (periodic_start, 42.0)):
+            sample = dataset[index]
+            assert isinstance(sample, Sample)
+            assert sample.input_fields[0, 0, 0, 0] == value
+    assert isinstance(dm.val_dataset, Subset)
+    assert len(dm.val_dataset) == len(dm.train_dataset)
+    assert {
+        batch.input_fields[0, 0, 0, 0, 0].item() for batch in dm.val_dataloader()
+    } == {
+        14.0,
+        42.0,
+    }
 
 
 @pytest.mark.parametrize(

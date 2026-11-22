@@ -22,6 +22,7 @@ max_dt_stride: 1
 # DataLoader configuration
 batch_size: 16
 num_workers: 0
+val_shuffle_seed: null
 
 # Normalization
 use_normalization: true

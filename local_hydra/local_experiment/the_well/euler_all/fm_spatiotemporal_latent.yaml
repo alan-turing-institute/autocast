@@ -1,0 +1,7 @@
+# @package _global_
+defaults:
+  - /local_experiment/the_well/euler_open/fm_spatiotemporal_latent
+  - /local_experiment/the_well/euler_all/_spatiotemporal_latent
+  - _self_
+
+experiment_name: the_well_euler_all_fm_spatiotemporal_latent

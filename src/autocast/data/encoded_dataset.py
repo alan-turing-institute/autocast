@@ -1,4 +1,4 @@
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -438,7 +438,7 @@ class MiniWellDataModule(LightningDataModule):
 
     This datamodule wraps MiniWellInputOutput datasets and provides
     train/val/test dataloaders that collate samples into EncodedBatch objects.
-    Accepts a data_path with train/valid/test subdirectories containing data.h5.
+    Accepts one cache root or an ordered list of roots with matching splits.
     """
 
     def __init__(
@@ -453,6 +453,8 @@ class MiniWellDataModule(LightningDataModule):
         persistent_workers: bool | None = None,
         prefetch_factor: int | None = 2,
         val_shuffle_seed: int | None = None,
+        *,
+        data_paths: Sequence[str] | None = None,
     ):
         """Initialize the MiniWellDataModule.
 
@@ -472,9 +474,24 @@ class MiniWellDataModule(LightningDataModule):
                 Only used when num_workers > 0.
             val_shuffle_seed: Seed for a fixed validation window order. When
                 set, a capped validation pass samples across the full split.
+            data_paths: Cache roots to concatenate within each split. Each
+                listed root must provide shards for that split.
         """
         super().__init__()
         self.data_path = Path(data_path) if data_path is not None else None
+        if data_paths is None:
+            self.data_paths = (self.data_path,) if self.data_path is not None else ()
+        else:
+            if data_path is not None or not data_paths or isinstance(data_paths, str):
+                msg = "Supply either data_path or a nonempty list of data_paths"
+                raise ValueError(msg)
+            self.data_paths = tuple(Path(path) for path in data_paths)
+            if len({path.resolve() for path in self.data_paths}) != len(
+                self.data_paths
+            ):
+                msg = "MiniWell cache roots must be distinct"
+                raise ValueError(msg)
+        self._require_each_split = data_paths is not None
         self.n_steps_input = n_steps_input
         self.n_steps_output = n_steps_output
         self.stride = stride
@@ -491,15 +508,15 @@ class MiniWellDataModule(LightningDataModule):
         self.val_dataset: Dataset | None = None
         self.test_dataset: Dataset | None = None
 
-    def _create_dataset(
-        self, dir_path: Path
-    ) -> MiniWellInputOutput | ConcatDataset | None:
-        """Create a dataset from all h5 files in a directory."""
-        if not dir_path.exists():
-            return None
-
-        # Find all h5 files in the directory
-        files = sorted(dir_path.glob("*.h5")) + sorted(dir_path.glob("*.hdf5"))
+    def _create_dataset(self, split: str) -> MiniWellInputOutput | ConcatDataset | None:
+        """Concatenate the shards for this split in configured root order."""
+        files: list[Path] = []
+        for root in self.data_paths:
+            directory = root / split
+            shards = sorted(directory.glob("*.h5")) + sorted(directory.glob("*.hdf5"))
+            if self._require_each_split and not shards:
+                raise FileNotFoundError(f"No MiniWell shards in {directory}")
+            files.extend(shards)
         if not files:
             return None
 
@@ -535,17 +552,15 @@ class MiniWellDataModule(LightningDataModule):
 
     def setup(self, stage: str | None = None) -> None:
         """Set up datasets for the given stage."""
-        if self.data_path is None:
-            msg = "data_path must be provided"
+        if not self.data_paths:
+            msg = "data_path or data_paths must be provided"
             raise ValueError(msg)
 
         if stage == "fit" or stage is None:
             if self.train_dataset is None:
-                train_dir = self.data_path / "train"
-                self.train_dataset = self._create_dataset(train_dir)
+                self.train_dataset = self._create_dataset("train")
             if self.val_dataset is None:
-                valid_dir = self.data_path / "valid"
-                dataset = self._create_dataset(valid_dir)
+                dataset = self._create_dataset("valid")
                 if dataset is not None and self.val_shuffle_seed is not None:
                     generator = torch.Generator().manual_seed(self.val_shuffle_seed)
                     indices = torch.randperm(len(dataset), generator=generator).tolist()
@@ -553,8 +568,7 @@ class MiniWellDataModule(LightningDataModule):
                 self.val_dataset = dataset
 
         if (stage == "test" or stage is None) and self.test_dataset is None:
-            test_dir = self.data_path / "test"
-            self.test_dataset = self._create_dataset(test_dir)
+            self.test_dataset = self._create_dataset("test")
 
     def train_dataloader(self) -> DataLoader:
         """Return training dataloader."""

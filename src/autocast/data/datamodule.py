@@ -2,23 +2,24 @@ import os
 from collections.abc import Callable, Sequence
 from functools import partial
 from pathlib import Path
+from typing import Any, Literal
 
 import torch
 from lightning.pytorch import LightningDataModule
 from omegaconf import DictConfig
 from the_well.data.normalization import RMSNormalization, ZScoreNormalization
-from torch.utils.data import DataLoader
+from torch.utils.data import ConcatDataset, DataLoader, Dataset, Subset
 
 from autocast.data.dataset import SpatioTemporalDataset, TheWell
 from autocast.types import collate_batches
 
 
 class TheWellDataModule(LightningDataModule):
-    """DataModule for TheWell datasets."""
+    """Load one Well dataset or concatenate compatible raw datasets per split."""
 
     def __init__(
         self,
-        well_dataset_name: str,
+        well_dataset_name: str | Sequence[str] | None,
         n_steps_input: int = 1,
         n_steps_output: int = 1,
         batch_size: int = 4,
@@ -29,6 +30,8 @@ class TheWellDataModule(LightningDataModule):
         autoencoder_mode: bool = False,
         num_workers: int | None = None,  # Auto-detect if None
         normalization_path: str = "../stats.yaml",
+        *,
+        val_shuffle_seed: int | None = None,
         **well_kwargs,
     ):
         super().__init__()
@@ -39,31 +42,25 @@ class TheWellDataModule(LightningDataModule):
             num_workers if num_workers is not None else min(os.cpu_count() or 1, 8)
         )
 
-        self.train_dataset = TheWell(
-            well_dataset_name=well_dataset_name,
-            well_split_name="train",
-            n_steps_input=n_steps_input,
-            n_steps_output=n_steps_output,
-            use_normalization=use_normalization,
-            normalization_type=normalization_type,
-            normalization_path=normalization_path,
-            autoencoder_mode=autoencoder_mode,
-            **well_kwargs,
+        names = (
+            (well_dataset_name,)
+            if well_dataset_name is None or isinstance(well_dataset_name, str)
+            else tuple(well_dataset_name)
         )
-        self.val_dataset = TheWell(
-            well_dataset_name=well_dataset_name,
-            well_split_name="valid",
-            n_steps_input=n_steps_input,
-            n_steps_output=n_steps_output,
-            use_normalization=use_normalization,
-            normalization_type=normalization_type,
-            normalization_path=normalization_path,
-            autoencoder_mode=autoencoder_mode,
-            **well_kwargs,
-        )
-        self.test_dataset = TheWell(
-            well_dataset_name=well_dataset_name,
-            well_split_name="test",
+        if not names or len(set(names)) != len(names):
+            msg = "Well dataset names must be nonempty and distinct"
+            raise ValueError(msg)
+        if len(names) > 1 and (
+            use_normalization or well_kwargs.get("path") is not None
+        ):
+            msg = (
+                "Multiple Well datasets require well_base_path and raw fields "
+                "with shared normalization handled by the model."
+            )
+            raise ValueError(msg)
+
+        load = partial(
+            TheWell,
             n_steps_input=n_steps_input,
             n_steps_output=n_steps_output,
             use_normalization=use_normalization,
@@ -73,29 +70,42 @@ class TheWellDataModule(LightningDataModule):
             **well_kwargs,
         )
 
+        def split_dataset(
+            split: Literal["train", "valid", "test"], **overrides: Any
+        ) -> TheWell | ConcatDataset:
+            datasets = [
+                load(well_dataset_name=name, well_split_name=split, **overrides)
+                for name in names
+            ]
+            if len(datasets) == 1:
+                return datasets[0]
+            first = datasets[0].well_metadata
+            shape_keys = (
+                "spatial_resolution",
+                "field_names",
+                "constant_field_names",
+                "constant_scalar_names",
+            )
+            for dataset in datasets[1:]:
+                if any(
+                    getattr(dataset.well_metadata, key) != getattr(first, key)
+                    for key in shape_keys
+                ):
+                    msg = "Combined Well datasets must have matching fields and grids"
+                    raise ValueError(msg)
+            return ConcatDataset(datasets)
+
+        self.train_dataset = split_dataset("train")
+        validation: Dataset = split_dataset("valid")
+        if val_shuffle_seed is not None:
+            generator = torch.Generator().manual_seed(val_shuffle_seed)
+            indices = torch.randperm(len(validation), generator=generator).tolist()
+            validation = Subset(validation, indices)
+        self.val_dataset = validation
+        self.test_dataset = split_dataset("test")
         if not autoencoder_mode:
-            self.rollout_val_dataset = TheWell(
-                well_dataset_name=well_dataset_name,
-                well_split_name="train",
-                n_steps_input=n_steps_input,
-                n_steps_output=n_steps_output,
-                use_normalization=use_normalization,
-                normalization_type=normalization_type,
-                normalization_path=normalization_path,
-                full_trajectory_mode=True,
-                **well_kwargs,
-            )
-            self.rollout_test_dataset = TheWell(
-                well_dataset_name=well_dataset_name,
-                well_split_name="test",
-                n_steps_input=n_steps_input,
-                n_steps_output=n_steps_output,
-                use_normalization=use_normalization,
-                normalization_type=normalization_type,
-                normalization_path=normalization_path,
-                full_trajectory_mode=True,
-                **well_kwargs,
-            )
+            self.rollout_val_dataset = split_dataset("train", full_trajectory_mode=True)
+            self.rollout_test_dataset = split_dataset("test", full_trajectory_mode=True)
 
     def train_dataloader(self) -> DataLoader:
         """DataLoader for training."""

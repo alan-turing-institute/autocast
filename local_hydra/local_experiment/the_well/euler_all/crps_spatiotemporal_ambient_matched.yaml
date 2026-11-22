@@ -1,0 +1,13 @@
+# @package _global_
+defaults:
+  - /local_experiment/the_well/euler_open/crps_spatiotemporal_ambient_matched
+  - /local_experiment/the_well/euler_all/_sources
+  - _self_
+
+experiment_name: the_well_euler_all_crps_spatiotemporal_ambient_matched
+
+datamodule:
+  well_dataset_name: ${euler_all_lola.well_dataset_names}
+  well_base_path: ${euler_all_lola.well_base_path}
+  normalization_path: ../stats.yaml
+  val_shuffle_seed: 0

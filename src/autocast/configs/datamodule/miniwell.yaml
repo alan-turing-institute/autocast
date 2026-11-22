@@ -5,6 +5,8 @@ _target_: autocast.data.encoded_dataset.MiniWellDataModule
 
 # Base path containing train/, valid/, test/ subdirectories with *.h5 files
 data_path: null
+# Multiple cache roots are concatenated within each split.
+data_paths: null
 
 # Temporal configuration
 n_steps_input: 1

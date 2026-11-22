@@ -164,6 +164,43 @@ test. The periodic cache validates its own boundary labels. Use
 Set `EULER_CODEC_DIR` to select a local copy of the published codec. The cache
 checks both file hashes before encoding.
 
+### Joint open and periodic Euler
+
+The `the_well/euler_all` Hydra presets concatenate the canonical open and
+periodic sources within each split. The two caches use the same frozen codec
+and remain unaugmented. The ambient preset loads raw fields from both Well
+datasets and applies the same Euler field transforms in the model.
+
+```bash
+uv run --no-sync python -m "$workflow" verify-joint-cache
+uv run --no-sync python -m "$workflow" verify-joint-ambient
+uv run --no-sync python -m autocast.scripts.train.processor \
+    local_experiment=the_well/euler_all/crps_spatiotemporal_latent --cfg job --resolve
+uv run --no-sync python -m autocast.scripts.train.processor \
+    local_experiment=the_well/euler_all/fm_spatiotemporal_latent --cfg job --resolve
+uv run --no-sync python -m autocast.scripts.train.encoder_processor_decoder \
+    local_experiment=the_well/euler_all/crps_spatiotemporal_ambient_matched --cfg job --resolve
+```
+
+For paired evaluation, generate one manifest per boundary with
+`workflow --source open windows` and `workflow --source periodic windows`.
+Use the maintained `eval=the_well/euler_open` metric preset for both.
+For a latent checkpoint, set `eval.mode=encode_once`,
+`datamodule.data_paths=null` and `datamodule.data_path` to the selected
+boundary's cache root. The evaluator infers the matching raw Well dataset
+and codec from that root. For ambient evaluation, set `eval.mode=ambient`
+and select one `datamodule.well_dataset_name`. Pass the matching manifest
+as `eval.test_window_subset` in each run.
+
+The [joint launcher](../euler_all/job.sh) uses the two-root preflight and the
+same eight-node TF32 layout for both methods. Its `probe` profile runs
+three 64-update epochs with a 16-batch validation pass. Its `production`
+profile runs 4,096 epochs and validates every eight epochs. Use a separate
+single-GPU allocation for the `eval` operation. It calls `autocast eval
+--workdir` with explicit cache paths and sends paired results to `eval-open`
+and `eval-periodic` under the training run. The probe scores two windows
+per boundary while verifying the full paired manifest.
+
 ### Production array, training and paired evaluation
 
 Run this chain with `cache_path="$root/cache-lola"` and the upstream exports

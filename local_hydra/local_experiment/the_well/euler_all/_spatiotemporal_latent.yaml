@@ -1,0 +1,8 @@
+# @package _global_
+defaults:
+  - /local_experiment/the_well/euler_all/_sources
+  - _self_
+
+datamodule:
+  data_path: null
+  data_paths: ${euler_all_lola.cache_paths}
