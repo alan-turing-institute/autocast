@@ -1076,6 +1076,13 @@ def _resolve_rollout_channel_names(dataset: Any) -> list[str] | None:
             names_already_subset = False
 
     if not isinstance(raw_names, Sequence) or isinstance(raw_names, str):
+        well_metadata = getattr(dataset, "well_metadata", None)
+        field_groups = getattr(well_metadata, "field_names", None)
+        if isinstance(field_groups, Mapping):
+            raw_names = [name for group in field_groups.values() for name in group]
+            names_already_subset = False
+
+    if not isinstance(raw_names, Sequence) or isinstance(raw_names, str):
         return None
 
     channel_names = [str(name) for name in raw_names]
@@ -1095,6 +1102,50 @@ def _resolve_rollout_channel_names(dataset: Any) -> list[str] | None:
             return None
 
     return channel_names
+
+
+def _test_window_video_callback(
+    eval_cfg: DictConfig, video_dir: Path, channel_names: list[str] | None
+) -> Callable[[torch.Tensor, torch.Tensor], None]:
+    """Render the first scored test sample without a second prediction pass."""
+    suffix = eval_cfg.get("video_format", "mp4")
+    path = video_dir / f"test_window_0.{suffix}"
+    render_pending = True
+
+    def render(prediction: torch.Tensor, truth: torch.Tensor) -> None:
+        nonlocal render_pending
+        if not render_pending:
+            return
+        render_pending = False
+
+        prediction = prediction[:1]
+        ensemble = prediction.ndim == truth.ndim + 1
+        names = channel_names if len(channel_names or []) == truth.shape[-1] else None
+        try:
+            video_dir.mkdir(parents=True, exist_ok=True)
+            plot_spatiotemporal_video(
+                true=truth[:1].cpu(),
+                pred=(prediction.mean(dim=-1) if ensemble else prediction).cpu(),
+                pred_uq=prediction.std(dim=-1).cpu() if ensemble else None,
+                extra_preds=[(prediction[..., 0].cpu(), "Member 0")]
+                if ensemble
+                else None,
+                fps=eval_cfg.get("fps", 5),
+                save_path=str(path),
+                title="Next-window forecast",
+                pred_label="Ensemble Mean" if ensemble else "Prediction",
+                pred_uq_label="Ensemble Std Dev",
+                colorbar_mode="column",
+                channel_names=names,
+                preserve_aspect=eval_cfg.get("preserve_aspect", False),
+                transpose_spatial=eval_cfg.get("transpose_spatial", False),
+            )
+        except Exception:
+            log.exception("Could not save test window video to %s", path)
+        else:
+            log.info("Saved test window video to %s", path)
+
+    return render
 
 
 def _plot_or_warn(metric: Any, /, **kwargs: Any) -> None:
@@ -3760,6 +3811,20 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 ),
             )
 
+        render_test_window = None
+        if fabric.global_rank == 0 and eval_cfg.get("save_test_window_video", False):
+            render_test_window = _test_window_video_callback(
+                eval_cfg,
+                video_dir,
+                _resolve_rollout_channel_names(raw_test_loader.dataset),
+            )
+
+        def record_test_batch(prediction: torch.Tensor, truth: torch.Tensor) -> None:
+            if test_trajectory_accumulator is not None:
+                test_trajectory_accumulator.update(prediction, truth)
+            if render_test_window is not None:
+                render_test_window(prediction, truth)
+
         test_metrics_results, _, test_per_batch_rows = compute_metrics_from_dataloader(
             dataloader=test_loader,
             metric_fns=test_metric_fns,
@@ -3769,8 +3834,9 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
             device=fabric.device,
             metric_min_window_steps=METRIC_MIN_WINDOW_STEPS,
             batch_result_callback=(
-                test_trajectory_accumulator.update
+                record_test_batch
                 if test_trajectory_accumulator is not None
+                or render_test_window is not None
                 else None
             ),
         )

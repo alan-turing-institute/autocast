@@ -89,6 +89,8 @@ video_dir: null
 
 # Rollout sample indices to visualize
 batch_indices: []
+# Render the first scored test window from the same predictions used for metrics.
+save_test_window_video: false
 
 # Optional YAML manifest of fixed test-trajectory indices and dataset inventory.
 # Applies to all test rollout passes, including metrics and visualizations.

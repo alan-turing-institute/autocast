@@ -19,6 +19,8 @@ eval:
   compute_rollout_metrics: false
   compute_rollout_coverage: false
   batch_indices: []
+  save_test_window_video: true
+  fps: 2
   trajectory_statistics:
     enabled: false
   benchmark:

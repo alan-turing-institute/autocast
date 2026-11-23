@@ -99,7 +99,9 @@ All eval configs support these parameters:
 - Deterministic metrics on ensemble predictions are scored on the ensemble
   mean by default, matching LOLA's VRMSE/skill evaluation.
 - `csv_path`: Custom path for metrics CSV (default: work_dir/evaluation_metrics.csv)
-- `video_dir`: Custom directory for rollout videos (default: work_dir/videos)
+- `video_dir`: Custom directory for evaluation videos (default: work_dir/videos)
+- `save_test_window_video`: Render the first scored test sample as
+  `test_window_0.mp4` using its metric-pass predictions and targets.
 - `batch_indices`: List of rollout sample indices to visualize (resolved across
   batched rollout dataloader samples)
 - `rollout_subset`: Optional path to a YAML manifest containing `population_size`

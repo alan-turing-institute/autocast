@@ -74,6 +74,7 @@ from autocast.scripts.eval.encoder_processor_decoder import (
     _sample_test_windows,
     _should_skip_metric,
     _split_metric_and_metadata_rows,
+    _test_window_video_callback,
     _training_runtime_rows,
     _trajectory_statistics_seed,
     _try_build_decode_fn,
@@ -803,6 +804,15 @@ def test_resolve_rollout_channel_names_from_stats_applies_idxs():
     assert _resolve_rollout_channel_names(dataset) == ["p", "u"]
 
 
+def test_resolve_rollout_channel_names_for_unnormalized_well_dataset():
+    dataset = SimpleNamespace(
+        well_metadata=SimpleNamespace(field_names={0: ["density"], 1: ["u", "v"]}),
+        channel_idxs=(2, 0),
+    )
+
+    assert _resolve_rollout_channel_names(dataset) == ["v", "density"]
+
+
 def test_resolve_rollout_channel_names_returns_none_without_norm_names():
     dataset = SimpleNamespace(
         norm=None,
@@ -967,6 +977,29 @@ def test_render_rollouts_can_use_custom_rollout_predict(tmp_path, monkeypatch):
 
     assert len(out_paths) == 1
     assert torch.equal(captured_true[0], trues[1:2])
+
+
+def test_test_window_video_uses_first_scored_window(tmp_path, monkeypatch):
+    rendered = []
+    monkeypatch.setattr(
+        "autocast.scripts.eval.encoder_processor_decoder.plot_spatiotemporal_video",
+        lambda **kwargs: rendered.append(kwargs),
+    )
+    callback = _test_window_video_callback(
+        OmegaConf.create({"fps": 2}), tmp_path, ["density"]
+    )
+    truth = torch.arange(32.0).reshape(2, 4, 2, 2, 1)
+    prediction = torch.stack((truth + 1, truth + 3), dim=-1)
+    callback(prediction, truth)
+    callback(prediction + 100, truth + 100)
+
+    (video,) = rendered
+    assert video["save_path"] == str(tmp_path / "test_window_0.mp4")
+    assert video["fps"] == 2
+    assert video["channel_names"] == ["density"]
+    torch.testing.assert_close(video["true"], truth[:1])
+    torch.testing.assert_close(video["pred"], prediction[:1].mean(dim=-1))
+    torch.testing.assert_close(video["extra_preds"][0][0], prediction[:1, ..., 0])
 
 
 def test_render_rollouts_can_emit_single_member_diagnostics(tmp_path, monkeypatch):

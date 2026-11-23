@@ -198,8 +198,9 @@ three 64-update epochs with a 16-batch validation pass. Its `production`
 profile runs 4,096 epochs and validates every eight epochs. Use a separate
 single-GPU allocation for the `eval` operation. It calls `autocast eval
 --workdir` with explicit cache paths and sends paired results to `eval-open`
-and `eval-periodic` under the training run. The probe scores two windows
-per boundary while verifying the full paired manifest.
+and `eval-periodic` under the training run. Each evaluation renders the
+first scored window as `videos/test_window_0.mp4`. The probe scores two
+windows per boundary while verifying the full paired manifest.
 
 ### Rollouts for the LoLA comparison
 
