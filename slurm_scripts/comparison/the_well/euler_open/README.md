@@ -201,6 +201,46 @@ single-GPU allocation for the `eval` operation. It calls `autocast eval
 and `eval-periodic` under the training run. The probe scores two windows
 per boundary while verifying the full paired manifest.
 
+### Rollouts for the LoLA comparison
+
+Use `eval=the_well/euler_all` for raw-space rollout curves from the final
+latent checkpoints. It extends the RB reference preset with one observed
+frame at raw time zero and 25 forecasts at raw steps 4, 8, …, 100. Step
+100 is the last observed Euler frame. The RB diagnostics use stride one
+and report 100- and 180-frame rollouts from frame 16. The Euler rollout
+uses deterministic decoding and 16 members. FM uses AB3 with 16 solver
+steps. See the [LoLA evaluation protocol](https://arxiv.org/html/2507.02608v4).
+
+The joint launcher's `eval-rollout` operation generates one manifest per
+boundary from LoLA's seed-0 test draw across the pooled split. It evaluates
+each boundary separately. One GPU per method is sufficient for the pilot.
+For each run directory, preview the outputs with two trajectories per
+boundary before choosing a production walltime.
+
+```bash
+sbatch --partition=workq --account="$AUTOCAST_SLURM_ACCOUNT" \
+    --nodes=1 --gpus-per-node=1 --ntasks=1 --cpus-per-task=8 --mem=64G \
+    --time=00:15:00 slurm_scripts/comparison/the_well/euler_all/job.sh \
+    eval-rollout probe fm "$fm_run"
+```
+
+Set `AUTOCAST_EXPECTED_REVISION` to the reviewed checkout commit and use
+`crps "$crps_run"` for CRPS. The production profile uses the whole
+selected cohort. The rollout pass scores per-lead metrics in physical
+units. It includes the RB VRMSE, CRPS, spatial energy, spread–skill ratio
+and 19 coverage levels, plus the LoLA power-spectrum errors. It skips
+benchmarks, next-window scoring and a second pass for window aggregates.
+CSV column `i` represents lead `4 * (i + 1)` in raw steps. Use the existing
+`eval` operation for the paired four-lead task. For a pooled LoLA curve,
+use the same pooling and metric reductions for both models.
+
+Each evaluation writes one MP4 under its `videos/` directory using the
+first trajectory in the saved boundary manifest. It shows ground truth,
+the ensemble mean and standard deviation, and member zero for all five
+fields. FM and CRPS use the same selected trajectory for each boundary.
+The pilot checks video rendering and scoring with two trajectories per
+boundary.
+
 ### Production array, training and paired evaluation
 
 Run this chain with `cache_path="$root/cache-lola"` and the upstream exports

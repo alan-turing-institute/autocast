@@ -19,6 +19,10 @@ latent_space_metrics: false
 # metrics are controlled separately via `compute_rollout_metrics`.
 compute_test_metrics: true
 
+# Disable to score only per-lead rollout curves, without a second inference
+# pass for the windowed aggregate CSVs. Trajectory statistics still use both.
+compute_rollout_window_metrics: true
+
 # Opt in to scoring EPD next-window predictions and targets in physical units.
 denormalize_test_metrics: false
 

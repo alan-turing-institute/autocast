@@ -614,6 +614,13 @@ class TheWell(SpatioTemporalDataset):
             min_std=min_std,
             storage_options=storage_options,
         )
+        if full_trajectory_mode:
+            # The Well rounds down at non-unit stride. Retain the endpoint of
+            # the stride-aligned slice, e.g. frames 0, 4, ..., 100 for Euler.
+            frames = min(self.well_dataset.n_steps_per_trajectory)
+            self.well_dataset.n_steps_output = (
+                (frames - 1) // min_dt_stride + 1 - n_steps_input
+            )
         # Model setup needs the same normalizer used by the loader to restore
         # physical units in evaluation; unnormalized loaders expose None.
         self.norm = self.well_dataset.norm

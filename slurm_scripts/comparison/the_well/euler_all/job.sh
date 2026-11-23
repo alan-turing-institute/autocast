@@ -5,7 +5,7 @@ umask 027
 # Submit with --chdir at the reviewed checkout. Resource requests are supplied
 # at submission, since training and paired evaluation use different layouts.
 cd "$(git rev-parse --show-toplevel)"
-operation=${1:?Specify check, train or eval}
+operation=${1:?Specify check, train, eval or eval-rollout}
 profile=${2:?Specify probe or production}
 objective=${3:?Specify fm or crps}
 run_dir=${4:?Provide an absolute run directory}
@@ -68,20 +68,38 @@ case "$operation" in
         export NCCL_NET="AWS Libfabric" WANDB_DIR="$run_dir"
         exec srun --kill-on-bad-exit=1 uv run --offline --no-sync "${trainer[@]}"
         ;;
-    eval)
+    eval|eval-rollout)
         test -s "$run_dir/processor.ckpt"
+        if [[ "$operation" == eval-rollout ]]; then
+            preset=the_well/euler_all
+            selection=lola-rollout
+            manifest_prefix=lola-rollout
+            subset_key=rollout_subset
+            output_prefix=eval-lola
+            eval_limit=()
+            if [[ "$profile" == probe ]]; then
+                eval_limit=(eval.max_rollout_batches=2)
+                output_prefix=eval-lola-probe
+            fi
+        else
+            preset=the_well/euler_open
+            selection=windows
+            manifest_prefix=paired
+            subset_key=test_window_subset
+            output_prefix=eval
+        fi
         for source in open periodic; do
             cache="$EULER_OPEN_CACHE_DIR"
             if [[ "$source" == periodic ]]; then cache="$EULER_PERIODIC_CACHE_DIR"; fi
-            manifest="$run_dir/paired-$source.yaml"
-            "${workflow[@]}" --source "$source" windows "$manifest"
+            manifest="$run_dir/$manifest_prefix-$source.yaml"
+            "${workflow[@]}" --source "$source" "$selection" "$manifest"
             srun --kill-on-bad-exit=1 uv run --offline --no-sync autocast eval \
-                --workdir "$run_dir" --output-subdir "eval-$source" \
-                eval=the_well/euler_open eval.mode=encode_once \
+                --workdir "$run_dir" --output-subdir "$output_prefix-$source" \
+                "eval=$preset" eval.mode=encode_once \
                 "eval.checkpoint=$run_dir/processor.ckpt" \
                 datamodule.data_paths=null "datamodule.data_path=$cache" \
                 eval.devices=1 eval.num_nodes=1 eval.strategy=auto \
-                eval.save_rollout_snapshots=false "eval.test_window_subset=$manifest" \
+                eval.save_rollout_snapshots=false "eval.$subset_key=$manifest" \
                 "${eval_limit[@]}"
         done
         ;;

@@ -1,0 +1,41 @@
+# @package _global_
+defaults:
+  - /eval/the_well/rayleigh_benard
+  - _self_
+
+# Use one boundary's cache root and the corresponding LoLA rollout manifest.
+eval:
+  mode: encode_once
+  chunk_size: 4
+  use_ema: false
+  lola_decoder_noisy: false
+  rollout_start: 0
+  max_rollout_steps: 7  # Four leads per block, cropped to the 25 observed leads.
+  metrics:
+    - vrmse_v2
+    - psrmse_low
+    - psrmse_mid
+    - psrmse_high
+    - crps
+    - energy_spatial
+    - spread
+    - skill
+    - ssr
+    - ssr_pooled
+  compute_test_metrics: false
+  compute_rollout_window_metrics: false
+  compute_rollout_coverage: true
+  transpose_spatial: false
+  batch_indices: [0]  # First trajectory in this boundary's saved manifest.
+  video_format: mp4
+  rollout_member_indices: [0]
+  rollout_member_render_mode: inline
+  save_rollout_snapshots: false
+  benchmark:
+    enabled: false
+  benchmark_rollout:
+    enabled: false
+
+datamodule:
+  num_workers: 0
+  max_rollout_steps: 25  # Twenty-five stride-four forecast frames.

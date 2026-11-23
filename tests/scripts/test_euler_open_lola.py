@@ -35,6 +35,18 @@ from slurm_scripts.comparison.the_well.rayleigh_benard.paired_test_windows impor
 )
 
 
+def test_euler_lola_rollout_draw_is_split_by_boundary():
+    cfg = workflow.experiment_config("production")
+    selections = [
+        workflow.lola_rollout_selection(cfg, source) for source in ("open", "periodic")
+    ]
+    assert [len(selection["indices"]) for selection in selections] == [25, 39]
+    for selection in selections:
+        assert selection["population_size"] == sum(selection["files"].values()) == 500
+        assert selection["indices"] == sorted(set(selection["indices"]))
+        assert all(0 <= index < 500 for index in selection["indices"])
+
+
 def test_euler_window_selection_matches_well_and_miniwell_offsets(tmp_path):
     cfg = workflow.experiment_config("production")
     spec = cfg.euler_open_lola

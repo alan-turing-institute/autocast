@@ -27,6 +27,7 @@ from autocast.benchmarking import benchmark_model, benchmark_rollout
 from autocast.data.well_windows import validate_well_window_selection
 from autocast.data.zarr_dataset import ZarrDataModule
 from autocast.external.lola.wrapped_decoder import WrappedDecoder
+from autocast.external.lola.wrapped_encoder import WrappedEncoder
 from autocast.metrics import (
     MAE,
     MSE,
@@ -464,24 +465,42 @@ def _build_encode_once_rollout_predict(
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
         with torch.no_grad():
             batch = _crop_rollout_batch_start(batch, rollout_start)
-            encoded_batch = encoder_decoder.encoder.encode_batch(batch)
-            preds_latent, trues_latent = processor_wrapper.rollout(
+            encoder = encoder_decoder.encoder
+            if (
+                free_running_only
+                and not compare_to_autoencoded_target
+                and isinstance(encoder, WrappedEncoder)
+            ):
+                inputs, labels = encoder.encode_with_cond(batch)
+                encoded_batch = EncodedBatch(
+                    encoded_inputs=inputs,
+                    encoded_output_fields=inputs[:, :0],
+                    global_cond=labels,
+                    encoded_info={},
+                )
+            else:
+                encoded_batch = encoder.encode_batch(batch)
+            preds_latent, _ = processor_wrapper.rollout(
                 encoded_batch,
                 stride=rollout_stride,
                 max_rollout_steps=max_rollout_steps,
                 free_running_only=free_running_only,
                 n_members=n_members if n_members and n_members > 1 else None,
             )
+            target_steps = batch.output_fields.shape[1]
             preds = _decode_tensor(
-                preds_latent,
+                preds_latent[:, :target_steps] if target_steps else preds_latent,
                 _decode_to_raw,
                 n_members=n_members if n_members and n_members > 1 else None,
             )
             if compare_to_autoencoded_target:
+                target_latents = encoded_batch.encoded_output_fields[
+                    :, : preds.shape[1]
+                ]
                 trues = (
-                    None
-                    if trues_latent is None
-                    else _decode_tensor(trues_latent, _decode_to_raw, n_members=None)
+                    _decode_tensor(target_latents, _decode_to_raw, n_members=None)
+                    if target_steps
+                    else None
                 )
             else:
                 trues = underlying.denormalize_tensor(batch.output_fields)
@@ -3890,6 +3909,8 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 if resolved_eval_path == EVAL_PATH_ENCODE_ONCE
                 else None
             )
+            if explicit_rollout_seed is not None:
+                _seed_evaluation_sampling(explicit_rollout_seed)
             _render_rollouts(
                 # Keep Fabric's forwarding for precision and distributed execution.
                 cast(RolloutMixin, model).rollout,
@@ -4078,12 +4099,11 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                             )
                         )
 
-            def _write_rollout_metric_outputs(  # noqa: PLR0915
+            def _write_rollout_window_outputs(
                 *,
                 rollout_predict: Callable[[Any], Any],
                 csv_name: str,
                 metadata_csv_name: str,
-                per_timestep_stem: str,
                 log_prefix: str,
                 scoring_seed: int | None,
                 collect_trajectory_statistics: bool = False,
@@ -4197,6 +4217,29 @@ def run_evaluation(cfg: DictConfig, work_dir: Path | None = None) -> None:  # no
                 if fabric.global_rank == 0 and rollout_metadata_rows:
                     _write_csv(rollout_metadata_rows, rollout_metadata_csv_path)
                     log.info("Wrote rollout metadata to %s", rollout_metadata_csv_path)
+
+            def _write_rollout_metric_outputs(
+                *,
+                rollout_predict: Callable[[Any], Any],
+                csv_name: str,
+                metadata_csv_name: str,
+                per_timestep_stem: str,
+                log_prefix: str,
+                scoring_seed: int | None,
+                collect_trajectory_statistics: bool = False,
+            ) -> None:
+                if (
+                    eval_cfg.get("compute_rollout_window_metrics", True)
+                    or collect_trajectory_statistics
+                ):
+                    _write_rollout_window_outputs(
+                        rollout_predict=rollout_predict,
+                        csv_name=csv_name,
+                        metadata_csv_name=metadata_csv_name,
+                        log_prefix=log_prefix,
+                        scoring_seed=scoring_seed,
+                        collect_trajectory_statistics=collect_trajectory_statistics,
+                    )
 
                 if not per_timestep_metric_fns:
                     return

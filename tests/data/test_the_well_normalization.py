@@ -49,7 +49,7 @@ def test_well_delta_stats_use_metadata_and_existing_filesystem(
 
 
 @pytest.fixture
-def native_well_files(tmp_path):
+def native_well_files(tmp_path, request):
     """Minimal native files read by the actual WellDataset, without mocks."""
     root = tmp_path / "well"
     dataset_path = root / "rayleigh_benard"
@@ -63,7 +63,8 @@ def native_well_files(tmp_path):
         "rms_delta": {"z": 0.75, "velocity": [4.0, 5.0]},
     }
     (dataset_path / "stats.yaml").write_text(yaml.safe_dump(stats))
-    physical = torch.tensor([14.0, 26.0, 3.0]).expand(4, 2, 2, 3)
+    frames = getattr(request, "param", 4)
+    physical = torch.tensor([14.0, 26.0, 3.0]).expand(frames, 2, 2, 3)
     for split in ("train", "valid", "test"):
         split_path = dataset_path / "data" / split
         split_path.mkdir(parents=True)
@@ -76,7 +77,7 @@ def native_well_files(tmp_path):
             )
             dimensions = handle.create_group("dimensions")
             dimensions.attrs["spatial_dims"] = ["x", "y"]
-            for name, size in (("time", 4), ("x", 2), ("y", 2)):
+            for name, size in (("time", frames), ("x", 2), ("y", 2)):
                 dimension = dimensions.create_dataset(name, data=list(range(size)))
                 dimension.attrs["sample_varying"] = False
             handle.create_group("scalars").attrs["field_names"] = []
@@ -93,6 +94,20 @@ def native_well_files(tmp_path):
                         dim_varying=[True, True],
                     )
     return root
+
+
+@pytest.mark.parametrize("native_well_files", [5], indirect=True)
+def test_well_rollout_includes_final_stride_aligned_frame(native_well_files):
+    dataset = TheWell(
+        well_base_path=str(native_well_files),
+        well_dataset_name="rayleigh_benard",
+        well_split_name="test",
+        full_trajectory_mode=True,
+        min_dt_stride=2,
+        max_dt_stride=2,
+    )
+    assert len(dataset) == 1
+    assert dataset[0].output_fields.shape[0] == 2
 
 
 def test_joint_well_keeps_both_sources_and_uses_raw_fields(native_well_files):

@@ -415,10 +415,10 @@ def test_decode_tensor_preserves_ensemble_axis():
     assert decoded.shape == (2, 4, 8, 8, 2, 5)
 
 
-def test_encode_once_rollout_predict_can_use_autoencoded_targets():
+def test_encode_once_rollout_predict_can_use_autoencoded_targets(monkeypatch):
     input_fields = torch.tensor([1.0]).reshape(1, 1, 1, 1, 1)
-    raw_outputs = torch.tensor([20.0, 30.0]).reshape(1, 2, 1, 1, 1)
-    encoded_outputs = torch.tensor([2.0, 3.0]).reshape(1, 2, 1, 1, 1)
+    raw_outputs = torch.tensor([20.0, 30.0, 40.0]).reshape(1, 3, 1, 1, 1)
+    encoded_outputs = torch.tensor([2.0, 3.0, 4.0]).reshape(1, 3, 1, 1, 1)
     batch = Batch(
         input_fields=input_fields,
         output_fields=raw_outputs,
@@ -426,8 +426,15 @@ def test_encode_once_rollout_predict_can_use_autoencoded_targets():
         constant_fields=None,
     )
 
+    encode_calls = []
+
     class FakeEncoder:
+        def encode_with_cond(self, raw_batch):
+            encode_calls.append("input")
+            return raw_batch.input_fields, None
+
         def encode_batch(self, raw_batch):
+            encode_calls.append("input_and_output")
             return EncodedBatch(
                 encoded_inputs=raw_batch.input_fields,
                 encoded_output_fields=encoded_outputs,
@@ -444,8 +451,11 @@ def test_encode_once_rollout_predict_can_use_autoencoded_targets():
             return torch.zeros(())
 
         def map(self, x, global_cond):  # noqa: ARG002
-            return x + 1
+            return torch.cat((x + 1, x + 2), dim=1)
 
+    monkeypatch.setattr(
+        "autocast.scripts.eval.encoder_processor_decoder.WrappedEncoder", FakeEncoder
+    )
     model = SimpleNamespace(
         encoder_decoder=SimpleNamespace(
             encoder=FakeEncoder(),
@@ -456,7 +466,7 @@ def test_encode_once_rollout_predict_can_use_autoencoded_targets():
     )
     raw_predict = _build_encode_once_rollout_predict(
         model,
-        rollout_stride=1,
+        rollout_stride=2,
         max_rollout_steps=2,
         free_running_only=True,
         n_members=None,
@@ -464,7 +474,7 @@ def test_encode_once_rollout_predict_can_use_autoencoded_targets():
     )
     ae_target_predict = _build_encode_once_rollout_predict(
         model,
-        rollout_stride=1,
+        rollout_stride=2,
         max_rollout_steps=2,
         free_running_only=True,
         n_members=None,
@@ -475,8 +485,10 @@ def test_encode_once_rollout_predict_can_use_autoencoded_targets():
     preds_raw, trues_raw = raw_predict(batch)
     preds_relative, trues_relative = ae_target_predict(batch)
 
+    assert encode_calls == ["input", "input_and_output"]
     assert trues_raw is not None
     assert trues_relative is not None
+    assert preds_raw.shape[1] == 3
     assert torch.allclose(preds_raw, preds_relative)
     assert torch.allclose(trues_raw, raw_outputs)
     assert torch.allclose(trues_relative, encoded_outputs * 2)

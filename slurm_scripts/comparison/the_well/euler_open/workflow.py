@@ -89,6 +89,30 @@ def paired_selection(spec: DictConfig) -> dict:
     }
 
 
+def lola_rollout_selection(cfg: DictConfig, source: str) -> dict:
+    """Reproduce LoLA's pooled test draw and map it to one boundary."""
+    inventories = {}
+    for boundary in ("open", "periodic"):
+        spec = source_spec(cfg, boundary)
+        inventories[boundary] = dict.fromkeys(
+            shard_names(spec), int(spec.trajectories_per_shard["test"])
+        )
+    files = inventories[source]
+    size = sum(files.values())
+    offset = 0 if source == "open" else sum(inventories["open"].values())
+    total = sum(sum(inventory.values()) for inventory in inventories.values())
+    # LoLA eval.yaml draws 64 fractions with Python's seed 0, then eval.py
+    # converts each using int(fraction * population) and deduplicates.
+    rng = random.Random(0)
+    draw = {int(rng.random() * total) for _ in range(64)}
+    return {
+        "seed": 0,
+        "population_size": size,
+        "files": files,
+        "indices": sorted(i - offset for i in draw if offset <= i < offset + size),
+    }
+
+
 def configure_encode_once(cfg: DictConfig) -> DictConfig:
     """Resolve the verified all-Euler codec against the open-only raw loader."""
     from autocast.scripts.eval.encoder_processor_decoder import (  # noqa: PLC0415
@@ -139,17 +163,15 @@ def predict_window(model, batch: Batch) -> tuple[torch.Tensor, torch.Tensor]:
     )
 
 
-def _save_selection(spec: DictConfig, path: Path) -> None:
+def _save_selection(selection: dict, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    contents = yaml.safe_dump(paired_selection(spec), sort_keys=False)
+    contents = yaml.safe_dump(selection, sort_keys=False)
     try:
         with path.open("x") as stream:
             stream.write(contents)
     except FileExistsError:
-        if yaml.safe_load(path.read_text()) != paired_selection(spec):
-            raise ValueError(
-                f"Existing paired-window manifest differs: {path}"
-            ) from None
+        if yaml.safe_load(path.read_text()) != selection:
+            raise ValueError(f"Existing selection manifest differs: {path}") from None
 
 
 def main() -> None:
@@ -167,8 +189,8 @@ def main() -> None:
     commands.add_parser("verify-joint-ambient")
     cache = commands.add_parser("cache")
     cache.add_argument("index", type=int)
-    select = commands.add_parser("windows")
-    select.add_argument("manifest", type=Path)
+    commands.add_parser("windows").add_argument("manifest", type=Path)
+    commands.add_parser("lola-rollout").add_argument("manifest", type=Path)
     evaluate = commands.add_parser("evaluate")
     evaluate.add_argument("config", type=Path)
     evaluate.add_argument("checkpoint", type=Path)
@@ -188,7 +210,7 @@ def main() -> None:
         if cfg.eval.mode not in {"encode_once", "ambient"}:
             msg = "Euler paired evaluation requires encode_once or ambient mode"
             raise ValueError(msg)
-        _save_selection(cfg.euler_open_lola, args.manifest)
+        _save_selection(paired_selection(cfg.euler_open_lola), args.manifest)
         args.members = cfg.eval.n_members
         run(
             args,
@@ -203,7 +225,10 @@ def main() -> None:
         verify_joint_sources(ambient=args.command == "verify-joint-ambient")
         return
 
-    spec = source_spec(experiment_config(args.profile), args.source)
+    cfg = experiment_config(
+        "production" if args.command == "lola-rollout" else args.profile
+    )
+    spec = source_spec(cfg, args.source)
     if args.command == "plan":
         for index, (split, name) in enumerate(planned_shards(spec)):
             print(f"{index}\t{split}\t{name}")
@@ -213,8 +238,10 @@ def main() -> None:
         verify_ambient_source(spec)
     elif args.command == "cache":
         cache_shard(spec, args.index, torch.device("cuda"))
+    elif args.command == "lola-rollout":
+        _save_selection(lola_rollout_selection(cfg, args.source), args.manifest)
     else:
-        _save_selection(spec, args.manifest)
+        _save_selection(paired_selection(spec), args.manifest)
 
 
 if __name__ == "__main__":
