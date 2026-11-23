@@ -67,7 +67,7 @@ def verify_joint_sources(*, ambient: bool) -> None:
             verify_cache(spec, accept_recorded_revision=True)
 
 
-def paired_selection(spec: DictConfig) -> dict:
+def paired_selection(spec: DictConfig, *, data_stride: int | None = None) -> dict:
     """Choose a boundary-specific test cohort from the pinned file order."""
     files = dict.fromkeys(shard_names(spec), int(spec.trajectories_per_shard["test"]))
     seed = spec.paired_test.seed
@@ -83,7 +83,7 @@ def paired_selection(spec: DictConfig) -> dict:
             {"files": files, "indices": indices},
             seed,
             frames=spec.frames,
-            stride=spec.cache.window_stride,
+            stride=spec.cache.window_stride if data_stride is None else data_stride,
             windows_per_trajectory=spec.paired_test.windows_per_trajectory,
         ),
     }
@@ -187,9 +187,10 @@ def main() -> None:
     commands.add_parser("verify-ambient")
     commands.add_parser("verify-joint-cache")
     commands.add_parser("verify-joint-ambient")
-    cache = commands.add_parser("cache")
-    cache.add_argument("index", type=int)
-    commands.add_parser("windows").add_argument("manifest", type=Path)
+    commands.add_parser("cache").add_argument("index", type=int)
+    windows = commands.add_parser("windows")
+    windows.add_argument("manifest", type=Path)
+    windows.add_argument("--data-stride", type=int, choices=(1, 4))
     commands.add_parser("lola-rollout").add_argument("manifest", type=Path)
     evaluate = commands.add_parser("evaluate")
     evaluate.add_argument("config", type=Path)
@@ -241,7 +242,9 @@ def main() -> None:
     elif args.command == "lola-rollout":
         _save_selection(lola_rollout_selection(cfg, args.source), args.manifest)
     else:
-        _save_selection(paired_selection(spec), args.manifest)
+        _save_selection(
+            paired_selection(spec, data_stride=args.data_stride), args.manifest
+        )
 
 
 if __name__ == "__main__":

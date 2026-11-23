@@ -47,6 +47,18 @@ def test_euler_lola_rollout_draw_is_split_by_boundary():
         assert all(0 <= index < 500 for index in selection["indices"])
 
 
+def test_euler_stride_one_paired_windows_allow_the_last_four_raw_frames():
+    cfg = workflow.experiment_config("production")
+    spec = cfg.euler_open_lola
+    selection = workflow.paired_selection(spec, data_stride=1)
+    starts = [window["context_frame"] for window in selection["windows"]]
+
+    assert selection.get("stride", 1) == 1
+    assert len(starts) == 512
+    assert max(starts) == 96
+    assert spec.cache.window_stride == 4
+
+
 def test_euler_window_selection_matches_well_and_miniwell_offsets(tmp_path):
     cfg = workflow.experiment_config("production")
     spec = cfg.euler_open_lola

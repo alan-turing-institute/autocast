@@ -242,6 +242,36 @@ fields. FM and CRPS use the same selected trajectory for each boundary.
 The pilot checks video rendering and scoring with two trajectories per
 boundary.
 
+### Stride-one Euler companion
+
+Set `EULER_DATA_STRIDE=1` on the joint launcher to train and evaluate at
+every stored raw frame. The default is 4 for the LoLA protocol. Both
+variants use one input frame, four predictions per autoregressive block,
+and the same frozen codec and joint cache. The cache contains all raw
+frames. The training loader applies the selected stride.
+
+| Raw data stride | Blocks per rollout | Scored raw leads |
+| --- | ---: | --- |
+| 4 | 7 | 4, 8, …, 100 |
+| 1 | 25 | 1, 2, …, 100 |
+
+Preview both stride-one training configs with separate run directories.
+
+```bash
+job=slurm_scripts/comparison/the_well/euler_all/job.sh
+EULER_DATA_STRIDE=1 bash "$job" check probe fm "$fm_stride1_run"
+EULER_DATA_STRIDE=1 bash "$job" check probe crps "$crps_stride1_run"
+```
+
+For a reviewed submission, export `EULER_DATA_STRIDE=1` for training
+and both eval operations. The evaluator reads the training stride from
+`resolved_config.yaml`. Both cadences use `eval=the_well/euler_all` for
+rollouts. For stride one the launcher sets `eval.max_rollout_steps=25`
+and `datamodule.max_rollout_steps=100`. Per-field metrics and 100-frame
+MP4s go under `eval-stride1-open/` and `eval-stride1-periodic/`. CSV column
+`i` represents raw lead `i + 1`. The `eval` operation writes the paired
+four-lead scores and clips under `eval-open/` and `eval-periodic/`.
+
 ### Production array, training and paired evaluation
 
 Run this chain with `cache_path="$root/cache-lola"` and the upstream exports

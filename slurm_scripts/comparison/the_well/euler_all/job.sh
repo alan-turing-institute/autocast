@@ -25,6 +25,12 @@ export EULER_OPEN_CACHE_DIR=${EULER_OPEN_CACHE_DIR:-"$AUTOCAST_DATASETS/$open_da
 export EULER_PERIODIC_CACHE_DIR=${EULER_PERIODIC_CACHE_DIR:-"$AUTOCAST_DATASETS/$periodic_dataset/$codec/cache/$periodic_dataset"}
 workflow=(uv run --offline --no-sync python -m slurm_scripts.comparison.the_well.euler_open.workflow)
 
+# Raw frames between model frames. The processor emits four model frames per block.
+data_stride=${EULER_DATA_STRIDE:-4}
+case "$data_stride" in
+    1|4) ;;
+    *) echo "EULER_DATA_STRIDE must be 1 or 4" >&2; exit 2 ;;
+esac
 case "$objective" in
     fm) batch_per_rank=8 ;;
     crps) batch_per_rank=1 ;;
@@ -47,6 +53,7 @@ esac
 trainer=(python -m autocast.scripts.train.processor
     "local_experiment=the_well/euler_all/${objective}_spatiotemporal_latent"
     "hydra.run.dir=$run_dir" "datamodule.batch_size=$batch_per_rank"
+    "datamodule.stride=$data_stride"
     trainer.num_nodes=8 trainer.devices=4 trainer.precision=32-true
     trainer.callbacks.0.save_top_k=2 trainer.callbacks.0.save_last=false
     ++trainer.callbacks.0.monitor=step ++trainer.callbacks.0.mode=max
@@ -70,16 +77,22 @@ case "$operation" in
         ;;
     eval|eval-rollout)
         test -s "$run_dir/processor.ckpt"
+        selection_args=()
+        rollout_limits=()
         if [[ "$operation" == eval-rollout ]]; then
             preset=the_well/euler_all
             selection=lola-rollout
             manifest_prefix=lola-rollout
             subset_key=rollout_subset
             output_prefix=eval-lola
+            if [[ "$data_stride" == 1 ]]; then
+                rollout_limits=(eval.max_rollout_steps=25 datamodule.max_rollout_steps=100)
+                output_prefix=eval-stride1
+            fi
             eval_limit=()
             if [[ "$profile" == probe ]]; then
                 eval_limit=(eval.max_rollout_batches=2)
-                output_prefix=eval-lola-probe
+                output_prefix="$output_prefix-probe"
             fi
         else
             preset=the_well/euler_open
@@ -87,12 +100,13 @@ case "$operation" in
             manifest_prefix=paired
             subset_key=test_window_subset
             output_prefix=eval
+            selection_args=(--data-stride "$data_stride")
         fi
         for source in open periodic; do
             cache="$EULER_OPEN_CACHE_DIR"
             if [[ "$source" == periodic ]]; then cache="$EULER_PERIODIC_CACHE_DIR"; fi
             manifest="$run_dir/$manifest_prefix-$source.yaml"
-            "${workflow[@]}" --source "$source" "$selection" "$manifest"
+            "${workflow[@]}" --source "$source" "$selection" "$manifest" "${selection_args[@]}"
             srun --kill-on-bad-exit=1 uv run --offline --no-sync autocast eval \
                 --workdir "$run_dir" --output-subdir "$output_prefix-$source" \
                 "eval=$preset" eval.mode=encode_once \
@@ -100,7 +114,7 @@ case "$operation" in
                 datamodule.data_paths=null "datamodule.data_path=$cache" \
                 eval.devices=1 eval.num_nodes=1 eval.strategy=auto \
                 eval.save_rollout_snapshots=false "eval.$subset_key=$manifest" \
-                "${eval_limit[@]}"
+                "${rollout_limits[@]}" "${eval_limit[@]}"
         done
         ;;
     *) echo "Unknown operation: $operation" >&2; exit 2 ;;
