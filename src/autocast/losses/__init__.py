@@ -17,6 +17,7 @@ from autocast.losses.ensemble import (
     CRPSLoss,
     EnsembleMAELoss,
     FairCRPSLoss,
+    JointCoefficientEnergyScore,
 )
 from autocast.losses.regularization import MCDropoutMSEL2Loss
 from autocast.losses.scale import (
@@ -55,6 +56,7 @@ __all__ = [
     "GaussianSmoothing",
     "HelmholtzDecomposition",
     "IdentityDecomposition",
+    "JointCoefficientEnergyScore",
     "MCDropoutMSEL2Loss",
     "MagnitudeTransform",
     "PowerTransform",

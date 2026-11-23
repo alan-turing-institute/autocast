@@ -15,10 +15,12 @@ from omegaconf import DictConfig, open_dict
 from autocast.losses import (
     AlphaFairCRPSLoss,
     CoefficientCRPSLoss,
+    JointCoefficientEnergyScore,
     MCDropoutMSEL2Loss,
     SpectralSpreadErrorLoss,
     WeightedSumLoss,
 )
+from autocast.losses.mode_groups import SampledModeEnergyScore
 from autocast.models.encoder_processor_decoder_ensemble import (
     EncoderProcessorDecoderEnsemble,
 )
@@ -86,6 +88,59 @@ def test_fourier_preset_is_opt_in_and_preserves_null_loss(REPO_ROOT: Path):
         "autocast.processors.flow_matching.FlowMatchingProcessor"
     )
     assert _build_loss_func(cfg.model) is None
+
+
+@pytest.mark.parametrize("group", ["singletons", "pairs", "triads"])
+def test_campaign_mode_configs_keep_common_reference(REPO_ROOT, group):
+    cfg = _config(
+        REPO_ROOT, [f"local_experiment=swe64s/campaign_nested_joint_fourier_{group}"]
+    )
+    train = instantiate(cfg.model.loss_func)
+    baseline = instantiate(cfg.model.validation_loss_func)
+    assert train.weights == baseline.weights == (1.0, 0.1)
+    assert train.requires_ambient_predictions
+    score = train.losses[1].objective.branches[0].score
+    assert isinstance(score, SampledModeEnergyScore)
+    assert score.group == group
+    assert score.group_norm == "rms"
+    assert score.triads_per_draw == 64
+    assert score.seed == 153164
+    rng = torch.Generator().manual_seed(7)
+    preds = torch.randn(1, 1, 64, 64, 3, 8, generator=rng, requires_grad=True)
+    truth = torch.randn(1, 1, 64, 64, 3, generator=rng)
+    train(preds, truth).backward()
+    assert preds.grad is not None
+    assert torch.isfinite(preds.grad).all()
+
+
+def test_nested_joint_fourier_config_scores_decoded_fields(REPO_ROOT: Path):
+    name = "local_experiment=swe64s/campaign_nested_joint_fourier_energy"
+    cfg = _config(REPO_ROOT, [name])
+    train = _build_loss_func(cfg.model)
+    baseline = instantiate(cfg.model.validation_loss_func)
+    assert isinstance(train, WeightedSumLoss)
+    assert train.requires_ambient_predictions
+    assert train.weights == baseline.weights == (1.0, 0.1)
+    generator = torch.Generator().manual_seed(43)
+    fields = torch.randn(1, 1, 4, 4, 3, 8, generator=generator, requires_grad=True)
+    truth = torch.randn(1, 1, 4, 4, 3, generator=generator)
+    swapped = torch.cat(
+        (fields[..., :1, :].roll(1, dims=-1), fields[..., 1:, :]), dim=-2
+    )
+    torch.testing.assert_close(baseline(fields, truth), baseline(swapped, truth))
+    loss = train(fields, truth)
+    spectral = JointCoefficientEnergyScore(
+        alpha=0.95, channel_multipliers=[1.0, 0.9987621223, 1.0012363472]
+    )
+    expected = AlphaFairCRPSLoss(alpha=0.95)(fields, truth) + 0.1 * spectral(
+        torch.fft.fftn(fields, dim=(2, 3), norm="ortho"),
+        torch.fft.fftn(truth, dim=(2, 3), norm="ortho"),
+    )
+    torch.testing.assert_close(loss, expected)
+    assert not torch.isclose(loss, train(swapped, truth))
+    loss.backward()
+    assert fields.grad is not None
+    assert torch.isfinite(fields.grad).all()
 
 
 @pytest.mark.parametrize(

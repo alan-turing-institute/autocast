@@ -1,0 +1,12 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/campaign_nested_joint_fourier_energy
+  - _self_
+
+experiment_name: swe64s_campaign_nested_joint_fourier_triads
+joint_fourier_score:
+  _target_: autocast.losses.mode_groups.SampledModeEnergyScore
+  group: triads
+  group_norm: rms
+  triads_per_draw: 64
+  seed: 153164

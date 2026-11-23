@@ -1,3 +1,5 @@
+import math
+from collections.abc import Sequence
 from typing import Literal, cast
 
 import torch
@@ -176,7 +178,7 @@ class CoefficientCRPSLoss(EnsembleLoss):
         )
         preds, targets = preds.to(dtype), targets.to(dtype)
         n_ensemble = preds.shape[-1]
-        truth = (preds - targets.unsqueeze(-1)).abs().mean(dim=-1)
+        truth = self._distance(preds - targets.unsqueeze(-1)).mean(dim=-1)
         if n_ensemble == 1:
             return truth
 
@@ -185,11 +187,64 @@ class CoefficientCRPSLoss(EnsembleLoss):
         first, second = torch.triu_indices(
             n_ensemble, n_ensemble, offset=1, device=preds.device
         )
-        spread = (preds[..., first] - preds[..., second]).abs().sum(dim=-1)
+        spread = self._distance(preds[..., first] - preds[..., second]).sum(dim=-1)
         coefficient = (1.0 - self.alpha) / n_ensemble**2 + self.alpha / (
             n_ensemble * (n_ensemble - 1)
         )
         return truth - coefficient * spread
+
+    def _distance(self, difference: Tensor) -> Tensor:
+        return difference.abs()
+
+
+class JointCoefficientEnergyScore(CoefficientCRPSLoss):
+    """Score all channels jointly at each mode using their Euclidean distance.
+
+    A complex C-channel vector represents 2C real coordinates. Both the
+    observation and spread terms use this same norm. Spatial or frequency
+    axes remain separate. With reduction="none" the channel axis has size 1.
+    Alpha has the same meaning as in CoefficientCRPSLoss (1 is fully fair).
+    Optional positive multipliers convert each channel into fixed score units.
+    """
+
+    def __init__(
+        self,
+        alpha: int | float = 1.0,
+        reduction: str = "mean",
+        channel_multipliers: Sequence[float] | None = None,
+    ) -> None:
+        super().__init__(alpha=alpha, reduction=reduction)
+        self.channel_multipliers = (
+            tuple(channel_multipliers) if channel_multipliers is not None else None
+        )
+        if self.channel_multipliers is not None and (
+            not self.channel_multipliers
+            or any(not math.isfinite(w) or w <= 0 for w in self.channel_multipliers)
+        ):
+            msg = "Channel multipliers must be finite and positive."
+            raise ValueError(msg)
+
+    def _compute_score(self, preds: Tensor, targets: Tensor) -> Tensor:
+        if targets.ndim < 1 or targets.shape[-1] == 0:
+            msg = "Joint scoring requires a nonempty channel axis."
+            raise ValueError(msg)
+        if self.channel_multipliers is not None:
+            if len(self.channel_multipliers) != targets.shape[-1]:
+                msg = "Provide one multiplier per channel."
+                raise ValueError(msg)
+            dtype = torch.promote_types(
+                torch.promote_types(preds.real.dtype, targets.real.dtype), torch.float32
+            )
+            scale = torch.as_tensor(
+                self.channel_multipliers, device=targets.device, dtype=dtype
+            )
+            preds = preds * scale.unsqueeze(-1)
+            targets = targets * scale
+        return super()._compute_score(preds, targets)
+
+    def _distance(self, difference: Tensor) -> Tensor:
+        # (..., channel, member or member-pair) for both distance terms.
+        return torch.linalg.vector_norm(difference, dim=-2, keepdim=True)
 
 
 class _BoundedGradientSqrt(torch.autograd.Function):

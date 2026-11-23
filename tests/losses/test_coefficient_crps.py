@@ -8,7 +8,47 @@ from autocast.losses.ensemble import (
     CoefficientCRPSLoss,
     CRPSLoss,
     FairCRPSLoss,
+    JointCoefficientEnergyScore,
 )
+
+
+@pytest.mark.parametrize("alpha", [0.95, 1.0])
+def test_joint_complex_score_matches_six_real_coordinates(alpha):
+    generator = torch.Generator().manual_seed(91)
+    preds = torch.randn(2, 4, 3, 8, dtype=torch.complex128, generator=generator)
+    targets = torch.randn(2, 4, 3, dtype=torch.complex128, generator=generator)
+    scales = torch.tensor([0.5, 2.0, 2.0], dtype=torch.float64)
+    score = JointCoefficientEnergyScore(alpha, "none", scales.tolist())
+
+    def coordinates(field):
+        return torch.view_as_real(field * scales).flatten(start_dim=-2)
+
+    members = [coordinates(field) for field in preds.unbind(dim=-1)]
+    target = coordinates(targets)
+    truth = torch.stack([torch.linalg.vector_norm(m - target, dim=-1) for m in members])
+    pairs = torch.stack(
+        [torch.linalg.vector_norm(m - n, dim=-1) for m in members for n in members]
+    )
+    spread_factor = 0.5 * (1.0 - alpha + alpha * 8 / 7)
+    expected = truth.mean(dim=0) - spread_factor * pairs.mean(dim=0)
+    torch.testing.assert_close(score(preds, targets), expected.unsqueeze(-1))
+
+
+def test_joint_fourier_score_detects_relative_phase_and_height_pairing():
+    # The height coefficient is in quadrature with both winds. Swapping the
+    # heights between members reverses that relationship at identical power.
+    truth = torch.tensor([1j, 1, 1], dtype=torch.complex64)
+    members = torch.stack((truth, -truth), dim=-1).repeat(1, 4).requires_grad_()
+    swapped = torch.cat((members[:1].roll(1, dims=-1), members[1:]))
+    separate = CoefficientCRPSLoss(alpha=0.95)
+    joint = JointCoefficientEnergyScore(alpha=0.95)
+    torch.testing.assert_close(separate(members, truth), separate(swapped, truth))
+    loss = joint(members, truth)
+    assert loss < joint(swapped, truth)
+    torch.testing.assert_close(loss, joint(members.roll(1, dims=-1), truth))
+    loss.backward()
+    assert members.grad is not None
+    assert torch.isfinite(members.grad).all()
 
 
 def _distance(value):
