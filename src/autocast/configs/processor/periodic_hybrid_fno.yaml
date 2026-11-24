@@ -1,0 +1,7 @@
+_target_: autocast.processors.periodic_hybrid_fno.PeriodicHybridFNOProcessor
+in_channels: null
+out_channels: null
+spatial_resolution: null
+hidden_channels: 128
+spectral_channels: 47
+max_wavenumber: 21

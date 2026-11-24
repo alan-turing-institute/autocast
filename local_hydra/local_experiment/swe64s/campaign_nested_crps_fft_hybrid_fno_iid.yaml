@@ -1,0 +1,15 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/campaign_nested_crps_fft_concat
+  - /processor@hybrid_processor: periodic_hybrid_fno
+  - _self_
+
+experiment_name: swe64s_fft_hybrid_fno_iid_1000
+
+model:
+  # Replace the inherited ViT processor mapping without carrying across its keys.
+  processor: ${hybrid_processor}
+
+hydra:
+  launcher:
+    timeout_min: 480

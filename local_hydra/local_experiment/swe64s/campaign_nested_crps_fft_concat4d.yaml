@@ -1,0 +1,20 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/campaign_nested_crps_fft_concat
+  - /source_distribution@model.input_noise_injector.noise_source: multiscale_gaussian
+  - _self_
+
+experiment_name: swe64s_fft_vit_multiscale_1000
+
+model:
+  input_noise_injector:
+    noise_source:
+      half_power_wavenumbers: [2.0, 4.0, 8.0, 16.0]
+  processor:
+    noise_mode: global
+    n_noise_channels: null
+    n_noise_input_channels: null
+
+hydra:
+  launcher:
+    timeout_min: 480
