@@ -567,7 +567,9 @@ def build_eval_overrides(
         else:
             eval_defaults = _resolved_eval_default_overrides()
         command_overrides.extend(_struct_safe_overrides(eval_defaults, resolved_cfg))
-        if dataset is not None:
+        if dataset is not None and not contains_override(
+            overrides, "datamodule.data_path="
+        ):
             command_overrides.append(
                 f"datamodule.data_path={datasets_root() / dataset}"
             )

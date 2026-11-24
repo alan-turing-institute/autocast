@@ -1641,6 +1641,28 @@ def test_main_eval_does_not_infer_dataset_from_workdir(monkeypatch, tmp_path):
     assert captured["output_subdir"] == "eval"
 
 
+def test_main_eval_preserves_explicit_quoted_data_path(monkeypatch, tmp_path):
+    (tmp_path / "resolved_config.yaml").write_text(
+        "datamodule:\n  data_path: /old/dataset\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "encoder_processor_decoder.ckpt").touch()
+    data_path = tmp_path / "held-out data" / "all trajectories"
+    override = f'++datamodule.data_path="{data_path}"'
+    monkeypatch.setattr(
+        sys, "argv", ["autocast", "eval", "--workdir", str(tmp_path), override]
+    )
+
+    with patch("autocast.scripts.workflow.commands.run_module") as run:
+        workflow_cli.main()
+    overrides = run.call_args.args[1]
+    assert [
+        value
+        for value in overrides
+        if value.lstrip("+").startswith("datamodule.data_path=")
+    ] == [override]
+
+
 def test_main_eval_forwards_output_subdir(monkeypatch, tmp_path):
     (tmp_path / "resolved_config.yaml").write_text(
         "datamodule:\n  data_path: /tmp/datasets/reaction_diffusion\n",
