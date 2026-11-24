@@ -1638,18 +1638,18 @@ flags for teacher-forced and free-running evaluation.
 
 ## Common evaluation
 
-`evaluation.yaml` defines the common physical-field metric settings: 16 members,
-raw weights, central 90 percent coverage through the existing `MultiCoverage`,
-VRMSE and SSR with per-channel/per-lead output. Aggregate coverage-error scores
-are distinct from empirical coverage; use the `coverage_0.90` trajectory columns
-for the 90 percent coverage plots. The wrapper reuses the saved training config,
-not a reconstructed generic architecture.
+`eval=swe64_paper` inherits the reference metrics and sets 16 members, raw
+weights, central 90 percent coverage, and a 100-lead rollout. Use the
+`coverage_0.90` trajectory columns for empirical 90 percent coverage.
+The wrapper reuses the saved training configuration.
 
 ```sh
 # Preview only; neither command is executed without --execute.
 uv run --frozen python scripts/swe64s/evaluate.py \
   --run-dir /path/to/afcrps-run \
   --checkpoint /path/to/selected-checkpoint.ckpt \
+  --test-data-root /path/to/shared-100-test-view \
+  --normalization-path /path/to/shared-100-test-view/stats.yml \
   --output-root /path/to/new-evaluation
 ```
 
@@ -1657,10 +1657,10 @@ For latent FM also pass `--autoencoder-checkpoint /path/to/new-swe64/autoencoder
 The evaluator then restores the raw dataset and normalization from the saved
 cache config and follows the existing encode-once path. Outputs use separate
 `free_running` and `teacher_forced` directories; existing destinations are
-rejected before execution. Teacher forcing supplies truth at each four-frame
-block boundary, not at every frame inside a jointly predicted block. The
-25-call cap covers 100 saved-time leads, or 25 simulator time units, on all test
-trajectories. Review evaluation cost on the target GPU before executing.
+rejected before execution. Teacher forcing supplies truth at each prediction
+boundary. The wrapper uses 100 calls for one-frame heads and 25 for four-frame
+heads, covering 25 simulator time units in each case. Use the shared test view
+and normalization for paired comparisons across training-pool sizes.
 
 The shared metric runner is not yet the complete structural evaluation.
 Mean member power, mean member-anomaly power and divergence/vorticity balance

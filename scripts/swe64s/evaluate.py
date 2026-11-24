@@ -7,23 +7,11 @@ import json
 import shlex
 import subprocess
 from pathlib import Path
-from typing import Any
 
-from omegaconf import OmegaConf
+from omegaconf import DictConfig, ListConfig, OmegaConf
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-PRESET = REPO_ROOT / "local_hydra/local_experiment/swe64s/evaluation.yaml"
-
-
-def _overrides(prefix: str, value: Any) -> list[str]:
-    """Flatten only the shared eval settings into struct-safe Hydra overrides."""
-    if isinstance(value, dict):
-        return [
-            item
-            for key, nested in value.items()
-            for item in _overrides(f"{prefix}.{key}", nested)
-        ]
-    return [f"++{prefix}={json.dumps(value)}"]
+FORECAST_LEADS = 100
 
 
 def build_commands(
@@ -33,24 +21,15 @@ def build_commands(
     output_root: Path,
     autoencoder_checkpoint: Path | None,
     n_steps_output: int = 4,
+    test_data_root: Path | None = None,
+    normalization_path: Path | None = None,
 ) -> list[list[str]]:
     """Reuse the standard evaluator without replacing saved model/data settings."""
     if n_steps_output not in (1, 4):
         msg = "The SWE64 protocol supports one or four output frames"
         raise ValueError(msg)
-    settings = OmegaConf.to_container(OmegaConf.load(PRESET).eval, resolve=True)
-    if not isinstance(settings, dict):
-        msg = "Expected an evaluation settings mapping"
-        raise TypeError(msg)
-    # max_rollout_steps counts model calls, not saved-time leads.
-    settings["max_rollout_steps"] = 100 // n_steps_output
     commands = []
     for mode, ratio in (("free_running", 0.0), ("teacher_forced", 1.0)):
-        mode_settings = {
-            **settings,
-            "free_running_only": ratio == 0.0,
-            "teacher_forcing_ratio": ratio,
-        }
         command = [
             "uv",
             "run",
@@ -62,10 +41,29 @@ def build_commands(
             str(run_dir),
             "--output-subdir",
             str(output_root / mode),
-            *_overrides("eval", mode_settings),
+            "eval=swe64_paper",
+            f"++eval.max_rollout_steps={FORECAST_LEADS // n_steps_output}",
+            f"++eval.free_running_only={json.dumps(ratio == 0.0)}",
+            f"++eval.teacher_forcing_ratio={ratio}",
+            f"++datamodule.n_steps_output={n_steps_output}",
             f"++eval.checkpoint={json.dumps(str(checkpoint))}",
             "++seed=42",
         ]
+        # The free-running pass already scores every next-window test example.
+        if ratio == 1.0:
+            command += [
+                "++eval.compute_test_metrics=false",
+                "++eval.trajectory_statistics.enabled=false",
+            ]
+        if test_data_root is not None:
+            command += [
+                f"++datamodule.data_path={json.dumps(str(test_data_root))}",
+                "++datamodule.test_trajectories=100",
+            ]
+        if normalization_path is not None:
+            command.append(
+                f"++datamodule.normalization_path={json.dumps(str(normalization_path))}"
+            )
         if autoencoder_checkpoint is not None:
             command.append(
                 f"++autoencoder_checkpoint={json.dumps(str(autoencoder_checkpoint))}"
@@ -87,18 +85,27 @@ def _validate_execution(args: argparse.Namespace) -> None:
     if OmegaConf.select(cfg, "model.processor._target_") is None:
         msg = "Select an afCRPS or FM training run, not an autoencoder run"
         raise ValueError(msg)
-    if cfg.datamodule.n_steps_input != 1 or cfg.datamodule.n_steps_output not in (1, 4):
+    if cfg.datamodule.n_steps_input != 1 or _output_steps(cfg) not in (1, 4):
         msg = (
             "This evaluation protocol requires one input and one or four output frames"
         )
         raise ValueError(msg)
     if not args.checkpoint.is_file():
         raise FileNotFoundError(args.checkpoint)
-    is_fm = str(cfg.model.processor._target_).endswith("FlowMatchingProcessor")
-    encoder_target = str(OmegaConf.select(cfg, "model.encoder._target_", default=""))
-    requires_autoencoder = is_fm and not encoder_target.endswith("IdentityEncoder")
+    codec = args.autoencoder_checkpoint or OmegaConf.select(
+        cfg, "autoencoder_checkpoint"
+    )
+    identity_codec = all(
+        str(OmegaConf.select(cfg, f"model.{part}._target_")).split(".")[-1]
+        == f"Identity{part.title()}"
+        for part in ("encoder", "decoder")
+    )
+    requires_autoencoder = codec is not None or (
+        OmegaConf.select(cfg, "model.train_in_latent_space", default=False)
+        and not identity_codec
+    )
     if requires_autoencoder and (
-        args.autoencoder_checkpoint is None or not args.autoencoder_checkpoint.is_file()
+        codec is None or not Path(codec).expanduser().is_file()
     ):
         msg = "Latent FM evaluation requires the matching SWE64 autoencoder checkpoint"
         raise FileNotFoundError(msg)
@@ -116,6 +123,8 @@ def main() -> None:
     parser.add_argument("--checkpoint", required=True, type=Path)
     parser.add_argument("--output-root", required=True, type=Path)
     parser.add_argument("--autoencoder-checkpoint", type=Path)
+    parser.add_argument("--test-data-root", type=Path)
+    parser.add_argument("--normalization-path", type=Path)
     parser.add_argument(
         "--execute", action="store_true", help="Run both evaluations sequentially."
     )
@@ -131,6 +140,8 @@ def main() -> None:
         output_root=args.output_root,
         autoencoder_checkpoint=args.autoencoder_checkpoint,
         n_steps_output=_saved_output_steps(args.run_dir),
+        test_data_root=args.test_data_root,
+        normalization_path=args.normalization_path,
     )
     for command in commands:
         print(shlex.join(command), flush=True)
@@ -145,8 +156,15 @@ def _saved_output_steps(run_dir: Path) -> int:
     for name in ("resolved_config.yaml", "resolved_autoencoder_config.yaml"):
         path = run_dir / name
         if path.is_file():
-            return int(OmegaConf.load(path).datamodule.n_steps_output)
+            return _output_steps(OmegaConf.load(path))
     return 4
+
+
+def _output_steps(config: DictConfig | ListConfig) -> int:
+    return int(
+        OmegaConf.select(config, "model.prediction_steps")
+        or OmegaConf.select(config, "datamodule.n_steps_output")
+    )
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ from argparse import Namespace
 from pathlib import Path
 
 import pytest
+from hydra import compose, initialize_config_dir
 from omegaconf import OmegaConf
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -26,8 +27,28 @@ def test_rollout_horizon_is_one_hundred_leads(outputs):
         assert (
             f"++eval.free_running_only={'true' if index == 0 else 'false'}" in command
         )
-        assert "++eval.coverage_levels=[0.9]" in command
+        assert "eval=swe64_paper" in command
+        assert f"++datamodule.n_steps_output={outputs}" in command
         assert not any(arg.startswith("++model.") for arg in command)
+    assert "++eval.compute_test_metrics=false" not in commands[0]
+    assert "++eval.compute_test_metrics=false" in commands[1]
+
+
+def test_paper_preset_inherits_reference_metrics():
+    with initialize_config_dir(
+        version_base=None, config_dir=str(ROOT / "src/autocast/configs")
+    ):
+        reference = compose(overrides=["+eval=reference"]).eval
+        paper = compose(overrides=["+eval=swe64_paper"]).eval
+    assert paper.metrics == reference.metrics
+    assert "ssr_pooled" in paper.metrics
+    assert "collection_coverage" in paper.metrics
+    assert paper.n_members == 16
+    assert paper.max_rollout_steps == 100
+    assert paper.coverage_levels == [0.9]
+    assert not paper.use_ema
+    assert paper.sampling_seed == 42
+    assert paper.rollout_sampling_seed == 43
 
 
 @pytest.mark.parametrize("outputs", [0, 2, 3])
@@ -51,10 +72,16 @@ def test_saved_task_and_codec_validation(tmp_path, kind, outputs):
         {
             "datamodule": {"n_steps_input": 1, "n_steps_output": outputs},
             "model": {
+                "train_in_latent_space": kind.endswith("_fm"),
                 "encoder": {
                     "_target_": "autocast.encoders.IdentityEncoder"
                     if kind == "ambient_fm"
                     else "autocast.encoders.DCEncoder"
+                },
+                "decoder": {
+                    "_target_": "autocast.decoders.IdentityDecoder"
+                    if kind == "ambient_fm"
+                    else "autocast.decoders.DCDecoder"
                 },
                 "processor": {
                     "_target_": "autocast.processors.ResidualFlowMatchingProcessor"
@@ -83,3 +110,11 @@ def test_saved_task_and_codec_validation(tmp_path, kind, outputs):
     (args.output_root / "free_running").mkdir(parents=True)
     with pytest.raises(FileExistsError):
         HELPER["_validate_execution"](args)
+
+
+def test_finetune_uses_its_prediction_head_width(tmp_path):
+    config = OmegaConf.create(
+        {"datamodule": {"n_steps_output": 2}, "model": {"prediction_steps": 1}}
+    )
+    OmegaConf.save(config, tmp_path / "resolved_config.yaml")
+    assert HELPER["_saved_output_steps"](tmp_path) == 1

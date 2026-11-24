@@ -1,0 +1,24 @@
+# Common SWE64 forecast evaluation. The saved fit supplies the model,
+# normalization and checkpoint; the launcher supplies the shared test view.
+defaults:
+  - reference
+  - _self_
+
+use_ema: false
+n_members: 16
+batch_size: 4
+sampling_seed: 42
+rollout_sampling_seed: 43
+denormalize_test_metrics: false
+max_rollout_steps: 100  # The SWE64 launcher scales this by the saved head width.
+metric_windows_rollout: [[0, 4], [4, 20], [20, 100]]
+coverage_levels: [0.9]
+deterministic_metric_member_average: true
+
+batch_indices: []
+rollout_member_indices: []
+save_rollout_snapshots: false
+benchmark:
+  enabled: false
+benchmark_rollout:
+  enabled: false

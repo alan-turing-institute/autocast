@@ -265,12 +265,6 @@ def test_swe64_cache_contract_uses_actual_compression(
 )
 def test_swe64_evaluation_commands_preserve_saved_model(name):
     build_commands = runpy.run_path(str(HELPERS / "evaluate.py"))["build_commands"]
-    commands = build_commands(
-        run_dir=Path("/preview/run"),
-        checkpoint=Path("/preview/model.ckpt"),
-        output_root=Path("/preview/eval"),
-        autoencoder_checkpoint=None,
-    )
     with initialize_config_dir(
         version_base=None, config_dir=str(REPO_ROOT / "src/autocast/configs")
     ):
@@ -281,6 +275,13 @@ def test_swe64_evaluation_commands_preserve_saved_model(name):
                 f"hydra.searchpath=[file://{REPO_ROOT / 'local_hydra'}]",
             ],
         )
+    commands = build_commands(
+        run_dir=Path("/preview/run"),
+        checkpoint=Path("/preview/model.ckpt"),
+        output_root=Path("/preview/eval"),
+        autoencoder_checkpoint=None,
+        n_steps_output=saved.datamodule.n_steps_output,
+    )
     for index, command in enumerate(commands):
         with initialize_config_dir(
             version_base=None, config_dir=str(REPO_ROOT / "src/autocast/configs")
@@ -291,7 +292,7 @@ def test_swe64_evaluation_commands_preserve_saved_model(name):
                     f"local_experiment=swe64s/{name}",
                     "trainer.max_epochs=1",
                     f"hydra.searchpath=[file://{REPO_ROOT / 'local_hydra'}]",
-                    *[arg for arg in command if arg.startswith("++")],
+                    *[arg for arg in command if arg.startswith(("++", "eval="))],
                 ],
             )
         assert cfg.model == saved.model
