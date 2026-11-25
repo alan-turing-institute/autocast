@@ -1,0 +1,10 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe128s/campaign_crps_fft
+  - _self_
+
+experiment_name: swe128s_campaign_crps_fft_wide
+
+model:
+  processor:
+    hidden_dim: 448

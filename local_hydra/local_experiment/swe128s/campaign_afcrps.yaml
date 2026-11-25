@@ -1,0 +1,70 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/afcrps_spatial1d_residual_one_output_12block_256ep_8h
+  - override /trainer: swe64s_campaign
+  - _self_
+
+experiment_name: swe128s_campaign_afcrps
+swe128_data_path: ???
+compile_backbone: false
+
+datamodule:
+  data_path: ${swe128_data_path}
+  normalization_path: ${swe128_data_path}/stats.yml
+  valid_trajectories: 20
+  test_trajectories: 100
+
+model:
+  processor:
+    spatial_resolution: [128, 128]
+    patch_size: 8
+
+optimizer:
+  scheduler_interval: step
+  cosine_epochs: null
+  cosine_steps: 128000
+  min_lr_ratio: 0.0
+
+trainer:
+  limit_train_batches: 1.0
+  max_epochs: 1000000
+  max_steps: 128000
+  check_val_every_n_epoch: null
+  val_check_interval: 500
+  callbacks:
+    - _target_: lightning.pytorch.callbacks.ModelCheckpoint
+      auto_insert_metric_name: false
+      every_n_epochs: 0
+      every_n_train_steps: 32000
+      save_on_train_epoch_end: false
+      filename: snapshot-{step:08d}
+      save_last: false
+      save_top_k: -1
+    - _target_: lightning.pytorch.callbacks.ModelCheckpoint
+      auto_insert_metric_name: false
+      every_n_epochs: 1
+      save_on_train_epoch_end: false
+      filename: best-val-{epoch:04d}-{step:08d}-{val_loss:.6f}
+      mode: min
+      monitor: val_loss
+      save_last: true
+      save_top_k: 1
+    - _target_: autocast.callbacks.grad_norm.GradNormCallback
+      norm_type: 2.0
+      log_per_param: false
+    - _target_: autocast.callbacks.ema.EMACallback
+      decay: 0.999
+    - _target_: autocast.callbacks.sustained_validation.SustainedValidationRise
+      monitor: val_loss
+      relative_tolerance: 0.01
+      absolute_tolerance: 1e-8
+      patience: 10
+      min_steps: 10000
+
+logging:
+  wandb:
+    enabled: true
+    mode: online
+    id: null
+    resume: null
+    log_model: false

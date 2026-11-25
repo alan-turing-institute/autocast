@@ -1,0 +1,9 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/campaign_nested_joint_fourier_pairs
+  - _self_
+
+experiment_name: swe64s_campaign_nested_joint_fourier_pairs_singletons
+
+joint_fourier_score:
+  singleton_weight: 0.5
