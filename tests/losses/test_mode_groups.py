@@ -141,6 +141,22 @@ def test_grouped_score_matches_manual_distances_and_resumes(group, norm):
     torch.testing.assert_close(loss(preds, truth), next_score)
 
 
+def test_pair_singleton_mix_uses_one_shared_draw():
+    options = {"triads_per_draw": 9, "seed": 42, "alpha": 0.95, "group_norm": "rms"}
+    pairs = SampledModeEnergyScore("pairs", **options)
+    singletons = SampledModeEnergyScore("singletons", **options)
+    mixture = SampledModeEnergyScore("pairs", singleton_weight=0.5, **options)
+    generator = torch.Generator().manual_seed(15)
+    prediction = torch.randn(
+        1, 1, 8, 10, 3, 4, dtype=torch.complex64, generator=generator
+    )
+    truth = torch.randn(1, 1, 8, 10, 3, dtype=torch.complex64, generator=generator)
+    for _ in range(2):
+        expected = 0.5 * (pairs(prediction, truth) + singletons(prediction, truth))
+        torch.testing.assert_close(mixture(prediction, truth), expected)
+        torch.testing.assert_close(mixture.get_extra_state(), pairs.get_extra_state())
+
+
 def test_sampled_arms_and_rank_local_streams_draw_the_same_triads():
     scores = [
         SampledModeEnergyScore(group, triads_per_draw=64, seed=153164)

@@ -2,7 +2,7 @@
 
 from collections.abc import Sequence
 from functools import lru_cache
-from math import sqrt
+from math import isfinite, sqrt
 from typing import Literal
 
 import torch
@@ -61,6 +61,8 @@ class SampledModeEnergyScore(nn.Module):
     scores each vertex separately, retaining repetitions in the sampled triads.
     Pair mode averages the three edges of each triad. With group_norm="rms",
     distances within a group are divided by the square root of its mode count.
+    In pair mode, singleton_weight can allocate part of the retained-mode
+    score to the vertices of the same sampled triads.
     The complement, including DC, keeps its one-mode score and its original
     share of the full FFT mean. Within the retained set mode exposure follows
     uniform triad sampling. Distances use the same channel scaling in every mode.
@@ -74,6 +76,7 @@ class SampledModeEnergyScore(nn.Module):
         alpha: float = 1.0,
         channel_multipliers: Sequence[float] | None = None,
         group_norm: Literal["raw", "rms"] = "raw",
+        singleton_weight: float = 0.0,
     ) -> None:
         super().__init__()
         group_sizes = {"singletons": 1, "pairs": 2, "triads": 3}
@@ -87,7 +90,14 @@ class SampledModeEnergyScore(nn.Module):
         if group_norm not in ("raw", "rms"):
             msg = "group_norm must be 'raw' or 'rms'."
             raise ValueError(msg)
+        if not isfinite(singleton_weight) or not 0 <= singleton_weight <= 1:
+            msg = "singleton_weight must be finite and in [0, 1]."
+            raise ValueError(msg)
+        if singleton_weight and group != "pairs":
+            msg = "singleton_weight is only supported for pairs."
+            raise ValueError(msg)
         self.group = group
+        self.singleton_weight = singleton_weight
         self.group_norm = group_norm
         self.triads_per_draw = triads_per_draw
         self.seed = seed
@@ -122,7 +132,8 @@ class SampledModeEnergyScore(nn.Module):
             if self.training
             else torch.Generator().manual_seed(self.seed)
         )
-        groups = _sample_triads(nx, ny, self.triads_per_draw, generator)
+        triads = _sample_triads(nx, ny, self.triads_per_draw, generator)
+        groups = triads
         if self.group == "pairs":
             groups = groups[:, ((0, 1), (0, 2), (1, 2))].reshape(-1, 2)
         elif self.group == "singletons":
@@ -139,6 +150,10 @@ class SampledModeEnergyScore(nn.Module):
             )
             / self._group_scale
         )
+        if self.singleton_weight:
+            vertices = triads.flatten().to(preds.device)
+            singleton = self.single(pred[:, :, vertices], target[:, :, vertices])
+            joint = torch.lerp(joint, singleton, self.singleton_weight)
         single = self.single(pred[:, :, outside], target[:, :, outside])
         outside_weight = len(outside_cpu) / (nx * ny)
         return (1 - outside_weight) * joint + outside_weight * single

@@ -1,0 +1,25 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/campaign_nested_crps_fft_hybrid_fno
+  - /loss/ensemble_fourier_crps@model.validation_loss_func
+  - _self_
+
+experiment_name: swe64s_campaign_nested_hybrid_fno_helmholtz
+
+# Historical V2 reference. Check the auxiliary gradient on training batches
+# of the matched backbone before choosing the launch override.
+vector_weight: 0.298358
+
+model:
+  loss_func:
+    _target_: autocast.losses.WeightedSumLoss
+    weights: [1.0, 0.1, "${vector_weight}"]
+    losses:
+      - ${model.validation_loss_func.losses.0}
+      - ${model.validation_loss_func.losses.1}
+      - _target_: autocast.losses.VelocityScoreLoss
+        mode: helmholtz
+        channels: [1, 2]
+        channel_stds: [0.1211, 0.1214]
+        domain_lengths: [6.283185307179586, 6.283185307179586]
+        alpha: ${model.validation_loss_func.losses.0.alpha}

@@ -1,0 +1,9 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/campaign_nested_hybrid_fno_fourier_pairs
+  - _self_
+
+experiment_name: swe64s_campaign_nested_hybrid_fno_pairs_singletons
+
+fno_pair_score:
+  singleton_weight: 0.5

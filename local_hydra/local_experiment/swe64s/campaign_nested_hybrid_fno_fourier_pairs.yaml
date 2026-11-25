@@ -1,0 +1,27 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/campaign_nested_crps_fft_hybrid_fno
+  - /loss/ensemble_fourier_crps@model.validation_loss_func
+  - _self_
+
+experiment_name: swe64s_campaign_nested_hybrid_fno_fourier_pairs
+
+model:
+  loss_func:
+    _target_: autocast.losses.WeightedSumLoss
+    weights: ${model.validation_loss_func.weights}
+    losses:
+      - ${model.validation_loss_func.losses.0}
+      - _target_: autocast.losses.TransformedLoss
+        requires_ambient_predictions: true
+        decomposition: ${model.validation_loss_func.losses.1.decomposition}
+        score: ${fno_pair_score}
+
+fno_pair_score:
+  _target_: autocast.losses.mode_groups.SampledModeEnergyScore
+  alpha: ${model.validation_loss_func.losses.1.score.alpha}
+  channel_multipliers: [1.0, 0.9987621223, 1.0012363472]
+  group: pairs
+  group_norm: rms
+  triads_per_draw: 64
+  seed: 153164

@@ -15,6 +15,11 @@ from autocast.scripts.setup import setup_epd_model
 from autocast.types import Batch
 
 ROOT = Path(__file__).resolve().parents[2]
+LOSS_ARMS = (
+    "campaign_nested_hybrid_fno_helmholtz",
+    "campaign_nested_hybrid_fno_fourier_pairs",
+    "campaign_nested_hybrid_fno_pairs_singletons",
+)
 
 
 def _compose(preset):
@@ -84,6 +89,35 @@ def test_controls_match_campaign_and_parameter_budget():
     assert all(not p.is_complex() for p in hybrid.parameters())
 
 
+def test_wind_loss_controls_match_fno_and_common_validation():
+    reference = _compose("campaign_nested_crps_fft_hybrid_fno")
+    for name in LOSS_ARMS:
+        cfg = _compose(name)
+        for key in ("datamodule", "trainer", "optimizer", "seed"):
+            assert OmegaConf.select(cfg, key) == OmegaConf.select(reference, key)
+        assert cfg.logging.wandb.enabled
+        assert cfg.logging.wandb.mode == "online"
+        assert not cfg.logging.wandb.log_model
+        for key in (
+            "processor",
+            "input_noise_injector",
+            "residual_prediction",
+            "n_members",
+        ):
+            assert cfg.model[key] == reference.model[key]
+        assert cfg.model.validation_loss_func == reference.model.loss_func
+        assert cfg.model.loss_func.weights[:2] == [1.0, 0.1]
+        assert cfg.model.loss_func.losses[0] == reference.model.loss_func.losses[0]
+        assert cfg.resume_from_checkpoint is None
+
+    helmholtz, pairs, mixed = (_compose(name) for name in LOSS_ARMS)
+    assert helmholtz.model.loss_func.losses[2].mode == "helmholtz"
+    pair_cfg = OmegaConf.to_container(pairs.fno_pair_score, resolve=True)
+    mixed_cfg = OmegaConf.to_container(mixed.fno_pair_score, resolve=True)
+    assert isinstance(pair_cfg, dict)
+    assert mixed_cfg == {**pair_cfg, "singleton_weight": 0.5}
+
+
 def test_fourier_mixer_is_periodic_and_retains_cutoff():
     layer = _GlobalFourierConv(1, 1, max_wavenumber=21)
     with torch.no_grad():
@@ -99,8 +133,9 @@ def test_fourier_mixer_is_periodic_and_retains_cutoff():
     torch.testing.assert_close(layer(low), low, atol=1e-5, rtol=1e-5)
 
 
-def test_hybrid_runs_ensemble_residual_loss_and_reloads():
-    cfg = _compose("campaign_nested_crps_fft_hybrid_fno")
+@pytest.mark.parametrize("preset", ["campaign_nested_crps_fft_hybrid_fno", *LOSS_ARMS])
+def test_hybrid_runs_ensemble_residual_loss_and_reloads(preset):
+    cfg = _compose(preset)
     cfg.model.processor.hidden_channels = 8
     cfg.model.processor.spectral_channels = 4
     field = torch.randn(1, 1, 48, 48, 3)
