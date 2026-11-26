@@ -35,6 +35,8 @@ umask: "0002"
 #   than bf16-mixed since accumulation stays f32).
 # - "medium": TF32 matmul + TF32 accumulate (faster still, less safe).
 float32_matmul_precision: null
+# Compile the supported spatial ViT backbone in place during training.
+compile_backbone: false
 
 train_eval:
   checkpoint: null

@@ -14,6 +14,7 @@ from conftest import get_optimizer_config
 from hydra import compose, initialize_config_dir
 from hydra.utils import instantiate
 from lightning.pytorch.callbacks import Callback, EarlyStopping, ModelCheckpoint, Timer
+from lightning.pytorch.utilities.types import OptimizerLRScheduler
 from matplotlib import pyplot as plt
 from omegaconf import DictConfig, OmegaConf, open_dict
 from torch.utils.data import DataLoader, Dataset, TensorDataset
@@ -27,6 +28,9 @@ from autocast.data.datamodule import SpatioTemporalDataModule
 from autocast.encoders.base import EncoderWithCond
 from autocast.encoders.identity import IdentityEncoder
 from autocast.nn.noise.source import TemporalOUSource
+from autocast.nn.vit import SpatialViTBackbone
+from autocast.processors.azula_vit import AzulaViTProcessor
+from autocast.processors.flow_matching import FlowMatchingProcessor
 from autocast.processors.residual_flow_matching import ResidualFlowMatchingProcessor
 from autocast.scripts import training
 from autocast.scripts.setup import (
@@ -1149,6 +1153,133 @@ def test_infer_latent_spatial_resolution_channels_first_time_concat():
         encoded, cast(EncoderWithCond, DummyEncoder(in_channels=1))
     )
     assert spatial == (16, 16)
+
+
+@pytest.mark.parametrize("flow_matching", [False, True])
+def test_opt_in_compile_backbone_preserves_full_resume(
+    config_dir: str, tmp_path: Path, monkeypatch, flow_matching: bool
+):
+    cfg = _load_config(config_dir, "encoder_processor_decoder")
+    assert cfg.get("compile_backbone") is False
+    compile_calls = []
+    original_compile = torch.nn.Module.compile
+
+    def compile_eager(module, **kwargs):
+        compile_calls.append(module)
+        assert kwargs["backend"] == "inductor"
+        original_compile(module, backend="eager")
+
+    monkeypatch.setattr(torch.nn.Module, "compile", compile_eager)
+
+    class ToyModel(L.LightningModule):
+        def __init__(self):
+            super().__init__()
+            if flow_matching:
+                backbone = SpatialViTBackbone(
+                    in_channels=1,
+                    out_channels=1,
+                    cond_channels=1,
+                    n_steps_input=1,
+                    n_steps_output=1,
+                    global_cond_channels=None,
+                    include_global_cond=False,
+                    hid_channels=16,
+                    hid_blocks=1,
+                    attention_heads=2,
+                    mod_features=8,
+                    patch_size=2,
+                )
+                self.processor = FlowMatchingProcessor(
+                    backbone=backbone,
+                    flow_ode_steps=1,
+                    n_steps_output=1,
+                    n_channels_out=1,
+                )
+            else:
+                self.processor = AzulaViTProcessor(
+                    in_channels=1,
+                    out_channels=1,
+                    spatial_resolution=(4, 4),
+                    hidden_dim=16,
+                    n_layers=1,
+                    num_heads=2,
+                    patch_size=2,
+                    temporal_method="none",
+                    n_noise_channels=8,
+                )
+
+        def training_step(self, batch, batch_idx):
+            del batch_idx
+            (fields,) = batch
+            if isinstance(self.processor, FlowMatchingProcessor):
+                pred = self.processor.flow_field(
+                    fields, fields.new_full((fields.shape[0],), 0.5), fields
+                )
+            else:
+                pred = self.processor(fields, fields.new_zeros(fields.shape[0], 8))
+            return (pred - fields).square().mean()
+
+        def configure_optimizers(self) -> OptimizerLRScheduler:
+            optimizer = torch.optim.AdamW(self.parameters(), lr=1e-3)
+            return {
+                "optimizer": optimizer,
+                "lr_scheduler": {
+                    "scheduler": torch.optim.lr_scheduler.CosineAnnealingLR(
+                        optimizer, T_max=4
+                    ),
+                    "interval": "step",
+                },
+            }
+
+    class ToyData(L.LightningDataModule):
+        def train_dataloader(self):
+            fields = torch.linspace(-1, 1, steps=64).reshape(4, 1, 4, 4, 1)
+            return DataLoader(TensorDataset(fields), batch_size=2)
+
+    def fit(name, max_steps, compile_backbone=False, parent=None):
+        config = OmegaConf.create(
+            {
+                "compile_backbone": compile_backbone,
+                "resume_from_checkpoint": str(parent) if parent is not None else None,
+                "logging": {"wandb": {"enabled": False}},
+                "output": {"save_config": False},
+                "trainer": {
+                    "_target_": "lightning.pytorch.Trainer",
+                    "accelerator": "cpu",
+                    "devices": 1,
+                    "max_steps": max_steps,
+                    "callbacks": [{"_target_": "autocast.callbacks.ema.EMACallback"}],
+                    "enable_checkpointing": False,
+                    "enable_progress_bar": False,
+                    "enable_model_summary": False,
+                    "num_sanity_val_steps": 0,
+                },
+            }
+        )
+        path = tmp_path / name / "final.ckpt"
+        model = ToyModel()
+        run_training(
+            config,
+            model,
+            ToyData(),
+            path.parent,
+            skip_test=True,
+            output_checkpoint_path=path,
+        )
+        return path, torch.load(path, weights_only=False, map_location="cpu")
+
+    parent, _ = fit("parent", 2)
+    _, eager = fit("eager", 4, parent=parent)
+    assert compile_calls == []
+    _, compiled = fit("compiled", 4, compile_backbone=True, parent=parent)
+    assert len(compile_calls) == 1
+    assert isinstance(compile_calls[0], SpatialViTBackbone)
+    assert eager["global_step"] == compiled["global_step"] == 4
+    assert eager["lr_schedulers"] == compiled["lr_schedulers"]
+    for key in ("state_dict", "ema_state_dict"):
+        assert eager[key].keys() == compiled[key].keys()
+        for name, weights in eager[key].items():
+            torch.testing.assert_close(compiled[key][name], weights)
 
 
 def test_final_checkpoint_survives_standalone_validation(tmp_path: Path):

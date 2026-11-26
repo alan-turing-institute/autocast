@@ -21,6 +21,7 @@ from lightning.pytorch.trainer.states import TrainerFn
 from matplotlib import pyplot as plt
 from omegaconf import DictConfig, OmegaConf
 
+from autocast.callbacks.compile_backbone import CompileViTBackbone
 from autocast.callbacks.gpu_util import GpuUtilizationLogCallback
 from autocast.callbacks.residual_statistics import ResidualStatisticsCallback
 from autocast.logging import create_wandb_logger
@@ -589,6 +590,8 @@ def run_training(
         *_gpu_util_callbacks(config),
         *_early_stopping_callbacks(config),
     ]
+    if config.get("compile_backbone", False):
+        callbacks.append(CompileViTBackbone())
     trainer_cfg["callbacks"] = callbacks
 
     trainer = instantiate(
