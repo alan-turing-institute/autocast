@@ -89,6 +89,65 @@ def test_controls_match_campaign_and_parameter_budget():
     assert all(not p.is_complex() for p in hybrid.parameters())
 
 
+def test_periodic_swin_matches_correlated_concat_and_trains():
+    cfg = _compose("campaign_nested_crps_fft_swin")
+    reference = _compose("campaign_nested_crps_fft_concat4d")
+    for key in ("datamodule", "trainer", "optimizer", "seed"):
+        assert cfg[key] == reference[key]
+    assert cfg.logging.wandb.enabled
+    assert cfg.logging.wandb.mode == "online"
+    assert not cfg.logging.wandb.log_model
+    for key in (
+        "loss_func",
+        "input_noise_injector",
+        "residual_prediction",
+        "n_members",
+    ):
+        assert cfg.model[key] == reference.model[key]
+    assert cfg.model.processor.periodic
+    assert cfg.model.processor.n_noise_channels is None
+    assert not cfg.compile_backbone
+
+    field = torch.randn(1, 1, 64, 64, 3)
+    batch = Batch(field, torch.randn_like(field), None, None)
+    stats = {
+        "channel_count": 3,
+        "n_steps_input": 1,
+        "n_steps_output": 1,
+        "example_batch": batch,
+    }
+    datamodule = LightningDataModule()
+    model = setup_epd_model(cfg, stats, datamodule)
+    with pytest.raises(ValueError, match="field sizes must be multiples of 16"):
+        model.processor.map(torch.zeros(1, 7, 63, 64), global_cond=None)
+    vit = instantiate(
+        reference.model.processor,
+        in_channels=7,
+        out_channels=3,
+        spatial_resolution=(64, 64),
+    )
+    assert sum(p.numel() for p in model.processor.parameters()) == pytest.approx(
+        sum(p.numel() for p in vit.parameters()), rel=0.02
+    )
+    loss, members = model.loss(batch)
+    assert torch.isfinite(loss)
+    assert members is not None
+    assert members.shape == (*field.shape, 8)
+    assert not torch.equal(members[..., 0], members[..., 1])
+    loss.backward()
+    for parameter in model.processor.parameters():
+        assert parameter.grad is not None
+        assert torch.isfinite(parameter.grad).all()
+    reloaded = setup_epd_model(cfg, stats, datamodule)
+    reloaded.load_state_dict(model.state_dict(), strict=True)
+    with torch.no_grad(), torch.random.fork_rng(devices=[]):
+        torch.manual_seed(42)
+        before = model(batch)
+        torch.manual_seed(42)
+        after = reloaded(batch)
+    torch.testing.assert_close(before, after)
+
+
 def test_wind_loss_controls_match_fno_and_common_validation():
     reference = _compose("campaign_nested_crps_fft_hybrid_fno")
     for name in LOSS_ARMS:

@@ -177,11 +177,12 @@ def test_score_ablation_campaign_matches_all_eleven_cells(tmp_path):
         assert job["allocation_minutes"] == (480 if backbone == "vit" else 720)
 
 
-def test_score_ablation_preflight_uses_one_short_fit(tmp_path):
+@pytest.mark.parametrize("name", ["fno_afes_blend", "swin_crps_fft"])
+def test_preset_preflight_uses_one_short_fit(tmp_path, name):
     (job,) = CAMPAIGN["build_plan"](
         pool_root=tmp_path / "pool",
         output_root=tmp_path / "scores",
-        run_names=["fno_afes_blend"],
+        run_names=[name],
         preflight=True,
     )["jobs"]
     cfg = _compose(job["preview_command"])

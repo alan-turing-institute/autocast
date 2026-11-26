@@ -108,7 +108,8 @@ ALL_RUNS = (
         "fno_afcrps_magnitude": Run(
             preset="campaign_nested_crps_fft_hybrid_fno_magnitude",
             allocation_minutes=720,
-        )
+        ),
+        "swin_crps_fft": Run(preset="campaign_nested_crps_fft_swin"),
     }
 )
 

@@ -291,6 +291,7 @@ class SwinViTBlock(nn.Module):
         drop_path: float = 0.0,
         use_ada_ln: bool = True,
         zero_init: bool = True,
+        periodic: bool = False,
     ):
         super().__init__()
         if hidden_dim % num_heads != 0:
@@ -301,6 +302,10 @@ class SwinViTBlock(nn.Module):
         self.num_heads = num_heads
         self.hidden_dim = hidden_dim
         self.n_spatial_dims = n_spatial_dims
+        if periodic and n_spatial_dims != 2:
+            msg = "Periodic Swin attention requires a 2D grid."
+            raise ValueError(msg)
+        self.periodic = periodic
         if len(window_size) < n_spatial_dims:
             raise ValueError(
                 "window_size has "
@@ -349,14 +354,18 @@ class SwinViTBlock(nn.Module):
             ws2 = (ws[0], ws[1])
             ss2 = (ss[0], ss[1])
             pad_size_2d = ((-h) % ws2[0], (-w) % ws2[1])
+            if self.periodic and any(pad_size_2d):
+                msg = "Periodic Swin windows must tile the 2D token grid."
+                raise ValueError(msg)
             xs = _pad_2d(xs, pad_size_2d)
             _, hp, wp, _ = xs.shape
 
             windows = _window_partition_2d(xs, ws2)
             windows = rearrange(windows, "nw wh ww c -> nw (wh ww) c")
+            # On the torus, rolled tokens across either seam are neighbours.
             attn_mask = (
                 _compute_shifted_window_mask_2d(h, w, ws2, ss2, x.device, x.dtype)
-                if do_shift
+                if do_shift and not self.periodic
                 else None
             )
         else:
@@ -529,6 +538,7 @@ class BasicSwinLayer(nn.Module):
         upsample: type[nn.Module] | None = None,
         use_ada_ln: bool = True,
         zero_init: bool = True,
+        periodic: bool = False,
     ):
         super().__init__()
         self.dim = dim
@@ -545,6 +555,7 @@ class BasicSwinLayer(nn.Module):
                     drop_path=drop_path[i],
                     use_ada_ln=use_ada_ln,
                     zero_init=zero_init,
+                    periodic=periodic,
                 )
                 for i in range(depth)
             ]
@@ -647,6 +658,10 @@ class SwinViTProcessor(Processor[EncodedBatch]):
 
     Constructs a U-Net style encoder-decoder architecture.
 
+    Set ``periodic=True`` for shifted-window attention across both axes of
+    a 2D torus. This requires an explicit patch size and grids that tile the
+    patch embedding, merges and effective windows without padding.
+
     Features:
     - Shifted-Window Multi-Head Self Attention (SW-MSA).
     - Patch Merging for hierarchical staging (encoder downsampling).
@@ -688,9 +703,23 @@ class SwinViTProcessor(Processor[EncodedBatch]):
         patch_size: int | None = None,
         use_ada_ln: bool = True,
         zero_init: bool = True,
+        periodic: bool = False,
     ):
         super().__init__()
         self.n_spatial_dims = len(spatial_resolution)
+        self.periodic_grid_multiple: int | None = None
+        if periodic:
+            if (
+                self.n_spatial_dims != 2
+                or patch_size is None
+                or patch_size < 1
+                or not encoder_depths
+            ):
+                msg = (
+                    "Periodic Swin requires a 2D grid, a patch size and encoder stages."
+                )
+                raise ValueError(msg)
+            self.periodic_grid_multiple = patch_size * 2 ** (len(encoder_depths) - 1)
         if len(window_size) < self.n_spatial_dims:
             raise ValueError(
                 "window_size has "
@@ -731,6 +760,7 @@ class SwinViTProcessor(Processor[EncodedBatch]):
                 else None,
                 use_ada_ln=use_ada_ln,
                 zero_init=zero_init,
+                periodic=periodic,
             )
             self.encoder_layers.append(layer)
 
@@ -752,6 +782,7 @@ class SwinViTProcessor(Processor[EncodedBatch]):
                 else None,
                 use_ada_ln=use_ada_ln,
                 zero_init=zero_init,
+                periodic=periodic,
             )
             self.decoder_layers.append(layer)
 
@@ -782,6 +813,10 @@ class SwinViTProcessor(Processor[EncodedBatch]):
         return all_res, padded_outs
 
     def forward(self, x: Tensor, x_noise: Tensor | None = None) -> Tensor:
+        multiple = self.periodic_grid_multiple
+        if multiple is not None and any(size % multiple for size in x.shape[1:-1]):
+            msg = f"Periodic Swin field sizes must be multiples of {multiple}."
+            raise ValueError(msg)
         x = rearrange(
             self.embed(rearrange(x, self.embed_reshapes[0])), self.embed_reshapes[1]
         )

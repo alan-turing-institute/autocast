@@ -1,0 +1,25 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/campaign_nested_crps_fft_concat4d
+  - _self_
+
+experiment_name: swe64s_fft_swin_multiscale_1000
+
+model:
+  processor: ${swin_processor}
+
+swin_processor:
+  _target_: autocast.processors.SwinViTProcessor
+  in_channels: auto
+  out_channels: auto
+  spatial_resolution: auto
+  patch_size: 4
+  window_size: [4, 4]
+  hidden_dim: 96
+  encoder_depths: [2, 2, 2]
+  encoder_num_heads: [3, 6, 12]
+  decoder_depths: [2, 2, 2]
+  decoder_num_heads: [12, 6, 3]
+  n_noise_channels: null
+  use_ada_ln: false
+  periodic: true
