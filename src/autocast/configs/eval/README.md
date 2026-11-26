@@ -58,8 +58,9 @@ All eval configs support these parameters:
   pass entirely (no `evaluation_metrics.csv` written). Useful for re-rendering
   rollout videos/snapshots without paying for metrics. Rollout metrics are
   gated separately via `compute_rollout_metrics`. Enabling
-  `trajectory_statistics.enabled` requires both metric passes and overrides
-  these skip flags; its outputs go to the trajectory statistics directory.
+  `trajectory_statistics.enabled` runs the metric passes selected by
+  `trajectory_statistics.scope` even when their compute flags are false.
+  Its outputs go to the trajectory statistics directory.
 - `denormalize_test_metrics`: Score EPD next-window predictions and targets
   in physical units using the fitted normalizer. Defaults to `false`, including
   in `eval=reference`. The RB preset enables it. Ambient and encode-once
@@ -143,6 +144,24 @@ With the inherited seed, auxiliary rollout passes continue the RNG sequence
 from the main rollout pass. Explicit eval seeds reset those passes.
 Set `eval.trajectory_statistics.enabled=false` for partial, multi-device,
 single-member, or unsupported loaders. The seed still applies.
+
+Set `eval.trajectory_statistics.include_per_channel=true` to save a companion
+`*_per_channel.csv` for each trajectory statistics CSV. The companion files
+identify each field by `channel_idx` and `channel_name`. They use the same
+forecasts as the pooled metrics, including the selected scoring units. Metrics
+configured to treat all fields as a single vector stay in the pooled files.
+
+The default trajectory scope is `both`. Set `scope=next_window` or `scope=rollout`
+to collect trajectory statistics for one pass. Regular metrics for the other
+pass still follow their usual compute flags. For a physical-unit next-window
+pass without rollouts, use:
+
+```bash
+uv run autocast eval --workdir <run> eval=reference \
+  eval.denormalize_test_metrics=true eval.compute_rollout_metrics=false \
+  eval.compute_rollout_coverage=false eval.trajectory_statistics.scope=next_window \
+  eval.trajectory_statistics.include_per_channel=true
+```
 
 ## Rayleigh-Benard reference
 

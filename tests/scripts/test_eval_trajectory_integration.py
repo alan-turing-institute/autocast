@@ -115,6 +115,54 @@ def test_evaluation_exports_original_selected_trajectory_ids(tmp_path, monkeypat
         assert rows["trajectory_id"].tolist() == ["test_0001"] * count
 
 
+@pytest.mark.parametrize("scope", ["both", "next_window", "rollout"])
+def test_evaluation_exports_trajectory_fields_for_selected_scope(
+    tmp_path, monkeypatch, scope
+):
+    checkpoint = _install_ensemble_eval_fixture(
+        tmp_path, monkeypatch, test_trajectories=[1]
+    )
+    cfg = _default_eval_cfg(
+        checkpoint,
+        metrics=["mse", "crps", "fcrps", "afcrps"],
+        compute_test_metrics=False,
+        compute_rollout_metrics=False,
+        compute_rollout_coverage=False,
+        trajectory_statistics={
+            "enabled": True,
+            "scope": scope,
+            "include_per_channel": True,
+        },
+    )
+
+    run_evaluation(cfg, work_dir=tmp_path)
+
+    output = tmp_path / "trajectory_statistics"
+    for name, count in (
+        ("single_step_metrics_per_trajectory", 0 if scope == "rollout" else 1),
+        ("rollout_metrics_per_trajectory", 0 if scope == "next_window" else 1),
+        (
+            "rollout_metrics_per_timestep_per_trajectory",
+            0 if scope == "next_window" else 3,
+        ),
+    ):
+        pooled = output / f"{name}.csv"
+        per_channel = output / f"{name}_per_channel.csv"
+        if count == 0:
+            assert not pooled.exists()
+            assert not per_channel.exists()
+            continue
+        rows = pd.read_csv(per_channel)
+        assert len(rows) == count
+        assert rows["trajectory_idx"].tolist() == [1] * count
+        assert rows["channel_idx"].tolist() == [0] * count
+        assert rows["channel_name"].tolist() == ["channel_0"] * count
+        metrics = ["mse", "crps", "fcrps", "afcrps"]
+        assert rows[metrics].to_numpy() == pytest.approx(
+            pd.read_csv(pooled)[metrics].to_numpy()
+        )
+
+
 @pytest.mark.parametrize("mode", ["ambient", "encode_once"])
 @pytest.mark.parametrize(
     ("trajectory_statistics", "compute_metrics"),

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, cast
@@ -96,6 +96,8 @@ class TrajectoryMetricAccumulator:
         windows: list[Window] | None,
         metric_fns: dict[str, Callable[[], Metric]],
         include_per_timestep: bool = False,
+        include_per_channel: bool = False,
+        channel_names: Sequence[str] | None = None,
         trajectory_metadata: dict[int, dict[str, CsvValue]] | None = None,
         row_context: dict[str, CsvValue] | None = None,
     ) -> None:
@@ -112,7 +114,7 @@ class TrajectoryMetricAccumulator:
             msg = "Trajectory metric aggregation requires metric factories."
             raise ValueError(msg)
 
-        normalized_windows = [None] if windows is None else list(windows)
+        normalized_windows: list[Window] = [None] if windows is None else list(windows)
         if not normalized_windows:
             msg = "Trajectory metric aggregation requires at least one window."
             raise ValueError(msg)
@@ -126,11 +128,14 @@ class TrajectoryMetricAccumulator:
         self.windows = normalized_windows
         self.metric_fns = dict(metric_fns)
         self.include_per_timestep = include_per_timestep
+        self.include_per_channel = include_per_channel
+        self.channel_names = channel_names
         self.trajectory_metadata = trajectory_metadata or {}
         self.row_context = row_context or {}
         self._next_sample = 0
         self._window_totals: dict[tuple[int, Window], _MetricTotals] = {}
         self._per_timestep_results: dict[tuple[int, int], _PerTimestepResult] = {}
+        self._channel_accumulators: list[TrajectoryMetricAccumulator] | None = None
 
         if self.include_per_timestep:
             trajectory_counts: dict[int, int] = {}
@@ -167,6 +172,8 @@ class TrajectoryMetricAccumulator:
     def _time_values(value: Any, n_timesteps: int) -> torch.Tensor | None:
         if not isinstance(value, torch.Tensor):
             return None
+        if value.ndim == 0 and n_timesteps == 1:
+            return value.reshape(1)
         if value.ndim == 0 or int(value.shape[0]) != n_timesteps:
             return None
         return value.reshape(n_timesteps, -1).mean(dim=-1)
@@ -304,6 +311,37 @@ class TrajectoryMetricAccumulator:
         totals.coverage_count += n_samples * n_timesteps * math.prod(trues.shape[2:])
         totals.window_indices.update(window_indices)
 
+    def _new_channel_accumulators(
+        self, n_channels: int
+    ) -> list[TrajectoryMetricAccumulator]:
+        # Scores whose vector includes the field dimension keep their joint value.
+        metric_fns = {
+            name: factory
+            for name, factory in self.metric_fns.items()
+            if getattr(factory(), "vector_dims", None) != "spatial_temporal_channels"
+        }
+        if not metric_fns:
+            return []
+        names = self.channel_names
+        if names is None or len(names) != n_channels:
+            names = [f"channel_{index}" for index in range(n_channels)]
+        return [
+            TrajectoryMetricAccumulator(
+                sample_trajectory_indices=self.sample_trajectory_indices,
+                sample_window_indices=self.sample_window_indices,
+                windows=self.windows,
+                metric_fns=metric_fns,
+                include_per_timestep=self.include_per_timestep,
+                trajectory_metadata=self.trajectory_metadata,
+                row_context={
+                    **self.row_context,
+                    "channel_idx": index,
+                    "channel_name": name,
+                },
+            )
+            for index, name in enumerate(names)
+        ]
+
     def update(self, preds: TensorBTSCM, trues: TensorBTSC) -> None:
         """Consume one inference batch without retaining prediction tensors."""
         batch_size = int(trues.shape[0])
@@ -355,6 +393,15 @@ class TrajectoryMetricAccumulator:
                     trues=trajectory_trues,
                 )
 
+        if self.include_per_channel:
+            if self._channel_accumulators is None:
+                self._channel_accumulators = self._new_channel_accumulators(
+                    int(trues.shape[-1])
+                )
+            for index, accumulator in enumerate(self._channel_accumulators):
+                field_slice = slice(index, index + 1)
+                accumulator.update(preds[..., field_slice, :], trues[..., field_slice])
+
         self._next_sample = batch_end
 
     def validate_complete(self) -> None:
@@ -366,6 +413,9 @@ class TrajectoryMetricAccumulator:
                 f"{self._next_sample} of {expected} source samples."
             )
             raise RuntimeError(msg)
+
+        for accumulator in self._channel_accumulators or ():
+            accumulator.validate_complete()
 
     def _row(
         self,
@@ -437,7 +487,9 @@ class TrajectoryMetricAccumulator:
         )
         return row
 
-    def window_rows(self, *, task: TrajectoryTask) -> list[dict[str, CsvValue]]:
+    def window_rows(
+        self, *, task: TrajectoryTask, per_channel: bool = False
+    ) -> list[dict[str, CsvValue]]:
         """Return one row per trajectory and configured metric window."""
         if task not in (
             TrajectoryTask.SINGLE_STEP,
@@ -445,6 +497,13 @@ class TrajectoryMetricAccumulator:
         ):
             msg = f"Window rows do not support task {task}."
             raise ValueError(msg)
+
+        if per_channel:
+            return [
+                row
+                for accumulator in self._channel_accumulators or ()
+                for row in accumulator.window_rows(task=task)
+            ]
 
         rows = []
         trajectory_indices = sorted(
@@ -464,8 +523,17 @@ class TrajectoryMetricAccumulator:
                 rows.append(row)
         return rows
 
-    def per_timestep_rows(self) -> list[dict[str, CsvValue]]:
+    def per_timestep_rows(
+        self, *, per_channel: bool = False
+    ) -> list[dict[str, CsvValue]]:
         """Return one row per trajectory and rollout lead time."""
+        if per_channel:
+            return [
+                row
+                for accumulator in self._channel_accumulators or ()
+                for row in accumulator.per_timestep_rows()
+            ]
+
         rows = []
         for trajectory_idx, lead_time in sorted(self._per_timestep_results):
             result = self._per_timestep_results[(trajectory_idx, lead_time)]

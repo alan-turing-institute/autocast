@@ -120,15 +120,16 @@ devices: 1 # default single-GPU eval; override with int (e.g. 4) for multi-GPU D
 num_nodes: 1
 
 # Optional trajectory statistics are written alongside the aggregate CSVs.
-# They require complete, sequential test and rollout loaders on one device.
-# Enabling this runs both metric passes even when compute_test_metrics or
-# compute_rollout_metrics is false.
+# Each selected pass requires a complete, sequential loader on one device.
+# The default scope runs both metric passes even when their compute flags are false.
 trajectory_statistics:
   enabled: false
+  scope: both  # both, next_window, or rollout
   output_dir: null  # default: <evaluation CSV directory>/trajectory_statistics
   overwrite_existing: false  # fail before inference if output_dir is non-empty
   sampling_seed: 42
   include_per_timestep: true
+  include_per_channel: false
 
 # Rollout settings
 max_rollout_steps: 10
