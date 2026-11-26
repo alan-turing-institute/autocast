@@ -1,0 +1,57 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/campaign_nested_joint_fourier_energy
+  - /loss/swe64_fourier_blend@model.loss_func
+  - _self_
+
+experiment_name: swe64s_campaign_nested_crps_fft_joint_blend
+swe64_train_trajectories: 1000
+compile_backbone: true
+seed: 42
+
+swe64_primary_loss: ${model.validation_loss_func.losses.0}
+spectral_componentwise_weight: 0.1
+spectral_joint_weight: 0.1
+
+optimizer:
+  scheduler_interval: step
+  cosine_epochs: null
+  cosine_steps: 128000
+
+trainer:
+  max_time: "00:07:45:00"
+  limit_train_batches: 1.0
+  max_epochs: 1000000
+  max_steps: 128000
+  check_val_every_n_epoch: null
+  val_check_interval: 500
+  callbacks:
+    - _target_: lightning.pytorch.callbacks.ModelCheckpoint
+      auto_insert_metric_name: false
+      every_n_epochs: 0
+      every_n_train_steps: 32000
+      save_on_train_epoch_end: false
+      filename: snapshot-{step:08d}
+      save_last: false
+      save_top_k: -1
+    - _target_: lightning.pytorch.callbacks.ModelCheckpoint
+      auto_insert_metric_name: false
+      every_n_epochs: 1
+      every_n_train_steps: 0
+      save_on_train_epoch_end: false
+      filename: best-val-{epoch:04d}-{step:08d}-{val_loss:.6f}
+      mode: min
+      monitor: val_loss
+      save_last: true
+      save_top_k: 1
+    - _target_: autocast.callbacks.grad_norm.GradNormCallback
+      norm_type: 2.0
+      log_per_param: false
+    - _target_: autocast.callbacks.ema.EMACallback
+      decay: 0.999
+    - _target_: autocast.callbacks.sustained_validation.SustainedValidationRise
+      monitor: val_loss
+      relative_tolerance: 0.01
+      absolute_tolerance: 1e-8
+      patience: 10
+      min_steps: 10000

@@ -1,0 +1,19 @@
+defaults:
+  - _reset_epd_loss
+  - _self_
+
+_target_: autocast.losses.WeightedSumLoss
+weights: [1.0, 1.0]
+losses:
+  - ${swe64_primary_loss}
+  - _target_: autocast.losses.TransformedLoss
+    requires_ambient_predictions: true
+    decomposition: ${model.validation_loss_func.losses.1.decomposition}
+    objective:
+      _target_: autocast.losses.ComponentObjective
+      weights: ["${spectral_componentwise_weight}", "${spectral_joint_weight}"]
+      branches:
+        - _target_: autocast.losses.ComponentBranch
+          score: ${model.validation_loss_func.losses.1.score}
+        - _target_: autocast.losses.ComponentBranch
+          score: ${joint_fourier_score}

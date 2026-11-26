@@ -26,6 +26,9 @@ class Run:
     hops: int | None = None
     fixed_rate: bool = False
     finetune_steps: int | None = None
+    preset: str | None = None
+    allocation_minutes: int | None = None
+    overrides: tuple[str, ...] = ()
 
 
 RUNS = {
@@ -47,6 +50,69 @@ RUNS = {
 }
 
 
+def _score_run(backbone: str, primary: str, spectral: str) -> Run:
+    """Select an objective without changing its backbone or validation score."""
+    hybrid = backbone == "fno"
+    overrides = []
+    if primary == "afes":
+        overrides += [
+            "swe64_primary_loss=null",
+            "swe64_primary_loss={_target_:autocast.losses.AlphaFairEnergyScoreLoss,"
+            "alpha:0.95}",
+        ]
+    if spectral == "none":
+        overrides.append("model.loss_func=${swe64_primary_loss}")
+    elif spectral in ("component", "joint"):
+        score = (
+            "${model.validation_loss_func.losses.1.score}"
+            if spectral == "component"
+            else "${joint_fourier_score}"
+        )
+        prefix = "model.loss_func.losses.1.objective"
+        overrides += [
+            f"{prefix}.weights=[0.1]",
+            f"{prefix}.branches=[{{_target_:autocast.losses.ComponentBranch,"
+            f"score:{score}}}]",
+        ]
+    return Run(
+        preset=(
+            "campaign_nested_hybrid_fno_joint_blend"
+            if hybrid
+            else "campaign_nested_crps_fft_joint_blend"
+        ),
+        allocation_minutes=720 if hybrid else 480,
+        overrides=tuple(overrides),
+    )
+
+
+SCORE_RUNS = {
+    f"{backbone}_{primary}_{spectral}": _score_run(backbone, primary, spectral)
+    for backbone, primary, spectral in (
+        ("vit", "afcrps", "blend"),
+        ("fno", "afcrps", "blend"),
+        ("fno", "afes", "blend"),
+        ("fno", "afcrps", "none"),
+        ("fno", "afes", "none"),
+        ("fno", "afes", "component"),
+        ("fno", "afes", "joint"),
+        ("vit", "afes", "blend"),
+        ("vit", "afes", "none"),
+        ("vit", "afes", "component"),
+        ("vit", "afes", "joint"),
+    )
+}
+ALL_RUNS = (
+    RUNS
+    | SCORE_RUNS
+    | {
+        "fno_afcrps_magnitude": Run(
+            preset="campaign_nested_crps_fft_hybrid_fno_magnitude",
+            allocation_minutes=720,
+        )
+    }
+)
+
+
 def _job(
     name: str,
     run: Run,
@@ -59,16 +125,19 @@ def _job(
     preflight: bool,
     parent_checkpoint: Path | None,
 ) -> dict[str, Any]:
-    preset = f"campaign_nested_{run.objective}"
+    preset = run.preset or f"campaign_nested_{run.objective}"
     epochs = 512 if run.fixed_rate else 256
-    minutes = 960 if run.fixed_rate else 480
+    updates = epochs * 500
+    minutes = run.allocation_minutes or (960 if run.fixed_rate else 480)
     if run.fixed_rate:
         preset += "_constant"
     if run.finetune_steps is not None:
         preset += "_finetune"
         minutes = 180 if run.finetune_steps == 1 else 300
+        updates = 32000
     if preflight:
         minutes = 30
+        updates = 128 if run.preset is not None else 1000
         output_root /= "preflight"
     output = output_root / name / "fit"
     if output.exists():
@@ -88,13 +157,16 @@ def _job(
         "++hydra.launcher.nodes=1",
         "++hydra.launcher.cpus_per_task=72",
         "++hydra.launcher.partition=workq",
-        f"model.processor.rpb={str(run.rpb).lower()}",
-        f"model.processor.graph_hops={json.dumps(run.hops)}",
         f"++provenance.source_commit={source}",
         f"++provenance.normalization_sha256={stats_hash}",
         f"logging.wandb.group={json.dumps(output_root.name)}",
         f"logging.wandb.name={json.dumps(f'swe64s-{name}-{output_root.name}')}",
     ]
+    if run.preset is None:
+        overrides += [
+            f"model.processor.rpb={str(run.rpb).lower()}",
+            f"model.processor.graph_hops={json.dumps(run.hops)}",
+        ]
     if account is not None:
         overrides.append(
             f"++hydra.launcher.additional_parameters.account={json.dumps(account)}"
@@ -109,7 +181,16 @@ def _job(
             f"resume_from_checkpoint={json.dumps(str(parent_checkpoint))}",
             f"model.train_rollout_steps={run.finetune_steps}",
         ]
-    if preflight:
+    overrides.extend(run.overrides)
+    if preflight and run.preset is not None:
+        overrides += [
+            "trainer.max_steps=128",
+            "trainer.val_check_interval=128",
+            "++trainer.limit_val_batches=8",
+            "logging.wandb.enabled=false",
+            "output.checkpoint_path=preflight.ckpt",
+        ]
+    elif preflight:
         overrides += [
             "trainer.max_epochs=2",
             "++trainer.profiler=simple",
@@ -135,9 +216,7 @@ def _job(
     job: dict[str, Any] = {
         "name": name,
         "train_trajectories": run.pool,
-        "expected_updates": (
-            1000 if preflight else 32000 if run.finetune_steps else epochs * 500
-        ),
+        "expected_updates": updates,
         "allocation_minutes": minutes,
         "train_path": str(pool_root / f"train{run.pool}"),
         "normalization_path": str(pool_root / "train200/stats.yml"),
@@ -145,7 +224,7 @@ def _job(
         "overrides": overrides,
         "preview_command": command,
     }
-    if preflight:
+    if preflight and run.preset is None:
         job["resume_preview_command"] = [
             *command[:10],
             str(output.parent / "resume"),
@@ -164,13 +243,20 @@ def build_plan(
     account: str | None = None,
     preflight: bool = False,
     parent_checkpoint: Path | None = None,
+    score_ablations: bool = False,
 ) -> dict[str, Any]:
     """Resolve command inputs without inspecting or mutating remote data."""
-    names = run_names or (PREFLIGHT_RUNS if preflight else FIRST_RUNS)
+    names = run_names or (
+        tuple(SCORE_RUNS)
+        if score_ablations
+        else PREFLIGHT_RUNS
+        if preflight
+        else FIRST_RUNS
+    )
     if len(names) != len(set(names)):
         msg = "Select each run only once."
         raise ValueError(msg)
-    selected = [RUNS[name] for name in names]
+    selected = [ALL_RUNS[name] for name in names]
     finetunes = [run for run in selected if run.finetune_steps is not None]
     if finetunes and (preflight or parent_checkpoint is None):
         msg = "Fine-tune previews require a parent checkpoint and no preflight flag."
@@ -224,7 +310,11 @@ def main() -> None:
     parser.add_argument("--pool-root", required=True, type=Path)
     parser.add_argument("--output-root", required=True, type=Path)
     parser.add_argument("--account")
-    parser.add_argument("--run", dest="run_names", action="append", choices=RUNS)
+    select = parser.add_mutually_exclusive_group()
+    select.add_argument("--run", dest="run_names", action="append", choices=ALL_RUNS)
+    select.add_argument(
+        "--score-ablations", action="store_true", help="Preview the eleven score fits."
+    )
     parser.add_argument("--preflight", action="store_true")
     parser.add_argument("--parent-checkpoint", type=Path)
     args = parser.parse_args()

@@ -8,7 +8,17 @@ from hydra import compose, initialize_config_dir
 from hydra.utils import instantiate
 from omegaconf import OmegaConf
 
-from autocast.losses import AlphaFairCRPSLoss, WeightedSumLoss
+from autocast.losses import (
+    AlphaFairCRPSLoss,
+    AlphaFairEnergyScoreLoss,
+    CoefficientCRPSLoss,
+    ComponentBranch,
+    ComponentObjective,
+    JointCoefficientEnergyScore,
+    TransformedLoss,
+    WeightedSumLoss,
+)
+from autocast.losses.mode_groups import SampledModeEnergyScore
 from autocast.models.optimizer_mixin import OptimizerMixin
 from autocast.scripts.workflow.cli import build_parser
 
@@ -106,6 +116,80 @@ def _assert_training_budget(cfg, run, expected_updates):
             assert cfg.optimizer.scheduler_interval == "epoch"
             assert cfg.optimizer.cosine_epochs == cfg.trainer.max_epochs == 256
             assert cfg.optimizer.learning_rate == 2e-4
+
+
+def test_score_ablation_campaign_matches_all_eleven_cells(tmp_path):
+    plan = CAMPAIGN["build_plan"](
+        pool_root=tmp_path / "pool",
+        output_root=tmp_path / "scores",
+        score_ablations=True,
+    )
+    assert len(plan["jobs"]) == 11
+    assert len({job["output"] for job in plan["jobs"]}) == 11
+    for job in plan["jobs"]:
+        backbone, primary, spectral = job["name"].split("_")
+        cfg = _compose(job["preview_command"])
+        loss = instantiate(cfg.model.loss_func)
+        primary_cls = (
+            AlphaFairEnergyScoreLoss if primary == "afes" else AlphaFairCRPSLoss
+        )
+        if spectral == "none":
+            assert isinstance(loss, primary_cls)
+        else:
+            assert isinstance(loss, WeightedSumLoss)
+            assert isinstance(loss.losses[0], primary_cls)
+            assert loss.weights == (1.0, 1.0)
+            spectral_loss = loss.losses[1]
+            assert isinstance(spectral_loss, TransformedLoss)
+            objective = spectral_loss.objective
+            assert isinstance(objective, ComponentObjective)
+            joint_cls = (
+                SampledModeEnergyScore
+                if backbone == "fno"
+                else JointCoefficientEnergyScore
+            )
+            classes = {
+                "blend": (CoefficientCRPSLoss, joint_cls),
+                "component": (CoefficientCRPSLoss,),
+                "joint": (joint_cls,),
+            }[spectral]
+            assert objective.weights == (0.1,) * len(classes)
+            for branch, score_cls in zip(objective.branches, classes, strict=True):
+                assert isinstance(branch, ComponentBranch)
+                assert type(branch.score) is score_cls
+                if isinstance(branch.score, SampledModeEnergyScore):
+                    assert branch.score.group == "singletons"
+        validation = instantiate(cfg.model.validation_loss_func)
+        assert isinstance(validation, WeightedSumLoss)
+        assert isinstance(validation.losses[0], AlphaFairCRPSLoss)
+        assert validation.weights == (1.0, 0.1)
+        assert cfg.compile_backbone == (backbone == "vit")
+        assert cfg.float32_matmul_precision == "high"
+        assert cfg.trainer.devices == 4
+        assert cfg.trainer.limit_train_batches == 1.0
+        assert cfg.trainer.max_steps == cfg.optimizer.cosine_steps == 128000
+        assert cfg.optimizer.scheduler_interval == "step"
+        assert cfg.trainer.callbacks[0].every_n_train_steps == 32000
+        assert cfg.datamodule.batch_size == 32
+        assert cfg.model.n_members == 8
+        assert cfg.model.residual_prediction
+        assert cfg.logging.wandb.mode == "online"
+        assert job["allocation_minutes"] == (480 if backbone == "vit" else 720)
+
+
+def test_score_ablation_preflight_uses_one_short_fit(tmp_path):
+    (job,) = CAMPAIGN["build_plan"](
+        pool_root=tmp_path / "pool",
+        output_root=tmp_path / "scores",
+        run_names=["fno_afes_blend"],
+        preflight=True,
+    )["jobs"]
+    cfg = _compose(job["preview_command"])
+    assert cfg.trainer.max_steps == job["expected_updates"] == 128
+    assert cfg.optimizer.cosine_steps == 128000
+    assert cfg.trainer.limit_val_batches == 8
+    assert not cfg.logging.wandb.enabled
+    assert "resume_preview_command" not in job
 
 
 @pytest.mark.parametrize("name", CAMPAIGN["PREFLIGHT_RUNS"])

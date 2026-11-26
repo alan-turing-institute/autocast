@@ -1,0 +1,28 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/campaign_nested_crps_fft_hybrid_fno
+  - /loss/ensemble_fourier_crps@model.validation_loss_func
+  - _self_
+
+experiment_name: swe64s_fft_hybrid_fno_magnitude_1000
+
+model:
+  loss_func:
+    _target_: autocast.losses.WeightedSumLoss
+    weights: ${model.validation_loss_func.weights}
+    losses:
+      - ${model.validation_loss_func.losses.0}
+      - _target_: autocast.losses.TransformedLoss
+        requires_ambient_predictions: true
+        decomposition:
+          _target_: autocast.losses.FourierDecomposition
+          representation: magnitude
+          norm: ${model.validation_loss_func.losses.1.decomposition.norm}
+        score: ${model.validation_loss_func.losses.1.score}
+
+trainer:
+  max_time: "00:11:45:00"
+
+hydra:
+  launcher:
+    timeout_min: 720

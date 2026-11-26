@@ -1,0 +1,18 @@
+# @package _global_
+defaults:
+  - /local_experiment/swe64s/campaign_nested_hybrid_fno_singletons
+  - /loss/swe64_fourier_blend@model.loss_func
+  - _self_
+
+experiment_name: swe64s_campaign_nested_hybrid_fno_joint_blend
+swe64_primary_loss: ${model.validation_loss_func.losses.0}
+joint_fourier_score: ${fno_pair_score}
+spectral_componentwise_weight: 0.1
+spectral_joint_weight: 0.1
+
+trainer:
+  max_time: "00:11:45:00"
+
+hydra:
+  launcher:
+    timeout_min: 720
