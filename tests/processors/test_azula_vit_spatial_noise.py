@@ -149,6 +149,27 @@ def test_gathered_graph_requires_graph_hops():
         make_processor(graph_attention_backend="gathered")
 
 
+def test_checkpointed_gathered_backbone_compiles():
+    model = make_processor(
+        graph_hops=2,
+        graph_attention_backend="gathered",
+        graph_periodic_axes=(True, False),
+        rpb=False,
+        checkpointing=True,
+    )
+    x = torch.randn(2, 3, 8, 8)
+    noise = torch.randn(2, 4)
+    expected = model(x, noise)
+    model.model.compile(backend="eager", fullgraph=True)
+    actual = model(x, noise)
+    torch.testing.assert_close(actual, expected)
+    params = tuple(model.parameters())
+    torch.testing.assert_close(
+        torch.autograd.grad(actual.square().mean(), params),
+        torch.autograd.grad(expected.square().mean(), params),
+    )
+
+
 @pytest.mark.parametrize("graph_hops", [None, 1])
 def test_unknown_graph_attention_backend_reports_valid_choices(
     graph_hops, validation_error

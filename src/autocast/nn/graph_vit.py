@@ -265,7 +265,19 @@ class PeriodicGraphViT(ViT):
 
         tokens = rearrange(patches, "b h w c -> b (h w) c") + self.pos_embedding(pos)
         for block in self.blocks:
-            tokens = block(tokens, mod, pos=pos, mask=attention_context)
+            if block.checkpointing and torch.compiler.is_compiling():
+                # Azula's checkpoint wrapper queries functorch tracking state,
+                # which Dynamo cannot trace. Keep the same block recomputation.
+                tokens = checkpoint(
+                    block._forward,
+                    tokens,
+                    mod,
+                    pos,
+                    attention_context,
+                    use_reentrant=False,
+                )
+            else:
+                tokens = block(tokens, mod, pos=pos, mask=attention_context)
 
         patches = rearrange(tokens, "b (h w) c -> b h w c", h=height, w=width)
         return self.unpatch(self.out_proj(patches))
