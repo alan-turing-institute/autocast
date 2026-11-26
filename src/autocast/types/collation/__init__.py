@@ -2,15 +2,32 @@ from collections.abc import Sequence
 
 import torch
 
-from autocast.types.batch import Batch, EncodedBatch, EncodedSample, Sample
+from autocast.types.batch import (
+    Batch,
+    EncodedBatch,
+    EncodedSample,
+    Sample,
+    SphericalBatch,
+)
 from autocast.types.types import Tensor
 
 
 def collate_batches(samples: Sequence[Sample]) -> Batch:
-    """Stack a sequence of `Batch` instances along the batch dimension."""
+    """Stack a sequence of `Batch` instances along the batch dimension.
+
+    Samples on a grid on the sphere give a `SphericalBatch` on that grid. Samples on
+    different grids, or spherical samples mixed with plain ones, raise `ValueError`.
+    """
     if len(samples) == 0:
         msg = "collate_batches expects at least one sample"
         raise ValueError(msg)
+
+    grid_types = {getattr(sample, "grid_type", None) for sample in samples}
+    if len(grid_types) > 1:
+        names = sorted(str(grid_type) for grid_type in grid_types)
+        msg = f"collate_batches got samples on different grids: {names}"
+        raise ValueError(msg)
+    (grid_type,) = grid_types
 
     def _stack_optional(getter: str) -> Tensor | None:
         values = [getattr(sample, getter) for sample in samples]
@@ -27,6 +44,15 @@ def collate_batches(samples: Sequence[Sample]) -> Batch:
     constant_fields = _stack_optional("constant_fields")
     boundary_conditions = _stack_optional("boundary_conditions")
 
+    if grid_type is not None:
+        return SphericalBatch(
+            input_fields=input_fields,
+            output_fields=output_fields,
+            constant_scalars=constant_scalars,
+            constant_fields=constant_fields,
+            boundary_conditions=boundary_conditions,
+            grid_type=grid_type,
+        )
     return Batch(
         input_fields=input_fields,
         output_fields=output_fields,

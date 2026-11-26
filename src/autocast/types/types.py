@@ -17,6 +17,7 @@ Tensor = torch.Tensor
 # - H: exactly one height dim
 # - D: exactly one depth dim
 # - M: exactly one model dim (e.g. for ensembles)
+# - G: one or more dims of a grid on the sphere (nlat nlon, or npix for HEALPix)
 
 TensorC = Float[Tensor, "channel"]  # Vector of scalars
 TensorBC = Float[Tensor, "batch channel"]  # Only batch and channel
@@ -56,6 +57,12 @@ TensorBCWH = Float[Tensor, "batch channel width height"]  # Specific spatial dim
 TensorBTCHW = Float[Tensor, "batch time channel height width"]  # Specific spatial dims
 
 TensorBTC = Float[Tensor, "batch time channel"]
+
+# Fields on a grid on the sphere, channels last; the batch types name the grid.
+TensorBTGC = Float[Tensor, "batch time grid *grid channel"]
+TensorBGC = Float[Tensor, "batch grid *grid channel"]  # No time dimension
+TensorTGC = Float[Tensor, "time grid *grid channel"]  # No batch dimension
+TensorGC = Float[Tensor, "grid *grid channel"]  # No batch or time dimension
 
 ArrayLike = Tensor | np.ndarray
 
