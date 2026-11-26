@@ -1,18 +1,23 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from typing import TypeVar
 
 import torch
 
+from autocast.types.grid import GridType
 from autocast.types.types import (
     Tensor,
     TensorBC,
+    TensorBGC,
     TensorBNC,
     TensorBSC,
+    TensorBTGC,
     TensorBTSC,
     TensorC,
+    TensorGC,
     TensorNC,
     TensorS,
     TensorSC,
+    TensorTGC,
     TensorTSC,
 )
 
@@ -26,6 +31,15 @@ def _pin_memory_if_available(tensor: Tensor) -> Tensor:
     return tensor.pin_memory()
 
 
+def _check_spherical(grid_type: GridType) -> None:
+    if grid_type == GridType.CARTESIAN:
+        msg = (
+            "Spherical samples and batches need a grid on the sphere, "
+            f"got {GridType.CARTESIAN!r}."
+        )
+        raise ValueError(msg)
+
+
 @dataclass
 class Sample:
     """A batch in input data space."""
@@ -35,6 +49,20 @@ class Sample:
     constant_scalars: TensorC | None
     constant_fields: TensorSC | None
     boundary_conditions: TensorS | None
+
+
+@dataclass
+class SphericalSample(Sample):
+    """A sample whose fields lie on the grid on the sphere named by ``grid_type``."""
+
+    input_fields: TensorTGC
+    output_fields: TensorTGC
+    constant_fields: TensorGC | None
+    grid_type: GridType = field(kw_only=True)
+
+    def __post_init__(self) -> None:
+        """Refuse the Cartesian grid."""
+        _check_spherical(self.grid_type)
 
 
 @dataclass
@@ -67,7 +95,8 @@ class Batch:
         becomes
         0, 0, 0, 1, 1, 1, 2, 2, 2, ...
         """
-        return Batch(
+        return replace(
+            self,
             input_fields=self.input_fields.repeat_interleave(m, dim=0),
             output_fields=self.output_fields.repeat_interleave(m, dim=0),
             constant_scalars=(
@@ -89,7 +118,8 @@ class Batch:
 
     def to(self, device: torch.device | str) -> "Batch":
         """Move batch to device."""
-        return Batch(
+        return replace(
+            self,
             input_fields=self.input_fields.to(device),
             output_fields=self.output_fields.to(device),
             constant_scalars=(
@@ -111,7 +141,8 @@ class Batch:
 
     def pin_memory(self) -> "Batch":
         """Pin CPU tensors for faster host-to-device transfer."""
-        return Batch(
+        return replace(
+            self,
             input_fields=_pin_memory_if_available(self.input_fields),
             output_fields=_pin_memory_if_available(self.output_fields),
             constant_scalars=(
@@ -130,6 +161,23 @@ class Batch:
                 else None
             ),
         )
+
+
+@dataclass
+class SphericalBatch(Batch):
+    """A batch whose fields lie on the grid on the sphere named by ``grid_type``.
+
+    ``repeat``, ``to`` and ``pin_memory`` return a SphericalBatch on the same grid.
+    """
+
+    input_fields: TensorBTGC
+    output_fields: TensorBTGC
+    constant_fields: TensorBGC | None
+    grid_type: GridType = field(kw_only=True)
+
+    def __post_init__(self) -> None:
+        """Refuse the Cartesian grid."""
+        _check_spherical(self.grid_type)
 
 
 @dataclass
@@ -152,7 +200,8 @@ class EncodedBatch:
         0, 0, 0, 1, 1, 1, 2, 2, 2, ...
 
         """
-        return EncodedBatch(
+        return replace(
+            self,
             encoded_inputs=self.encoded_inputs.repeat_interleave(m, dim=0),
             encoded_output_fields=self.encoded_output_fields.repeat_interleave(
                 m, dim=0
@@ -169,7 +218,8 @@ class EncodedBatch:
 
     def to(self, device: torch.device | str) -> "EncodedBatch":
         """Move batch to device."""
-        return EncodedBatch(
+        return replace(
+            self,
             encoded_inputs=self.encoded_inputs.to(device),
             encoded_output_fields=self.encoded_output_fields.to(device),
             global_cond=(
@@ -180,7 +230,8 @@ class EncodedBatch:
 
     def pin_memory(self) -> "EncodedBatch":
         """Pin CPU tensors for faster host-to-device transfer."""
-        return EncodedBatch(
+        return replace(
+            self,
             encoded_inputs=_pin_memory_if_available(self.encoded_inputs),
             encoded_output_fields=_pin_memory_if_available(self.encoded_output_fields),
             global_cond=(
@@ -192,3 +243,19 @@ class EncodedBatch:
                 k: _pin_memory_if_available(v) for k, v in self.encoded_info.items()
             },
         )
+
+
+@dataclass
+class EncodedSphericalBatch(EncodedBatch):
+    """An encoded batch whose fields still lie on the grid named by ``grid_type``.
+
+    Encoders that keep the grid, such as the identity encoder, return it.
+    """
+
+    encoded_inputs: TensorBTGC
+    encoded_output_fields: TensorBTGC
+    grid_type: GridType = field(kw_only=True)
+
+    def __post_init__(self) -> None:
+        """Refuse the Cartesian grid."""
+        _check_spherical(self.grid_type)

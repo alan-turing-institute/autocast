@@ -1,4 +1,5 @@
 from collections.abc import Callable, Sequence
+from itertools import pairwise
 from typing import Any, Literal
 
 import h5py
@@ -10,22 +11,71 @@ from the_well.data.normalization import RMSNormalization, ZScoreNormalization
 from torch.utils.data import Dataset
 
 from autocast.data.metadata import Metadata
-from autocast.types import Sample
+from autocast.types import GridType, Sample, SphericalSample
+
+
+def _parse_grid_type(value: object) -> GridType | None:
+    """Grid on the sphere named by a payload, or None for a Cartesian payload.
+
+    A payload without ``grid_type``, or with ``"cartesian"``, gives plain samples.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        msg = f"grid_type must be a string, got {type(value).__name__}."
+        raise TypeError(msg)
+    try:
+        grid_type = GridType(value)
+    except ValueError as error:
+        names = ", ".join(member.value for member in GridType)
+        msg = f"Unknown grid_type {value!r}; expected one of: {names}."
+        raise ValueError(msg) from error
+    return None if grid_type == GridType.CARTESIAN else grid_type
+
+
+def _as_index(indices: Sequence[int], size: int) -> slice | list[int]:
+    """Return indices along an axis of length ``size`` as a slice when possible.
+
+    Indices that form an ascending run with a constant step become a slice, which
+    selects a view: a memory-mapped tensor is then not read. Other indices stay a
+    list, and indexing with it copies the selected entries.
+    """
+    positions = []
+    for index in indices:
+        if not -size <= index < size:
+            msg = f"Index {index} is out of range for an axis of length {size}."
+            raise IndexError(msg)
+        positions.append(index + size if index < 0 else index)
+    if len(positions) == 1:
+        return slice(positions[0], positions[0] + 1)
+    if len(positions) > 1:
+        step = positions[1] - positions[0]
+        if step > 0 and all(
+            later - earlier == step for earlier, later in pairwise(positions)
+        ):
+            return slice(positions[0], positions[-1] + 1, step)
+    return positions
 
 
 class BatchMixin:
     """A mixin class to provide Batch conversion functionality."""
 
     @staticmethod
-    def to_sample(data: dict) -> Sample:
-        """Convert a dictionary of tensors to a Sample object."""
-        return Sample(
-            input_fields=data["input_fields"],
-            output_fields=data["output_fields"],
-            constant_scalars=data.get("constant_scalars"),
-            constant_fields=data.get("constant_fields"),
-            boundary_conditions=data.get("boundary_conditions"),
-        )
+    def to_sample(data: dict, grid_type: GridType | None = None) -> Sample:
+        """Convert a dictionary of tensors to a Sample object.
+
+        With a ``grid_type`` on the sphere the result is a SphericalSample.
+        """
+        fields = {
+            "input_fields": data["input_fields"],
+            "output_fields": data["output_fields"],
+            "constant_scalars": data.get("constant_scalars"),
+            "constant_fields": data.get("constant_fields"),
+            "boundary_conditions": data.get("boundary_conditions"),
+        }
+        if grid_type is None:
+            return Sample(**fields)
+        return SphericalSample(**fields, grid_type=grid_type)
 
 
 class SpatioTemporalDataset(Dataset, BatchMixin):
@@ -94,6 +144,8 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         self.autoencoder_mode = autoencoder_mode
         self._channel_idxs_applied = False
         self._applied_start_frame = 0
+        # Set by readers whose payload names a grid on the sphere.
+        self.grid_type: GridType | None = None
 
         if data_path is not None:
             self.read_data(data_path)
@@ -134,7 +186,7 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         self._applied_start_frame = start_frame
 
         if channel_idxs is not None and not self._channel_idxs_applied:
-            self.data = self.data[..., list(channel_idxs)]
+            self.data = self.data[..., _as_index(channel_idxs, self.data.shape[-1])]
             self._channel_idxs_applied = True
 
         self.set_up_normalization()
@@ -164,6 +216,10 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
                 )
                 raise ValueError(msg)
 
+        if stride < 1:
+            msg = f"stride must be a positive integer, got {stride!r}."
+            raise ValueError(msg)
+
         window_size = n_steps_input + n_steps_output
         if self.data.shape[1] < window_size:
             msg = (
@@ -189,64 +245,40 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             self.n_channels,
         ) = self.data.shape
 
-        # Pre-compute all subtrajectories for efficient indexing
-        self.all_input_fields = []
-        self.all_output_fields = []
-        self.all_constant_scalars = []
-        self.all_constant_fields = []
-        self.sample_trajectory_indices: list[int] = []
-        self.sample_window_indices: list[int] = []
-
-        # Create input-output pairs
-        for traj_idx in range(self.n_trajectories):
-            # Create subtrajectories for this trajectory
-            fields = (
-                self.data[traj_idx]
-                .unfold(0, self.n_steps_input + self.n_steps_output, self.stride)
-                # [num_subtrajectories, T_in + T_out, W, H, C]
-                .permute(0, -1, 1, 2, 3)
-            )
-
-            # Split into input and output
-            input_fields = fields[:, : self.n_steps_input, ...]
-            output_fields = (
-                fields[:, self.n_steps_input :, ...]
-                if not self.autoencoder_mode
-                else input_fields
-            )
-
-            # Store each subtrajectory separately
-            for sub_idx in range(input_fields.shape[0]):
-                self.sample_trajectory_indices.append(self.trajectory_indices[traj_idx])
-                self.sample_window_indices.append(sub_idx)
-                self.all_input_fields.append(
-                    input_fields[sub_idx].to(self.dtype)
-                )  # [T_in, W, H, C]
-                self.all_output_fields.append(
-                    output_fields[sub_idx].to(self.dtype)
-                )  # [T_out, W, H, C]
-
-                # Handle constant scalars
-                if self.constant_scalars is not None:
-                    self.all_constant_scalars.append(
-                        self.constant_scalars[traj_idx].to(self.dtype)
-                    )
-
-                # Handle constant fields
-                if self.constant_fields is not None:
-                    self.all_constant_fields.append(
-                        self.constant_fields[traj_idx].to(self.dtype)
-                    )
+        # Windows are indexed, not stored. Window w of a trajectory holds frames
+        # w * stride to w * stride + window_size - 1, the windows of
+        # data[t].unfold(0, window_size, stride); __getitem__ reads only its own.
+        self._window_size = window_size
+        self._windows_per_trajectory = (self.n_timesteps - window_size) // stride + 1
+        self.sample_trajectory_indices: list[int] = [
+            index
+            for index in self.trajectory_indices
+            for _ in range(self._windows_per_trajectory)
+        ]
+        self.sample_window_indices: list[int] = (
+            list(range(self._windows_per_trajectory)) * self.n_trajectories
+        )
 
         if self.verbose:
-            print(f"Created {len(self.all_input_fields)} subtrajectory samples")
-            print(f"Each input sample shape: {self.all_input_fields[0].shape}")
-            print(f"Each output sample shape: {self.all_output_fields[0].shape}")
-            print(f"Data type: {self.all_input_fields[0].dtype}")
+            frame_shape = tuple(self.data.shape[2:])
+            n_output_steps = (
+                self.n_steps_input if self.autoencoder_mode else self.n_steps_output
+            )
+            print(f"Created {len(self)} subtrajectory samples")
+            print(f"Each input sample shape: {(self.n_steps_input, *frame_shape)}")
+            print(f"Each output sample shape: {(n_output_steps, *frame_shape)}")
+            print(f"Data type: {self.dtype}")
 
     def _from_f(self, f):
         assert "data" in f, "HDF5 file must contain 'data' dataset"
-        self.data = torch.Tensor(f["data"][:]).to(self.dtype)  # type: ignore # [N, T, W, H, C]  # noqa: PGH003
+        data = f["data"]
+        # A tensor from a torch payload stays as loaded (memory-mapped by read_data),
+        # and each item converts its own window to self.dtype. HDF5 is read whole.
+        self.data = (
+            data if torch.is_tensor(data) else torch.Tensor(data[:]).to(self.dtype)  # type: ignore # [N, T, W, H, C]  # noqa: PGH003
+        )
+        if isinstance(f, dict):
+            self.grid_type = _parse_grid_type(f.get("grid_type"))
         if self.verbose:
             print(f"Loaded data shape: {self.data.shape}")
         # TODO: add the constant scalars
@@ -336,7 +368,9 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             if missing:
                 msg = f"Unavailable trajectory indices: {missing}."
                 raise ValueError(msg)
-            selection = [positions[index] for index in selected_indices]
+            selection = _as_index(
+                [positions[index] for index in selected_indices], n_available
+            )
         else:
             msg = (
                 "trajectories must be None, a positive count or a sequence of indices."
@@ -354,19 +388,28 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
         """Read data.
 
         By default assumes HDF5 format in `data_path` with correct shape and fields.
+        HDF5 files are read whole. A `.pt` file is memory-mapped
+        (`torch.load(mmap=True)`), so each item reads only its own window; a file
+        that cannot be mapped, such as one saved without the zip format, is
+        loaded whole.
         """
         self.data_path = data_path
         if self.data_path.endswith(".h5") or self.data_path.endswith(".hdf5"):
             with h5py.File(self.data_path, "r") as f:
                 self._from_f(f)
         if self.data_path.endswith(".pt"):
-            self._from_f(torch.load(self.data_path))
+            try:
+                payload = torch.load(self.data_path, mmap=True)
+            except RuntimeError:
+                payload = torch.load(self.data_path)
+            self._from_f(payload)
 
     def parse_data(self, data: dict | None):
         """Parse data from a dictionary."""
         if data is not None:
+            # A tensor is kept as given (no copy); items convert their windows.
             self.data = (
-                data["data"].to(self.dtype)
+                data["data"]
                 if torch.is_tensor(data["data"])
                 else torch.tensor(data["data"], dtype=self.dtype)
             )
@@ -375,12 +418,17 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             self._channel_idxs_applied = bool(data.get("_channel_idxs_applied", False))
             self._applied_start_frame = data.get("_applied_start_frame", 0)
             self._preloaded_trajectory_indices = data.get("_trajectory_indices")
+            self.grid_type = _parse_grid_type(data.get("grid_type"))
             return
         msg = "No data provided to parse."
         raise ValueError(msg)
 
     def to_preloaded_data(self) -> dict[str, Any]:
-        """Return the in-memory payload accepted by ``data=`` without copying."""
+        """Return the in-memory payload accepted by ``data=`` without copying.
+
+        The grid is stored as its string, so the payload saves and loads with
+        `torch.load(weights_only=True)`.
+        """
         return {
             "data": self.data,
             "constant_scalars": self.constant_scalars,
@@ -388,16 +436,27 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             "_channel_idxs_applied": self._channel_idxs_applied,
             "_applied_start_frame": self._applied_start_frame,
             "_trajectory_indices": self.trajectory_indices,
+            "grid_type": None if self.grid_type is None else self.grid_type.value,
         }
 
     def __len__(self):  # noqa: D105
-        return len(self.all_input_fields)
+        return self.n_trajectories * self._windows_per_trajectory
 
     def __getitem__(self, idx):
-        """Get item at index."""
-        input_fields = self.all_input_fields[idx]
+        """Get item at index, reading only the frames of its window."""
+        if idx < 0:
+            idx += len(self)
+        if not 0 <= idx < len(self):
+            raise IndexError(idx)
+        trajectory, window = divmod(idx, self._windows_per_trajectory)
+        start = window * self.stride
+        # A copy of this window only: of a memory-mapped file nothing else is read.
+        fields = self.data[trajectory, start : start + self._window_size].to(
+            self.dtype, copy=True
+        )
+        input_fields = fields[: self.n_steps_input]
         output_fields = (
-            input_fields if self.autoencoder_mode else self.all_output_fields[idx]
+            input_fields if self.autoencoder_mode else fields[self.n_steps_input :]
         )
         if self.use_normalization and self.norm is not None:
             field_names = (
@@ -433,12 +492,16 @@ class SpatioTemporalDataset(Dataset, BatchMixin):
             "input_fields": input_fields,
             "output_fields": output_fields,
         }
-        if len(self.all_constant_scalars) > 0:
-            item["constant_scalars"] = self.all_constant_scalars[idx]
-        if len(self.all_constant_fields) > 0:
-            item["constant_fields"] = self.all_constant_fields[idx]
+        if self.constant_scalars is not None:
+            item["constant_scalars"] = self.constant_scalars[trajectory].to(
+                self.dtype, copy=True
+            )
+        if self.constant_fields is not None:
+            item["constant_fields"] = self.constant_fields[trajectory].to(
+                self.dtype, copy=True
+            )
 
-        return self.to_sample(item)
+        return self.to_sample(item, self.grid_type)
 
     def set_up_normalization(self):
         """Set up normalizer (`None` if `self.use_normalization = False`)."""
@@ -486,7 +549,7 @@ class ReactionDiffusionDataset(SpatioTemporalDataset):
             n_files=0,
             n_trajectories_per_file=[],
             n_steps_per_trajectory=[self.data.shape[1]] * self.data.shape[0],
-            grid_type="cartesian",
+            grid_type=GridType.CARTESIAN,
         )
 
 
@@ -511,7 +574,7 @@ class AdvectionDiffusionDataset(SpatioTemporalDataset):
             n_files=0,
             n_trajectories_per_file=[],
             n_steps_per_trajectory=[self.data.shape[1]] * self.data.shape[0],
-            grid_type="cartesian",
+            grid_type=GridType.CARTESIAN,
         )
 
 
@@ -539,7 +602,7 @@ class BOUTDataset(SpatioTemporalDataset):
             n_files=0,
             n_trajectories_per_file=[],
             n_steps_per_trajectory=[self.data.shape[1]] * self.data.shape[0],
-            grid_type="cartesian",
+            grid_type=GridType.CARTESIAN,
         )
 
 

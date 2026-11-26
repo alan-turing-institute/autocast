@@ -1,5 +1,6 @@
 from dataclasses import dataclass
-from typing import Literal
+
+from autocast.types.grid import GridType
 
 
 @dataclass
@@ -17,4 +18,4 @@ class Metadata:
     n_steps_per_trajectory: list[int]
     n_files: int | None = None
     n_trajectories_per_file: list[int] | None = None
-    grid_type: Literal["cartesian"] = "cartesian"
+    grid_type: GridType = GridType.CARTESIAN
