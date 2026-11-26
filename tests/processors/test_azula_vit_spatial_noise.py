@@ -105,9 +105,13 @@ def test_graph_block_restricts_input_gradients_to_periodic_neighbors():
         (False, False, "global", True),
     ],
 )
-def test_gathered_graph_vit_matches_masked(rpb, rope, noise_mode, checkpointing):
+@pytest.mark.parametrize("periodic_axes", [(True, True), (True, False)])
+def test_gathered_graph_vit_matches_masked(
+    rpb, rope, noise_mode, checkpointing, periodic_axes
+):
     config = {
         "graph_hops": 1,
+        "graph_periodic_axes": periodic_axes,
         "spatial_resolution": (8, 12),
         "patch_size": (2, 4),
         "noise_mode": noise_mode,

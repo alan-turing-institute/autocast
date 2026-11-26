@@ -1,5 +1,6 @@
-"""Azula ViT with attention over a periodic graph of patch tokens."""
+"""Azula ViT with attention over a grid graph of patch tokens."""
 
+from collections.abc import Sequence
 from typing import Literal, get_args
 
 import torch
@@ -22,17 +23,29 @@ def validate_graph_attention_backend(backend: str) -> None:
 
 
 def periodic_grid_neighbors(
-    height: int, width: int, hops: int, *, device: torch.device
+    height: int,
+    width: int,
+    hops: int,
+    *,
+    device: torch.device,
+    periodic_axes: Sequence[bool] = (True, True),
 ) -> Tensor:
-    """Return the width-fastest neighbor indices for each patch on a torus.
+    """Return width-fastest neighbor indices with optional wrapping per axis.
 
     The input is a positive grid shape and a nonnegative hop count. Each row
     contains the patch itself and all patches within that many grid hops,
-    counted once even when a neighborhood wraps around a short axis.
+    counted once even when a neighborhood wraps around a short axis. Entries
+    outside a bounded axis are padded with -1.
     """
-    # A single representative per offset also handles the antipode on even axes.
-    row_offsets = range(-min(hops, height // 2), min(hops, (height - 1) // 2) + 1)
-    col_offsets = range(-min(hops, width // 2), min(hops, (width - 1) // 2) + 1)
+    wrap_rows, wrap_cols = periodic_axes
+
+    def axis_offsets(size: int, *, wrap: bool) -> range:
+        # Keep one representative for an offset, including the even antipode.
+        left, right = (size // 2, (size - 1) // 2) if wrap else (size - 1, size - 1)
+        return range(-min(hops, left), min(hops, right) + 1)
+
+    row_offsets = axis_offsets(height, wrap=wrap_rows)
+    col_offsets = axis_offsets(width, wrap=wrap_cols)
     offsets = [
         (dy, dx)
         for dy in row_offsets
@@ -41,18 +54,31 @@ def periodic_grid_neighbors(
     ]
     dy, dx = torch.tensor(offsets, device=device).unbind(dim=1)
     nodes = torch.arange(height * width, device=device)
-    rows = (nodes[:, None] // width + dy) % height
-    cols = (nodes[:, None] % width + dx) % width
-    return rows * width + cols
+    rows = nodes[:, None] // width + dy
+    cols = nodes[:, None] % width + dx
+    if wrap_rows:
+        rows = rows.remainder(height)
+    if wrap_cols:
+        cols = cols.remainder(width)
+    neighbors = rows * width + cols
+    if wrap_rows and wrap_cols:
+        return neighbors
+    valid = (rows >= 0) & (rows < height) & (cols >= 0) & (cols < width)
+    return neighbors.masked_fill(~valid, -1)
 
 
 class GatheredGraphAttention(nn.Module):
     """Evaluate Azula self-attention only on a fixed-size list of neighbors."""
 
     checkpoint_gather: bool = True
+    has_padding: bool = False
 
     def __init__(
-        self, attention: MultiheadSelfAttention, *, checkpoint_gather: bool = True
+        self,
+        attention: MultiheadSelfAttention,
+        *,
+        checkpoint_gather: bool = True,
+        has_padding: bool = False,
     ):
         super().__init__()
         self.qkv_proj = attention.qkv_proj
@@ -63,6 +89,7 @@ class GatheredGraphAttention(nn.Module):
         self.heads = attention.heads
         self.dropout = attention.dropout
         self.checkpoint_gather = checkpoint_gather
+        self.has_padding = has_padding
 
     def _position_bias(self, pos: Tensor, neighbors: Tensor) -> Tensor | None:
         if self.bias_proj is None:
@@ -98,6 +125,13 @@ class GatheredGraphAttention(nn.Module):
         neighbors: Tensor,
         dropout_p: float,
     ) -> Tensor:
+        if self.has_padding:
+            valid = neighbors >= 0
+            bias = (
+                valid.expand(self.heads, -1, -1)
+                if bias is None
+                else bias.masked_fill(~valid, -torch.inf)
+            )
         # Fold nodes into the head axis to keep one query per neighborhood and
         # allow a single position bias to broadcast across the batch.
         attended = F.scaled_dot_product_attention(
@@ -150,7 +184,7 @@ class GatheredGraphAttention(nn.Module):
 
 
 class PeriodicGraphViT(ViT):
-    """Reuse Azula blocks with a periodic graph of 2D patch tokens."""
+    """Reuse Azula blocks with a graph of 2D patch tokens."""
 
     graph_attention_backend: GraphAttentionBackend = "masked"
 
@@ -159,6 +193,7 @@ class PeriodicGraphViT(ViT):
         *,
         graph_hops: int,
         graph_attention_backend: GraphAttentionBackend = "masked",
+        graph_periodic_axes: Sequence[bool] = (True, True),
         spatial: int = 2,
         **kwargs,
     ):
@@ -169,9 +204,15 @@ class PeriodicGraphViT(ViT):
             msg = "graph_hops must be a nonnegative integer."
             raise ValueError(msg)
         validate_graph_attention_backend(graph_attention_backend)
+        if len(graph_periodic_axes) != 2 or any(
+            type(axis) is not bool for axis in graph_periodic_axes
+        ):
+            msg = "graph_periodic_axes must specify two boolean spatial axes."
+            raise ValueError(msg)
         super().__init__(spatial=spatial, **kwargs)
         self.graph_hops = graph_hops
         self.graph_attention_backend = graph_attention_backend
+        self.graph_periodic_axes = tuple(graph_periodic_axes)
         if graph_attention_backend == "gathered":
             for block in self.blocks:
                 attention = block.get_submodule("msa")
@@ -181,7 +222,9 @@ class PeriodicGraphViT(ViT):
                 block.set_submodule(
                     "msa",
                     GatheredGraphAttention(
-                        attention, checkpoint_gather=not block.checkpointing
+                        attention,
+                        checkpoint_gather=not block.checkpointing,
+                        has_padding=not all(self.graph_periodic_axes),
                     ),
                 )
 
@@ -200,14 +243,25 @@ class PeriodicGraphViT(ViT):
         )
 
         attention_context = periodic_grid_neighbors(
-            height, width, self.graph_hops, device=x.device
+            height,
+            width,
+            self.graph_hops,
+            device=x.device,
+            periodic_axes=self.graph_periodic_axes,
         )
         if self.graph_attention_backend == "masked":
             n_patches = height * width
             mask = x.new_zeros((n_patches, n_patches), dtype=torch.bool)
-            attention_context = mask.scatter_(
-                dim=1, index=attention_context, value=True
-            )
+            if all(self.graph_periodic_axes):
+                mask.scatter_(dim=1, index=attention_context, value=True)
+            else:
+                valid = attention_context >= 0
+                queries = torch.arange(n_patches, device=x.device)[:, None]
+                mask[
+                    queries.expand_as(attention_context)[valid],
+                    attention_context[valid],
+                ] = True
+            attention_context = mask
 
         tokens = rearrange(patches, "b h w c -> b (h w) c") + self.pos_embedding(pos)
         for block in self.blocks:

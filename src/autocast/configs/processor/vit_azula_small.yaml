@@ -9,6 +9,7 @@ n_layers: 10
 patch_size: 4
 graph_hops: null
 graph_attention_backend: masked
+graph_periodic_axes: [true, true]
 temporal_method: none
 n_noise_channels: 256
 n_noise_input_channels: null

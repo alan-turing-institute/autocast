@@ -35,8 +35,9 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
     patch grid. Calls are independent; the singleton time slot is not a
     rollout trajectory. Explicit ``forward`` noise always bypasses sampling.
 
-    ``graph_hops`` optionally restricts attention to periodic patch neighborhoods.
+    ``graph_hops`` optionally restricts attention to patch neighborhoods.
     Select ``graph_attention_backend="gathered"`` to score only graph neighbors.
+    ``graph_periodic_axes`` selects wrapping in input spatial axis order.
     """
 
     def __init__(
@@ -66,6 +67,7 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
         noise_source: SourceDistribution | None = None,
         graph_hops: int | None = None,
         graph_attention_backend: GraphAttentionBackend = "masked",
+        graph_periodic_axes: Sequence[bool] = (True, True),
     ):
         super().__init__()
         self.n_spatial_dims = len(spatial_resolution)
@@ -152,6 +154,7 @@ class AzulaViTProcessor(Processor[EncodedBatch]):
             spatial_modulation=self.noise_mode == AdaLNNoiseMode.SPATIAL,
             graph_hops=graph_hops,
             graph_attention_backend=graph_attention_backend,
+            graph_periodic_axes=graph_periodic_axes,
         )
 
     def _noise_shape(self, x: Tensor) -> tuple[int, ...]:
