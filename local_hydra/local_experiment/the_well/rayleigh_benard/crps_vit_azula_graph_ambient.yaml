@@ -4,6 +4,7 @@ defaults:
   - _self_
 
 experiment_name: the_well_rayleigh_benard_crps_vit_azula_graph_ambient
+compile_backbone: true
 
 # Four GPUs, one real window per GPU per microbatch.
 datamodule:
@@ -24,6 +25,7 @@ optimizer:
   cosine_epochs: 4096
 
 trainer:
+  precision: bf16-mixed
   max_epochs: 4096
   max_time: "00:23:45:00"
   accumulate_grad_batches: 8

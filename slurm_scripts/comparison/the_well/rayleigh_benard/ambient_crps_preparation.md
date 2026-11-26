@@ -36,6 +36,8 @@ Use `--size graph` for the ambient Azula ViT with 4×4 patches, two-hop
 gathered attention and horizontal wrapping. It uses one observed frame to
 predict the next four jointly and defaults to one real window per GPU per
 microbatch. It retains eight draws per window and the same update count.
+Training uses BF16 mixed precision and compiles the spatial ViT backbone.
+The smoke job allows 30 minutes for compilation and one optimizer update.
 The preset disables Azula's relative position bias because it measures
 distances in unwrapped coordinates across the periodic seam.
 

@@ -216,9 +216,11 @@ def prepare_training(  # noqa: PLR0915
         command,
         commit=commit,
         gpus=4,
-        minutes={"smoke": 15, "timing": 30 if nodes == 8 else 240, "train": 1440}[
-            phase
-        ],
+        minutes={
+            "smoke": 30 if cfg.get("compile_backbone", False) else 15,
+            "timing": 30 if nodes == 8 else 240,
+            "train": 1440,
+        }[phase],
         run_dir=workdir,
         nodes=nodes,
     )
