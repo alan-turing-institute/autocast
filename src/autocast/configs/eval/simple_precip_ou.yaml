@@ -1,0 +1,8 @@
+# Common precipitation scores in physical units with per-field trajectory exports.
+defaults:
+  - swe64_paper
+  - _self_
+
+denormalize_test_metrics: true
+trajectory_statistics:
+  include_per_channel: true

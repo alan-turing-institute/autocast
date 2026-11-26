@@ -1,0 +1,10 @@
+# @package _global_
+defaults:
+  - /local_experiment/simple_precip_ou/fno_afcrps
+  - _self_
+
+experiment_name: precip_ou64_fno_afcrps_envelope
+
+datamodule:
+  # Predict every supplied field for free-running feedback.
+  channel_idxs: [0, 1, 3]

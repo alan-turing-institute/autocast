@@ -68,8 +68,8 @@ trainer:
   max_time: "00:11:45:00"
   limit_train_batches: 1.0
   check_val_every_n_epoch: null
-  # With a global batch of 128, this validates once per full training pass.
-  val_check_interval: 2500
+  # Match the SWE64 sustained-rise cadence at one update per batch.
+  val_check_interval: 500
   callbacks:
     - _target_: lightning.pytorch.callbacks.ModelCheckpoint
       auto_insert_metric_name: false
