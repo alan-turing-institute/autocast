@@ -23,6 +23,33 @@ def test_periodic_grid_neighbors(height, width, hops, degree):
     torch.testing.assert_close(neighbors.sort(dim=1).values, expected)
 
 
+@pytest.mark.parametrize(
+    ("height", "width", "hops", "periodic_axes"),
+    [(6, 5, 2, (True, False)), (2, 6, 2, (False, True)), (1, 4, 5, (False, False))],
+)
+def test_grid_neighbors_with_bounded_axes(height, width, hops, periodic_axes):
+    nodes = torch.arange(height * width)
+    rows, cols = nodes // width, nodes % width
+    dy = (rows[:, None] - rows).abs()
+    dx = (cols[:, None] - cols).abs()
+    if periodic_axes[0]:
+        dy = torch.minimum(dy, height - dy)
+    if periodic_axes[1]:
+        dx = torch.minimum(dx, width - dx)
+    neighbors = periodic_grid_neighbors(
+        height, width, hops, device=nodes.device, periodic_axes=periodic_axes
+    )
+    valid = neighbors >= 0
+    sources = nodes[:, None].expand_as(neighbors)
+    actual = torch.zeros_like(dy)
+    actual.index_put_(
+        (sources[valid], neighbors[valid]),
+        torch.ones_like(sources[valid]),
+        accumulate=True,
+    )
+    torch.testing.assert_close(actual, (dy + dx <= hops).long())
+
+
 def test_gathered_attention_passes_only_neighbor_pairs_to_sdpa(monkeypatch):
     attention = GatheredGraphAttention(
         MultiheadSelfAttention(16, attention_heads=2, pos_features=2, rpb=True)

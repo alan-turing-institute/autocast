@@ -12,6 +12,7 @@ Training presets under `local_hydra/local_experiment/the_well/rayleigh_benard/`:
 | --- | --- |
 | Ambient CRPS 226M | [crps_spatiotemporal_ambient_matched.yaml](../../../../local_hydra/local_experiment/the_well/rayleigh_benard/crps_spatiotemporal_ambient_matched.yaml) |
 | Ambient CRPS 859M | [crps_spatiotemporal_ambient.yaml](../../../../local_hydra/local_experiment/the_well/rayleigh_benard/crps_spatiotemporal_ambient.yaml) |
+| Ambient CRPS gathered graph | [crps_vit_azula_graph_ambient.yaml](../../../../local_hydra/local_experiment/the_well/rayleigh_benard/crps_vit_azula_graph_ambient.yaml) |
 | Latent CRPS 223M | [crps_spatiotemporal_latent.yaml](../../../../local_hydra/local_experiment/the_well/rayleigh_benard/crps_spatiotemporal_latent.yaml) |
 | Latent FM 223M | [fm_spatiotemporal_latent.yaml](../../../../local_hydra/local_experiment/the_well/rayleigh_benard/fm_spatiotemporal_latent.yaml) |
 
@@ -30,6 +31,13 @@ for deployment checks. `--nodes` supports 1, 2, 4 or 8; `--microbatch`
 adjusts accumulation while preserving the global batch and update count.
 Preparation writes resolved configs, source/config hashes and batch scripts
 to a fresh directory. Inspect those artifacts before explicit submission.
+
+Use `--size graph` for the ambient Azula ViT with 4×4 patches, two-hop
+gathered attention and horizontal wrapping. It uses one observed frame to
+predict the next four jointly and defaults to one real window per GPU per
+microbatch. It retains eight draws per window and the same update count.
+The preset disables Azula's relative position bias because it measures
+distances in unwrapped coordinates across the periodic seam.
 
 ## Continue a run
 

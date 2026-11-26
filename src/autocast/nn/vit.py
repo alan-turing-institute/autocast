@@ -59,6 +59,7 @@ class SpatialViTBackbone(TemporalBackboneBase):
         spatial_modulation: bool = False,
         graph_hops: int | None = None,
         graph_attention_backend: GraphAttentionBackend = "masked",
+        graph_periodic_axes: Sequence[bool] = (True, True),
     ):
         """Initialize the spatial ViT backbone.
 
@@ -99,8 +100,9 @@ class SpatialViTBackbone(TemporalBackboneBase):
                 time-embedding module is not registered and ``t=None`` is
                 accepted at forward time (one-step processors).
             spatial_modulation: Whether AdaLN receives one vector per patch token.
-            graph_hops: Optional maximum attention distance in periodic 2D grid hops.
+            graph_hops: Optional maximum attention distance in 2D grid hops.
             graph_attention_backend: How to evaluate attention over the graph.
+            graph_periodic_axes: Which spatial axes wrap, in input axis order.
         """
         if window_size is not None:
             msg = (
@@ -147,6 +149,7 @@ class SpatialViTBackbone(TemporalBackboneBase):
             checkpointing=checkpointing,
             graph_hops=graph_hops,
             graph_attention_backend=graph_attention_backend,
+            graph_periodic_axes=graph_periodic_axes,
         )
         if spatial_modulation:
             for block in self.vit.get_submodule("blocks").children():
@@ -171,13 +174,15 @@ class SpatialViTBackbone(TemporalBackboneBase):
         *,
         graph_hops: int | None = None,
         graph_attention_backend: GraphAttentionBackend = "masked",
+        graph_periodic_axes: Sequence[bool] = (True, True),
         **kwargs,
     ) -> nn.Module:
         """Build the ViT backbone.
 
         Args:
-            graph_hops: When set, restrict attention to this many periodic grid hops.
+            graph_hops: When set, restrict attention to this many grid hops.
             graph_attention_backend: How to evaluate attention over the graph.
+            graph_periodic_axes: Which spatial axes wrap, in input axis order.
             **kwargs: Keyword arguments including:
                 - hid_channels: Hidden dimension for ViT transformer
                 - hid_blocks: Number of transformer blocks
@@ -206,6 +211,7 @@ class SpatialViTBackbone(TemporalBackboneBase):
                 PeriodicGraphViT,
                 graph_hops=graph_hops,
                 graph_attention_backend=graph_attention_backend,
+                graph_periodic_axes=graph_periodic_axes,
             )
         )
         return build_vit(

@@ -129,9 +129,10 @@ Set ``graph_hops: 2`` in an Azula ViT processor configuration to attend over a
 periodic patch graph. For the packaged Azula ViT presets, use the Hydra
 override ``model.processor.graph_hops=2`` or select
 ``processor@model.processor=graph_vit_azula_small``. Each patch attends to
-itself and patches within the specified number of grid steps, wrapping on
-both axes. With ``graph_hops: null``, every pair of patches can attend. A hop
-count of zero allows each patch to attend to itself.
+itself and patches within the specified number of grid steps. Both axes wrap
+by default. Use ``graph_periodic_axes: [true, false]`` to wrap the first input
+spatial axis and keep the second bounded. With ``graph_hops: null``, every pair
+of patches can attend. A hop count of zero allows each patch to attend to itself.
 
 Set the hop count on the same SWE64 ViT configuration for a paired benchmark
 with the same patch size, positional encodings, weights layout and AdaLN

@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parents[4]
 EXPERIMENTS = {
     "matched": "the_well/rayleigh_benard/crps_spatiotemporal_ambient_matched",
     "lola": "the_well/rayleigh_benard/crps_spatiotemporal_ambient",
+    "graph": "the_well/rayleigh_benard/crps_vit_azula_graph_ambient",
 }
 COHORT = Path(__file__).with_name("test64_seed0.yaml")
 REFERENCE_EPOCHS = 4096
@@ -114,12 +115,13 @@ def prepare_training(  # noqa: PLR0915
 ):
     """Preserve 32 real windows and 256 member predictions per optimizer update."""
     if size not in EXPERIMENTS:
-        msg = "Use matched or lola for the model size."
+        msg = f"Unknown model preset {size!r}. Choose from {', '.join(EXPERIMENTS)}."
         raise ValueError(msg)
     if nodes not in (1, 2, 4, 8) or not datasets.is_absolute():
         msg = "Use an absolute dataset root and 1, 2, 4 or 8 four-GPU nodes."
         raise ValueError(msg)
-    microbatch = 8 // nodes if microbatch is None else microbatch
+    if microbatch is None:
+        microbatch = 1 if size == "graph" else 8 // nodes
     if microbatch not in (1, 2, 4, 8) or microbatch > 8 // nodes:
         msg = "Use a microbatch that preserves 32 real windows across all ranks."
         raise ValueError(msg)
@@ -175,7 +177,9 @@ def prepare_training(  # noqa: PLR0915
             if str(callback.get("_target_", "")).endswith("ModelCheckpoint"):
                 callback.dirpath = str(workdir / "checkpoints")
         if phase != "train":
-            cfg.trainer.callbacks[0].every_n_epochs = target
+            snapshot = cfg.trainer.callbacks[0]
+            snapshot.pop("every_n_train_steps_fraction", None)
+            snapshot.every_n_epochs = target
         else:
             # Check only at complete epochs; measure epoch/save time before
             # relying on this 30-minute allocation headroom in production.

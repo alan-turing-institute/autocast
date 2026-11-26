@@ -1,0 +1,36 @@
+# @package _global_
+defaults:
+  - /local_experiment/the_well/rayleigh_benard/crps_vit_azula_large_ambient
+  - _self_
+
+experiment_name: the_well_rayleigh_benard_crps_vit_azula_graph_ambient
+
+# Four GPUs, one real window per GPU per microbatch.
+datamodule:
+  batch_size: 1
+
+model:
+  processor:
+    patch_size: 4
+    graph_hops: 2
+    graph_attention_backend: gathered
+    # Native Well axes are x (periodic) and y (walls).
+    graph_periodic_axes: [true, false]
+    # Azula's relative bias uses unwrapped coordinates, including at the seam.
+    rpb: false
+    checkpointing: true
+
+optimizer:
+  cosine_epochs: 4096
+
+trainer:
+  max_epochs: 4096
+  max_time: "00:23:45:00"
+  accumulate_grad_batches: 8
+  limit_train_batches: 512
+  limit_val_batches: 128
+  check_val_every_n_epoch: 8
+  num_sanity_val_steps: 0
+  gradient_clip_val: 1.0
+  log_every_n_steps: 64
+  enable_progress_bar: false
