@@ -1,0 +1,10 @@
+# @package _global_
+defaults:
+  - /local_experiment/simple_precip_ou/common
+  - /processor@precip_fno_processor: periodic_hybrid_fno
+  - _self_
+
+experiment_name: precip_ou64_fno_afcrps
+
+model:
+  processor: ${precip_fno_processor}

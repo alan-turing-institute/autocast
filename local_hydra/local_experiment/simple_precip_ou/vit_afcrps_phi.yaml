@@ -1,0 +1,10 @@
+# @package _global_
+defaults:
+  - /local_experiment/simple_precip_ou/vit_afcrps
+  - _self_
+
+experiment_name: precip_ou64_vit_afcrps_phi
+
+datamodule:
+  # Predict phi with the rain fields so all three can be fed back in rollouts.
+  channel_idxs: [0, 1, 2]

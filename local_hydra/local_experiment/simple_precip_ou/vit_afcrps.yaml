@@ -1,0 +1,6 @@
+# @package _global_
+defaults:
+  - /local_experiment/simple_precip_ou/common
+  - _self_
+
+experiment_name: precip_ou64_vit_afcrps
