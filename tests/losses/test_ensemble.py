@@ -8,6 +8,7 @@ import torch
 
 from autocast.losses import (
     AlphaFairCRPSLoss,
+    AlphaFairEnergyScoreLoss,
     CoefficientCRPSLoss,
     CRPSLoss,
     EnsembleMAELoss,
@@ -117,3 +118,35 @@ def test_alpha_fair_crps_integer_alpha_with_runtime_typechecking():
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("alpha", [0, 0.95, 1])
+def test_alpha_fair_energy_score_matches_explicit_joint_distances(alpha):
+    generator = torch.Generator().manual_seed(19)
+    targets = torch.randn(2, 1, 4, 3, 3, generator=generator, dtype=torch.float64)
+    preds = torch.randn(
+        *targets.shape, 8, generator=generator, dtype=torch.float64, requires_grad=True
+    )
+    vectors = preds.flatten(1, -2).transpose(-1, -2)
+    truth = targets.flatten(1)
+    distance_to_truth = (vectors - truth[:, None]).norm(dim=-1).mean(dim=-1)
+    first, second = torch.triu_indices(8, 8, offset=1)
+    between_members = (vectors[:, first] - vectors[:, second]).norm(dim=-1).sum(dim=-1)
+    weight = (1 - alpha) / 8**2 + alpha / (8 * 7)
+    expected = (distance_to_truth - weight * between_members) / truth.shape[-1] ** 0.5
+    actual = AlphaFairEnergyScoreLoss(alpha=alpha, reduction="none")(preds, targets)
+
+    torch.testing.assert_close(actual, expected)
+    expected_grad = torch.autograd.grad(expected.sum(), preds, retain_graph=True)[0]
+    actual_grad = torch.autograd.grad(actual.sum(), preds)[0]
+    torch.testing.assert_close(actual_grad, expected_grad)
+
+
+def test_alpha_fair_energy_score_zero_distances_in_low_precision():
+    targets = torch.ones((2, 1, 3, 4, 3), dtype=torch.bfloat16)
+    preds = targets[..., None].repeat(1, 1, 1, 1, 1, 8).requires_grad_()
+    loss = AlphaFairEnergyScoreLoss()(preds, targets)
+
+    torch.testing.assert_close(loss, torch.zeros((), dtype=torch.float32))
+    loss.backward()
+    torch.testing.assert_close(preds.grad, torch.zeros_like(preds))

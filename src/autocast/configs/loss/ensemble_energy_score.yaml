@@ -1,0 +1,7 @@
+# Almost-fair energy score over each complete decoded ensemble field.
+defaults:
+  - _reset_epd_loss
+  - _self_
+
+_target_: autocast.losses.AlphaFairEnergyScoreLoss
+alpha: 0.95

@@ -13,6 +13,7 @@ from autocast.losses.decomposition import (
 )
 from autocast.losses.ensemble import (
     AlphaFairCRPSLoss,
+    AlphaFairEnergyScoreLoss,
     CoefficientCRPSLoss,
     CRPSLoss,
     EnsembleMAELoss,
@@ -40,6 +41,7 @@ from autocast.losses.vector import HelmholtzDecomposition, VelocityScoreLoss
 
 __all__ = [
     "AlphaFairCRPSLoss",
+    "AlphaFairEnergyScoreLoss",
     "CRPSLoss",
     "CoefficientCRPSLoss",
     "CoefficientLpLoss",

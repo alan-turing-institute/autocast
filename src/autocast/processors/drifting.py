@@ -25,7 +25,10 @@ from jaxtyping import Float
 from torch import nn
 from torch.nn import functional as F
 
-from autocast.metrics.ensemble import _energy_score_terms
+from autocast.metrics.ensemble import (
+    _alpha_fair_energy_score_from_distances,
+    _energy_score_terms,
+)
 from autocast.processors.one_step_cohort import BaseNoise, OneStepCohortProcessor
 from autocast.types import EncodedBatch, Tensor
 
@@ -145,26 +148,17 @@ def _energy_score(
     dist_truth, dist_pair = _energy_score_terms(
         gen_b.transpose(-1, -2), pos_b.squeeze(-2)
     )  # (B, K), (B, K, K)
-    term1 = dist_truth.mean(dim=-1)  # (B,)
-
-    # Self-distances are EXACTLY zero under the kernel, so the full double sum
-    # already equals the distinct-pair sum and needs no diagonal mask.
-    pair_sum = dist_pair.sum(dim=(-2, -1))  # (B,)
-
     if scaled:
         # SCRPS loss: -SCRPS = a / b + 1/2 log b. b is the UNBIASED mean
         # pairwise distance pair_sum / (K(K-1)); eps floors the a/b barrier and
         # log b against cohort collapse. a_f / the spread coefficient are not
         # used here on purpose (the unbiased b is the SCRPS denominator).
-        b = pair_sum / (k * (k - 1))  # (B,)
+        term1 = dist_truth.mean(dim=-1)
+        b = dist_pair.sum(dim=(-2, -1)) / (k * (k - 1))
         b_eff = b + eps
         return (term1 / b_eff + 0.5 * b_eff.log()).mean()
 
-    # Almost-fair energy score (difference form); eps_af is the almost-fair
-    # shrinkage of Lang et al.
-    eps_af = (1.0 - a_f) / k
-    spread_coeff = (1.0 - eps_af) / (2.0 * k * (k - 1))
-    return (term1 - spread_coeff * pair_sum).mean()
+    return _alpha_fair_energy_score_from_distances(dist_truth, dist_pair, a_f).mean()
 
 
 def _per_tau_force_field(

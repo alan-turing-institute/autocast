@@ -14,6 +14,7 @@ from omegaconf import DictConfig, open_dict
 
 from autocast.losses import (
     AlphaFairCRPSLoss,
+    AlphaFairEnergyScoreLoss,
     CoefficientCRPSLoss,
     JointCoefficientEnergyScore,
     MCDropoutMSEL2Loss,
@@ -88,6 +89,33 @@ def test_fourier_preset_is_opt_in_and_preserves_null_loss(REPO_ROOT: Path):
         "autocast.processors.flow_matching.FlowMatchingProcessor"
     )
     assert _build_loss_func(cfg.model) is None
+
+
+def test_energy_score_preset_can_replace_grid_crps_in_epd(
+    REPO_ROOT: Path, make_toy_batch, dummy_datamodule
+):
+    preset = _config(REPO_ROOT, ["loss@model.loss_func=ensemble_energy_score"])
+    assert isinstance(_build_loss_func(preset.model), AlphaFairEnergyScoreLoss)
+
+    batch = make_toy_batch(t_in=1, t_out=1, w=4, h=6, c=3)
+    cfg = _small_model_config(REPO_ROOT, batch)
+    cfg.model.residual_prediction = True
+    cfg.model.loss_func.losses[0] = preset.model.loss_func
+    model = setup_epd_model(cfg, _stats(batch), dummy_datamodule)
+    loss_func = model.loss_func
+    assert isinstance(loss_func, WeightedSumLoss)
+    assert isinstance(loss_func.losses[0], AlphaFairEnergyScoreLoss)
+
+    loss, predictions = model.loss(batch)
+    assert predictions is not None
+    torch.testing.assert_close(loss, loss_func(predictions, batch.output_fields))
+    assert loss.ndim == 0
+    assert torch.isfinite(loss)
+    loss.backward()
+    assert any(
+        parameter.grad is not None and torch.count_nonzero(parameter.grad)
+        for parameter in model.processor.parameters()
+    )
 
 
 @pytest.mark.parametrize("group", ["singletons", "pairs", "triads"])

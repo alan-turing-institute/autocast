@@ -955,7 +955,6 @@ class AlmostFairEnergyScore(BTSCMMetric):
         dist_truth = torch.linalg.vector_norm(
             y_pred_vector - y_true_expanded, ord=2, dim=-2
         )
-        term1 = dist_truth.mean(dim=-1)
 
         # term2: almost-fair spread over the joint field. Self-distances are
         # exactly 0 here, so the full double sum equals the distinct-pair sum.
@@ -963,11 +962,9 @@ class AlmostFairEnergyScore(BTSCMMetric):
             y_pred_vector, "... d m -> ... d 1 m"
         )
         dist_pairwise = torch.linalg.vector_norm(pairwise, ord=2, dim=-3)
-        eps = (1.0 - self.a_f) / n_ensemble
-        spread_coeff = (1.0 - eps) / (2.0 * n_ensemble * (n_ensemble - 1))
-        term2 = spread_coeff * dist_pairwise.sum(dim=(-2, -1))
-
-        score = term1 - term2
+        score = _alpha_fair_energy_score_from_distances(
+            dist_truth, dist_pairwise, self.a_f
+        )
         return _restore_vector_dims_singletons(score, y_true, self.vector_dims)
 
 
@@ -1424,13 +1421,7 @@ when someone raises ``n_members`` past 25.
 def _energy_score_terms(
     y_pred_vector: Tensor, y_true_vector: Tensor
 ) -> tuple[Tensor, Tensor]:
-    """Raw Euclidean distances behind every energy score in this repo.
-
-    THE single implementation, shared by :class:`EnergyScore`,
-    :class:`AlmostFairEnergyScore`, ``losses.ensemble.EnergyScoreLoss`` and
-    ``processors.drifting._energy_score``. Do not re-derive these distances at a
-    call site: a differing input layout is a reason to write a transpose, never
-    a reason to write the formula again.
+    """Exact Euclidean distances for vectorized ensemble training scores.
 
     Args:
         y_pred_vector: Predictions of shape (..., D, M), D the selected vector
@@ -1459,6 +1450,18 @@ def _energy_score_terms(
     return (
         dist_truth.reshape(*leading, n_members),
         dist_pairwise.reshape(*leading, n_members, n_members),
+    )
+
+
+def _alpha_fair_energy_score_from_distances(
+    dist_truth: Tensor, dist_pairwise: Tensor, alpha: float
+) -> Tensor:
+    """Combine truth and ordered member-pair distances into an afES."""
+    n_members = dist_truth.shape[-1]
+    epsilon = (1.0 - alpha) / n_members
+    spread_coefficient = (1.0 - epsilon) / (2.0 * n_members * (n_members - 1))
+    return dist_truth.mean(dim=-1) - spread_coefficient * dist_pairwise.sum(
+        dim=(-2, -1)
     )
 
 

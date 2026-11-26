@@ -5,7 +5,14 @@ from typing import Literal, cast
 import torch
 from torch import nn
 
-from autocast.metrics.ensemble import _alpha_fair_crps_score, _common_crps_score
+from autocast.metrics.ensemble import (
+    _alpha_fair_crps_score,
+    _alpha_fair_energy_score_from_distances,
+    _common_crps_score,
+    _energy_score_terms,
+    _require_pairwise_ensemble_size,
+    _vectorize_selected_dims,
+)
 from autocast.types import (
     Tensor,
     TensorBTSC,
@@ -90,6 +97,51 @@ class AlphaFairCRPSLoss(EnsembleLoss):
 
     def _compute_score(self, preds: TensorBTSCM, targets: TensorBTSC) -> Tensor:
         return _alpha_fair_crps_score(preds, targets, alpha=self.alpha)
+
+
+class AlphaFairEnergyScoreLoss(EnsembleLoss):
+    """Almost-fair energy score over each complete forecast field.
+
+    All times, spatial locations and channels form one vector per ensemble
+    member. Divide Euclidean distances by the square root of the vector size
+    to put the score on a per-coordinate RMS scale. With reduction="none",
+    return one score per batch example.
+    """
+
+    requires_ambient_predictions = True
+
+    def __init__(self, alpha: int | float = 0.95, reduction: str = "mean") -> None:
+        super().__init__(reduction=reduction)
+        if not 0 <= alpha <= 1:
+            raise ValueError(f"alpha must be finite and in [0, 1], got {alpha}.")
+        self.alpha = float(alpha)
+
+    def _compute_score(self, preds: TensorBTSCM, targets: TensorBTSC) -> Tensor:
+        if preds.shape[:-1] != targets.shape:
+            msg = "Predictions must match targets with a final ensemble axis."
+            raise ValueError(msg)
+        if not (preds.is_floating_point() and targets.is_floating_point()):
+            msg = "AlphaFairEnergyScoreLoss requires real floating fields."
+            raise ValueError(msg)
+        _require_pairwise_ensemble_size(preds.shape[-1], type(self).__name__)
+
+        pred_vector, target_vector = _vectorize_selected_dims(
+            preds, targets, "spatial_temporal_channels"
+        )
+        vector_size = target_vector.shape[-1]
+        if vector_size == 0:
+            msg = "AlphaFairEnergyScoreLoss requires a nonempty field."
+            raise ValueError(msg)
+        dtype = torch.promote_types(
+            torch.promote_types(preds.dtype, targets.dtype), torch.float32
+        )
+        dist_truth, dist_pairwise = _energy_score_terms(
+            pred_vector.to(dtype), target_vector.to(dtype)
+        )
+        score = _alpha_fair_energy_score_from_distances(
+            dist_truth, dist_pairwise, self.alpha
+        )
+        return score / math.sqrt(vector_size)
 
 
 class EnsembleMAELoss(EnsembleLoss):
